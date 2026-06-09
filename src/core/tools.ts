@@ -1028,6 +1028,10 @@ interface SubagentInstance {
 const subagentTypes = new Map<string, SubagentType>();
 const subagentInstances = new Map<string, SubagentInstance>();
 
+export function registerSubagentType(name: string, description: string, systemPrompt: string) {
+  subagentTypes.set(name, { name, description, systemPrompt });
+}
+
 const defineSubagentTool: Tool = {
   name: "define_subagent",
   description: "Define a new subagent type with a specialized role and system prompt.",

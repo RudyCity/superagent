@@ -7,6 +7,9 @@ import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
 import { getContextWindowLimit } from "./core/config.js";
 import { getToolDescription } from "./core/permissions.js";
+import fs from "fs/promises";
+import path from "path";
+import { registerSubagentType, allTools } from "./core/tools.js";
 
 interface ChatLine {
   type:
@@ -366,7 +369,7 @@ export function App({
     }
   }, [lastTabPrefix]);
 
-  const commands = ["/clear", "/compact", "/help", "/new", "/resume", "/quit", "/exit"];
+  const commands = ["/clear", "/compact", "/help", "/init", "/new", "/resume", "/quit", "/exit"];
 
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
@@ -510,24 +513,29 @@ export function App({
           });
         })()}
 
-        {scrollOffset === 0 && isProcessing && !showPermission && (
+        {scrollOffset === 0 && isProcessing && streamDisplay && (
           <Box marginY={0} flexDirection="column">
             <Text color="magenta">
-              ├───[ <Text bold color="magenta">✦ SuperAgent</Text> ]
+              ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text> ]
             </Text>
-            {streamDisplay ? (
-              streamDisplay.split("\n").map((l, idx) => (
-                <Box key={idx} flexDirection="row">
-                  <Text color="magenta">│ </Text>
-                  <Text>{l}</Text>
-                </Box>
-              ))
-            ) : isExecutingTool ? null : (
-              <Box flexDirection="row">
+            {streamDisplay.split("\n").map((l, idx) => (
+              <Box key={idx} flexDirection="row">
                 <Text color="magenta">│ </Text>
-                <LoadingIndicator />
+                <Text>{l}</Text>
               </Box>
-            )}
+            ))}
+          </Box>
+        )}
+
+        {scrollOffset === 0 && isProcessing && !streamDisplay && !showPermission && !isExecutingTool && (
+          <Box marginY={0} flexDirection="column">
+            <Text color="magenta">
+              ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text> ]
+            </Text>
+            <Box flexDirection="row">
+              <Text color="magenta">│ </Text>
+              <LoadingIndicator />
+            </Box>
           </Box>
         )}
       </Box>
@@ -578,7 +586,7 @@ export function App({
 
         <Box flexDirection="column">
           <Text color={scrollOffset > 0 ? "yellow" : isProcessing ? "gray" : "green"}>
-            └───[ <Text bold color={scrollOffset > 0 ? "yellow" : isProcessing ? "gray" : "green"}>⌨️ Input</Text> ]
+            └───[ <Text bold color={scrollOffset > 0 ? "yellow" : isProcessing ? "gray" : "green"}>⌨️ COMM_LINK: ACTIVE</Text> ]
             {scrollOffset > 0 && (
               <Text color="yellow" bold> [Scroll: -{scrollOffset} lines/msgs - Press Esc to snap to bottom]</Text>
             )}
@@ -607,28 +615,38 @@ export function App({
 
       {/* Status bar */}
       <Box flexDirection="column" paddingX={1} marginTop={0}>
-        <Box justifyContent="space-between">
+        <Text color="cyan">┌──────────────────────────────────────────────────────────────────────┐</Text>
+        <Box justifyContent="space-between" paddingX={1}>
           <Box>
-            <Text backgroundColor="cyan" color="black" bold> SUPERAGENT </Text>
-            <Text dimColor>  msgs: {messageCount}  </Text>
-            <Text color="yellow" bold>  ↑ Up: {tokensUp.toLocaleString()}  </Text>
-            <Text color="green" bold>  ↓ Down: {(tokensDown + liveStreamTokens).toLocaleString()}  </Text>
+            <Text color="cyan" bold>[TELEMETRY]</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="magenta" bold>ONLINE</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="white">MSGS: {messageCount}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="yellow" bold>↑ UP: {tokensUp.toLocaleString()}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="green" bold>↓ DOWN: {(tokensDown + liveStreamTokens).toLocaleString()}</Text>
           </Box>
           <Box>
             <Text color="magenta" bold>
-              Ctx: {activeContextUsage.toLocaleString()} / {contextLimit.toLocaleString()} ({contextPercentage}%)
+              CTX_USAGE: {contextPercentage}%
             </Text>
           </Box>
         </Box>
-        <Box justifyContent="space-between" marginTop={0}>
+        <Box justifyContent="space-between" paddingX={1} marginTop={0}>
           <Box>
-            <Text dimColor>Dir: {process.cwd()}</Text>
+            <Text color="cyan" bold>[NODE_PATH]</Text>
+            <Text color="gray"> │ </Text>
+            <Text dimColor>{process.cwd()}</Text>
           </Box>
           <Box>
-            <Text backgroundColor="gray" color="white"> {getProviderLabel()} </Text>
-            <Text backgroundColor="blue" color="white" bold> {modelName} </Text>
+            <Text color="cyan" bold>[COGNITIVE_MODEL]</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="blue" bold>{modelName}</Text>
           </Box>
         </Box>
+        <Text color="cyan">└──────────────────────────────────────────────────────────────────────┘</Text>
       </Box>
     </Box>
   );
@@ -700,6 +718,74 @@ function handleSlashCommand(
       const summary = ctx.agent?.getHistory().getCompactSummary();
       ctx.addLine({ type: "system", content: summary || "No history.", timestamp: now });
       break;
+    case "init":
+      (async () => {
+        const agentsPath = path.resolve(process.cwd(), "agents.md");
+        let fileStatus = "LOADED";
+        try {
+          await fs.access(agentsPath);
+        } catch {
+          // Create agents.md if not exists
+          const defaultContent = `# Project Specifications (agents.md)\n\nThis file contains key information about the project for AI agents to study and align with.\n\n## Project Overview\n- **Name**: superagent\n- **Description**: An interactive CLI coding assistant designed for codebase operations.\n- **Technology Stack**: Node.js, TypeScript, Ink (React), Vercel AI SDK\n\n## Coding Guidelines\n- On Windows, statement separator for terminal commands is \';\' instead of \'&&\'.\n- Always write robust TypeScript code and verify compilation with \'npm run build\'.\n`;
+          await fs.writeFile(agentsPath, defaultContent, "utf-8");
+          fileStatus = "CREATED";
+        }
+
+        let projectName = "Unknown";
+        let projectTech = "Unknown";
+        try {
+          const content = await fs.readFile(agentsPath, "utf-8");
+          const nameMatch = content.match(/-\s*\*\*Name\*\*:\s*(.*)/i);
+          if (nameMatch) projectName = nameMatch[1].trim();
+          const techMatch = content.match(/-\s*\*\*Technology Stack\*\*:\s*(.*)/i);
+          if (techMatch) projectTech = techMatch[1].trim();
+        } catch (err: any) {
+          ctx.addLine({ type: "error", content: `Failed to read agents.md: ${err.message}`, timestamp: now });
+          return;
+        }
+
+        // System information
+        const modelName = process.env.MODEL || getDefaultModel();
+        let limit = getContextWindowLimit(modelName);
+        if (process.env.CONTEXT_WINDOW_LIMIT) {
+          const parsed = parseInt(process.env.CONTEXT_WINDOW_LIMIT, 10);
+          if (!isNaN(parsed)) limit = parsed;
+        }
+
+        const auditLines = [
+          "┌───[ ⚙️ SYSTEM AUDIT & AGENT INITIALIZATION ]",
+          "│ ",
+          "│ [HOST INFO]",
+          `│ 🖥️ OS Platform   : ${process.platform}`,
+          `│ 📦 Node Version   : ${process.version}`,
+          `│ 📂 Workspace      : ${process.cwd()}`,
+          "│ ",
+          "│ [COGNITIVE CORE]",
+          `│ ✦ Provider        : ${process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai"}`,
+          `│ ✦ Active Model    : ${modelName}`,
+          `│ ✦ Context Limit   : ${limit.toLocaleString()} tokens`,
+          `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
+          "│ ",
+          "│ [PROJECT METADATA]",
+          `│ 📄 Registry File  : ${fileStatus} (${agentsPath})`,
+          `│ 📂 Project Name   : ${projectName}`,
+          `│ 🛠️ Tech Stack      : ${projectTech}`,
+          "│ ",
+          "│ [SYSTEM TOOLS]",
+          `│ 🛠️ Loaded Tools (${allTools.length}): ${allTools.map(t => t.name).join(", ")}`,
+          "│ ",
+          "└──────────────────────────────────────────────"
+        ];
+
+        ctx.addLine({
+          type: "system",
+          content: auditLines.join("\n"),
+          timestamp: now,
+        });
+      })().catch(err => {
+        ctx.addLine({ type: "error", content: `Init failed: ${err.message}`, timestamp: now });
+      });
+      break;
     case "help":
       ctx.addLine({
         type: "system",
@@ -709,6 +795,7 @@ function handleSlashCommand(
           "  /resume   - Resume last conversation session from history",
           "  /clear    - Clear conversation history",
           "  /compact  - Show conversation summary",
+          "  /init     - Initialize/audit AI agents and system configuration",
           "  /help     - Show this help",
           "  /quit     - Exit the app",
           "",
@@ -738,7 +825,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
       return (
         <Box marginY={0} flexDirection="column">
           <Text color="cyan">
-            {isFirst ? "┌" : "├"}───[ <Text bold color="cyan">👤 You</Text> ]
+            {isFirst ? "┌" : "├"}───[ <Text bold color="cyan">👤 ACCESS_POINT: USER</Text> ]
           </Text>
           {content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
@@ -753,7 +840,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
       return (
         <Box marginY={0} flexDirection="column">
           <Text color="magenta">
-            {isFirst ? "┌" : "├"}───[ <Text bold color="magenta">✦ SuperAgent</Text> ]
+            {isFirst ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT</Text> ]
           </Text>
           {line.content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
@@ -768,7 +855,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
       return (
         <Box marginY={0} flexDirection="column">
           <Text color="yellow">
-            ├───[ <Text bold color="yellow">⚙️ Tool Execute</Text> ]
+            ├───[ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ]
           </Text>
           {content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
@@ -786,7 +873,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
       return (
         <Box marginY={0} flexDirection="column">
           <Text color={themeColor}>
-            ├───[ <Text bold color={themeColor}>{isError ? "❌ Tool Failed" : "✅ Tool Success"}</Text> ]
+            ├───[ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ]
           </Text>
           {contentText.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
@@ -802,7 +889,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
       return (
         <Box marginY={0} flexDirection="column">
           <Text color="red">
-            ├───[ <Text bold color="red">🚨 Error</Text> ]
+            ├───[ <Text bold color="red">🚨 ERROR_REPORT</Text> ]
           </Text>
           {contentText.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
@@ -817,7 +904,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
       return (
         <Box marginY={0} flexDirection="column">
           <Text color="gray">
-            ├───[ <Text bold color="gray">ℹ️ System</Text> ]
+            ├───[ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ]
           </Text>
           {line.content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
@@ -831,7 +918,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
       return (
         <Box marginY={0} flexDirection="column">
           <Text color="gray">
-            ├───[ <Text bold color="gray">Message</Text> ]
+            ├───[ <Text bold color="gray">COMM_PACKET</Text> ]
           </Text>
           {line.content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
