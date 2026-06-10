@@ -546,6 +546,22 @@ interface BackgroundTask {
 
 export const backgroundTasks = new Map<string, BackgroundTask>();
 
+export type TaskChangeListener = () => void;
+const taskChangeListeners = new Set<TaskChangeListener>();
+
+export function subscribeToTasks(listener: TaskChangeListener) {
+  taskChangeListeners.add(listener);
+  return () => {
+    taskChangeListeners.delete(listener);
+  };
+}
+
+export function notifyTasksChanged() {
+  for (const listener of taskChangeListeners) {
+    listener();
+  }
+}
+
 const runBackgroundTool: Tool = {
   name: "run_background",
   description: "Run a shell command in the background. Returns a task ID.",
@@ -583,6 +599,7 @@ const runBackgroundTool: Tool = {
       };
 
       backgroundTasks.set(taskId, task);
+      notifyTasksChanged();
 
       proc.all?.on("data", (data) => {
         const text = data.toString();
@@ -594,6 +611,7 @@ const runBackgroundTool: Tool = {
 
       proc.on("close", (code) => {
         task.output.push(`\n[Process exited with code ${code}]`);
+        notifyTasksChanged();
       });
 
       return `Started task in background. Task ID: ${taskId}`;
@@ -627,6 +645,7 @@ const killTaskTool: Tool = {
     try {
       task.process.kill();
       backgroundTasks.delete(taskId);
+      notifyTasksChanged();
       return `Task "${taskId}" has been killed successfully.`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -965,6 +984,7 @@ const manageTaskTool: Tool = {
       try {
         task.process.kill();
         backgroundTasks.delete(taskId);
+        notifyTasksChanged();
         return `Task "${taskId}" has been killed successfully.`;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1065,11 +1085,46 @@ interface SubagentInstance {
 }
 
 const subagentTypes = new Map<string, SubagentType>();
-const subagentInstances = new Map<string, SubagentInstance>();
+export const subagentInstances = new Map<string, SubagentInstance>();
+
+export type SubagentChangeListener = () => void;
+const subagentChangeListeners = new Set<SubagentChangeListener>();
+
+export function subscribeToSubagents(listener: SubagentChangeListener) {
+  subagentChangeListeners.add(listener);
+  return () => {
+    subagentChangeListeners.delete(listener);
+  };
+}
+
+export function notifySubagentsChanged() {
+  for (const listener of subagentChangeListeners) {
+    listener();
+  }
+}
 
 export function registerSubagentType(name: string, description: string, systemPrompt: string) {
   subagentTypes.set(name, { name, description, systemPrompt });
 }
+
+// Register default subagent types
+registerSubagentType(
+  "researcher",
+  "Specialized in codebase research, file analysis, web searching, and gathering context/information without modifications.",
+  "You are a research subagent. Your goal is to gather information, read files, search the codebase, use web search, and analyze code or documentation. Do not modify any files or execute write operations unless explicitly instructed. Keep your findings concise and organized."
+);
+
+registerSubagentType(
+  "coder",
+  "Specialized in writing code, editing files, implementing features, and refactoring codebase files.",
+  "You are a coding subagent. Your goal is to write, edit, and modify files in the codebase to implement requested features, fixes, or refactoring. Ensure you follow clean coding standards, preserve existing comments/formatting, and explain your changes clearly."
+);
+
+registerSubagentType(
+  "reviewer",
+  "Specialized in code review, quality checks, debugging, testing, and finding bugs/flaws.",
+  "You are a code review subagent. Your goal is to inspect code changes, identify bugs, security vulnerabilities, performance issues, or architectural improvements. You can run tests, read files, and verify the correctness of the implementation."
+);
 
 const defineSubagentTool: Tool = {
   name: "define_subagent",
@@ -1155,7 +1210,8 @@ const invokeSubagentTool: Tool = {
       },
       async (question, options) => {
         return options[0] || "";
-      }
+      },
+      subType.systemPrompt
     );
 
     const instance: SubagentInstance = {
@@ -1168,11 +1224,14 @@ const invokeSubagentTool: Tool = {
     };
 
     subagentInstances.set(subagentId, instance);
+    notifySubagentsChanged();
 
     agentInstance.sendMessage(prompt).then(() => {
       instance.status = "completed";
+      notifySubagentsChanged();
     }).catch(() => {
       instance.status = "completed";
+      notifySubagentsChanged();
     });
 
     return `Invoked subagent "${typeName}" (Role: ${role}) in background. Conversation ID: ${subagentId}`;
@@ -1206,10 +1265,13 @@ const sendMessageTool: Tool = {
     }
 
     instance.status = "running";
+    notifySubagentsChanged();
     instance.agent.sendMessage(message).then(() => {
       instance.status = "completed";
+      notifySubagentsChanged();
     }).catch(() => {
       instance.status = "completed";
+      notifySubagentsChanged();
     });
 
     return `Message sent to subagent "${recipientId}". Subagent is processing.`;
@@ -1276,6 +1338,7 @@ const manageSubagentsTool: Tool = {
           subagentInstances.delete(id);
         }
       }
+      notifySubagentsChanged();
       return `Terminated subagents: ${conversationIds.join(", ")}`;
     }
 
@@ -1284,6 +1347,7 @@ const manageSubagentsTool: Tool = {
         inst.agent.abort();
       }
       subagentInstances.clear();
+      notifySubagentsChanged();
       return "All subagent instances terminated.";
     }
 

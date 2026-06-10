@@ -5,12 +5,13 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
-import { getContextWindowLimit, updateEnvFile } from "./core/config.js";
+import { getContextWindowLimit, updateEnvFile, getInstalledSkills } from "./core/config.js";
 import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
-import { registerSubagentType, allTools } from "./core/tools.js";
+import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents } from "./core/tools.js";
 import { WizardDialog } from "./components/wizard-dialog.js";
+import { execa } from "execa";
 
 interface ChatLine {
   type:
@@ -60,6 +61,7 @@ export function App({
   const [tempInput, setTempInput] = useState("");
   const agentRef = useRef<Agent | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [triggerUpdate, setTriggerUpdate] = useState(0);
   const [activeWizard, setActiveWizard] = useState<{
     type: "login" | "model" | "plan_approve" | "permission" | "question";
     step: number;
@@ -81,6 +83,19 @@ export function App({
     process.stdout.on("resize", handleResize);
     return () => {
       process.stdout.off("resize", handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    const unsubTasks = subscribeToTasks(() => {
+      setTriggerUpdate((prev) => prev + 1);
+    });
+    const unsubSubagents = subscribeToSubagents(() => {
+      setTriggerUpdate((prev) => prev + 1);
+    });
+    return () => {
+      unsubTasks();
+      unsubSubagents();
     };
   }, []);
 
@@ -686,6 +701,10 @@ export function App({
     "/login",
     "/model",
     "/approve",
+    "/agents",
+    "/tasks",
+    "/install",
+    "/skills",
   ];
 
   useInput((inputChar, key) => {
@@ -1266,6 +1285,10 @@ export function App({
             <Text color="magenta" bold>ONLINE</Text>
             <Text color="gray"> │ </Text>
             <Text color="white">MSGS: {messageCount}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="cyan" bold>TASKS: {backgroundTasks.size}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="yellow" bold>SUBAGENTS: {Array.from(subagentInstances.values()).filter(s => s.status === "running").length}</Text>
             <Text color="gray"> │ </Text>
             <Text color="yellow" bold>↑ UP: {tokensUp.toLocaleString()}</Text>
             <Text color="gray"> │ </Text>
@@ -1854,6 +1877,127 @@ function handleSlashCommand(
       }
       break;
     }
+    case "agents": {
+      const activeList = Array.from(subagentInstances.entries());
+      const lines = [
+        "┌───[ 🤖 ACTIVE SUBAGENTS & TYPES ]",
+        "│ ",
+        "│ [DEFINED TYPES]",
+        "│  • researcher : codebase research & context gathering",
+        "│  • coder      : code writing & editing",
+        "│  • reviewer   : debugging, review & testing",
+        "│ ",
+        "│ [ACTIVE INSTANCES]",
+      ];
+      if (activeList.length === 0) {
+        lines.push("│  None");
+      } else {
+        for (const [id, inst] of activeList) {
+          lines.push(`│  • ID: ${id} | Type: ${inst.typeName} | Role: ${inst.role} | Status: ${inst.status}`);
+        }
+      }
+      lines.push("└──────────────────────────────────────────────");
+      ctx.addLine({
+        type: "system",
+        content: lines.join("\n"),
+        timestamp: now,
+      });
+      break;
+    }
+    case "tasks": {
+      const taskList = Array.from(backgroundTasks.entries());
+      const lines = [
+        "┌───[ ⚙️ RUNNING BACKGROUND TASKS ]",
+        "│ ",
+      ];
+      if (taskList.length === 0) {
+        lines.push("│  No active background tasks.");
+      } else {
+        for (const [id, task] of taskList) {
+          lines.push(`│  • ID: ${id} | Command: ${task.command}`);
+        }
+      }
+      lines.push("└──────────────────────────────────────────────");
+      ctx.addLine({
+        type: "system",
+        content: lines.join("\n"),
+        timestamp: now,
+      });
+      break;
+    }
+    case "install": {
+      const args = cmd.slice(name.length + 2).trim();
+      if (!args) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /install <owner/repo> (e.g. /install vercel-labs/skills/find-skills)",
+          timestamp: now,
+        });
+        break;
+      }
+      ctx.addLine({
+        type: "system",
+        content: `Installing skill "${args}" via skills.sh...`,
+        timestamp: now,
+      });
+
+      (async () => {
+        try {
+          const isWin = process.platform === "win32";
+          const shell = isWin ? "powershell.exe" : true;
+          const result = await execa("npx", ["skills", "add", args], {
+            shell,
+            cwd: process.cwd(),
+            reject: false,
+          });
+          if (result.failed) {
+            ctx.addLine({
+              type: "error",
+              content: `Failed to install skill: ${result.stderr || result.stdout || "Unknown error"}`,
+              timestamp: Date.now(),
+            });
+          } else {
+            ctx.addLine({
+              type: "system",
+              content: `✓ Successfully installed skill: ${args}!\nOutput:\n${result.stdout}`,
+              timestamp: Date.now(),
+            });
+          }
+        } catch (err: any) {
+          ctx.addLine({
+            type: "error",
+            content: `Failed to execute install command: ${err.message}`,
+            timestamp: Date.now(),
+          });
+        }
+      })();
+      break;
+    }
+    case "skills": {
+      const skills = getInstalledSkills();
+      const lines = [
+        "┌───[ 📂 INSTALLED AGENT SKILLS ]",
+        "│ ",
+      ];
+      if (skills.length === 0) {
+        lines.push("│  No skills installed. Use /install <owner/repo> to install skills.");
+      } else {
+        for (const s of skills) {
+          lines.push(`│  • Name        : ${s.name}`);
+          lines.push(`│    Description : ${s.description}`);
+          lines.push(`│    Path        : ${s.path}`);
+          lines.push("│ ");
+        }
+        lines.pop(); // Remove the last empty spacer line
+      }
+      lines.push("└──────────────────────────────────────────────");
+      ctx.addLine({
+        type: "system",
+        content: lines.join("\n"),
+        timestamp: now,
+      });
+      break;
+    }
     case "help":
       ctx.addLine({
         type: "system",
@@ -1864,6 +2008,10 @@ function handleSlashCommand(
           "  /clear    - Clear conversation history",
           "  /compact  - Show conversation summary",
           "  /init     - Initialize/audit AI agents and system configuration",
+          "  /agents   - List active subagents and defined subagent types",
+          "  /tasks    - List running background tasks",
+          "  /skills   - List all installed agent skills and templates",
+          "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",
           "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
           "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
           "  /approve  - Approve the pending implementation plan",

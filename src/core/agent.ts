@@ -36,6 +36,7 @@ export type QuestionHandler = (
 export class Agent {
   public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
   private conversation: Conversation;
+  private customSystemPrompt?: string;
   private get config() {
     return getConfig();
   }
@@ -52,8 +53,10 @@ export class Agent {
   constructor(
     onEvent: (event: AgentEvent) => void,
     onPermission: PermissionHandler,
-    onQuestion: QuestionHandler
+    onQuestion: QuestionHandler,
+    customSystemPrompt?: string
   ) {
+    this.customSystemPrompt = customSystemPrompt;
     this.conversation = new Conversation();
     this.onEvent = (event: AgentEvent) => {
       if (event.type === "error") {
@@ -149,7 +152,7 @@ export class Agent {
         try {
           const result = await generateText({
             model: this.getModel(),
-            system: this.config.systemPrompt,
+            system: this.customSystemPrompt || this.config.systemPrompt,
             messages,
             tools: Object.fromEntries(
               toolDefs.map((t) => [
@@ -195,7 +198,7 @@ export class Agent {
         try {
           result = streamText({
             model: this.getModel(),
-            system: this.config.systemPrompt,
+            system: this.customSystemPrompt || this.config.systemPrompt,
             messages,
             tools: Object.fromEntries(
               toolDefs.map((t) => [

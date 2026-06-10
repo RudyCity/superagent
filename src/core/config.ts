@@ -74,7 +74,14 @@ export function getConfig(): Config {
 }
 
 function getSystemPrompt(): string {
-  return `You are SuperAgent, an interactive CLI coding assistant. You help users with software engineering tasks.
+  const basePrompt = `You are SuperAgent, an interactive CLI coding assistant. You help users with software engineering tasks.
+
+SUBAGENTS AVAILABLE OUT-OF-THE-BOX:
+You have pre-defined specialized subagents available for delegation (via 'invoke_subagent'):
+- 'researcher': Specialized in codebase research, file analysis, web searching, and gathering context/information without modifications.
+- 'coder': Specialized in writing code, editing files, implementing features, and refactoring codebase files.
+- 'reviewer': Specialized in code review, quality checks, debugging, testing, and finding bugs/flaws.
+You can invoke these directly or define new ones if needed.
 
 IMPORTANT GUIDELINES:
 - CRITICAL: Before executing ANY tool call, you MUST output a brief, 1-sentence narrative explaining what you are going to do and why, using a cyber/system operator persona (e.g., "[SYS] Scanning workspace node to map file tree...", "[SYS] Injecting patch into src/app.tsx..."). This narrative MUST be outputted as a text block before the tool call starts.
@@ -106,13 +113,13 @@ TOOL USAGE GUIDELINES:
 4. Command & Task Execution:
    - Use 'run_command' for fast synchronous shell execution.
    - Use 'bash' if you need a custom execution timeout.
-   - Use 'run_background' for long-running processes (e.g. dev servers, watch processes) and manage them using 'manage_task' (status, input, kill).
+   - Use 'run_background' for long-running processes (e.g. dev servers, watch processes, or long test suites). You must monitor background tasks using 'manage_task' (action: 'status') to inspect their logs and verify if they completed successfully.
 5. Web & Information Gathering:
    - Use 'web_search' to search the internet for documentation or current information.
    - Use 'fetch_url' to download and extract clean text from a specific webpage.
 6. Scheduling & Delegation:
    - Use 'schedule' to set timers or recurring cron notifications in the background.
-   - Use 'define_subagent' and 'invoke_subagent' to delegate complex, independent subtasks to specialized background agents, communicating via 'send_message' and monitoring via 'manage_subagents'.
+   - Use 'invoke_subagent' to spawn pre-defined subagents ('researcher', 'coder', 'reviewer') or custom subagents defined via 'define_subagent' to work on parallel/subtasks. Because they run asynchronously, you must monitor them using 'manage_subagents' (action: 'list' or 'logs') to retrieve their output, and send follow-up instructions via 'send_message'.
 7. Operational Best Practices:
    - Avoid reading huge files all at once; use the 'offset' and 'limit' parameters of 'read' to view only necessary sections.
    - If a tool call fails or returns an error, do not repeat the exact same tool call. Investigate the cause (e.g., check paths using glob/ripgrep) and adjust parameters before retrying.
@@ -141,6 +148,87 @@ AVAILABLE TOOLS:
 - invoke_subagent: Start a subagent in the background.
 - send_message: Send a message to an active subagent.
 - manage_subagents: List or terminate active subagents.`;
+  
+  const skillsPrompt = loadAgentSkills();
+  return basePrompt + skillsPrompt;
+}
+
+export interface LoadedSkill {
+  name: string;
+  description: string;
+  path: string;
+}
+
+export function getInstalledSkills(): LoadedSkill[] {
+  const skills: LoadedSkill[] = [];
+  const searchDirs = [
+    path.join(os.homedir(), ".superagent-r", "skills"),
+    path.join(process.cwd(), "skills"),
+    path.join(process.cwd(), ".superagent", "skills"),
+    path.join(process.cwd(), ".agents", "skills")
+  ];
+
+  for (const dir of searchDirs) {
+    if (fs.existsSync(dir)) {
+      try {
+        const items = fs.readdirSync(dir, { withFileTypes: true });
+        for (const item of items) {
+          if (item.isDirectory()) {
+            const skillDir = path.join(dir, item.name);
+            const skillMdPath = path.join(skillDir, "SKILL.md");
+            if (fs.existsSync(skillMdPath)) {
+              try {
+                const content = fs.readFileSync(skillMdPath, "utf-8");
+                let name = item.name;
+                let description = "No description provided.";
+                
+                // Simple frontmatter parser
+                const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+                if (fmMatch) {
+                  const fm = fmMatch[1];
+                  const nameMatch = fm.match(/^name:\s*(.*)$/m);
+                  const descMatch = fm.match(/^description:\s*(.*)$/m);
+                  if (nameMatch) name = nameMatch[1].trim();
+                  if (descMatch) description = descMatch[1].trim();
+                } else {
+                  // Fallback to searching first heading or lines
+                  const headingMatch = content.match(/^#\s*(.*)$/m);
+                  if (headingMatch) name = headingMatch[1].trim();
+                }
+                
+                if (!skills.some(s => s.path === skillMdPath)) {
+                  skills.push({
+                    name,
+                    description,
+                    path: skillMdPath
+                  });
+                }
+              } catch (e) {
+                // Ignore parsing errors for individual skills
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Ignore directory read errors
+      }
+    }
+  }
+  return skills;
+}
+
+function loadAgentSkills(): string {
+  const skills = getInstalledSkills();
+  if (skills.length === 0) {
+    return "";
+  }
+
+  let text = "\n\nINSTALLED AGENT SKILLS:\n";
+  text += "The following specialized agent skills are installed. If a user's task matches one of these skills, you should read the specified 'SKILL.md' file using a file read tool to obtain the detailed instructions, and execute any scripts or workflows it specifies:\n";
+  for (const s of skills) {
+    text += `- **${s.name}**: ${s.description}\n  Instruction File: ${s.path}\n`;
+  }
+  return text;
 }
 
 export function getContextWindowLimit(model: string): number {
