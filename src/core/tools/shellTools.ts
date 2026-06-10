@@ -1,4 +1,5 @@
 import { execa } from "execa";
+import { exec } from "child_process";
 import { Tool, BackgroundTask } from "./types.js";
 import { 
   formatCommandForPowerShell, 
@@ -12,6 +13,24 @@ import {
   clearActiveToolOutput, 
   appendActiveToolOutput 
 } from "./state.js";
+
+export function killProcessTree(pid: number | undefined): void {
+  if (!pid) return;
+  if (process.platform === "win32") {
+    try {
+      exec(`taskkill /F /T /PID ${pid}`);
+    } catch {
+      // Ignore
+    }
+  } else {
+    try {
+      exec(`pkill -P ${pid}`);
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Ignore
+    }
+  }
+}
 
 export const bashTool: Tool = {
   name: "bash",
@@ -44,16 +63,35 @@ export const bashTool: Tool = {
       }
     }
 
+    let timeoutId: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        const err = new Error("TimeoutError");
+        err.name = "TimeoutError";
+        reject(err);
+      }, timeout);
+    });
+
     try {
       clearActiveToolOutput();
       const proc = execa(command, {
         shell: shellPath,
         cwd,
-        timeout,
         reject: false,
         all: true,
-        cancelSignal: signal,
       });
+
+      const abortHandler = () => {
+        killProcessTree(proc.pid);
+      };
+
+      if (signal) {
+        if (signal.aborted) {
+          killProcessTree(proc.pid);
+          throw new Error("AbortError");
+        }
+        signal.addEventListener("abort", abortHandler);
+      }
 
       let interactiveWarning: string | null = null;
       proc.all?.on("data", (data) => {
@@ -65,19 +103,32 @@ export const bashTool: Tool = {
         }
       });
 
-      const result = await proc;
-      clearActiveToolOutput();
-      let output = (result.all || result.stdout || "").trim();
-      output = truncateOutput(output);
-      
-      if (interactiveWarning) {
-        output = `${interactiveWarning}\n\n${output}`;
-      }
+      try {
+        const result = await Promise.race([proc, timeoutPromise]);
+        clearActiveToolOutput();
+        let output = (result.all || result.stdout || "").trim();
+        output = truncateOutput(output);
+        
+        if (interactiveWarning) {
+          output = `${interactiveWarning}\n\n${output}`;
+        }
 
-      if (result.exitCode !== 0) {
-        return `Exit code: ${result.exitCode}\n${output}`;
+        if (result.exitCode !== 0) {
+          return `Exit code: ${result.exitCode}\n${output}`;
+        }
+        return output || "(no output)";
+      } catch (innerErr: any) {
+        if (innerErr && innerErr.name === "TimeoutError") {
+          killProcessTree(proc.pid);
+          return `Error executing command: Timeout of ${timeout}ms exceeded.`;
+        }
+        throw innerErr;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+        if (signal) {
+          signal.removeEventListener("abort", abortHandler);
+        }
       }
-      return output || "(no output)";
     } catch (err: unknown) {
       clearActiveToolOutput();
       if (signal?.aborted || (err instanceof Error && (err.name === "AbortError" || err.name === "CancelError"))) {
@@ -121,8 +172,19 @@ export const runCommandTool: Tool = {
         cwd,
         reject: false,
         all: true,
-        cancelSignal: signal,
       });
+
+      const abortHandler = () => {
+        killProcessTree(proc.pid);
+      };
+
+      if (signal) {
+        if (signal.aborted) {
+          killProcessTree(proc.pid);
+          throw new Error("AbortError");
+        }
+        signal.addEventListener("abort", abortHandler);
+      }
 
       let interactiveWarning: string | null = null;
       proc.all?.on("data", (data) => {
@@ -134,15 +196,21 @@ export const runCommandTool: Tool = {
         }
       });
 
-      const result = await proc;
-      clearActiveToolOutput();
-      let output = (result.all || result.stdout || "").trim();
-      output = truncateOutput(output);
+      try {
+        const result = await proc;
+        clearActiveToolOutput();
+        let output = (result.all || result.stdout || "").trim();
+        output = truncateOutput(output);
 
-      if (interactiveWarning) {
-        output = `${interactiveWarning}\n\n${output}`;
+        if (interactiveWarning) {
+          output = `${interactiveWarning}\n\n${output}`;
+        }
+        return output || "(no output)";
+      } finally {
+        if (signal) {
+          signal.removeEventListener("abort", abortHandler);
+        }
       }
-      return output || "(no output)";
     } catch (err: unknown) {
       clearActiveToolOutput();
       if (signal?.aborted || (err instanceof Error && (err.name === "AbortError" || err.name === "CancelError"))) {
@@ -241,7 +309,7 @@ export const killTaskTool: Tool = {
     }
 
     try {
-      task.process.kill();
+      killProcessTree(task.process.pid);
       backgroundTasks.delete(taskId);
       notifyTasksChanged();
       return `Task "${taskId}" has been killed successfully.`;
@@ -345,7 +413,7 @@ export const manageTaskTool: Tool = {
 
     if (action === "kill") {
       try {
-        task.process.kill();
+        killProcessTree(task.process.pid);
         backgroundTasks.delete(taskId);
         notifyTasksChanged();
         return `Task "${taskId}" has been killed successfully.`;
