@@ -15,6 +15,11 @@ const DANGEROUS_PATTERNS = [
   /rmdir\s+\/[sS]\s+\/[qQ]\s+[cC]:\\/i,
   /del\s+\/[fF]\s+\/[sS]\s+\/[qQ]\s+[cC]:\\/i,
   /(shutdown|reboot|halt|poweroff)(\s|$)/i,
+  /Remove-Item\s+.*-(Recurse|Force)/i,
+  /Format-Volume/i,
+  /Initialize-Disk/i,
+  /Stop-Process\s+.*-Force/i,
+  /Stop-Computer/i,
 ];
 
 export function isDangerousCommand(command: string): boolean {

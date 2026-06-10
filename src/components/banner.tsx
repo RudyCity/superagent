@@ -4,21 +4,31 @@ import { Box, Text } from "ink";
 export function Banner() {
   return (
     <Box flexDirection="column" paddingX={1} marginY={1}>
-      <Text color="cyan" bold>
-        {`   _____ _    _ _____  ______ _____          _____ ______ _   _ _______ 
-  / ____| |  | |  __ \\|  ____|  __ \\   /\\   / ____|  ____| \\ | |__   __|
- | (___ | |  | | |__) | |__  | |__) | /  \\ | |  __| |__  |  \\| |  | |   
-  \\___ \\| |  | |  ___/|  __| |  _  / / /\\ \\| | |_ |  __| | . \` |  | |   
-  ____) | |__| | |    | |____| | \\ \\/ ____ \\ |__| | |____| |\\  |  | |   
- |_____/ \\____/|_|    |______|_|  \\_/_/    \\_\\_____|______|_| \\_|  |_|   `}
-      </Text>
-      <Box flexDirection="row" marginTop={1}>
-        <Text color="magenta" bold>[ COGNITIVE SYSTEM INTERFACE v2.0 ]</Text>
-        <Text color="gray"> ── </Text>
-        <Text dimColor>Type your query or </Text>
-        <Text bold color="yellow">/help</Text>
+      <Box flexDirection="row" alignItems="center">
+        {/* Mascot Column */}
+        <Box flexDirection="column" marginRight={3} alignItems="center">
+          <Text color="yellow">   ▲   </Text>
+          <Text color="yellow">  /█\  </Text>
+          <Text color="yellow"> ▞███▚ </Text>
+          <Text color="yellow">▐▛█▀█▜▌</Text>
+          <Text color="yellow">  ▐█▌  </Text>
+        </Box>
+
+        {/* Info Column */}
+        <Box flexDirection="column" justifyContent="center">
+          <Box flexDirection="row" marginBottom={1}>
+            <Text color="cyan" bold>SUPERAGENT</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="magenta" bold>COGNITIVE SYSTEM INTERFACE v2.0</Text>
+          </Box>
+          <Box flexDirection="row">
+            <Text dimColor>Type your query or </Text>
+            <Text bold color="yellow">/help</Text>
+            <Text dimColor> to see available commands</Text>
+          </Box>
+        </Box>
       </Box>
-      <Text color="cyan">────────────────────────────────────────────────────────────────────────</Text>
     </Box>
   );
 }
+

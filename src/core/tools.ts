@@ -3,6 +3,45 @@ import path from "path";
 import { execa } from "execa";
 import fg from "fast-glob";
 
+export function formatCommandForPowerShell(command: string): string {
+  const parts: string[] = [];
+  let currentPart = "";
+  let inDoubleQuote = false;
+  let inSingleQuote = false;
+  let i = 0;
+  while (i < command.length) {
+    const char = command[i];
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      currentPart += char;
+      i++;
+    } else if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      currentPart += char;
+      i++;
+    } else if (!inDoubleQuote && !inSingleQuote && char === '&' && command[i + 1] === '&') {
+      parts.push(currentPart.trim());
+      currentPart = "";
+      i += 2;
+    } else {
+      currentPart += char;
+      i++;
+    }
+  }
+  parts.push(currentPart.trim());
+
+  if (parts.length <= 1) {
+    return command;
+  }
+
+  let result = parts[0];
+  for (let j = 1; j < parts.length; j++) {
+    result += `; if ($?) { ${parts[j]}`;
+  }
+  result += " }".repeat(parts.length - 1);
+  return result;
+}
+
 export interface Tool {
   name: string;
   description: string;
@@ -190,7 +229,7 @@ const bashTool: Tool = {
     const timeout = (args.timeout as number) || 120000;
     const isWin = process.platform === "win32";
     if (isWin) {
-      command = command.replace(/&&/g, ";");
+      command = formatCommandForPowerShell(command);
     }
 
     try {
@@ -524,7 +563,7 @@ const runBackgroundTool: Tool = {
     let command = args.command as string;
     const isWin = process.platform === "win32";
     if (isWin) {
-      command = command.replace(/&&/g, ";");
+      command = formatCommandForPowerShell(command);
     }
     const taskId = Math.random().toString(36).substring(2, 9);
 
@@ -841,7 +880,7 @@ const runCommandTool: Tool = {
     let command = args.command as string;
     const isWin = process.platform === "win32";
     if (isWin) {
-      command = command.replace(/&&/g, ";");
+      command = formatCommandForPowerShell(command);
     }
     const shell = isWin ? "powershell.exe" : true;
     try {

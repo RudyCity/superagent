@@ -24,7 +24,7 @@ export interface ToolResult {
 
 export class Conversation {
   private messages: Message[] = [];
-  private maxHistory = 50;
+  private maxHistory = 200;
 
   async saveToFile(filePath: string): Promise<void> {
     try {
@@ -95,13 +95,48 @@ export class Conversation {
     this.messages = [];
   }
 
-  getCompactSummary(): string {
+  pruneToTokenLimit(maxTokens: number): void {
+    while (this.messages.length > 2 && this.getTokenEstimate() > maxTokens) {
+      const first = this.messages[0];
+      if (first.role === "assistant" && first.toolCalls && first.toolCalls.length > 0) {
+        this.messages.shift();
+        if (this.messages.length > 0 && this.messages[0].role === "tool") {
+          this.messages.shift();
+        }
+      } else {
+        this.messages.shift();
+      }
+    }
+  }
+
+  replaceOldMessagesWithSummary(count: number, summaryText: string): void {
+    const kept = this.messages.slice(count);
+    const summaryMsg: Message = {
+      role: "user",
+      content: `[System Conversation Summary of older turns]:\n${summaryText}`,
+      timestamp: Date.now(),
+    };
+    this.messages = [summaryMsg, ...kept];
+  }
+
+  getCompactSummary(limit?: number): string {
     if (this.messages.length === 0) return "No messages yet.";
     const userMsgs = this.messages.filter((m) => m.role === "user").length;
     const assistantMsgs = this.messages.filter(
       (m) => m.role === "assistant"
     ).length;
-    return `${this.messages.length} messages (${userMsgs} user, ${assistantMsgs} assistant)`;
+    const tokens = this.getTokenEstimate();
+    let summary = `${this.messages.length} messages (${userMsgs} user, ${assistantMsgs} assistant)\n`;
+    summary += `Estimated Token Usage: ${tokens.toLocaleString()} tokens`;
+    if (limit) {
+      const pct = Math.min(100, (tokens / limit) * 100);
+      const barLength = 20;
+      const filled = Math.round((pct / 100) * barLength);
+      const bar = "█".repeat(filled) + "░".repeat(barLength - filled);
+      summary += `\nContext Window Limit : ${limit.toLocaleString()} tokens\n`;
+      summary += `Usage: [${bar}] ${pct.toFixed(1)}%`;
+    }
+    return summary;
   }
 
   getTokenEstimate(): number {

@@ -1,4 +1,9 @@
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
 export type Provider = "anthropic" | "openai" | "custom";
+
 
 export interface Config {
   apiKey: string;
@@ -56,17 +61,38 @@ function getSystemPrompt(): string {
 
 IMPORTANT GUIDELINES:
 - CRITICAL: Before executing ANY tool call, you MUST output a brief, 1-sentence narrative explaining what you are going to do and why, using a cyber/system operator persona (e.g., "[SYS] Scanning workspace node to map file tree...", "[SYS] Injecting patch into src/app.tsx..."). This narrative MUST be outputted as a text block before the tool call starts.
-- Be concise, direct, and to the point
-- Use tools to read, write, edit files and run commands
-- When referencing code, use format: \`file_path:line_number\`
-- Minimize output tokens while maintaining helpfulness
-- Only use tools to complete tasks. Don't output tool calls as text
-- After editing a file, verify with lint/typecheck if available
-- Never commit changes unless explicitly asked
-- Follow existing code conventions and patterns
-- NEVER expose secrets or keys
+- Be concise, direct, and to the point. Minimize output tokens while maintaining helpfulness.
+- Never commit changes unless explicitly asked.
+- NEVER expose secrets or keys.
 - Always look for and study the 'agents.md' file in the workspace root if it exists, as it contains critical project information, architecture, and developer guidelines.
 - On Windows, when executing terminal commands, use ';' instead of '&&' as a statement separator (PowerShell syntax).
+
+TOOL USAGE GUIDELINES:
+1. File Reading & Writing:
+   - Use 'read' to view file contents.
+   - Use 'write_to_file' to create new files or completely overwrite existing ones (preferred over 'write').
+2. File Editing:
+   - Use 'replace_file_content' for single contiguous block edits.
+   - Use 'multi_replace_file_content' for multiple non-contiguous edits across a file.
+   - Use 'edit' only for simple, unique string replacements.
+3. Code & File Searching:
+   - Use 'ripgrep_search' for fast codebase text search.
+   - Use 'glob' to find files matching a path/name pattern.
+   - Use 'grep' as a fallback if ripgrep is unavailable.
+4. Command & Task Execution:
+   - Use 'run_command' for fast synchronous shell execution.
+   - Use 'bash' if you need a custom execution timeout.
+   - Use 'run_background' for long-running processes (e.g. dev servers, watch processes) and manage them using 'manage_task' (status, input, kill).
+5. Web & Information Gathering:
+   - Use 'web_search' to search the internet for documentation or current information.
+   - Use 'fetch_url' to download and extract clean text from a specific webpage.
+6. Scheduling & Delegation:
+   - Use 'schedule' to set timers or recurring cron notifications in the background.
+   - Use 'define_subagent' and 'invoke_subagent' to delegate complex, independent subtasks to specialized background agents, communicating via 'send_message' and monitoring via 'manage_subagents'.
+7. Operational Best Practices:
+   - Avoid reading huge files all at once; use the 'offset' and 'limit' parameters of 'read' to view only necessary sections.
+   - If a tool call fails or returns an error, do not repeat the exact same tool call. Investigate the cause (e.g., check paths using glob/ripgrep) and adjust parameters before retrying.
+   - Write fully functional, complete code edits. Do not use placeholders or add incomplete '// TODO' blocks unless specifically requested.
 
 AVAILABLE TOOLS:
 - read: Read file contents with line numbers.
@@ -101,4 +127,51 @@ export function getContextWindowLimit(model: string): number {
   // Default fallback
   return 128000;
 }
+
+export function updateEnvFile(updates: Record<string, string>): string {
+  let envPath = path.join(process.cwd(), ".env");
+  if (!fs.existsSync(envPath)) {
+    const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    envPath = path.join(projectRoot, ".env");
+  }
+
+  let content = "";
+  if (fs.existsSync(envPath)) {
+    content = fs.readFileSync(envPath, "utf-8");
+  }
+
+  const lines = content.split(/\r?\n/);
+  const updatedKeys = new Set<string>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line && !line.startsWith("#")) {
+      const parts = line.split("=");
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        if (updates.hasOwnProperty(key)) {
+          lines[i] = `${key}=${updates[key]}`;
+          updatedKeys.add(key);
+        }
+      }
+    }
+  }
+
+  // Add keys that were not found in the file
+  for (const [key, val] of Object.entries(updates)) {
+    if (!updatedKeys.has(key)) {
+      lines.push(`${key}=${val}`);
+    }
+  }
+
+  fs.writeFileSync(envPath, lines.join("\n"), "utf-8");
+
+  // Also update process.env so it's immediate in memory!
+  for (const [key, val] of Object.entries(updates)) {
+    process.env[key] = val;
+  }
+
+  return envPath;
+}
+
 

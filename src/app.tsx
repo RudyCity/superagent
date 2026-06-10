@@ -5,7 +5,7 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
-import { getContextWindowLimit } from "./core/config.js";
+import { getContextWindowLimit, updateEnvFile } from "./core/config.js";
 import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
@@ -48,11 +48,35 @@ export function App({
   const [lastPromptTokens, setLastPromptTokens] = useState(0);
   const [contextLimit, setContextLimit] = useState(128000);
   const streamBufferRef = useRef("");
+  const lastStreamUpdateRef = useRef<number>(0);
+  const streamTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [tempInput, setTempInput] = useState("");
   const agentRef = useRef<Agent | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [activeWizard, setActiveWizard] = useState<{
+    type: "login" | "model";
+    step: number;
+    data: Record<string, string>;
+  } | null>(null);
+  const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
+  const [wizardOptions, setWizardOptions] = useState<string[]>([]);
+  const [focusMode, setFocusMode] = useState<"input" | "history">("input");
+  const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
+  const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
+  const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setTerminalHeight(process.stdout.rows || 30);
+      setTerminalWidth(process.stdout.columns || 80);
+    };
+    process.stdout.on("resize", handleResize);
+    return () => {
+      process.stdout.off("resize", handleResize);
+    };
+  }, []);
 
   useEffect(() => {
     const modelName = process.env.MODEL || getDefaultModel();
@@ -109,6 +133,10 @@ export function App({
   }, []);
 
   const flushBuffer = useCallback(() => {
+    if (streamTimeoutRef.current) {
+      clearTimeout(streamTimeoutRef.current);
+      streamTimeoutRef.current = null;
+    }
     const content = streamBufferRef.current.trim();
     if (content) {
       addLine({
@@ -136,10 +164,42 @@ export function App({
       switch (event.type) {
         case "text":
           streamBufferRef.current += event.content;
-          setStreamDisplay(streamBufferRef.current);
+          const now = Date.now();
+          if (now - lastStreamUpdateRef.current > 120) {
+            setStreamDisplay(streamBufferRef.current);
+            lastStreamUpdateRef.current = now;
+            if (streamTimeoutRef.current) {
+              clearTimeout(streamTimeoutRef.current);
+              streamTimeoutRef.current = null;
+            }
+          } else {
+            if (!streamTimeoutRef.current) {
+              streamTimeoutRef.current = setTimeout(() => {
+                setStreamDisplay(streamBufferRef.current);
+                lastStreamUpdateRef.current = Date.now();
+                streamTimeoutRef.current = null;
+              }, 120);
+            }
+          }
           break;
-        case "tool_start":
-          flushBuffer();
+        case "tool_start": {
+          if (streamTimeoutRef.current) {
+            clearTimeout(streamTimeoutRef.current);
+            streamTimeoutRef.current = null;
+          }
+          const content = streamBufferRef.current.trim();
+          if (content) {
+            flushBuffer();
+          } else {
+            const fallbackNarrative = `[SYS] Initiating action: ${event.description}...`;
+            addLine({
+              type: "assistant",
+              content: fallbackNarrative,
+              timestamp: Date.now(),
+            });
+            streamBufferRef.current = "";
+            setStreamDisplay("");
+          }
           setIsExecutingTool(true);
           addLine({
             type: "tool_start",
@@ -147,6 +207,7 @@ export function App({
             timestamp: Date.now(),
           });
           break;
+        }
         case "tool_end":
           setIsExecutingTool(false);
           const r = event.toolResult;
@@ -161,6 +222,10 @@ export function App({
           });
           break;
         case "error":
+          if (streamTimeoutRef.current) {
+            clearTimeout(streamTimeoutRef.current);
+            streamTimeoutRef.current = null;
+          }
           setIsExecutingTool(false);
           addLine({
             type: "error",
@@ -169,6 +234,10 @@ export function App({
           });
           break;
         case "done":
+          if (streamTimeoutRef.current) {
+            clearTimeout(streamTimeoutRef.current);
+            streamTimeoutRef.current = null;
+          }
           flushBuffer();
           setIsExecutingTool(false);
           setIsProcessing(false);
@@ -265,6 +334,147 @@ export function App({
     onHistoryChange?.(hasMessages);
   }, [lines, onHistoryChange]);
 
+  const handleWizardSubmit = useCallback((value: string) => {
+    if (!activeWizard) return;
+    const now = Date.now();
+
+    if (activeWizard.type === "login") {
+      if (activeWizard.step === 1) {
+        const choice = value.toLowerCase();
+        let provider = "";
+        if (choice === "1" || choice.includes("openrouter")) {
+          provider = "openrouter";
+        } else if (choice === "2" || choice.includes("openai")) {
+          provider = "openai";
+        } else if (choice === "3" || choice.includes("anthropic")) {
+          provider = "anthropic";
+        } else if (choice === "4" || choice.includes("custom")) {
+          provider = "custom";
+        } else {
+          addLine({
+            type: "error",
+            content: "Invalid choice. Please select 1, 2, 3, or 4.",
+            timestamp: now,
+          });
+          return;
+        }
+
+        addLine({
+          type: "system",
+          content: `Selected provider: ${provider}\nStep 2: Please enter your API Key:`,
+          timestamp: now,
+        });
+
+        setActiveWizard({
+          type: "login",
+          step: 2,
+          data: { provider },
+        });
+      } else if (activeWizard.step === 2) {
+        const provider = activeWizard.data.provider;
+        if (provider === "custom") {
+          addLine({
+            type: "system",
+            content: `Entered Base URL: ${value}\nStep 3: Please enter your API Key:`,
+            timestamp: now,
+          });
+          setActiveWizard({
+            type: "login",
+            step: 3,
+            data: { provider, baseUrl: value },
+          });
+        } else {
+          const apiKey = value;
+          const updates: Record<string, string> = {};
+          if (provider === "openrouter") {
+            updates["CUSTOM_BASE_URL"] = "https://openrouter.ai/api/v1";
+            updates["CUSTOM_API_KEY"] = apiKey;
+            delete process.env.ANTHROPIC_API_KEY;
+            delete process.env.OPENAI_API_KEY;
+          } else if (provider === "anthropic") {
+            updates["ANTHROPIC_API_KEY"] = apiKey;
+            updates["CUSTOM_BASE_URL"] = "";
+            updates["CUSTOM_API_KEY"] = "";
+            delete process.env.CUSTOM_BASE_URL;
+            delete process.env.CUSTOM_API_KEY;
+            delete process.env.OPENAI_API_KEY;
+          } else if (provider === "openai") {
+            updates["OPENAI_API_KEY"] = apiKey;
+            updates["CUSTOM_BASE_URL"] = "";
+            updates["CUSTOM_API_KEY"] = "";
+            delete process.env.CUSTOM_BASE_URL;
+            delete process.env.CUSTOM_API_KEY;
+            delete process.env.ANTHROPIC_API_KEY;
+          }
+
+          try {
+            const envPath = updateEnvFile(updates);
+            addLine({
+              type: "system",
+              content: `Successfully logged in! Configured provider: ${provider}.\nSaved to: ${envPath}`,
+              timestamp: now,
+            });
+            if (provider === "openrouter" && !process.env.MODEL) {
+              updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
+            }
+          } catch (err: any) {
+            addLine({
+              type: "error",
+              content: `Failed to save credentials: ${err.message}`,
+              timestamp: now,
+            });
+          }
+          setActiveWizard(null);
+        }
+      } else if (activeWizard.step === 3) {
+        const provider = activeWizard.data.provider;
+        const baseUrl = activeWizard.data.baseUrl;
+        const apiKey = value;
+
+        try {
+          const envPath = updateEnvFile({
+            CUSTOM_BASE_URL: baseUrl,
+            CUSTOM_API_KEY: apiKey,
+          });
+          delete process.env.ANTHROPIC_API_KEY;
+          delete process.env.OPENAI_API_KEY;
+
+          addLine({
+            type: "system",
+            content: `Successfully logged in! Configured custom provider at: ${baseUrl}\nSaved to: ${envPath}`,
+            timestamp: now,
+          });
+        } catch (err: any) {
+          addLine({
+            type: "error",
+            content: `Failed to save credentials: ${err.message}`,
+            timestamp: now,
+          });
+        }
+        setActiveWizard(null);
+      }
+    } else if (activeWizard.type === "model") {
+      const modelName = value;
+      try {
+        const envPath = updateEnvFile({ MODEL: modelName });
+        const limit = getContextWindowLimit(modelName);
+        setContextLimit(limit);
+        addLine({
+          type: "system",
+          content: `Model successfully changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        addLine({
+          type: "error",
+          content: `Failed to set model: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      setActiveWizard(null);
+    }
+  }, [activeWizard, addLine, setContextLimit]);
+
   const handleSubmit = useCallback(
     async (value: string) => {
       const trimmed = value.trim();
@@ -274,6 +484,11 @@ export function App({
       setLastTabPrefix(null);
       setHistoryIndex(-1);
       setScrollOffset(0);
+
+      if (activeWizard) {
+        handleWizardSubmit(trimmed);
+        return;
+      }
       setHistory((prev) => {
         if (prev.length > 0 && prev[prev.length - 1] === trimmed) {
           return prev;
@@ -292,6 +507,10 @@ export function App({
           exit,
           agent: agentRef.current,
           clearLines: () => setLines([]),
+          setContextLimit,
+          setActiveWizard,
+          setWizardOptions,
+          setWizardSelectedIndex,
           resumeSession: async () => {
             if (!agentRef.current) return;
             await agentRef.current.loadHistory();
@@ -369,9 +588,120 @@ export function App({
     }
   }, [lastTabPrefix]);
 
-  const commands = ["/clear", "/compact", "/help", "/init", "/new", "/resume", "/quit", "/exit"];
+  const commands = [
+    "/clear",
+    "/compact",
+    "/help",
+    "/init",
+    "/new",
+    "/resume",
+    "/quit",
+    "/exit",
+    "/login",
+    "/lgin",
+    "/model",
+  ];
 
   useInput((inputChar, key) => {
+    if (key.ctrl && inputChar === "h") {
+      setFocusMode((prev) => {
+        const next = prev === "input" ? "history" : "input";
+        if (next === "history") {
+          const uniqueHistory = Array.from(new Set(history));
+          setHistorySelectedIndex(uniqueHistory.length > 0 ? uniqueHistory.length - 1 : 0);
+        }
+        return next;
+      });
+      return;
+    }
+
+    if (focusMode === "history") {
+      const uniqueHistory = Array.from(new Set(history));
+      if (key.upArrow) {
+        setHistorySelectedIndex((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setHistorySelectedIndex((prev) => Math.min(uniqueHistory.length - 1, prev + 1));
+        return;
+      }
+      if (key.return) {
+        if (uniqueHistory.length > 0 && uniqueHistory[historySelectedIndex]) {
+          setInput(uniqueHistory[historySelectedIndex]);
+        }
+        setFocusMode("input");
+        return;
+      }
+      if (key.escape) {
+        setFocusMode("input");
+        return;
+      }
+      return;
+    }
+
+    if (activeWizard && !isProcessing) {
+      if (activeWizard.type === "login" && activeWizard.step === 1) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(3, prev + 1));
+          return;
+        }
+        if (key.return) {
+          const providers = ["openrouter", "openai", "anthropic", "custom"];
+          const provider = providers[wizardSelectedIndex];
+          const now = Date.now();
+          addLine({
+            type: "system",
+            content: `Selected provider: ${provider}\nStep 2: Please enter your API Key:`,
+            timestamp: now,
+          });
+          setActiveWizard({
+            type: "login",
+            step: 2,
+            data: { provider },
+          });
+          setWizardSelectedIndex(0);
+          return;
+        }
+      } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          return;
+        }
+        if (key.return && !input.trim()) {
+          const selectedModel = wizardOptions[wizardSelectedIndex];
+          const now = Date.now();
+          try {
+            const envPath = updateEnvFile({ MODEL: selectedModel });
+            const limit = getContextWindowLimit(selectedModel);
+            setContextLimit(limit);
+            addLine({
+              type: "system",
+              content: `Model successfully changed to: ${selectedModel}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+              timestamp: now,
+            });
+          } catch (err: any) {
+            addLine({
+              type: "error",
+              content: `Failed to set model: ${err.message}`,
+              timestamp: now,
+            });
+          }
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
+      }
+    }
+
     if (key.ctrl && inputChar === "c") {
       if (isProcessing) {
         agentRef.current?.abort();
@@ -394,6 +724,15 @@ export function App({
     if (key.escape) {
       if (scrollOffset > 0) {
         setScrollOffset(0);
+      } else if (activeWizard) {
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        addLine({
+          type: "system",
+          content: "Wizard cancelled.",
+          timestamp: Date.now(),
+        });
       } else if (isProcessing) {
         agentRef.current?.abort();
       } else {
@@ -478,6 +817,21 @@ export function App({
     { isActive: showPermission }
   );
 
+  const getWizardPlaceholder = () => {
+    if (!activeWizard) return "Type a message or /help...";
+    if (activeWizard.type === "login") {
+      if (activeWizard.step === 1) return "Enter provider number (1-4)...";
+      if (activeWizard.step === 2) {
+        return activeWizard.data.provider === "custom" ? "Enter Custom Base URL..." : "Paste API key...";
+      }
+      if (activeWizard.step === 3) return "Paste API key...";
+    }
+    if (activeWizard.type === "model") {
+      return "Enter model name (e.g. google/gemini-2.5-flash)...";
+    }
+    return "Enter value...";
+  };
+
   const getSuggestions = () => {
     if (!input.startsWith("/")) return [];
     const prefix = lastTabPrefix || input;
@@ -488,167 +842,459 @@ export function App({
   const messageCount = lines.filter(
     (l) => l.type === "user" || l.type === "assistant"
   ).length;
-
   const modelName = process.env.MODEL || getDefaultModel();
   const liveStreamTokens = Math.ceil(streamDisplay.length / 4);
   const activeContextUsage = lastPromptTokens > 0 ? (lastPromptTokens + liveStreamTokens) : 0;
   const contextPercentage = contextLimit > 0 ? ((activeContextUsage / contextLimit) * 100).toFixed(2) : "0.00";
 
+  // Calculate layout dimensions dynamically
+  const chatWidth = Math.max(20, terminalWidth - 6);
+
+  // Dynamic estimate of markdown line rendering count
+  const estimateMarkdownLines = (text: string, width: number): number => {
+    let count = 0;
+    const rawLines = text.split("\n");
+    for (const l of rawLines) {
+      count += Math.max(1, Math.ceil(l.length / width));
+    }
+    return count;
+  };
+
+  // Dynamic estimate of ChatLine height in terminal rows
+  const estimateChatLineHeight = (line: ChatLine, width: number): number => {
+    let linesCount = 2; // Border header + spacing lines
+    const textLines = line.content.split("\n");
+    for (const l of textLines) {
+      let rawText = l;
+      if (line.type === "user") {
+        rawText = l.replace(/^❯ /, "");
+      } else if (line.type === "tool_start") {
+        rawText = l.replace(/^⚡ /, "");
+      }
+      linesCount += Math.max(1, Math.ceil(rawText.length / width));
+    }
+    return linesCount;
+  };
+
+  // Base chrome height: Banner is 7, input prompt / active is 2, status bar is 1, margins is 4
+  let chromeHeight = 14;
+  if (activeWizard) {
+    if (activeWizard.type === "login" && activeWizard.step === 1) {
+      chromeHeight += 6;
+    } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
+      chromeHeight += 8;
+    }
+  } else if (input.startsWith("/") && suggestions.length > 0) {
+    chromeHeight += 2;
+  }
+  if (showPermission) {
+    chromeHeight += 5;
+  }
+  if (isProcessing) {
+    if (streamDisplay) {
+      chromeHeight += 1 + estimateMarkdownLines(streamDisplay, chatWidth);
+    } else if (!showPermission && !isExecutingTool) {
+      chromeHeight += 2; // Thinking loading indicator
+    }
+  }
+
+  // Calculate available height for messages with a safety buffer to prevent terminal scrolling/duplicated headers
+  const chatHeightLimit = Math.max(5, terminalHeight - chromeHeight - 3);
+
   return (
     <Box flexDirection="column">
       <Banner />
 
-      {/* Messages */}
-      <Box flexDirection="column" paddingX={1}>
-        {(() => {
-          const startIndex = scrollOffset === 0
-            ? Math.max(0, lines.length - 15)
-            : Math.max(0, lines.length - 15 - scrollOffset);
-          const visibleLines = lines.slice(startIndex, scrollOffset === 0 ? undefined : lines.length - scrollOffset);
-          return visibleLines.map((line, i) => {
-            const originalIndex = startIndex + i;
-            return (
-              <ChatLineComponent key={originalIndex} line={line} isFirst={originalIndex === 0} />
-            );
-          });
-        })()}
+      <Box flexDirection="row">
+        {/* Chat Area */}
+        <Box flexDirection="column" width="100%">
+          {/* Messages */}
+          <Box flexDirection="column" paddingX={1}>
+            {(() => {
+              let startIndex = lines.length;
+              let accumulatedHeight = 0;
+              const endIndex = scrollOffset === 0 ? lines.length : Math.max(0, lines.length - scrollOffset);
 
-        {scrollOffset === 0 && isProcessing && streamDisplay && (
-          <Box marginY={0} flexDirection="column">
-            <Text color="magenta">
-              ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text> ]
-            </Text>
-            {streamDisplay.split("\n").map((l, idx) => (
-              <Box key={idx} flexDirection="row">
-                <Text color="magenta">│ </Text>
-                <Text>{l}</Text>
+              for (let i = endIndex - 1; i >= 0; i--) {
+                const h = estimateChatLineHeight(lines[i], chatWidth);
+                if (accumulatedHeight + h > chatHeightLimit) {
+                  if (i === endIndex - 1) {
+                    startIndex = i; // Show at least the latest line
+                  }
+                  break;
+                }
+                accumulatedHeight += h;
+                startIndex = i;
+              }
+
+              const visibleLines = lines.slice(startIndex, endIndex);
+              return visibleLines.map((line, i) => {
+                const originalIndex = startIndex + i;
+                return (
+                  <ChatLineComponent key={originalIndex} line={line} isFirst={originalIndex === 0} />
+                );
+              });
+            })()}
+
+            {scrollOffset === 0 && isProcessing && streamDisplay && (
+              <Box flexDirection="column">
+                <Text color="magenta">
+                  ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text> ]
+                </Text>
+                {renderMarkdown(streamDisplay, "magenta")}
               </Box>
-            ))}
-          </Box>
-        )}
+            )}
 
-        {scrollOffset === 0 && isProcessing && !streamDisplay && !showPermission && !isExecutingTool && (
-          <Box marginY={0} flexDirection="column">
-            <Text color="magenta">
-              ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text> ]
-            </Text>
-            <Box flexDirection="row">
-              <Text color="magenta">│ </Text>
-              <LoadingIndicator />
-            </Box>
+            {scrollOffset === 0 && isProcessing && !streamDisplay && !showPermission && !isExecutingTool && (
+              <Box flexDirection="column">
+                <Text color="magenta">
+                  ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text> ]
+                </Text>
+                <Box flexDirection="row">
+                  <Text color="magenta">│ </Text>
+                  <LoadingIndicator />
+                </Box>
+              </Box>
+            )}
           </Box>
-        )}
-      </Box>
 
-      {/* Permission prompt */}
-      {showPermission && pendingPermission && (
-        <Box
-          borderStyle="round"
-          borderColor="yellow"
-          paddingX={1}
-          marginY={1}
-        >
-          <Box flexDirection="column">
-            <Text bold color="yellow">
-              ⚠ Permission Required
-            </Text>
-            <Text>{pendingPermission.description}</Text>
-            <Box marginTop={1}>
-              <Text>
-                Approve? (<Text color="green">y</Text>/
-                <Text color="red">n</Text>)
-              </Text>
-            </Box>
-          </Box>
-        </Box>
-      )}
-
-      {/* Input */}
-      <Box paddingX={1} marginY={1} flexDirection="column">
-        <Text dimColor>──────────────────────────────────────────────────────────────</Text>
-        
-        {/* Render suggestions inline above the input line */}
-        {input.startsWith("/") && suggestions.length > 0 && (
-          <Box marginBottom={1} flexDirection="row">
-            <Text dimColor>Suggestions: </Text>
-            {suggestions.map((s) => {
-              const isSelected = input === s;
-              return (
-                <Box key={s} marginRight={2}>
-                  <Text color={isSelected ? "cyan" : "gray"} bold={isSelected} underline={isSelected}>
-                    {s}
+          {/* Permission prompt */}
+          {showPermission && pendingPermission && (
+            <Box
+              borderStyle="round"
+              borderColor="yellow"
+              paddingX={1}
+              marginY={1}
+            >
+              <Box flexDirection="column">
+                <Text bold color="yellow">
+                  ⚠ Permission Required
+                </Text>
+                <Text>{pendingPermission.description}</Text>
+                <Box marginTop={1}>
+                  <Text>
+                    Approve? (<Text color="green">y</Text>/
+                    <Text color="red">n</Text>)
                   </Text>
                 </Box>
-              );
-            })}
-          </Box>
-        )}
-
-        <Box flexDirection="column">
-          <Text color={scrollOffset > 0 ? "yellow" : isProcessing ? "gray" : "green"}>
-            └───[ <Text bold color={scrollOffset > 0 ? "yellow" : isProcessing ? "gray" : "green"}>⌨️ COMM_LINK: ACTIVE</Text> ]
-            {scrollOffset > 0 && (
-              <Text color="yellow" bold> [Scroll: -{scrollOffset} lines/msgs - Press Esc to snap to bottom]</Text>
-            )}
-          </Text>
-          <Box flexDirection="row">
-            <Text color={isProcessing ? "gray" : "green"}>│ ❯ </Text>
-            {isProcessing ? (
-              <Text dimColor>Processing... (Ctrl+C to abort)</Text>
-            ) : (input.length > 200 || input.includes("\n")) ? (
-              <Box flexDirection="row">
-                <Text color="yellow" bold>[Pasted Text: {input.length} chars, {input.split("\n").length} lines] </Text>
-                <Text dimColor>(Press Enter to send, Esc to clear)</Text>
               </Box>
-            ) : (
-              <TextInput
-                focus
-                value={input}
-                onChange={handleInputChange}
-                onSubmit={handleSubmit}
-                placeholder="Type a message or /help..."
-              />
+            </Box>
+          )}
+
+          {/* Input */}
+          <Box paddingX={1} marginY={1} flexDirection="column">
+            {/* Render Wizard choices if active */}
+            {activeWizard && activeWizard.type === "login" && activeWizard.step === 1 && (
+              <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+                <Text bold color="cyan">🔑 SELECT PROVIDER (Use Arrow Keys Up/Down & Enter):</Text>
+                {["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"].map((p, idx) => {
+                  const isSelected = idx === wizardSelectedIndex;
+                  return (
+                    <Text key={p} color={isSelected ? "cyan" : "gray"} bold={isSelected}>
+                      {isSelected ? "❯ " : "  "} {p}
+                    </Text>
+                  );
+                })}
+              </Box>
             )}
+
+            {activeWizard && activeWizard.type === "model" && wizardOptions.length > 0 && (
+              <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+                <Text bold color="cyan">⚙️ SELECT MODEL (Use Arrow Keys Up/Down & Enter, or type custom model):</Text>
+                {(() => {
+                  const maxVisible = 6;
+                  const total = wizardOptions.length;
+                  let start = Math.max(0, wizardSelectedIndex - Math.floor(maxVisible / 2));
+                  let end = start + maxVisible;
+                  if (end > total) {
+                    end = total;
+                    start = Math.max(0, end - maxVisible);
+                  }
+                  const visibleOptions = wizardOptions.slice(start, end);
+                  return (
+                    <Box flexDirection="column">
+                      {start > 0 && <Text color="yellow">   ▲ ... ({start} more models above) ...</Text>}
+                      {visibleOptions.map((m, idx) => {
+                        const originalIndex = start + idx;
+                        const isSelected = originalIndex === wizardSelectedIndex;
+                        return (
+                          <Text key={m} color={isSelected ? "cyan" : "gray"} bold={isSelected}>
+                            {isSelected ? "❯ " : "  "} {m}
+                          </Text>
+                        );
+                      })}
+                      {end < total && <Text color="yellow">   ▼ ... ({total - end} more models below) ...</Text>}
+                    </Box>
+                  );
+                })()}
+              </Box>
+            )}
+
+            {/* Render suggestions inline above the input line */}
+            {!activeWizard && input.startsWith("/") && suggestions.length > 0 && (
+              <Box marginBottom={1} flexDirection="row">
+                <Text dimColor>Suggestions: </Text>
+                {suggestions.map((s) => {
+                  const isSelected = input === s;
+                  return (
+                    <Box key={s} marginRight={2}>
+                      <Text color={isSelected ? "cyan" : "gray"} bold={isSelected} underline={isSelected}>
+                        {s}
+                      </Text>
+                    </Box>
+                  );
+                })}
+              </Box>
+            )}
+
+            <Box flexDirection="column">
+              <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>
+                └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>
+                  {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : "⌨️ COMM_LINK: ACTIVE"}
+                </Text> ]
+                {scrollOffset > 0 && (
+                  <Text color="yellow" bold> [Scroll: -{scrollOffset} lines/msgs - Press Esc to snap to bottom]</Text>
+                )}
+              </Text>
+              <Box flexDirection="row">
+                <Text color={activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>│ ❯ </Text>
+                {isProcessing ? (
+                  <Text dimColor>Processing... (Ctrl+C to abort)</Text>
+                ) : (input.length > 200 || input.includes("\n")) ? (
+                  <Box flexDirection="row">
+                    <Text color="yellow" bold>[Pasted Text: {input.length} chars, {input.split("\n").length} lines] </Text>
+                    <Text dimColor>(Press Enter to send, Esc to clear)</Text>
+                  </Box>
+                ) : (
+                  <TextInput
+                    focus={focusMode === "input"}
+                    value={input}
+                    onChange={handleInputChange}
+                    onSubmit={handleSubmit}
+                    placeholder={getWizardPlaceholder()}
+                  />
+                )}
+              </Box>
+            </Box>
           </Box>
         </Box>
       </Box>
 
       {/* Status bar */}
       <Box flexDirection="column" paddingX={1} marginTop={0}>
-        <Text color="cyan">┌──────────────────────────────────────────────────────────────────────┐</Text>
-        <Box justifyContent="space-between" paddingX={1}>
+        <Box justifyContent="space-between" paddingX={0} marginTop={0}>
           <Box>
-            <Text color="cyan" bold>[TELEMETRY]</Text>
+            <Text color="cyan" bold>[SHORTCUTS]</Text>
             <Text color="gray"> │ </Text>
-            <Text color="magenta" bold>ONLINE</Text>
+            <Text color="gray">Ctrl+C </Text><Text dimColor>Abort/Exit</Text>
             <Text color="gray"> │ </Text>
-            <Text color="white">MSGS: {messageCount}</Text>
+            <Text color="gray">Ctrl+↑/↓, PgUp/PgDn </Text><Text dimColor>Scroll</Text>
             <Text color="gray"> │ </Text>
-            <Text color="yellow" bold>↑ UP: {tokensUp.toLocaleString()}</Text>
+            <Text color="gray">Esc </Text><Text dimColor>Clear/Cancel</Text>
             <Text color="gray"> │ </Text>
-            <Text color="green" bold>↓ DOWN: {(tokensDown + liveStreamTokens).toLocaleString()}</Text>
-          </Box>
-          <Box>
-            <Text color="magenta" bold>
-              CTX_USAGE: {contextPercentage}%
-            </Text>
+            <Text color="gray">↑/↓ </Text><Text dimColor>History</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="gray">Tab </Text><Text dimColor>Autocomplete</Text>
           </Box>
         </Box>
-        <Box justifyContent="space-between" paddingX={1} marginTop={0}>
-          <Box>
-            <Text color="cyan" bold>[NODE_PATH]</Text>
-            <Text color="gray"> │ </Text>
-            <Text dimColor>{process.cwd()}</Text>
-          </Box>
-          <Box>
-            <Text color="cyan" bold>[COGNITIVE_MODEL]</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="blue" bold>{modelName}</Text>
-          </Box>
-        </Box>
-        <Text color="cyan">└──────────────────────────────────────────────────────────────────────┘</Text>
       </Box>
     </Box>
+  );
+}
+
+function renderMarkdown(content: string, themeColor: string = "magenta"): React.ReactNode {
+  const lines = content.split("\n");
+  let inCodeBlock = false;
+  let codeLanguage = "";
+
+  return (
+    <>
+      {lines.map((l, idx) => {
+        const trimmed = l.trim();
+        if (trimmed.startsWith("```")) {
+          inCodeBlock = !inCodeBlock;
+          codeLanguage = trimmed.slice(3).trim();
+          return (
+            <Box key={idx} flexDirection="row">
+              <Text color={themeColor}>│ </Text>
+              <Text color="gray" italic>
+                {inCodeBlock ? `┌─── [ CODE: ${codeLanguage || "TEXT"} ]` : "└─── [ END CODE ]"}
+              </Text>
+            </Box>
+          );
+        }
+
+        if (inCodeBlock) {
+          return (
+            <Box key={idx} flexDirection="row">
+              <Text color={themeColor}>│ </Text>
+              <Text color="green">{l}</Text>
+            </Box>
+          );
+        }
+
+        if (l.startsWith("# ")) {
+          return (
+            <Box key={idx} flexDirection="row">
+              <Text color={themeColor}>│ </Text>
+              <Text bold color="yellow">{l.slice(2)}</Text>
+            </Box>
+          );
+        }
+        if (l.startsWith("## ")) {
+          return (
+            <Box key={idx} flexDirection="row">
+              <Text color={themeColor}>│ </Text>
+              <Text bold color="cyan">{l.slice(3)}</Text>
+            </Box>
+          );
+        }
+        if (l.startsWith("### ")) {
+          return (
+            <Box key={idx} flexDirection="row">
+              <Text color={themeColor}>│ </Text>
+              <Text bold color="blue">{l.slice(4)}</Text>
+            </Box>
+          );
+        }
+
+        let listPrefix = "";
+        let remainingText = l;
+        if (l.trim().startsWith("- ")) {
+          const indent = l.indexOf("- ");
+          listPrefix = " ".repeat(indent) + "• ";
+          remainingText = l.slice(indent + 2);
+        } else if (l.trim().startsWith("* ")) {
+          const indent = l.indexOf("* ");
+          listPrefix = " ".repeat(indent) + "• ";
+          remainingText = l.slice(indent + 2);
+        } else if (/^\d+\.\s/.test(l.trim())) {
+          const match = l.match(/^(\s*)(\d+\.\s)(.*)/);
+          if (match) {
+            listPrefix = match[1] + match[2];
+            remainingText = match[3];
+          }
+        }
+
+        const parsedElements: React.ReactNode[] = [];
+        let currentText = remainingText;
+
+        while (currentText.length > 0) {
+          const boldIdx = currentText.indexOf("**");
+          const codeIdx = currentText.indexOf("`");
+
+          if (boldIdx === -1 && codeIdx === -1) {
+            parsedElements.push(<Text key={parsedElements.length}>{currentText}</Text>);
+            break;
+          }
+
+          if (boldIdx !== -1 && (codeIdx === -1 || boldIdx < codeIdx)) {
+            if (boldIdx > 0) {
+              parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(0, boldIdx)}</Text>);
+            }
+            const nextBoldIdx = currentText.indexOf("**", boldIdx + 2);
+            if (nextBoldIdx !== -1) {
+              const boldText = currentText.slice(boldIdx + 2, nextBoldIdx);
+              parsedElements.push(<Text key={parsedElements.length} bold color="yellow">{boldText}</Text>);
+              currentText = currentText.slice(nextBoldIdx + 2);
+            } else {
+              parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(boldIdx)}</Text>);
+              break;
+            }
+          } else {
+            if (codeIdx > 0) {
+              parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(0, codeIdx)}</Text>);
+            }
+            const nextCodeIdx = currentText.indexOf("`", codeIdx + 1);
+            if (nextCodeIdx !== -1) {
+              const codeText = currentText.slice(codeIdx + 1, nextCodeIdx);
+              parsedElements.push(<Text key={parsedElements.length} color="cyan" bold>{codeText}</Text>);
+              currentText = currentText.slice(nextCodeIdx + 1);
+            } else {
+              parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(codeIdx)}</Text>);
+              break;
+            }
+          }
+        }
+
+        return (
+          <Box key={idx} flexDirection="row">
+            <Text color={themeColor}>│ </Text>
+            {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
+            <Text>{parsedElements}</Text>
+          </Box>
+        );
+      })}
+    </>
+  );
+}
+
+function renderToolStart(content: string): React.ReactNode {
+  const lines = content.split("\n");
+  return (
+    <>
+      {lines.map((l, idx) => {
+        if (l.includes("Detail:")) {
+          const parts = l.split("Detail:");
+          const prefix = parts[0] + "Detail: ";
+          const rest = parts[1];
+          const openParenIdx = rest.indexOf("(");
+          if (openParenIdx !== -1) {
+            const toolName = rest.slice(0, openParenIdx).trim();
+            let remaining = rest.slice(openParenIdx + 1);
+            let hasClose = false;
+            if (remaining.endsWith(")")) {
+              remaining = remaining.slice(0, -1);
+              hasClose = true;
+            }
+            return (
+              <Box key={idx} flexDirection="row">
+                <Text color="yellow">│ </Text>
+                <Text dimColor>{prefix}</Text>
+                <Text bold color="green">{toolName}</Text>
+                <Text color="cyan">(</Text>
+                <Text color="yellow">{remaining}</Text>
+                {hasClose && <Text color="cyan">)</Text>}
+              </Box>
+            );
+          }
+        }
+        return (
+          <Box key={idx} flexDirection="row">
+            <Text color="yellow">│ </Text>
+            <Text bold color="white">{l}</Text>
+          </Box>
+        );
+      })}
+    </>
+  );
+}
+
+function renderToolEnd(content: string, isError: boolean): React.ReactNode {
+  const lines = content.split("\n");
+  const themeColor = isError ? "red" : "green";
+  return (
+    <>
+      {lines.map((l, idx) => {
+        if (l.startsWith("Output:") || l.startsWith("Detail:")) {
+          const type = l.startsWith("Output:") ? "Output: " : "Detail: ";
+          const rest = l.substring(type.length);
+          return (
+            <Box key={idx} flexDirection="row">
+              <Text color={themeColor}>│ </Text>
+              <Text bold color={isError ? "cyan" : "gray"} dimColor={!isError}>{type}</Text>
+              <Text dimColor>{rest}</Text>
+            </Box>
+          );
+        }
+        return (
+          <Box key={idx} flexDirection="row">
+            <Text color={themeColor}>│ </Text>
+            <Text color={isError ? "white" : "gray"} dimColor={!isError}>{l}</Text>
+          </Box>
+        );
+      })}
+    </>
   );
 }
 
@@ -685,6 +1331,10 @@ function handleSlashCommand(
     exit: () => void;
     agent: Agent | null;
     clearLines?: () => void;
+    setContextLimit?: (limit: number) => void;
+    setActiveWizard?: (val: { type: "login" | "model"; step: number; data: Record<string, string> } | null) => void;
+    setWizardOptions?: (options: string[]) => void;
+    setWizardSelectedIndex?: (index: number) => void;
     resumeSession?: () => Promise<void>;
   }
 ) {
@@ -714,10 +1364,13 @@ function handleSlashCommand(
       ctx.agent?.clearHistory();
       ctx.addLine({ type: "system", content: "Conversation cleared.", timestamp: now });
       break;
-    case "compact":
-      const summary = ctx.agent?.getHistory().getCompactSummary();
+    case "compact": {
+      const currentModel = process.env.MODEL || getDefaultModel();
+      const limit = getContextWindowLimit(currentModel);
+      const summary = ctx.agent?.getHistory().getCompactSummary(limit);
       ctx.addLine({ type: "system", content: summary || "No history.", timestamp: now });
       break;
+    }
     case "init":
       (async () => {
         const agentsPath = path.resolve(process.cwd(), "agents.md");
@@ -786,6 +1439,193 @@ function handleSlashCommand(
         ctx.addLine({ type: "error", content: `Init failed: ${err.message}`, timestamp: now });
       });
       break;
+    case "login":
+    case "lgin": {
+      const args = cmd.slice(name.length + 2).trim();
+      if (!args) {
+        if (ctx.setActiveWizard) {
+          ctx.setActiveWizard({
+            type: "login",
+            step: 1,
+            data: {},
+          });
+          ctx.setWizardSelectedIndex?.(0);
+        } else {
+          ctx.addLine({
+            type: "system",
+            content: [
+              "Usage:",
+              "  /login <api_key> (auto-detects OpenRouter, Anthropic, OpenAI)",
+              "  /login openrouter <api_key>",
+              "  /login anthropic <api_key>",
+              "  /login openai <api_key>",
+              "  /login custom <base_url> <api_key>",
+            ].join("\n"),
+            timestamp: now,
+          });
+        }
+        break;
+      }
+
+      const parts = args.split(/\s+/);
+      let provider = "";
+      let apiKey = "";
+      let baseUrl = "";
+
+      if (parts[0].toLowerCase() === "custom") {
+        if (parts.length < 3) {
+          ctx.addLine({
+            type: "error",
+            content: "Error: /login custom requires <base_url> and <api_key>",
+            timestamp: now,
+          });
+          break;
+        }
+        provider = "custom";
+        baseUrl = parts[1];
+        apiKey = parts[2];
+      } else if (["openrouter", "anthropic", "openai"].includes(parts[0].toLowerCase())) {
+        if (parts.length < 2) {
+          ctx.addLine({
+            type: "error",
+            content: `Error: /login ${parts[0]} requires <api_key>`,
+            timestamp: now,
+          });
+          break;
+        }
+        provider = parts[0].toLowerCase();
+        apiKey = parts[1];
+      } else {
+        apiKey = parts[0];
+        if (apiKey.startsWith("sk-or-")) {
+          provider = "openrouter";
+        } else if (apiKey.startsWith("sk-ant-")) {
+          provider = "anthropic";
+        } else {
+          provider = "openai";
+        }
+      }
+
+      const updates: Record<string, string> = {};
+      if (provider === "openrouter") {
+        updates["CUSTOM_BASE_URL"] = "https://openrouter.ai/api/v1";
+        updates["CUSTOM_API_KEY"] = apiKey;
+        delete process.env.ANTHROPIC_API_KEY;
+        delete process.env.OPENAI_API_KEY;
+      } else if (provider === "anthropic") {
+        updates["ANTHROPIC_API_KEY"] = apiKey;
+        updates["CUSTOM_BASE_URL"] = "";
+        updates["CUSTOM_API_KEY"] = "";
+        delete process.env.CUSTOM_BASE_URL;
+        delete process.env.CUSTOM_API_KEY;
+        delete process.env.OPENAI_API_KEY;
+      } else if (provider === "openai") {
+        updates["OPENAI_API_KEY"] = apiKey;
+        updates["CUSTOM_BASE_URL"] = "";
+        updates["CUSTOM_API_KEY"] = "";
+        delete process.env.CUSTOM_BASE_URL;
+        delete process.env.CUSTOM_API_KEY;
+        delete process.env.ANTHROPIC_API_KEY;
+      } else if (provider === "custom") {
+        updates["CUSTOM_BASE_URL"] = baseUrl;
+        updates["CUSTOM_API_KEY"] = apiKey;
+        delete process.env.ANTHROPIC_API_KEY;
+        delete process.env.OPENAI_API_KEY;
+      }
+
+      try {
+        const envPath = updateEnvFile(updates);
+        ctx.addLine({
+          type: "system",
+          content: `Successfully logged in. Configured provider: ${provider}.\nSaved to: ${envPath}`,
+          timestamp: now,
+        });
+
+        if (provider === "openrouter" && !process.env.MODEL) {
+          updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
+        }
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to save login credentials: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      break;
+    }
+    case "model": {
+      const modelName = cmd.slice(name.length + 2).trim();
+      if (modelName) {
+        try {
+          const envPath = updateEnvFile({ MODEL: modelName });
+          const limit = getContextWindowLimit(modelName);
+          if (ctx.setContextLimit) {
+            ctx.setContextLimit(limit);
+          }
+          ctx.addLine({
+            type: "system",
+            content: `Model changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+            timestamp: now,
+          });
+        } catch (err: any) {
+          ctx.addLine({
+            type: "error",
+            content: `Failed to set model: ${err.message}`,
+            timestamp: now,
+          });
+        }
+      } else {
+        const currentModel = process.env.MODEL || getDefaultModel();
+        ctx.addLine({
+          type: "system",
+          content: `Current Model: ${currentModel}`,
+          timestamp: now,
+        });
+
+        const defaults = [
+          "google/gemini-2.5-flash",
+          "meta-llama/llama-3.3-70b-instruct",
+          "deepseek/deepseek-chat",
+          "gpt-4o",
+          "gpt-4o-mini",
+          "claude-3-5-sonnet-20241022",
+        ];
+
+        if (ctx.setActiveWizard) {
+          ctx.setActiveWizard({
+            type: "model",
+            step: 1,
+            data: {},
+          });
+          ctx.setWizardOptions?.(defaults);
+          ctx.setWizardSelectedIndex?.(0);
+        }
+
+        const baseUrl = process.env.CUSTOM_BASE_URL;
+        if (baseUrl) {
+          fetch(`${baseUrl}/models`)
+            .then(async (res) => {
+              if (res.ok) {
+                const data = (await res.json()) as any;
+                if (data && Array.isArray(data.data)) {
+                  const modelsList = data.data.map((m: any) => m.id).slice(0, 15);
+                  if (ctx.setWizardOptions) {
+                    ctx.setWizardOptions(modelsList);
+                    ctx.setWizardSelectedIndex?.(0);
+                  }
+                  ctx.addLine({
+                    type: "system",
+                    content: `Live models loaded from ${baseUrl}. Selector list updated!`,
+                    timestamp: Date.now(),
+                  });
+                }
+              }
+            })
+            .catch(() => {});
+        }
+      }
+      break;
+    }
     case "help":
       ctx.addLine({
         type: "system",
@@ -796,6 +1636,8 @@ function handleSlashCommand(
           "  /clear    - Clear conversation history",
           "  /compact  - Show conversation summary",
           "  /init     - Initialize/audit AI agents and system configuration",
+          "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
+          "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
           "  /help     - Show this help",
           "  /quit     - Exit the app",
           "",
@@ -823,7 +1665,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
     case "user": {
       const content = line.content.replace(/^❯ /, "");
       return (
-        <Box marginY={0} flexDirection="column">
+        <Box flexDirection="column">
           <Text color="cyan">
             {isFirst ? "┌" : "├"}───[ <Text bold color="cyan">👤 ACCESS_POINT: USER</Text> ]
           </Text>
@@ -833,36 +1675,35 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
               <Text>{l}</Text>
             </Box>
           ))}
+          <Box flexDirection="row">
+            <Text color="cyan">│ </Text>
+          </Box>
         </Box>
       );
     }
     case "assistant":
       return (
-        <Box marginY={0} flexDirection="column">
+        <Box flexDirection="column">
           <Text color="magenta">
             {isFirst ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT</Text> ]
           </Text>
-          {line.content.split("\n").map((l, idx) => (
-            <Box key={idx} flexDirection="row">
-              <Text color="magenta">│ </Text>
-              <Text>{l}</Text>
-            </Box>
-          ))}
+          {renderMarkdown(line.content, "magenta")}
+          <Box flexDirection="row">
+            <Text color="magenta">│ </Text>
+          </Box>
         </Box>
       );
     case "tool_start": {
       const content = line.content.replace(/^⚡ /, "");
       return (
-        <Box marginY={0} flexDirection="column">
+        <Box flexDirection="column">
           <Text color="yellow">
             ├───[ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ]
           </Text>
-          {content.split("\n").map((l, idx) => (
-            <Box key={idx} flexDirection="row">
-              <Text color="yellow">│ </Text>
-              <Text>{l}</Text>
-            </Box>
-          ))}
+          {renderToolStart(content)}
+          <Box flexDirection="row">
+            <Text color="yellow">│ </Text>
+          </Box>
         </Box>
       );
     }
@@ -871,23 +1712,21 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
       const contentText = line.content.substring(2);
       const themeColor = isError ? "red" : "green";
       return (
-        <Box marginY={0} flexDirection="column">
+        <Box flexDirection="column">
           <Text color={themeColor}>
             ├───[ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ]
           </Text>
-          {contentText.split("\n").map((l, idx) => (
-            <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│ </Text>
-              <Text dimColor>{l}</Text>
-            </Box>
-          ))}
+          {renderToolEnd(contentText, isError)}
+          <Box flexDirection="row">
+            <Text color={themeColor}>│ </Text>
+          </Box>
         </Box>
       );
     }
     case "error": {
       const contentText = line.content.replace(/^Error: /, "");
       return (
-        <Box marginY={0} flexDirection="column">
+        <Box flexDirection="column">
           <Text color="red">
             ├───[ <Text bold color="red">🚨 ERROR_REPORT</Text> ]
           </Text>
@@ -897,12 +1736,15 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
               <Text color="red">{l}</Text>
             </Box>
           ))}
+          <Box flexDirection="row">
+            <Text color="red">│ </Text>
+          </Box>
         </Box>
       );
     }
     case "system":
       return (
-        <Box marginY={0} flexDirection="column">
+        <Box flexDirection="column">
           <Text color="gray">
             ├───[ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ]
           </Text>
@@ -912,11 +1754,14 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
               <Text color="gray" italic>{l}</Text>
             </Box>
           ))}
+          <Box flexDirection="row">
+            <Text color="gray">│ </Text>
+          </Box>
         </Box>
       );
     default:
       return (
-        <Box marginY={0} flexDirection="column">
+        <Box flexDirection="column">
           <Text color="gray">
             ├───[ <Text bold color="gray">COMM_PACKET</Text> ]
           </Text>
@@ -926,6 +1771,9 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
               <Text>{l}</Text>
             </Box>
           ))}
+          <Box flexDirection="row">
+            <Text color="gray">│ </Text>
+          </Box>
         </Box>
       );
   }
@@ -938,7 +1786,7 @@ function LoadingIndicator() {
   useEffect(() => {
     const interval = setInterval(() => {
       setFrame((prev) => (prev + 1) % frames.length);
-    }, 80);
+    }, 250);
     return () => clearInterval(interval);
   }, []);
 

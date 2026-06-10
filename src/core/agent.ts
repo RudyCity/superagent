@@ -2,7 +2,8 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
-import { getConfig } from "./config.js";
+import fs from "fs";
+import { getConfig, getContextWindowLimit } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions } from "./tools.js";
 import {
@@ -28,7 +29,9 @@ export type PermissionHandler = (
 
 export class Agent {
   private conversation: Conversation;
-  private config = getConfig();
+  private get config() {
+    return getConfig();
+  }
   private onEvent: (event: AgentEvent) => void;
   private onPermission: PermissionHandler;
   private abortController: AbortController | null = null;
@@ -39,8 +42,26 @@ export class Agent {
     onPermission: PermissionHandler
   ) {
     this.conversation = new Conversation();
-    this.onEvent = onEvent;
+    this.onEvent = (event: AgentEvent) => {
+      if (event.type === "error") {
+        this.writeToLogFile(event.message);
+      } else if (event.type === "tool_end" && event.toolResult.isError) {
+        this.writeToLogFile(`Tool '${event.toolResult.name}' failed: ${event.toolResult.result}`);
+      }
+      onEvent(event);
+    };
     this.onPermission = onPermission;
+  }
+
+  private writeToLogFile(message: string): void {
+    try {
+      const logPath = path.join(this.config.workingDirectory, "superagent.log");
+      const timestamp = new Date().toISOString();
+      const logMessage = `[${timestamp}] [ERROR] ${message}\n`;
+      fs.appendFileSync(logPath, logMessage, "utf-8");
+    } catch (err) {
+      // Ignore log write errors to prevent crashing the agent
+    }
   }
 
   private getHistoryFilePath(): string {
@@ -63,6 +84,10 @@ export class Agent {
     const openai = createOpenAI({
       apiKey: this.config.apiKey,
       ...(this.config.baseUrl && { baseURL: this.config.baseUrl }),
+      headers: {
+        "HTTP-Referer": "https://github.com/RudyCity/superagent",
+        "X-Title": "SuperAgent CLI",
+      },
     });
     return openai(this.config.model);
   }
@@ -73,6 +98,7 @@ export class Agent {
     this.abortController = new AbortController();
 
     this.conversation.addUserMessage(userInput);
+    await this.compactHistoryIfNeeded();
     await this.saveHistory();
 
     try {
@@ -95,6 +121,7 @@ export class Agent {
     const maxIterations = 20;
 
     for (let i = 0; i < maxIterations; i++) {
+      await this.compactHistoryIfNeeded();
       const messages = this.buildMessages();
       const toolDefs = getToolDefinitions();
 
@@ -342,6 +369,62 @@ export class Agent {
     }
 
     return coreMessages;
+  }
+
+  async compactHistoryIfNeeded(): Promise<void> {
+    const modelLimit = getContextWindowLimit(this.config.model);
+    const maxHistoryTokens = Math.floor(modelLimit * 0.5);
+
+    if (this.conversation.getTokenEstimate() > maxHistoryTokens) {
+      const allMsgs = this.conversation.getMessages();
+      if (allMsgs.length > 20) {
+        const toSummarize = allMsgs.slice(0, 20);
+        try {
+          const summary = await this.summarizeMessages(toSummarize);
+          this.conversation.replaceOldMessagesWithSummary(20, summary);
+          await this.saveHistory();
+        } catch (err) {
+          console.error("Failed to summarize and compact conversation history:", err);
+          this.conversation.pruneToTokenLimit(maxHistoryTokens);
+          await this.saveHistory();
+        }
+      } else {
+        this.conversation.pruneToTokenLimit(maxHistoryTokens);
+        await this.saveHistory();
+      }
+    }
+  }
+
+  private async summarizeMessages(messages: any[]): Promise<string> {
+    const formatted = messages.map(m => {
+      const role = m.role.toUpperCase();
+      let details = m.content || "";
+      if (m.toolCalls && m.toolCalls.length > 0) {
+        details += `\n[Tool Calls]: ${m.toolCalls.map((tc: any) => tc.name).join(", ")}`;
+      }
+      return `[${role}]: ${details}`;
+    }).join("\n\n");
+
+    const prompt = `You are a helper system node. Summarize the following past coding assistant chat history turns extremely briefly.
+Identify:
+1. What the user's goals or requirements were.
+2. What actions the assistant took (e.g. edited files, ran commands).
+3. The resulting workspace state or any unresolved issues.
+
+Keep the summary concise, clear, and direct.
+
+---
+PAST CHAT HISTORY:
+${formatted}`;
+
+    const result = await generateText({
+      model: this.getModel(),
+      system: "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
+      prompt,
+      abortSignal: this.abortController?.signal,
+    });
+
+    return result.text || "(empty summary)";
   }
 
   abort(): void {
