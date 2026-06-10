@@ -1080,8 +1080,8 @@ export function App({
   // Calculate dynamic input line height wrapping
   const inputLinesCount = input ? Math.max(1, Math.ceil((input.length + 6) / terminalWidth)) : 1;
 
-  // Base chrome height: Banner is 7, Input wrapper base is 4 (header + margin + prompt border/spacers), Status bar is 4 (3 lines + margin)
-  let chromeHeight = 15 + inputLinesCount;
+  // Base chrome height: Banner is 7, Input wrapper base is 3 (header + margin + prompt border/spacers), Status bar is 3 (3 lines + margin)
+  let chromeHeight = 12 + inputLinesCount;
   if (planState === "PLANNING_PENDING") {
     if (activeWizard?.type === "plan_approve") {
       chromeHeight += 8;
@@ -1128,7 +1128,7 @@ export function App({
   chromeHeight += liveListHeight;
 
   // Calculate available height for messages with a safety buffer to prevent terminal scrolling/duplicated headers
-  const chatHeightLimit = Math.max(5, terminalHeight - chromeHeight - 4);
+  const chatHeightLimit = Math.max(5, terminalHeight - chromeHeight - 1);
 
   return (
     <Box flexDirection="column">
@@ -1228,7 +1228,7 @@ export function App({
             {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (
               <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
                 <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
-                <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">implementation_plan.md</Text></Text>
+                <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">file:///${process.cwd().replace(/\\/g, "/")}/implementation_plan.md</Text></Text>
                 <Text color="yellow">Silakan ketik <Text bold color="green">/approve</Text> untuk menyetujui dan melanjutkan modifikasi kode.</Text>
               </Box>
             )}
@@ -1236,7 +1236,7 @@ export function App({
             {activeWizard && activeWizard.type === "plan_approve" && wizardOptions.length > 0 && (
               <WizardDialog
                 title="⚠️ PLAN APPROVAL REQUIRED (Use Arrow Keys Up/Down & Enter):"
-                description="Model AI telah merancang rencana di file: implementation_plan.md"
+                description={`Model AI telah merancang rencana di file: file:///${process.cwd().replace(/\\/g, "/")}/implementation_plan.md`}
                 borderColor="yellow"
                 options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
@@ -1990,7 +1990,13 @@ function handleSlashCommand(
           lines.push(`│  ${branchChar} ID: ${id} (${inst.typeName})`);
           const connectChar = isLast ? " " : "│";
           lines.push(`│     ├─ Role: ${inst.role}`);
-          lines.push(`│     └─ Status: ${inst.status}`);
+          if (inst.status === "completed" && (inst as any).result) {
+            const snippet = (inst as any).result.length > 60 ? (inst as any).result.slice(0, 57) + "..." : (inst as any).result;
+            lines.push(`│     ├─ Status: ${inst.status}`);
+            lines.push(`│     └─ Report: ${snippet.replace(/\n/g, " ")}`);
+          } else {
+            lines.push(`│     └─ Status: ${inst.status}`);
+          }
         });
       }
       lines.push("└──────────────────────────────────────────────");

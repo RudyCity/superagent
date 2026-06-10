@@ -1082,7 +1082,22 @@ interface SubagentInstance {
   agent: any;
   status: "idle" | "running" | "completed";
   logs: string[];
+  result?: string;
 }
+
+const SUBAGENT_REPORT_INSTRUCTION = `
+CRITICAL INSTRUCTION FOR SUBAGENT REPORTING:
+When you have completed your assigned task, or if you are blocked and cannot proceed, you MUST provide a standardized final report in your last response. Format your report exactly as follows using Markdown:
+
+### SUBAGENT TASK REPORT
+- **Goal / Objective**: [Brief description of what you were asked to do]
+- **Actions Taken**:
+  - [Action 1: e.g. read src/app.tsx]
+  - [Action 2: e.g. executed tests]
+- **Key Findings / Outcomes**:
+  - [Detail what you discovered or accomplished]
+- **Status & Next Steps**: [Completed / Blocked / Unresolved issues - and any recommendations for the main agent]
+`;
 
 const subagentTypes = new Map<string, SubagentType>();
 export const subagentInstances = new Map<string, SubagentInstance>();
@@ -1227,6 +1242,8 @@ const invokeSubagentTool: Tool = {
       return `{ ${parts.join(", ")} }`;
     }
 
+    const systemPromptWithReport = `${subType.systemPrompt}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
+
     const agentInstance = new Agent(
       (event) => {
         if (event.type === "text") {
@@ -1268,7 +1285,7 @@ const invokeSubagentTool: Tool = {
       async (question, options) => {
         return options[0] || "";
       },
-      subType.systemPrompt
+      systemPromptWithReport
     );
 
     const instance: SubagentInstance = {
@@ -1287,6 +1304,11 @@ const invokeSubagentTool: Tool = {
       flushTextBuffer();
       logs.push(`└──────────────────────────────────────────────\n`);
       instance.status = "completed";
+      const msgs = agentInstance.getHistory().getMessages();
+      const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
+      if (lastAssistantMsg) {
+        instance.result = lastAssistantMsg.content;
+      }
       notifySubagentsChanged();
     }).catch(() => {
       flushTextBuffer();
@@ -1329,6 +1351,11 @@ const sendMessageTool: Tool = {
     notifySubagentsChanged();
     instance.agent.sendMessage(message).then(() => {
       instance.status = "completed";
+      const msgs = instance.agent.getHistory().getMessages();
+      const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
+      if (lastAssistantMsg) {
+        instance.result = lastAssistantMsg.content;
+      }
       notifySubagentsChanged();
     }).catch(() => {
       instance.status = "completed";
@@ -1341,19 +1368,19 @@ const sendMessageTool: Tool = {
 
 const manageSubagentsTool: Tool = {
   name: "manage_subagents",
-  description: "List subagent types/instances, check logs, or terminate them.",
+  description: "List subagent types/instances, check logs, retrieve reports, or terminate them.",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["list", "logs", "kill", "kill_all"],
+        enum: ["list", "logs", "report", "kill", "kill_all"],
         description: "Action to perform",
       },
       conversationIds: {
         type: "array",
         items: { type: "string" },
-        description: "List of conversation IDs to kill or read logs from",
+        description: "List of conversation IDs to kill or read logs/reports from",
       },
     },
     required: ["action"],
@@ -1371,7 +1398,12 @@ const manageSubagentsTool: Tool = {
       lines.push("\nActive Subagent Instances:");
       if (subagentInstances.size === 0) lines.push("  None");
       for (const [id, inst] of subagentInstances.entries()) {
-        lines.push(`  - ID: ${id} | Type: ${inst.typeName} | Role: ${inst.role} | Status: ${inst.status}`);
+        let line = `  - ID: ${id} | Type: ${inst.typeName} | Role: ${inst.role} | Status: ${inst.status}`;
+        if (inst.status === "completed" && inst.result) {
+          const snippet = inst.result.length > 120 ? inst.result.slice(0, 120) + "..." : inst.result;
+          line += `\n    Report: ${snippet.replace(/\n/g, "\n    ")}`;
+        }
+        lines.push(line);
       }
       return lines.join("\n");
     }
@@ -1386,6 +1418,18 @@ const manageSubagentsTool: Tool = {
         return `Error: Subagent instance "${id}" not found.`;
       }
       return `Logs for Subagent ${id} (${inst.role}):\n${inst.logs.join("") || "(no logs yet)"}`;
+    }
+
+    if (action === "report") {
+      if (!conversationIds || conversationIds.length === 0) {
+        return "Error: conversationIds is required to retrieve the report.";
+      }
+      const id = conversationIds[0];
+      const inst = subagentInstances.get(id);
+      if (!inst) {
+        return `Error: Subagent instance "${id}" not found.`;
+      }
+      return `Report for Subagent ${id} (${inst.role}):\n\n${inst.result || "No report available yet."}`;
     }
 
     if (action === "kill") {
