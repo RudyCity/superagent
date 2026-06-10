@@ -27,6 +27,8 @@ vi.mock("execa", () => {
         }
       } else if (cmd === "rg") {
         mockResult.stdout = "src/app.tsx:10:match content";
+      } else if (typeof cmd === "string" && cmd.startsWith("android")) {
+        mockResult.stdout = "mocked android output";
       }
 
       const mockPromise: any = Promise.resolve(mockResult);
@@ -278,6 +280,12 @@ patched line
 
     const log = await tool?.execute({ action: "log", limit: 2 }, process.cwd());
     expect(log).toBe("commit log 1\ncommit log 2");
+  });
+
+  it("should run androidCliTool", async () => {
+    const tool = getToolByName("android_cli");
+    const result = await tool?.execute({ command: "sdk list" }, process.cwd());
+    expect(result).toBe("mocked android output");
   });
 
   it("should capture screenshot using screenshotTool", async () => {

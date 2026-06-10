@@ -1838,7 +1838,7 @@ export function App({
               </Text>
               <Box flexDirection="row">
                 <Text color={activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>│ ❯ </Text>
-                {isProcessing ? (
+                {isProcessing && !activeWizard ? (
                   <ProcessingIndicator scrollOffset={scrollOffset} />
                 ) : (input.length > 200 || input.includes("\n")) ? (
                   <Box flexDirection="row">

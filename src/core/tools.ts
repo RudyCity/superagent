@@ -1914,6 +1914,37 @@ const screenshotTool: Tool = {
   },
 };
 
+const androidCliTool: Tool = {
+  name: "android_cli",
+  description: "Execute an Android CLI command (e.g., 'sdk list', 'emulator list', 'run'). Returns the output.",
+  parameters: {
+    type: "object",
+    properties: {
+      command: {
+        type: "string",
+        description: "The android subcommand and options to run (e.g., 'sdk list', 'emulator list', 'info'). Do not include the 'android' command prefix.",
+      },
+    },
+    required: ["command"],
+  },
+  async execute(args, cwd, signal) {
+    const subCommand = args.command as string;
+    const isWin = process.platform === "win32";
+    const fullCommand = `android ${subCommand}`;
+    try {
+      const { stdout, stderr } = await execa(fullCommand, {
+        cwd,
+        cancelSignal: signal,
+        shell: isWin ? "powershell.exe" : true,
+      });
+      return (stdout || stderr || "").trim() || "(no output)";
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return `Android CLI error: ${message}`;
+    }
+  },
+};
+
 export const allTools: Tool[] = [
   readTool,
   askQuestionTool,
@@ -1941,6 +1972,7 @@ export const allTools: Tool[] = [
   applyPatchTool,
   gitActionTool,
   screenshotTool,
+  androidCliTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {

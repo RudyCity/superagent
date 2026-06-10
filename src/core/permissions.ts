@@ -7,6 +7,7 @@ export const MODIFYING_TOOLS = [
   "edit",
   "replace_file_content",
   "multi_replace_file_content",
+  "apply_patch",
 ];
 
 const DANGEROUS_PATTERNS = [
@@ -83,6 +84,16 @@ export function getToolDescription(
       return `Sending message to subagent: ${args.recipientId}`;
     case "manage_subagents":
       return `Managing subagents (${args.action})`;
+    case "apply_patch":
+      return `Applying patch to file: ${args.filePath}`;
+    case "git_action":
+      return `Running Git action: ${args.action}`;
+    case "screenshot":
+      return `Capturing desktop screenshot`;
+    case "android_cli":
+      return `Running Android CLI command: android ${args.command}`;
+    case "ask_question":
+      return `Asking user: ${args.question}`;
     default:
       return `Running tool ${toolCall.name} with parameters ${JSON.stringify(args)}`;
   }
