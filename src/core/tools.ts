@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { execa } from "execa";
 import fg from "fast-glob";
+import { getLocalRgPath, isRgInstalledGlobally, ensureRgInstalled, ensureAndroidCliInstalled } from "./androidSetup.js";
 
 export function formatCommandForPowerShell(command: string): string {
   const parts: string[] = [];
@@ -654,9 +655,20 @@ const ripgrepSearchTool: Tool = {
     const pattern = args.pattern as string;
     const searchPath = args.path ? path.resolve(cwd, args.path as string) : cwd;
 
+    await ensureRgInstalled();
+
+    let rgExe = "rg";
+    if (!(await isRgInstalledGlobally())) {
+      const localRg = getLocalRgPath();
+      try {
+        await fs.access(localRg);
+        rgExe = localRg;
+      } catch {}
+    }
+
     try {
       const result = await execa(
-        "rg",
+        rgExe,
         [
           "--vimgrep",
           "--smart-case",
@@ -1929,8 +1941,25 @@ const androidCliTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const subCommand = args.command as string;
+    await ensureAndroidCliInstalled();
     const isWin = process.platform === "win32";
-    const fullCommand = `android ${subCommand}`;
+    let exe = "android";
+    if (isWin) {
+      const userProfile = process.env.USERPROFILE || process.env.HOMEPATH || "C:\\Users\\USER";
+      const winPath = path.join(userProfile, "AppData", "AndroidCLI", "android.exe");
+      try {
+        await fs.access(winPath);
+        exe = `"${winPath}"`;
+      } catch {}
+    } else {
+      const home = process.env.HOME || "";
+      const unixPath = path.join(home, ".android-cli", "bin", "android");
+      try {
+        await fs.access(unixPath);
+        exe = unixPath;
+      } catch {}
+    }
+    const fullCommand = isWin ? `& ${exe} ${subCommand}` : `${exe} ${subCommand}`;
     try {
       const { stdout, stderr } = await execa(fullCommand, {
         cwd,
