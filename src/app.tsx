@@ -58,6 +58,9 @@ export function App({
   const [runningTasksCount, setRunningTasksCount] = useState(0);
   const [runningSubagentsCount, setRunningSubagentsCount] = useState(0);
   const [goalMode, setGoalMode] = useState<{ goal: string; startedAt: number } | null>(null);
+  const [toolTimeout, setToolTimeout] = useState<number | null>(null);
+  const [toolStartTime, setToolStartTime] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [activeWizard, setActiveWizard] = useState<{
     type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal";
     step: number;
@@ -118,6 +121,20 @@ export function App({
       setActiveToolOutput(out);
     });
   }, []);
+
+  useEffect(() => {
+    if (!isExecutingTool || !toolTimeout || !toolStartTime) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - toolStartTime;
+      const remaining = Math.max(0, Math.ceil((toolTimeout - elapsed) / 1000));
+      setTimeLeft(remaining);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isExecutingTool, toolTimeout, toolStartTime]);
 
   useEffect(() => {
     const modelName = process.env.MODEL || getDefaultModel();
@@ -236,6 +253,16 @@ export function App({
             streamBufferRef.current = "";
             setStreamDisplay("");
           }
+          const timeoutArg = event.toolCall.args?.timeout;
+          if (typeof timeoutArg === "number") {
+            setToolTimeout(timeoutArg);
+            setToolStartTime(Date.now());
+            setTimeLeft(Math.ceil(timeoutArg / 1000));
+          } else {
+            setToolTimeout(null);
+            setToolStartTime(null);
+            setTimeLeft(null);
+          }
           setIsExecutingTool(true);
           let prefixEmoji = "⚡";
           let customTitle = event.description;
@@ -257,6 +284,9 @@ export function App({
         }
         case "tool_end": {
           setIsExecutingTool(false);
+          setToolTimeout(null);
+          setToolStartTime(null);
+          setTimeLeft(null);
           const r = event.toolResult;
           let prefixEmojiEnd = r.isError ? "✗" : "✓";
           let customTitleEnd = event.description;
@@ -286,6 +316,9 @@ export function App({
             streamTimeoutRef.current = null;
           }
           setIsExecutingTool(false);
+          setToolTimeout(null);
+          setToolStartTime(null);
+          setTimeLeft(null);
           addLine({
             type: "error",
             content: `Error: ${event.message}`,
@@ -299,6 +332,9 @@ export function App({
           }
           flushBuffer();
           setIsExecutingTool(false);
+          setToolTimeout(null);
+          setToolStartTime(null);
+          setTimeLeft(null);
           setIsProcessing(false);
           break;
         case "goal_done":
@@ -1837,7 +1873,7 @@ export function App({
             {scrollOffset === 0 && isExecutingTool && (
               <Box flexDirection="column">
                 <Text color="yellow">
-                  ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...</Text> ]
+                  ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
                 </Text>
                 <Box flexDirection="row">
                   <Text color="yellow">│    </Text>
