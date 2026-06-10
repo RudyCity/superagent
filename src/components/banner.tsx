@@ -19,7 +19,7 @@ export function Banner() {
           <Box flexDirection="row" marginBottom={1}>
             <Text color="cyan" bold>SUPERAGENT</Text>
             <Text color="gray"> │ </Text>
-            <Text color="magenta" bold>COGNITIVE SYSTEM INTERFACE v2.0</Text>
+            <Text color="magenta" bold>COGNITIVE SYSTEM INTERFACE v1.1.0</Text>
           </Box>
           <Box flexDirection="row">
             <Text dimColor>Type your query or </Text>
