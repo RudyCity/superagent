@@ -10,6 +10,7 @@ import {
   executeToolCall,
   getToolDescription,
   isDangerousCommand,
+  MODIFYING_TOOLS,
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 
@@ -27,19 +28,31 @@ export type PermissionHandler = (
   description: string
 ) => Promise<boolean>;
 
+export type QuestionHandler = (
+  question: string,
+  options: string[]
+) => Promise<string>;
+
 export class Agent {
+  public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
   private conversation: Conversation;
   private get config() {
     return getConfig();
   }
   private onEvent: (event: AgentEvent) => void;
   private onPermission: PermissionHandler;
+  private onQuestion: QuestionHandler;
   private abortController: AbortController | null = null;
   private isRunning = false;
 
+  public approvePlan(): void {
+    this.planState = "APPROVED";
+  }
+
   constructor(
     onEvent: (event: AgentEvent) => void,
-    onPermission: PermissionHandler
+    onPermission: PermissionHandler,
+    onQuestion: QuestionHandler
   ) {
     this.conversation = new Conversation();
     this.onEvent = (event: AgentEvent) => {
@@ -51,6 +64,7 @@ export class Agent {
       onEvent(event);
     };
     this.onPermission = onPermission;
+    this.onQuestion = onQuestion;
   }
 
   private writeToLogFile(message: string): void {
@@ -206,6 +220,12 @@ export class Agent {
             if (delta.type === "text-delta") {
               textContent += delta.textDelta;
               this.onEvent({ type: "text", content: delta.textDelta });
+            } else if ((delta.type as string) === "reasoning" || (delta.type as string) === "reasoning-delta") {
+              const reasoningText = (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
+              if (reasoningText) {
+                textContent += reasoningText;
+                this.onEvent({ type: "text", content: reasoningText });
+              }
             } else if (delta.type === "tool-call") {
               const tc: ToolCall = {
                 id: delta.toolCallId,
@@ -260,6 +280,52 @@ export class Agent {
       for (const tc of toolCalls) {
         const description = getToolDescription(tc);
         this.onEvent({ type: "tool_start", toolCall: tc, description });
+
+        if (tc.name === "ask_question") {
+          const question = tc.args.question as string || "";
+          const options = tc.args.options as string[] || [];
+          try {
+            const selected = await this.onQuestion(question, options);
+            const toolResult: ToolResult = {
+              toolCallId: tc.id,
+              name: tc.name,
+              result: `User selected option: "${selected}"`,
+            };
+            toolResults.push(toolResult);
+            this.onEvent({ type: "tool_end", toolResult, description });
+            continue;
+          } catch (err: any) {
+            const toolResult: ToolResult = {
+              toolCallId: tc.id,
+              name: tc.name,
+              result: `Error getting user answer: ${err.message}`,
+              isError: true,
+            };
+            toolResults.push(toolResult);
+            this.onEvent({ type: "tool_end", toolResult, description });
+            continue;
+          }
+        }
+
+        // Check if this tool modifies files
+        if (MODIFYING_TOOLS.includes(tc.name)) {
+          const filePath = tc.args.filePath as string || "";
+          const isPlanFile = filePath && path.basename(filePath).toLowerCase() === "implementation_plan.md";
+
+          if (isPlanFile) {
+            this.planState = "PLANNING_PENDING";
+          } else if (this.planState === "PLANNING_PENDING") {
+            const blocked: ToolResult = {
+              toolCallId: tc.id,
+              name: tc.name,
+              result: "Error: File modification blocked. A plan is pending approval. You must wait for the user to approve the plan using '/approve' before modifying any codebase files.",
+              isError: true,
+            };
+            toolResults.push(blocked);
+            this.onEvent({ type: "tool_end", toolResult: blocked, description });
+            continue;
+          }
+        }
 
         if (
           (tc.name === "bash" || tc.name === "run_command" || tc.name === "run_background") &&

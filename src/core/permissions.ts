@@ -1,6 +1,14 @@
 import { getToolByName } from "./tools.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 
+export const MODIFYING_TOOLS = [
+  "write",
+  "write_to_file",
+  "edit",
+  "replace_file_content",
+  "multi_replace_file_content",
+];
+
 const DANGEROUS_PATTERNS = [
   /rm\s+-rf\s+[\/~]/i,
   /rmdir\s+[\/~]/i,

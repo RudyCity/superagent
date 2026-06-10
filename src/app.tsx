@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { Agent } from "./core/agent.js";
-import type { AgentEvent, PermissionHandler } from "./core/agent.js";
+import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
 import { getContextWindowLimit, updateEnvFile } from "./core/config.js";
@@ -10,6 +10,7 @@ import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
 import { registerSubagentType, allTools } from "./core/tools.js";
+import { WizardDialog } from "./components/wizard-dialog.js";
 
 interface ChatLine {
   type:
@@ -36,11 +37,15 @@ export function App({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExecutingTool, setIsExecutingTool] = useState(false);
   const [streamDisplay, setStreamDisplay] = useState("");
-  const [showPermission, setShowPermission] = useState(false);
   const [pendingPermission, setPendingPermission] = useState<{
     toolCall: ToolCall;
     description: string;
     resolve: (value: boolean) => void;
+  } | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<{
+    question: string;
+    options: string[];
+    resolve: (value: string) => void;
   } | null>(null);
   const [lastTabPrefix, setLastTabPrefix] = useState<string | null>(null);
   const [tokensUp, setTokensUp] = useState(0);
@@ -56,12 +61,13 @@ export function App({
   const agentRef = useRef<Agent | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [activeWizard, setActiveWizard] = useState<{
-    type: "login" | "model";
+    type: "login" | "model" | "plan_approve" | "permission" | "question";
     step: number;
     data: Record<string, string>;
   } | null>(null);
   const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
+  const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [focusMode, setFocusMode] = useState<"input" | "history">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
   const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
@@ -153,7 +159,29 @@ export function App({
     (toolCall: ToolCall, description: string) => {
       return new Promise<boolean>((resolve) => {
         setPendingPermission({ toolCall, description, resolve });
-        setShowPermission(true);
+        setWizardOptions(["Allow Command Execution", "Deny Command Execution"]);
+        setWizardSelectedIndex(0);
+        setActiveWizard({
+          type: "permission",
+          step: 1,
+          data: {},
+        });
+      });
+    },
+    []
+  );
+
+  const questionHandler: QuestionHandler = useCallback(
+    (question: string, options: string[]) => {
+      return new Promise<string>((resolve) => {
+        setPendingQuestion({ question, options, resolve });
+        setWizardOptions(options);
+        setWizardSelectedIndex(0);
+        setActiveWizard({
+          type: "question",
+          step: 1,
+          data: { question },
+        });
       });
     },
     []
@@ -165,7 +193,7 @@ export function App({
         case "text":
           streamBufferRef.current += event.content;
           const now = Date.now();
-          if (now - lastStreamUpdateRef.current > 120) {
+          if (now - lastStreamUpdateRef.current > 20) {
             setStreamDisplay(streamBufferRef.current);
             lastStreamUpdateRef.current = now;
             if (streamTimeoutRef.current) {
@@ -178,7 +206,7 @@ export function App({
                 setStreamDisplay(streamBufferRef.current);
                 lastStreamUpdateRef.current = Date.now();
                 streamTimeoutRef.current = null;
-              }, 120);
+              }, 20);
             }
           }
           break;
@@ -248,12 +276,28 @@ export function App({
           setLastPromptTokens(event.promptTokens);
           break;
       }
+      if (agentRef.current) {
+        const nextState = agentRef.current.planState;
+        setPlanState(nextState);
+        if (nextState === "PLANNING_PENDING") {
+          setActiveWizard((curr) => {
+            if (curr && curr.type === "plan_approve") return curr;
+            setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+            setWizardSelectedIndex(0);
+            return {
+              type: "plan_approve",
+              step: 1,
+              data: {},
+            };
+          });
+        }
+      }
     },
     [flushBuffer, addLine]
   );
 
   useEffect(() => {
-    const agent = new Agent(handleEvent, permissionHandler);
+    const agent = new Agent(handleEvent, permissionHandler, questionHandler);
     agentRef.current = agent;
 
     const handleSigint = () => {
@@ -327,7 +371,7 @@ export function App({
     return () => {
       process.off("SIGINT", handleSigint);
     };
-  }, [handleEvent, permissionHandler, exit, autoResume]);
+  }, [handleEvent, permissionHandler, questionHandler, exit, autoResume]);
 
   useEffect(() => {
     const hasMessages = agentRef.current ? agentRef.current.getHistory().getMessages().length > 0 : false;
@@ -472,8 +516,30 @@ export function App({
         });
       }
       setActiveWizard(null);
+    } else if (activeWizard.type === "plan_approve") {
+      const approved = value === "approve";
+      if (approved) {
+        if (agentRef.current) {
+          agentRef.current.approvePlan();
+          setPlanState("APPROVED");
+        }
+        addLine({
+          type: "system",
+          content: "✓ Implementation plan approved! The agent is now allowed to perform code and file modifications.",
+          timestamp: now,
+        });
+      } else {
+        addLine({
+          type: "system",
+          content: "✗ Implementation plan rejected. Please provide your feedback to the agent.",
+          timestamp: now,
+        });
+      }
+      setActiveWizard(null);
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
     }
-  }, [activeWizard, addLine, setContextLimit]);
+  }, [activeWizard, addLine, setContextLimit, setPlanState]);
 
   const handleSubmit = useCallback(
     async (value: string) => {
@@ -511,6 +577,7 @@ export function App({
           setActiveWizard,
           setWizardOptions,
           setWizardSelectedIndex,
+          setPlanState,
           resumeSession: async () => {
             if (!agentRef.current) return;
             await agentRef.current.loadHistory();
@@ -562,6 +629,9 @@ export function App({
             }
             setLines(loadedLines);
             setHistory(userInputs);
+            if (agentRef.current) {
+              setPlanState(agentRef.current.planState);
+            }
           }
         });
         return;
@@ -577,6 +647,22 @@ export function App({
       streamBufferRef.current = "";
       setStreamDisplay("");
       await agentRef.current?.sendMessage(trimmed);
+      if (agentRef.current) {
+        const nextState = agentRef.current.planState;
+        setPlanState(nextState);
+        if (nextState === "PLANNING_PENDING") {
+          setActiveWizard((curr) => {
+            if (curr && curr.type === "plan_approve") return curr;
+            setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+            setWizardSelectedIndex(0);
+            return {
+              type: "plan_approve",
+              step: 1,
+              data: {},
+            };
+          });
+        }
+      }
     },
     [isProcessing, addLine, exit]
   );
@@ -598,8 +684,8 @@ export function App({
     "/quit",
     "/exit",
     "/login",
-    "/lgin",
     "/model",
+    "/approve",
   ];
 
   useInput((inputChar, key) => {
@@ -639,7 +725,7 @@ export function App({
       return;
     }
 
-    if (activeWizard && !isProcessing) {
+    if (activeWizard) {
       if (activeWizard.type === "login" && activeWizard.step === 1) {
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
@@ -699,6 +785,59 @@ export function App({
           setWizardSelectedIndex(0);
           return;
         }
+      } else if (activeWizard.type === "plan_approve" && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          return;
+        }
+        if (key.return) {
+          const isApprove = wizardSelectedIndex === 0;
+          handleWizardSubmit(isApprove ? "approve" : "reject");
+          return;
+        }
+      } else if (activeWizard.type === "permission" && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          return;
+        }
+        if (key.return) {
+          const approved = wizardSelectedIndex === 0;
+          handlePermissionResponse(approved);
+          return;
+        }
+      } else if (activeWizard.type === "question" && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          return;
+        }
+        if (key.return) {
+          const selectedOption = wizardOptions[wizardSelectedIndex];
+          if (pendingQuestion) {
+            pendingQuestion.resolve(selectedOption);
+            addLine({
+              type: "system",
+              content: `❓ Answered: "${selectedOption}"`,
+              timestamp: Date.now(),
+            });
+            setPendingQuestion(null);
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+          }
+          return;
+        }
       }
     }
 
@@ -725,6 +864,14 @@ export function App({
       if (scrollOffset > 0) {
         setScrollOffset(0);
       } else if (activeWizard) {
+        if (pendingPermission) {
+          pendingPermission.resolve(false);
+          setPendingPermission(null);
+        }
+        if (pendingQuestion) {
+          pendingQuestion.resolve("");
+          setPendingQuestion(null);
+        }
         setActiveWizard(null);
         setWizardOptions([]);
         setWizardSelectedIndex(0);
@@ -799,8 +946,10 @@ export function App({
           content: approved ? "✓ Permission granted" : "✗ Permission denied",
           timestamp: Date.now(),
         });
-        setShowPermission(false);
         setPendingPermission(null);
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
       }
     },
     [pendingPermission, addLine]
@@ -814,7 +963,7 @@ export function App({
         handlePermissionResponse(false);
       }
     },
-    { isActive: showPermission }
+    { isActive: activeWizard?.type === "permission" }
   );
 
   const getWizardPlaceholder = () => {
@@ -882,24 +1031,32 @@ export function App({
   // Calculate dynamic input line height wrapping
   const inputLinesCount = input ? Math.max(1, Math.ceil((input.length + 6) / terminalWidth)) : 1;
 
-  // Base chrome height: Banner is 7, Input wrapper base is 3 (header + margins), Status bar is 3
-  let chromeHeight = 13 + inputLinesCount;
+  // Base chrome height: Banner is 7, Input wrapper base is 4 (header + margin + prompt border/spacers), Status bar is 4 (3 lines + margin)
+  let chromeHeight = 15 + inputLinesCount;
+  if (planState === "PLANNING_PENDING") {
+    if (activeWizard?.type === "plan_approve") {
+      chromeHeight += 8;
+    } else {
+      chromeHeight += 6;
+    }
+  }
   if (activeWizard) {
     if (activeWizard.type === "login" && activeWizard.step === 1) {
-      chromeHeight += 6;
-    } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
       chromeHeight += 8;
+    } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
+      chromeHeight += 12;
+    } else if (activeWizard.type === "permission") {
+      chromeHeight += 9;
+    } else if (activeWizard.type === "question") {
+      chromeHeight += 8 + Math.min(6, wizardOptions.length);
     }
   } else if (input.startsWith("/") && suggestions.length > 0) {
     chromeHeight += 2;
   }
-  if (showPermission) {
-    chromeHeight += 5;
-  }
   if (isProcessing) {
     if (streamDisplay && streamDisplay.trim().length > 0) {
       chromeHeight += 2; // Stream header and spacing
-    } else if (!showPermission && !isExecutingTool) {
+    } else if (activeWizard?.type !== "permission" && !isExecutingTool) {
       chromeHeight += 2; // Thinking loading indicator
     }
   }
@@ -966,7 +1123,8 @@ export function App({
                       </Text>
                       {renderMarkdown(
                         truncateStreamDisplay(streamDisplay, streamVisibleLinesCount, chatWidth),
-                        "magenta"
+                        "magenta",
+                        true
                       )}
                     </Box>
                   )}
@@ -974,7 +1132,7 @@ export function App({
               );
             })()}
 
-            {scrollOffset === 0 && isProcessing && (!streamDisplay || streamDisplay.trim().length === 0) && !showPermission && !isExecutingTool && (
+            {scrollOffset === 0 && isProcessing && (!streamDisplay || streamDisplay.trim().length === 0) && activeWizard?.type !== "permission" && !isExecutingTool && (
               <Box flexDirection="column">
                 <Text color="magenta">
                   ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text> ]
@@ -988,75 +1146,64 @@ export function App({
           </Box>
 
           {/* Permission prompt */}
-          {showPermission && pendingPermission && (
-            <Box
-              borderStyle="round"
+          {activeWizard && activeWizard.type === "permission" && pendingPermission && (
+            <WizardDialog
+              title="⚠️ PERMISSION REQUIRED (Use Arrow Keys Up/Down & Enter, or press Y/N):"
+              description={pendingPermission.description}
               borderColor="yellow"
-              paddingX={1}
-              marginY={1}
-            >
-              <Box flexDirection="column">
-                <Text bold color="yellow">
-                  ⚠ Permission Required
-                </Text>
-                <Text>{pendingPermission.description}</Text>
-                <Box marginTop={1}>
-                  <Text>
-                    Approve? (<Text color="green">y</Text>/
-                    <Text color="red">n</Text>)
-                  </Text>
-                </Box>
-              </Box>
-            </Box>
+              options={wizardOptions}
+              selectedIndex={wizardSelectedIndex}
+            />
           )}
 
           {/* Input */}
-          <Box paddingX={1} marginY={1} flexDirection="column">
-            {/* Render Wizard choices if active */}
-            {activeWizard && activeWizard.type === "login" && activeWizard.step === 1 && (
-              <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-                <Text bold color="cyan">🔑 SELECT PROVIDER (Use Arrow Keys Up/Down & Enter):</Text>
-                {["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"].map((p, idx) => {
-                  const isSelected = idx === wizardSelectedIndex;
-                  return (
-                    <Text key={p} color={isSelected ? "cyan" : "gray"} bold={isSelected}>
-                      {isSelected ? "❯ " : "  "} {p}
-                    </Text>
-                  );
-                })}
+          <Box flexDirection="column" paddingX={1} marginTop={1}>
+
+            {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (
+              <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
+                <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
+                <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">implementation_plan.md</Text></Text>
+                <Text color="yellow">Silakan ketik <Text bold color="green">/approve</Text> untuk menyetujui dan melanjutkan modifikasi kode.</Text>
               </Box>
             )}
 
+            {activeWizard && activeWizard.type === "plan_approve" && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="⚠️ PLAN APPROVAL REQUIRED (Use Arrow Keys Up/Down & Enter):"
+                description="Model AI telah merancang rencana di file: implementation_plan.md"
+                borderColor="yellow"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "question" && wizardOptions.length > 0 && pendingQuestion && (
+              <WizardDialog
+                title="❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):"
+                description={pendingQuestion.question}
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "login" && activeWizard.step === 1 && (
+              <WizardDialog
+                title="🔑 SELECT PROVIDER (Use Arrow Keys Up/Down & Enter):"
+                borderColor="cyan"
+                options={["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
             {activeWizard && activeWizard.type === "model" && wizardOptions.length > 0 && (
-              <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-                <Text bold color="cyan">⚙️ SELECT MODEL (Use Arrow Keys Up/Down & Enter, or type custom model):</Text>
-                {(() => {
-                  const maxVisible = 6;
-                  const total = wizardOptions.length;
-                  let start = Math.max(0, wizardSelectedIndex - Math.floor(maxVisible / 2));
-                  let end = start + maxVisible;
-                  if (end > total) {
-                    end = total;
-                    start = Math.max(0, end - maxVisible);
-                  }
-                  const visibleOptions = wizardOptions.slice(start, end);
-                  return (
-                    <Box flexDirection="column">
-                      {start > 0 && <Text color="yellow">   ▲ ... ({start} more models above) ...</Text>}
-                      {visibleOptions.map((m, idx) => {
-                        const originalIndex = start + idx;
-                        const isSelected = originalIndex === wizardSelectedIndex;
-                        return (
-                          <Text key={m} color={isSelected ? "cyan" : "gray"} bold={isSelected}>
-                            {isSelected ? "❯ " : "  "} {m}
-                          </Text>
-                        );
-                      })}
-                      {end < total && <Text color="yellow">   ▼ ... ({total - end} more models below) ...</Text>}
-                    </Box>
-                  );
-                })()}
-              </Box>
+              <WizardDialog
+                title="⚙️ SELECT MODEL (Use Arrow Keys Up/Down & Enter, or type custom model):"
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+                maxVisible={6}
+              />
             )}
 
             {/* Render suggestions inline above the input line */}
@@ -1113,7 +1260,7 @@ export function App({
       </Box>
 
       {/* Status bar */}
-      <Box flexDirection="column" paddingX={1} marginTop={0}>
+      <Box flexDirection="column" paddingX={1} marginTop={1}>
         <Box justifyContent="space-between" paddingX={0}>
           <Box>
             <Text color="magenta" bold>ONLINE</Text>
@@ -1156,7 +1303,7 @@ export function App({
   );
 }
 
-function renderMarkdown(content: string, themeColor: string = "magenta"): React.ReactNode {
+function renderMarkdown(content: string, themeColor: string = "magenta", showCursor: boolean = false): React.ReactNode {
   const lines = content.split("\n");
   let inCodeBlock = false;
   let codeLanguage = "";
@@ -1174,6 +1321,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta"): React.
               <Text color="gray" italic>
                 {inCodeBlock ? `┌─── [ CODE: ${codeLanguage || "TEXT"} ]` : "└─── [ END CODE ]"}
               </Text>
+              {showCursor && idx === lines.length - 1 && <Text color="gray">█</Text>}
             </Box>
           );
         }
@@ -1183,6 +1331,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta"): React.
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>│ </Text>
               <Text color="green">{l}</Text>
+              {showCursor && idx === lines.length - 1 && <Text color="green">█</Text>}
             </Box>
           );
         }
@@ -1192,6 +1341,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta"): React.
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>│ </Text>
               <Text bold color="yellow">{l.slice(2)}</Text>
+              {showCursor && idx === lines.length - 1 && <Text bold color="yellow">█</Text>}
             </Box>
           );
         }
@@ -1200,6 +1350,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta"): React.
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>│ </Text>
               <Text bold color="cyan">{l.slice(3)}</Text>
+              {showCursor && idx === lines.length - 1 && <Text bold color="cyan">█</Text>}
             </Box>
           );
         }
@@ -1208,6 +1359,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta"): React.
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>│ </Text>
               <Text bold color="blue">{l.slice(4)}</Text>
+              {showCursor && idx === lines.length - 1 && <Text bold color="blue">█</Text>}
             </Box>
           );
         }
@@ -1276,6 +1428,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta"): React.
             <Text color={themeColor}>│ </Text>
             {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
             <Text>{parsedElements}</Text>
+            {showCursor && idx === lines.length - 1 && <Text>█</Text>}
           </Box>
         );
       })}
@@ -1386,10 +1539,11 @@ function handleSlashCommand(
     agent: Agent | null;
     clearLines?: () => void;
     setContextLimit?: (limit: number) => void;
-    setActiveWizard?: (val: { type: "login" | "model"; step: number; data: Record<string, string> } | null) => void;
+    setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question"; step: number; data: Record<string, string> } | null) => void;
     setWizardOptions?: (options: string[]) => void;
     setWizardSelectedIndex?: (index: number) => void;
     resumeSession?: () => Promise<void>;
+    setPlanState?: (state: "IDLE" | "PLANNING_PENDING" | "APPROVED") => void;
   }
 ) {
   const [name] = cmd.slice(1).split(" ");
@@ -1398,6 +1552,10 @@ function handleSlashCommand(
   switch (name.toLowerCase()) {
     case "new":
       ctx.agent?.clearHistory();
+      if (ctx.agent) {
+        ctx.agent.planState = "IDLE";
+      }
+      ctx.setPlanState?.("IDLE");
       ctx.clearLines?.();
       ctx.addLine({ type: "system", content: "New conversation started. History and terminal cleared.", timestamp: now });
       break;
@@ -1416,7 +1574,24 @@ function handleSlashCommand(
       break;
     case "clear":
       ctx.agent?.clearHistory();
+      if (ctx.agent) {
+        ctx.agent.planState = "IDLE";
+      }
+      ctx.setPlanState?.("IDLE");
       ctx.addLine({ type: "system", content: "Conversation cleared.", timestamp: now });
+      break;
+    case "approve":
+      if (ctx.agent) {
+        ctx.agent.approvePlan();
+        ctx.setPlanState?.("APPROVED");
+        ctx.addLine({
+          type: "system",
+          content: "✓ Implementation plan approved! The agent is now allowed to perform code and file modifications.",
+          timestamp: now,
+        });
+      } else {
+        ctx.addLine({ type: "error", content: "Agent not available in this context.", timestamp: now });
+      }
       break;
     case "compact": {
       const currentModel = process.env.MODEL || getDefaultModel();
@@ -1493,8 +1668,7 @@ function handleSlashCommand(
         ctx.addLine({ type: "error", content: `Init failed: ${err.message}`, timestamp: now });
       });
       break;
-    case "login":
-    case "lgin": {
+    case "login": {
       const args = cmd.slice(name.length + 2).trim();
       if (!args) {
         if (ctx.setActiveWizard) {
@@ -1692,6 +1866,7 @@ function handleSlashCommand(
           "  /init     - Initialize/audit AI agents and system configuration",
           "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
           "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
+          "  /approve  - Approve the pending implementation plan",
           "  /help     - Show this help",
           "  /quit     - Exit the app",
           "",

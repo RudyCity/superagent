@@ -1152,6 +1152,9 @@ const invokeSubagentTool: Tool = {
       },
       async (toolCall, desc) => {
         return true;
+      },
+      async (question, options) => {
+        return options[0] || "";
       }
     );
 
@@ -1288,8 +1291,34 @@ const manageSubagentsTool: Tool = {
   },
 };
 
+const askQuestionTool: Tool = {
+  name: "ask_question",
+  description: "Ask the user a multiple-choice question to clarify requirements or get design decisions. Returns the selected option.",
+  parameters: {
+    type: "object",
+    properties: {
+      question: {
+        type: "string",
+        description: "The question to ask the user",
+      },
+      options: {
+        type: "array",
+        items: {
+          type: "string",
+        },
+        description: "List of options for the user to choose from",
+      },
+    },
+    required: ["question", "options"],
+  },
+  async execute(args, cwd, signal) {
+    return `Error: ask_question must be executed interactively.`;
+  },
+};
+
 export const allTools: Tool[] = [
   readTool,
+  askQuestionTool,
   writeTool,
   editTool,
   bashTool,

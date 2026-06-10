@@ -85,6 +85,11 @@ if (process.stdin.isTTY) {
     async (toolCall, description) => {
       console.log(`\n⚠ Auto-approving permission in non-TTY: ${description}`);
       return true;
+    },
+    async (question, options) => {
+      console.log(`\n❓ Question in non-TTY: ${question}`);
+      console.log(`Auto-selecting first option: "${options[0]}"`);
+      return options[0];
     }
   );
 
