@@ -117,10 +117,46 @@ const writeTool: Tool = {
   },
 };
 
+// Helper to normalize content for matching by converting CRLF to LF and trimming line spaces
+export function normalizeForMatching(str: string): string {
+  return str
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map(line => line.trimEnd())
+    .join("\n");
+}
+
+// Helper to check syntax error in file if typescript or project configurations allow it
+async function verifySyntax(filePath: string): Promise<string | null> {
+  const ext = path.extname(filePath);
+  if (ext === ".ts" || ext === ".tsx" || ext === ".js" || ext === ".jsx") {
+    try {
+      const code = await fs.readFile(filePath, "utf-8");
+      // Basic check: matching braces / brackets
+      const stack: string[] = [];
+      const pairs: Record<string, string> = { "}": "{", ")": "(", "]": "[" };
+      for (let i = 0; i < code.length; i++) {
+        const c = code[i];
+        if (c === "{" || c === "(" || c === "[") {
+          stack.push(c);
+        } else if (c === "}" || c === ")" || c === "]") {
+          if (stack.length === 0 || stack[stack.length - 1] !== pairs[c]) {
+            return `Syntax check failed: Unmatched bracket/brace "${c}" near character ${i}`;
+          }
+          stack.pop();
+        }
+      }
+    } catch {
+      // Ignored
+    }
+  }
+  return null;
+}
+
 const editTool: Tool = {
   name: "edit",
   description:
-    "Edit a file by replacing an exact string match. Use read first to see content.",
+    "Edit a file by replacing an exact string match (CRLF/LF and trailing whitespace tolerant). Use read first to see content.",
   parameters: {
     type: "object",
     properties: {
@@ -156,48 +192,117 @@ const editTool: Tool = {
       const startLine = args.startLine ? Math.max(1, args.startLine as number) : undefined;
       const endLine = args.endLine ? args.endLine as number : undefined;
 
+      const normContent = normalizeForMatching(content);
+      const normOldStr = normalizeForMatching(oldStr);
+
       let updated: string;
       if (startLine !== undefined || endLine !== undefined) {
-        const lines = content.split("\n");
+        const lines = content.split(/\r?\n/);
+        const normLines = normContent.split("\n");
         const startIdx = startLine !== undefined ? startLine - 1 : 0;
         const endIdx = endLine !== undefined ? Math.min(lines.length, endLine) : lines.length;
 
-        const targetSubContent = lines.slice(startIdx, endIdx).join("\n");
-        if (!targetSubContent.includes(oldStr)) {
-          return `Error: oldString not found within lines ${startLine || 1} to ${endLine || lines.length} of ${filePath}`;
+        const targetSubNormContent = normLines.slice(startIdx, endIdx).join("\n");
+        if (!targetSubNormContent.includes(normOldStr)) {
+          return `Error: oldString not found within lines ${startLine || 1} to ${endLine || lines.length} of ${filePath} (matching normalized content)`;
         }
-        const count = targetSubContent.split(oldStr).length - 1;
+        const count = targetSubNormContent.split(normOldStr).length - 1;
         if (count > 1) {
           return `Error: Found ${count} matches for oldString in the specified line range. Provide more context or a narrower range.`;
         }
 
-        const replacedSubContent = targetSubContent.replace(oldStr, newStr);
-        const beforeLines = lines.slice(0, startIdx);
-        const afterLines = lines.slice(endIdx);
+        // Map normalized coordinates back to actual string
+        // To replace accurately in original content: find position in normContent slice, and map start/end
+        const subContentStartOffset = normLines.slice(0, startIdx).join("\n").length + (startIdx > 0 ? 1 : 0);
+        const matchIndexInNorm = normContent.indexOf(normOldStr, subContentStartOffset);
         
-        const joinedParts = [];
-        if (beforeLines.length > 0) {
-          joinedParts.push(beforeLines.join("\n"));
-        }
-        joinedParts.push(replacedSubContent);
-        if (afterLines.length > 0) {
-          joinedParts.push(afterLines.join("\n"));
-        }
-        updated = joinedParts.join("\n");
-      } else {
-        if (!content.includes(oldStr)) {
-          return `Error: oldString not found in ${filePath}`;
+        // Let's do a reliable replacement by joining original lines
+        const sliceText = lines.slice(startIdx, endIdx).join("\n");
+        const normSliceText = normalizeForMatching(sliceText);
+        const matchIdx = normSliceText.indexOf(normOldStr);
+        
+        // We'll perform a replacement preserving surrounding whitespace of the match area if possible
+        // Or simply replace the entire slice line segment by matching the target lines.
+        // For absolute robustness, let's substitute the matching range lines directly:
+        // We locate the exact characters to replace in the original string using normalized index tracking
+        let normCharIdx = 0;
+        let origCharIdx = 0;
+        let matchOrigStart = -1;
+        let matchOrigEnd = -1;
+
+        while (origCharIdx < content.length && normCharIdx < normContent.length) {
+          if (normCharIdx === matchIndexInNorm) {
+            matchOrigStart = origCharIdx;
+          }
+          if (normCharIdx === matchIndexInNorm + normOldStr.length) {
+            matchOrigEnd = origCharIdx;
+            break;
+          }
+          const cOrig = content[origCharIdx];
+          const cNorm = normContent[normCharIdx];
+          
+          if (cOrig === "\r") {
+            origCharIdx++;
+            continue;
+          }
+          origCharIdx++;
+          normCharIdx++;
         }
 
-        const count = content.split(oldStr).length - 1;
+        if (matchOrigStart === -1 || matchOrigEnd === -1) {
+          // Fallback if index mapping failed
+          updated = content.replace(oldStr, newStr);
+        } else {
+          updated = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
+        }
+      } else {
+        if (!normContent.includes(normOldStr)) {
+          return `Error: oldString not found in ${filePath} (matching normalized content)`;
+        }
+
+        const count = normContent.split(normOldStr).length - 1;
         if (count > 1) {
           return `Error: Found ${count} matches for oldString. Provide more context to make it unique, or specify startLine/endLine.`;
         }
 
-        updated = content.replace(oldStr, newStr);
+        const matchIndexInNorm = normContent.indexOf(normOldStr);
+        let normCharIdx = 0;
+        let origCharIdx = 0;
+        let matchOrigStart = -1;
+        let matchOrigEnd = -1;
+
+        while (origCharIdx < content.length && normCharIdx < normContent.length) {
+          if (normCharIdx === matchIndexInNorm) {
+            matchOrigStart = origCharIdx;
+          }
+          if (normCharIdx === matchIndexInNorm + normOldStr.length) {
+            matchOrigEnd = origCharIdx;
+            break;
+          }
+          const cOrig = content[origCharIdx];
+          
+          if (cOrig === "\r") {
+            origCharIdx++;
+            continue;
+          }
+          origCharIdx++;
+          normCharIdx++;
+        }
+
+        if (matchOrigStart === -1 || matchOrigEnd === -1) {
+          updated = content.replace(oldStr, newStr);
+        } else {
+          updated = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
+        }
       }
 
       await fs.writeFile(filePath, updated, "utf-8");
+      
+      const syntaxError = await verifySyntax(filePath);
+      if (syntaxError) {
+        return `Warning: ${syntaxError}. Changes applied to file: ${filePath}`;
+      }
+
       return `File edited: ${filePath}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -205,6 +310,34 @@ const editTool: Tool = {
     }
   },
 };
+
+// Helper to truncate large output if it exceeds a specified limit (to save tokens)
+function truncateOutput(output: string, maxLines = 100): string {
+  const lines = output.split(/\r?\n/);
+  if (lines.length > maxLines) {
+    return lines.slice(0, maxLines).join("\n") + `\n\n... (output truncated, showing ${maxLines} of ${lines.length} lines)`;
+  }
+  return output;
+}
+
+// Helper to detect if process stdout suggests an interactive input prompt
+function detectInteractivePrompt(text: string): string | null {
+  const patterns = [
+    /\[y\/n\]/i,
+    /\(y\/n\)/i,
+    /confirm\?/i,
+    /proceed\?/i,
+    /enter\s+password/i,
+    /api\s+key/i,
+    /select\s+an\s+option/i
+  ];
+  for (const pattern of patterns) {
+    if (pattern.test(text)) {
+      return `Warning: Interactive prompt detected ("${text.trim().slice(-30)}"). The command may hang. Use run_background and manage_task 'send_input' to interact.`;
+    }
+  }
+  return null;
+}
 
 const bashTool: Tool = {
   name: "bash",
@@ -219,14 +352,14 @@ const bashTool: Tool = {
       },
       timeout: {
         type: "number",
-        description: "Timeout in ms (default 120000)",
+        description: "Timeout in ms (default 600000)",
       },
     },
     required: ["command"],
   },
   async execute(args, cwd, signal) {
     let command = args.command as string;
-    const timeout = (args.timeout as number) || 120000;
+    const timeout = (args.timeout as number) || 600000;
     const isWin = process.platform === "win32";
     if (isWin) {
       command = formatCommandForPowerShell(command);
@@ -243,13 +376,25 @@ const bashTool: Tool = {
         cancelSignal: signal,
       });
 
+      let interactiveWarning: string | null = null;
       proc.all?.on("data", (data) => {
-        appendActiveToolOutput(data.toString());
+        const text = data.toString();
+        appendActiveToolOutput(text);
+        const warning = detectInteractivePrompt(text);
+        if (warning) {
+          interactiveWarning = warning;
+        }
       });
 
       const result = await proc;
       clearActiveToolOutput();
-      const output = (result.all || result.stdout || "").trim();
+      let output = (result.all || result.stdout || "").trim();
+      output = truncateOutput(output);
+      
+      if (interactiveWarning) {
+        output = `${interactiveWarning}\n\n${output}`;
+      }
+
       if (result.exitCode !== 0) {
         return `Exit code: ${result.exitCode}\n${output}`;
       }
@@ -806,7 +951,7 @@ const replaceFileContentTool: Tool = {
 
     try {
       const content = await fs.readFile(filePath, "utf-8");
-      const lines = content.split("\n");
+      const lines = content.split(/\r?\n/);
       
       if (startLine < 1 || startLine > lines.length || endLine < startLine || endLine > lines.length) {
         return `Error: Invalid line range [${startLine}, ${endLine}]. File has ${lines.length} lines.`;
@@ -814,19 +959,59 @@ const replaceFileContentTool: Tool = {
 
       const sliceOfLines = lines.slice(startLine - 1, endLine);
       const sliceText = sliceOfLines.join("\n");
+      const normSliceText = normalizeForMatching(sliceText);
+      const normTargetContent = normalizeForMatching(targetContent);
 
-      if (!sliceText.includes(targetContent)) {
-        return `Error: targetContent not found in specified line range [${startLine}, ${endLine}].`;
+      if (!normSliceText.includes(normTargetContent)) {
+        return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] (matching normalized content).`;
       }
 
-      const replacedSlice = sliceText.replace(targetContent, replacementContent);
+      // Find match and map index to preserve CRLF / LF line endings
+      const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
+      let normCharIdx = 0;
+      let origCharIdx = 0;
+      let matchOrigStart = -1;
+      let matchOrigEnd = -1;
+
+      while (origCharIdx < sliceText.length && normCharIdx < normSliceText.length) {
+        if (normCharIdx === matchIndexInNorm) {
+          matchOrigStart = origCharIdx;
+        }
+        if (normCharIdx === matchIndexInNorm + normTargetContent.length) {
+          matchOrigEnd = origCharIdx;
+          break;
+        }
+        const cOrig = sliceText[origCharIdx];
+        if (cOrig === "\r") {
+          origCharIdx++;
+          continue;
+        }
+        origCharIdx++;
+        normCharIdx++;
+      }
+
+      let replacedSlice: string;
+      if (matchOrigStart === -1 || matchOrigEnd === -1) {
+        replacedSlice = sliceText.replace(targetContent, replacementContent);
+      } else {
+        replacedSlice = sliceText.slice(0, matchOrigStart) + replacementContent + sliceText.slice(matchOrigEnd);
+      }
+
       const newLines = [
         ...lines.slice(0, startLine - 1),
         replacedSlice,
         ...lines.slice(endLine),
       ];
 
-      await fs.writeFile(filePath, newLines.join("\n"), "utf-8");
+      // Match the default line endings of the file
+      const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
+      await fs.writeFile(filePath, newLines.join(originalEnding), "utf-8");
+
+      const syntaxError = await verifySyntax(filePath);
+      if (syntaxError) {
+        return `Warning: ${syntaxError}. File updated: ${filePath}`;
+      }
+
       return `File updated successfully: ${filePath}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -954,13 +1139,25 @@ const runCommandTool: Tool = {
         cancelSignal: signal,
       });
 
+      let interactiveWarning: string | null = null;
       proc.all?.on("data", (data) => {
-        appendActiveToolOutput(data.toString());
+        const text = data.toString();
+        appendActiveToolOutput(text);
+        const warning = detectInteractivePrompt(text);
+        if (warning) {
+          interactiveWarning = warning;
+        }
       });
 
       const result = await proc;
       clearActiveToolOutput();
-      return (result.all || result.stdout || "").trim() || "(no output)";
+      let output = (result.all || result.stdout || "").trim();
+      output = truncateOutput(output);
+
+      if (interactiveWarning) {
+        output = `${interactiveWarning}\n\n${output}`;
+      }
+      return output || "(no output)";
     } catch (err: unknown) {
       clearActiveToolOutput();
       const message = err instanceof Error ? err.message : String(err);
@@ -1536,6 +1733,187 @@ const askQuestionTool: Tool = {
   },
 };
 
+const applyPatchTool: Tool = {
+  name: "apply_patch",
+  description: "Apply a unified diff or patch pattern to modify a file.",
+  parameters: {
+    type: "object",
+    properties: {
+      filePath: {
+        type: "string",
+        description: "Path to the file to patch",
+      },
+      patchContent: {
+        type: "string",
+        description: "Unified diff or search-replace format block",
+      },
+    },
+    required: ["filePath", "patchContent"],
+  },
+  async execute(args, cwd, signal) {
+    const filePath = path.resolve(cwd, args.filePath as string);
+    const patchContent = args.patchContent as string;
+    try {
+      let content = await fs.readFile(filePath, "utf-8");
+      // Basic search-replace parsing for unified-like chunks if we don't have standard patch libs
+      // Parse search & replace blocks: e.g. looking for <<<, ===, >>> or standard unified hunk headers
+      const lines = patchContent.split(/\r?\n/);
+      let targetLines: string[] = [];
+      let replacementLines: string[] = [];
+      let mode: "search" | "replace" | "idle" = "idle";
+
+      for (const line of lines) {
+        if (line.startsWith("<<<<<<<")) {
+          mode = "search";
+          targetLines = [];
+        } else if (line.startsWith("=======")) {
+          mode = "replace";
+          replacementLines = [];
+        } else if (line.startsWith(">>>>>>>")) {
+          mode = "idle";
+          const oldStr = targetLines.join("\n");
+          const newStr = replacementLines.join("\n");
+          const normContent = normalizeForMatching(content);
+          const normOldStr = normalizeForMatching(oldStr);
+          if (normContent.includes(normOldStr)) {
+            const matchIndexInNorm = normContent.indexOf(normOldStr);
+            let normCharIdx = 0;
+            let origCharIdx = 0;
+            let matchOrigStart = -1;
+            let matchOrigEnd = -1;
+            while (origCharIdx < content.length && normCharIdx < normContent.length) {
+              if (normCharIdx === matchIndexInNorm) {
+                matchOrigStart = origCharIdx;
+              }
+              if (normCharIdx === matchIndexInNorm + normOldStr.length) {
+                matchOrigEnd = origCharIdx;
+                break;
+              }
+              const cOrig = content[origCharIdx];
+              if (cOrig === "\r") {
+                origCharIdx++;
+                continue;
+              }
+              origCharIdx++;
+              normCharIdx++;
+            }
+            if (matchOrigStart !== -1 && matchOrigEnd !== -1) {
+              content = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
+            } else {
+              content = content.replace(oldStr, newStr);
+            }
+          } else {
+            return `Error: Patch search block not found in target file: ${filePath}`;
+          }
+        } else {
+          if (mode === "search") {
+            targetLines.push(line);
+          } else if (mode === "replace") {
+            replacementLines.push(line);
+          }
+        }
+      }
+
+      await fs.writeFile(filePath, content, "utf-8");
+      const syntaxError = await verifySyntax(filePath);
+      if (syntaxError) {
+        return `Warning: ${syntaxError}. Applied patch to file: ${filePath}`;
+      }
+      return `Patch applied successfully to ${filePath}`;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return `Error applying patch: ${message}`;
+    }
+  },
+};
+
+const gitActionTool: Tool = {
+  name: "git_action",
+  description: "Execute a structured Git action (status, log, diff, commit).",
+  parameters: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        enum: ["status", "diff", "commit", "log"],
+        description: "The git action to perform",
+      },
+      message: {
+        type: "string",
+        description: "Commit message (required for commit)",
+      },
+      limit: {
+        type: "number",
+        description: "Max commit log entries (default 5)",
+      },
+    },
+    required: ["action"],
+  },
+  async execute(args, cwd, signal) {
+    const action = args.action as string;
+    try {
+      if (action === "status") {
+        const { stdout } = await execa("git", ["status", "--porcelain"], { cwd, cancelSignal: signal });
+        return stdout || "Clean working tree.";
+      }
+      if (action === "diff") {
+        const { stdout } = await execa("git", ["diff"], { cwd, cancelSignal: signal });
+        return truncateOutput(stdout, 120) || "No unstaged changes.";
+      }
+      if (action === "commit") {
+        const message = args.message as string;
+        if (!message) return "Error: Commit message is required.";
+        await execa("git", ["add", "-A"], { cwd, cancelSignal: signal });
+        const { stdout } = await execa("git", ["commit", "-m", message], { cwd, cancelSignal: signal });
+        return stdout;
+      }
+      if (action === "log") {
+        const limit = (args.limit as number) || 5;
+        const { stdout } = await execa("git", ["log", `-${limit}`, "--oneline"], { cwd, cancelSignal: signal });
+        return stdout;
+      }
+      return "Unknown git action.";
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return `Git action error: ${message}`;
+    }
+  },
+};
+
+const screenshotTool: Tool = {
+  name: "screenshot",
+  description: "Capture current desktop screenshot to debug visual compose UI.",
+  parameters: {
+    type: "object",
+    properties: {},
+  },
+  async execute(args, cwd, signal) {
+    const isWin = process.platform === "win32";
+    if (!isWin) {
+      return "Screenshot tool is only supported on Windows in this execution context.";
+    }
+    const outputPath = path.resolve(cwd, `screenshot_${Date.now()}.png`);
+    try {
+      // Execute Powershell script to grab screen screenshot using System.Drawing
+      const psCommand = `
+        Add-Type -AssemblyName System.Windows.Forms,System.Drawing;
+        $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds;
+        $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height;
+        $graphics = [System.Drawing.Graphics]::FromImage($bmp);
+        $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size);
+        $bmp.Save('${outputPath.replace(/\\/g, "\\\\")}');
+        $graphics.Dispose();
+        $bmp.Dispose();
+      `.replace(/\n/s, " ");
+      await execa("powershell.exe", ["-Command", psCommand], { cancelSignal: signal });
+      return `Screenshot successfully captured: ${outputPath}`;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return `Failed to capture screenshot: ${message}`;
+    }
+  },
+};
+
 export const allTools: Tool[] = [
   readTool,
   askQuestionTool,
@@ -1560,6 +1938,9 @@ export const allTools: Tool[] = [
   invokeSubagentTool,
   sendMessageTool,
   manageSubagentsTool,
+  applyPatchTool,
+  gitActionTool,
+  screenshotTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {

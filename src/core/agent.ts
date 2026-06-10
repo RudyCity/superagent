@@ -144,6 +144,17 @@ export class Agent {
 
     const baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt;
 
+    // Load scratchpad content if it exists
+    let scratchpadText = "";
+    try {
+      const scratchpadPath = path.resolve(this.config.workingDirectory, "scratch", "scratchpad.md");
+      if (fs.existsSync(scratchpadPath)) {
+        scratchpadText = fs.readFileSync(scratchpadPath, "utf-8");
+      }
+    } catch {
+      // Ignored
+    }
+
     for (let i = 0; i < maxIterations; i++) {
       await this.compactHistoryIfNeeded();
       const messages = this.buildMessages();
@@ -157,7 +168,8 @@ CRITICAL TASK EXECUTION CONTEXT:
 - Current Step: ${currentStep} of ${maxIterations}.
 - Be highly efficient. If the task is complex, requires multiple steps, or involves extensive research/coding across different components, DO NOT try to do everything in a single sequential thread.
 - Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'explorer', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
-- Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.`;
+- Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.
+${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}`;
 
       let textContent = "";
       const toolCalls: ToolCall[] = [];

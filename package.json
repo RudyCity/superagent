@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.1.20",
+  "version": "1.1.21",
   "description": "Interactive CLI coding agent - like Claude Code",
   "type": "module",
   "bin": {
@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "tsx src/cli.tsx",
     "build": "tsc",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
@@ -26,6 +27,7 @@
     "@types/node": "^22.15.2",
     "@types/react": "^18.3.20",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.8"
   }
 }

@@ -12,6 +12,10 @@ Superagent is an interactive, terminal-based AI coding assistant designed to hel
 - **Permissions Control**: Prompts users before running system commands or reading/writing files, ensuring execution safety.
 - **Resumable Sessions**: Automatically resumes previous sessions using the `--resume` or `-r` flags.
 - **Structured Planning Mode**: For complex changes, Superagent drafts an `implementation_plan.md` in the workspace root, requiring user approval before modifying code.
+- **Robust String Matching**: File-editing tools normalize whitespace and line endings to make search-and-replace modifications extremely robust.
+- **Structured Patching (`apply_patch`)**: Supports applying standard unified search-and-replace/diff patches safely.
+- **Built-in Git & Visual Helpers**: Real-time git status/diff/commit integration and desktop screenshot capturing on Windows (`screenshot`) for remote visual debugging.
+- **Interactive Prompt Detection**: Detects if standard system commands attempt to trigger an interactive prompt, providing clear warning notices.
 
 ---
 
@@ -78,6 +82,12 @@ npm run build
 Once built, run the application using:
 ```bash
 npm start
+```
+
+### Running Unit Tests
+Superagent features a Vitest-based test suite for verifying config, conversations, tool helpers, and file operations:
+```bash
+npm test
 ```
 
 ---

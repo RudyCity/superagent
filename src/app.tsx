@@ -54,7 +54,7 @@ export function App({
   const [tokensUp, setTokensUp] = useState(0);
   const [tokensDown, setTokensDown] = useState(0);
   const [lastPromptTokens, setLastPromptTokens] = useState(0);
-  const [contextLimit, setContextLimit] = useState(128000);
+  const [contextLimit, setContextLimit] = useState(256000);
   const streamBufferRef = useRef("");
   const lastStreamUpdateRef = useRef<number>(0);
   const streamTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -77,6 +77,9 @@ export function App({
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
   const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
   const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
+  const addLine = useCallback((line: ChatLine) => {
+    setLines((prev) => [...prev, line]);
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -97,16 +100,24 @@ export function App({
       setRunningSubagentsCount(
         Array.from(subagentInstances.values()).filter((s) => s.status === "running").length
       );
+      // Push notifications: Log completed subagents directly to context lines
+      const activeList = Array.from(subagentInstances.values());
+      activeList.forEach((inst) => {
+        if (inst.status === "completed" && inst.result && !(inst as any).notified) {
+          (inst as any).notified = true;
+          addLine({
+            type: "system",
+            content: `🤖 [SUBAGENT NOTIFICATION]: Subagent ${inst.id} (${inst.role}) has completed!\nReport Summary:\n${inst.result}`,
+            timestamp: Date.now()
+          });
+        }
+      });
     });
     setRunningTasksCount(backgroundTasks.size);
     setRunningSubagentsCount(
       Array.from(subagentInstances.values()).filter((s) => s.status === "running").length
     );
-    return () => {
-      unsubTasks();
-      unsubSubagents();
-    };
-  }, []);
+  }, [addLine]);
 
   const [activeToolOutput, setActiveToolOutput] = useState("");
   useEffect(() => {
@@ -165,10 +176,6 @@ export function App({
     }
   }, []);
 
-  const addLine = useCallback((line: ChatLine) => {
-    setLines((prev) => [...prev, line]);
-  }, []);
-
   const flushBuffer = useCallback(() => {
     if (streamTimeoutRef.current) {
       clearTimeout(streamTimeoutRef.current);
@@ -205,12 +212,14 @@ export function App({
   const questionHandler: QuestionHandler = useCallback(
     (question: string, options: string[]) => {
       return new Promise<string>((resolve) => {
-        setPendingQuestion({ question, options, resolve });
-        setWizardOptions(options);
+        const hasOptions = Array.isArray(options) && options.length > 0;
+        const allOptions = hasOptions ? [...options, "Custom..."] : [];
+        setPendingQuestion({ question, options: allOptions, resolve });
+        setWizardOptions(allOptions);
         setWizardSelectedIndex(0);
         setActiveWizard({
           type: "question",
-          step: 1,
+          step: hasOptions ? 1 : 2,
           data: { question },
         });
       });
@@ -806,6 +815,19 @@ export function App({
       setActiveWizard(null);
       setWizardOptions([]);
       setWizardSelectedIndex(0);
+    } else if (activeWizard.type === "question") {
+      if (pendingQuestion) {
+        pendingQuestion.resolve(value);
+        addLine({
+          type: "system",
+          content: `❓ Answered: "${value}"`,
+          timestamp: now,
+        });
+        setPendingQuestion(null);
+      }
+      setActiveWizard(null);
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
     }
   }, [activeWizard, addLine, setContextLimit, setPlanState]);
 
@@ -1284,6 +1306,17 @@ export function App({
         if (key.return) {
           const selectedOption = wizardOptions[wizardSelectedIndex];
           if (pendingQuestion) {
+            if (selectedOption === "Custom...") {
+              setActiveWizard({
+                type: "question",
+                step: 2,
+                data: { question: pendingQuestion.question },
+              });
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+              setInput("");
+              return;
+            }
             pendingQuestion.resolve(selectedOption);
             addLine({
               type: "system",
@@ -1440,6 +1473,10 @@ export function App({
       return wizardOptions.length > 0
         ? "🔍 Search models (type to filter, arrows to navigate, Enter to select)..."
         : "Enter model name (e.g. google/gemini-2.5-flash)...";
+    }
+    if (activeWizard.type === "question") {
+      if (activeWizard.step === 2) return "Type custom answer and press Enter...";
+      return "Select option using arrows and Enter, or choose Custom...";
     }
     return "Enter value...";
   };
@@ -1697,9 +1734,9 @@ export function App({
               />
             )}
 
-            {activeWizard && activeWizard.type === "question" && wizardOptions.length > 0 && pendingQuestion && (
+            {activeWizard && activeWizard.type === "question" && pendingQuestion && (
               <WizardDialog
-                title="❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):"
+                title={activeWizard.step === 2 ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):" : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):"}
                 description={pendingQuestion.question}
                 borderColor="cyan"
                 options={wizardOptions}

@@ -274,7 +274,7 @@ export function getContextWindowLimit(model: string): number {
   if (m.includes("gpt-4o") || m.includes("gpt-4-turbo") || m.includes("gpt-4")) return 128000;
   if (m.includes("o1") || m.includes("o3")) return 200000;
   // Default fallback
-  return 128000;
+  return 256000;
 }
 
 export function updateEnvFile(updates: Record<string, string>): string {
