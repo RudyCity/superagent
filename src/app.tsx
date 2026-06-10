@@ -915,7 +915,7 @@ export function App({
           setWizardOptions,
           setWizardSelectedIndex,
           setPlanState,
-          setGoalMode,
+          setGoalMode: (val: { goal: string; startedAt: number } | null) => setGoalMode(val),
           setIsProcessing,
           resumeSession: async () => {
             if (!agentRef.current) return;
@@ -2982,7 +2982,7 @@ function handleSlashCommand(
         content: [
           "Commands:",
           "  /new      - Start new session (clear history & screen)",
-          "  /resume   - Resume last conversation session from history",
+          "  /resume   - Resume a conversation session from history via wizard dialog",
           "  /clear    - Clear conversation history",
           "  /compact  - Show conversation summary",
           "  /goal     - Activate Goal Mode for long-running overnight tasks",

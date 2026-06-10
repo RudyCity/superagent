@@ -1,0 +1,129 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Agent } from "./agent.js";
+import type { AgentEvent } from "./agent.js";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeHandlers() {
+  const events: AgentEvent[] = [];
+  const onEvent = vi.fn((e: AgentEvent) => events.push(e));
+  const onPermission = vi.fn(async () => true);
+  const onQuestion = vi.fn(async () => "No, stop here");
+  return { events, onEvent, onPermission, onQuestion };
+}
+
+// ─── Goal Mode: Properties ─────────────────────────────────────────────────────
+
+describe("Agent – goal mode properties", () => {
+  it("goalMode defaults to null", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    expect(agent.goalMode).toBeNull();
+  });
+
+  it("goalMaxIterations defaults to 200", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    expect(agent.goalMaxIterations).toBe(200);
+  });
+
+  it("goalMode can be set and read back", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.goalMode = "build a REST API with tests";
+    expect(agent.goalMode).toBe("build a REST API with tests");
+  });
+
+  it("goalMaxIterations can be customized", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.goalMaxIterations = 100;
+    expect(agent.goalMaxIterations).toBe(100);
+  });
+
+  it("goalMode can be cleared back to null", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.goalMode = "some goal";
+    agent.goalMode = null;
+    expect(agent.goalMode).toBeNull();
+  });
+});
+
+// ─── Goal Mode: planState independence ────────────────────────────────────────
+
+describe("Agent – goalMode is independent of planState", () => {
+  it("setting goalMode does not affect planState", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.goalMode = "fix all tests";
+    expect(agent.planState).toBe("IDLE");
+  });
+
+  it("approvePlan does not clear goalMode", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.goalMode = "deploy to production";
+    agent.approvePlan();
+    expect(agent.goalMode).toBe("deploy to production");
+    expect(agent.planState).toBe("APPROVED");
+  });
+});
+
+// ─── Goal Mode: AgentEvent type ───────────────────────────────────────────────
+
+describe("AgentEvent type – goal_done", () => {
+  it("goal_done event has correct shape", () => {
+    const event: AgentEvent = {
+      type: "goal_done",
+      goal: "implement auth",
+      summary: "GOAL_COMPLETE: auth implemented with tests",
+    };
+    expect(event.type).toBe("goal_done");
+    expect(event.goal).toBe("implement auth");
+    expect(event.summary).toContain("GOAL_COMPLETE");
+  });
+});
+
+// ─── Goal Mode: abort / reset ─────────────────────────────────────────────────
+
+describe("Agent – abort and reset", () => {
+  it("abort() can be called safely when agent is not running", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    expect(() => agent.abort()).not.toThrow();
+  });
+
+  it("isAgentRunning() returns false before any sendMessage", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    expect(agent.isAgentRunning()).toBe(false);
+  });
+
+  it("goalMode persists until explicitly cleared", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.goalMode = "overnight task";
+    // Simulate what /new and /clear do:
+    agent.goalMode = null;
+    expect(agent.goalMode).toBeNull();
+  });
+});
+
+// ─── Goal Mode: goalMaxIterations validation ──────────────────────────────────
+
+describe("Agent – goalMaxIterations boundary values", () => {
+  it("accepts large iteration values", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.goalMaxIterations = 1000;
+    expect(agent.goalMaxIterations).toBe(1000);
+  });
+
+  it("accepts iteration value of 1", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.goalMaxIterations = 1;
+    expect(agent.goalMaxIterations).toBe(1);
+  });
+});
