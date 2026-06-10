@@ -61,7 +61,8 @@ export function App({
   const [tempInput, setTempInput] = useState("");
   const agentRef = useRef<Agent | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
-  const [triggerUpdate, setTriggerUpdate] = useState(0);
+  const [runningTasksCount, setRunningTasksCount] = useState(0);
+  const [runningSubagentsCount, setRunningSubagentsCount] = useState(0);
   const [activeWizard, setActiveWizard] = useState<{
     type: "login" | "model" | "plan_approve" | "permission" | "question";
     step: number;
@@ -88,11 +89,17 @@ export function App({
 
   useEffect(() => {
     const unsubTasks = subscribeToTasks(() => {
-      setTriggerUpdate((prev) => prev + 1);
+      setRunningTasksCount(backgroundTasks.size);
     });
     const unsubSubagents = subscribeToSubagents(() => {
-      setTriggerUpdate((prev) => prev + 1);
+      setRunningSubagentsCount(
+        Array.from(subagentInstances.values()).filter((s) => s.status === "running").length
+      );
     });
+    setRunningTasksCount(backgroundTasks.size);
+    setRunningSubagentsCount(
+      Array.from(subagentInstances.values()).filter((s) => s.status === "running").length
+    );
     return () => {
       unsubTasks();
       unsubSubagents();
@@ -208,7 +215,7 @@ export function App({
         case "text":
           streamBufferRef.current += event.content;
           const now = Date.now();
-          if (now - lastStreamUpdateRef.current > 20) {
+          if (now - lastStreamUpdateRef.current > 100) {
             setStreamDisplay(streamBufferRef.current);
             lastStreamUpdateRef.current = now;
             if (streamTimeoutRef.current) {
@@ -221,7 +228,7 @@ export function App({
                 setStreamDisplay(streamBufferRef.current);
                 lastStreamUpdateRef.current = Date.now();
                 streamTimeoutRef.current = null;
-              }, 20);
+              }, 100);
             }
           }
           break;
@@ -1103,6 +1110,23 @@ export function App({
     }
   }
 
+  let liveListHeight = 0;
+  if (runningSubagentsCount > 0 || runningTasksCount > 0) {
+    liveListHeight += 1; // padding/margin
+    if (runningSubagentsCount > 0) {
+      liveListHeight += 1; // header
+      liveListHeight += runningSubagentsCount * 2; // Each subagent takes 2 lines
+    }
+    if (runningTasksCount > 0) {
+      liveListHeight += 1; // header
+      liveListHeight += runningTasksCount; // Each task is 1 line
+      if (runningSubagentsCount > 0) {
+        liveListHeight += 1; // marginTop
+      }
+    }
+  }
+  chromeHeight += liveListHeight;
+
   // Calculate available height for messages with a safety buffer to prevent terminal scrolling/duplicated headers
   const chatHeightLimit = Math.max(5, terminalHeight - chromeHeight - 4);
 
@@ -1301,6 +1325,40 @@ export function App({
         </Box>
       </Box>
 
+      {/* Active Subagents & Tasks Live List */}
+      {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
+        <Box flexDirection="column" paddingX={2} marginTop={1}>
+          {runningSubagentsCount > 0 && (
+            <Box flexDirection="column">
+              <Text color="yellow" bold>🤖 ACTIVE SUBAGENTS:</Text>
+              {Array.from(subagentInstances.values())
+                .filter((s) => s.status === "running")
+                .map((inst) => (
+                  <Box key={inst.id} flexDirection="column">
+                    <Text color="yellow">
+                      ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
+                    </Text>
+                    <Text color="yellow">
+                      │  └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
+                    </Text>
+                  </Box>
+                ))}
+            </Box>
+          )}
+          {runningTasksCount > 0 && (
+            <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
+              <Text color="cyan" bold>⚙️ ACTIVE TASKS:</Text>
+              {Array.from(backgroundTasks.entries())
+                .map(([id, task]) => (
+                  <Text key={id} color="cyan">
+                    ├─ [{id}] Command: {task.command}
+                  </Text>
+                ))}
+            </Box>
+          )}
+        </Box>
+      )}
+
       {/* Status bar */}
       <Box flexDirection="column" paddingX={1} marginTop={1}>
         <Box justifyContent="space-between" paddingX={0}>
@@ -1309,9 +1367,9 @@ export function App({
             <Text color="gray"> │ </Text>
             <Text color="white">MSGS: {messageCount}</Text>
             <Text color="gray"> │ </Text>
-            <Text color="cyan" bold>TASKS: {backgroundTasks.size}</Text>
+            <Text color="cyan" bold>TASKS: {runningTasksCount}</Text>
             <Text color="gray"> │ </Text>
-            <Text color="yellow" bold>SUBAGENTS: {Array.from(subagentInstances.values()).filter(s => s.status === "running").length}</Text>
+            <Text color="yellow" bold>SUBAGENTS: {runningSubagentsCount}</Text>
             <Text color="gray"> │ </Text>
             <Text color="yellow" bold>↑ UP: {formatCompactNumber(tokensUp)}</Text>
             <Text color="gray"> │ </Text>
@@ -1916,18 +1974,24 @@ function handleSlashCommand(
         "┌───[ 🤖 ACTIVE SUBAGENTS & TYPES ]",
         "│ ",
         "│ [DEFINED TYPES]",
-        "│  • researcher : codebase research & context gathering",
-        "│  • coder      : code writing & editing",
-        "│  • reviewer   : debugging, review & testing",
+        "│  ├─ researcher : codebase research & context gathering",
+        "│  ├─ explorer   : codebase structure, references, APIs, or resources exploration",
+        "│  ├─ coder      : code writing & editing",
+        "│  └─ reviewer   : debugging, review & testing",
         "│ ",
         "│ [ACTIVE INSTANCES]",
       ];
       if (activeList.length === 0) {
-        lines.push("│  None");
+        lines.push("│  └─ None");
       } else {
-        for (const [id, inst] of activeList) {
-          lines.push(`│  • ID: ${id} | Type: ${inst.typeName} | Role: ${inst.role} | Status: ${inst.status}`);
-        }
+        activeList.forEach(([id, inst], index) => {
+          const isLast = index === activeList.length - 1;
+          const branchChar = isLast ? "└─" : "├─";
+          lines.push(`│  ${branchChar} ID: ${id} (${inst.typeName})`);
+          const connectChar = isLast ? " " : "│";
+          lines.push(`│     ├─ Role: ${inst.role}`);
+          lines.push(`│     └─ Status: ${inst.status}`);
+        });
       }
       lines.push("└──────────────────────────────────────────────");
       ctx.addLine({
@@ -2068,6 +2132,26 @@ function handleSlashCommand(
         timestamp: now,
       });
   }
+}
+
+function getLatestSubagentAction(logs: string[]): string {
+  if (!logs || logs.length === 0) return "Initializing...";
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const raw = logs[i].trim();
+    if (raw) {
+      let clean = raw
+        .replace(/^.*?───\[\s*/, "")
+        .replace(/\s*\]$/, "")
+        .replace(/^[│┌├└─\s]+/, "")
+        .trim();
+      clean = clean.replace(/^Description:\s*/i, "");
+      clean = clean.replace(/^Args:\s*/i, "");
+      if (clean) {
+        return clean.length > 80 ? clean.slice(0, 80) + "..." : clean;
+      }
+    }
+  }
+  return "Processing...";
 }
 
 function truncateStreamDisplay(text: string, maxLines: number, width: number): string {

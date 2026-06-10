@@ -1115,6 +1115,12 @@ registerSubagentType(
 );
 
 registerSubagentType(
+  "explorer",
+  "Specialized in exploring codebase structure, finding required references, APIs, or resources requested by the main agent.",
+  "You are an explorer subagent. Your goal is to explore the codebase, APIs, documentation, or other resources to find references and details needed by the main agent. Focus on discovery, map out relationships, and report your findings clearly."
+);
+
+registerSubagentType(
   "coder",
   "Specialized in writing code, editing files, implementing features, and refactoring codebase files.",
   "You are a coding subagent. Your goal is to write, edit, and modify files in the codebase to implement requested features, fixes, or refactoring. Ensure you follow clean coding standards, preserve existing comments/formatting, and explain your changes clearly."
@@ -1192,17 +1198,68 @@ const invokeSubagentTool: Tool = {
     const subagentId = Math.random().toString(36).substring(2, 9);
 
     const logs: string[] = [];
+    let textBuffer = "";
+    let isFirstNode = true;
+
+    function flushTextBuffer() {
+      if (!textBuffer) return;
+      const cleanText = textBuffer.trim();
+      if (cleanText) {
+        const lines = cleanText.split("\n");
+        logs.push(`${isFirstNode ? "┌" : "├"}───[ ✦ COGNITIVE THINKING ]\n`);
+        isFirstNode = false;
+        for (const line of lines) {
+          logs.push(`│   ${line}\n`);
+        }
+        logs.push(`│\n`);
+      }
+      textBuffer = "";
+    }
+
+    function formatSubagentArgs(subArgs: Record<string, unknown>): string {
+      const entries = Object.entries(subArgs);
+      if (entries.length === 0) return "{}";
+      const parts = entries.map(([k, v]) => {
+        const val = typeof v === "string" ? v : JSON.stringify(v);
+        const truncated = val.length > 50 ? val.slice(0, 50) + "..." : val;
+        return `${k}: ${truncated}`;
+      });
+      return `{ ${parts.join(", ")} }`;
+    }
 
     const agentInstance = new Agent(
       (event) => {
         if (event.type === "text") {
-          logs.push(event.content);
+          textBuffer += event.content;
         } else if (event.type === "error") {
-          logs.push(`\nError: ${event.message}\n`);
+          flushTextBuffer();
+          logs.push(`${isFirstNode ? "┌" : "├"}───[ 🚨 ERROR ]\n`);
+          isFirstNode = false;
+          const lines = event.message.split("\n");
+          for (const line of lines) {
+            logs.push(`│   ${line}\n`);
+          }
+          logs.push(`│\n`);
         } else if (event.type === "tool_start") {
-          logs.push(`\n⚡ Tool started: ${event.description}\n`);
+          flushTextBuffer();
+          logs.push(`${isFirstNode ? "┌" : "├"}───[ ⚙️ TOOL CALL: ${event.toolCall.name} ]\n`);
+          isFirstNode = false;
+          logs.push(`│   Description: ${event.description}\n`);
+          const argLines = formatSubagentArgs(event.toolCall.args);
+          logs.push(`│   Args: ${argLines}\n`);
+          logs.push(`│\n`);
         } else if (event.type === "tool_end") {
-          logs.push(`\n✓ Tool ended: ${event.description}\n`);
+          flushTextBuffer();
+          const r = event.toolResult;
+          const status = r.isError ? "🔴 FAILED" : "🟢 SUCCESS";
+          logs.push(`│   └───[ ${status} ]\n`);
+          const resultStr = typeof r.result === "string" ? r.result : JSON.stringify(r.result);
+          const truncated = resultStr.slice(0, 200) + (resultStr.length > 200 ? "..." : "");
+          const resultLines = truncated.split("\n");
+          for (const line of resultLines) {
+            logs.push(`│       ${line}\n`);
+          }
+          logs.push(`│\n`);
         }
       },
       async (toolCall, desc) => {
@@ -1227,9 +1284,13 @@ const invokeSubagentTool: Tool = {
     notifySubagentsChanged();
 
     agentInstance.sendMessage(prompt).then(() => {
+      flushTextBuffer();
+      logs.push(`└──────────────────────────────────────────────\n`);
       instance.status = "completed";
       notifySubagentsChanged();
     }).catch(() => {
+      flushTextBuffer();
+      logs.push(`└──────────────────────────────────────────────\n`);
       instance.status = "completed";
       notifySubagentsChanged();
     });
