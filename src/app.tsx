@@ -5,7 +5,7 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
-import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider } from "./core/config.js";
+import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, listHistorySessions } from "./core/config.js";
 import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
@@ -65,8 +65,9 @@ export function App({
   const [scrollOffset, setScrollOffset] = useState(0);
   const [runningTasksCount, setRunningTasksCount] = useState(0);
   const [runningSubagentsCount, setRunningSubagentsCount] = useState(0);
+  const [goalMode, setGoalMode] = useState<{ goal: string; startedAt: number } | null>(null);
   const [activeWizard, setActiveWizard] = useState<{
-    type: "login" | "model" | "plan_approve" | "permission" | "question";
+    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal";
     step: number;
     data: Record<string, string>;
   } | null>(null);
@@ -332,6 +333,18 @@ export function App({
           flushBuffer();
           setIsExecutingTool(false);
           setIsProcessing(false);
+          break;
+        case "goal_done":
+          // Goal mode finished - clear goal mode state and notify user
+          setGoalMode(null);
+          if (agentRef.current) {
+            agentRef.current.goalMode = null;
+          }
+          addLine({
+            type: "system",
+            content: `🎯 GOAL MODE COMPLETED\n   Goal: "${event.goal}"\n   ${event.summary}`,
+            timestamp: Date.now(),
+          });
           break;
         case "token_usage":
           setTokensUp((prev) => prev + event.promptTokens);
@@ -828,8 +841,41 @@ export function App({
       setActiveWizard(null);
       setWizardOptions([]);
       setWizardSelectedIndex(0);
+    } else if (activeWizard.type === "goal") {
+      // User typed their goal in the wizard dialog
+      setActiveWizard(null);
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
+      if (!value.trim()) return;
+      const goalArg = value.trim();
+      if (agentRef.current) {
+        agentRef.current.goalMode = goalArg;
+      }
+      setGoalMode({ goal: goalArg, startedAt: now });
+      addLine({
+        type: "system",
+        content: [
+          "🎯 GOAL MODE ACTIVATED",
+          `   Objective : ${goalArg}`,
+          "   Iterations: up to 200 steps (auto-continue enabled)",
+          "   The agent will not stop until the goal is achieved.",
+          "   Use Ctrl+C to abort at any time.",
+        ].join("\n"),
+        timestamp: now,
+      });
+      addLine({
+        type: "user",
+        content: `❯ /goal ${goalArg}`,
+        timestamp: now,
+      });
+      setIsProcessing(true);
+      agentRef.current?.sendMessage(
+        `GOAL MODE: Your primary objective is to achieve the following goal completely and verifiably:\n\n"${goalArg}"\n\nBegin immediately. Plan thoroughly, execute step by step, verify completion, and report back with GOAL_COMPLETE or GOAL_PARTIAL.`
+      ).catch((err: any) => {
+        addLine({ type: "error", content: `Goal mode error: ${err.message}`, timestamp: Date.now() });
+      });
     }
-  }, [activeWizard, addLine, setContextLimit, setPlanState]);
+  }, [activeWizard, addLine, setContextLimit, setPlanState, setGoalMode, setIsProcessing]);
 
   const handleSubmit = useCallback(
     async (value: string) => {
@@ -869,6 +915,8 @@ export function App({
           setWizardOptions,
           setWizardSelectedIndex,
           setPlanState,
+          setGoalMode,
+          setIsProcessing,
           resumeSession: async () => {
             if (!agentRef.current) return;
             await agentRef.current.loadHistory();
@@ -923,7 +971,62 @@ export function App({
             if (agentRef.current) {
               setPlanState(agentRef.current.planState);
             }
-          }
+          },
+          resumeFromPath: async (filePath: string) => {
+            if (!agentRef.current) return;
+            await agentRef.current.loadHistoryFromPath(filePath);
+            const msgs = agentRef.current.getHistory().getMessages();
+            const loadedLines: ChatLine[] = [];
+            const userInputs: string[] = [];
+            for (const m of msgs) {
+              if (m.role === "user") {
+                loadedLines.push({
+                  type: "user",
+                  content: `❯ ${m.content}`,
+                  timestamp: m.timestamp,
+                });
+                userInputs.push(m.content);
+              } else if (m.role === "assistant") {
+                if (m.content) {
+                  loadedLines.push({
+                    type: "assistant",
+                    content: m.content,
+                    timestamp: m.timestamp,
+                  });
+                }
+                if (m.toolCalls && m.toolCalls.length > 0) {
+                  for (const tc of m.toolCalls) {
+                    const description = getToolDescription(tc);
+                    loadedLines.push({
+                      type: "tool_start",
+                      content: `⚡ ${description}\n   Detail: ${tc.name}(${formatArgs(tc.args)})`,
+                      timestamp: m.timestamp,
+                    });
+                  }
+                }
+                if (m.toolResults && m.toolResults.length > 0) {
+                  for (const tr of m.toolResults) {
+                    const tc = m.toolCalls?.find((c) => c.id === tr.toolCallId);
+                    const description = tc ? getToolDescription(tc) : `${tr.name}`;
+                    const statusPrefix = tr.isError ? "✗ Failed -" : "✓ Completed -";
+                    const resultContent = tr.isError
+                      ? `${statusPrefix} ${description}\nDetail: ${tr.result}`
+                      : `${statusPrefix} ${description}\nOutput: ${tr.result.slice(0, 500)}${tr.result.length > 500 ? "..." : ""}`;
+                    loadedLines.push({
+                      type: "tool_end",
+                      content: resultContent,
+                      timestamp: m.timestamp,
+                    });
+                  }
+                }
+              }
+            }
+            setLines(loadedLines);
+            setHistory(userInputs);
+            if (agentRef.current) {
+              setPlanState(agentRef.current.planState);
+            }
+          },
         });
         return;
       }
@@ -972,6 +1075,7 @@ export function App({
   const commands = [
     "/clear",
     "/compact",
+    "/goal",
     "/help",
     "/init",
     "/new",
@@ -1328,6 +1432,56 @@ export function App({
             setActiveWizard(null);
             setWizardOptions([]);
             setWizardSelectedIndex(0);
+          }
+          return;
+        }
+      } else if (activeWizard.type === "resume" && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          return;
+        }
+        if (key.return) {
+          const sessions = listHistorySessions();
+          const chosen = sessions[wizardSelectedIndex];
+          if (!chosen) return;
+          const now = Date.now();
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          if (agentRef.current) {
+            agentRef.current.loadHistoryFromPath(chosen.filePath)
+              .then(() => {
+                const msgs = agentRef.current!.getHistory().getMessages();
+                const loadedLines: ChatLine[] = [];
+                const userInputs: string[] = [];
+                for (const m of msgs) {
+                  if (m.role === "user") {
+                    loadedLines.push({ type: "user", content: `❯ ${m.content}`, timestamp: m.timestamp });
+                    userInputs.push(m.content);
+                  } else if (m.role === "assistant") {
+                    if (m.content) {
+                      loadedLines.push({ type: "assistant", content: m.content, timestamp: m.timestamp });
+                    }
+                    if (m.toolCalls && m.toolCalls.length > 0) {
+                      for (const tc of m.toolCalls) {
+                        const description = getToolDescription(tc);
+                        loadedLines.push({ type: "tool_start", content: `⚡ ${description}\n   Detail: ${tc.name}(${formatArgs(tc.args)})`, timestamp: m.timestamp });
+                      }
+                    }
+                  }
+                }
+                setLines(loadedLines);
+                setHistory(userInputs);
+                if (agentRef.current) setPlanState(agentRef.current.planState);
+                addLine({ type: "system", content: `✓ Session resumed: ${chosen.displayName} (${msgs.length} messages)`, timestamp: now });
+              })
+              .catch((err: any) => {
+                addLine({ type: "error", content: `Failed to resume session: ${err.message}`, timestamp: now });
+              });
           }
           return;
         }
@@ -1800,6 +1954,36 @@ export function App({
                 />
               );
             })()}
+
+            {activeWizard && activeWizard.type === "resume" && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="📚 RESUME SESSION — Pilih sesi untuk dilanjutkan (↑/↓ Navigate, Enter: Load, Esc: Cancel):"
+                description="Sesi diurutkan dari yang paling baru:"
+                borderColor="magenta"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+                maxVisible={8}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "goal" && activeWizard.step === 1 && (
+              <WizardDialog
+                title="🎯 GOAL MODE — Deskripsikan tujuan yang ingin dicapai (Type & Enter):"
+                description="Agent akan bekerja tanpa henti sampai goal tercapai. Gunakan Ctrl+C untuk membatalkan."
+                borderColor="yellow"
+                options={[]}
+                selectedIndex={0}
+              />
+            )}
+
+            {/* Goal Mode Banner */}
+            {goalMode && !activeWizard && (
+              <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
+                <Text bold color="yellow">🎯 GOAL MODE ACTIVE ─────────────────────────────────────</Text>
+                <Text color="yellow">  Target: <Text bold color="white">{goalMode.goal.length > 80 ? goalMode.goal.slice(0, 77) + "..." : goalMode.goal}</Text></Text>
+                <Text color="yellow" dimColor>  Running... (Ctrl+C to abort)</Text>
+              </Box>
+            )}
 
             {/* Render suggestions inline above the input line */}
             {!activeWizard && input.startsWith("/") && suggestions.length > 0 && (
@@ -2287,11 +2471,14 @@ function handleSlashCommand(
     agent: Agent | null;
     clearLines?: () => void;
     setContextLimit?: (limit: number) => void;
-    setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question"; step: number; data: Record<string, string> } | null) => void;
+    setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal"; step: number; data: Record<string, string> } | null) => void;
     setWizardOptions?: (options: string[]) => void;
     setWizardSelectedIndex?: (index: number) => void;
     resumeSession?: () => Promise<void>;
+    resumeFromPath?: (filePath: string) => Promise<void>;
     setPlanState?: (state: "IDLE" | "PLANNING_PENDING" | "APPROVED") => void;
+    setGoalMode?: (val: { goal: string; startedAt: number } | null) => void;
+    setIsProcessing?: (val: boolean) => void;
   }
 ) {
   const [name] = cmd.slice(1).split(" ");
@@ -2302,30 +2489,46 @@ function handleSlashCommand(
       ctx.agent?.clearHistory();
       if (ctx.agent) {
         ctx.agent.planState = "IDLE";
+        ctx.agent.goalMode = null;
       }
       ctx.setPlanState?.("IDLE");
+      ctx.setGoalMode?.(null);
       ctx.clearLines?.();
       ctx.addLine({ type: "system", content: "New conversation started. History and terminal cleared.", timestamp: now });
       break;
-    case "resume":
-      if (ctx.resumeSession) {
-        ctx.resumeSession()
-          .then(() => {
-            ctx.addLine({ type: "system", content: "Conversation session resumed from history.", timestamp: now });
-          })
-          .catch((err: any) => {
-            ctx.addLine({ type: "error", content: `Failed to resume session: ${err.message}`, timestamp: now });
-          });
-      } else {
-        ctx.addLine({ type: "error", content: "Resume command not supported in this context.", timestamp: now });
+    case "resume": {
+      const sessions = listHistorySessions();
+      if (sessions.length === 0) {
+        ctx.addLine({ type: "system", content: "No previous sessions found. Start a conversation first!", timestamp: now });
+        break;
       }
+      const relTime = (d: Date) => {
+        const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (diff < 60) return `${diff}s ago`;
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        return `${Math.floor(diff / 86400)}d ago`;
+      };
+      const sessionOptions = sessions.map(
+        (s) => `📁 ${s.displayName}  |  ${s.messageCount} msgs  |  ${relTime(s.lastModified)}`
+      );
+      ctx.setActiveWizard?.({
+        type: "resume",
+        step: 1,
+        data: {},
+      });
+      ctx.setWizardOptions?.(sessionOptions);
+      ctx.setWizardSelectedIndex?.(0);
       break;
+    }
     case "clear":
       ctx.agent?.clearHistory();
       if (ctx.agent) {
         ctx.agent.planState = "IDLE";
+        ctx.agent.goalMode = null;
       }
       ctx.setPlanState?.("IDLE");
+      ctx.setGoalMode?.(null);
       ctx.addLine({ type: "system", content: "Conversation cleared.", timestamp: now });
       break;
     case "approve":
@@ -2341,6 +2544,71 @@ function handleSlashCommand(
         ctx.addLine({ type: "error", content: "Agent not available in this context.", timestamp: now });
       }
       break;
+    case "goal": {
+      const goalArg = cmd.slice(name.length + 2).trim();
+      if (!goalArg) {
+        // No argument: open wizard dialog for text input
+        if (ctx.setActiveWizard) {
+          ctx.setActiveWizard({ type: "goal", step: 1, data: {} });
+          ctx.setWizardOptions?.([]);
+          ctx.setWizardSelectedIndex?.(0);
+        } else {
+          ctx.addLine({
+            type: "error",
+            content: "Usage: /goal <description of what you want achieved>\nExample: /goal implement JWT auth end-to-end with tests",
+            timestamp: now,
+          });
+        }
+        break;
+      }
+      // Activate goal mode on the agent
+      if (!ctx.agent) {
+        ctx.addLine({ type: "error", content: "Agent not available.", timestamp: now });
+        break;
+      }
+      ctx.agent.goalMode = goalArg;
+      ctx.setGoalMode?.({ goal: goalArg, startedAt: now });
+      ctx.addLine({
+        type: "system",
+        content: [
+          "🎯 GOAL MODE ACTIVATED",
+          `   Objective : ${goalArg}`,
+          "   Iterations: up to 200 steps (auto-continue enabled)",
+          "   The agent will not stop until the goal is achieved.",
+          "   Use Ctrl+C to abort at any time.",
+        ].join("\n"),
+        timestamp: now,
+      });
+      ctx.addLine({
+        type: "user",
+        content: `❯ /goal ${goalArg}`,
+        timestamp: now,
+      });
+      // Write goal to scratchpad for agent memory
+      import("fs/promises").then(async (fsModule) => {
+        import("path").then(async (pathModule) => {
+          try {
+            const scratchDir = pathModule.resolve(process.cwd(), "scratch");
+            await fsModule.mkdir(scratchDir, { recursive: true });
+            const scratchPath = pathModule.join(scratchDir, "scratchpad.md");
+            let existing = "";
+            try { existing = await fsModule.readFile(scratchPath, "utf-8"); } catch { /* ok */ }
+            const goalBlock = `\n\n## 🎯 ACTIVE GOAL (set ${new Date(now).toISOString()})\n${goalArg}\n`;
+            // Remove old goal block if exists, then append new one
+            const cleaned = existing.replace(/\n\n## 🎯 ACTIVE GOAL[\s\S]*?(?=\n\n##|$)/g, "");
+            await fsModule.writeFile(scratchPath, cleaned + goalBlock, "utf-8");
+          } catch { /* ignore scratchpad write errors */ }
+        });
+      });
+      // Send the goal as a message to the agent
+      ctx.setIsProcessing?.(true);
+      ctx.agent.sendMessage(
+        `GOAL MODE: Your primary objective is to achieve the following goal completely and verifiably:\n\n"${goalArg}"\n\nBegin immediately. Plan thoroughly, execute step by step, verify completion, and report back with GOAL_COMPLETE or GOAL_PARTIAL.`
+      ).catch((err: any) => {
+        ctx.addLine({ type: "error", content: `Goal mode error: ${err.message}`, timestamp: Date.now() });
+      });
+      break;
+    }
     case "compact": {
       const currentModel = process.env.MODEL || getDefaultModel();
       const limit = getContextWindowLimit(currentModel);
@@ -2717,6 +2985,8 @@ function handleSlashCommand(
           "  /resume   - Resume last conversation session from history",
           "  /clear    - Clear conversation history",
           "  /compact  - Show conversation summary",
+          "  /goal     - Activate Goal Mode for long-running overnight tasks",
+          "              Usage: /goal <description>  (e.g. /goal implement JWT auth end-to-end)",
           "  /init     - Initialize/audit AI agents and system configuration",
           "  /agents   - List active subagents and defined subagent types",
           "  /tasks    - List running background tasks",

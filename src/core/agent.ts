@@ -20,6 +20,7 @@ export type AgentEvent =
   | { type: "tool_end"; toolResult: ToolResult; description: string }
   | { type: "error"; message: string }
   | { type: "done" }
+  | { type: "goal_done"; goal: string; summary: string }
   | { type: "permission_required"; toolCall: ToolCall; description: string }
   | { type: "token_usage"; promptTokens: number; completionTokens: number };
 
@@ -35,6 +36,8 @@ export type QuestionHandler = (
 
 export class Agent {
   public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
+  public goalMode: string | null = null;
+  public goalMaxIterations: number = 200;
   private conversation: Conversation;
   private customSystemPrompt?: string;
   private get config() {
@@ -92,6 +95,10 @@ export class Agent {
     await this.conversation.loadFromFile(this.getHistoryFilePath());
   }
 
+  async loadHistoryFromPath(filePath: string): Promise<void> {
+    await this.conversation.loadFromFile(filePath);
+  }
+
   async saveHistory(): Promise<void> {
     await this.conversation.saveToFile(this.getHistoryFilePath());
   }
@@ -138,9 +145,12 @@ export class Agent {
   }
 
   private async runAgentLoop(): Promise<void> {
-    const maxIterations = parseInt(process.env.MAX_ITERATIONS || "50", 10) || 50;
+    const isGoalMode = !!this.goalMode;
+    const defaultMax = parseInt(process.env.MAX_ITERATIONS || "50", 10) || 50;
+    const maxIterations = isGoalMode ? this.goalMaxIterations : defaultMax;
     let continueCount = 0;
-    const maxContinues = 3;
+    // In goal mode, allow many more auto-continues without prompting the user
+    const maxContinues = isGoalMode ? 10 : 3;
 
     const baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt;
 
@@ -154,6 +164,24 @@ export class Agent {
     } catch {
       // Ignored
     }
+
+    // Goal mode addendum injected into every iteration's system prompt
+    const goalModeAddendum = isGoalMode
+      ? `
+
+🎯 GOAL MODE ACTIVE:
+Your PRIMARY OBJECTIVE is: "${this.goalMode}"
+
+CRITICAL GOAL MODE RULES:
+- You MUST NOT stop until this goal is FULLY and VERIFIABLY achieved.
+- After every action, ask yourself: "Is the goal complete?" — if not, keep going.
+- Self-verify completion: run tests, check outputs, read files to confirm correctness.
+- If you hit an error, diagnose and fix it. Never give up on the goal.
+- Only declare completion when you have concrete evidence the goal is done.
+- Use subagents aggressively to parallelize work and meet the goal faster.
+- At the end of your work, produce a concise GOAL COMPLETION REPORT starting with "GOAL_COMPLETE:" or "GOAL_PARTIAL:" followed by a brief summary of what was achieved.
+`
+      : "";
 
     for (let i = 0; i < maxIterations; i++) {
       await this.compactHistoryIfNeeded();
@@ -169,7 +197,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - Be highly efficient. If the task is complex, requires multiple steps, or involves extensive research/coding across different components, DO NOT try to do everything in a single sequential thread.
 - Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'explorer', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
 - Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.
-${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}`;
+${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}`;
 
       let textContent = "";
       const toolCalls: ToolCall[] = [];
@@ -434,10 +462,19 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}`
 
       if (i === maxIterations - 1) {
         if (continueCount >= maxContinues) {
+          const stopMsg = isGoalMode
+            ? `\n\n⚠️ [GOAL MODE: Reached maximum auto-continue limit (${maxContinues}x). Stopping to prevent infinite loop. Your goal was: "${this.goalMode}". You can continue with '/resume'.]\n`
+            : `\n\n⚠️ [System Warning: Reached maximum iteration limit and maximum auto-continues (${maxContinues}). Stopping to prevent infinite loop. You can continue the session by sending a message or running '/resume'.]\n`;
+          this.onEvent({ type: "text", content: stopMsg });
+        } else if (isGoalMode) {
+          // In goal mode: auto-continue without asking the user
+          continueCount++;
           this.onEvent({
             type: "text",
-            content: `\n\n⚠️ [System Warning: Reached maximum iteration limit and maximum auto-continues (${maxContinues}). Stopping to prevent infinite loop. You can continue the session by sending a message or running '/resume'.]\n`
+            content: `\n\n🎯 [GOAL MODE: Auto-continuing iteration block ${continueCount}/${maxContinues} to achieve goal: "${this.goalMode}"]\n`,
           });
+          i = -1; // Reset loop counter to run again
+          continue;
         } else {
           try {
             const selected = await this.onQuestion(
@@ -457,6 +494,15 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}`
           }
         }
       }
+    }
+
+    // After loop ends: if goal mode, emit goal_done event
+    if (isGoalMode && this.goalMode) {
+      this.onEvent({
+        type: "goal_done",
+        goal: this.goalMode,
+        summary: "Agent has finished executing. Check the output above for GOAL_COMPLETE or GOAL_PARTIAL status.",
+      });
     }
   }
 

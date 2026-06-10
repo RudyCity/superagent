@@ -20,7 +20,65 @@ export function ensureGlobalConfigDir(): void {
   }
 }
 
+export interface HistorySession {
+  filePath: string;
+  displayName: string;
+  messageCount: number;
+  lastModified: Date;
+  preview: string;
+}
 
+export function listHistorySessions(): HistorySession[] {
+  const historyDir = path.join(getGlobalConfigDir(), "history");
+  if (!fs.existsSync(historyDir)) return [];
+
+  let files: string[];
+  try {
+    files = fs.readdirSync(historyDir).filter((f) => f.endsWith(".json"));
+  } catch {
+    return [];
+  }
+
+  const sessions: HistorySession[] = [];
+  for (const file of files) {
+    const filePath = path.join(historyDir, file);
+    try {
+      const stat = fs.statSync(filePath);
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const messages: Array<{ role: string; content: string; timestamp?: number }> = JSON.parse(raw);
+      if (!Array.isArray(messages)) continue;
+
+      // Reconstruct display name from sanitized filename
+      const nameWithoutExt = file.replace(/\.json$/, "");
+      // Heuristic: replace underscores back with path separators where reasonable
+      const displayName = nameWithoutExt
+        .replace(/^_+/, "")
+        .replace(/_([a-zA-Z])_/g, ":\\$1\\")  // e.g. D_backup -> D:\backup
+        .replace(/_/g, " / ");
+
+      const userMessages = messages.filter((m) => m.role === "user");
+      const lastUser = userMessages[userMessages.length - 1];
+      const preview = lastUser
+        ? lastUser.content.slice(0, 60).replace(/\n/g, " ") + (lastUser.content.length > 60 ? "…" : "")
+        : "(no user messages)";
+
+      sessions.push({
+        filePath,
+        displayName,
+        messageCount: messages.length,
+        lastModified: stat.mtime,
+        preview,
+      });
+    } catch {
+      // Skip corrupt/unreadable files
+      continue;
+    }
+  }
+
+  // Sort by most recently modified first
+  sessions.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+  return sessions;
+}
 
 export interface Config {
   apiKey: string;
