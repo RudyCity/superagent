@@ -1978,7 +1978,7 @@ function handleSlashCommand(
               if (res.ok) {
                 const data = (await res.json()) as any;
                 if (data && Array.isArray(data.data)) {
-                  const modelsList = data.data.map((m: any) => m.id).slice(0, 15);
+                  const modelsList = data.data.map((m: any) => m.id);
                   if (ctx.setWizardOptions) {
                     ctx.setWizardOptions(modelsList);
                     ctx.setWizardSelectedIndex?.(0);
