@@ -336,7 +336,18 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}`
 
         if (tc.name === "ask_question") {
           const question = tc.args.question as string || "";
-          const options = tc.args.options as string[] || [];
+          const rawOptions = (tc.args.options as unknown[]) || [];
+          const options: string[] = rawOptions.map((o) => {
+            if (typeof o === "string") return o;
+            if (o && typeof o === "object") {
+              const obj = o as Record<string, unknown>;
+              // If the object has a label-like field, use it; otherwise JSON.stringify
+              const label = obj["label"] ?? obj["name"] ?? obj["command"] ?? obj["title"] ?? obj["value"];
+              if (label !== undefined) return String(label);
+              return JSON.stringify(o);
+            }
+            return String(o);
+          });
           try {
             const selected = await this.onQuestion(question, options);
             const toolResult: ToolResult = {

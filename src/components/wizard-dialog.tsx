@@ -67,15 +67,17 @@ export function WizardDialog({
       {visibleOptions.map((opt, idx) => {
         const originalIndex = start + idx;
         const isSelected = originalIndex === selectedIndex;
+        const optStr = typeof opt === "string" ? opt : JSON.stringify(opt);
         return (
-          <Box key={opt} flexDirection="row">
+          <Box key={`${optStr}-${originalIndex}`} flexDirection="row">
             <Text color={borderColor}>│ </Text>
             <Text color={isSelected ? borderColor : "gray"} bold={isSelected}>
-              {isSelected ? "❯ " : "  "} {opt}
+              {isSelected ? "❯ " : "  "} {optStr}
             </Text>
           </Box>
         );
       })}
+
 
       {end < total && (
         <Box flexDirection="row">
