@@ -1906,34 +1906,119 @@ export function App({
 }
 
 function renderMarkdown(content: string, themeColor: string = "magenta", showCursor: boolean = false): React.ReactNode {
-  const lines = content.split("\n");
+  const rawLines = content.split("\n");
+
+  // Format markdown tables helper
+  function formatMarkdownTable(tableLines: string[]): string[] {
+    const rows = tableLines.map(line => {
+      const parts = line.split("|");
+      if (parts.length >= 2) {
+        return parts.slice(1, parts.length - 1).map(cell => cell.trim());
+      }
+      return [];
+    });
+
+    const isSeparatorRow = (row: string[]) => {
+      return row.length > 0 && row.every(cell => cell.length > 0 && /^[:-]+$/.test(cell));
+    };
+
+    const numCols = Math.max(...rows.map(r => r.length));
+    const colWidths = Array(numCols).fill(0);
+
+    rows.forEach((row) => {
+      if (isSeparatorRow(row)) return;
+      for (let i = 0; i < numCols; i++) {
+        const cellText = row[i] || "";
+        const cleanText = cellText.replace(/\*\*|`/g, "");
+        if (cleanText.length > colWidths[i]) {
+          colWidths[i] = cleanText.length;
+        }
+      }
+    });
+
+    return rows.map((row) => {
+      if (isSeparatorRow(row)) {
+        const separatorCells = colWidths.map(width => "-".repeat(width + 2));
+        return "| " + separatorCells.join(" | ") + " |";
+      }
+
+      const formattedCells = colWidths.map((width, colIdx) => {
+        const cellText = row[colIdx] || "";
+        const cleanText = cellText.replace(/\*\*|`/g, "");
+        const paddingLength = Math.max(0, width - cleanText.length);
+        return cellText + " ".repeat(paddingLength);
+      });
+
+      return "| " + formattedCells.join(" | ") + " |";
+    });
+  }
+
+  const processedLines: { text: string; inCodeBlock: boolean; codeLanguage?: string }[] = [];
   let inCodeBlock = false;
   let codeLanguage = "";
 
+  let i = 0;
+  while (i < rawLines.length) {
+    const line = rawLines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      inCodeBlock = !inCodeBlock;
+      codeLanguage = trimmed.slice(3).trim();
+      processedLines.push({ text: line, inCodeBlock: true, codeLanguage });
+      i++;
+      continue;
+    }
+
+    if (inCodeBlock) {
+      processedLines.push({ text: line, inCodeBlock: true });
+      i++;
+      continue;
+    }
+
+    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+      const tableLines: string[] = [];
+      while (i < rawLines.length && rawLines[i].trim().startsWith("|") && rawLines[i].trim().endsWith("|")) {
+        tableLines.push(rawLines[i]);
+        i++;
+      }
+      const formatted = formatMarkdownTable(tableLines);
+      formatted.forEach(fLine => {
+        processedLines.push({ text: fLine, inCodeBlock: false });
+      });
+      continue;
+    }
+
+    processedLines.push({ text: line, inCodeBlock: false });
+    i++;
+  }
+
+  let inCode = false;
   return (
     <>
-      {lines.map((l, idx) => {
+      {processedLines.map((item, idx) => {
+        const l = item.text;
         const trimmed = l.trim();
+
         if (trimmed.startsWith("```")) {
-          inCodeBlock = !inCodeBlock;
-          codeLanguage = trimmed.slice(3).trim();
+          inCode = !inCode;
           return (
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>│    </Text>
               <Text color="gray" italic>
-                {inCodeBlock ? `┌─── [ CODE: ${codeLanguage || "TEXT"} ]` : "└─── [ END CODE ]"}
+                {inCode ? `┌─── [ CODE: ${item.codeLanguage || "TEXT"} ]` : "└─── [ END CODE ]"}
               </Text>
-              {showCursor && idx === lines.length - 1 && <Text color="gray">█</Text>}
+              {showCursor && idx === processedLines.length - 1 && <Text color="gray">█</Text>}
             </Box>
           );
         }
 
-        if (inCodeBlock) {
+        if (inCode) {
           return (
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>│    </Text>
               <Text color="green">{l}</Text>
-              {showCursor && idx === lines.length - 1 && <Text color="green">█</Text>}
+              {showCursor && idx === processedLines.length - 1 && <Text color="green">█</Text>}
             </Box>
           );
         }
@@ -1943,7 +2028,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>│    </Text>
               <Text bold color="yellow">{l.slice(2)}</Text>
-              {showCursor && idx === lines.length - 1 && <Text bold color="yellow">█</Text>}
+              {showCursor && idx === processedLines.length - 1 && <Text bold color="yellow">█</Text>}
             </Box>
           );
         }
@@ -1952,7 +2037,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>│    </Text>
               <Text bold color="cyan">{l.slice(3)}</Text>
-              {showCursor && idx === lines.length - 1 && <Text bold color="cyan">█</Text>}
+              {showCursor && idx === processedLines.length - 1 && <Text bold color="cyan">█</Text>}
             </Box>
           );
         }
@@ -1961,7 +2046,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>│    </Text>
               <Text bold color="blue">{l.slice(4)}</Text>
-              {showCursor && idx === lines.length - 1 && <Text bold color="blue">█</Text>}
+              {showCursor && idx === processedLines.length - 1 && <Text bold color="blue">█</Text>}
             </Box>
           );
         }
@@ -2030,7 +2115,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
             <Text color={themeColor}>│    </Text>
             {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
             <Text>{parsedElements}</Text>
-            {showCursor && idx === lines.length - 1 && <Text>█</Text>}
+            {showCursor && idx === processedLines.length - 1 && <Text>█</Text>}
           </Box>
         );
       })}
