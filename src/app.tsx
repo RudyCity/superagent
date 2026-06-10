@@ -1993,21 +1993,70 @@ export function App({
             )}
 
             {/* Render suggestions inline above the input line */}
-            {!activeWizard && input.startsWith("/") && suggestions.length > 0 && (
-              <Box marginBottom={1} flexDirection="row">
-                <Text dimColor>Suggestions: </Text>
-                {suggestions.map((s) => {
-                  const isSelected = input === s;
-                  return (
-                    <Box key={s} marginRight={2}>
-                      <Text color={isSelected ? "cyan" : "gray"} bold={isSelected} underline={isSelected}>
-                        {s}
-                      </Text>
+            {!activeWizard && input.startsWith("/") && suggestions.length > 0 && (() => {
+              const MAX_VISIBLE_SUGGESTIONS = 5;
+              let visibleSuggestions: string[] = [];
+              let hasMoreSuffix = false;
+              let hasMorePrefix = false;
+              let remainingCount = 0;
+
+              if (suggestions.length <= MAX_VISIBLE_SUGGESTIONS) {
+                visibleSuggestions = suggestions;
+              } else {
+                const selectedIndex = suggestions.indexOf(input);
+                if (selectedIndex === -1 || selectedIndex < MAX_VISIBLE_SUGGESTIONS - 1) {
+                  visibleSuggestions = suggestions.slice(0, MAX_VISIBLE_SUGGESTIONS - 1);
+                  hasMoreSuffix = true;
+                  remainingCount = suggestions.length - visibleSuggestions.length;
+                } else {
+                  visibleSuggestions = [
+                    suggestions[0],
+                    suggestions[selectedIndex - 1],
+                    suggestions[selectedIndex],
+                  ];
+                  if (selectedIndex + 1 < suggestions.length) {
+                    visibleSuggestions.push(suggestions[selectedIndex + 1]);
+                  }
+                  hasMorePrefix = true;
+                  hasMoreSuffix = selectedIndex + 2 < suggestions.length;
+                  remainingCount = suggestions.length - visibleSuggestions.length;
+                }
+              }
+
+              return (
+                <Box marginBottom={1} flexDirection="row">
+                  <Text dimColor>Suggestions: </Text>
+                  {hasMorePrefix && (
+                    <>
+                      <Box marginRight={2}>
+                        <Text color={input === suggestions[0] ? "cyan" : "gray"} bold={input === suggestions[0]} underline={input === suggestions[0]}>
+                          {suggestions[0]}
+                        </Text>
+                      </Box>
+                      <Box marginRight={2}>
+                        <Text dimColor>...</Text>
+                      </Box>
+                    </>
+                  )}
+                  {visibleSuggestions.map((s, idx) => {
+                    if (hasMorePrefix && idx === 0) return null;
+                    const isSelected = input === s;
+                    return (
+                      <Box key={s} marginRight={2}>
+                        <Text color={isSelected ? "cyan" : "gray"} bold={isSelected} underline={isSelected}>
+                          {s}
+                        </Text>
+                      </Box>
+                    );
+                  })}
+                  {hasMoreSuffix && (
+                    <Box marginRight={2}>
+                      <Text dimColor>... (+{remainingCount} more)</Text>
                     </Box>
-                  );
-                })}
-              </Box>
-            )}
+                  )}
+                </Box>
+              );
+            })()}
 
 
 
