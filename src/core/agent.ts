@@ -215,13 +215,14 @@ CRITICAL GOAL MODE RULES:
 `
       : "";
 
-    for (let i = 0; i < maxIterations; i++) {
-      await this.compactHistoryIfNeeded();
-      const messages = this.buildMessages();
-      const toolDefs = getToolDefinitions();
+    try {
+      for (let i = 0; i < maxIterations; i++) {
+        await this.compactHistoryIfNeeded();
+        const messages = this.buildMessages();
+        const toolDefs = getToolDefinitions();
 
-      const currentStep = i + 1;
-      const systemPrompt = `${baseSystemPrompt}
+        const currentStep = i + 1;
+        const systemPrompt = `${baseSystemPrompt}
 
 CRITICAL TASK EXECUTION CONTEXT:
 - You are running with a strict step limit of ${maxIterations} agent iterations per request.
@@ -231,121 +232,47 @@ CRITICAL TASK EXECUTION CONTEXT:
 - Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.
 ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}`;
 
-      let textContent = "";
-      const toolCalls: ToolCall[] = [];
+        let textContent = "";
+        const toolCalls: ToolCall[] = [];
 
-      if (this.config.disableStreaming) {
-        let attempt = 0;
-        const maxRetries = 3;
-        const baseDelay = 1000;
+        if (this.config.disableStreaming) {
+          let attempt = 0;
+          const maxRetries = 3;
+          const baseDelay = 1000;
 
-        while (true) {
-          try {
-            const result = await generateText({
-              model: this.getModel(),
-              system: systemPrompt,
-              messages,
-              tools: Object.fromEntries(
-                toolDefs.map((t) => [
-                  t.name,
-                  {
-                    description: t.description,
-                    parameters: jsonSchema(t.input_schema),
-                  },
-                ])
-              ),
-              maxSteps: 1,
-              abortSignal: this.abortController?.signal,
-            });
-
-            textContent = result.text || "";
-            if (textContent) {
-              this.onEvent({ type: "text", content: textContent });
-            }
-            if (result.toolCalls) {
-              for (const tc of result.toolCalls) {
-                toolCalls.push({
-                  id: tc.toolCallId,
-                  name: tc.toolName,
-                  args: tc.args as Record<string, unknown>,
-                });
-              }
-            }
-            const usage = result.usage;
-            if (usage) {
-              this.onEvent({
-                type: "token_usage",
-                promptTokens: usage.promptTokens,
-                completionTokens: usage.completionTokens,
-              });
-            }
-            break;
-          } catch (err: unknown) {
-            if (err instanceof Error && err.name === "AbortError") {
-              throw err;
-            }
-            attempt++;
-            if (attempt > maxRetries) {
-              const msg = err instanceof Error ? err.message : String(err);
-              this.onEvent({ type: "error", message: `Generate text failed after ${maxRetries} retries: ${msg}` });
-              return;
-            }
-            const msg = err instanceof Error ? err.message : String(err);
-            this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
-            await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
-          }
-        }
-      } else {
-        let attempt = 0;
-        const maxRetries = 3;
-        const baseDelay = 1000;
-
-        while (true) {
-          try {
-            textContent = "";
-            toolCalls.length = 0;
-
-            const result = streamText({
-              model: this.getModel(),
-              system: systemPrompt,
-              messages,
-              tools: Object.fromEntries(
-                toolDefs.map((t) => [
-                  t.name,
-                  {
-                    description: t.description,
-                    parameters: jsonSchema(t.input_schema),
-                  },
-                ])
-              ),
-              maxSteps: 1,
-              abortSignal: this.abortController?.signal,
-            });
-
-            for await (const delta of result.fullStream) {
-              if (delta.type === "text-delta") {
-                textContent += delta.textDelta;
-                this.onEvent({ type: "text", content: delta.textDelta });
-              } else if ((delta.type as string) === "reasoning" || (delta.type as string) === "reasoning-delta") {
-                const reasoningText = (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
-                if (reasoningText) {
-                  textContent += reasoningText;
-                  this.onEvent({ type: "text", content: reasoningText });
-                }
-              } else if (delta.type === "tool-call") {
-                const tc: ToolCall = {
-                  id: delta.toolCallId,
-                  name: delta.toolName,
-                  args: delta.args as Record<string, unknown>,
-                };
-                toolCalls.push(tc);
-              } else if (delta.type === "error") {
-                throw delta.error instanceof Error ? delta.error : new Error(String(delta.error));
-              }
-            }
-
+          while (true) {
             try {
-              const usage = await result.usage;
+              const result = await generateText({
+                model: this.getModel(),
+                system: systemPrompt,
+                messages,
+                tools: Object.fromEntries(
+                  toolDefs.map((t) => [
+                    t.name,
+                    {
+                      description: t.description,
+                      parameters: jsonSchema(t.input_schema),
+                    },
+                  ])
+                ),
+                maxSteps: 1,
+                abortSignal: this.abortController?.signal,
+              });
+
+              textContent = result.text || "";
+              if (textContent) {
+                this.onEvent({ type: "text", content: textContent });
+              }
+              if (result.toolCalls) {
+                for (const tc of result.toolCalls) {
+                  toolCalls.push({
+                    id: tc.toolCallId,
+                    name: tc.toolName,
+                    args: tc.args as Record<string, unknown>,
+                  });
+                }
+              }
+              const usage = result.usage;
               if (usage) {
                 this.onEvent({
                   type: "token_usage",
@@ -353,188 +280,259 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   completionTokens: usage.completionTokens,
                 });
               }
-            } catch (err) {
-              // Ignore or log error silently
-            }
-
-            break;
-          } catch (err: unknown) {
-            if (err instanceof Error && err.name === "AbortError") {
-              throw err;
-            }
-            attempt++;
-            if (attempt > maxRetries) {
+              break;
+            } catch (err: unknown) {
+              if (err instanceof Error && err.name === "AbortError") {
+                throw err;
+              }
+              attempt++;
+              if (attempt > maxRetries) {
+                const msg = err instanceof Error ? err.message : String(err);
+                this.onEvent({ type: "error", message: `Generate text failed after ${maxRetries} retries: ${msg}` });
+                return;
+              }
               const msg = err instanceof Error ? err.message : String(err);
-              this.onEvent({ type: "error", message: `Stream error after ${maxRetries} retries: ${msg}` });
-              return;
+              this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
+              await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
             }
-            const msg = err instanceof Error ? err.message : String(err);
-            this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
-            await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
           }
-        }
-      }
-
-      if (toolCalls.length === 0) {
-        if (!textContent.trim()) {
-          this.onEvent({
-            type: "error",
-            message: "Empty response from model. Check your endpoint/model config.",
-          });
         } else {
-          this.conversation.addAssistantMessage(textContent);
-          await this.saveHistory();
-        }
-        return;
-      }
+          let attempt = 0;
+          const maxRetries = 3;
+          const baseDelay = 1000;
 
-      const toolResults: ToolResult[] = [];
+          while (true) {
+            try {
+              textContent = "";
+              toolCalls.length = 0;
 
-      for (const tc of toolCalls) {
-        const description = getToolDescription(tc);
-        this.onEvent({ type: "tool_start", toolCall: tc, description });
+              const result = streamText({
+                model: this.getModel(),
+                system: systemPrompt,
+                messages,
+                tools: Object.fromEntries(
+                  toolDefs.map((t) => [
+                    t.name,
+                    {
+                      description: t.description,
+                      parameters: jsonSchema(t.input_schema),
+                    },
+                  ])
+                ),
+                maxSteps: 1,
+                abortSignal: this.abortController?.signal,
+              });
 
-        if (tc.name === "ask_question") {
-          const question = tc.args.question as string || "";
-          const rawOptions = (tc.args.options as unknown[]) || [];
-          const options: string[] = rawOptions.map((o) => {
-            if (typeof o === "string") return o;
-            if (o && typeof o === "object") {
-              const obj = o as Record<string, unknown>;
-              // If the object has a label-like field, use it; otherwise JSON.stringify
-              const label = obj["label"] ?? obj["name"] ?? obj["command"] ?? obj["title"] ?? obj["value"];
-              if (label !== undefined) return String(label);
-              return JSON.stringify(o);
+              for await (const delta of result.fullStream) {
+                if (delta.type === "text-delta") {
+                  textContent += delta.textDelta;
+                  this.onEvent({ type: "text", content: delta.textDelta });
+                } else if ((delta.type as string) === "reasoning" || (delta.type as string) === "reasoning-delta") {
+                  const reasoningText = (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
+                  if (reasoningText) {
+                    textContent += reasoningText;
+                    this.onEvent({ type: "text", content: reasoningText });
+                  }
+                } else if (delta.type === "tool-call") {
+                  const tc: ToolCall = {
+                    id: delta.toolCallId,
+                    name: delta.toolName,
+                    args: delta.args as Record<string, unknown>,
+                  };
+                  toolCalls.push(tc);
+                } else if (delta.type === "error") {
+                  throw delta.error instanceof Error ? delta.error : new Error(String(delta.error));
+                }
+              }
+
+              try {
+                const usage = await result.usage;
+                if (usage) {
+                  this.onEvent({
+                    type: "token_usage",
+                    promptTokens: usage.promptTokens,
+                    completionTokens: usage.completionTokens,
+                  });
+                }
+              } catch (err) {
+                // Ignore or log error silently
+              }
+
+              break;
+            } catch (err: unknown) {
+              if (err instanceof Error && err.name === "AbortError") {
+                throw err;
+              }
+              attempt++;
+              if (attempt > maxRetries) {
+                const msg = err instanceof Error ? err.message : String(err);
+                this.onEvent({ type: "error", message: `Stream error after ${maxRetries} retries: ${msg}` });
+                return;
+              }
+              const msg = err instanceof Error ? err.message : String(err);
+              this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
+              await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
             }
-            return String(o);
-          });
-          try {
-            const selected = await this.onQuestion(question, options);
-            const toolResult: ToolResult = {
-              toolCallId: tc.id,
-              name: tc.name,
-              result: `User selected option: "${selected}"`,
-            };
-            toolResults.push(toolResult);
-            this.onEvent({ type: "tool_end", toolResult, description });
-            continue;
-          } catch (err: any) {
-            const toolResult: ToolResult = {
-              toolCallId: tc.id,
-              name: tc.name,
-              result: `Error getting user answer: ${err.message}`,
-              isError: true,
-            };
-            toolResults.push(toolResult);
-            this.onEvent({ type: "tool_end", toolResult, description });
-            continue;
           }
         }
 
-        // Check if this tool modifies files
-        if (MODIFYING_TOOLS.includes(tc.name)) {
-          const filePath = tc.args.filePath as string || "";
-          const isPlanFile = filePath && path.basename(filePath).toLowerCase() === "implementation_plan.md";
-
-          if (isPlanFile) {
-            this.planState = "PLANNING_PENDING";
-          } else if (this.planState === "PLANNING_PENDING") {
-            const blocked: ToolResult = {
-              toolCallId: tc.id,
-              name: tc.name,
-              result: "Error: File modification blocked. A plan is pending approval. You must wait for the user to approve the plan using '/approve' before modifying any codebase files.",
-              isError: true,
-            };
-            toolResults.push(blocked);
-            this.onEvent({ type: "tool_end", toolResult: blocked, description });
-            continue;
+        if (toolCalls.length === 0) {
+          if (!textContent.trim()) {
+            this.onEvent({
+              type: "error",
+              message: "Empty response from model. Check your endpoint/model config.",
+            });
+          } else {
+            this.conversation.addAssistantMessage(textContent);
+            await this.saveHistory();
           }
+          break;
         }
 
-        if (
-          (tc.name === "bash" || tc.name === "run_command" || tc.name === "run_background") &&
-          isDangerousCommand(tc.args.command as string)
-        ) {
-          const approved = await this.onPermission(tc, description);
-          if (!approved) {
-            const denied: ToolResult = {
-              toolCallId: tc.id,
-              name: tc.name,
-              result: "User denied permission for this command.",
-              isError: true,
-            };
-            toolResults.push(denied);
-            this.onEvent({ type: "tool_end", toolResult: denied, description });
-            continue;
-          }
-        }
+        const toolResults: ToolResult[] = [];
 
-        const toolResult = await executeToolCall(
-          tc,
-          this.config.workingDirectory,
-          this.abortController?.signal
-        );
-        toolResults.push(toolResult);
-        this.onEvent({ type: "tool_end", toolResult, description });
-      }
+        for (const tc of toolCalls) {
+          const description = getToolDescription(tc);
+          this.onEvent({ type: "tool_start", toolCall: tc, description });
 
-      this.conversation.addAssistantMessage(
-        textContent,
-        toolCalls,
-        toolResults
-      );
-
-      this.conversation.addMessage({
-        role: "tool",
-        content: "",
-        toolResults,
-        timestamp: Date.now(),
-      });
-      await this.saveHistory();
-
-      if (i === maxIterations - 1) {
-        if (continueCount >= maxContinues) {
-          const stopMsg = isGoalMode
-            ? `\n\n⚠️ [GOAL MODE: Reached maximum auto-continue limit (${maxContinues}x). Stopping to prevent infinite loop. Your goal was: "${this.goalMode}". You can continue with '/resume'.]\n`
-            : `\n\n⚠️ [System Warning: Reached maximum iteration limit and maximum auto-continues (${maxContinues}). Stopping to prevent infinite loop. You can continue the session by sending a message or running '/resume'.]\n`;
-          this.onEvent({ type: "text", content: stopMsg });
-        } else if (isGoalMode) {
-          // In goal mode: auto-continue without asking the user
-          continueCount++;
-          this.onEvent({
-            type: "text",
-            content: `\n\n🎯 [GOAL MODE: Auto-continuing iteration block ${continueCount}/${maxContinues} to achieve goal: "${this.goalMode}"]\n`,
-          });
-          i = -1; // Reset loop counter to run again
-          continue;
-        } else {
-          try {
-            const selected = await this.onQuestion(
-              `Reached maximum iteration limit of ${maxIterations} steps. The task may be incomplete. Would you like to continue for another ${maxIterations} steps?`,
-              ["Yes, continue", "No, stop here"]
-            );
-            if (selected === "Yes, continue") {
-              continueCount++;
-              i = -1; // Reset loop counter to run again
+          if (tc.name === "ask_question") {
+            const question = tc.args.question as string || "";
+            const rawOptions = (tc.args.options as unknown[]) || [];
+            const options: string[] = rawOptions.map((o) => {
+              if (typeof o === "string") return o;
+              if (o && typeof o === "object") {
+                const obj = o as Record<string, unknown>;
+                const label = obj["label"] ?? obj["name"] ?? obj["command"] ?? obj["title"] ?? obj["value"];
+                if (label !== undefined) return String(label);
+                return JSON.stringify(o);
+              }
+              return String(o);
+            });
+            try {
+              const selected = await this.onQuestion(question, options);
+              const toolResult: ToolResult = {
+                toolCallId: tc.id,
+                name: tc.name,
+                result: `User selected option: "${selected}"`,
+              };
+              toolResults.push(toolResult);
+              this.onEvent({ type: "tool_end", toolResult, description });
+              continue;
+            } catch (err: any) {
+              const toolResult: ToolResult = {
+                toolCallId: tc.id,
+                name: tc.name,
+                result: `Error getting user answer: ${err.message}`,
+                isError: true,
+              };
+              toolResults.push(toolResult);
+              this.onEvent({ type: "tool_end", toolResult, description });
               continue;
             }
-          } catch (err) {
+          }
+
+          if (MODIFYING_TOOLS.includes(tc.name)) {
+            const filePath = tc.args.filePath as string || "";
+            const isPlanFile = filePath && path.basename(filePath).toLowerCase() === "implementation_plan.md";
+
+            if (isPlanFile) {
+              this.planState = "PLANNING_PENDING";
+            } else if (this.planState === "PLANNING_PENDING") {
+              const blocked: ToolResult = {
+                toolCallId: tc.id,
+                name: tc.name,
+                result: "Error: File modification blocked. A plan is pending approval. You must wait for the user to approve the plan using '/approve' before modifying any codebase files.",
+                isError: true,
+              };
+              toolResults.push(blocked);
+              this.onEvent({ type: "tool_end", toolResult: blocked, description });
+              continue;
+            }
+          }
+
+          if (
+            (tc.name === "bash" || tc.name === "run_command" || tc.name === "run_background") &&
+            isDangerousCommand(tc.args.command as string)
+          ) {
+            const approved = await this.onPermission(tc, description);
+            if (!approved) {
+              const denied: ToolResult = {
+                toolCallId: tc.id,
+                name: tc.name,
+                result: "User denied permission for this command.",
+                isError: true,
+              };
+              toolResults.push(denied);
+              this.onEvent({ type: "tool_end", toolResult: denied, description });
+              continue;
+            }
+          }
+
+          const toolResult = await executeToolCall(
+            tc,
+            this.config.workingDirectory,
+            this.abortController?.signal
+          );
+          toolResults.push(toolResult);
+          this.onEvent({ type: "tool_end", toolResult, description });
+        }
+
+        this.conversation.addAssistantMessage(
+          textContent,
+          toolCalls,
+          toolResults
+        );
+
+        this.conversation.addMessage({
+          role: "tool",
+          content: "",
+          toolResults,
+          timestamp: Date.now(),
+        });
+        await this.saveHistory();
+
+        if (i === maxIterations - 1) {
+          if (continueCount >= maxContinues) {
+            const stopMsg = isGoalMode
+              ? `\n\n⚠️ [GOAL MODE: Reached maximum auto-continue limit (${maxContinues}x). Stopping to prevent infinite loop. Your goal was: "${this.goalMode}". You can continue with '/resume'.]\n`
+              : `\n\n⚠️ [System Warning: Reached maximum iteration limit and maximum auto-continues (${maxContinues}). Stopping to prevent infinite loop. You can continue the session by sending a message or running '/resume'.]\n`;
+            this.onEvent({ type: "text", content: stopMsg });
+          } else if (isGoalMode) {
+            continueCount++;
             this.onEvent({
               type: "text",
-              content: `\n\n⚠️ [System Warning: Reached maximum iteration limit of ${maxIterations} steps. The task may be incomplete. You can continue the session by sending a message or running '/resume'.]\n`
+              content: `\n\n🎯 [GOAL MODE: Auto-continuing iteration block ${continueCount}/${maxContinues} to achieve goal: "${this.goalMode}"]\n`,
             });
+            i = -1;
+            continue;
+          } else {
+            try {
+              const selected = await this.onQuestion(
+                `Reached maximum iteration limit of ${maxIterations} steps. The task may be incomplete. Would you like to continue for another ${maxIterations} steps?`,
+                ["Yes, continue", "No, stop here"]
+              );
+              if (selected === "Yes, continue") {
+                continueCount++;
+                i = -1;
+                continue;
+              }
+            } catch (err) {
+              this.onEvent({
+                type: "text",
+                content: `\n\n⚠️ [System Warning: Reached maximum iteration limit of ${maxIterations} steps. The task may be incomplete. You can continue the session by sending a message or running '/resume'.]\n`
+              });
+            }
           }
         }
       }
-    }
-
-    // After loop ends: if goal mode, emit goal_done event
-    if (isGoalMode && this.goalMode) {
-      this.onEvent({
-        type: "goal_done",
-        goal: this.goalMode,
-        summary: "Agent has finished executing. Check the output above for GOAL_COMPLETE or GOAL_PARTIAL status.",
-      });
+    } finally {
+      if (isGoalMode && this.goalMode) {
+        this.onEvent({
+          type: "goal_done",
+          goal: this.goalMode,
+          summary: "Agent has finished executing. Check the output above for GOAL_COMPLETE or GOAL_PARTIAL status.",
+        });
+      }
     }
   }
 
