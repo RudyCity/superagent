@@ -2225,7 +2225,6 @@ function LoadingIndicator() {
 
 function ProcessingIndicator({ scrollOffset }: { scrollOffset: number }) {
   const [frame, setFrame] = useState(0);
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   const progressFrames = [
     "[■□□□□□□□□□]",
     "[■■□□□□□□□□]",
@@ -2247,7 +2246,6 @@ function ProcessingIndicator({ scrollOffset }: { scrollOffset: number }) {
     return () => clearInterval(interval);
   }, []);
 
-  const spinner = frames[frame % frames.length];
   const pulse = pulseFrames[frame % pulseFrames.length];
   const barIndex = Math.floor(frame / 4) % progressFrames.length;
   const bar = progressFrames[barIndex];
@@ -2255,7 +2253,6 @@ function ProcessingIndicator({ scrollOffset }: { scrollOffset: number }) {
   return (
     <Box flexDirection="row">
       <Text color="gray">│ ❯ </Text>
-      <Text color="cyan" bold>{spinner} </Text>
       <Text dimColor>Processing{pulse} (Ctrl+C to abort) </Text>
       {scrollOffset > 0 && (
         <Text color="yellow" bold>
