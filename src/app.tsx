@@ -1132,14 +1132,14 @@ export function App({
   const chatHeightLimit = Math.max(5, terminalHeight - chromeHeight - 1);
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height={terminalHeight}>
       {showBanner && <Banner />}
 
-      <Box flexDirection="row">
+      <Box flexDirection="row" flexGrow={1}>
         {/* Chat Area */}
-        <Box flexDirection="column" width="100%">
+        <Box flexDirection="column" width="100%" flexGrow={1}>
           {/* Messages */}
-          <Box flexDirection="column" paddingX={1}>
+          <Box flexDirection="column" paddingX={1} flexGrow={1}>
             {(() => {
               let startIndex = lines.length;
               let accumulatedHeight = 0;
