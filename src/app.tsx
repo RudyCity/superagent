@@ -834,7 +834,8 @@ export function App({
   const handleSubmit = useCallback(
     async (value: string) => {
       const trimmed = value.trim();
-      if (!trimmed || isProcessing) return;
+      if (!trimmed) return;
+      if (isProcessing && !activeWizard) return;
 
       setInput("");
       setLastTabPrefix(null);
