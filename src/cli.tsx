@@ -29,17 +29,38 @@ if (!apiKey && !hasCustomEndpoint && !process.stdin.isTTY) {
   process.exit(1);
 }
 
+if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  console.log(`
+Usage: superagent [options] [prompt]
+
+Options:
+  -r, --resume    Resume the last active session
+  -h, --help      Show this help message and exit
+
+Examples:
+  superagent
+  superagent --resume
+  superagent "explain quantum computing in simple terms"
+`);
+  process.exit(0);
+}
+
 import readline from "readline";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 
 if (process.stdin.isTTY) {
   const autoResume = process.argv.includes("--resume") || process.argv.includes("-r");
+  const flags = ["--resume", "-r", "--help", "-h"];
+  const positionalArgs = process.argv.slice(2).filter(arg => !flags.includes(arg));
+  const initialPrompt = positionalArgs.join(" ");
+
   let hasCurrentHistory = false;
   console.clear();
   const { waitUntilExit } = render(
     React.createElement(App, {
       autoResume,
+      initialPrompt,
       onHistoryChange: (exists) => {
         hasCurrentHistory = exists;
       },

@@ -28,9 +28,11 @@ interface ChatLine {
 export function App({
   autoResume = false,
   onHistoryChange,
+  initialPrompt,
 }: {
   autoResume?: boolean;
   onHistoryChange?: (exists: boolean) => void;
+  initialPrompt?: string;
 }) {
   const { exit } = useApp();
   const [lines, setLines] = useState<ChatLine[]>([]);
@@ -418,12 +420,43 @@ export function App({
         agent.getHistory().clear();
       }
       setHistory(userInputs);
+
+      if (initialPrompt && initialPrompt.trim()) {
+        const prompt = initialPrompt.trim();
+        setLines((prev) => [
+          ...prev,
+          {
+            type: "user",
+            content: `❯ ${prompt}`,
+            timestamp: Date.now(),
+          },
+        ]);
+        setIsProcessing(true);
+        streamBufferRef.current = "";
+        setStreamDisplay("");
+        agent.sendMessage(prompt).then(() => {
+          const nextState = agent.planState;
+          setPlanState(nextState);
+          if (nextState === "PLANNING_PENDING") {
+            setActiveWizard((curr) => {
+              if (curr && curr.type === "plan_approve") return curr;
+              setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+              setWizardSelectedIndex(0);
+              return {
+                type: "plan_approve",
+                step: 1,
+                data: {},
+              };
+            });
+          }
+        });
+      }
     });
 
     return () => {
       process.off("SIGINT", handleSigint);
     };
-  }, [handleEvent, permissionHandler, questionHandler, exit, autoResume]);
+  }, [handleEvent, permissionHandler, questionHandler, exit, autoResume, initialPrompt]);
 
   useEffect(() => {
     const hasMessages = agentRef.current ? agentRef.current.getHistory().getMessages().length > 0 : false;
