@@ -1817,12 +1817,7 @@ export function App({
               </Box>
             )}
 
-            {activeWizard && (
-              <Box marginBottom={1} flexDirection="column">
-                <Text color="cyan" bold>❓ QUESTION / STEP INSTRUCTION:</Text>
-                <Text color="white">  {getWizardPlaceholder()}</Text>
-              </Box>
-            )}
+
 
             <Box flexDirection="column">
               <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>
