@@ -1,5 +1,20 @@
 import React from "react";
 import { Box, Text } from "ink";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let version = "1.1.0";
+try {
+  const pkgPath = path.join(__dirname, "..", "..", "package.json");
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+  version = pkg.version;
+} catch (e) {
+  // fallback
+}
 
 export function Banner() {
   return (
@@ -19,7 +34,7 @@ export function Banner() {
           <Box flexDirection="row" marginBottom={1}>
             <Text color="cyan" bold>SUPERAGENT</Text>
             <Text color="gray"> │ </Text>
-            <Text color="magenta" bold>COGNITIVE SYSTEM INTERFACE v1.1.0</Text>
+            <Text color="magenta" bold>COGNITIVE SYSTEM INTERFACE v{version}</Text>
           </Box>
           <Box flexDirection="row">
             <Text dimColor>Type your query or </Text>
