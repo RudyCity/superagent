@@ -260,7 +260,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
             }
             const msg = err instanceof Error ? err.message : String(err);
             this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
-            await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1)));
+            await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
           }
         }
       } else {
@@ -338,7 +338,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
             }
             const msg = err instanceof Error ? err.message : String(err);
             this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
-            await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1)));
+            await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
           }
         }
       }
@@ -649,6 +649,40 @@ ${formatted}`;
     }
 
     return result.text || "(empty summary)";
+  }
+
+  private async delayWithCountdown(attempt: number, delayMs: number): Promise<void> {
+    const delaySec = Math.ceil(delayMs / 1000);
+    const signal = this.abortController?.signal;
+    for (let sec = delaySec; sec > 0; sec--) {
+      if (signal?.aborted) {
+        const err = new Error("The operation was aborted.");
+        err.name = "AbortError";
+        throw err;
+      }
+      this.onEvent({ type: "text", content: `\rRetrying in ${sec}s... ` });
+      
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          if (signal) {
+            signal.removeEventListener("abort", onAbort);
+          }
+          resolve();
+        }, 1000);
+        
+        const onAbort = () => {
+          clearTimeout(timeout);
+          const err = new Error("The operation was aborted.");
+          err.name = "AbortError";
+          reject(err);
+        };
+        
+        if (signal) {
+          signal.addEventListener("abort", onAbort);
+        }
+      });
+    }
+    this.onEvent({ type: "text", content: `\r\n` });
   }
 
   abort(): void {

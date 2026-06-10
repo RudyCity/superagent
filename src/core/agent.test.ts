@@ -127,3 +127,32 @@ describe("Agent – goalMaxIterations boundary values", () => {
     expect(agent.goalMaxIterations).toBe(1);
   });
 });
+
+// ─── Countdown Delay ─────────────────────────────────────────────────────────
+
+describe("Agent – delayWithCountdown", () => {
+  it("counts down seconds and sends text events", async () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+
+    vi.useFakeTimers();
+
+    const delayPromise = (agent as any).delayWithCountdown(1, 4000);
+
+    await vi.runAllTimersAsync();
+    await delayPromise;
+
+    vi.useRealTimers();
+
+    const textEvents = onEvent.mock.calls
+      .map((args) => args[0] as AgentEvent)
+      .filter((e): e is { type: "text"; content: string } => e.type === "text")
+      .map((e) => e.content);
+
+    expect(textEvents).toContain("\rRetrying in 4s... ");
+    expect(textEvents).toContain("\rRetrying in 3s... ");
+    expect(textEvents).toContain("\rRetrying in 2s... ");
+    expect(textEvents).toContain("\rRetrying in 1s... ");
+    expect(textEvents[textEvents.length - 1]).toBe("\r\n");
+  });
+});

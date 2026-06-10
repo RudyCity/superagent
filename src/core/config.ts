@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import os from "os";
+import { getStaticModelLimit } from "./model_limits.js";
 
 export type Provider = "anthropic" | "openai" | "custom";
 
@@ -332,14 +333,108 @@ function loadAgentSkills(): string {
   return text;
 }
 
+export async function fetchAndCacheModels(): Promise<void> {
+  const config = getConfig();
+  let url = "";
+  const headers: Record<string, string> = {};
+
+  if (config.provider === "anthropic") {
+    // Anthropic doesn't have a public models list endpoint with context sizes
+    return;
+  }
+
+  const activeProvider = process.env.ACTIVE_PROVIDER || "";
+  if (activeProvider.toLowerCase() === "openrouter") {
+    url = "https://openrouter.ai/api/v1/models";
+  } else if (config.provider === "openai") {
+    if (config.baseUrl) {
+      url = `${config.baseUrl.replace(/\/+$/, "")}/models`;
+    } else {
+      url = "https://api.openai.com/v1/models";
+    }
+  } else if (config.provider === "custom") {
+    if (config.baseUrl) {
+      url = `${config.baseUrl.replace(/\/+$/, "")}/models`;
+    }
+  }
+
+  if (!url) return;
+
+  if (config.apiKey) {
+    headers["Authorization"] = `Bearer ${config.apiKey}`;
+  }
+
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) return;
+    const json = await res.json() as any;
+    if (json && Array.isArray(json.data)) {
+      const cache: Record<string, number> = {};
+      for (const m of json.data) {
+        if (!m || !m.id) continue;
+        const limit =
+          m.context_length ||
+          m.max_model_len ||
+          m.max_position_embeddings ||
+          (m.metadata &&
+            (m.metadata.context_length ||
+              m.metadata.max_model_len ||
+              m.metadata.max_position_embeddings));
+        if (limit && typeof limit === "number") {
+          cache[m.id] = limit;
+        }
+      }
+
+      ensureGlobalConfigDir();
+      const cachePath = path.join(getGlobalConfigDir(), "models_cache.json");
+      let existingCache: Record<string, number> = {};
+      if (fs.existsSync(cachePath)) {
+        try {
+          existingCache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+        } catch {}
+      }
+      const updatedCache = { ...existingCache, ...cache };
+      fs.writeFileSync(cachePath, JSON.stringify(updatedCache, null, 2), "utf-8");
+    }
+  } catch (err) {
+    // Ignore fetching errors
+  }
+}
+
 export function getContextWindowLimit(model: string): number {
-  const m = model.toLowerCase();
-  if (m.includes("claude-3-5") || m.includes("claude-3")) return 200000;
-  if (m.includes("gpt-4o") || m.includes("gpt-4-turbo") || m.includes("gpt-4")) return 128000;
-  if (m.includes("o1") || m.includes("o3")) return 200000;
+  // 1. Env overrides
+  if (process.env.CONTEXT_WINDOW_LIMIT) {
+    const parsed = parseInt(process.env.CONTEXT_WINDOW_LIMIT, 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  if (process.env.MAX_CONTEXT_TOKENS) {
+    const parsed = parseInt(process.env.MAX_CONTEXT_TOKENS, 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+
+  // 2. Read from models_cache.json
+  try {
+    const cachePath = path.join(getGlobalConfigDir(), "models_cache.json");
+    if (fs.existsSync(cachePath)) {
+      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+      if (cache && typeof cache[model] === "number") {
+        return cache[model];
+      }
+    }
+  } catch (err) {
+    // Ignore cache read errors
+  }
+
+  // 3. Fallback to rich static lookup
+  const staticLimit = getStaticModelLimit(model);
+  if (staticLimit !== null) {
+    return staticLimit;
+  }
+
   // Default fallback
   return 256000;
 }
+
 
 export function updateEnvFile(updates: Record<string, string>): string {
   ensureGlobalConfigDir();

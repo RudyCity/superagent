@@ -5,11 +5,11 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
-import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, listHistorySessions } from "./core/config.js";
+import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, listHistorySessions, fetchAndCacheModels } from "./core/config.js";
 import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
-import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToActiveOutput } from "./core/tools.js";
+import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToActiveOutput, registerQuestionHandler } from "./core/tools.js";
 import { WizardDialog } from "./components/wizard-dialog.js";
 import { execa } from "execa";
 
@@ -23,6 +23,15 @@ interface ChatLine {
     | "system";
   content: string;
   timestamp: number;
+}
+
+function resolveCarriageReturns(text: string): string {
+  const lines = text.split("\n");
+  const processed = lines.map((line) => {
+    const idx = line.lastIndexOf("\r");
+    return idx === -1 ? line : line.slice(idx + 1);
+  });
+  return processed.join("\n");
 }
 
 export function App({
@@ -144,37 +153,12 @@ export function App({
     }
     setContextLimit(initialLimit);
 
-    const customUrl = process.env.CUSTOM_BASE_URL;
-    if (customUrl) {
-      const fetchModels = async () => {
-        try {
-          const res = await fetch(`${customUrl}/models`);
-          if (res.ok) {
-            const json = await res.json() as any;
-            if (json && Array.isArray(json.data)) {
-              const currentModelData = json.data.find(
-                (m: any) => m.id === modelName
-              );
-              if (currentModelData) {
-                const limit =
-                  currentModelData.context_length ||
-                  currentModelData.max_model_len ||
-                  currentModelData.max_position_embeddings ||
-                  (currentModelData.metadata &&
-                    (currentModelData.metadata.context_length ||
-                      currentModelData.metadata.max_model_len));
-                if (limit && typeof limit === "number") {
-                  setContextLimit(limit);
-                }
-              }
-            }
-          }
-        } catch (e) {
-          // Silent catch
-        }
-      };
-      fetchModels();
-    }
+    fetchAndCacheModels()
+      .then(() => {
+        const limit = getContextWindowLimit(modelName);
+        setContextLimit(limit);
+      })
+      .catch(() => {});
   }, []);
 
   const flushBuffer = useCallback(() => {
@@ -232,7 +216,7 @@ export function App({
     (event: AgentEvent) => {
       switch (event.type) {
         case "text":
-          streamBufferRef.current += event.content;
+          streamBufferRef.current = resolveCarriageReturns(streamBufferRef.current + event.content);
           const now = Date.now();
           if (now - lastStreamUpdateRef.current > 100) {
             setStreamDisplay(streamBufferRef.current);
@@ -373,6 +357,7 @@ export function App({
   );
 
   useEffect(() => {
+    registerQuestionHandler(questionHandler);
     const agent = new Agent(handleEvent, permissionHandler, questionHandler);
     agentRef.current = agent;
 
@@ -477,6 +462,7 @@ export function App({
 
     return () => {
       process.off("SIGINT", handleSigint);
+      registerQuestionHandler(null);
     };
   }, [handleEvent, permissionHandler, questionHandler, exit, autoResume, initialPrompt]);
 
@@ -661,6 +647,14 @@ export function App({
           if (provider === "openrouter" && !process.env.MODEL) {
             updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
           }
+
+          fetchAndCacheModels()
+            .then(() => {
+              const currentModel = process.env.MODEL || getDefaultModel();
+              const limit = getContextWindowLimit(currentModel);
+              setContextLimit(limit);
+            })
+            .catch(() => {});
         } catch (err: any) {
           addLine({
             type: "error",
@@ -795,6 +789,12 @@ export function App({
             content: `Model successfully changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
             timestamp: now,
           });
+          fetchAndCacheModels()
+            .then(() => {
+              const newLimit = getContextWindowLimit(modelName);
+              setContextLimit(newLimit);
+            })
+            .catch(() => {});
         } catch (err: any) {
           addLine({
             type: "error",
@@ -1213,6 +1213,13 @@ export function App({
                   content: `Switched active provider to: ${chosen.name}\nSaved to: ${envPath}`,
                   timestamp: now,
                 });
+                fetchAndCacheModels()
+                  .then(() => {
+                    const currentModel = process.env.MODEL || getDefaultModel();
+                    const limit = getContextWindowLimit(currentModel);
+                    setContextLimit(limit);
+                  })
+                  .catch(() => {});
               } catch (err: any) {
                 addLine({
                   type: "error",
@@ -1365,6 +1372,12 @@ export function App({
               content: `Switched provider to: ${profileName} and model changed to: ${selectedModel}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
               timestamp: now,
             });
+            fetchAndCacheModels()
+              .then(() => {
+                const newLimit = getContextWindowLimit(selectedModel);
+                setContextLimit(newLimit);
+              })
+              .catch(() => {});
           } catch (err: any) {
             addLine({
               type: "error",
@@ -2882,6 +2895,16 @@ function handleSlashCommand(
         if (provider === "openrouter" && !process.env.MODEL) {
           updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
         }
+
+        fetchAndCacheModels()
+          .then(() => {
+            const currentModel = process.env.MODEL || getDefaultModel();
+            const limit = getContextWindowLimit(currentModel);
+            if (ctx.setContextLimit) {
+              ctx.setContextLimit(limit);
+            }
+          })
+          .catch(() => {});
       } catch (err: any) {
         ctx.addLine({
           type: "error",
@@ -2905,6 +2928,14 @@ function handleSlashCommand(
             content: `Model changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
             timestamp: now,
           });
+          fetchAndCacheModels()
+            .then(() => {
+              const newLimit = getContextWindowLimit(modelName);
+              if (ctx.setContextLimit) {
+                ctx.setContextLimit(newLimit);
+              }
+            })
+            .catch(() => {});
         } catch (err: any) {
           ctx.addLine({
             type: "error",

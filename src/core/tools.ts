@@ -1374,6 +1374,13 @@ When you have completed your assigned task, or if you are blocked and cannot pro
 const subagentTypes = new Map<string, SubagentType>();
 export const subagentInstances = new Map<string, SubagentInstance>();
 
+export type QuestionHandler = (question: string, options: string[]) => Promise<string>;
+let activeQuestionHandler: QuestionHandler | null = null;
+
+export function registerQuestionHandler(handler: QuestionHandler | null) {
+  activeQuestionHandler = handler;
+}
+
 export type SubagentChangeListener = () => void;
 const subagentChangeListeners = new Set<SubagentChangeListener>();
 
@@ -1555,6 +1562,9 @@ const invokeSubagentTool: Tool = {
         return true;
       },
       async (question, options) => {
+        if (activeQuestionHandler) {
+          return activeQuestionHandler(`[Subagent ${subagentId} (${role})]: ${question}`, options);
+        }
         return options[0] || "";
       },
       systemPromptWithReport
