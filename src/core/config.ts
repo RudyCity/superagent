@@ -34,25 +34,61 @@ export interface Config {
 }
 
 export function getConfig(): Config {
-  const customBaseUrl = process.env.CUSTOM_BASE_URL || "";
-  const customApiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY || "";
-  const anthropicKey = process.env.ANTHROPIC_API_KEY || "";
-  const openaiKey = process.env.OPENAI_API_KEY || "";
-
-  let provider: Provider;
-  let apiKey: string;
+  const activeProvider = process.env.ACTIVE_PROVIDER || "";
+  let provider: Provider = "openai";
+  let apiKey = "";
   let baseUrl: string | undefined;
 
-  if (customBaseUrl) {
-    provider = "custom";
-    apiKey = customApiKey;
-    baseUrl = customBaseUrl;
-  } else if (anthropicKey) {
-    provider = "anthropic";
-    apiKey = anthropicKey;
+  if (activeProvider) {
+    const prefix = `PROVIDER_${activeProvider.toUpperCase()}`;
+    const type = process.env[`${prefix}_TYPE`] || "";
+    apiKey = process.env[`${prefix}_API_KEY`] || "";
+    baseUrl = process.env[`${prefix}_BASE_URL`] || "";
+
+    if (!apiKey && !baseUrl) {
+      const customBaseUrl = process.env.CUSTOM_BASE_URL || "";
+      const customApiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY || "";
+      const anthropicKey = process.env.ANTHROPIC_API_KEY || "";
+      const openaiKey = process.env.OPENAI_API_KEY || "";
+
+      if (activeProvider.toLowerCase() === "custom" && customBaseUrl) {
+        provider = "custom";
+        apiKey = customApiKey;
+        baseUrl = customBaseUrl;
+      } else if (activeProvider.toLowerCase() === "anthropic" && anthropicKey) {
+        provider = "anthropic";
+        apiKey = anthropicKey;
+      } else if (activeProvider.toLowerCase() === "openai" && openaiKey) {
+        provider = "openai";
+        apiKey = openaiKey;
+      }
+    } else {
+      if (type === "anthropic" || activeProvider.toLowerCase() === "anthropic") {
+        provider = "anthropic";
+      } else if (type === "custom" || baseUrl) {
+        provider = "custom";
+      } else {
+        provider = "openai";
+      }
+    }
   } else {
-    provider = "openai";
-    apiKey = openaiKey;
+    // Backwards compatibility fallback
+    const customBaseUrl = process.env.CUSTOM_BASE_URL || "";
+    const customApiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY || "";
+    const anthropicKey = process.env.ANTHROPIC_API_KEY || "";
+    const openaiKey = process.env.OPENAI_API_KEY || "";
+
+    if (customBaseUrl) {
+      provider = "custom";
+      apiKey = customApiKey;
+      baseUrl = customBaseUrl;
+    } else if (anthropicKey) {
+      provider = "anthropic";
+      apiKey = anthropicKey;
+    } else {
+      provider = "openai";
+      apiKey = openaiKey;
+    }
   }
 
   const model =
@@ -282,6 +318,96 @@ export function updateEnvFile(updates: Record<string, string>): string {
   }
 
   return envPath;
+}
+
+export interface ConfiguredProvider {
+  name: string;
+  type: string;
+  baseUrl?: string;
+  isActive: boolean;
+}
+
+export function getConfiguredProviders(): ConfiguredProvider[] {
+  const providers: ConfiguredProvider[] = [];
+  const active = process.env.ACTIVE_PROVIDER || "";
+
+  // Add defaults if they are set in env directly (legacy)
+  if (process.env.ANTHROPIC_API_KEY && !process.env.PROVIDER_ANTHROPIC_API_KEY) {
+    providers.push({ name: "anthropic", type: "anthropic", isActive: !active || active.toLowerCase() === "anthropic" });
+  }
+  if (process.env.OPENAI_API_KEY && !process.env.PROVIDER_OPENAI_API_KEY) {
+    providers.push({ name: "openai", type: "openai", isActive: !active || active.toLowerCase() === "openai" });
+  }
+  if (process.env.CUSTOM_BASE_URL && !process.env.PROVIDER_CUSTOM_API_KEY) {
+    providers.push({ name: "custom", type: "custom", baseUrl: process.env.CUSTOM_BASE_URL, isActive: active.toLowerCase() === "custom" });
+  }
+
+  // Scan for PROVIDER_<NAME>_*
+  const seen = new Set<string>(providers.map(p => p.name.toLowerCase()));
+  for (const key of Object.keys(process.env)) {
+    const match = key.match(/^PROVIDER_([A-Z0-9_]+)_API_KEY$/);
+    if (match) {
+      const name = match[1].toLowerCase();
+      if (!seen.has(name)) {
+        seen.add(name);
+        const type = process.env[`PROVIDER_${match[1]}_TYPE`] || (name === "anthropic" ? "anthropic" : name === "openai" ? "openai" : name === "openrouter" ? "custom" : "custom");
+        const baseUrl = process.env[`PROVIDER_${match[1]}_BASE_URL`];
+        providers.push({
+          name,
+          type,
+          baseUrl,
+          isActive: active.toLowerCase() === name
+        });
+      }
+    }
+  }
+
+  return providers;
+}
+
+export function switchActiveProvider(name: string): string {
+  const prefix = `PROVIDER_${name.toUpperCase()}`;
+  const type = process.env[`${prefix}_TYPE`] || "";
+  const apiKey = process.env[`${prefix}_API_KEY`] || "";
+  const baseUrl = process.env[`${prefix}_BASE_URL`] || "";
+
+  const updates: Record<string, string> = {
+    ACTIVE_PROVIDER: name,
+  };
+
+  if (type === "openrouter" || name.toLowerCase() === "openrouter") {
+    updates["CUSTOM_BASE_URL"] = "https://openrouter.ai/api/v1";
+    updates["CUSTOM_API_KEY"] = apiKey;
+    updates["ANTHROPIC_API_KEY"] = "";
+    updates["OPENAI_API_KEY"] = "";
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+  } else if (type === "anthropic" || name.toLowerCase() === "anthropic") {
+    updates["ANTHROPIC_API_KEY"] = apiKey;
+    updates["CUSTOM_BASE_URL"] = "";
+    updates["CUSTOM_API_KEY"] = "";
+    updates["OPENAI_API_KEY"] = "";
+    delete process.env.CUSTOM_BASE_URL;
+    delete process.env.CUSTOM_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+  } else if (type === "openai" || name.toLowerCase() === "openai") {
+    updates["OPENAI_API_KEY"] = apiKey;
+    updates["CUSTOM_BASE_URL"] = "";
+    updates["CUSTOM_API_KEY"] = "";
+    updates["ANTHROPIC_API_KEY"] = "";
+    delete process.env.CUSTOM_BASE_URL;
+    delete process.env.CUSTOM_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+  } else {
+    updates["CUSTOM_BASE_URL"] = baseUrl;
+    updates["CUSTOM_API_KEY"] = apiKey;
+    updates["ANTHROPIC_API_KEY"] = "";
+    updates["OPENAI_API_KEY"] = "";
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+  }
+
+  return updateEnvFile(updates);
 }
 
 

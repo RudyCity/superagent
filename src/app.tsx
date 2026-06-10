@@ -5,41 +5,13 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
-import { getContextWindowLimit, updateEnvFile, getInstalledSkills } from "./core/config.js";
+import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider } from "./core/config.js";
 import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
 import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToActiveOutput } from "./core/tools.js";
 import { WizardDialog } from "./components/wizard-dialog.js";
 import { execa } from "execa";
-
-const providerModels: Record<string, string[]> = {
-  openrouter: [
-    "google/gemini-2.5-flash",
-    "google/gemini-2.5-pro",
-    "meta-llama/llama-3.3-70b-instruct",
-    "deepseek/deepseek-chat",
-    "anthropic/claude-3.5-sonnet",
-    "openai/gpt-4o",
-    "openai/gpt-4o-mini",
-  ],
-  openai: [
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "o1-mini",
-    "o1-preview",
-  ],
-  anthropic: [
-    "claude-3-5-sonnet-20241022",
-    "claude-3-5-sonnet-latest",
-    "claude-3-5-haiku-20241022",
-    "claude-3-opus-20240229",
-  ],
-  custom: [
-    "custom",
-  ],
-};
 
 interface ChatLine {
   type:
@@ -465,6 +437,37 @@ export function App({
     if (activeWizard.type === "login") {
       if (activeWizard.step === 1) {
         const choice = value.toLowerCase();
+        if (choice.includes("add") || choice === "1") {
+          setActiveWizard({
+            type: "login",
+            step: 2,
+            data: {},
+          });
+          setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+          setWizardSelectedIndex(0);
+        } else if (choice.includes("switch") || choice === "2") {
+          const list = getConfiguredProviders();
+          const options = list.map(p => `${p.name} (${p.type})${p.isActive ? " [Active]" : ""}`);
+          setActiveWizard({
+            type: "login",
+            step: 5,
+            data: {},
+          });
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+        } else {
+          const list = getConfiguredProviders();
+          addLine({
+            type: "system",
+            content: `Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})${p.isActive ? " [Active]" : ""}`).join("\n"),
+            timestamp: now,
+          });
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+        }
+      } else if (activeWizard.step === 2) {
+        const choice = value.toLowerCase();
         let provider = "";
         if (choice === "1" || choice.includes("openrouter")) {
           provider = "openrouter";
@@ -485,91 +488,124 @@ export function App({
 
         addLine({
           type: "system",
-          content: provider === "custom"
-            ? `Selected provider: ${provider}\nStep 2: Please enter your Base URL (e.g. http://localhost:8086/v1):`
-            : `Selected provider: ${provider}\nStep 2: Please enter your API Key:`,
+          content: `Selected provider type: ${provider}\nStep 3: Enter config profile name (e.g. ${provider}, deepseek, or press Enter for default):`,
           timestamp: now,
         });
 
         setActiveWizard({
           type: "login",
-          step: 2,
+          step: 3,
           data: { provider },
         });
-      } else if (activeWizard.step === 2) {
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+      } else if (activeWizard.step === 3) {
         const provider = activeWizard.data.provider;
+        const nameInput = value.trim().replace(/[^a-zA-Z0-9_-]/g, "");
+        const profileName = nameInput || provider;
+
         if (provider === "custom") {
           addLine({
             type: "system",
-            content: `Entered Base URL: ${value}\nStep 3: Please enter your API Key:`,
+            content: `Config Name: ${profileName}\nStep 4: Please enter your Base URL (e.g. http://localhost:11434/v1):`,
             timestamp: now,
           });
           setActiveWizard({
             type: "login",
-            step: 3,
-            data: { provider, baseUrl: value },
+            step: 4,
+            data: { provider, name: profileName },
           });
+          setInput("");
         } else {
-          const apiKey = value;
-          const updates: Record<string, string> = {};
-          if (provider === "openrouter") {
-            updates["CUSTOM_BASE_URL"] = "https://openrouter.ai/api/v1";
-            updates["CUSTOM_API_KEY"] = apiKey;
-            delete process.env.ANTHROPIC_API_KEY;
-            delete process.env.OPENAI_API_KEY;
-          } else if (provider === "anthropic") {
-            updates["ANTHROPIC_API_KEY"] = apiKey;
-            updates["CUSTOM_BASE_URL"] = "";
-            updates["CUSTOM_API_KEY"] = "";
-            delete process.env.CUSTOM_BASE_URL;
-            delete process.env.CUSTOM_API_KEY;
-            delete process.env.OPENAI_API_KEY;
-          } else if (provider === "openai") {
-            updates["OPENAI_API_KEY"] = apiKey;
-            updates["CUSTOM_BASE_URL"] = "";
-            updates["CUSTOM_API_KEY"] = "";
-            delete process.env.CUSTOM_BASE_URL;
-            delete process.env.CUSTOM_API_KEY;
-            delete process.env.ANTHROPIC_API_KEY;
-          }
+          addLine({
+            type: "system",
+            content: `Config Name: ${profileName}\nStep 6: Please enter your API Key:`,
+            timestamp: now,
+          });
+          setActiveWizard({
+            type: "login",
+            step: 6,
+            data: { provider, name: profileName },
+          });
+          setInput("");
+        }
+      } else if (activeWizard.step === 4) {
+        const provider = activeWizard.data.provider;
+        const profileName = activeWizard.data.name;
+        const baseUrl = value.trim();
 
+        addLine({
+          type: "system",
+          content: `Entered Base URL: ${baseUrl}\nStep 6: Please enter your API Key:`,
+          timestamp: now,
+        });
+        setActiveWizard({
+          type: "login",
+          step: 6,
+          data: { provider, name: profileName, baseUrl },
+        });
+        setInput("");
+      } else if (activeWizard.step === 5) {
+        const list = getConfiguredProviders();
+        const chosen = list.find(p => p.name.toLowerCase() === value.toLowerCase());
+        if (chosen) {
           try {
-            const envPath = updateEnvFile(updates);
+            const envPath = switchActiveProvider(chosen.name);
             addLine({
               type: "system",
-              content: `Successfully logged in! Configured provider: ${provider}.\nSaved to: ${envPath}`,
+              content: `Switched active provider to: ${chosen.name}\nSaved to: ${envPath}`,
               timestamp: now,
             });
-            if (provider === "openrouter" && !process.env.MODEL) {
-              updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
-            }
           } catch (err: any) {
             addLine({
               type: "error",
-              content: `Failed to save credentials: ${err.message}`,
+              content: `Failed to switch provider: ${err.message}`,
               timestamp: now,
             });
           }
-          setActiveWizard(null);
+        } else {
+          addLine({
+            type: "error",
+            content: `Provider "${value}" not found in configured list.`,
+            timestamp: now,
+          });
         }
-      } else if (activeWizard.step === 3) {
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+      } else if (activeWizard.step === 6) {
         const provider = activeWizard.data.provider;
+        const profileName = activeWizard.data.name;
         const baseUrl = activeWizard.data.baseUrl;
         const apiKey = value;
 
+        const prefix = `PROVIDER_${profileName.toUpperCase()}`;
+        const updates: Record<string, string> = {
+          ACTIVE_PROVIDER: profileName,
+          [`${prefix}_TYPE`]: provider,
+          [`${prefix}_API_KEY`]: apiKey,
+        };
+
+        if (baseUrl) {
+          updates[`${prefix}_BASE_URL`] = baseUrl;
+        } else if (provider === "openrouter") {
+          updates[`${prefix}_BASE_URL`] = "https://openrouter.ai/api/v1";
+        }
+
         try {
-          const envPath = updateEnvFile({
-            CUSTOM_BASE_URL: baseUrl,
-            CUSTOM_API_KEY: apiKey,
-          });
-          delete process.env.ANTHROPIC_API_KEY;
-          delete process.env.OPENAI_API_KEY;
+          updateEnvFile(updates);
+          const envPath = switchActiveProvider(profileName);
 
           addLine({
             type: "system",
-            content: `Successfully logged in! Configured custom provider at: ${baseUrl}\nSaved to: ${envPath}`,
+            content: `Successfully configured and activated provider profile: ${profileName} (${provider})!\nSaved to: ${envPath}`,
             timestamp: now,
           });
+
+          if (provider === "openrouter" && !process.env.MODEL) {
+            updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
+          }
         } catch (err: any) {
           addLine({
             type: "error",
@@ -578,6 +614,8 @@ export function App({
           });
         }
         setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
       }
     } else if (activeWizard.type === "model") {
       if (activeWizard.step === 1) {
@@ -600,29 +638,87 @@ export function App({
           return;
         }
 
-        addLine({
-          type: "system",
-          content: `Selected provider: ${provider}\nStep 2: Please select or type the model name:`,
-          timestamp: now,
+        setActiveWizard({
+          type: "model",
+          step: 2,
+          data: { provider },
         });
 
-        let models = providerModels[provider] || [];
-        if (provider === "custom") {
-          const baseUrl = process.env.CUSTOM_BASE_URL;
-          if (baseUrl) {
-            fetch(`${baseUrl}/models`)
+        let initialModels: string[] = [];
+        if (provider === "openrouter") {
+          initialModels = [
+            "google/gemini-2.5-flash",
+            "meta-llama/llama-3.3-70b-instruct",
+            "deepseek/deepseek-chat",
+            "anthropic/claude-3.5-sonnet",
+          ];
+          fetch("https://openrouter.ai/api/v1/models")
+            .then(async (res) => {
+              if (res.ok) {
+                const data = await res.json() as any;
+                if (data && Array.isArray(data.data)) {
+                  const modelsList = data.data.map((m: any) => m.id);
+                  setWizardOptions(modelsList);
+                }
+              }
+            })
+            .catch(() => {});
+        } else if (provider === "openai") {
+          initialModels = [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "o1",
+            "o1-mini",
+            "o1-preview",
+            "o3-mini",
+            "gpt-4-turbo",
+            "gpt-4",
+          ];
+          const apiKey = process.env.OPENAI_API_KEY || process.env.CUSTOM_API_KEY;
+          if (apiKey) {
+            fetch("https://api.openai.com/v1/models", {
+              headers: {
+                Authorization: `Bearer ${apiKey}`
+              }
+            })
               .then(async (res) => {
                 if (res.ok) {
-                  const data = (await res.json()) as any;
+                  const data = await res.json() as any;
                   if (data && Array.isArray(data.data)) {
                     const modelsList = data.data.map((m: any) => m.id);
                     setWizardOptions(modelsList);
-                    setWizardSelectedIndex(0);
-                    addLine({
-                      type: "system",
-                      content: `Live models loaded from ${baseUrl}. Selector list updated!`,
-                      timestamp: Date.now(),
-                    });
+                  }
+                }
+              })
+              .catch(() => {});
+          }
+        } else if (provider === "anthropic") {
+          initialModels = [
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229",
+            "claude-3-sonnet-20240229",
+            "claude-3-haiku-20240307",
+          ];
+        } else if (provider === "custom") {
+          initialModels = [
+            "deepseek-chat",
+            "llama-3.3-70b-instruct",
+          ];
+          const baseUrl = process.env.CUSTOM_BASE_URL;
+          const apiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY;
+          if (baseUrl) {
+            const headers: Record<string, string> = {};
+            if (apiKey) {
+              headers["Authorization"] = `Bearer ${apiKey}`;
+            }
+            fetch(`${baseUrl}/models`, { headers })
+              .then(async (res) => {
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  if (data && Array.isArray(data.data)) {
+                    const modelsList = data.data.map((m: any) => m.id);
+                    setWizardOptions(modelsList);
                   }
                 }
               })
@@ -630,13 +726,9 @@ export function App({
           }
         }
 
-        setActiveWizard({
-          type: "model",
-          step: 2,
-          data: { provider },
-        });
-        setWizardOptions(models);
+        setWizardOptions(initialModels);
         setWizardSelectedIndex(0);
+        setInput("");
       } else {
         const modelName = value;
         try {
@@ -656,6 +748,8 @@ export function App({
           });
         }
         setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
       }
     } else if (activeWizard.type === "plan_approve") {
       const approved = value === "approve";
@@ -814,7 +908,7 @@ export function App({
       setLastTabPrefix(null);
     }
     // Reset selection to top when search query changes in model wizard
-    if (activeWizard?.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0) {
+    if (activeWizard?.type === "model" && wizardOptions.length > 0) {
       setWizardSelectedIndex(0);
     }
   }, [lastTabPrefix, activeWizard, wizardOptions]);
@@ -875,70 +969,195 @@ export function App({
     }
 
     if (activeWizard) {
-      if (activeWizard.type === "login" && activeWizard.step === 1) {
+      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 5)) {
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(3, prev + 1));
+          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
           return;
         }
         if (key.return) {
-          const providers = ["openrouter", "openai", "anthropic", "custom"];
-          const provider = providers[wizardSelectedIndex];
+          const selectedOption = wizardOptions[wizardSelectedIndex];
+          if (!selectedOption) return;
           const now = Date.now();
-          addLine({
-            type: "system",
-            content: provider === "custom"
-              ? `Selected provider: ${provider}\nStep 2: Please enter your Base URL (e.g. http://localhost:8086/v1):`
-              : `Selected provider: ${provider}\nStep 2: Please enter your API Key:`,
-            timestamp: now,
-          });
+
+          if (activeWizard.step === 1) {
+            if (selectedOption.includes("Add / Log in")) {
+              setActiveWizard({
+                type: "login",
+                step: 2,
+                data: {},
+              });
+              setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+              setWizardSelectedIndex(0);
+            } else if (selectedOption.includes("Switch Active")) {
+              const list = getConfiguredProviders();
+              const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
+              setActiveWizard({
+                type: "login",
+                step: 5,
+                data: {},
+              });
+              setWizardOptions(options);
+              setWizardSelectedIndex(0);
+            } else {
+              const list = getConfiguredProviders();
+              addLine({
+                type: "system",
+                content: `Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})${p.isActive ? " [Active]" : ""}`).join("\n"),
+                timestamp: now,
+              });
+              setActiveWizard(null);
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+            }
+          } else if (activeWizard.step === 2) {
+            const choice = selectedOption.toLowerCase();
+            let provider = "";
+            if (choice.includes("openrouter")) provider = "openrouter";
+            else if (choice.includes("openai")) provider = "openai";
+            else if (choice.includes("anthropic")) provider = "anthropic";
+            else if (choice.includes("custom")) provider = "custom";
+
+            addLine({
+              type: "system",
+              content: `Selected provider type: ${provider}\nStep 3: Enter config profile name (e.g. ${provider}, deepseek, or press Enter for default):`,
+              timestamp: now,
+            });
+
+            setActiveWizard({
+              type: "login",
+              step: 3,
+              data: { provider },
+            });
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setInput("");
+          } else if (activeWizard.step === 5) {
+            const list = getConfiguredProviders();
+            const chosen = list[wizardSelectedIndex];
+            if (chosen) {
+              try {
+                const envPath = switchActiveProvider(chosen.name);
+                addLine({
+                  type: "system",
+                  content: `Switched active provider to: ${chosen.name}\nSaved to: ${envPath}`,
+                  timestamp: now,
+                });
+              } catch (err: any) {
+                addLine({
+                  type: "error",
+                  content: `Failed to switch provider: ${err.message}`,
+                  timestamp: now,
+                });
+              }
+            }
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+          }
+          return;
+        }
+      } else if (activeWizard.type === "model" && activeWizard.step === 1 && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+          return;
+        }
+        if (key.return) {
+          const list = getConfiguredProviders();
+          const chosen = list[wizardSelectedIndex];
+          if (!chosen) return;
+          
           setActiveWizard({
-            type: "login",
+            type: "model",
             step: 2,
-            data: { provider },
-          });
-          setWizardSelectedIndex(0);
-          return;
-        }
-      } else if (activeWizard.type === "model" && activeWizard.step === 1) {
-        if (key.upArrow) {
-          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
-          return;
-        }
-        if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(3, prev + 1));
-          return;
-        }
-        if (key.return) {
-          const providers = ["openrouter", "openai", "anthropic", "custom"];
-          const provider = providers[wizardSelectedIndex];
-          const now = Date.now();
-          addLine({
-            type: "system",
-            content: `Selected provider: ${provider}\nStep 2: Please select or type the model name:`,
-            timestamp: now,
+            data: { provider: chosen.name },
           });
 
-          let models = providerModels[provider] || [];
-          if (provider === "custom") {
-            const baseUrl = process.env.CUSTOM_BASE_URL;
-            if (baseUrl) {
-              fetch(`${baseUrl}/models`)
+          // Fetch models from this chosen profile
+          const prefix = `PROVIDER_${chosen.name.toUpperCase()}`;
+          const type = chosen.type;
+          const baseUrl = chosen.baseUrl || (type === "openrouter" ? "https://openrouter.ai/api/v1" : type === "openai" ? "https://api.openai.com/v1" : "");
+          const apiKey = process.env[`${prefix}_API_KEY`] || (type === "openai" ? process.env.OPENAI_API_KEY : type === "anthropic" ? process.env.ANTHROPIC_API_KEY : "");
+
+          let initialModels: string[] = [];
+          if (type === "openrouter" || chosen.name === "openrouter") {
+            initialModels = [
+              "google/gemini-2.5-flash",
+              "meta-llama/llama-3.3-70b-instruct",
+              "deepseek/deepseek-chat",
+              "anthropic/claude-3.5-sonnet",
+            ];
+            fetch("https://openrouter.ai/api/v1/models")
+              .then(async (res) => {
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  if (data && Array.isArray(data.data)) {
+                    const modelsList = data.data.map((m: any) => m.id);
+                    setWizardOptions(modelsList);
+                  }
+                }
+              })
+              .catch(() => {});
+          } else if (type === "openai" || chosen.name === "openai") {
+            initialModels = [
+              "gpt-4o",
+              "gpt-4o-mini",
+              "o1",
+              "o1-mini",
+              "o1-preview",
+              "o3-mini",
+              "gpt-4-turbo",
+              "gpt-4",
+            ];
+            if (apiKey) {
+              fetch("https://api.openai.com/v1/models", {
+                headers: {
+                  Authorization: `Bearer ${apiKey}`
+                }
+              })
                 .then(async (res) => {
                   if (res.ok) {
-                    const data = (await res.json()) as any;
+                    const data = await res.json() as any;
                     if (data && Array.isArray(data.data)) {
                       const modelsList = data.data.map((m: any) => m.id);
                       setWizardOptions(modelsList);
-                      setWizardSelectedIndex(0);
-                      addLine({
-                        type: "system",
-                        content: `Live models loaded from ${baseUrl}. Selector list updated!`,
-                        timestamp: Date.now(),
-                      });
+                    }
+                  }
+                })
+                .catch(() => {});
+            }
+          } else if (type === "anthropic" || chosen.name === "anthropic") {
+            initialModels = [
+              "claude-3-5-sonnet-20241022",
+              "claude-3-5-haiku-20241022",
+              "claude-3-opus-20240229",
+              "claude-3-sonnet-20240229",
+              "claude-3-haiku-20240307",
+            ];
+          } else {
+            initialModels = [
+              "deepseek-chat",
+              "llama-3.3-70b-instruct",
+            ];
+            if (baseUrl) {
+              const headers: Record<string, string> = {};
+              if (apiKey) {
+                headers["Authorization"] = `Bearer ${apiKey}`;
+              }
+              fetch(`${baseUrl}/models`, { headers })
+                .then(async (res) => {
+                  if (res.ok) {
+                    const data = await res.json() as any;
+                    if (data && Array.isArray(data.data)) {
+                      const modelsList = data.data.map((m: any) => m.id);
+                      setWizardOptions(modelsList);
                     }
                   }
                 })
@@ -946,12 +1165,7 @@ export function App({
             }
           }
 
-          setActiveWizard({
-            type: "model",
-            step: 2,
-            data: { provider },
-          });
-          setWizardOptions(models);
+          setWizardOptions(initialModels);
           setWizardSelectedIndex(0);
           setInput("");
           return;
@@ -974,12 +1188,14 @@ export function App({
           if (!selectedModel) return;
           const now = Date.now();
           try {
-            const envPath = updateEnvFile({ MODEL: selectedModel });
+            const profileName = activeWizard.data.provider;
+            const envPath = switchActiveProvider(profileName);
+            updateEnvFile({ MODEL: selectedModel });
             const limit = getContextWindowLimit(selectedModel);
             setContextLimit(limit);
             addLine({
               type: "system",
-              content: `Model successfully changed to: ${selectedModel}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+              content: `Switched provider to: ${profileName} and model changed to: ${selectedModel}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
               timestamp: now,
             });
           } catch (err: any) {
@@ -1179,11 +1395,12 @@ export function App({
   const getWizardPlaceholder = () => {
     if (!activeWizard) return "Type a message or /help...";
     if (activeWizard.type === "login") {
-      if (activeWizard.step === 1) return "Enter provider number (1-4)...";
-      if (activeWizard.step === 2) {
-        return activeWizard.data.provider === "custom" ? "Enter Custom Base URL..." : "Paste API key...";
-      }
-      if (activeWizard.step === 3) return "Paste API key...";
+      if (activeWizard.step === 1) return "Select option using arrows and Enter...";
+      if (activeWizard.step === 2) return "Select provider template using arrows and Enter...";
+      if (activeWizard.step === 3) return "Enter config profile name (or press Enter for default)...";
+      if (activeWizard.step === 4) return "Enter Custom Base URL...";
+      if (activeWizard.step === 5) return "Select provider to switch to using arrows and Enter...";
+      if (activeWizard.step === 6) return "Paste API key...";
     }
     if (activeWizard.type === "model") {
       if (activeWizard.step === 1) return "Enter provider number (1-4)...";
@@ -1250,8 +1467,11 @@ export function App({
   const showBanner = messageCount === 0;
   // Base chrome height: Banner is 7 (if shown), Input wrapper base is 3 (header + margin + prompt border/spacers), Status bar is 3 (3 lines + margin)
   let chromeHeight = (showBanner ? 12 : 5) + inputLinesCount;
-  if (isExecutingTool && activeToolLinesCount > 0) {
-    chromeHeight += activeToolLinesCount + 2; // Output lines + borders
+  if (isExecutingTool) {
+    chromeHeight += 2; // Loader header + loader line
+    if (activeToolLinesCount > 0) {
+      chromeHeight += activeToolLinesCount + 1; // Live output header + lines
+    }
   }
   if (planState === "PLANNING_PENDING") {
     if (activeWizard?.type === "plan_approve") {
@@ -1261,9 +1481,14 @@ export function App({
     }
   }
   if (activeWizard) {
-    if ((activeWizard.type === "login" || activeWizard.type === "model") && activeWizard.step === 1) {
-      chromeHeight += 8;
-    } else if (activeWizard.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0) {
+    chromeHeight += 3;
+    if (activeWizard.type === "login") {
+      if (activeWizard.step === 1 || activeWizard.step === 2) {
+        chromeHeight += 8;
+      } else if (activeWizard.step === 5) {
+        chromeHeight += 8 + Math.min(6, wizardOptions.length);
+      }
+    } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
       chromeHeight += 13; // +1 for search result count line
     } else if (activeWizard.type === "permission") {
       chromeHeight += 9;
@@ -1381,17 +1606,28 @@ export function App({
               </Box>
             )}
 
-            {scrollOffset === 0 && isExecutingTool && activeToolLinesCount > 0 && (
+            {scrollOffset === 0 && isExecutingTool && (
               <Box flexDirection="column">
                 <Text color="yellow">
-                  ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]
+                  ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...</Text> ]
                 </Text>
-                {activeToolLines.map((line, idx) => (
-                  <Box key={idx} flexDirection="row">
-                    <Text color="yellow">│    </Text>
-                    <Text color="gray">{line}</Text>
-                  </Box>
-                ))}
+                <Box flexDirection="row">
+                  <Text color="yellow">│    </Text>
+                  <ToolLoadingIndicator />
+                </Box>
+                {activeToolLinesCount > 0 && (
+                  <>
+                    <Text color="yellow">
+                      ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]
+                    </Text>
+                    {activeToolLines.map((line, idx) => (
+                      <Box key={idx} flexDirection="row">
+                        <Text color="yellow">│    </Text>
+                        <Text color="gray">{line}</Text>
+                      </Box>
+                    ))}
+                  </>
+                )}
               </Box>
             )}
           </Box>
@@ -1438,20 +1674,38 @@ export function App({
               />
             )}
 
-            {activeWizard && activeWizard.type === "login" && activeWizard.step === 1 && (
+            {activeWizard && activeWizard.type === "login" && activeWizard.step === 1 && wizardOptions.length > 0 && (
               <WizardDialog
-                title="🔑 SELECT PROVIDER (Use Arrow Keys Up/Down & Enter):"
+                title="🔑 PROVIDER MANAGER (Use Arrow Keys Up/Down & Enter):"
                 borderColor="cyan"
-                options={["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]}
+                options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
               />
             )}
 
-            {activeWizard && activeWizard.type === "model" && activeWizard.step === 1 && (
+            {activeWizard && activeWizard.type === "login" && activeWizard.step === 2 && wizardOptions.length > 0 && (
               <WizardDialog
-                title="⚙️ SELECT PROVIDER FOR MODEL (Use Arrow Keys Up/Down & Enter):"
+                title="🔑 SELECT PROVIDER TEMPLATE (Use Arrow Keys Up/Down & Enter):"
                 borderColor="cyan"
-                options={["1. OpenRouter", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]}
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "login" && activeWizard.step === 5 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="🔑 SWITCH ACTIVE PROVIDER (Use Arrow Keys Up/Down & Enter):"
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 1 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="⚙️ SELECT PROVIDER FOR MODELS (Use Arrow Keys Up/Down & Enter):"
+                borderColor="cyan"
+                options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
               />
             )}
@@ -1490,6 +1744,13 @@ export function App({
                     </Box>
                   );
                 })}
+              </Box>
+            )}
+
+            {activeWizard && (
+              <Box marginBottom={1} flexDirection="column">
+                <Text color="cyan" bold>❓ QUESTION / STEP INSTRUCTION:</Text>
+                <Text color="white">  {getWizardPlaceholder()}</Text>
               </Box>
             )}
 
@@ -1835,9 +2096,27 @@ function formatCompactNumber(num: number): string {
 }
 
 function getProviderLabel(): string {
+  const active = process.env.ACTIVE_PROVIDER;
+  if (active) {
+    const prefix = `PROVIDER_${active.toUpperCase()}`;
+    const baseUrl = process.env[`${prefix}_BASE_URL`] || "";
+    if (baseUrl) {
+      try {
+        const url = new URL(baseUrl);
+        return `${active} (${url.host})`;
+      } catch {
+        return active;
+      }
+    }
+    return active;
+  }
   if (process.env.CUSTOM_BASE_URL) {
-    const url = new URL(process.env.CUSTOM_BASE_URL);
-    return `custom (${url.host})`;
+    try {
+      const url = new URL(process.env.CUSTOM_BASE_URL);
+      return `custom (${url.host})`;
+    } catch {
+      return "custom";
+    }
   }
   if (process.env.ANTHROPIC_API_KEY) return "anthropic";
   return "openai";
@@ -1990,11 +2269,26 @@ function handleSlashCommand(
       const args = cmd.slice(name.length + 2).trim();
       if (!args) {
         if (ctx.setActiveWizard) {
-          ctx.setActiveWizard({
-            type: "login",
-            step: 1,
-            data: {},
-          });
+          const list = getConfiguredProviders();
+          if (list.length > 0) {
+            ctx.setActiveWizard({
+              type: "login",
+              step: 1,
+              data: {},
+            });
+            ctx.setWizardOptions?.([
+              "1. Add / Log in to a Provider",
+              "2. Switch Active Provider",
+              "3. List Configured Providers"
+            ]);
+          } else {
+            ctx.setActiveWizard({
+              type: "login",
+              step: 2,
+              data: {},
+            });
+            ctx.setWizardOptions?.(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+          }
           ctx.setWizardSelectedIndex?.(0);
         } else {
           ctx.addLine({
@@ -2052,38 +2346,26 @@ function handleSlashCommand(
         }
       }
 
-      const updates: Record<string, string> = {};
-      if (provider === "openrouter") {
-        updates["CUSTOM_BASE_URL"] = "https://openrouter.ai/api/v1";
-        updates["CUSTOM_API_KEY"] = apiKey;
-        delete process.env.ANTHROPIC_API_KEY;
-        delete process.env.OPENAI_API_KEY;
-      } else if (provider === "anthropic") {
-        updates["ANTHROPIC_API_KEY"] = apiKey;
-        updates["CUSTOM_BASE_URL"] = "";
-        updates["CUSTOM_API_KEY"] = "";
-        delete process.env.CUSTOM_BASE_URL;
-        delete process.env.CUSTOM_API_KEY;
-        delete process.env.OPENAI_API_KEY;
-      } else if (provider === "openai") {
-        updates["OPENAI_API_KEY"] = apiKey;
-        updates["CUSTOM_BASE_URL"] = "";
-        updates["CUSTOM_API_KEY"] = "";
-        delete process.env.CUSTOM_BASE_URL;
-        delete process.env.CUSTOM_API_KEY;
-        delete process.env.ANTHROPIC_API_KEY;
-      } else if (provider === "custom") {
-        updates["CUSTOM_BASE_URL"] = baseUrl;
-        updates["CUSTOM_API_KEY"] = apiKey;
-        delete process.env.ANTHROPIC_API_KEY;
-        delete process.env.OPENAI_API_KEY;
+      const profileName = provider;
+      const prefix = `PROVIDER_${profileName.toUpperCase()}`;
+      const updates: Record<string, string> = {
+        ACTIVE_PROVIDER: profileName,
+        [`${prefix}_TYPE`]: provider,
+        [`${prefix}_API_KEY`]: apiKey,
+      };
+
+      if (baseUrl) {
+        updates[`${prefix}_BASE_URL`] = baseUrl;
+      } else if (provider === "openrouter") {
+        updates[`${prefix}_BASE_URL`] = "https://openrouter.ai/api/v1";
       }
 
       try {
-        const envPath = updateEnvFile(updates);
+        updateEnvFile(updates);
+        const envPath = switchActiveProvider(profileName);
         ctx.addLine({
           type: "system",
-          content: `Successfully logged in. Configured provider: ${provider}.\nSaved to: ${envPath}`,
+          content: `Successfully logged in. Configured provider: ${profileName} (${provider}).\nSaved to: ${envPath}`,
           timestamp: now,
         });
 
@@ -2134,7 +2416,9 @@ function handleSlashCommand(
             step: 1,
             data: {},
           });
-          ctx.setWizardOptions?.(["1. OpenRouter", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+          const list = getConfiguredProviders();
+          const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
+          ctx.setWizardOptions?.(options.length > 0 ? options : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
           ctx.setWizardSelectedIndex?.(0);
         }
       }
@@ -2484,6 +2768,20 @@ function LoadingIndicator() {
   }, []);
 
   return <Text color="yellow">{frames[frame]} Thinking...</Text>;
+}
+
+function ToolLoadingIndicator() {
+  const [frame, setFrame] = useState(0);
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame((prev) => (prev + 1) % frames.length);
+    }, 120);
+    return () => clearInterval(interval);
+  }, []);
+
+  return <Text color="yellow">{frames[frame]} Running system tool...</Text>;
 }
 
 function ProcessingIndicator({ scrollOffset }: { scrollOffset: number }) {

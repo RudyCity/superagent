@@ -16,15 +16,12 @@ import React from "react";
 import { render } from "ink";
 import { App } from "./app.js";
 
-const apiKey =
-  process.env.ANTHROPIC_API_KEY ||
-  process.env.OPENAI_API_KEY ||
-  process.env.CUSTOM_API_KEY ||
-  "";
+import { getConfig } from "./core/config.js";
+const config = getConfig();
+const apiKey = config.apiKey;
+const hasCustomEndpoint = !!config.baseUrl;
 
-const hasCustomEndpoint = !!process.env.CUSTOM_BASE_URL;
-
-if (!apiKey && !hasCustomEndpoint) {
+if (!apiKey && !hasCustomEndpoint && !process.stdin.isTTY) {
   console.error(
     "Error: Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or CUSTOM_BASE_URL"
   );
