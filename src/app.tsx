@@ -1278,9 +1278,8 @@ export function App({
                 )}
               </Text>
               <Box flexDirection="row">
-                <Text color={activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>│ ❯ </Text>
                 {isProcessing ? (
-                  <Text dimColor>Processing... (Ctrl+C to abort)</Text>
+                  <ProcessingIndicator scrollOffset={scrollOffset} />
                 ) : (input.length > 200 || input.includes("\n")) ? (
                   <Box flexDirection="row">
                     <Text color="yellow" bold>[Pasted Text: {input.length} chars, {input.split("\n").length} lines] </Text>
@@ -2222,4 +2221,47 @@ function LoadingIndicator() {
   }, []);
 
   return <Text color="yellow">{frames[frame]} Thinking...</Text>;
+}
+
+function ProcessingIndicator({ scrollOffset }: { scrollOffset: number }) {
+  const [frame, setFrame] = useState(0);
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  const progressFrames = [
+    "[■□□□□□□□□□]",
+    "[■■□□□□□□□□]",
+    "[■■■□□□□□□□]",
+    "[■■■■□□□□□□]",
+    "[■■■■■□□□□□]",
+    "[■■■■■■□□□□]",
+    "[■■■■■■■□□□]",
+    "[■■■■■■■■□□]",
+    "[■■■■■■■■■□]",
+    "[■■■■■■■■■■]",
+  ];
+  const pulseFrames = ["   ", ".  ", ".. ", "..."];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame((prev) => (prev + 1) % 40);
+    }, 150);
+    return () => clearInterval(interval);
+  }, []);
+
+  const spinner = frames[frame % frames.length];
+  const pulse = pulseFrames[frame % pulseFrames.length];
+  const barIndex = Math.floor(frame / 4) % progressFrames.length;
+  const bar = progressFrames[barIndex];
+
+  return (
+    <Box flexDirection="row">
+      <Text color="gray">│ ❯ </Text>
+      <Text color="cyan" bold>{spinner} </Text>
+      <Text dimColor>Processing{pulse} (Ctrl+C to abort) </Text>
+      {scrollOffset > 0 && (
+        <Text color="yellow" bold>
+          [New outputs streaming at bottom - {bar}]
+        </Text>
+      )}
+    </Box>
+  );
 }
