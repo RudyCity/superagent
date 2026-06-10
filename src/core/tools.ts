@@ -233,7 +233,8 @@ const bashTool: Tool = {
     }
 
     try {
-      const result = await execa(command, {
+      clearActiveToolOutput();
+      const proc = execa(command, {
         shell: isWin ? "powershell.exe" : true,
         cwd,
         timeout,
@@ -241,14 +242,22 @@ const bashTool: Tool = {
         all: true,
         cancelSignal: signal,
       });
+
+      proc.all?.on("data", (data) => {
+        appendActiveToolOutput(data.toString());
+      });
+
+      const result = await proc;
+      clearActiveToolOutput();
       const output = (result.all || result.stdout || "").trim();
       if (result.exitCode !== 0) {
         return `Exit code: ${result.exitCode}\n${output}`;
       }
       return output || "(no output)";
     } catch (err: unknown) {
+      clearActiveToolOutput();
       const message = err instanceof Error ? err.message : String(err);
-      return `Error: ${message}`;
+      return `Error executing command: ${message}`;
     }
   },
 };
