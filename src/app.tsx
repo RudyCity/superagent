@@ -1080,8 +1080,9 @@ export function App({
   // Calculate dynamic input line height wrapping
   const inputLinesCount = input ? Math.max(1, Math.ceil((input.length + 6) / terminalWidth)) : 1;
 
-  // Base chrome height: Banner is 7, Input wrapper base is 3 (header + margin + prompt border/spacers), Status bar is 3 (3 lines + margin)
-  let chromeHeight = 12 + inputLinesCount;
+  const showBanner = messageCount === 0;
+  // Base chrome height: Banner is 7 (if shown), Input wrapper base is 3 (header + margin + prompt border/spacers), Status bar is 3 (3 lines + margin)
+  let chromeHeight = (showBanner ? 12 : 5) + inputLinesCount;
   if (planState === "PLANNING_PENDING") {
     if (activeWizard?.type === "plan_approve") {
       chromeHeight += 8;
@@ -1132,7 +1133,7 @@ export function App({
 
   return (
     <Box flexDirection="column">
-      <Banner />
+      {showBanner && <Banner />}
 
       <Box flexDirection="row">
         {/* Chat Area */}
