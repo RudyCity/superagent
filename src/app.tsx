@@ -1319,7 +1319,7 @@ export function App({
           </Box>
           <Box>
             <Text color="magenta" bold>
-              CTX_USAGE: {contextPercentage}%
+              CTX_USAGE: {activeContextUsage.toLocaleString()}/{contextLimit.toLocaleString()} ({contextPercentage}%)
             </Text>
           </Box>
         </Box>
