@@ -256,11 +256,17 @@ export interface LoadedSkill {
 
 export function getInstalledSkills(): LoadedSkill[] {
   const skills: LoadedSkill[] = [];
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const packageRootDir = path.resolve(__dirname, "..", "..");
+
   const searchDirs = [
     path.join(os.homedir(), ".superagent-r", "skills"),
     path.join(process.cwd(), "skills"),
     path.join(process.cwd(), ".superagent", "skills"),
-    path.join(process.cwd(), ".agents", "skills")
+    path.join(process.cwd(), ".agents", "skills"),
+    path.join(packageRootDir, "skills"),
+    path.join(packageRootDir, ".agents", "skills")
   ];
 
   for (const dir of searchDirs) {
