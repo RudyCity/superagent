@@ -13,6 +13,34 @@ import { registerSubagentType, allTools, backgroundTasks, subagentInstances, sub
 import { WizardDialog } from "./components/wizard-dialog.js";
 import { execa } from "execa";
 
+const providerModels: Record<string, string[]> = {
+  openrouter: [
+    "google/gemini-2.5-flash",
+    "google/gemini-2.5-pro",
+    "meta-llama/llama-3.3-70b-instruct",
+    "deepseek/deepseek-chat",
+    "anthropic/claude-3.5-sonnet",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+  ],
+  openai: [
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gpt-4-turbo",
+    "o1-mini",
+    "o1-preview",
+  ],
+  anthropic: [
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-sonnet-latest",
+    "claude-3-5-haiku-20241022",
+    "claude-3-opus-20240229",
+  ],
+  custom: [
+    "custom",
+  ],
+};
+
 interface ChatLine {
   type:
     | "user"
@@ -86,16 +114,6 @@ export function App({
       process.stdout.off("resize", handleResize);
     };
   }, []);
-
-  useEffect(() => {
-    // Enable SGR mouse tracking to detect scroll events in CLI
-    process.stdout.write("\x1b[?1000h\x1b[?1006h");
-    return () => {
-      // Disable SGR mouse tracking on exit
-      process.stdout.write("\x1b[?1000l\x1b[?1006l");
-    };
-  }, []);
-
 
   useEffect(() => {
     const unsubTasks = subscribeToTasks(() => {
@@ -562,24 +580,83 @@ export function App({
         setActiveWizard(null);
       }
     } else if (activeWizard.type === "model") {
-      const modelName = value;
-      try {
-        const envPath = updateEnvFile({ MODEL: modelName });
-        const limit = getContextWindowLimit(modelName);
-        setContextLimit(limit);
+      if (activeWizard.step === 1) {
+        const choice = value.toLowerCase();
+        let provider = "";
+        if (choice === "1" || choice.includes("openrouter")) {
+          provider = "openrouter";
+        } else if (choice === "2" || choice.includes("openai")) {
+          provider = "openai";
+        } else if (choice === "3" || choice.includes("anthropic")) {
+          provider = "anthropic";
+        } else if (choice === "4" || choice.includes("custom")) {
+          provider = "custom";
+        } else {
+          addLine({
+            type: "error",
+            content: "Invalid choice. Please select 1, 2, 3, or 4.",
+            timestamp: now,
+          });
+          return;
+        }
+
         addLine({
           type: "system",
-          content: `Model successfully changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+          content: `Selected provider: ${provider}\nStep 2: Please select or type the model name:`,
           timestamp: now,
         });
-      } catch (err: any) {
-        addLine({
-          type: "error",
-          content: `Failed to set model: ${err.message}`,
-          timestamp: now,
+
+        let models = providerModels[provider] || [];
+        if (provider === "custom") {
+          const baseUrl = process.env.CUSTOM_BASE_URL;
+          if (baseUrl) {
+            fetch(`${baseUrl}/models`)
+              .then(async (res) => {
+                if (res.ok) {
+                  const data = (await res.json()) as any;
+                  if (data && Array.isArray(data.data)) {
+                    const modelsList = data.data.map((m: any) => m.id);
+                    setWizardOptions(modelsList);
+                    setWizardSelectedIndex(0);
+                    addLine({
+                      type: "system",
+                      content: `Live models loaded from ${baseUrl}. Selector list updated!`,
+                      timestamp: Date.now(),
+                    });
+                  }
+                }
+              })
+              .catch(() => {});
+          }
+        }
+
+        setActiveWizard({
+          type: "model",
+          step: 2,
+          data: { provider },
         });
+        setWizardOptions(models);
+        setWizardSelectedIndex(0);
+      } else {
+        const modelName = value;
+        try {
+          const envPath = updateEnvFile({ MODEL: modelName });
+          const limit = getContextWindowLimit(modelName);
+          setContextLimit(limit);
+          addLine({
+            type: "system",
+            content: `Model successfully changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+            timestamp: now,
+          });
+        } catch (err: any) {
+          addLine({
+            type: "error",
+            content: `Failed to set model: ${err.message}`,
+            timestamp: now,
+          });
+        }
+        setActiveWizard(null);
       }
-      setActiveWizard(null);
     } else if (activeWizard.type === "plan_approve") {
       const approved = value === "approve";
       if (approved) {
@@ -737,7 +814,7 @@ export function App({
       setLastTabPrefix(null);
     }
     // Reset selection to top when search query changes in model wizard
-    if (activeWizard?.type === "model" && wizardOptions.length > 0) {
+    if (activeWizard?.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0) {
       setWizardSelectedIndex(0);
     }
   }, [lastTabPrefix, activeWizard, wizardOptions]);
@@ -761,21 +838,6 @@ export function App({
   ];
 
   useInput((inputChar, key) => {
-    // Handle SGR Mouse Scroll Wheel
-    if (inputChar.startsWith("\x1b[<") || inputChar.startsWith("\u001b[<")) {
-      if (inputChar.includes("64;")) {
-        // Scroll Up
-        setScrollOffset((prev) => {
-          const maxScroll = Math.max(0, lines.length - 15);
-          return Math.min(prev + 1, maxScroll);
-        });
-      } else if (inputChar.includes("65;")) {
-        // Scroll Down
-        setScrollOffset((prev) => Math.max(0, prev - 1));
-      }
-      return;
-    }
-
     if (key.ctrl && inputChar === "h") {
       setFocusMode((prev) => {
         const next = prev === "input" ? "history" : "input";
@@ -841,7 +903,60 @@ export function App({
           setWizardSelectedIndex(0);
           return;
         }
-      } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
+      } else if (activeWizard.type === "model" && activeWizard.step === 1) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(3, prev + 1));
+          return;
+        }
+        if (key.return) {
+          const providers = ["openrouter", "openai", "anthropic", "custom"];
+          const provider = providers[wizardSelectedIndex];
+          const now = Date.now();
+          addLine({
+            type: "system",
+            content: `Selected provider: ${provider}\nStep 2: Please select or type the model name:`,
+            timestamp: now,
+          });
+
+          let models = providerModels[provider] || [];
+          if (provider === "custom") {
+            const baseUrl = process.env.CUSTOM_BASE_URL;
+            if (baseUrl) {
+              fetch(`${baseUrl}/models`)
+                .then(async (res) => {
+                  if (res.ok) {
+                    const data = (await res.json()) as any;
+                    if (data && Array.isArray(data.data)) {
+                      const modelsList = data.data.map((m: any) => m.id);
+                      setWizardOptions(modelsList);
+                      setWizardSelectedIndex(0);
+                      addLine({
+                        type: "system",
+                        content: `Live models loaded from ${baseUrl}. Selector list updated!`,
+                        timestamp: Date.now(),
+                      });
+                    }
+                  }
+                })
+                .catch(() => {});
+            }
+          }
+
+          setActiveWizard({
+            type: "model",
+            step: 2,
+            data: { provider },
+          });
+          setWizardOptions(models);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+      } else if (activeWizard.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0) {
         const modelSearchQuery = input.trim().toLowerCase();
         const filteredModels = modelSearchQuery
           ? wizardOptions.filter((m) => m.toLowerCase().includes(modelSearchQuery))
@@ -1071,6 +1186,7 @@ export function App({
       if (activeWizard.step === 3) return "Paste API key...";
     }
     if (activeWizard.type === "model") {
+      if (activeWizard.step === 1) return "Enter provider number (1-4)...";
       return wizardOptions.length > 0
         ? "🔍 Search models (type to filter, arrows to navigate, Enter to select)..."
         : "Enter model name (e.g. google/gemini-2.5-flash)...";
@@ -1145,9 +1261,9 @@ export function App({
     }
   }
   if (activeWizard) {
-    if (activeWizard.type === "login" && activeWizard.step === 1) {
+    if ((activeWizard.type === "login" || activeWizard.type === "model") && activeWizard.step === 1) {
       chromeHeight += 8;
-    } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
+    } else if (activeWizard.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0) {
       chromeHeight += 13; // +1 for search result count line
     } else if (activeWizard.type === "permission") {
       chromeHeight += 9;
@@ -1331,7 +1447,16 @@ export function App({
               />
             )}
 
-            {activeWizard && activeWizard.type === "model" && wizardOptions.length > 0 && (() => {
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 1 && (
+              <WizardDialog
+                title="⚙️ SELECT PROVIDER FOR MODEL (Use Arrow Keys Up/Down & Enter):"
+                borderColor="cyan"
+                options={["1. OpenRouter", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0 && (() => {
               const modelSearchQuery = input.trim().toLowerCase();
               const filteredModels = modelSearchQuery
                 ? wizardOptions.filter((m) => m.toLowerCase().includes(modelSearchQuery))
@@ -2003,46 +2128,14 @@ function handleSlashCommand(
           timestamp: now,
         });
 
-        const defaults = [
-          "google/gemini-2.5-flash",
-          "meta-llama/llama-3.3-70b-instruct",
-          "deepseek/deepseek-chat",
-          "gpt-4o",
-          "gpt-4o-mini",
-          "claude-3-5-sonnet-20241022",
-        ];
-
         if (ctx.setActiveWizard) {
           ctx.setActiveWizard({
             type: "model",
             step: 1,
             data: {},
           });
-          ctx.setWizardOptions?.(defaults);
+          ctx.setWizardOptions?.(["1. OpenRouter", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
           ctx.setWizardSelectedIndex?.(0);
-        }
-
-        const baseUrl = process.env.CUSTOM_BASE_URL;
-        if (baseUrl) {
-          fetch(`${baseUrl}/models`)
-            .then(async (res) => {
-              if (res.ok) {
-                const data = (await res.json()) as any;
-                if (data && Array.isArray(data.data)) {
-                  const modelsList = data.data.map((m: any) => m.id);
-                  if (ctx.setWizardOptions) {
-                    ctx.setWizardOptions(modelsList);
-                    ctx.setWizardSelectedIndex?.(0);
-                  }
-                  ctx.addLine({
-                    type: "system",
-                    content: `Live models loaded from ${baseUrl}. Selector list updated!`,
-                    timestamp: Date.now(),
-                  });
-                }
-              }
-            })
-            .catch(() => {});
         }
       }
       break;

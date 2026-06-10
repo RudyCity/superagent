@@ -163,119 +163,143 @@ CRITICAL TASK EXECUTION CONTEXT:
       const toolCalls: ToolCall[] = [];
 
       if (this.config.disableStreaming) {
-        try {
-          const result = await generateText({
-            model: this.getModel(),
-            system: systemPrompt,
-            messages,
-            tools: Object.fromEntries(
-              toolDefs.map((t) => [
-                t.name,
-                {
-                  description: t.description,
-                  parameters: jsonSchema(t.input_schema),
-                },
-              ])
-            ),
-            maxSteps: 1,
-            abortSignal: this.abortController?.signal,
-          });
+        let attempt = 0;
+        const maxRetries = 3;
+        const baseDelay = 1000;
 
-          textContent = result.text || "";
-          if (textContent) {
-            this.onEvent({ type: "text", content: textContent });
-          }
-          if (result.toolCalls) {
-            for (const tc of result.toolCalls) {
-              toolCalls.push({
-                id: tc.toolCallId,
-                name: tc.toolName,
-                args: tc.args as Record<string, unknown>,
+        while (true) {
+          try {
+            const result = await generateText({
+              model: this.getModel(),
+              system: systemPrompt,
+              messages,
+              tools: Object.fromEntries(
+                toolDefs.map((t) => [
+                  t.name,
+                  {
+                    description: t.description,
+                    parameters: jsonSchema(t.input_schema),
+                  },
+                ])
+              ),
+              maxSteps: 1,
+              abortSignal: this.abortController?.signal,
+            });
+
+            textContent = result.text || "";
+            if (textContent) {
+              this.onEvent({ type: "text", content: textContent });
+            }
+            if (result.toolCalls) {
+              for (const tc of result.toolCalls) {
+                toolCalls.push({
+                  id: tc.toolCallId,
+                  name: tc.toolName,
+                  args: tc.args as Record<string, unknown>,
+                });
+              }
+            }
+            const usage = result.usage;
+            if (usage) {
+              this.onEvent({
+                type: "token_usage",
+                promptTokens: usage.promptTokens,
+                completionTokens: usage.completionTokens,
               });
             }
-          }
-          const usage = result.usage;
-          if (usage) {
-            this.onEvent({
-              type: "token_usage",
-              promptTokens: usage.promptTokens,
-              completionTokens: usage.completionTokens,
-            });
-          }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          this.onEvent({ type: "error", message: `Generate text failed: ${msg}` });
-          return;
-        }
-      } else {
-        let result;
-        try {
-          result = streamText({
-            model: this.getModel(),
-            system: systemPrompt,
-            messages,
-            tools: Object.fromEntries(
-              toolDefs.map((t) => [
-                t.name,
-                {
-                  description: t.description,
-                  parameters: jsonSchema(t.input_schema),
-                },
-              ])
-            ),
-            maxSteps: 1,
-            abortSignal: this.abortController?.signal,
-          });
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          this.onEvent({ type: "error", message: `Stream init failed: ${msg}` });
-          return;
-        }
-
-        try {
-          for await (const delta of result.fullStream) {
-            if (delta.type === "text-delta") {
-              textContent += delta.textDelta;
-              this.onEvent({ type: "text", content: delta.textDelta });
-            } else if ((delta.type as string) === "reasoning" || (delta.type as string) === "reasoning-delta") {
-              const reasoningText = (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
-              if (reasoningText) {
-                textContent += reasoningText;
-                this.onEvent({ type: "text", content: reasoningText });
-              }
-            } else if (delta.type === "tool-call") {
-              const tc: ToolCall = {
-                id: delta.toolCallId,
-                name: delta.toolName,
-                args: delta.args as Record<string, unknown>,
-              };
-              toolCalls.push(tc);
-            } else if (delta.type === "error") {
-              const errMsg =
-                delta.error instanceof Error
-                  ? delta.error.message
-                  : String(delta.error);
-              this.onEvent({ type: "error", message: `API error: ${errMsg}` });
+            break;
+          } catch (err: unknown) {
+            if (err instanceof Error && err.name === "AbortError") {
+              throw err;
+            }
+            attempt++;
+            if (attempt > maxRetries) {
+              const msg = err instanceof Error ? err.message : String(err);
+              this.onEvent({ type: "error", message: `Generate text failed after ${maxRetries} retries: ${msg}` });
               return;
             }
+            const msg = err instanceof Error ? err.message : String(err);
+            this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
+            await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1)));
           }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          this.onEvent({ type: "error", message: `Stream error: ${msg}` });
-          return;
         }
+      } else {
+        let attempt = 0;
+        const maxRetries = 3;
+        const baseDelay = 1000;
 
-        try {
-          const usage = await result.usage;
-          if (usage) {
-            this.onEvent({
-              type: "token_usage",
-              promptTokens: usage.promptTokens,
-              completionTokens: usage.completionTokens,
+        while (true) {
+          try {
+            textContent = "";
+            toolCalls.length = 0;
+
+            const result = streamText({
+              model: this.getModel(),
+              system: systemPrompt,
+              messages,
+              tools: Object.fromEntries(
+                toolDefs.map((t) => [
+                  t.name,
+                  {
+                    description: t.description,
+                    parameters: jsonSchema(t.input_schema),
+                  },
+                ])
+              ),
+              maxSteps: 1,
+              abortSignal: this.abortController?.signal,
             });
+
+            for await (const delta of result.fullStream) {
+              if (delta.type === "text-delta") {
+                textContent += delta.textDelta;
+                this.onEvent({ type: "text", content: delta.textDelta });
+              } else if ((delta.type as string) === "reasoning" || (delta.type as string) === "reasoning-delta") {
+                const reasoningText = (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
+                if (reasoningText) {
+                  textContent += reasoningText;
+                  this.onEvent({ type: "text", content: reasoningText });
+                }
+              } else if (delta.type === "tool-call") {
+                const tc: ToolCall = {
+                  id: delta.toolCallId,
+                  name: delta.toolName,
+                  args: delta.args as Record<string, unknown>,
+                };
+                toolCalls.push(tc);
+              } else if (delta.type === "error") {
+                throw delta.error instanceof Error ? delta.error : new Error(String(delta.error));
+              }
+            }
+
+            try {
+              const usage = await result.usage;
+              if (usage) {
+                this.onEvent({
+                  type: "token_usage",
+                  promptTokens: usage.promptTokens,
+                  completionTokens: usage.completionTokens,
+                });
+              }
+            } catch (err) {
+              // Ignore or log error silently
+            }
+
+            break;
+          } catch (err: unknown) {
+            if (err instanceof Error && err.name === "AbortError") {
+              throw err;
+            }
+            attempt++;
+            if (attempt > maxRetries) {
+              const msg = err instanceof Error ? err.message : String(err);
+              this.onEvent({ type: "error", message: `Stream error after ${maxRetries} retries: ${msg}` });
+              return;
+            }
+            const msg = err instanceof Error ? err.message : String(err);
+            this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
+            await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1)));
           }
-        } catch (err) {
-          // Ignore or log error silently
         }
       }
 
@@ -529,12 +553,31 @@ Keep the summary concise, clear, and direct.
 PAST CHAT HISTORY:
 ${formatted}`;
 
-    const result = await generateText({
-      model: this.getModel(),
-      system: "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
-      prompt,
-      abortSignal: this.abortController?.signal,
-    });
+    let attempt = 0;
+    const maxRetries = 3;
+    const baseDelay = 1000;
+    let result;
+
+    while (true) {
+      try {
+        result = await generateText({
+          model: this.getModel(),
+          system: "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
+          prompt,
+          abortSignal: this.abortController?.signal,
+        });
+        break;
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          throw err;
+        }
+        attempt++;
+        if (attempt > maxRetries) {
+          throw err;
+        }
+        await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1)));
+      }
+    }
 
     return result.text || "(empty summary)";
   }
