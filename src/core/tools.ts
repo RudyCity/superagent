@@ -402,6 +402,12 @@ const bashTool: Tool = {
       return output || "(no output)";
     } catch (err: unknown) {
       clearActiveToolOutput();
+      // Re-throw if signal was aborted so the agent loop can clean up
+      if (signal?.aborted || (err instanceof Error && (err.name === "AbortError" || err.name === "CancelError"))) {
+        const abortErr = new Error("AbortError");
+        abortErr.name = "AbortError";
+        throw abortErr;
+      }
       const message = err instanceof Error ? err.message : String(err);
       return `Error executing command: ${message}`;
     }
@@ -1172,6 +1178,12 @@ const runCommandTool: Tool = {
       return output || "(no output)";
     } catch (err: unknown) {
       clearActiveToolOutput();
+      // Re-throw if signal was aborted so the agent loop can clean up
+      if (signal?.aborted || (err instanceof Error && (err.name === "AbortError" || err.name === "CancelError"))) {
+        const abortErr = new Error("AbortError");
+        abortErr.name = "AbortError";
+        throw abortErr;
+      }
       const message = err instanceof Error ? err.message : String(err);
       return `Error executing command: ${message}`;
     }

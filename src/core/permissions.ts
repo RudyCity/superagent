@@ -122,6 +122,11 @@ export async function executeToolCall(
       result,
     };
   } catch (err: unknown) {
+    // Re-throw AbortError so it propagates up to the agent loop's finally block,
+    // which resets isRunning=false and emits the "done" event.
+    if (err instanceof Error && err.name === "AbortError") {
+      throw err;
+    }
     const message = err instanceof Error ? err.message : String(err);
     return {
       toolCallId: toolCall.id,
