@@ -457,7 +457,9 @@ export function App({
 
         addLine({
           type: "system",
-          content: `Selected provider: ${provider}\nStep 2: Please enter your API Key:`,
+          content: provider === "custom"
+            ? `Selected provider: ${provider}\nStep 2: Please enter your Base URL (e.g. http://localhost:8086/v1):`
+            : `Selected provider: ${provider}\nStep 2: Please enter your API Key:`,
           timestamp: now,
         });
 
@@ -716,7 +718,7 @@ export function App({
         }
       }
     },
-    [isProcessing, addLine, exit]
+    [isProcessing, activeWizard, handleWizardSubmit, addLine, exit]
   );
 
   const handleInputChange = useCallback((val: string) => {
@@ -724,7 +726,11 @@ export function App({
     if (lastTabPrefix && !val.startsWith(lastTabPrefix)) {
       setLastTabPrefix(null);
     }
-  }, [lastTabPrefix]);
+    // Reset selection to top when search query changes in model wizard
+    if (activeWizard?.type === "model" && wizardOptions.length > 0) {
+      setWizardSelectedIndex(0);
+    }
+  }, [lastTabPrefix, activeWizard, wizardOptions]);
 
   const commands = [
     "/clear",
@@ -797,7 +803,9 @@ export function App({
           const now = Date.now();
           addLine({
             type: "system",
-            content: `Selected provider: ${provider}\nStep 2: Please enter your API Key:`,
+            content: provider === "custom"
+              ? `Selected provider: ${provider}\nStep 2: Please enter your Base URL (e.g. http://localhost:8086/v1):`
+              : `Selected provider: ${provider}\nStep 2: Please enter your API Key:`,
             timestamp: now,
           });
           setActiveWizard({
@@ -809,16 +817,21 @@ export function App({
           return;
         }
       } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
+        const modelSearchQuery = input.trim().toLowerCase();
+        const filteredModels = modelSearchQuery
+          ? wizardOptions.filter((m) => m.toLowerCase().includes(modelSearchQuery))
+          : wizardOptions;
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, filteredModels.length - 1), prev + 1));
           return;
         }
-        if (key.return && !input.trim()) {
-          const selectedModel = wizardOptions[wizardSelectedIndex];
+        if (key.return) {
+          const selectedModel = filteredModels[wizardSelectedIndex] ?? filteredModels[0];
+          if (!selectedModel) return;
           const now = Date.now();
           try {
             const envPath = updateEnvFile({ MODEL: selectedModel });
@@ -836,6 +849,7 @@ export function App({
               timestamp: now,
             });
           }
+          setInput("");
           setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);
@@ -1032,7 +1046,9 @@ export function App({
       if (activeWizard.step === 3) return "Paste API key...";
     }
     if (activeWizard.type === "model") {
-      return "Enter model name (e.g. google/gemini-2.5-flash)...";
+      return wizardOptions.length > 0
+        ? "🔍 Search models (type to filter, arrows to navigate, Enter to select)..."
+        : "Enter model name (e.g. google/gemini-2.5-flash)...";
     }
     return "Enter value...";
   };
@@ -1107,7 +1123,7 @@ export function App({
     if (activeWizard.type === "login" && activeWizard.step === 1) {
       chromeHeight += 8;
     } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
-      chromeHeight += 12;
+      chromeHeight += 13; // +1 for search result count line
     } else if (activeWizard.type === "permission") {
       chromeHeight += 9;
     } else if (activeWizard.type === "question") {
@@ -1290,15 +1306,25 @@ export function App({
               />
             )}
 
-            {activeWizard && activeWizard.type === "model" && wizardOptions.length > 0 && (
-              <WizardDialog
-                title="⚙️ SELECT MODEL (Use Arrow Keys Up/Down & Enter, or type custom model):"
-                borderColor="cyan"
-                options={wizardOptions}
-                selectedIndex={wizardSelectedIndex}
-                maxVisible={6}
-              />
-            )}
+            {activeWizard && activeWizard.type === "model" && wizardOptions.length > 0 && (() => {
+              const modelSearchQuery = input.trim().toLowerCase();
+              const filteredModels = modelSearchQuery
+                ? wizardOptions.filter((m) => m.toLowerCase().includes(modelSearchQuery))
+                : wizardOptions;
+              const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
+              const searchTitle = modelSearchQuery
+                ? `⚙️ SELECT MODEL — 🔍 "${input.trim()}" (${filteredModels.length}/${wizardOptions.length} results):`
+                : `⚙️ SELECT MODEL (Type to search, arrows to navigate, Enter to select):`;
+              return (
+                <WizardDialog
+                  title={searchTitle}
+                  borderColor="cyan"
+                  options={filteredModels.length > 0 ? filteredModels : ["(no results)"]}
+                  selectedIndex={clampedIndex}
+                  maxVisible={6}
+                />
+              );
+            })()}
 
             {/* Render suggestions inline above the input line */}
             {!activeWizard && input.startsWith("/") && suggestions.length > 0 && (
