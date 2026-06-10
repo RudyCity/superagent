@@ -88,6 +88,16 @@ export function App({
   }, []);
 
   useEffect(() => {
+    // Enable SGR mouse tracking to detect scroll events in CLI
+    process.stdout.write("\x1b[?1000h\x1b[?1006h");
+    return () => {
+      // Disable SGR mouse tracking on exit
+      process.stdout.write("\x1b[?1000l\x1b[?1006l");
+    };
+  }, []);
+
+
+  useEffect(() => {
     const unsubTasks = subscribeToTasks(() => {
       setRunningTasksCount(backgroundTasks.size);
     });
@@ -751,6 +761,21 @@ export function App({
   ];
 
   useInput((inputChar, key) => {
+    // Handle SGR Mouse Scroll Wheel
+    if (inputChar.startsWith("\x1b[<") || inputChar.startsWith("\u001b[<")) {
+      if (inputChar.includes("64;")) {
+        // Scroll Up
+        setScrollOffset((prev) => {
+          const maxScroll = Math.max(0, lines.length - 15);
+          return Math.min(prev + 1, maxScroll);
+        });
+      } else if (inputChar.includes("65;")) {
+        // Scroll Down
+        setScrollOffset((prev) => Math.max(0, prev - 1));
+      }
+      return;
+    }
+
     if (key.ctrl && inputChar === "h") {
       setFocusMode((prev) => {
         const next = prev === "input" ? "history" : "input";

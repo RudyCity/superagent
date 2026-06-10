@@ -138,12 +138,26 @@ export class Agent {
   }
 
   private async runAgentLoop(): Promise<void> {
-    const maxIterations = 20;
+    const maxIterations = parseInt(process.env.MAX_ITERATIONS || "50", 10) || 50;
+    let continueCount = 0;
+    const maxContinues = 3;
+
+    const baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt;
 
     for (let i = 0; i < maxIterations; i++) {
       await this.compactHistoryIfNeeded();
       const messages = this.buildMessages();
       const toolDefs = getToolDefinitions();
+
+      const currentStep = i + 1;
+      const systemPrompt = `${baseSystemPrompt}
+
+CRITICAL TASK EXECUTION CONTEXT:
+- You are running with a strict step limit of ${maxIterations} agent iterations per request.
+- Current Step: ${currentStep} of ${maxIterations}.
+- Be highly efficient. If the task is complex, requires multiple steps, or involves extensive research/coding across different components, DO NOT try to do everything in a single sequential thread.
+- Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'explorer', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
+- Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.`;
 
       let textContent = "";
       const toolCalls: ToolCall[] = [];
@@ -152,7 +166,7 @@ export class Agent {
         try {
           const result = await generateText({
             model: this.getModel(),
-            system: this.customSystemPrompt || this.config.systemPrompt,
+            system: systemPrompt,
             messages,
             tools: Object.fromEntries(
               toolDefs.map((t) => [
@@ -198,7 +212,7 @@ export class Agent {
         try {
           result = streamText({
             model: this.getModel(),
-            system: this.customSystemPrompt || this.config.systemPrompt,
+            system: systemPrompt,
             messages,
             tools: Object.fromEntries(
               toolDefs.map((t) => [
@@ -370,6 +384,32 @@ export class Agent {
         timestamp: Date.now(),
       });
       await this.saveHistory();
+
+      if (i === maxIterations - 1) {
+        if (continueCount >= maxContinues) {
+          this.onEvent({
+            type: "text",
+            content: `\n\n⚠️ [System Warning: Reached maximum iteration limit and maximum auto-continues (${maxContinues}). Stopping to prevent infinite loop. You can continue the session by sending a message or running '/resume'.]\n`
+          });
+        } else {
+          try {
+            const selected = await this.onQuestion(
+              `Reached maximum iteration limit of ${maxIterations} steps. The task may be incomplete. Would you like to continue for another ${maxIterations} steps?`,
+              ["Yes, continue", "No, stop here"]
+            );
+            if (selected === "Yes, continue") {
+              continueCount++;
+              i = -1; // Reset loop counter to run again
+              continue;
+            }
+          } catch (err) {
+            this.onEvent({
+              type: "text",
+              content: `\n\n⚠️ [System Warning: Reached maximum iteration limit of ${maxIterations} steps. The task may be incomplete. You can continue the session by sending a message or running '/resume'.]\n`
+            });
+          }
+        }
+      }
     }
   }
 
