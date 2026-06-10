@@ -32,7 +32,7 @@ export const askQuestionTool: Tool = {
 
 export const scheduleTool: Tool = {
   name: "schedule",
-  description: "Schedule a one-shot timer or recurring notification in the background.",
+  description: "Schedule a one-shot timer or recurring notification in the background. Optionally wait for it synchronously.",
   parameters: {
     type: "object",
     properties: {
@@ -48,6 +48,10 @@ export const scheduleTool: Tool = {
         type: "string",
         description: "Simple interval (e.g. '5m' for 5 minutes, '1h' for 1 hour) for recurring checks",
       },
+      wait: {
+        type: "boolean",
+        description: "Whether the tool should block and wait synchronously for the duration before returning control to the agent",
+      },
     },
     required: ["prompt"],
   },
@@ -55,6 +59,7 @@ export const scheduleTool: Tool = {
     const prompt = args.prompt as string;
     const durationSeconds = args.durationSeconds as number;
     const cronExpression = args.cronExpression as string;
+    const wait = args.wait as boolean ?? false;
     const jobId = Math.random().toString(36).substring(2, 9);
 
     if (!durationSeconds && !cronExpression) {
@@ -65,12 +70,66 @@ export const scheduleTool: Tool = {
 
     if (durationSeconds) {
       const ms = durationSeconds * 1000;
-      job.timer = setTimeout(() => {
-        console.log(`\n[Schedule Triggered (ID: ${jobId})]: ${prompt}`);
-        scheduledJobs.delete(jobId);
-      }, ms);
-      scheduledJobs.set(jobId, job);
-      return `One-shot timer scheduled with ID: ${jobId} (triggers in ${durationSeconds} seconds)`;
+      
+      if (wait) {
+        // Limit blocking wait to a maximum of 300 seconds to prevent infinite lockups
+        const MAX_WAIT_SECONDS = 300;
+        if (durationSeconds > MAX_WAIT_SECONDS) {
+          return `Error: Maximum blocking wait duration is ${MAX_WAIT_SECONDS} seconds (requested: ${durationSeconds}s). Use background scheduling (wait: false) for longer delays.`;
+        }
+
+        // Active waiting with visual countdown feedback
+        await new Promise<void>((resolve, reject) => {
+          let secondsLeft = durationSeconds;
+          
+          const interval = setInterval(() => {
+            secondsLeft--;
+            if (secondsLeft > 0) {
+              process.stdout.write(`\r⏳ Active waiting: ${secondsLeft}s remaining... `);
+            } else {
+              process.stdout.write(`\r⏳ Active waiting: done!          \n`);
+              clearInterval(interval);
+            }
+          }, 1000);
+
+          const timeout = setTimeout(() => {
+            clearInterval(interval);
+            console.log(`\n[Schedule Triggered (ID: ${jobId})]: ${prompt}`);
+            cleanup();
+            resolve();
+          }, ms);
+
+          const onAbort = () => {
+            clearInterval(interval);
+            clearTimeout(timeout);
+            cleanup();
+            const err = new Error("AbortError");
+            err.name = "AbortError";
+            reject(err);
+          };
+
+          const cleanup = () => {
+            if (signal) {
+              signal.removeEventListener("abort", onAbort);
+            }
+          };
+
+          if (signal) {
+            signal.addEventListener("abort", onAbort);
+          }
+          
+          process.stdout.write(`⏳ Active waiting: ${secondsLeft}s remaining... `);
+        });
+        
+        return `One-shot timer ID: ${jobId} triggered after waiting ${durationSeconds} seconds. Prompt: ${prompt}`;
+      } else {
+        job.timer = setTimeout(() => {
+          console.log(`\n[Schedule Triggered (ID: ${jobId})]: ${prompt}`);
+          scheduledJobs.delete(jobId);
+        }, ms);
+        scheduledJobs.set(jobId, job);
+        return `One-shot timer scheduled with ID: ${jobId} (triggers in ${durationSeconds} seconds)`;
+      }
     }
 
     if (cronExpression) {

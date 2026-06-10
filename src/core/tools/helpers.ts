@@ -1,5 +1,54 @@
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
+import { execSync } from "child_process";
+
+interface WindowsShellResult {
+  shellPath: string;
+  isBash: boolean;
+}
+
+let cachedShell: WindowsShellResult | null = null;
+
+export function resolveWindowsShell(): WindowsShellResult {
+  if (cachedShell) return cachedShell;
+
+  if (process.platform !== "win32") {
+    cachedShell = { shellPath: "bash", isBash: true };
+    return cachedShell;
+  }
+
+  // Common Git Bash locations
+  const commonPaths = [
+    "C:\\Program Files\\Git\\bin\\bash.exe",
+    "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+    "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+    "C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe",
+  ];
+
+  // Try common installation directories
+  for (const p of commonPaths) {
+    if (fsSync.existsSync(p)) {
+      cachedShell = { shellPath: p, isBash: true };
+      return cachedShell;
+    }
+  }
+
+  // Try checking PATH for bash.exe using 'where'
+  try {
+    const whereBash = execSync("where bash", { stdio: [] }).toString().trim().split(/\r?\n/)[0];
+    if (whereBash && fsSync.existsSync(whereBash)) {
+      cachedShell = { shellPath: whereBash, isBash: true };
+      return cachedShell;
+    }
+  } catch {
+    // Ignore error if 'where bash' fails
+  }
+
+  // Fallback to PowerShell
+  cachedShell = { shellPath: "powershell.exe", isBash: false };
+  return cachedShell;
+}
 
 export function formatCommandForPowerShell(command: string): string {
   const parts: string[] = [];

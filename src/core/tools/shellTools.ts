@@ -1,6 +1,11 @@
 import { execa } from "execa";
 import { Tool, BackgroundTask } from "./types.js";
-import { formatCommandForPowerShell, truncateOutput, detectInteractivePrompt } from "./helpers.js";
+import { 
+  formatCommandForPowerShell, 
+  truncateOutput, 
+  detectInteractivePrompt, 
+  resolveWindowsShell 
+} from "./helpers.js";
 import { 
   backgroundTasks, 
   notifyTasksChanged, 
@@ -29,15 +34,20 @@ export const bashTool: Tool = {
   async execute(args, cwd, signal) {
     let command = args.command as string;
     const timeout = (args.timeout as number) || 600000;
-    const isWin = process.platform === "win32";
-    if (isWin) {
-      command = formatCommandForPowerShell(command);
+    
+    let shellPath: string | boolean = true;
+    if (process.platform === "win32") {
+      const resolved = resolveWindowsShell();
+      shellPath = resolved.shellPath;
+      if (!resolved.isBash) {
+        command = formatCommandForPowerShell(command);
+      }
     }
 
     try {
       clearActiveToolOutput();
       const proc = execa(command, {
-        shell: isWin ? "powershell.exe" : true,
+        shell: shellPath,
         cwd,
         timeout,
         reject: false,
@@ -96,15 +106,18 @@ export const runCommandTool: Tool = {
   },
   async execute(args, cwd, signal) {
     let command = args.command as string;
-    const isWin = process.platform === "win32";
-    if (isWin) {
-      command = formatCommandForPowerShell(command);
+    let shellPath: string | boolean = true;
+    if (process.platform === "win32") {
+      const resolved = resolveWindowsShell();
+      shellPath = resolved.shellPath;
+      if (!resolved.isBash) {
+        command = formatCommandForPowerShell(command);
+      }
     }
-    const shell = isWin ? "powershell.exe" : true;
     try {
       clearActiveToolOutput();
       const proc = execa(command, {
-        shell,
+        shell: shellPath,
         cwd,
         reject: false,
         all: true,
@@ -158,15 +171,19 @@ export const runBackgroundTool: Tool = {
   },
   async execute(args, cwd, signal) {
     let command = args.command as string;
-    const isWin = process.platform === "win32";
-    if (isWin) {
-      command = formatCommandForPowerShell(command);
+    let shellPath: string | boolean = true;
+    if (process.platform === "win32") {
+      const resolved = resolveWindowsShell();
+      shellPath = resolved.shellPath;
+      if (!resolved.isBash) {
+        command = formatCommandForPowerShell(command);
+      }
     }
     const taskId = Math.random().toString(36).substring(2, 9);
 
     try {
       const proc = execa(command, {
-        shell: isWin ? "powershell.exe" : true,
+        shell: shellPath,
         cwd,
         reject: false,
         all: true,

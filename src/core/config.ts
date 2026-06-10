@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import os from "os";
 import { getStaticModelLimit } from "./model_limits.js";
+import { resolveWindowsShell } from "./tools/helpers.js";
 
 export type Provider = "anthropic" | "openai" | "custom";
 
@@ -177,7 +178,18 @@ export function getConfig(): Config {
 }
 
 function getSystemPrompt(): string {
+  let shellPrompt = "";
+  if (process.platform === "win32") {
+    const resolved = resolveWindowsShell();
+    if (resolved.isBash) {
+      shellPrompt = `\n- ACTIVE TERMINAL SHELL: Git Bash (bash.exe). Since Git Bash is available, you CAN run standard Linux/Bash commands (like grep, lsof, piping '|', etc.). Avoid using PowerShell commands unless requested.`;
+    } else {
+      shellPrompt = `\n- ACTIVE TERMINAL SHELL: Windows PowerShell (powershell.exe). Since Git Bash is NOT available, you MUST use Windows/PowerShell syntax. Do NOT use Unix-only commands (like grep, lsof). When chaining multiple commands, use ';' instead of '&&'.`;
+    }
+  }
+
   const basePrompt = `You are SuperAgent, an interactive CLI coding assistant. You help users with software engineering tasks.
+${shellPrompt}
 
 SUBAGENTS AVAILABLE OUT-OF-THE-BOX:
 You have pre-defined specialized subagents available for delegation (via 'invoke_subagent'):
