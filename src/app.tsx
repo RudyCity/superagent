@@ -244,26 +244,49 @@ export function App({
             setStreamDisplay("");
           }
           setIsExecutingTool(true);
+          let prefixEmoji = "⚡";
+          let customTitle = event.description;
+          if (event.toolCall.name === "read" && typeof event.toolCall.args.filePath === "string") {
+            const filePath = event.toolCall.args.filePath;
+            if (filePath.includes("skills") && filePath.endsWith("SKILL.md")) {
+              prefixEmoji = "📖";
+              const parts = filePath.replace(/\\/g, "/").split("/");
+              const skillName = parts[parts.length - 2] || "unknown";
+              customTitle = `[SKILL] Loading instructions for: ${skillName}`;
+            }
+          }
           addLine({
             type: "tool_start",
-            content: `⚡ ${event.description}\n   Detail: ${event.toolCall.name}(${formatArgs(event.toolCall.args)})`,
+            content: `${prefixEmoji} ${customTitle}\n   Detail: ${event.toolCall.name}(${formatArgs(event.toolCall.args)})`,
             timestamp: Date.now(),
           });
           break;
         }
-        case "tool_end":
+        case "tool_end": {
           setIsExecutingTool(false);
           const r = event.toolResult;
-          const statusPrefix = r.isError ? "✗ Failed -" : "✓ Completed -";
+          let prefixEmojiEnd = r.isError ? "✗" : "✓";
+          let customTitleEnd = event.description;
+          if (r.name === "read" && typeof event.description === "string") {
+            const desc = event.description;
+            if (desc.includes("skills") && desc.endsWith("SKILL.md")) {
+              prefixEmojiEnd = r.isError ? "🚨" : "📖";
+              const parts = desc.replace(/\\/g, "/").split("/");
+              const skillName = parts[parts.length - 2] || "unknown";
+              customTitleEnd = `[SKILL] Loaded instructions for: ${skillName}`;
+            }
+          }
+          const statusPrefix = r.isError ? `${prefixEmojiEnd} Failed -` : `${prefixEmojiEnd} Completed -`;
           const resultContent = r.isError
-            ? `${statusPrefix} ${event.description}\nDetail: ${r.result}`
-            : `${statusPrefix} ${event.description}\nOutput: ${r.result.slice(0, 500)}${r.result.length > 500 ? "..." : ""}`;
+            ? `${statusPrefix} ${customTitleEnd}\nDetail: ${r.result}`
+            : `${statusPrefix} ${customTitleEnd}\nOutput: ${r.result.slice(0, 500)}${r.result.length > 500 ? "..." : ""}`;
           addLine({
             type: "tool_end",
             content: resultContent,
             timestamp: Date.now(),
           });
           break;
+        }
         case "error":
           if (streamTimeoutRef.current) {
             clearTimeout(streamTimeoutRef.current);
