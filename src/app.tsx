@@ -1218,7 +1218,7 @@ export function App({
                   ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text> ]
                 </Text>
                 <Box flexDirection="row">
-                  <Text color="magenta">│ </Text>
+                  <Text color="magenta">│    </Text>
                   <LoadingIndicator />
                 </Box>
               </Box>
@@ -1231,7 +1231,7 @@ export function App({
                 </Text>
                 {activeToolLines.map((line, idx) => (
                   <Box key={idx} flexDirection="row">
-                    <Text color="yellow">│ </Text>
+                    <Text color="yellow">│    </Text>
                     <Text color="gray">{line}</Text>
                   </Box>
                 ))}
