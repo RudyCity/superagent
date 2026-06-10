@@ -2400,8 +2400,12 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
           <Box key={idx} flexDirection="row">
             <Text color={themeColor}>│    </Text>
             {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
-            <Box flexDirection="row" flexShrink={1}>{parsedElements}</Box>
-            {showCursor && idx === processedLines.length - 1 && <Text>█</Text>}
+            <Box flexShrink={1}>
+              <Text>
+                {parsedElements}
+                {showCursor && idx === processedLines.length - 1 && "█"}
+              </Text>
+            </Box>
           </Box>
         );
       })}
