@@ -1278,6 +1278,7 @@ export function App({
                 )}
               </Text>
               <Box flexDirection="row">
+                <Text color={activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>│ ❯ </Text>
                 {isProcessing ? (
                   <ProcessingIndicator scrollOffset={scrollOffset} />
                 ) : (input.length > 200 || input.includes("\n")) ? (
@@ -2252,7 +2253,6 @@ function ProcessingIndicator({ scrollOffset }: { scrollOffset: number }) {
 
   return (
     <Box flexDirection="row">
-      <Text color="gray">│ ❯ </Text>
       <Text dimColor>Processing{pulse} (Ctrl+C to abort) </Text>
       {scrollOffset > 0 && (
         <Text color="yellow" bold>
