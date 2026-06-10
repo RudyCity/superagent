@@ -846,6 +846,9 @@ export function App({
   const liveStreamTokens = Math.ceil(streamDisplay.length / 4);
   const activeContextUsage = lastPromptTokens > 0 ? (lastPromptTokens + liveStreamTokens) : 0;
   const contextPercentage = contextLimit > 0 ? ((activeContextUsage / contextLimit) * 100).toFixed(2) : "0.00";
+  const lastUserLine = [...lines].reverse().find((l) => l.type === "user");
+  const lastUserPrompt = lastUserLine ? lastUserLine.content.replace(/^❯ /, "").replace(/\n/g, " ") : "";
+  const displayPrompt = lastUserPrompt.length > 50 ? lastUserPrompt.slice(0, 47) + "..." : lastUserPrompt;
 
   // Calculate layout dimensions dynamically
   const chatWidth = Math.max(20, terminalWidth - 6);
@@ -876,8 +879,11 @@ export function App({
     return linesCount;
   };
 
-  // Base chrome height: Banner is 7, input prompt / active is 2, status bar is 4, margins is 4
-  let chromeHeight = 17;
+  // Calculate dynamic input line height wrapping
+  const inputLinesCount = input ? Math.max(1, Math.ceil((input.length + 6) / terminalWidth)) : 1;
+
+  // Base chrome height: Banner is 7, Input wrapper base is 3 (header + margins), Status bar is 3
+  let chromeHeight = 13 + inputLinesCount;
   if (activeWizard) {
     if (activeWizard.type === "login" && activeWizard.step === 1) {
       chromeHeight += 6;
@@ -891,15 +897,15 @@ export function App({
     chromeHeight += 5;
   }
   if (isProcessing) {
-    if (streamDisplay) {
-      chromeHeight += 1 + estimateMarkdownLines(streamDisplay, chatWidth);
+    if (streamDisplay && streamDisplay.trim().length > 0) {
+      chromeHeight += 2; // Stream header and spacing
     } else if (!showPermission && !isExecutingTool) {
       chromeHeight += 2; // Thinking loading indicator
     }
   }
 
   // Calculate available height for messages with a safety buffer to prevent terminal scrolling/duplicated headers
-  const chatHeightLimit = Math.max(5, terminalHeight - chromeHeight - 3);
+  const chatHeightLimit = Math.max(5, terminalHeight - chromeHeight - 4);
 
   return (
     <Box flexDirection="column">
@@ -915,11 +921,27 @@ export function App({
               let accumulatedHeight = 0;
               const endIndex = scrollOffset === 0 ? lines.length : Math.max(0, lines.length - scrollOffset);
 
+              let effectiveChatHeightLimit = chatHeightLimit;
+              let streamVisibleLinesCount = 0;
+              const shouldRenderStream = scrollOffset === 0 && isProcessing && streamDisplay && streamDisplay.trim().length > 0;
+
+              if (shouldRenderStream) {
+                const totalStreamLines = estimateMarkdownLines(streamDisplay, chatWidth);
+                const maxStreamHeight = Math.max(3, chatHeightLimit - 2); // Keep at least 2 lines for history/headers
+                if (totalStreamLines > maxStreamHeight) {
+                  streamVisibleLinesCount = maxStreamHeight;
+                  effectiveChatHeightLimit = Math.max(0, chatHeightLimit - streamVisibleLinesCount);
+                } else {
+                  streamVisibleLinesCount = totalStreamLines;
+                  effectiveChatHeightLimit = chatHeightLimit - totalStreamLines;
+                }
+              }
+
               for (let i = endIndex - 1; i >= 0; i--) {
                 const h = estimateChatLineHeight(lines[i], chatWidth);
-                if (accumulatedHeight + h > chatHeightLimit) {
-                  if (i === endIndex - 1) {
-                    startIndex = i; // Show at least the latest line
+                if (accumulatedHeight + h > effectiveChatHeightLimit) {
+                  if (i === endIndex - 1 && effectiveChatHeightLimit > 0) {
+                    startIndex = i; // Show at least the latest line if there is any history space
                   }
                   break;
                 }
@@ -928,24 +950,31 @@ export function App({
               }
 
               const visibleLines = lines.slice(startIndex, endIndex);
-              return visibleLines.map((line, i) => {
-                const originalIndex = startIndex + i;
-                return (
-                  <ChatLineComponent key={originalIndex} line={line} isFirst={originalIndex === 0} />
-                );
-              });
+              return (
+                <>
+                  {visibleLines.map((line, i) => {
+                    const originalIndex = startIndex + i;
+                    return (
+                      <ChatLineComponent key={originalIndex} line={line} isFirst={originalIndex === 0} />
+                    );
+                  })}
+
+                  {shouldRenderStream && (
+                    <Box flexDirection="column">
+                      <Text color="magenta">
+                        {visibleLines.length === 0 ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text> ]
+                      </Text>
+                      {renderMarkdown(
+                        truncateStreamDisplay(streamDisplay, streamVisibleLinesCount, chatWidth),
+                        "magenta"
+                      )}
+                    </Box>
+                  )}
+                </>
+              );
             })()}
 
-            {scrollOffset === 0 && isProcessing && streamDisplay && (
-              <Box flexDirection="column">
-                <Text color="magenta">
-                  ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text> ]
-                </Text>
-                {renderMarkdown(streamDisplay, "magenta")}
-              </Box>
-            )}
-
-            {scrollOffset === 0 && isProcessing && !streamDisplay && !showPermission && !isExecutingTool && (
+            {scrollOffset === 0 && isProcessing && (!streamDisplay || streamDisplay.trim().length === 0) && !showPermission && !isExecutingTool && (
               <Box flexDirection="column">
                 <Text color="magenta">
                   ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text> ]
@@ -1052,6 +1081,9 @@ export function App({
                 └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>
                   {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : "⌨️ COMM_LINK: ACTIVE"}
                 </Text> ]
+                {isProcessing && displayPrompt && (
+                  <Text color="cyan" bold> ─── [ PROMPT: "{displayPrompt}" ]</Text>
+                )}
                 {scrollOffset > 0 && (
                   <Text color="yellow" bold> [Scroll: -{scrollOffset} lines/msgs - Press Esc to snap to bottom]</Text>
                 )}
@@ -1680,6 +1712,27 @@ function handleSlashCommand(
         timestamp: now,
       });
   }
+}
+
+function truncateStreamDisplay(text: string, maxLines: number, width: number): string {
+  const rawLines = text.split("\n");
+  let accumulated = 0;
+  const resultLines: string[] = [];
+
+  for (let i = rawLines.length - 1; i >= 0; i--) {
+    const wrappedCount = Math.max(1, Math.ceil(rawLines[i].length / width));
+    if (accumulated + wrappedCount > maxLines) {
+      if (resultLines.length === 0) {
+        resultLines.unshift(rawLines[i]);
+      } else {
+        resultLines.unshift("... [older output hidden to fit screen] ...");
+      }
+      break;
+    }
+    accumulated += wrappedCount;
+    resultLines.unshift(rawLines[i]);
+  }
+  return resultLines.join("\n");
 }
 
 const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst }: { line: ChatLine; isFirst: boolean }) {
