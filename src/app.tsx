@@ -1313,13 +1313,13 @@ export function App({
             <Text color="gray"> │ </Text>
             <Text color="yellow" bold>SUBAGENTS: {Array.from(subagentInstances.values()).filter(s => s.status === "running").length}</Text>
             <Text color="gray"> │ </Text>
-            <Text color="yellow" bold>↑ UP: {tokensUp.toLocaleString()}</Text>
+            <Text color="yellow" bold>↑ UP: {formatCompactNumber(tokensUp)}</Text>
             <Text color="gray"> │ </Text>
-            <Text color="green" bold>↓ DOWN: {(tokensDown + liveStreamTokens).toLocaleString()}</Text>
+            <Text color="green" bold>↓ DOWN: {formatCompactNumber(tokensDown + liveStreamTokens)}</Text>
           </Box>
           <Box>
             <Text color="magenta" bold>
-              CTX_USAGE: {activeContextUsage.toLocaleString()}/{contextLimit.toLocaleString()} ({contextPercentage}%)
+              CTX_USAGE: {formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)} ({contextPercentage}%)
             </Text>
           </Box>
         </Box>
@@ -1560,6 +1560,16 @@ function formatArgs(args: Record<string, unknown>): string {
     return `${k}: ${truncated}`;
   });
   return `{ ${parts.join(", ")} }`;
+}
+
+function formatCompactNumber(num: number): string {
+  if (num >= 1_000_000) {
+    return (num / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "M";
+  }
+  if (num >= 1_000) {
+    return (num / 1_000).toFixed(1).replace(/\.?0+$/, "") + "K";
+  }
+  return num.toString();
 }
 
 function getProviderLabel(): string {
