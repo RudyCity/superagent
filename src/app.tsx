@@ -1072,6 +1072,12 @@ export function App({
     }
   }, [lastTabPrefix, activeWizard, wizardOptions]);
 
+  const installedSkills = getInstalledSkills();
+  const skillCommands = installedSkills.map(s => {
+    const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    return `/skill-${slug}`;
+  });
+
   const commands = [
     "/clear",
     "/compact",
@@ -1089,6 +1095,7 @@ export function App({
     "/tasks",
     "/install",
     "/skills",
+    ...skillCommands
   ];
 
   useInput((inputChar, key) => {
@@ -2483,6 +2490,41 @@ function handleSlashCommand(
 ) {
   const [name] = cmd.slice(1).split(" ");
   const now = Date.now();
+
+  if (name.toLowerCase().startsWith("skill-")) {
+    const slug = name.toLowerCase().slice(6);
+    const skills = getInstalledSkills();
+    const matchedSkill = skills.find(s => {
+      const sSlug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      return sSlug === slug;
+    });
+
+    if (matchedSkill) {
+      ctx.addLine({
+        type: "user",
+        content: `❯ /skill-${slug}`,
+        timestamp: now,
+      });
+      ctx.addLine({
+        type: "system",
+        content: `Activating skill "${matchedSkill.name}"...\nInstruction path: ${matchedSkill.path}`,
+        timestamp: now,
+      });
+      ctx.setIsProcessing?.(true);
+      ctx.agent?.sendMessage(
+        `I would like you to use the following skill: "${matchedSkill.name}".\nPlease read its instruction file at "${matchedSkill.path}" using a file read tool first, and then help me with my request based on its instructions.`
+      ).catch((err: any) => {
+        ctx.addLine({ type: "error", content: `Skill activation error: ${err.message}`, timestamp: Date.now() });
+      });
+    } else {
+      ctx.addLine({
+        type: "error",
+        content: `Skill "${slug}" not found.`,
+        timestamp: now,
+      });
+    }
+    return;
+  }
 
   switch (name.toLowerCase()) {
     case "new":
