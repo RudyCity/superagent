@@ -876,8 +876,8 @@ export function App({
     return linesCount;
   };
 
-  // Base chrome height: Banner is 7, input prompt / active is 2, status bar is 1, margins is 4
-  let chromeHeight = 14;
+  // Base chrome height: Banner is 7, input prompt / active is 2, status bar is 4, margins is 4
+  let chromeHeight = 17;
   if (activeWizard) {
     if (activeWizard.type === "login" && activeWizard.step === 1) {
       chromeHeight += 6;
@@ -1082,10 +1082,32 @@ export function App({
 
       {/* Status bar */}
       <Box flexDirection="column" paddingX={1} marginTop={0}>
+        <Box justifyContent="space-between" paddingX={0}>
+          <Box>
+            <Text color="magenta" bold>ONLINE</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="white">MSGS: {messageCount}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="yellow" bold>↑ UP: {tokensUp.toLocaleString()}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="green" bold>↓ DOWN: {(tokensDown + liveStreamTokens).toLocaleString()}</Text>
+          </Box>
+          <Box>
+            <Text color="magenta" bold>
+              CTX_USAGE: {contextPercentage}%
+            </Text>
+          </Box>
+        </Box>
         <Box justifyContent="space-between" paddingX={0} marginTop={0}>
           <Box>
-            <Text color="cyan" bold>[SHORTCUTS]</Text>
-            <Text color="gray"> │ </Text>
+            <Text dimColor>{process.cwd()}</Text>
+          </Box>
+          <Box>
+            <Text color="blue" bold>{modelName}</Text>
+          </Box>
+        </Box>
+        <Box justifyContent="space-between" paddingX={0} marginTop={0}>
+          <Box>
             <Text color="gray">Ctrl+C </Text><Text dimColor>Abort/Exit</Text>
             <Text color="gray"> │ </Text>
             <Text color="gray">Ctrl+↑/↓, PgUp/PgDn </Text><Text dimColor>Scroll</Text>

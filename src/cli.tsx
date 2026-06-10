@@ -6,10 +6,12 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env from current working directory first
+import os from "os";
+
+// Load global .env first
+dotenv.config({ path: path.join(os.homedir(), ".superagent-r", ".env") });
+// Load local .env from current working directory to allow project-level overrides
 dotenv.config();
-// Fallback to .env in the superagent project directory
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
 import React from "react";
 import { render } from "ink";
 import { App } from "./app.js";
@@ -37,6 +39,7 @@ import type { AgentEvent } from "./core/agent.js";
 if (process.stdin.isTTY) {
   const autoResume = process.argv.includes("--resume") || process.argv.includes("-r");
   let hasCurrentHistory = false;
+  console.clear();
   const { waitUntilExit } = render(
     React.createElement(App, {
       autoResume,

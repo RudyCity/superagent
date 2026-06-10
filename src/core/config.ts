@@ -1,8 +1,25 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import os from "os";
 
 export type Provider = "anthropic" | "openai" | "custom";
+
+export function getGlobalConfigDir(): string {
+  return path.join(os.homedir(), ".superagent-r");
+}
+
+export function ensureGlobalConfigDir(): void {
+  const dir = getGlobalConfigDir();
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  const historyDir = path.join(dir, "history");
+  if (!fs.existsSync(historyDir)) {
+    fs.mkdirSync(historyDir, { recursive: true });
+  }
+}
+
 
 
 export interface Config {
@@ -66,6 +83,13 @@ IMPORTANT GUIDELINES:
 - NEVER expose secrets or keys.
 - Always look for and study the 'agents.md' file in the workspace root if it exists, as it contains critical project information, architecture, and developer guidelines.
 - On Windows, when executing terminal commands, use ';' instead of '&&' as a statement separator (PowerShell syntax).
+- PLANNING & IMPLEMENTATION PLANS: If a user's request is complex, requires non-trivial refactoring, multi-file modifications, or new architecture/features, you MUST first offer an implementation plan.
+  To do this:
+  1. Draft a detailed design and proposed changes.
+  2. Write this plan to a markdown file named 'implementation_plan.md' in the workspace root directory using the appropriate file write tool.
+  3. Respond to the user explaining that you have created 'implementation_plan.md', summarize the key points of the plan, and ask them for explicit approval.
+  4. DO NOT make any further modifications or run modifying/executing tools until the user provides approval in the next conversation turn.
+
 
 TOOL USAGE GUIDELINES:
 1. File Reading & Writing:
@@ -129,11 +153,8 @@ export function getContextWindowLimit(model: string): number {
 }
 
 export function updateEnvFile(updates: Record<string, string>): string {
-  let envPath = path.join(process.cwd(), ".env");
-  if (!fs.existsSync(envPath)) {
-    const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    envPath = path.join(projectRoot, ".env");
-  }
+  ensureGlobalConfigDir();
+  const envPath = path.join(getGlobalConfigDir(), ".env");
 
   let content = "";
   if (fs.existsSync(envPath)) {

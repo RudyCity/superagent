@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import fs from "fs";
-import { getConfig, getContextWindowLimit } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions } from "./tools.js";
 import {
@@ -55,7 +55,8 @@ export class Agent {
 
   private writeToLogFile(message: string): void {
     try {
-      const logPath = path.join(this.config.workingDirectory, "superagent.log");
+      ensureGlobalConfigDir();
+      const logPath = path.join(getGlobalConfigDir(), "superagent.log");
       const timestamp = new Date().toISOString();
       const logMessage = `[${timestamp}] [ERROR] ${message}\n`;
       fs.appendFileSync(logPath, logMessage, "utf-8");
@@ -65,7 +66,9 @@ export class Agent {
   }
 
   private getHistoryFilePath(): string {
-    return path.join(this.config.workingDirectory, ".superagent_history.json");
+    ensureGlobalConfigDir();
+    const sanitizedPath = this.config.workingDirectory.replace(/[^a-zA-Z0-9]/g, "_");
+    return path.join(getGlobalConfigDir(), "history", `${sanitizedPath}.json`);
   }
 
   async loadHistory(): Promise<void> {
