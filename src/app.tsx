@@ -1449,7 +1449,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
           codeLanguage = trimmed.slice(3).trim();
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│ </Text>
+              <Text color={themeColor}>│    </Text>
               <Text color="gray" italic>
                 {inCodeBlock ? `┌─── [ CODE: ${codeLanguage || "TEXT"} ]` : "└─── [ END CODE ]"}
               </Text>
@@ -1461,7 +1461,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
         if (inCodeBlock) {
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│ </Text>
+              <Text color={themeColor}>│    </Text>
               <Text color="green">{l}</Text>
               {showCursor && idx === lines.length - 1 && <Text color="green">█</Text>}
             </Box>
@@ -1471,7 +1471,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
         if (l.startsWith("# ")) {
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│ </Text>
+              <Text color={themeColor}>│    </Text>
               <Text bold color="yellow">{l.slice(2)}</Text>
               {showCursor && idx === lines.length - 1 && <Text bold color="yellow">█</Text>}
             </Box>
@@ -1480,7 +1480,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
         if (l.startsWith("## ")) {
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│ </Text>
+              <Text color={themeColor}>│    </Text>
               <Text bold color="cyan">{l.slice(3)}</Text>
               {showCursor && idx === lines.length - 1 && <Text bold color="cyan">█</Text>}
             </Box>
@@ -1489,7 +1489,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
         if (l.startsWith("### ")) {
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│ </Text>
+              <Text color={themeColor}>│    </Text>
               <Text bold color="blue">{l.slice(4)}</Text>
               {showCursor && idx === lines.length - 1 && <Text bold color="blue">█</Text>}
             </Box>
@@ -1557,7 +1557,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
 
         return (
           <Box key={idx} flexDirection="row">
-            <Text color={themeColor}>│ </Text>
+            <Text color={themeColor}>│    </Text>
             {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
             <Text>{parsedElements}</Text>
             {showCursor && idx === lines.length - 1 && <Text>█</Text>}
@@ -1588,7 +1588,7 @@ function renderToolStart(content: string): React.ReactNode {
             }
             return (
               <Box key={idx} flexDirection="row">
-                <Text color="yellow">│ </Text>
+                <Text color="yellow">│    </Text>
                 <Text dimColor>{prefix}</Text>
                 <Text bold color="green">{toolName}</Text>
                 <Text color="cyan">(</Text>
@@ -1600,7 +1600,7 @@ function renderToolStart(content: string): React.ReactNode {
         }
         return (
           <Box key={idx} flexDirection="row">
-            <Text color="yellow">│ </Text>
+            <Text color="yellow">│    </Text>
             <Text bold color="white">{l}</Text>
           </Box>
         );
@@ -1620,7 +1620,7 @@ function renderToolEnd(content: string, isError: boolean): React.ReactNode {
           const rest = l.substring(type.length);
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│ </Text>
+              <Text color={themeColor}>│    </Text>
               <Text bold color={isError ? "cyan" : "gray"} dimColor={!isError}>{type}</Text>
               <Text dimColor>{rest}</Text>
             </Box>
@@ -1628,7 +1628,7 @@ function renderToolEnd(content: string, isError: boolean): React.ReactNode {
         }
         return (
           <Box key={idx} flexDirection="row">
-            <Text color={themeColor}>│ </Text>
+            <Text color={themeColor}>│    </Text>
             <Text color={isError ? "white" : "gray"} dimColor={!isError}>{l}</Text>
           </Box>
         );
@@ -2220,7 +2220,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
           </Text>
           {content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
-              <Text color="cyan">│ </Text>
+              <Text color="cyan">│    </Text>
               <Text>{l}</Text>
             </Box>
           ))}
@@ -2281,7 +2281,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
           </Text>
           {contentText.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
-              <Text color="red">│ </Text>
+              <Text color="red">│    </Text>
               <Text color="red">{l}</Text>
             </Box>
           ))}
@@ -2299,7 +2299,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
           </Text>
           {line.content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
-              <Text color="gray">│ </Text>
+              <Text color="gray">│    </Text>
               <Text color="gray" italic>{l}</Text>
             </Box>
           ))}
@@ -2316,7 +2316,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
           </Text>
           {line.content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
-              <Text color="gray">│ </Text>
+              <Text color="gray">│    </Text>
               <Text>{l}</Text>
             </Box>
           ))}
