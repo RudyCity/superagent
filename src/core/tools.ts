@@ -562,6 +562,39 @@ export function notifyTasksChanged() {
   }
 }
 
+export type ActiveOutputListener = (text: string) => void;
+const activeOutputListeners = new Set<ActiveOutputListener>();
+let activeToolOutput = "";
+
+export function subscribeToActiveOutput(listener: ActiveOutputListener) {
+  activeOutputListeners.add(listener);
+  return () => {
+    activeOutputListeners.delete(listener);
+  };
+}
+
+export function getActiveToolOutput() {
+  return activeToolOutput;
+}
+
+export function clearActiveToolOutput() {
+  activeToolOutput = "";
+  for (const listener of activeOutputListeners) {
+    listener("");
+  }
+}
+
+export function appendActiveToolOutput(text: string) {
+  activeToolOutput += text;
+  const lines = activeToolOutput.split("\n");
+  if (lines.length > 50) {
+    activeToolOutput = lines.slice(lines.length - 50).join("\n");
+  }
+  for (const listener of activeOutputListeners) {
+    listener(activeToolOutput);
+  }
+}
+
 const runBackgroundTool: Tool = {
   name: "run_background",
   description: "Run a shell command in the background. Returns a task ID.",
@@ -903,15 +936,24 @@ const runCommandTool: Tool = {
     }
     const shell = isWin ? "powershell.exe" : true;
     try {
-      const result = await execa(command, {
+      clearActiveToolOutput();
+      const proc = execa(command, {
         shell,
         cwd,
         reject: false,
         all: true,
         cancelSignal: signal,
       });
+
+      proc.all?.on("data", (data) => {
+        appendActiveToolOutput(data.toString());
+      });
+
+      const result = await proc;
+      clearActiveToolOutput();
       return (result.all || result.stdout || "").trim() || "(no output)";
     } catch (err: unknown) {
+      clearActiveToolOutput();
       const message = err instanceof Error ? err.message : String(err);
       return `Error executing command: ${message}`;
     }

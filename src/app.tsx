@@ -9,7 +9,7 @@ import { getContextWindowLimit, updateEnvFile, getInstalledSkills } from "./core
 import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
-import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents } from "./core/tools.js";
+import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToActiveOutput } from "./core/tools.js";
 import { WizardDialog } from "./components/wizard-dialog.js";
 import { execa } from "execa";
 
@@ -104,6 +104,13 @@ export function App({
       unsubTasks();
       unsubSubagents();
     };
+  }, []);
+
+  const [activeToolOutput, setActiveToolOutput] = useState("");
+  useEffect(() => {
+    return subscribeToActiveOutput((out) => {
+      setActiveToolOutput(out);
+    });
   }, []);
 
   useEffect(() => {
@@ -1080,9 +1087,15 @@ export function App({
   // Calculate dynamic input line height wrapping
   const inputLinesCount = input ? Math.max(1, Math.ceil((input.length + 6) / terminalWidth)) : 1;
 
+  const activeToolLines = activeToolOutput ? activeToolOutput.trim().split("\n").slice(-8) : [];
+  const activeToolLinesCount = activeToolLines.length;
+
   const showBanner = messageCount === 0;
   // Base chrome height: Banner is 7 (if shown), Input wrapper base is 3 (header + margin + prompt border/spacers), Status bar is 3 (3 lines + margin)
   let chromeHeight = (showBanner ? 12 : 5) + inputLinesCount;
+  if (isExecutingTool && activeToolLinesCount > 0) {
+    chromeHeight += activeToolLinesCount + 2; // Output lines + borders
+  }
   if (planState === "PLANNING_PENDING") {
     if (activeWizard?.type === "plan_approve") {
       chromeHeight += 8;
@@ -1208,6 +1221,20 @@ export function App({
                   <Text color="magenta">│ </Text>
                   <LoadingIndicator />
                 </Box>
+              </Box>
+            )}
+
+            {scrollOffset === 0 && isExecutingTool && activeToolLinesCount > 0 && (
+              <Box flexDirection="column">
+                <Text color="yellow">
+                  ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]
+                </Text>
+                {activeToolLines.map((line, idx) => (
+                  <Box key={idx} flexDirection="row">
+                    <Text color="yellow">│ </Text>
+                    <Text color="gray">{line}</Text>
+                  </Box>
+                ))}
               </Box>
             )}
           </Box>
