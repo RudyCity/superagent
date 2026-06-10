@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels } from "./config.js";
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions } from "./config.js";
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -132,5 +132,55 @@ describe("config", () => {
     expect(config.provider).toBe("anthropic");
     expect(config.apiKey).toBe("sk-ant-test");
     expect(config.model).toBe("my-custom-model");
+  });
+
+  describe("listHistorySessions", () => {
+    it("should only return history sessions matching the current active project path or its subdirectories", () => {
+      const historyDir = path.join(getGlobalConfigDir(), "history");
+
+      const mockCwd = "D:\\projects\\my-awesome-project";
+      const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
+
+      const spyExistsSync = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+        if (p === historyDir) return true;
+        return false;
+      });
+
+      const mockFiles = [
+        "D__projects_my_awesome_project.json",
+        "d__projects_my_awesome_project_src.json",
+        "D__projects_another_project.json",
+        "some-other-file.txt",
+      ];
+      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(mockFiles as any);
+
+      const spyStatSync = vi.spyOn(fs, "statSync").mockReturnValue({
+        mtime: new Date(),
+      } as any);
+
+      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockReturnValue(
+        JSON.stringify([
+          { role: "user", content: "hello" },
+          { role: "assistant", content: "hi" }
+        ])
+      );
+
+      try {
+        const sessions = listHistorySessions();
+        // Should only match:
+        // - "D__projects__my-awesome-project.json"
+        // - "d__projects__my-awesome-project__src.json"
+        // (case-insensitive and prefix-matched)
+        expect(sessions.length).toBe(2);
+        expect(sessions[0].filePath).toContain("my_awesome_project");
+        expect(sessions[1].filePath).toContain("my_awesome_project_src");
+      } finally {
+        spyCwd.mockRestore();
+        spyExistsSync.mockRestore();
+        spyReaddirSync.mockRestore();
+        spyStatSync.mockRestore();
+        spyReadFileSync.mockRestore();
+      }
+    });
   });
 });

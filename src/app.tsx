@@ -370,7 +370,7 @@ export function App({
     };
     process.on("SIGINT", handleSigint);
 
-    agent.loadHistory().then(() => {
+    agent.loadHistory(autoResume).then(() => {
       const msgs = agent.getHistory().getMessages();
       const userInputs: string[] = [];
       const loadedLines: ChatLine[] = [];

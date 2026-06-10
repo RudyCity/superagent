@@ -1426,6 +1426,18 @@ registerSubagentType(
   "You are a code review subagent. Your goal is to inspect code changes, identify bugs, security vulnerabilities, performance issues, or architectural improvements. You can run tests, read files, and verify the correctness of the implementation."
 );
 
+registerSubagentType(
+  "manual-tester",
+  "Specialized in browser testing (Playwright), analyzing console logs/errors, and visual UI/UX design taste checks.",
+  "You are a manual testing and browser automation subagent. Your goal is to run end-to-end browser tests using Playwright, navigate web applications, and thoroughly verify functionality.\n\n" +
+  "CRITICAL RULES:\n" +
+  "1. INITIALIZATION: At the start of your execution, before performing any testing tasks, you MUST check if 'playwright' is installed and ready (e.g., run 'npx playwright --version'). If not, or if browsers are missing, install them (e.g., run 'npm install -D @playwright/test' and 'npx playwright install'). Also check if 'agent-browser' is installed globally (e.g., run 'agent-browser --version' or 'npx agent-browser --version'). If not, install it using 'npm install -g agent-browser' followed by 'agent-browser install' to ensure browser automation capability is fully functional.\n" +
+  "2. Access and interact with the browser (using tools like 'agent-browser' or running playwright CLI commands) to perform tests.\n" +
+  "3. Inspect browser console logs, network errors, and test execution artifacts (like screenshots, trace files, or test reports) to diagnose issues and trace bugs.\n" +
+  "4. Perform visual UI/UX checks (design taste): analyze screenshots to check visual alignment, spacing, typography, responsiveness, styling inconsistencies, and overall design aesthetics to ensure a high-quality, premium visual feel.\n" +
+  "5. Provide a clear, structured test report detailing passing tests, failures, visual feedback, and browser error logs."
+);
+
 const defineSubagentTool: Tool = {
   name: "define_subagent",
   description: "Define a new subagent type with a specialized role and system prompt.",

@@ -33,9 +33,16 @@ export function listHistorySessions(): HistorySession[] {
   const historyDir = path.join(getGlobalConfigDir(), "history");
   if (!fs.existsSync(historyDir)) return [];
 
+  const currentDir = process.cwd();
+  const currentSanitized = currentDir.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+
   let files: string[];
   try {
-    files = fs.readdirSync(historyDir).filter((f) => f.endsWith(".json"));
+    files = fs.readdirSync(historyDir).filter((f) => {
+      if (!f.endsWith(".json")) return false;
+      const nameWithoutExt = f.replace(/\.json$/, "").toLowerCase();
+      return nameWithoutExt === currentSanitized || nameWithoutExt.startsWith(currentSanitized + "_");
+    });
   } catch {
     return [];
   }
@@ -51,11 +58,12 @@ export function listHistorySessions(): HistorySession[] {
 
       // Reconstruct display name from sanitized filename
       const nameWithoutExt = file.replace(/\.json$/, "");
-      // Heuristic: replace underscores back with path separators where reasonable
-      const displayName = nameWithoutExt
-        .replace(/^_+/, "")
-        .replace(/_([a-zA-Z])_/g, ":\\$1\\")  // e.g. D_backup -> D:\backup
-        .replace(/_/g, " / ");
+      // Strip trailing timestamp suffix if present (e.g. _1717999999)
+      const cleanName = nameWithoutExt.replace(/_\d+$/, "");
+      const displayName = cleanName
+        .replace(/^([a-zA-Z])__/, "$1:\\")
+        .replace(/^_+/, "/")
+        .replace(/_/g, "/");
 
       const userMessages = messages.filter((m) => m.role === "user");
       const lastUser = userMessages[userMessages.length - 1];

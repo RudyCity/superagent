@@ -85,22 +85,54 @@ export class Agent {
     }
   }
 
-  private getHistoryFilePath(): string {
+  private currentHistoryFilePath: string | null = null;
+
+  private resolveHistoryFilePath(autoResume: boolean): string {
     ensureGlobalConfigDir();
     const sanitizedPath = this.config.workingDirectory.replace(/[^a-zA-Z0-9]/g, "_");
-    return path.join(getGlobalConfigDir(), "history", `${sanitizedPath}.json`);
+    const historyDir = path.join(getGlobalConfigDir(), "history");
+
+    if (autoResume) {
+      try {
+        const files = fs.readdirSync(historyDir);
+        const matchedFiles = files.filter(f => {
+          if (!f.endsWith(".json")) return false;
+          const nameWithoutExt = f.replace(/\.json$/, "").toLowerCase();
+          return nameWithoutExt === sanitizedPath.toLowerCase() || nameWithoutExt.startsWith(sanitizedPath.toLowerCase() + "_");
+        });
+
+        if (matchedFiles.length > 0) {
+          const sorted = matchedFiles.map(f => {
+            const filePath = path.join(historyDir, f);
+            const stat = fs.statSync(filePath);
+            return { filePath, mtime: stat.mtime.getTime() };
+          }).sort((a, b) => b.mtime - a.mtime);
+
+          return sorted[0].filePath;
+        }
+      } catch {
+        // Ignore and generate a new one
+      }
+    }
+
+    return path.join(historyDir, `${sanitizedPath}_${Date.now()}.json`);
   }
 
-  async loadHistory(): Promise<void> {
-    await this.conversation.loadFromFile(this.getHistoryFilePath());
+  async loadHistory(autoResume = false): Promise<void> {
+    this.currentHistoryFilePath = this.resolveHistoryFilePath(autoResume);
+    await this.conversation.loadFromFile(this.currentHistoryFilePath);
   }
 
   async loadHistoryFromPath(filePath: string): Promise<void> {
+    this.currentHistoryFilePath = filePath;
     await this.conversation.loadFromFile(filePath);
   }
 
   async saveHistory(): Promise<void> {
-    await this.conversation.saveToFile(this.getHistoryFilePath());
+    if (!this.currentHistoryFilePath) {
+      this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
+    }
+    await this.conversation.saveToFile(this.currentHistoryFilePath);
   }
 
   private getModel() {
@@ -691,6 +723,7 @@ ${formatted}`;
 
   async clearHistory(): Promise<void> {
     this.conversation.clear();
+    this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
     await this.saveHistory();
   }
 

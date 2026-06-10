@@ -156,3 +156,14 @@ describe("Agent – delayWithCountdown", () => {
     expect(textEvents[textEvents.length - 1]).toBe("\r\n");
   });
 });
+
+// ─── Agent History Sessions ───────────────────────────────────────────────────
+
+describe("Agent – history sessions", () => {
+  it("generates a new unique session file name with timestamp when autoResume is false", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    const resolvedPath = (agent as any).resolveHistoryFilePath(false);
+    expect(resolvedPath).toMatch(/_\d+\.json$/);
+  });
+});
