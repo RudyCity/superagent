@@ -4,6 +4,8 @@ Superagent is an interactive, terminal-based AI coding assistant designed to fac
 
 It features a cyberpunk-styled terminal user interface built with terminal UI components, automatic tracking of model context token limits, a robust security permission layer, multi-agent orchestration (parallel subagents), and persistent integration with local terminal shells.
 
+![Superagent Cyberpunk Terminal UI](assets/Video_SuperAgent.gif)
+
 ---
 
 ## 📖 Background
