@@ -13,13 +13,17 @@ import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler } from "./core/tools.js";
+import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged } from "./core/tools.js";
 import { WizardDialog } from "./components/wizard-dialog.js";
 import { execa } from "execa";
 import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions } from "./utils/text.js";
 import { handleSlashCommand, getProviderLabel, getDefaultModel } from "./core/slash-commands.js";
 import type { ChatLine } from "./core/slash-commands.js";
 
+
+export function stripSgrMouseSequences(value: string): string {
+  return value.replace(/(?:\x1b)?\[<\d+;\d+;\d+[Mm]/g, "");
+}
 
 export function App({
   autoResume = false,
@@ -84,9 +88,38 @@ export function App({
   const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
   const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
   const [gitBranch, setGitBranch] = useState<string>("");
+  const scrollChat = useCallback((direction: "up" | "down", amount = 1) => {
+    setScrollOffset((prev) => {
+      if (direction === "down") {
+        return Math.max(0, prev - amount);
+      }
+      const maxScroll = Math.max(0, lines.length - 15);
+      return Math.min(prev + amount, maxScroll);
+    });
+  }, [lines.length]);
   const addLine = useCallback((line: ChatLine) => {
     setLines((prev) => [...prev, line]);
   }, []);
+
+  const stopRunningSubagents = useCallback(() => {
+    const runningSubagents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
+    if (runningSubagents.length === 0) {
+      return 0;
+    }
+
+    for (const inst of runningSubagents) {
+      inst.agent.abort();
+      subagentInstances.delete(inst.id);
+    }
+    notifySubagentsChanged();
+
+    addLine({
+      type: "system",
+      content: `Interrupted ${runningSubagents.length} running subagent${runningSubagents.length === 1 ? "" : "s"}.`,
+      timestamp: Date.now(),
+    });
+    return runningSubagents.length;
+  }, [addLine]);
 
   useEffect(() => {
     if (!activeWizard) {
@@ -158,6 +191,40 @@ export function App({
       process.stdout.off("resize", handleResize);
     };
   }, []);
+
+  useEffect(() => {
+    const stdin = process.stdin;
+    const stdout = process.stdout;
+
+    if (!stdin.isTTY || !stdout.isTTY) {
+      return;
+    }
+
+    const enableMouseTracking = "\x1b[?1000h\x1b[?1006h";
+    const disableMouseTracking = "\x1b[?1006l\x1b[?1000l";
+
+    const handleMouseInput = (data: Buffer) => {
+      const text = data.toString("utf8");
+      const wheelEvents = text.matchAll(/\x1b\[<(?<button>64|65);\d+;\d+M/g);
+
+      for (const event of wheelEvents) {
+        const button = event.groups?.button;
+        if (button === "64") {
+          scrollChat("up", 3);
+        } else if (button === "65") {
+          scrollChat("down", 3);
+        }
+      }
+    };
+
+    stdout.write(enableMouseTracking);
+    stdin.on("data", handleMouseInput);
+
+    return () => {
+      stdin.off("data", handleMouseInput);
+      stdout.write(disableMouseTracking);
+    };
+  }, [scrollChat]);
 
   useEffect(() => {
     const fetchBranch = async () => {
@@ -549,6 +616,15 @@ export function App({
     agentRef.current = agent;
 
     const handleSigint = () => {
+      if (stopRunningSubagents() > 0) {
+        agent.abort();
+        setIsProcessing(false);
+        setIsExecutingTool(false);
+        setToolTimeout(null);
+        setToolStartTime(null);
+        setTimeLeft(null);
+        return;
+      }
       if (agent.isAgentRunning()) {
         agent.abort();
       } else {
@@ -651,7 +727,7 @@ export function App({
       process.off("SIGINT", handleSigint);
       registerQuestionHandler(null);
     };
-  }, [handleEvent, permissionHandler, questionHandler, exit, autoResume, initialPrompt]);
+  }, [handleEvent, permissionHandler, questionHandler, exit, autoResume, initialPrompt, stopRunningSubagents]);
 
   useEffect(() => {
     const hasMessages = agentRef.current ? agentRef.current.getHistory().getMessages().length > 0 : false;
@@ -1499,18 +1575,20 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   );
 
   const handleInputChange = useCallback((val: string) => {
-    setInput(val);
-    const lengthDiff = val.length - input.length;
-    const containsNewline = val.includes("\n");
+    const sanitizedVal = stripSgrMouseSequences(val);
+
+    setInput(sanitizedVal);
+    const lengthDiff = sanitizedVal.length - input.length;
+    const containsNewline = sanitizedVal.includes("\n");
     if (lengthDiff < 0) {
       // User is deleting characters — never treat as paste
       setIsPasted(false);
     } else if (lengthDiff > 15 || containsNewline) {
       setIsPasted(true);
-    } else if (val.length === 0 || (val.length <= 200 && !containsNewline)) {
+    } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
       setIsPasted(false);
     }
-    if (lastTabPrefix && !val.startsWith(lastTabPrefix)) {
+    if (lastTabPrefix && !sanitizedVal.startsWith(lastTabPrefix)) {
       setLastTabPrefix(null);
     }
     // Reset selection to top when search query changes in model wizard
@@ -2243,6 +2321,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     }
 
     if (key.ctrl && inputChar === "c") {
+      if (stopRunningSubagents() > 0) {
+        agentRef.current?.abort();
+        setIsProcessing(false);
+        setIsExecutingTool(false);
+        setToolTimeout(null);
+        setToolStartTime(null);
+        setTimeLeft(null);
+        return;
+      }
       if (isProcessing) {
         agentRef.current?.abort();
       } else {
@@ -2251,14 +2338,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     }
 
     if (key.pageUp || (key.ctrl && key.upArrow) || (key.shift && key.upArrow)) {
-      setScrollOffset((prev) => {
-        const maxScroll = Math.max(0, lines.length - 15);
-        return Math.min(prev + 1, maxScroll);
-      });
+      scrollChat("up");
     }
 
     if (key.pageDown || (key.ctrl && key.downArrow) || (key.shift && key.downArrow)) {
-      setScrollOffset((prev) => Math.max(0, prev - 1));
+      scrollChat("down");
     }
 
     if (key.escape) {
@@ -2283,6 +2367,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           timestamp: Date.now(),
         });
       } else if (isProcessing) {
+        if (stopRunningSubagents() > 0) {
+          agentRef.current?.abort();
+          setIsProcessing(false);
+          setIsExecutingTool(false);
+          setToolTimeout(null);
+          setToolStartTime(null);
+          setTimeLeft(null);
+          return;
+        }
         agentRef.current?.abort();
       } else {
         setInput("");

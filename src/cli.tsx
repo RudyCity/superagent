@@ -31,6 +31,9 @@ function cleanupBackgroundTasks() {
 
 process.on("exit", cleanupBackgroundTasks);
 process.on("SIGINT", () => {
+  if (process.stdin.isTTY) {
+    return;
+  }
   cleanupBackgroundTasks();
   process.exit(130);
 });
