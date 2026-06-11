@@ -1917,6 +1917,39 @@ export function App({
 
           {/* Input */}
           <Box flexDirection="column" paddingX={1} marginTop={1}>
+            {/* Active Subagents & Tasks Live List */}
+            {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
+              <Box flexDirection="column" paddingX={1} marginBottom={1}>
+                {runningSubagentsCount > 0 && (
+                  <Box flexDirection="column">
+                    <Text color="yellow" bold>🤖 ACTIVE SUBAGENTS:</Text>
+                    {Array.from(subagentInstances.values())
+                      .filter((s) => s.status === "running")
+                      .map((inst) => (
+                        <Box key={inst.id} flexDirection="column">
+                          <Text color="yellow">
+                            ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
+                          </Text>
+                          <Text color="yellow">
+                            │  └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
+                          </Text>
+                        </Box>
+                      ))}
+                  </Box>
+                )}
+                {runningTasksCount > 0 && (
+                  <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
+                    <Text color="cyan" bold>⚙️ ACTIVE TASKS:</Text>
+                    {Array.from(backgroundTasks.entries())
+                      .map(([id, task]) => (
+                        <Text key={id} color="cyan">
+                          ├─ [{id}] Command: {task.command}
+                        </Text>
+                      ))}
+                  </Box>
+                )}
+              </Box>
+            )}
 
             {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (
               <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
@@ -2135,40 +2168,6 @@ export function App({
           </Box>
         </Box>
       </Box>
-
-      {/* Active Subagents & Tasks Live List */}
-      {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
-        <Box flexDirection="column" paddingX={2} marginTop={1}>
-          {runningSubagentsCount > 0 && (
-            <Box flexDirection="column">
-              <Text color="yellow" bold>🤖 ACTIVE SUBAGENTS:</Text>
-              {Array.from(subagentInstances.values())
-                .filter((s) => s.status === "running")
-                .map((inst) => (
-                  <Box key={inst.id} flexDirection="column">
-                    <Text color="yellow">
-                      ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
-                    </Text>
-                    <Text color="yellow">
-                      │  └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
-                    </Text>
-                  </Box>
-                ))}
-            </Box>
-          )}
-          {runningTasksCount > 0 && (
-            <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
-              <Text color="cyan" bold>⚙️ ACTIVE TASKS:</Text>
-              {Array.from(backgroundTasks.entries())
-                .map(([id, task]) => (
-                  <Text key={id} color="cyan">
-                    ├─ [{id}] Command: {task.command}
-                  </Text>
-                ))}
-            </Box>
-          )}
-        </Box>
-      )}
 
       {/* Status bar */}
       <Box flexDirection="column" paddingX={1} marginTop={1}>
