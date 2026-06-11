@@ -137,6 +137,13 @@ export class Agent {
     return path.join(historyDir, `${sanitizedPath}_${Date.now()}.json`);
   }
 
+  public getCurrentHistoryFilePath(): string {
+    if (!this.currentHistoryFilePath) {
+      this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
+    }
+    return this.currentHistoryFilePath;
+  }
+
   async loadHistory(autoResume = false): Promise<void> {
     this.currentHistoryFilePath = this.resolveHistoryFilePath(autoResume);
     await this.conversation.loadFromFile(this.currentHistoryFilePath);
@@ -264,7 +271,7 @@ An implementation plan has been written to '${this.getPlanFilePath()}' and is cu
 You are temporarily in a READ-ONLY mode.
 - DO NOT attempt to write/edit/modify any codebase files.
 - DO NOT run terminal commands that modify files, add packages, or check out git branches.
-- Focus on explaining your proposed plan to the user, answering any questions, or waiting for them to approve via '/approve' or reject via '/reject'.`;
+- Focus on explaining your proposed plan to the user, answering any questions, or waiting for them to approve via the interactive approval wizard.`;
         } else if (this.planState === "APPROVED") {
           planStateAddendum = `\n\n✓ PLAN STATE NOTICE:
 The user has APPROVED your implementation plan. You are now fully authorized to modify codebase files and run commands to execute the plan.`;
@@ -513,7 +520,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               const blocked: ToolResult = {
                 toolCallId: tc.id,
                 name: tc.name,
-                result: "Error: File modification blocked. A plan is pending approval. You must wait for the user to approve the plan using '/approve' before modifying any codebase files.",
+                result: "Error: File modification blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before modifying any codebase files.",
                 isError: true,
               };
               toolResults.push(blocked);
@@ -532,7 +539,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 const blocked: ToolResult = {
                   toolCallId: tc.id,
                   name: tc.name,
-                  result: `Error: Terminal command blocked. A plan is pending approval. You must wait for the user to approve the plan using '/approve' before running commands that modify the codebase or repository state. Command blocked: "${cmd}"`,
+                  result: `Error: Terminal command blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before running commands that modify the codebase or repository state. Command blocked: "${cmd}"`,
                   isError: true,
                 };
                 toolResults.push(blocked);

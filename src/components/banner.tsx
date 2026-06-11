@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,33 +17,83 @@ try {
   // fallback
 }
 
+function isGitRepo(): boolean {
+  try {
+    execSync("git rev-parse --is-inside-work-tree", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function Banner() {
+  const hasGit = isGitRepo();
+
   return (
     <Box flexDirection="column" paddingX={1} marginY={1}>
       <Box flexDirection="row" alignItems="center">
-        {/* Mascot Column */}
+        {/* Mascot Column - Sleek Futuristic Emblem */}
         <Box flexDirection="column" marginRight={3} alignItems="center">
-          <Text color="yellow">   ▲   </Text>
-          <Text color="yellow">  /█\  </Text>
-          <Text color="yellow"> ▞███▚ </Text>
-          <Text color="yellow">▐▛█▀█▜▌</Text>
-          <Text color="yellow">  ▐█▌  </Text>
+          <Box flexDirection="row">
+            <Text color="magenta">◿ </Text>
+            <Text color="cyan" bold>▲</Text>
+            <Text color="magenta"> ◺</Text>
+          </Box>
+          <Box flexDirection="row">
+            <Text color="cyan">◢█</Text>
+            <Text color="magenta">▒</Text>
+            <Text color="cyan">█◣</Text>
+          </Box>
+          <Box flexDirection="row">
+            <Text color="magenta">◥</Text>
+            <Text color="cyan">██</Text>
+            <Text color="magenta">▒</Text>
+            <Text color="cyan">██</Text>
+            <Text color="magenta">◤</Text>
+          </Box>
+          <Box flexDirection="row">
+            <Text color="cyan">◥█</Text>
+            <Text color="magenta">▒</Text>
+            <Text color="cyan">█◤</Text>
+          </Box>
+          <Box flexDirection="row">
+            <Text color="magenta">◥</Text>
+            <Text color="cyan" bold>▼</Text>
+            <Text color="magenta">◤</Text>
+          </Box>
         </Box>
 
         {/* Info Column */}
         <Box flexDirection="column" justifyContent="center">
-          <Box flexDirection="row" marginBottom={1}>
-            <Text color="cyan" bold>SUPERAGENT</Text>
+          <Box flexDirection="row" marginBottom={1} alignItems="center">
+            <Text color="cyan" bold>S U P E R A G E N T</Text>
             <Text color="gray"> │ </Text>
-            <Text color="magenta" bold>COGNITIVE SYSTEM INTERFACE v{version}</Text>
+            <Text color="magenta" bold>COGNITIVE SYSTEM v{version}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="green" bold>● READY</Text>
           </Box>
           <Box flexDirection="row">
             <Text dimColor>Type your query or </Text>
-            <Text bold color="yellow">/help</Text>
-            <Text dimColor> to see available commands</Text>
+            <Text bold color="cyan">/help</Text>
+            <Text dimColor> to explore commands</Text>
           </Box>
         </Box>
       </Box>
+
+      {!hasGit && (
+        <Box marginTop={1} paddingX={1}>
+          <Text color="yellow">⚠ </Text>
+          <Text dimColor>Git not detected in this project. Checkpoints won't capture code state.</Text>
+          <Text dimColor> Run </Text>
+          <Text bold color="cyan">git init</Text>
+          <Text dimColor> or </Text>
+          <Text bold color="cyan">/init</Text>
+          <Text dimColor> to enable full checkpoint features.</Text>
+        </Box>
+      )}
     </Box>
   );
 }

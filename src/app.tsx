@@ -6,6 +6,8 @@ import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agen
 import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
 import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, listHistorySessions, fetchAndCacheModels } from "./core/config.js";
+import { createCheckpoint, listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, type Checkpoint } from "./core/checkpoints.js";
+import { getGlobalConfigDir } from "./core/config.js";
 import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
@@ -62,10 +64,11 @@ export function App({
   const [toolStartTime, setToolStartTime] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [activeWizard, setActiveWizard] = useState<{
-    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal";
+    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint";
     step: number;
     data: Record<string, string>;
   } | null>(null);
+  const [checkpointsList, setCheckpointsList] = useState<Checkpoint[]>([]);
   const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
@@ -684,6 +687,239 @@ export function App({
         setActiveWizard(null);
         setWizardOptions([]);
         setWizardSelectedIndex(0);
+      } else if (activeWizard.step === 10) {
+        const choice = value.toLowerCase();
+        if (choice.includes("ask ai") || choice.startsWith("6")) {
+          addLine({
+            type: "system",
+            content: `Selected AI-Assisted Initialization.\nStep 13: Briefly describe what you want to build (e.g. "A simple markdown parser command line tool in TypeScript"):`,
+            timestamp: now,
+          });
+          setActiveWizard({
+            type: "login",
+            step: 13,
+            data: activeWizard.data,
+          });
+        } else {
+          let stack = "TypeScript";
+          if (choice.includes("javascript")) stack = "JavaScript";
+          else if (choice.includes("python")) stack = "Python";
+          else if (choice.includes("rust")) stack = "Rust";
+          else if (choice.includes("go")) stack = "Go";
+
+          addLine({
+            type: "system",
+            content: `Selected Stack: ${stack}\nStep 11: Enter Project Name (or press Enter for default "${path.basename(process.cwd())}"):`,
+            timestamp: now,
+          });
+          setActiveWizard({
+            type: "login",
+            step: 11,
+            data: { ...activeWizard.data, stack },
+          });
+        }
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+      } else if (activeWizard.step === 11) {
+        const projectName = value.trim() || path.basename(process.cwd());
+        addLine({
+          type: "system",
+          content: `Project Name: ${projectName}\nStep 12: Enter a short Project Description:`,
+          timestamp: now,
+        });
+        setActiveWizard({
+          type: "login",
+          step: 12,
+          data: { ...activeWizard.data, projectName },
+        });
+        setInput("");
+      } else if (activeWizard.step === 12) {
+        const projectDesc = value.trim() || "A software project.";
+        const projectName = activeWizard.data.projectName;
+        const projectTech = activeWizard.data.stack;
+        const cwd = process.cwd();
+
+        (async () => {
+          // Write agents.md
+          const agentsPath = path.resolve(cwd, "agents.md");
+          const defaultContent = [
+            `# Project Specifications (agents.md)`,
+            ``,
+            `This file contains key information about the project for AI agents to study and align with.`,
+            ``,
+            `## Project Overview`,
+            `- **Name**: ${projectName}`,
+            `- **Description**: ${projectDesc}`,
+            `- **Technology Stack**: ${projectTech}`,
+            ``,
+            `## Coding Guidelines`,
+            `- On Windows, statement separator for terminal commands is ';' instead of '&&'.`,
+            `- Always verify compilation and run tests before committing.`,
+            ``,
+          ].join("\n");
+
+          await fs.writeFile(agentsPath, defaultContent, "utf-8");
+          addLine({ type: "system", content: `📄 Generated agents.md (created: ${projectName}, ${projectTech})`, timestamp: Date.now() });
+
+          // Run audit/git setup summary
+          const gitStatusLabel = activeWizard.data.gitStatus === "ACTIVE" ? "✓ ACTIVE" : activeWizard.data.gitStatus === "INITIALIZED" ? "✓ INITIALIZED (new)" : `✗ ${activeWizard.data.gitStatus}`;
+          const modelName = process.env.MODEL || getDefaultModel();
+          const limit = getContextWindowLimit(modelName);
+
+          const auditLines = [
+            "┌───[ ⚙️ SYSTEM AUDIT & AGENT INITIALIZATION ]",
+            "│ ",
+            "│ [HOST INFO]",
+            `│ 🖥️ OS Platform   : ${process.platform}`,
+            `│ 📦 Node Version   : ${process.version}`,
+            `│ 📂 Workspace      : ${cwd}`,
+            "│ ",
+            "│ [VERSION CONTROL]",
+            `│ 🔀 Git Status     : ${gitStatusLabel}`,
+            ...(activeWizard.data.gitBranch ? [`│ 🌿 Branch         : ${activeWizard.data.gitBranch}`] : []),
+            ...(activeWizard.data.gitSha ? [`│ 📌 HEAD           : ${activeWizard.data.gitSha}`] : []),
+            "│ ",
+            "│ [COGNITIVE CORE]",
+            `│ ✦ Provider        : ${process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai"}`,
+            `│ ✦ Active Model    : ${modelName}`,
+            `│ ✦ Context Limit   : ${limit.toLocaleString()} tokens`,
+            `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
+            "│ ",
+            "│ [PROJECT METADATA]",
+            `│ 📄 Registry File  : CREATED (${agentsPath})`,
+            `│ 📂 Project Name   : ${projectName}`,
+            `│ 🛠️ Tech Stack      : ${projectTech}`,
+            "│ ",
+            "│ [SYSTEM TOOLS]",
+            `│ 🛠️ Loaded Tools (${allTools.length}): ${allTools.map(t => t.name).join(", ")}`,
+            "│ ",
+            "└──────────────────────────────────────────────"
+          ];
+          addLine({ type: "system", content: auditLines.join("\n"), timestamp: Date.now() });
+        })().catch(err => {
+          addLine({ type: "error", content: `Failed to complete project initialization: ${err.message}`, timestamp: Date.now() });
+        });
+
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+      } else if (activeWizard.step === 13) {
+        const goal = value.trim();
+        if (!goal) {
+          addLine({ type: "error", content: "AI prompt cannot be empty. Initialization cancelled.", timestamp: now });
+          setActiveWizard(null);
+          return;
+        }
+
+        addLine({ type: "system", content: "🤖 Consulting AI to formulate project structure...", timestamp: now });
+        setIsProcessing(true);
+
+        (async () => {
+          try {
+            if (!agentRef.current) {
+              throw new Error("AI Core is not initialized yet.");
+            }
+
+            const prompt = `You are a software architect. Build a specifications file named 'agents.md' for this new project based on the user's goal: "${goal}".
+Generate ONLY a raw markdown document that maps precisely to this structure:
+
+# Project Specifications (agents.md)
+
+## Project Overview
+- **Name**: [a suitable name for the project]
+- **Description**: [one-sentence clear description]
+- **Technology Stack**: [a list of key libraries and language, e.g. TypeScript, React, Vite]
+
+## Coding Guidelines
+- On Windows, statement separator for terminal commands is ';' instead of '&&'.
+- Always verify compilation and run tests before committing.
+[Add 2-3 specific custom guidelines for the target stack if helpful]`;
+
+            // Make direct completion request to active provider/model
+            const { generateText } = await import("ai");
+            const modelConfig = (agentRef.current as any).getModel();
+            const response = await generateText({
+              model: modelConfig,
+              prompt: prompt,
+            });
+
+            const content = response.text || "";
+            const cwd = process.cwd();
+            const agentsPath = path.resolve(cwd, "agents.md");
+            await fs.writeFile(agentsPath, content, "utf-8");
+            addLine({ type: "system", content: `📄 Generated agents.md successfully!`, timestamp: Date.now() });
+
+            // Extract project details dynamically from AI generated content
+            let projectName = path.basename(cwd);
+            let projectTech = "Unknown";
+            const nameMatch = content.match(/-\s*\*\*Name\*\*:\s*(.*)/i);
+            if (nameMatch) projectName = nameMatch[1].trim();
+            const techMatch = content.match(/-\s*\*\*Technology Stack\*\*:\s*(.*)/i);
+            if (techMatch) projectTech = techMatch[1].trim();
+
+            const gitStatusLabel = activeWizard.data.gitStatus === "ACTIVE" ? "✓ ACTIVE" : activeWizard.data.gitStatus === "INITIALIZED" ? "✓ INITIALIZED (new)" : `✗ ${activeWizard.data.gitStatus}`;
+            const modelName = process.env.MODEL || getDefaultModel();
+            const limit = getContextWindowLimit(modelName);
+
+            const auditLines = [
+              "┌───[ ⚙️ SYSTEM AUDIT & AGENT INITIALIZATION ]",
+              "│ ",
+              "│ [HOST INFO]",
+              `│ 🖥️ OS Platform   : ${process.platform}`,
+              `│ 📦 Node Version   : ${process.version}`,
+              `│ 📂 Workspace      : ${cwd}`,
+              "│ ",
+              "│ [VERSION CONTROL]",
+              `│ 🔀 Git Status     : ${gitStatusLabel}`,
+              ...(activeWizard.data.gitBranch ? [`│ 🌿 Branch         : ${activeWizard.data.gitBranch}`] : []),
+              ...(activeWizard.data.gitSha ? [`│ 📌 HEAD           : ${activeWizard.data.gitSha}`] : []),
+              "│ ",
+              "│ [COGNITIVE CORE]",
+              `│ ✦ Provider        : ${process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai"}`,
+              `│ ✦ Active Model    : ${modelName}`,
+              `│ ✦ Context Limit   : ${limit.toLocaleString()} tokens`,
+              `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
+              "│ ",
+              "│ [PROJECT METADATA]",
+              `│ 📄 Registry File  : CREATED (${agentsPath})`,
+              `│ 📂 Project Name   : ${projectName}`,
+              `│ 🛠️ Tech Stack      : ${projectTech}`,
+              "│ ",
+              "│ [SYSTEM TOOLS]",
+              `│ 🛠️ Loaded Tools (${allTools.length}): ${allTools.map(t => t.name).join(", ")}`,
+              "│ ",
+              "└──────────────────────────────────────────────"
+            ];
+            addLine({ type: "system", content: auditLines.join("\n"), timestamp: Date.now() });
+
+          } catch (aiErr: any) {
+            addLine({ type: "error", content: `AI code completion request failed: ${aiErr.message}. Falling back to default project structure.`, timestamp: Date.now() });
+            
+            // Fallback content write
+            const cwd = process.cwd();
+            const agentsPath = path.resolve(cwd, "agents.md");
+            const fallbackContent = [
+              `# Project Specifications (agents.md)`,
+              ``,
+              `## Project Overview`,
+              `- **Name**: ${path.basename(cwd)}`,
+              `- **Description**: A new software project.`,
+              `- **Technology Stack**: Custom Stack`,
+              ``,
+              `## Coding Guidelines`,
+              `- On Windows, statement separator for terminal commands is ';' instead of '&&'.`,
+              `- Always verify compilation and run tests before committing.`,
+            ].join("\n");
+            await fs.writeFile(agentsPath, fallbackContent, "utf-8");
+          } finally {
+            setIsProcessing(false);
+          }
+        })();
+
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
       }
     } else if (activeWizard.type === "model") {
       if (activeWizard.step === 1) {
@@ -1060,6 +1296,16 @@ export function App({
         timestamp: Date.now(),
       });
 
+      // Auto-checkpoint before sending message
+      if (agentRef.current) {
+        const sessionPath = agentRef.current.getCurrentHistoryFilePath();
+        const msgs = agentRef.current.getHistory().getMessages();
+        if (msgs.length > 0) {
+          const preview = trimmed.slice(0, 40) + (trimmed.length > 40 ? "…" : "");
+          createCheckpoint(sessionPath, `Auto: ${preview}`, msgs, agentRef.current.planState).catch(() => {});
+        }
+      }
+
       setIsProcessing(true);
       streamBufferRef.current = "";
       setStreamDisplay("");
@@ -1102,6 +1348,7 @@ export function App({
   });
 
   const commands = [
+    "/checkpoint",
     "/clear",
     "/compact",
     "/goal",
@@ -1113,8 +1360,6 @@ export function App({
     "/exit",
     "/login",
     "/model",
-    "/approve",
-    "/reject",
     "/agents",
     "/tasks",
     "/install",
@@ -1132,6 +1377,39 @@ export function App({
         }
         return next;
       });
+      return;
+    }
+
+    // Ctrl+P: Open checkpoint wizard
+    if (key.ctrl && inputChar === "p") {
+      if (isProcessing || activeWizard) return;
+      if (!agentRef.current) return;
+      const sessionPath = agentRef.current.getCurrentHistoryFilePath();
+      listCheckpointsForSession(sessionPath)
+        .then((checkpoints) => {
+          if (checkpoints.length === 0) {
+            addLine({ type: "system", content: "No checkpoints found. Use /checkpoint <name> to create one.", timestamp: Date.now() });
+            return;
+          }
+          setCheckpointsList(checkpoints);
+          const relTime = (ts: number) => {
+            const diff = Math.floor((Date.now() - ts) / 1000);
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return `${Math.floor(diff / 86400)}d ago`;
+          };
+          const options = checkpoints.map((c) => {
+            const gitTag = c.gitSha ? ` [${c.gitSha}]` : "";
+            return `📌 ${c.name}  |  ${c.messages.length} msgs  |  ${relTime(c.timestamp)}${gitTag}`;
+          });
+          setActiveWizard({ type: "checkpoint", step: 1, data: {} });
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+        })
+        .catch(() => {
+          addLine({ type: "error", content: "Failed to list checkpoints.", timestamp: Date.now() });
+        });
       return;
     }
 
@@ -1160,7 +1438,7 @@ export function App({
     }
 
     if (activeWizard) {
-      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 5)) {
+      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 5 || activeWizard.step === 10)) {
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
@@ -1204,6 +1482,9 @@ export function App({
               setWizardOptions([]);
               setWizardSelectedIndex(0);
             }
+          } else if (activeWizard.step === 10) {
+            handleWizardSubmit(selectedOption);
+            return;
           } else if (activeWizard.step === 2) {
             const choice = selectedOption.toLowerCase();
             let provider = "";
@@ -1529,6 +1810,138 @@ export function App({
           }
           return;
         }
+      } else if (activeWizard.type === "checkpoint" && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          return;
+        }
+        if (key.return) {
+          const chosen = checkpointsList[wizardSelectedIndex];
+          if (!chosen) return;
+          const now = Date.now();
+
+          // Step 1: If checkpoint has gitSha, show git restore confirmation
+          if (activeWizard.step === 1 && chosen.gitSha) {
+            setActiveWizard({ type: "checkpoint", step: 2, data: { checkpointIndex: String(wizardSelectedIndex) } });
+            setWizardOptions(["✓ Ya, pulihkan workspace ke commit ini (git stash & checkout)", "✗ Tidak, hanya pulihkan riwayat percakapan saja"]);
+            setWizardSelectedIndex(0);
+            return;
+          }
+
+          // Perform restore (no git)
+          const sessionPath = agentRef.current?.getCurrentHistoryFilePath();
+          if (!sessionPath) return;
+          const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
+          const sessionBase = path.basename(sessionPath, ".json");
+          const chkPath = path.join(checkpointsDir, `${sessionBase}_checkpoint_${chosen.timestamp}.json`);
+
+          terminateActiveTasksAndSubagents();
+
+          restoreCheckpoint(chkPath, sessionPath)
+            .then(async () => {
+              if (agentRef.current) {
+                await agentRef.current.loadHistoryFromPath(sessionPath);
+                const msgs = agentRef.current.getHistory().getMessages();
+                const loadedLines: ChatLine[] = [];
+                const userInputs: string[] = [];
+                for (const m of msgs) {
+                  if (m.role === "user") {
+                    loadedLines.push({ type: "user", content: `❯ ${m.content}`, timestamp: m.timestamp });
+                    userInputs.push(m.content);
+                  } else if (m.role === "assistant") {
+                    if (m.content) loadedLines.push({ type: "assistant", content: m.content, timestamp: m.timestamp });
+                  }
+                }
+                setLines(loadedLines);
+                setHistory(userInputs);
+                setPlanState(agentRef.current.planState);
+              }
+              addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" berhasil dipulihkan! (${chosen.messages.length} messages)`, timestamp: now });
+            })
+            .catch((err: any) => {
+              addLine({ type: "error", content: `Gagal memulihkan checkpoint: ${err.message}`, timestamp: now });
+            });
+
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setCheckpointsList([]);
+          return;
+        }
+      } else if (activeWizard.type === "checkpoint" && activeWizard.step === 2) {
+        // Git restore confirmation step
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          return;
+        }
+        if (key.return) {
+          const chkIndex = parseInt(activeWizard.data.checkpointIndex || "0", 10);
+          const chosen = checkpointsList[chkIndex];
+          if (!chosen) return;
+          const now = Date.now();
+          const doGitRestore = wizardSelectedIndex === 0;
+          const sessionPath = agentRef.current?.getCurrentHistoryFilePath();
+          if (!sessionPath) return;
+
+          const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
+          const sessionBase = path.basename(sessionPath, ".json");
+          const chkPath = path.join(checkpointsDir, `${sessionBase}_checkpoint_${chosen.timestamp}.json`);
+
+          terminateActiveTasksAndSubagents();
+
+          (async () => {
+            try {
+              // Git stash & checkout if user chose yes
+              if (doGitRestore && chosen.gitSha) {
+                try {
+                  const { execa: execaFn } = await import("execa");
+                  await execaFn("git", ["stash", "--include-untracked"], { cwd: process.cwd(), reject: false });
+                  await execaFn("git", ["checkout", chosen.gitSha], { cwd: process.cwd(), reject: false });
+                  addLine({ type: "system", content: `✓ Workspace dipulihkan ke Git commit: ${chosen.gitSha} (uncommitted changes di-stash)`, timestamp: now });
+                } catch (gitErr: any) {
+                  addLine({ type: "error", content: `Git restore gagal: ${gitErr.message}. Riwayat percakapan tetap dipulihkan.`, timestamp: now });
+                }
+              }
+
+              // Restore conversation
+              await restoreCheckpoint(chkPath, sessionPath);
+              if (agentRef.current) {
+                await agentRef.current.loadHistoryFromPath(sessionPath);
+                const msgs = agentRef.current.getHistory().getMessages();
+                const loadedLines: ChatLine[] = [];
+                const userInputs: string[] = [];
+                for (const m of msgs) {
+                  if (m.role === "user") {
+                    loadedLines.push({ type: "user", content: `❯ ${m.content}`, timestamp: m.timestamp });
+                    userInputs.push(m.content);
+                  } else if (m.role === "assistant") {
+                    if (m.content) loadedLines.push({ type: "assistant", content: m.content, timestamp: m.timestamp });
+                  }
+                }
+                setLines(loadedLines);
+                setHistory(userInputs);
+                setPlanState(agentRef.current.planState);
+              }
+              addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" berhasil dipulihkan! (${chosen.messages.length} messages)`, timestamp: now });
+            } catch (err: any) {
+              addLine({ type: "error", content: `Gagal memulihkan checkpoint: ${err.message}`, timestamp: now });
+            }
+          })();
+
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setCheckpointsList([]);
+          return;
+        }
       }
     }
 
@@ -1566,6 +1979,7 @@ export function App({
         setActiveWizard(null);
         setWizardOptions([]);
         setWizardSelectedIndex(0);
+        setCheckpointsList([]);
         addLine({
           type: "system",
           content: "Wizard cancelled.",
@@ -1666,6 +2080,10 @@ export function App({
       if (activeWizard.step === 4) return "Enter Custom Base URL...";
       if (activeWizard.step === 5) return "Select provider to switch to using arrows and Enter...";
       if (activeWizard.step === 6) return "Paste API key...";
+      if (activeWizard.step === 10) return "Select option using arrows and Enter...";
+      if (activeWizard.step === 11) return "Enter project name (press Enter for folder default)...";
+      if (activeWizard.step === 12) return "Enter project description (press Enter for default)...";
+      if (activeWizard.step === 13) return "Describe the project (e.g. CLI tool in Rust)...";
     }
     if (activeWizard.type === "model") {
       if (activeWizard.step === 1) return "Enter provider number (1-4)...";
@@ -1757,8 +2175,10 @@ export function App({
     if (activeWizard.type === "login") {
       if (activeWizard.step === 1 || activeWizard.step === 2) {
         chromeHeight += 8;
-      } else if (activeWizard.step === 5) {
+      } else if (activeWizard.step === 5 || activeWizard.step === 10) {
         chromeHeight += 8 + Math.min(6, wizardOptions.length);
+      } else if (activeWizard.step === 11 || activeWizard.step === 12 || activeWizard.step === 13) {
+        chromeHeight += 6;
       }
     } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
       chromeHeight += 13; // +1 for search result count line
@@ -1955,7 +2375,7 @@ export function App({
               <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
                 <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
                 <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">{planUrl}</Text></Text>
-                <Text color="yellow">Silakan ketik <Text bold color="green">/approve</Text> untuk menyetujui dan melanjutkan modifikasi kode.</Text>
+                <Text color="yellow">Silakan kirim pesan/masukan apa saja untuk menampilkan kembali dialog persetujuan wizard.</Text>
               </Box>
             )}
 
@@ -2006,6 +2426,46 @@ export function App({
               />
             )}
 
+            {activeWizard && activeWizard.type === "login" && activeWizard.step === 10 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="🛠️ PROJECT INITIALIZATION — Select Technology Stack (Arrows & Enter):"
+                description="Choose a template catalog stack or let AI dynamically design your project details:"
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "login" && activeWizard.step === 11 && (
+              <WizardDialog
+                title="🛠️ PROJECT INITIALIZATION — Enter Project Name (Type & Enter):"
+                description="Specify the catalog name for this workspace:"
+                borderColor="cyan"
+                options={[]}
+                selectedIndex={0}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "login" && activeWizard.step === 12 && (
+              <WizardDialog
+                title="🛠️ PROJECT INITIALIZATION — Enter Project Description (Type & Enter):"
+                description="Give a one-sentence overview description of this software:"
+                borderColor="cyan"
+                options={[]}
+                selectedIndex={0}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "login" && activeWizard.step === 13 && (
+              <WizardDialog
+                title="🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter):"
+                description="State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:"
+                borderColor="magenta"
+                options={[]}
+                selectedIndex={0}
+              />
+            )}
+
             {activeWizard && activeWizard.type === "model" && activeWizard.step === 1 && wizardOptions.length > 0 && (
               <WizardDialog
                 title="⚙️ SELECT PROVIDER FOR MODELS (Use Arrow Keys Up/Down & Enter):"
@@ -2043,6 +2503,27 @@ export function App({
                 options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
                 maxVisible={8}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 1 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="📌 CHECKPOINT — Pilih checkpoint untuk dipulihkan (↑/↓ Navigate, Enter: Restore, Esc: Cancel):"
+                description="Checkpoints diurutkan dari yang paling baru:"
+                borderColor="green"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+                maxVisible={8}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 2 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="📌 RESTORE WORKSPACE — Pulihkan kode workspace ke Git commit checkpoint? (↑/↓ Navigate, Enter: Select):"
+                description={`Git commit: ${checkpointsList[parseInt(activeWizard.data.checkpointIndex || "0", 10)]?.gitSha || "unknown"}`}
+                borderColor="yellow"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
               />
             )}
 

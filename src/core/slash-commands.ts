@@ -11,6 +11,14 @@ import {
   updateEnvFile, 
   getContextWindowLimit 
 } from "./config.js";
+import {
+  createCheckpoint,
+  listCheckpointsForSession,
+  deleteCheckpointsForSession,
+  restoreCheckpoint,
+  restoreCheckpointById,
+  terminateActiveTasksAndSubagents,
+} from "./checkpoints.js";
 import { searchHistory } from "./historySearch.js";
 import { getToolDescription } from "./permissions.js";
 import { allTools, backgroundTasks, subagentInstances } from "./tools.js";
@@ -69,7 +77,7 @@ export function handleSlashCommand(
     agent: Agent | null;
     clearLines?: () => void;
     setContextLimit?: (limit: number) => void;
-    setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal"; step: number; data: Record<string, string> } | null) => void;
+    setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint"; step: number; data: Record<string, string> } | null) => void;
     setWizardOptions?: (options: string[]) => void;
     setWizardSelectedIndex?: (index: number) => void;
     resumeSession?: () => Promise<void>;
@@ -119,6 +127,10 @@ export function handleSlashCommand(
 
   switch (name.toLowerCase()) {
     case "new":
+      if (ctx.agent) {
+        const sessionFilePath = ctx.agent.getCurrentHistoryFilePath();
+        deleteCheckpointsForSession(sessionFilePath).catch(() => {});
+      }
       ctx.agent?.clearHistory();
       if (ctx.agent) {
         ctx.agent.planState = "IDLE";
@@ -191,6 +203,10 @@ export function handleSlashCommand(
       break;
     }
     case "clear":
+      if (ctx.agent) {
+        const sessionFilePath = ctx.agent.getCurrentHistoryFilePath();
+        deleteCheckpointsForSession(sessionFilePath).catch(() => {});
+      }
       ctx.agent?.clearHistory();
       if (ctx.agent) {
         ctx.agent.planState = "IDLE";
@@ -200,39 +216,109 @@ export function handleSlashCommand(
       ctx.setGoalMode?.(null);
       ctx.addLine({ type: "system", content: "Conversation cleared.", timestamp: now });
       break;
-    case "approve":
-      if (ctx.agent) {
-        ctx.agent.approvePlan();
-        ctx.setPlanState?.("APPROVED");
-        ctx.addLine({
-          type: "system",
-          content: "✓ Implementation plan approved! The agent is now allowed to perform code and file modifications.",
-          timestamp: now,
-        });
+
+    case "checkpoint": {
+      if (!ctx.agent) {
+        ctx.addLine({ type: "error", content: "Agent not initialized.", timestamp: now });
+        break;
+      }
+
+      const args = cmd.slice(name.length + 2).trim();
+      const sessionFilePath = ctx.agent.getCurrentHistoryFilePath();
+      const messages = ctx.agent.getHistory().getMessages();
+      const planState = ctx.agent.planState;
+
+      const parts = args.split(/\s+/);
+      const subCommand = parts[0] ? parts[0].toLowerCase() : "";
+
+      if (subCommand === "list") {
+        ctx.addLine({ type: "system", content: "Retrieving checkpoints...", timestamp: now });
+        listCheckpointsForSession(sessionFilePath)
+          .then((checkpoints) => {
+            if (checkpoints.length === 0) {
+              ctx.addLine({ type: "system", content: "No checkpoints found for this session.", timestamp: Date.now() });
+              return;
+            }
+            const outputLines = [
+              "┌───[ 📋 SESSION CHECKPOINTS ]",
+              "│ ",
+            ];
+            checkpoints.forEach((c) => {
+              const dateStr = new Date(c.timestamp).toLocaleTimeString();
+              const gitInfo = c.gitSha ? ` | Git: ${c.gitSha}` : "";
+              outputLines.push(`│ • ID  : ${c.id}`);
+              outputLines.push(`│   Name: ${c.name} (${dateStr}${gitInfo})`);
+              outputLines.push(`│   Msgs: ${c.messages.length} messages`);
+              outputLines.push("│ ");
+            });
+            outputLines.pop(); // remove last empty spacer
+            outputLines.push("└───────────────────────────────");
+            ctx.addLine({ type: "system", content: outputLines.join("\n"), timestamp: Date.now() });
+          })
+          .catch((err) => {
+            ctx.addLine({ type: "error", content: `Failed to list checkpoints: ${err.message}`, timestamp: Date.now() });
+          });
+      } else if (subCommand === "restore") {
+        const targetId = parts[1];
+        if (!targetId) {
+          ctx.addLine({ type: "error", content: "Usage: /checkpoint restore <checkpoint_id>", timestamp: now });
+          break;
+        }
+
+        ctx.addLine({ type: "system", content: `Restoring checkpoint ${targetId}...`, timestamp: now });
+        restoreCheckpointById(targetId, sessionFilePath)
+          .then(async (checkpoint) => {
+            if (!checkpoint) {
+              ctx.addLine({ type: "error", content: `Checkpoint with ID "${targetId}" not found.`, timestamp: Date.now() });
+              return;
+            }
+
+            // Kill active tasks/subagents
+            terminateActiveTasksAndSubagents();
+
+            // Reload agent history and sync planState
+            if (ctx.resumeFromPath) {
+              await ctx.resumeFromPath(sessionFilePath);
+            }
+            ctx.setPlanState?.(checkpoint.planState);
+
+            ctx.addLine({
+              type: "system",
+              content: `✓ Checkpoint "${checkpoint.name}" successfully restored! (${checkpoint.messages.length} messages)`,
+              timestamp: Date.now()
+            });
+
+            if (checkpoint.gitSha) {
+              ctx.addLine({
+                type: "system",
+                content: `ℹ Note: Workspace files were at Git commit: ${checkpoint.gitSha}\n  To sync workspace codebase files, run: git checkout ${checkpoint.gitSha}`,
+                timestamp: Date.now()
+              });
+            }
+          })
+          .catch((err) => {
+            ctx.addLine({ type: "error", content: `Failed to restore checkpoint: ${err.message}`, timestamp: Date.now() });
+          });
       } else {
-        ctx.addLine({ type: "error", content: "Agent not available in this context.", timestamp: now });
+        // Create a checkpoint
+        const checkpointName = args || `Manual: Checkpoint at ${new Date(now).toLocaleTimeString()}`;
+        ctx.addLine({ type: "system", content: `Creating checkpoint "${checkpointName}"...`, timestamp: now });
+        createCheckpoint(sessionFilePath, checkpointName, messages, planState)
+          .then((c) => {
+            const gitInfo = c.gitSha ? ` (Git: ${c.gitSha})` : "";
+            ctx.addLine({
+              type: "system",
+              content: `✓ Checkpoint created successfully!\n  ID  : ${c.id}\n  Name: ${c.name}${gitInfo}`,
+              timestamp: Date.now(),
+            });
+          })
+          .catch((err) => {
+            ctx.addLine({ type: "error", content: `Failed to create checkpoint: ${err.message}`, timestamp: Date.now() });
+          });
       }
       break;
-    case "reject":
-      if (ctx.agent) {
-        const feedback = cmd.slice(cmd.indexOf(" ") !== -1 ? cmd.indexOf(" ") + 1 : cmd.length).trim();
-        ctx.agent.planState = "IDLE";
-        ctx.setPlanState?.("IDLE");
-        ctx.addLine({
-          type: "system",
-          content: `✗ Implementation plan rejected. Feedback sent to agent: "${feedback || "No feedback provided."}"`,
-          timestamp: now,
-        });
-        ctx.setIsProcessing?.(true);
-        ctx.agent.sendMessage(
-          `The implementation plan was rejected. Feedback from user:\n\n"${feedback || "No feedback provided. Please revise the plan or ask for clarification."}"\n\nPlease revise the implementation plan in '${ctx.agent.getPlanFilePath()}' accordingly and ask for approval again.`
-        ).catch((err: any) => {
-          ctx.addLine({ type: "error", content: `Error sending reject feedback: ${err.message}`, timestamp: Date.now() });
-        });
-      } else {
-        ctx.addLine({ type: "error", content: "Agent not available in this context.", timestamp: now });
-      }
-      break;
+    }
+
     case "goal": {
       const goalArg = cmd.slice(name.length + 2).trim();
       if (!goalArg) {
@@ -303,14 +389,163 @@ export function handleSlashCommand(
     }
     case "init":
       (async () => {
-        const agentsPath = path.resolve(process.cwd(), "agents.md");
+        const cwd = process.cwd();
+
+        // ── Git Setup ──────────────────────────────────
+        let gitStatus = "NOT DETECTED";
+        let gitBranch = "";
+        let gitSha = "";
+        let gitInitialized = false;
+
+        try {
+          const { stdout } = await execa("git", ["rev-parse", "--is-inside-work-tree"], { cwd, reject: false });
+          if (stdout?.trim() === "true") {
+            gitStatus = "ACTIVE";
+          }
+        } catch {}
+
+        if (gitStatus !== "ACTIVE") {
+          // Auto-initialize git
+          ctx.addLine({ type: "system", content: "🔧 Git not detected. Initializing repository...", timestamp: now });
+          try {
+            await execa("git", ["init"], { cwd });
+            gitStatus = "INITIALIZED";
+            gitInitialized = true;
+
+            // Create .gitignore if it doesn't exist
+            const gitignorePath = path.join(cwd, ".gitignore");
+            try {
+              await fs.access(gitignorePath);
+            } catch {
+              const defaultGitignore = [
+                "node_modules/",
+                "dist/",
+                "build/",
+                ".env",
+                ".env.local",
+                "*.log",
+                ".DS_Store",
+                "Thumbs.db",
+                "",
+              ].join("\n");
+              await fs.writeFile(gitignorePath, defaultGitignore, "utf-8");
+              ctx.addLine({ type: "system", content: "📄 Created default .gitignore", timestamp: Date.now() });
+            }
+
+            ctx.addLine({ type: "system", content: "✓ Git repository initialized successfully!", timestamp: Date.now() });
+          } catch (gitErr: any) {
+            ctx.addLine({ type: "error", content: `Git init failed: ${gitErr.message}`, timestamp: Date.now() });
+            gitStatus = "FAILED";
+          }
+        }
+
+        // Gather git info if repo exists
+        if (gitStatus === "ACTIVE" || gitStatus === "INITIALIZED") {
+          try {
+            const { stdout: branch } = await execa("git", ["branch", "--show-current"], { cwd, reject: false });
+            gitBranch = branch?.trim() || "(detached)";
+          } catch {}
+          try {
+            const { stdout: sha } = await execa("git", ["rev-parse", "--short", "HEAD"], { cwd, reject: false });
+            gitSha = sha?.trim() || (gitInitialized ? "(no commits yet)" : "unknown");
+          } catch {
+            gitSha = gitInitialized ? "(no commits yet)" : "unknown";
+          }
+        }
+
+        // ── agents.md Setup ────────────────────────────
+        const agentsPath = path.resolve(cwd, "agents.md");
         let fileStatus = "LOADED";
         try {
           await fs.access(agentsPath);
         } catch {
-          const defaultContent = `# Project Specifications (agents.md)\n\nThis file contains key information about the project for AI agents to study and align with.\n\n## Project Overview\n- **Name**: superagent\n- **Description**: An interactive CLI coding assistant designed for codebase operations.\n- **Technology Stack**: Node.js, TypeScript, Ink (React), Vercel AI SDK\n\n## Coding Guidelines\n- On Windows, statement separator for terminal commands is \';\' instead of \'&&\'.\n- Always write robust TypeScript code and verify compilation with \'npm run build\'.\n`;
+          // Auto-detect project info from package.json or directory name
+          let detectedName = path.basename(cwd);
+          let detectedDesc = "A software project.";
+          let detectedTech = "Unknown";
+
+          try {
+            const pkgPath = path.join(cwd, "package.json");
+            const pkgContent = await fs.readFile(pkgPath, "utf-8");
+            const pkg = JSON.parse(pkgContent);
+            if (pkg.name) detectedName = pkg.name;
+            if (pkg.description) detectedDesc = pkg.description;
+
+            // Detect tech stack from dependencies
+            const allDeps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+            const techs: string[] = [];
+            if (allDeps["typescript"]) techs.push("TypeScript");
+            else techs.push("JavaScript");
+            if (allDeps["react"] || allDeps["react-dom"]) techs.push("React");
+            if (allDeps["next"]) techs.push("Next.js");
+            if (allDeps["vue"]) techs.push("Vue");
+            if (allDeps["svelte"]) techs.push("Svelte");
+            if (allDeps["express"]) techs.push("Express");
+            if (allDeps["fastify"]) techs.push("Fastify");
+            if (allDeps["ink"]) techs.push("Ink (CLI)");
+            if (allDeps["electron"]) techs.push("Electron");
+            if (allDeps["vite"]) techs.push("Vite");
+            if (allDeps["tailwindcss"]) techs.push("Tailwind CSS");
+            if (allDeps["prisma"] || allDeps["@prisma/client"]) techs.push("Prisma");
+            if (allDeps["mongoose"]) techs.push("MongoDB/Mongoose");
+            if (techs.length > 0) detectedTech = techs.join(", ");
+          } catch {
+            // No package.json — check for other project types
+            try {
+              await fs.access(path.join(cwd, "requirements.txt"));
+              detectedTech = "Python";
+            } catch {}
+            try {
+              await fs.access(path.join(cwd, "Cargo.toml"));
+              detectedTech = "Rust";
+            } catch {}
+            try {
+              await fs.access(path.join(cwd, "go.mod"));
+              detectedTech = "Go";
+            } catch {}
+            try {
+              await fs.access(path.join(cwd, "pom.xml"));
+              detectedTech = "Java (Maven)";
+            } catch {}
+          }
+
+          if (detectedTech === "Unknown" && ctx.setActiveWizard) {
+            ctx.setActiveWizard({
+              type: "login",
+              step: 10,
+              data: { gitStatus, gitBranch, gitSha },
+            });
+            ctx.setWizardOptions?.([
+              "1. Node.js (TypeScript)",
+              "2. Node.js (JavaScript)",
+              "3. Python",
+              "4. Rust",
+              "5. Go",
+              "6. Ask AI to describe & build it (Dynamic)"
+            ]);
+            ctx.setWizardSelectedIndex?.(0);
+            return;
+          }
+
+          const defaultContent = [
+            `# Project Specifications (agents.md)`,
+            ``,
+            `This file contains key information about the project for AI agents to study and align with.`,
+            ``,
+            `## Project Overview`,
+            `- **Name**: ${detectedName}`,
+            `- **Description**: ${detectedDesc}`,
+            `- **Technology Stack**: ${detectedTech}`,
+            ``,
+            `## Coding Guidelines`,
+            `- On Windows, statement separator for terminal commands is ';' instead of '&&'.`,
+            `- Always verify compilation and run tests before committing.`,
+            ``,
+          ].join("\n");
+
           await fs.writeFile(agentsPath, defaultContent, "utf-8");
           fileStatus = "CREATED";
+          ctx.addLine({ type: "system", content: `📄 Generated agents.md (detected: ${detectedName}, ${detectedTech})`, timestamp: Date.now() });
         }
 
         let projectName = "Unknown";
@@ -333,13 +568,20 @@ export function handleSlashCommand(
           if (!isNaN(parsed)) limit = parsed;
         }
 
+        const gitStatusLabel = gitStatus === "ACTIVE" ? "✓ ACTIVE" : gitStatus === "INITIALIZED" ? "✓ INITIALIZED (new)" : `✗ ${gitStatus}`;
+
         const auditLines = [
           "┌───[ ⚙️ SYSTEM AUDIT & AGENT INITIALIZATION ]",
           "│ ",
           "│ [HOST INFO]",
           `│ 🖥️ OS Platform   : ${process.platform}`,
           `│ 📦 Node Version   : ${process.version}`,
-          `│ 📂 Workspace      : ${process.cwd()}`,
+          `│ 📂 Workspace      : ${cwd}`,
+          "│ ",
+          "│ [VERSION CONTROL]",
+          `│ 🔀 Git Status     : ${gitStatusLabel}`,
+          ...(gitBranch ? [`│ 🌿 Branch         : ${gitBranch}`] : []),
+          ...(gitSha ? [`│ 📌 HEAD           : ${gitSha}`] : []),
           "│ ",
           "│ [COGNITIVE CORE]",
           `│ ✦ Provider        : ${process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai"}`,
@@ -744,20 +986,22 @@ export function handleSlashCommand(
           "                    Usage: /search-history <query-text>",
           "  /clear    - Clear conversation history",
           "  /compact  - Show conversation summary",
+          "  /checkpoint - Manage checkpoints to save/restore conversation state",
+          "                Usage: /checkpoint [list|restore <id>|<name>]",
           "  /goal     - Activate Goal Mode for long-running overnight tasks",
           "              Usage: /goal <description>  (e.g. /goal implement JWT auth end-to-end)",
-          "  /init     - Initialize/audit AI agents and system configuration",
+          "  /init     - Initialize project (Git setup, agents.md generation, system audit)",
           "  /agents   - List active subagents and defined subagent types",
           "  /tasks    - List running background tasks",
           "  /skills   - List all installed agent skills and templates",
           "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",
           "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
           "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
-          "  /approve  - Approve the pending implementation plan",
           "  /help     - Show this help",
           "  /quit     - Exit the app",
           "",
           "Shortcuts:",
+          "  Ctrl+P    - Show checkpoints interactive wizard dialog",
           "  Ctrl+C    - Abort / Exit",
         ].join("\n"),
         timestamp: now,

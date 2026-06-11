@@ -22,6 +22,10 @@ export function ensureGlobalConfigDir(): void {
   if (!fs.existsSync(historyDir)) {
     fs.mkdirSync(historyDir, { recursive: true });
   }
+  const checkpointsDir = path.join(dir, "checkpoints");
+  if (!fs.existsSync(checkpointsDir)) {
+    fs.mkdirSync(checkpointsDir, { recursive: true });
+  }
 }
 
 export interface HistorySession {
