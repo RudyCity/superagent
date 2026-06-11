@@ -10,6 +10,7 @@ export interface BackgroundTask {
   command: string;
   process: any;
   output: string[];
+  logPath?: string;
 }
 
 export type TaskChangeListener = () => void;

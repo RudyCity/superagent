@@ -59,11 +59,7 @@ export function getToolDescription(
     case "ripgrep_search":
       return `Searching codebase with ripgrep for: ${args.pattern}`;
     case "run_background":
-      return `Starting background task: ${args.command}`;
-    case "kill_task":
-      return `Killing background task: ${args.taskId}`;
-    case "view_background_tasks":
-      return `Viewing background tasks`;
+      return `Starting background task: ${args.command}${args.cwd ? ` (in ${args.cwd})` : ""}`;
     case "write_to_file":
       return `Writing file: ${args.filePath}`;
     case "replace_file_content":
@@ -71,7 +67,7 @@ export function getToolDescription(
     case "multi_replace_file_content":
       return `Replacing multiple blocks in file: ${args.filePath}`;
     case "run_command":
-      return `Running command: ${args.command}`;
+      return `Running command: ${args.command}${args.cwd ? ` (in ${args.cwd})` : ""}`;
     case "manage_task":
       return `Managing task (${args.action}): ${args.taskId || ""}`;
     case "schedule":

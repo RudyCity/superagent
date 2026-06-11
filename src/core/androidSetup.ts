@@ -54,14 +54,17 @@ export async function isAndroidCliInstalledLocally(): Promise<boolean> {
   }
 }
 
+let cachedRgInstalledGlobally: boolean | null = null;
 export async function isRgInstalledGlobally(): Promise<boolean> {
+  if (cachedRgInstalledGlobally !== null) return cachedRgInstalledGlobally;
   const isWin = process.platform === "win32";
   try {
     await execa(isWin ? "where.exe" : "which", ["rg"]);
-    return true;
+    cachedRgInstalledGlobally = true;
   } catch {
-    return false;
+    cachedRgInstalledGlobally = false;
   }
+  return cachedRgInstalledGlobally;
 }
 
 export function getLocalBinDir(): string {
@@ -73,13 +76,16 @@ export function getLocalRgPath(): string {
   return path.join(getLocalBinDir(), isWin ? "rg.exe" : "rg");
 }
 
+let cachedRgInstalledLocally: boolean | null = null;
 export async function isRgInstalledLocally(): Promise<boolean> {
+  if (cachedRgInstalledLocally !== null) return cachedRgInstalledLocally;
   try {
     await fs.access(getLocalRgPath());
-    return true;
+    cachedRgInstalledLocally = true;
   } catch {
-    return false;
+    cachedRgInstalledLocally = false;
   }
+  return cachedRgInstalledLocally;
 }
 
 export async function ensureRgInstalled(): Promise<void> {

@@ -104,8 +104,82 @@ export async function verifySyntax(filePath: string): Promise<string | null> {
       const code = await fs.readFile(filePath, "utf-8");
       const stack: string[] = [];
       const pairs: Record<string, string> = { "}": "{", ")": "(", "]": "[" };
-      for (let i = 0; i < code.length; i++) {
+      
+      let i = 0;
+      while (i < code.length) {
         const c = code[i];
+        
+        // Skip single-line comments
+        if (c === "/" && code[i + 1] === "/") {
+          i += 2;
+          while (i < code.length && code[i] !== "\n") {
+            i++;
+          }
+          continue;
+        }
+        
+        // Skip multi-line comments
+        if (c === "/" && code[i + 1] === "*") {
+          i += 2;
+          while (i < code.length && !(code[i] === "*" && code[i + 1] === "/")) {
+            i++;
+          }
+          i += 2; // skip */
+          continue;
+        }
+        
+        // Skip string literals (single, double, template quotes)
+        if (c === "'" || c === '"' || c === "`") {
+          const quote = c;
+          i++;
+          while (i < code.length) {
+            if (code[i] === "\\") {
+              i += 2; // skip escape sequence
+              continue;
+            }
+            if (code[i] === quote) {
+              i++;
+              break;
+            }
+            i++;
+          }
+          continue;
+        }
+        
+        // Skip regex literals (simplified heuristic)
+        if (c === "/") {
+          let isRegex = false;
+          let prevIdx = i - 1;
+          while (prevIdx >= 0 && /\s/.test(code[prevIdx])) {
+            prevIdx--;
+          }
+          if (prevIdx >= 0) {
+            const prevChar = code[prevIdx];
+            if ("=,([:?!&|;~+*-%^<>".includes(prevChar)) {
+              isRegex = true;
+            }
+          } else {
+            isRegex = true; // start of file
+          }
+          
+          if (isRegex) {
+            i++;
+            while (i < code.length) {
+              if (code[i] === "\\") {
+                i += 2;
+                continue;
+              }
+              if (code[i] === "/") {
+                i++;
+                break;
+              }
+              i++;
+            }
+            continue;
+          }
+        }
+
+        // Bracket matching
         if (c === "{" || c === "(" || c === "[") {
           stack.push(c);
         } else if (c === "}" || c === ")" || c === "]") {
@@ -114,6 +188,11 @@ export async function verifySyntax(filePath: string): Promise<string | null> {
           }
           stack.pop();
         }
+        i++;
+      }
+      
+      if (stack.length > 0) {
+        return `Syntax check failed: Unmatched opening bracket/brace "${stack[stack.length - 1]}"`;
       }
     } catch {
       // Ignored
@@ -138,7 +217,12 @@ export function detectInteractivePrompt(text: string): string | null {
     /proceed\?/i,
     /enter\s+password/i,
     /api\s+key/i,
-    /select\s+an\s+option/i
+    /select\s+an\s+option/i,
+    /password:/i,
+    /passphrase:/i,
+    /user(name)?:/i,
+    /input\s+.*:/i,
+    /choice:/i,
   ];
   for (const pattern of patterns) {
     if (pattern.test(text)) {

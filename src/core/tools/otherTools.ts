@@ -26,7 +26,21 @@ export const askQuestionTool: Tool = {
     required: ["question", "options"],
   },
   async execute(args, cwd, signal) {
-    return `Error: ask_question must be executed interactively.`;
+    const question = args.question as string;
+    const rawOptions = (args.options as unknown[]) || [];
+    const options: string[] = rawOptions.map(o => String(o));
+
+    const handler = (await import("./state.js")).getActiveQuestionHandler();
+    if (!handler) {
+      return `Error: ask_question must be executed interactively. No question handler is registered.`;
+    }
+
+    try {
+      const selected = await handler(question, options);
+      return `User selected option: "${selected}"`;
+    } catch (err: any) {
+      return `Error getting user answer: ${err.message}`;
+    }
   },
 };
 
@@ -156,13 +170,13 @@ export const scheduleTool: Tool = {
 
 export const gitActionTool: Tool = {
   name: "git_action",
-  description: "Execute a structured Git action (status, log, diff, commit).",
+  description: "Execute a structured Git action (status, log, diff, commit, add, restore, clean).",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["status", "diff", "commit", "log"],
+        enum: ["status", "diff", "commit", "log", "add", "restore", "clean"],
         description: "The git action to perform",
       },
       message: {
@@ -173,11 +187,17 @@ export const gitActionTool: Tool = {
         type: "number",
         description: "Max commit log entries (default 5)",
       },
+      files: {
+        type: "array",
+        items: { type: "string" },
+        description: "List of files/paths to stage or restore (used for add and restore)",
+      },
     },
     required: ["action"],
   },
   async execute(args, cwd, signal) {
     const action = args.action as string;
+    const files = args.files as string[] || [];
     try {
       if (action === "status") {
         const { stdout } = await execa("git", ["status", "--porcelain"], { cwd, cancelSignal: signal });
@@ -200,6 +220,22 @@ export const gitActionTool: Tool = {
         const { stdout } = await execa("git", ["log", `-${limit}`, "--oneline"], { cwd, cancelSignal: signal });
         return stdout;
       }
+      if (action === "add") {
+        const targets = files.length > 0 ? files : ["-A"];
+        await execa("git", ["add", ...targets], { cwd, cancelSignal: signal });
+        return `Successfully staged files: ${targets.join(", ")}`;
+      }
+      if (action === "restore") {
+        if (files.length === 0) {
+          return "Error: The 'files' parameter is required for the restore action.";
+        }
+        await execa("git", ["restore", ...files], { cwd, cancelSignal: signal });
+        return `Successfully restored files: ${files.join(", ")}`;
+      }
+      if (action === "clean") {
+        const { stdout } = await execa("git", ["clean", "-fd"], { cwd, cancelSignal: signal });
+        return stdout || "Cleaned untracked files/directories successfully.";
+      }
       return "Unknown git action.";
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -216,24 +252,39 @@ export const screenshotTool: Tool = {
     properties: {},
   },
   async execute(args, cwd, signal) {
-    const isWin = process.platform === "win32";
-    if (!isWin) {
-      return "Screenshot tool is only supported on Windows in this execution context.";
-    }
     const outputPath = path.resolve(cwd, `screenshot_${Date.now()}.png`);
     try {
-      const psCommand = `
-        Add-Type -AssemblyName System.Windows.Forms,System.Drawing;
-        $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds;
-        $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height;
-        $graphics = [System.Drawing.Graphics]::FromImage($bmp);
-        $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size);
-        $bmp.Save('${outputPath.replace(/\\/g, "\\\\")}');
-        $graphics.Dispose();
-        $bmp.Dispose();
-      `.replace(/\n/s, " ");
-      await execa("powershell.exe", ["-Command", psCommand], { cancelSignal: signal });
-      return `Screenshot successfully captured: ${outputPath}`;
+      if (process.platform === "win32") {
+        const psCommand = `
+          Add-Type -AssemblyName System.Windows.Forms,System.Drawing;
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds;
+          $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height;
+          $graphics = [System.Drawing.Graphics]::FromImage($bmp);
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size);
+          $bmp.Save('${outputPath.replace(/\\/g, "\\\\")}');
+          $graphics.Dispose();
+          $bmp.Dispose();
+        `.replace(/\n/s, " ");
+        await execa("powershell.exe", ["-Command", psCommand], { cancelSignal: signal });
+        return `Screenshot successfully captured: ${outputPath}`;
+      } else if (process.platform === "darwin") {
+        await execa("screencapture", ["-x", outputPath], { cancelSignal: signal });
+        return `Screenshot successfully captured: ${outputPath}`;
+      } else if (process.platform === "linux") {
+        try {
+          await execa("scrot", [outputPath], { cancelSignal: signal });
+          return `Screenshot successfully captured: ${outputPath}`;
+        } catch {
+          try {
+            await execa("gnome-screenshot", ["-f", outputPath], { cancelSignal: signal });
+            return `Screenshot successfully captured: ${outputPath}`;
+          } catch (err: any) {
+            return `Failed to capture screenshot on Linux: scrot or gnome-screenshot must be installed.`;
+          }
+        }
+      } else {
+        return `Screenshot tool is not supported on platform: ${process.platform}`;
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Failed to capture screenshot: ${message}`;
@@ -285,6 +336,33 @@ export const androidCliTool: Tool = {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Android CLI error: ${message}`;
+    }
+  },
+};
+
+export const searchHistoryTool: Tool = {
+  name: "search_history",
+  description: "Search all previous local workspace conversation history files for a query string.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "The search query or keyword to look for in the history files (case-insensitive)",
+      },
+    },
+    required: ["query"],
+  },
+  async execute(args, cwd, signal) {
+    const query = args.query as string;
+    if (!query) {
+      return "Error: query parameter is required.";
+    }
+    try {
+      const { searchHistory } = await import("../historySearch.js");
+      return await searchHistory(query);
+    } catch (err: any) {
+      return `Error searching history: ${err.message}`;
     }
   },
 };

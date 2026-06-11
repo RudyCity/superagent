@@ -13,6 +13,9 @@ import {
   MODIFYING_TOOLS,
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
+import { AsyncLocalStorage } from "async_hooks";
+
+export const agentLocalStorage = new AsyncLocalStorage<Agent>();
 
 export type AgentEvent =
   | { type: "text"; content: string }
@@ -35,6 +38,7 @@ export type QuestionHandler = (
 ) => Promise<string>;
 
 export class Agent {
+  public delegationDepth = 0;
   public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
   public goalMode: string | null = null;
   public goalMaxIterations: number = 200;
@@ -87,6 +91,21 @@ export class Agent {
 
   private currentHistoryFilePath: string | null = null;
 
+  public getPlanFilePath(): string {
+    const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
+    return historyPath.replace(/\.json$/, "_implementation_plan.md");
+  }
+
+  public getTaskFilePath(): string {
+    const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
+    return historyPath.replace(/\.json$/, "_task.md");
+  }
+
+  public getWalkthroughFilePath(): string {
+    const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
+    return historyPath.replace(/\.json$/, "_walkthrough.md");
+  }
+
   private resolveHistoryFilePath(autoResume: boolean): string {
     ensureGlobalConfigDir();
     const sanitizedPath = this.config.workingDirectory.replace(/[^a-zA-Z0-9]/g, "_");
@@ -121,18 +140,24 @@ export class Agent {
   async loadHistory(autoResume = false): Promise<void> {
     this.currentHistoryFilePath = this.resolveHistoryFilePath(autoResume);
     await this.conversation.loadFromFile(this.currentHistoryFilePath);
+    if (this.conversation.loadedPlanState) {
+      this.planState = this.conversation.loadedPlanState;
+    }
   }
 
   async loadHistoryFromPath(filePath: string): Promise<void> {
     this.currentHistoryFilePath = filePath;
     await this.conversation.loadFromFile(filePath);
+    if (this.conversation.loadedPlanState) {
+      this.planState = this.conversation.loadedPlanState;
+    }
   }
 
   async saveHistory(): Promise<void> {
     if (!this.currentHistoryFilePath) {
       this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
     }
-    await this.conversation.saveToFile(this.currentHistoryFilePath);
+    await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState);
   }
 
   private getModel() {
@@ -161,7 +186,7 @@ export class Agent {
     await this.saveHistory();
 
     try {
-      await this.runAgentLoop();
+      await agentLocalStorage.run(this, () => this.runAgentLoop());
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         this.onEvent({ type: "text", content: "\n\n[Interrupted]" });
@@ -221,6 +246,30 @@ CRITICAL GOAL MODE RULES:
         const messages = this.buildMessages();
         const toolDefs = getToolDefinitions();
 
+        const planStateNotice = `
+
+PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
+You MUST write/read the planning lifecycle documents at these exact absolute paths for this specific conversation history:
+- Implementation Plan File: ${this.getPlanFilePath()}
+- Task Tracking File: ${this.getTaskFilePath()}
+- Verification/Walkthrough File: ${this.getWalkthroughFilePath()}
+
+Whenever you reference these files in your thoughts or messages to the user, always use their absolute paths or format them as absolute file:/// links so the user can click and open them directly.
+Do NOT write them in the local workspace directory. Always write/read to/from these global paths.`;
+
+        let planStateAddendum = "";
+        if (this.planState === "PLANNING_PENDING") {
+          planStateAddendum = `\n\n⚠️ IMPORTANT PLAN STATE NOTICE:
+An implementation plan has been written to '${this.getPlanFilePath()}' and is currently pending user approval.
+You are temporarily in a READ-ONLY mode.
+- DO NOT attempt to write/edit/modify any codebase files.
+- DO NOT run terminal commands that modify files, add packages, or check out git branches.
+- Focus on explaining your proposed plan to the user, answering any questions, or waiting for them to approve via '/approve' or reject via '/reject'.`;
+        } else if (this.planState === "APPROVED") {
+          planStateAddendum = `\n\n✓ PLAN STATE NOTICE:
+The user has APPROVED your implementation plan. You are now fully authorized to modify codebase files and run commands to execute the plan.`;
+        }
+
         const currentStep = i + 1;
         const systemPrompt = `${baseSystemPrompt}
 
@@ -230,7 +279,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - Be highly efficient. If the task is complex, requires multiple steps, or involves extensive research/coding across different components, DO NOT try to do everything in a single sequential thread.
 - Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'explorer', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
 - Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.
-${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}`;
+${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${planStateNotice}${planStateAddendum}`;
 
         let textContent = "";
         const toolCalls: ToolCall[] = [];
@@ -432,11 +481,34 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           }
 
           if (MODIFYING_TOOLS.includes(tc.name)) {
-            const filePath = tc.args.filePath as string || "";
-            const isPlanFile = filePath && path.basename(filePath).toLowerCase() === "implementation_plan.md";
+            const filePath = tc.args.filePath as string || tc.args.TargetFile as string || "";
+            const planFilePath = this.getPlanFilePath();
+            const isPlanFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(planFilePath).toLowerCase();
 
             if (isPlanFile) {
-              this.planState = "PLANNING_PENDING";
+              const planContent = (tc.args.content as string || tc.args.codeContent as string || tc.args.CodeContent as string || "").trim();
+              const hasProposedChanges = /proposed\s+changes/i.test(planContent) || /rencana\s+perubahan/i.test(planContent);
+              const hasVerificationPlan = /verification\s+plan/i.test(planContent) || /rencana\s+verifikasi/i.test(planContent);
+              const hasTitle = /^#\s+.+/m.test(planContent);
+
+              if (!hasTitle || (!hasProposedChanges && !hasVerificationPlan)) {
+                const blocked: ToolResult = {
+                  toolCallId: tc.id,
+                  name: tc.name,
+                  result: "Error: The implementation plan is invalid or lacks structure. A valid plan must include a main title (e.g., '# Goal Description') and sections for 'Proposed Changes' and 'Verification Plan'. Please rewrite the plan with these sections included.",
+                  isError: true,
+                };
+                toolResults.push(blocked);
+                this.onEvent({ type: "tool_end", toolResult: blocked, description });
+                continue;
+              }
+
+              if (this.goalMode) {
+                this.planState = "APPROVED";
+                this.onEvent({ type: "text", content: "\n[SYS] Goal Mode active: Auto-approving implementation plan for autonomous execution.\n" });
+              } else {
+                this.planState = "PLANNING_PENDING";
+              }
             } else if (this.planState === "PLANNING_PENDING") {
               const blocked: ToolResult = {
                 toolCallId: tc.id,
@@ -451,20 +523,37 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           }
 
           if (
-            (tc.name === "bash" || tc.name === "run_command" || tc.name === "run_background") &&
-            isDangerousCommand(tc.args.command as string)
+            tc.name === "bash" || tc.name === "run_command" || tc.name === "run_background"
           ) {
-            const approved = await this.onPermission(tc, description);
-            if (!approved) {
-              const denied: ToolResult = {
-                toolCallId: tc.id,
-                name: tc.name,
-                result: "User denied permission for this command.",
-                isError: true,
-              };
-              toolResults.push(denied);
-              this.onEvent({ type: "tool_end", toolResult: denied, description });
-              continue;
+            if (this.planState === "PLANNING_PENDING") {
+              const cmd = (tc.args.command as string || "").trim();
+              const isModifyingCommand = /([>\u226B\u00BB]|\b(rm|rmdir|mkdir|cp|mv|touch|git\s+(checkout|apply|reset|clean|merge|rebase|commit|add|push|pull)|npm\s+(install|i|uninstall|update|add)|yarn\s+(add|remove|upgrade|install)|pnpm\s+(add|remove|update|install|i))\b)/i.test(cmd);
+              if (isModifyingCommand) {
+                const blocked: ToolResult = {
+                  toolCallId: tc.id,
+                  name: tc.name,
+                  result: `Error: Terminal command blocked. A plan is pending approval. You must wait for the user to approve the plan using '/approve' before running commands that modify the codebase or repository state. Command blocked: "${cmd}"`,
+                  isError: true,
+                };
+                toolResults.push(blocked);
+                this.onEvent({ type: "tool_end", toolResult: blocked, description });
+                continue;
+              }
+            }
+
+            if (isDangerousCommand(tc.args.command as string)) {
+              const approved = await this.onPermission(tc, description);
+              if (!approved) {
+                const denied: ToolResult = {
+                  toolCallId: tc.id,
+                  name: tc.name,
+                  result: "User denied permission for this command.",
+                  isError: true,
+                };
+                toolResults.push(denied);
+                this.onEvent({ type: "tool_end", toolResult: denied, description });
+                continue;
+              }
             }
           }
 

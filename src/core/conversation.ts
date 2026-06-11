@@ -25,11 +25,16 @@ export interface ToolResult {
 export class Conversation {
   private messages: Message[] = [];
   private maxHistory = 200;
+  public loadedPlanState?: "IDLE" | "PLANNING_PENDING" | "APPROVED";
 
-  async saveToFile(filePath: string): Promise<void> {
+  async saveToFile(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED"): Promise<void> {
     try {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
-      await fs.writeFile(filePath, JSON.stringify(this.messages, null, 2), "utf-8");
+      const data = {
+        messages: this.messages,
+        planState,
+      };
+      await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
     } catch (err) {
       console.error("Failed to save history:", err);
     }
@@ -38,7 +43,14 @@ export class Conversation {
   async loadFromFile(filePath: string): Promise<void> {
     try {
       const data = await fs.readFile(filePath, "utf-8");
-      this.messages = JSON.parse(data);
+      const parsed = JSON.parse(data);
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+        this.messages = parsed.messages;
+        this.loadedPlanState = parsed.planState;
+      } else if (Array.isArray(parsed)) {
+        this.messages = parsed;
+        this.loadedPlanState = undefined;
+      }
     } catch (err: any) {
       if (err.code !== "ENOENT") {
         console.error("Failed to load history:", err);

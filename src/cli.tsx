@@ -17,6 +17,28 @@ import { render } from "ink";
 import { App } from "./app.js";
 
 import { getConfig } from "./core/config.js";
+import { backgroundTasks, killProcessTree } from "./core/tools/index.js";
+
+function cleanupBackgroundTasks() {
+  for (const [id, task] of backgroundTasks.entries()) {
+    try {
+      killProcessTree(task.process.pid);
+    } catch {
+      // Ignore errors during exit cleanup
+    }
+  }
+}
+
+process.on("exit", cleanupBackgroundTasks);
+process.on("SIGINT", () => {
+  cleanupBackgroundTasks();
+  process.exit(130);
+});
+process.on("SIGTERM", () => {
+  cleanupBackgroundTasks();
+  process.exit(143);
+});
+
 const config = getConfig();
 const apiKey = config.apiKey;
 const hasCustomEndpoint = !!config.baseUrl;

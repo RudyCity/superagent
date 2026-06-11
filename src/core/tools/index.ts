@@ -18,8 +18,6 @@ import {
   bashTool, 
   runCommandTool, 
   runBackgroundTool, 
-  killTaskTool, 
-  viewBackgroundTasksTool, 
   manageTaskTool 
 } from "./shellTools.js";
 
@@ -40,23 +38,19 @@ import {
   scheduleTool, 
   gitActionTool, 
   screenshotTool, 
-  androidCliTool 
+  androidCliTool,
+  searchHistoryTool
 } from "./otherTools.js";
 
 export const allTools: Tool[] = [
   readTool,
   askQuestionTool,
-  writeTool,
-  editTool,
-  bashTool,
   globTool,
   grepTool,
   webSearchTool,
   fetchUrlTool,
   ripgrepSearchTool,
   runBackgroundTool,
-  killTaskTool,
-  viewBackgroundTasksTool,
   writeToFileTool,
   replaceFileContentTool,
   multiReplaceFileContentTool,
@@ -71,6 +65,7 @@ export const allTools: Tool[] = [
   gitActionTool,
   screenshotTool,
   androidCliTool,
+  searchHistoryTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {
@@ -93,6 +88,7 @@ export function getToolDefinitions(): Array<{
 export * from "./types.js";
 export * from "./helpers.js";
 export * from "./state.js";
+export { killProcessTree } from "./shellTools.js";
 
 // Register default subagent types
 registerSubagentType(

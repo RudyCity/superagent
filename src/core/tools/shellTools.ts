@@ -1,6 +1,9 @@
 import { execa } from "execa";
 import { exec } from "child_process";
+import path from "path";
+import fs from "fs";
 import { Tool, BackgroundTask } from "./types.js";
+import { getGlobalConfigDir } from "../config.js";
 import { 
   formatCommandForPowerShell, 
   truncateOutput, 
@@ -13,6 +16,16 @@ import {
   clearActiveToolOutput, 
   appendActiveToolOutput 
 } from "./state.js";
+
+function formatAndTruncateOutput(output: string, maxLines: number, logPath: string): string {
+  const trimmed = output.trim();
+  const lines = trimmed.split(/\r?\n/);
+  if (lines.length > maxLines) {
+    const lastLines = lines.slice(lines.length - maxLines).join("\n");
+    return `${lastLines}\n\n... (output truncated, full logs saved at: ${logPath})`;
+  }
+  return trimmed;
+}
 
 export function killProcessTree(pid: number | undefined): void {
   if (!pid) return;
@@ -100,6 +113,7 @@ export const bashTool: Tool = {
         const warning = detectInteractivePrompt(text);
         if (warning) {
           interactiveWarning = warning;
+          killProcessTree(proc.pid);
         }
       });
 
@@ -110,7 +124,7 @@ export const bashTool: Tool = {
         output = truncateOutput(output);
         
         if (interactiveWarning) {
-          output = `${interactiveWarning}\n\n${output}`;
+          return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background', then monitor it with 'manage_task' (action: 'status') and send inputs using 'manage_task' (action: 'send_input').`;
         }
 
         if (result.exitCode !== 0) {
@@ -152,11 +166,24 @@ export const runCommandTool: Tool = {
         type: "string",
         description: "The command to run",
       },
+      cwd: {
+        type: "string",
+        description: "Optional working directory to run the command in (relative to current directory or absolute)",
+      },
+      timeout: {
+        type: "number",
+        description: "Timeout in milliseconds (default 120000 / 2 minutes)",
+      },
     },
     required: ["command"],
   },
   async execute(args, cwd, signal) {
     let command = args.command as string;
+    const targetCwd = args.cwd 
+      ? path.resolve(cwd, args.cwd as string)
+      : cwd;
+    const timeout = (args.timeout as number) || 120000;
+
     let shellPath: string | boolean = true;
     if (process.platform === "win32") {
       const resolved = resolveWindowsShell();
@@ -165,11 +192,21 @@ export const runCommandTool: Tool = {
         command = formatCommandForPowerShell(command);
       }
     }
+
+    let timeoutId: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        const err = new Error("TimeoutError");
+        err.name = "TimeoutError";
+        reject(err);
+      }, timeout);
+    });
+
     try {
       clearActiveToolOutput();
       const proc = execa(command, {
         shell: shellPath,
-        cwd,
+        cwd: targetCwd,
         reject: false,
         all: true,
       });
@@ -193,20 +230,28 @@ export const runCommandTool: Tool = {
         const warning = detectInteractivePrompt(text);
         if (warning) {
           interactiveWarning = warning;
+          killProcessTree(proc.pid);
         }
       });
 
       try {
-        const result = await proc;
+        const result = await Promise.race([proc, timeoutPromise]);
         clearActiveToolOutput();
         let output = (result.all || result.stdout || "").trim();
         output = truncateOutput(output);
 
         if (interactiveWarning) {
-          output = `${interactiveWarning}\n\n${output}`;
+          return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background', then monitor it with 'manage_task' (action: 'status') and send inputs using 'manage_task' (action: 'send_input').`;
         }
         return output || "(no output)";
+      } catch (innerErr: any) {
+        if (innerErr && innerErr.name === "TimeoutError") {
+          killProcessTree(proc.pid);
+          return `Error executing command: Timeout of ${timeout}ms exceeded. If this command is a long-running process (like a dev server, watcher, or database), please run it in the background using 'run_background' instead.`;
+        }
+        throw innerErr;
       } finally {
+        if (timeoutId) clearTimeout(timeoutId);
         if (signal) {
           signal.removeEventListener("abort", abortHandler);
         }
@@ -234,11 +279,19 @@ export const runBackgroundTool: Tool = {
         type: "string",
         description: "The command to run in the background",
       },
+      cwd: {
+        type: "string",
+        description: "Optional working directory to run the command in (relative to current directory or absolute)",
+      },
     },
     required: ["command"],
   },
   async execute(args, cwd, signal) {
     let command = args.command as string;
+    const targetCwd = args.cwd 
+      ? path.resolve(cwd, args.cwd as string)
+      : cwd;
+
     let shellPath: string | boolean = true;
     if (process.platform === "win32") {
       const resolved = resolveWindowsShell();
@@ -248,11 +301,21 @@ export const runBackgroundTool: Tool = {
       }
     }
     const taskId = Math.random().toString(36).substring(2, 9);
+    const tasksLogDir = path.join(getGlobalConfigDir(), "tasks");
+    if (!fs.existsSync(tasksLogDir)) {
+      fs.mkdirSync(tasksLogDir, { recursive: true });
+    }
+    const logPath = path.join(tasksLogDir, `${taskId}.log`);
+    try {
+      fs.writeFileSync(logPath, "");
+    } catch {
+      // Ignore write errors
+    }
 
     try {
       const proc = execa(command, {
         shell: shellPath,
-        cwd,
+        cwd: targetCwd,
         reject: false,
         all: true,
       });
@@ -262,6 +325,7 @@ export const runBackgroundTool: Tool = {
         command,
         process: proc,
         output: [],
+        logPath,
       };
 
       backgroundTasks.set(taskId, task);
@@ -273,12 +337,42 @@ export const runBackgroundTool: Tool = {
         if (task.output.length > 1000) {
           task.output.shift();
         }
+        try {
+          fs.appendFileSync(logPath, text);
+        } catch {
+          // ignore
+        }
       });
 
+      let hasExited = false;
+      let exitCode: number | null = null;
+
       proc.on("close", (code) => {
-        task.output.push(`\n[Process exited with code ${code}]`);
+        hasExited = true;
+        exitCode = code;
+        const exitMsg = `\n[Process exited with code ${code}]`;
+        task.output.push(exitMsg);
+        try {
+          fs.appendFileSync(logPath, exitMsg);
+        } catch {
+          // ignore
+        }
         notifyTasksChanged();
       });
+
+      // Settle time wait of 2000ms
+      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+
+      if (hasExited) {
+        backgroundTasks.delete(taskId);
+        notifyTasksChanged();
+        const logs = task.output.join("");
+        const formattedLogs = formatAndTruncateOutput(logs, 20, logPath);
+        if (exitCode !== 0) {
+          return `Error: Background task failed instantly (exit code ${exitCode}).\nLogs:\n${formattedLogs}`;
+        }
+        return `Background task finished successfully immediately.\nOutput:\n${formattedLogs}`;
+      }
 
       return `Started task in background. Task ID: ${taskId}`;
     } catch (err: unknown) {
@@ -337,7 +431,9 @@ export const viewBackgroundTasksTool: Tool = {
     if (taskId) {
       const task = backgroundTasks.get(taskId);
       if (!task) return `No task found with ID "${taskId}"`;
-      return `Task: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${task.output.join("")}`;
+      const fullOutput = task.output.join("");
+      const formattedOutput = formatAndTruncateOutput(fullOutput, 50, task.logPath || "");
+      return `Task: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${formattedOutput}`;
     }
 
     if (backgroundTasks.size === 0) return "No active background tasks.";
@@ -395,7 +491,9 @@ export const manageTaskTool: Tool = {
     }
 
     if (action === "status") {
-      return `Task: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${task.output.join("")}`;
+      const fullOutput = task.output.join("");
+      const formattedOutput = formatAndTruncateOutput(fullOutput, 50, task.logPath || "");
+      return `Task: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${formattedOutput}`;
     }
 
     if (action === "send_input") {

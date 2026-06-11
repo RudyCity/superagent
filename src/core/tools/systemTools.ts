@@ -33,8 +33,18 @@ export const readTool: Tool = {
     const limit = (args.limit as number) || 2000;
 
     try {
-      const content = await fs.readFile(filePath, "utf-8");
-      const lines = content.split("\n");
+      const buffer = await fs.readFile(filePath);
+      
+      // Check for binary content (first 1024 bytes check for null bytes)
+      const checkLimit = Math.min(buffer.length, 1024);
+      for (let i = 0; i < checkLimit; i++) {
+        if (buffer[i] === 0) {
+          return `Error: Cannot read binary file ${args.filePath}`;
+        }
+      }
+
+      const content = buffer.toString("utf-8");
+      const lines = content.replace(/\r\n/g, "\n").split("\n");
       const sliced = lines.slice(offset - 1, offset - 1 + limit);
       return sliced.map((line, i) => `${offset + i}: ${line}`).join("\n");
     } catch (err: unknown) {
@@ -238,6 +248,10 @@ export const globTool: Tool = {
         type: "string",
         description: "Directory to search in (default: cwd)",
       },
+      limit: {
+        type: "number",
+        description: "Maximum number of files to return (default 500)",
+      },
     },
     required: ["pattern"],
   },
@@ -246,15 +260,22 @@ export const globTool: Tool = {
     const searchPath = args.path
       ? path.resolve(cwd, args.path as string)
       : cwd;
+    const limit = (args.limit as number) || 500;
 
     try {
       const files = await fg(pattern, {
         cwd: searchPath,
         absolute: false,
         onlyFiles: true,
+        ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
       });
       if (files.length === 0) return "No files found.";
-      return files.join("\n");
+      const sliced = files.slice(0, limit);
+      const output = sliced.join("\n");
+      if (files.length > limit) {
+        return `${output}\n\n... (output truncated, showing ${limit} of ${files.length} files)`;
+      }
+      return output;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error: ${message}`;
@@ -300,21 +321,31 @@ export const grepTool: Tool = {
 
       const results: string[] = [];
       const regex = new RegExp(pattern, "gi");
+      const slicedFiles = files.slice(0, 500);
 
-      for (const file of files.slice(0, 500)) {
-        try {
-          const content = await fs.readFile(file, "utf-8");
-          const lines = content.split("\n");
-          for (let i = 0; i < lines.length; i++) {
-            if (regex.test(lines[i])) {
-              const relPath = path.relative(searchPath, file);
-              results.push(`${relPath}:${i + 1}: ${lines[i].trim()}`);
+      // Process in batches of 25 files concurrently
+      const BATCH_SIZE = 25;
+      for (let offset = 0; offset < slicedFiles.length; offset += BATCH_SIZE) {
+        const batch = slicedFiles.slice(offset, offset + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (file) => {
+            try {
+              const content = await fs.readFile(file, "utf-8");
+              if (content.includes("\0")) return; // skip binary
+              const lines = content.split(/\r?\n/);
+              const localRegex = new RegExp(pattern, "gi");
+              for (let i = 0; i < lines.length; i++) {
+                if (localRegex.test(lines[i])) {
+                  const relPath = path.relative(searchPath, file);
+                  results.push(`${relPath}:${i + 1}: ${lines[i].trim()}`);
+                }
+                localRegex.lastIndex = 0;
+              }
+            } catch {
+              // skip unreadable files
             }
-            regex.lastIndex = 0;
-          }
-        } catch {
-          // skip unreadable files
-        }
+          })
+        );
       }
 
       return results.length > 0
@@ -432,6 +463,10 @@ export const writeToFileTool: Tool = {
       }
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, args.content as string, "utf-8");
+      const syntaxError = await verifySyntax(filePath);
+      if (syntaxError) {
+        return `Warning: ${syntaxError}. File written successfully: ${filePath}`;
+      }
       return `File written successfully: ${filePath}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -626,6 +661,10 @@ export const multiReplaceFileContentTool: Tool = {
       }
 
       await fs.writeFile(filePath, lines.join("\n"), "utf-8");
+      const syntaxError = await verifySyntax(filePath);
+      if (syntaxError) {
+        return `Warning: ${syntaxError}. File updated successfully with ${chunks.length} changes: ${filePath}`;
+      }
       return `File updated successfully with ${chunks.length} changes: ${filePath}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -656,59 +695,141 @@ export const applyPatchTool: Tool = {
     const patchContent = args.patchContent as string;
     try {
       let content = await fs.readFile(filePath, "utf-8");
-      const lines = patchContent.split(/\r?\n/);
-      let targetLines: string[] = [];
-      let replacementLines: string[] = [];
-      let mode: "search" | "replace" | "idle" = "idle";
-
-      for (const line of lines) {
-        if (line.startsWith("<<<<<<<")) {
-          mode = "search";
-          targetLines = [];
-        } else if (line.startsWith("=======")) {
-          mode = "replace";
-          replacementLines = [];
-        } else if (line.startsWith(">>>>>>>")) {
-          mode = "idle";
-          const oldStr = targetLines.join("\n");
-          const newStr = replacementLines.join("\n");
-          const normContent = normalizeForMatching(content);
-          const normOldStr = normalizeForMatching(oldStr);
-          if (normContent.includes(normOldStr)) {
-            const matchIndexInNorm = normContent.indexOf(normOldStr);
-            let normCharIdx = 0;
-            let origCharIdx = 0;
-            let matchOrigStart = -1;
-            let matchOrigEnd = -1;
-            while (origCharIdx < content.length && normCharIdx < normContent.length) {
-              if (normCharIdx === matchIndexInNorm) {
-                matchOrigStart = origCharIdx;
-              }
-              if (normCharIdx === matchIndexInNorm + normOldStr.length) {
-                matchOrigEnd = origCharIdx;
-                break;
-              }
-              const cOrig = content[origCharIdx];
-              if (cOrig === "\r") {
-                origCharIdx++;
-                continue;
-              }
-              origCharIdx++;
-              normCharIdx++;
+      
+      // If it looks like a unified diff
+      if (patchContent.includes("@@ ") || patchContent.startsWith("---") || patchContent.startsWith("diff")) {
+        const matchAt = (lines: string[], start: number, target: string[]): boolean => {
+          if (start + target.length > lines.length) return false;
+          for (let idx = 0; idx < target.length; idx++) {
+            if (lines[start + idx].trimEnd() !== target[idx].trimEnd()) {
+              return false;
             }
-            if (matchOrigStart !== -1 && matchOrigEnd !== -1) {
-              content = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
+          }
+          return true;
+        };
+
+        const lines = content.replace(/\r\n/g, "\n").split("\n");
+        const patchLines = patchContent.split(/\r?\n/);
+        let i = 0;
+        while (i < patchLines.length) {
+          const line = patchLines[i];
+          if (line.startsWith("@@")) {
+            const match = /@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@/.exec(line);
+            if (match) {
+              const oldStart = parseInt(match[1], 10) - 1;
+              
+              i++;
+              const hunkOld: string[] = [];
+              const hunkNew: string[] = [];
+              
+              while (
+                i < patchLines.length &&
+                !patchLines[i].startsWith("@@") &&
+                !patchLines[i].startsWith("diff") &&
+                !patchLines[i].startsWith("---") &&
+                !patchLines[i].startsWith("+++")
+              ) {
+                const hLine = patchLines[i];
+                if (hLine.startsWith("-")) {
+                  hunkOld.push(hLine.slice(1));
+                } else if (hLine.startsWith("+")) {
+                  hunkNew.push(hLine.slice(1));
+                } else if (hLine.startsWith(" ")) {
+                  hunkOld.push(hLine.slice(1));
+                  hunkNew.push(hLine.slice(1));
+                } else {
+                  hunkOld.push(hLine);
+                  hunkNew.push(hLine);
+                }
+                i++;
+              }
+              
+              let foundIdx = -1;
+              const radius = 100;
+              const searchStart = Math.max(0, oldStart - radius);
+              const searchEnd = Math.min(lines.length - hunkOld.length + 1, oldStart + radius);
+              
+              for (let j = oldStart; j >= searchStart; j--) {
+                if (matchAt(lines, j, hunkOld)) {
+                  foundIdx = j;
+                  break;
+                }
+              }
+              if (foundIdx === -1) {
+                for (let j = oldStart + 1; j < searchEnd; j++) {
+                  if (matchAt(lines, j, hunkOld)) {
+                    foundIdx = j;
+                    break;
+                  }
+                }
+              }
+              
+              if (foundIdx === -1) {
+                return `Error: Could not find matching lines for patch hunk around line ${oldStart + 1}`;
+              }
+              
+              lines.splice(foundIdx, hunkOld.length, ...hunkNew);
+              continue;
+            }
+          }
+          i++;
+        }
+        content = lines.join("\n");
+      } else {
+        const lines = patchContent.split(/\r?\n/);
+        let targetLines: string[] = [];
+        let replacementLines: string[] = [];
+        let mode: "search" | "replace" | "idle" = "idle";
+
+        for (const line of lines) {
+          if (line.startsWith("<<<<<<<")) {
+            mode = "search";
+            targetLines = [];
+          } else if (line.startsWith("=======")) {
+            mode = "replace";
+            replacementLines = [];
+          } else if (line.startsWith(">>>>>>>")) {
+            mode = "idle";
+            const oldStr = targetLines.join("\n");
+            const newStr = replacementLines.join("\n");
+            const normContent = normalizeForMatching(content);
+            const normOldStr = normalizeForMatching(oldStr);
+            if (normContent.includes(normOldStr)) {
+              const matchIndexInNorm = normContent.indexOf(normOldStr);
+              let normCharIdx = 0;
+              let origCharIdx = 0;
+              let matchOrigStart = -1;
+              let matchOrigEnd = -1;
+              while (origCharIdx < content.length && normCharIdx < normContent.length) {
+                if (normCharIdx === matchIndexInNorm) {
+                  matchOrigStart = origCharIdx;
+                }
+                if (normCharIdx === matchIndexInNorm + normOldStr.length) {
+                  matchOrigEnd = origCharIdx;
+                  break;
+                }
+                const cOrig = content[origCharIdx];
+                if (cOrig === "\r") {
+                  origCharIdx++;
+                  continue;
+                }
+                origCharIdx++;
+                normCharIdx++;
+              }
+              if (matchOrigStart !== -1 && matchOrigEnd !== -1) {
+                content = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
+              } else {
+                content = content.replace(oldStr, newStr);
+              }
             } else {
-              content = content.replace(oldStr, newStr);
+              return `Error: Patch search block not found in target file: ${filePath}`;
             }
           } else {
-            return `Error: Patch search block not found in target file: ${filePath}`;
-          }
-        } else {
-          if (mode === "search") {
-            targetLines.push(line);
-          } else if (mode === "replace") {
-            replacementLines.push(line);
+            if (mode === "search") {
+              targetLines.push(line);
+            } else if (mode === "replace") {
+              replacementLines.push(line);
+            }
           }
         }
       }

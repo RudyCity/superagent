@@ -838,9 +838,13 @@ export function App({
           timestamp: now,
         });
       } else {
+        if (agentRef.current) {
+          agentRef.current.planState = "IDLE";
+          setPlanState("IDLE");
+        }
         addLine({
           type: "system",
-          content: "✗ Implementation plan rejected. Please provide your feedback to the agent.",
+          content: "✗ Implementation plan rejected. Please type your feedback below and press Enter to send it to the agent.",
           timestamp: now,
         });
       }
@@ -1110,6 +1114,7 @@ export function App({
     "/login",
     "/model",
     "/approve",
+    "/reject",
     "/agents",
     "/tasks",
     "/install",
@@ -1693,6 +1698,9 @@ export function App({
   const lastUserPrompt = lastUserLine ? lastUserLine.content.replace(/^❯ /, "").replace(/\n/g, " ") : "";
   const displayPrompt = lastUserPrompt.length > 50 ? lastUserPrompt.slice(0, 47) + "..." : lastUserPrompt;
 
+  const planPath = agentRef.current ? agentRef.current.getPlanFilePath() : path.join(process.cwd(), "implementation_plan.md");
+  const planUrl = `file:///${planPath.replace(/\\/g, "/")}`;
+
   // Calculate layout dimensions dynamically
   const chatWidth = Math.max(20, terminalWidth - 6);
 
@@ -1913,7 +1921,7 @@ export function App({
             {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (
               <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
                 <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
-                <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">file:///${process.cwd().replace(/\\/g, "/")}/implementation_plan.md</Text></Text>
+                <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">{planUrl}</Text></Text>
                 <Text color="yellow">Silakan ketik <Text bold color="green">/approve</Text> untuk menyetujui dan melanjutkan modifikasi kode.</Text>
               </Box>
             )}
@@ -1921,7 +1929,7 @@ export function App({
             {activeWizard && activeWizard.type === "plan_approve" && wizardOptions.length > 0 && (
               <WizardDialog
                 title="⚠️ PLAN APPROVAL REQUIRED (Use Arrow Keys Up/Down & Enter):"
-                description={`Model AI telah merancang rencana di file: file:///${process.cwd().replace(/\\/g, "/")}/implementation_plan.md`}
+                description={`Model AI telah merancang rencana di file: ${planUrl}`}
                 borderColor="yellow"
                 options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}

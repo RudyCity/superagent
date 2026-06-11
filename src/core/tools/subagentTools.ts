@@ -5,6 +5,7 @@ import {
   notifySubagentsChanged, 
   activeQuestionHandler 
 } from "./state.js";
+import { agentLocalStorage } from "../agent.js";
 
 const SUBAGENT_REPORT_INSTRUCTION = `
 CRITICAL INSTRUCTION FOR SUBAGENT REPORTING:
@@ -69,6 +70,10 @@ export const invokeSubagentTool: Tool = {
         type: "string",
         description: "The initial instruction or prompt for the subagent",
       },
+      wait: {
+        type: "boolean",
+        description: "Whether to wait synchronously for the subagent to finish and return its final report/output.",
+      },
     },
     required: ["typeName", "role", "prompt"],
   },
@@ -76,6 +81,13 @@ export const invokeSubagentTool: Tool = {
     const typeName = args.typeName as string;
     const role = args.role as string;
     const prompt = args.prompt as string;
+    const wait = !!args.wait;
+
+    const parentAgent = agentLocalStorage.getStore();
+    const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;
+    if (parentDepth >= 2) {
+      return `Error: Maximum subagent delegation depth (2) reached. Spawning subagents from this subagent is blocked.`;
+    }
 
     const subType = subagentTypes.get(typeName);
     if (!subType) {
@@ -164,6 +176,8 @@ export const invokeSubagentTool: Tool = {
       systemPromptWithReport
     );
 
+    agentInstance.delegationDepth = parentDepth + 1;
+
     const instance: SubagentInstance = {
       id: subagentId,
       typeName,
@@ -176,24 +190,46 @@ export const invokeSubagentTool: Tool = {
     subagentInstances.set(subagentId, instance);
     notifySubagentsChanged();
 
-    agentInstance.sendMessage(prompt).then(() => {
-      flushTextBuffer();
-      logs.push(`└──────────────────────────────────────────────\n`);
-      instance.status = "completed";
-      const msgs = agentInstance.getHistory().getMessages();
-      const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
-      if (lastAssistantMsg) {
-        instance.result = lastAssistantMsg.content;
+    if (wait) {
+      try {
+        await agentInstance.sendMessage(prompt);
+        flushTextBuffer();
+        logs.push(`└──────────────────────────────────────────────\n`);
+        instance.status = "completed";
+        const msgs = agentInstance.getHistory().getMessages();
+        const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
+        if (lastAssistantMsg) {
+          instance.result = lastAssistantMsg.content;
+        }
+        notifySubagentsChanged();
+        return `Subagent "${typeName}" (Role: ${role}) finished. Report:\n\n${instance.result || "(no report)"}`;
+      } catch (err: any) {
+        flushTextBuffer();
+        logs.push(`└──────────────────────────────────────────────\n`);
+        instance.status = "completed";
+        notifySubagentsChanged();
+        return `Subagent failed: ${err.message}`;
       }
-      notifySubagentsChanged();
-    }).catch(() => {
-      flushTextBuffer();
-      logs.push(`└──────────────────────────────────────────────\n`);
-      instance.status = "completed";
-      notifySubagentsChanged();
-    });
+    } else {
+      agentInstance.sendMessage(prompt).then(() => {
+        flushTextBuffer();
+        logs.push(`└──────────────────────────────────────────────\n`);
+        instance.status = "completed";
+        const msgs = agentInstance.getHistory().getMessages();
+        const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
+        if (lastAssistantMsg) {
+          instance.result = lastAssistantMsg.content;
+        }
+        notifySubagentsChanged();
+      }).catch(() => {
+        flushTextBuffer();
+        logs.push(`└──────────────────────────────────────────────\n`);
+        instance.status = "completed";
+        notifySubagentsChanged();
+      });
 
-    return `Invoked subagent "${typeName}" (Role: ${role}) in background. Conversation ID: ${subagentId}`;
+      return `Invoked subagent "${typeName}" (Role: ${role}) in background. Conversation ID: ${subagentId}`;
+    }
   },
 };
 
@@ -211,12 +247,17 @@ export const sendMessageTool: Tool = {
         type: "string",
         description: "The follow-up message to send",
       },
+      wait: {
+        type: "boolean",
+        description: "Whether to wait synchronously for the subagent to finish and return its final report/output.",
+      },
     },
     required: ["recipientId", "message"],
   },
   async execute(args, cwd, signal) {
     const recipientId = args.recipientId as string;
     const message = args.message as string;
+    const wait = !!args.wait;
 
     const instance = subagentInstances.get(recipientId);
     if (!instance) {
@@ -225,20 +266,39 @@ export const sendMessageTool: Tool = {
 
     instance.status = "running";
     notifySubagentsChanged();
-    instance.agent.sendMessage(message).then(() => {
-      instance.status = "completed";
-      const msgs = instance.agent.getHistory().getMessages();
-      const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
-      if (lastAssistantMsg) {
-        instance.result = lastAssistantMsg.content;
-      }
-      notifySubagentsChanged();
-    }).catch(() => {
-      instance.status = "completed";
-      notifySubagentsChanged();
-    });
 
-    return `Message sent to subagent "${recipientId}". Subagent is processing.`;
+    if (wait) {
+      try {
+        await instance.agent.sendMessage(message);
+        instance.status = "completed";
+        const msgs = instance.agent.getHistory().getMessages();
+        const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
+        if (lastAssistantMsg) {
+          instance.result = lastAssistantMsg.content;
+        }
+        notifySubagentsChanged();
+        return `Subagent "${recipientId}" finished. Report:\n\n${instance.result || "(no report)"}`;
+      } catch (err: any) {
+        instance.status = "completed";
+        notifySubagentsChanged();
+        return `Subagent failed: ${err.message}`;
+      }
+    } else {
+      instance.agent.sendMessage(message).then(() => {
+        instance.status = "completed";
+        const msgs = instance.agent.getHistory().getMessages();
+        const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
+        if (lastAssistantMsg) {
+          instance.result = lastAssistantMsg.content;
+        }
+        notifySubagentsChanged();
+      }).catch(() => {
+        instance.status = "completed";
+        notifySubagentsChanged();
+      });
+
+      return `Message sent to subagent "${recipientId}". Subagent is processing.`;
+    }
   },
 };
 

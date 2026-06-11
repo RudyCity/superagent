@@ -11,6 +11,7 @@ import {
   updateEnvFile, 
   getContextWindowLimit 
 } from "./config.js";
+import { searchHistory } from "./historySearch.js";
 import { getToolDescription } from "./permissions.js";
 import { allTools, backgroundTasks, subagentInstances } from "./tools.js";
 import { formatArgs } from "../utils/text.js";
@@ -153,6 +154,42 @@ export function handleSlashCommand(
       ctx.setWizardSelectedIndex?.(0);
       break;
     }
+    case "search-history": {
+      const query = cmd.slice(name.length + 2).trim();
+      if (!query) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /search-history <query-text>\nExample: /search-history refactor background task",
+          timestamp: now,
+        });
+        break;
+      }
+      ctx.addLine({
+        type: "system",
+        content: `Searching conversation history for: "${query}"...`,
+        timestamp: now,
+      });
+      ctx.setIsProcessing?.(true);
+      searchHistory(query)
+        .then((result) => {
+          ctx.addLine({
+            type: "system",
+            content: result,
+            timestamp: Date.now(),
+          });
+        })
+        .catch((err: any) => {
+          ctx.addLine({
+            type: "error",
+            content: `History search failed: ${err.message}`,
+            timestamp: Date.now(),
+          });
+        })
+        .finally(() => {
+          ctx.setIsProcessing?.(false);
+        });
+      break;
+    }
     case "clear":
       ctx.agent?.clearHistory();
       if (ctx.agent) {
@@ -171,6 +208,26 @@ export function handleSlashCommand(
           type: "system",
           content: "✓ Implementation plan approved! The agent is now allowed to perform code and file modifications.",
           timestamp: now,
+        });
+      } else {
+        ctx.addLine({ type: "error", content: "Agent not available in this context.", timestamp: now });
+      }
+      break;
+    case "reject":
+      if (ctx.agent) {
+        const feedback = cmd.slice(cmd.indexOf(" ") !== -1 ? cmd.indexOf(" ") + 1 : cmd.length).trim();
+        ctx.agent.planState = "IDLE";
+        ctx.setPlanState?.("IDLE");
+        ctx.addLine({
+          type: "system",
+          content: `✗ Implementation plan rejected. Feedback sent to agent: "${feedback || "No feedback provided."}"`,
+          timestamp: now,
+        });
+        ctx.setIsProcessing?.(true);
+        ctx.agent.sendMessage(
+          `The implementation plan was rejected. Feedback from user:\n\n"${feedback || "No feedback provided. Please revise the plan or ask for clarification."}"\n\nPlease revise the implementation plan in '${ctx.agent.getPlanFilePath()}' accordingly and ask for approval again.`
+        ).catch((err: any) => {
+          ctx.addLine({ type: "error", content: `Error sending reject feedback: ${err.message}`, timestamp: Date.now() });
         });
       } else {
         ctx.addLine({ type: "error", content: "Agent not available in this context.", timestamp: now });
@@ -539,11 +596,67 @@ export function handleSlashCommand(
           lines.push(`│  • ID: ${id} | Command: ${task.command}`);
         }
       }
-      lines.push("└──────────────────────────────────────────────");
-      ctx.addLine({
-        type: "system",
-        content: lines.join("\n"),
-        timestamp: now,
+      lines.push("├──────────────────────────────────────────────");
+      lines.push("│ ");
+      const taskPath = ctx.agent ? ctx.agent.getTaskFilePath() : path.resolve(process.cwd(), "task.md");
+      const taskBasename = path.basename(taskPath);
+      lines.push(`│ [ 📋 CHECKLIST FROM ${taskBasename} ]`);
+
+      (async () => {
+        try {
+          const fsPromises = await import("fs/promises");
+          const taskContent = await fsPromises.readFile(taskPath, "utf-8");
+          const taskLines = taskContent.split(/\r?\n/);
+          let totalTasks = 0;
+          let completedTasks = 0;
+          let parsedTasks: string[] = [];
+
+          for (const line of taskLines) {
+            const match = line.match(/^\s*-\s*`\[([xX/ ])\]`?\s*(.*)$/) || line.match(/^\s*-\s*\[([xX/ ])\]\s*(.*)$/);
+            if (match) {
+              totalTasks++;
+              const status = match[1];
+              const text = match[2].trim();
+              if (status.toLowerCase() === "x") {
+                completedTasks++;
+                parsedTasks.push(`│   [✓] ${text}`);
+              } else if (status === "/") {
+                parsedTasks.push(`│   [/] ${text} (in progress)`);
+              } else {
+                parsedTasks.push(`│   [ ] ${text}`);
+              }
+            }
+          }
+
+          if (totalTasks > 0) {
+            const pct = Math.round((completedTasks / totalTasks) * 100);
+            const barLength = 20;
+            const filled = Math.round((pct / 100) * barLength);
+            const bar = "█".repeat(filled) + "░".repeat(barLength - filled);
+            lines.push(`│   Progress: [${bar}] ${pct}% (${completedTasks}/${totalTasks} completed)`);
+            lines.push("│ ");
+            lines.push(...parsedTasks);
+          } else {
+            lines.push(`│   No checklist items found in ${taskBasename}.`);
+          }
+        } catch {
+          lines.push(`│   ${taskBasename} not found or unreadable in history dir.`);
+        }
+
+        lines.push("└──────────────────────────────────────────────");
+        ctx.addLine({
+          type: "system",
+          content: lines.join("\n"),
+          timestamp: now,
+        });
+      })().catch(err => {
+        lines.push(`│   Error parsing task checklist: ${err.message}`);
+        lines.push("└──────────────────────────────────────────────");
+        ctx.addLine({
+          type: "system",
+          content: lines.join("\n"),
+          timestamp: now,
+        });
       });
       break;
     }
@@ -627,6 +740,8 @@ export function handleSlashCommand(
           "Commands:",
           "  /new      - Start new session (clear history & screen)",
           "  /resume   - Resume a conversation session from history via wizard dialog",
+          "  /search-history - Search all previous local workspace conversation history files",
+          "                    Usage: /search-history <query-text>",
           "  /clear    - Clear conversation history",
           "  /compact  - Show conversation summary",
           "  /goal     - Activate Goal Mode for long-running overnight tasks",

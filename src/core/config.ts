@@ -2,6 +2,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import os from "os";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { getStaticModelLimit } from "./model_limits.js";
 import { resolveWindowsShell } from "./tools/helpers.js";
 
@@ -206,12 +208,10 @@ IMPORTANT GUIDELINES:
 - NEVER expose secrets or keys.
 - Always look for and study the 'agents.md' file in the workspace root if it exists, as it contains critical project information, architecture, and developer guidelines.
 - On Windows, when executing terminal commands, use ';' instead of '&&' as a statement separator (PowerShell syntax).
-- PLANNING & IMPLEMENTATION PLANS: If a user's request is complex, requires non-trivial refactoring, multi-file modifications, or new architecture/features, you MUST first offer an implementation plan.
-  To do this:
-  1. Draft a detailed design and proposed changes.
-  2. Write this plan to a markdown file named 'implementation_plan.md' in the workspace root directory using the appropriate file write tool.
-  3. Respond to the user explaining that you have created 'implementation_plan.md', summarize the key points of the plan, and ask them for explicit approval.
-  4. DO NOT make any further modifications or run modifying/executing tools until the user provides approval in the next conversation turn.
+- PLANNING, TASKS & VERIFICATION LIFECYCLE: If a user's request is complex, requires non-trivial refactoring, multi-file modifications, or new architecture/features, you MUST follow this structured lifecycle using session-specific markdown files (the exact absolute paths to use are provided dynamically in the context/system prompt):
+  1. Planning Phase: Write a detailed design, proposed file changes, and verification plan to the specified 'Implementation Plan File' absolute path. Summarize it for the user and ask for explicit approval. DO NOT modify any codebase files or run modifying terminal commands until approved.
+  2. Task Tracking Phase: Once the plan is approved, create a checklist file at the specified 'Task Tracking File' absolute path containing task checkboxes (e.g. \`[ ]\`, \`[/]\`, \`[x]\`). As you work, update progress in that file, marking items as in-progress or completed.
+  3. Verification Phase: When implementation is complete, verify all changes. Write a summary of changes, test logs, and verification results to the specified 'Verification/Walkthrough File' absolute path before declaring the task finished.
 
 
 TOOL USAGE GUIDELINES:
@@ -587,6 +587,23 @@ export function switchActiveProvider(name: string): string {
   }
 
   return updateEnvFile(updates);
+}
+
+export function getModelInstance() {
+  const config = getConfig();
+  if (config.provider === "anthropic") {
+    const anthropic = createAnthropic({ apiKey: config.apiKey });
+    return anthropic(config.model);
+  }
+  const openai = createOpenAI({
+    apiKey: config.apiKey,
+    ...(config.baseUrl && { baseURL: config.baseUrl }),
+    headers: {
+      "HTTP-Referer": "https://github.com/RudyCity/superagent",
+      "X-Title": "SuperAgent CLI",
+    },
+  });
+  return openai(config.model);
 }
 
 
