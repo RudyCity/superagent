@@ -75,12 +75,44 @@ Superagent can launch concurrent secondary agents to perform parallel tasks:
 - **Researcher**: Explores the codebase and retrieves context (Read-Only).
 - **Coder**: Implements code modifications and refactoring.
 - **Reviewer**: Audits changes, runs tests, and validates implementations.
+- **manual-tester**: Automated browser testing (Playwright), browser log/error analysis, and visual UI/UX design taste checks.
 
 ### 4. Visible Terminal Windows (`/terminal`)
 Runs development servers, local builds, or test watchers in popped-up, visible OS terminal windows (Windows cmd, macOS Terminal, Linux x-terminal). It includes an AI-assisted preset initializer (`/terminal init`) to auto-configure workspace command presets.
 
 ### 5. Structured Planning
 For complex changes, Superagent writes a detailed `implementation_plan.md` to the workspace root for user approval before modifying code.
+
+---
+
+## 🔬 Deep Dive: System Architecture & Core Logic
+
+Superagent features several robust subsystems that ensure stability, execution safety, and a seamless developer workflow:
+
+### 1. Active Host Diagnostics & Auto-Dependency Setup (`androidSetup.ts`)
+Superagent proactively audits and prepares your local machine's developer environment:
+- **Automatic Utility Provisioning**: If `ripgrep` (`rg` for high-speed workspace indexing) or `curl` (on Windows) is missing on your host machine, Superagent automatically downloads, extracts, and places the binaries locally in `~/.superagent-r/bin/`.
+- **Android CLI Orchestrator**: Scans and provisions Google's official Android SDK command-line utilities using custom PowerShell (`install.cmd` for Windows) and Shell (`install.sh` for macOS/Linux) scripts.
+
+### 2. Multi-Agent Delegation & Standardized Reporting (`subagentTools.ts`)
+For parallel work, Superagent supports spawning concurrent subagents:
+- **Delegation Guardrails**: To prevent runaway loops or infinite resource spending, subagent delegation depth is restricted to a maximum level of `2`.
+- **Structured Markdown Reporting**: Every subagent completes its task by printing a standardized markdown block containing the initial goal, actions taken, key findings, and final outcome status.
+- **Visual Log Streaming**: Subagent actions, thoughts, tool calls, and execution errors are formatted and logged in a nested visual tree layout.
+
+### 3. Execution Safety Guardrails (`permissions.ts`)
+A dedicated validation layer inspects all terminal execution commands before they are executed. It immediately blocks destructive command invocations, including:
+- Directory wipes on root/home directories (`rm -rf /`, `rmdir /s /q C:\`, etc.)
+- Disk formatting/initialization commands (`Format-Volume`, `Initialize-Disk`, `mkfs`)
+- System power commands (`shutdown`, `reboot`, `Stop-Computer`)
+- Force process termination on critical system tasks
+- Unverified remote script pipes (`curl/wget | sh`, `Invoke-Expression/iex`)
+
+### 4. Background Job Scheduling & Timers (`schedule`)
+Superagent implements a background scheduler supporting:
+- **Active Waiting**: Synchronous waiting (`wait: true`) showing a real-time countdown indicator directly on the stdout terminal.
+- **Asynchronous Timers**: One-shot background reminders and recurring interval cron checks (e.g., `5m` or `1h`).
+- **Full Abort Signal Propagation**: Timers immediately clean up processes and interval hooks upon getting a cancel or abort event from the agent core.
 
 ---
 
