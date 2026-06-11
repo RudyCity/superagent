@@ -1,174 +1,186 @@
 # Superagent 🚀
 
-Superagent adalah asisten pemrograman berbasis terminal interaktif yang dirancang khusus untuk memfasilitasi siklus pengembangan, pengujian, debugging, serta optimalisasi aplikasi secara langsung dari dalam lingkungan kerja Anda. 
+Superagent is an interactive, terminal-based AI coding assistant designed to facilitate the cycle of development, testing, debugging, and application optimization directly from your workspace.
 
-Asisten ini menggabungkan antarmuka visual cyberpunk berbasis komponen terminal, pelacakan otomatis batas token konteks model, mekanisme keamanan akses ketat, koordinasi agen paralel (*subagent*), serta integrasi eksekusi terminal lokal yang persisten.
-
----
-
-## 📖 Latar Belakang
-
-Dalam pengembangan perangkat lunak modern, developer sering kali harus berpindah fokus (*context switching*) antara menulis kode, menjalankan perintah terminal, memantau *log* sistem, melakukan pencarian dokumentasi, dan memanggil API model bahasa besar (LLM). 
-
-Superagent dirancang untuk menjembatani celah tersebut langsung dari terminal dengan menyediakan lingkungan kerja terpadu yang dapat memahami konteks proyek secara mandiri melalui berkas spesifikasi proyek (`agents.md`), mengotomatiskan eksekusi tugas-tugas paralel menggunakan agen sekunder (*subagents*), dan memantau pemakaian batas memori konteks LLM secara real-time. Keamanan merupakan prioritas utama, di mana setiap eksekusi berkas, modifikasi kode, dan eksekusi perintah terminal memerlukan persetujuan eksplisit dari pengguna.
+It features a cyberpunk-styled terminal user interface built with terminal UI components, automatic tracking of model context token limits, a robust security permission layer, multi-agent orchestration (parallel subagents), and persistent integration with local terminal shells.
 
 ---
 
-## 🛠️ Tech Stack & Arsitektur Proyek
+## 📖 Background
 
-Pengembangan Superagent didukung oleh teknologi modern berbasis Node.js untuk efisiensi tinggi dan modularitas komponen:
+In modern software development, developers frequently switch context between writing code, running terminal commands, inspecting system logs, searching documentation, and interacting with Large Language Models (LLMs).
 
-- **Bahasa**: TypeScript (ES Modules)
+Superagent bridges this gap by providing an integrated terminal environment that understands your project's context automatically using a project specification file (`agents.md`), automates execution of independent tasks through secondary agents (*subagents*), and tracks LLM context window limits in real-time. Security is a primary design goal: every file modification, tool invocation, and shell command execution requires explicit user authorization.
+
+---
+
+## 🛠️ Tech Stack & Architecture
+
+Superagent is built on modern Node.js technologies for high performance and modular architecture:
+
+- **Language**: TypeScript (ES Modules)
 - **Runtime**: Node.js (v18+)
-- **Antarmuka Pengguna**: [Ink](https://github.com/vadimdemedes/ink) (React di dalam terminal) untuk render antarmuka grafis terminal yang interaktif dan responsif.
-- **Integrasi LLM**: [Vercel AI SDK](https://sdk.vercel.ai/) (`ai`, `@ai-sdk/openai`, `@ai-sdk/anthropic`) untuk interaksi terstruktur dengan model bahasa.
-- **Eksekusi Perintah**: [Execa](https://github.com/sindresorhus/execa) untuk kontrol proses latar belakang yang tangguh.
-- **Uji Coba & Testing**: [Vitest](https://vitest.dev/) untuk pengujian unit secara cepat dan andal.
+- **User Interface**: [Ink](https://github.com/vadimdemedes/ink) (React for the terminal) for a highly interactive, responsive visual layout.
+- **LLM Integration**: [Vercel AI SDK](https://sdk.vercel.ai/) (`ai`, `@ai-sdk/openai`, `@ai-sdk/anthropic`) for structured and streaming interactions.
+- **Process Execution**: [Execa](https://github.com/sindresorhus/execa) for reliable control of background and external processes.
+- **Testing**: [Vitest](https://vitest.dev/) for fast and reliable unit testing.
 
-### Struktur Direktori Utama
+### Directory Structure
 
 ```
 superagent/
 ├── src/
-│   ├── cli.tsx                 # Titik masuk utama aplikasi (Entrypoint)
-│   ├── app.tsx                 # Logika antarmuka React (Ink) dan penanganan input
+│   ├── cli.tsx                 # Main entrypoint
+│   ├── app.tsx                 # React UI wrapper and command handling logic
 │   ├── core/
-│   │   ├── agent.ts            # Inti dari siklus interaksi agen dan eksekusi instruksi
-│   │   ├── config.ts           # Manajemen konfigurasi environment dan file global .env
-│   │   ├── checkpoints.ts      # Logika penyimpanan/pemuatan status sesi obrolan
-│   │   ├── slash-commands.ts   # Registrasi perintah interaktif terminal (e.g., /terminal, /checkpoint)
-│   │   └── tools/              # Kumpulan fungsi perkakas (tools) yang dapat dijalankan agen
-│   │       ├── shellTools.ts   # Eksekusi command dan manajemen proses latar belakang
-│   │       ├── systemTools.ts  # Manipulasi file, pembuatan direktori, dan deteksi port
-│   │       ├── subagentTools.ts# Pembuatan dan orkestrasi agen sekunder paralel
-│   │       └── networkTools.ts # Fetch web content, browser automation, dll.
-│   └── components/             # Komponen antarmuka terminal (Visual indicators, Wizards, Logs)
-├── tests/                      # Kumpulan tes unit menggunakan Vitest
-└── package.json                # Manifes proyek dan skrip build/run
+│   │   ├── agent.ts            # Core cognitive loop and instruction runner
+│   │   ├── config.ts           # Environment variable and global config management
+│   │   ├── checkpoints.ts      # Conversation state checkpoint save/load logic
+│   │   ├── slash-commands.ts   # Interactive command definitions
+│   │   └── tools/              # Specialized tools equipped by the agent
+│   │       ├── shellTools.ts   # Command execution and background task control
+│   │       ├── systemTools.ts  # File operations, directory creation, port checks
+│   │       ├── subagentTools.ts# Secondary agent instantiation and management
+│   │       └── networkTools.ts # Web content fetch and browser integration
+│   └── components/             # React Ink components (visual stats, wizards)
+├── tests/                      # Unit test suites using Vitest
+└── package.json                # Project manifest and scripts
 ```
 
 ---
 
-## 🌟 Fitur Utama Pengembang
+## 🌟 Key Developer Features
 
-### 1. Antarmuka Visual & Pelacakan Konteks Real-Time
-Menampilkan statistik real-time mengenai ukuran prompt saat ini, jumlah token komplesi, histori memori, model aktif yang digunakan, serta batas sisa jendela konteks model untuk membantu menghemat konsumsi token API Anda.
+### 1. Cyberpunk Terminal UI & Token Tracking
+A rich terminal interface showing live statistics on active prompt sizes, completion token counts, token cost summaries, active models, and remaining context windows.
 
-### 2. Manajemen Sesi & Checkpoint Persisten
-Memungkinkan developer menyimpan status sesi pengkodean saat ini dan memulihkannya kembali kapan saja (melalui `/checkpoint save <name>` dan `/checkpoint restore <id>`). Sangat membantu untuk bereksperimen dengan pendekatan implementasi yang berbeda tanpa takut kehilangan histori percakapan sebelumnya. Anda juga dapat melanjutkan sesi terakhir secara otomatis dengan argumen `--resume` atau `-r`.
+### 2. Session Management & Checkpoints
+Allows developers to save the current state of a coding conversation and restore it at any point using `/checkpoint save <name>` and `/checkpoint restore <id>`. This allows you to safely experiment with different implementations. Use the `--resume` or `-r` flag to continue where you left off.
 
-### 3. Orkestrasi Multi-Agen (*Subagents*)
-Mendukung pembuatan agen sekunder secara paralel untuk mempercepat proses pencarian informasi atau pembagian tugas yang independen:
-- **Researcher**: Berfokus mencari informasi dalam repositori dan referensi luar secara read-only.
-- **Coder**: Menangani penulisan kode dan perbaikan logika program.
-- **Reviewer**: Menjalankan pengujian fungsional dan melakukan audit terhadap perubahan kode.
+### 3. Subagent Orchestration
+Superagent can launch concurrent secondary agents to perform parallel tasks:
+- **Researcher**: Explores the codebase and retrieves context (Read-Only).
+- **Coder**: Implements code modifications and refactoring.
+- **Reviewer**: Audits changes, runs tests, and validates implementations.
 
-### 4. Eksekusi Terminal Popped-Up (`/terminal`)
-Menjalankan tugas pengembangan, server lokal, atau alur kerja khusus pengujian di luar proses headless tradisional. Perintah `/terminal <cmd>` akan memunculkan jendela emulator terminal asli yang baru pada sistem operasi host (Windows cmd, macOS Terminal, Linux x-terminal-emulator), lengkap dengan konfigurasi preset berbasis file konfigurasi lokal `terminal-presets.json`.
+### 4. Visible Terminal Windows (`/terminal`)
+Runs development servers, local builds, or test watchers in popped-up, visible OS terminal windows (Windows cmd, macOS Terminal, Linux x-terminal). It includes an AI-assisted preset initializer (`/terminal init`) to auto-configure workspace command presets.
 
-### 5. Mode Perencanaan Terstruktur (`implementation_plan.md`)
-Sebelum melakukan perubahan kode yang kompleks, sistem akan menyusun rencana implementasi secara terperinci di root repositori dan meminta persetujuan pengguna. Proses ini meminimalisir kesalahan perombakan kode berskala besar yang tidak terencana.
+### 5. Structured Planning
+For complex changes, Superagent writes a detailed `implementation_plan.md` to the workspace root for user approval before modifying code.
 
 ---
 
-## 🚀 Panduan Memulai & Pengembangan
+## 🚀 Getting Started & Configuration
 
-### Persyaratan Awal
+### Prerequisites
 - **Node.js** v18+
-- **npm** atau package manager lainnya
+- **npm** (or your preferred package manager)
 
-### Langkah Penginstalan
+### Installation
 
-1. Unduh dan masuk ke direktori repositori:
+1. Clone and navigate into the repository:
    ```bash
    git clone <repository-url>
    cd superagent
    ```
 
-2. Pasang semua dependensi pengembangan:
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-3. Konfigurasi Kunci API Global:
-   Secara default, Superagent menyimpan konfigurasi global di direktori beranda pengguna untuk menjaga kebersihan repositori proyek Anda. Buat berkas `.env` di dalam folder `~/.superagent-r/` (misalnya, `C:\Users\<Username>\.superagent-r\.env` di Windows atau `/home/<username>/.superagent-r/.env` di macOS/Linux) dengan format berikut:
+3. Configure Global API Credentials:
+   Superagent isolates config files outside the project repository. Create a `.env` file in `~/.superagent-r/` (e.g., `C:\Users\<Username>\.superagent-r\.env` on Windows, or `~/.superagent-r/.env` on macOS/Linux):
    ```env
-   # API Keys (Sediakan minimal salah satu)
+   # API Keys (Provide at least one)
    ANTHROPIC_API_KEY=your_anthropic_api_key
    OPENAI_API_KEY=your_openai_api_key
 
-   # Provider Terpilih (openai atau anthropic)
+   # Active Provider (openai / anthropic / openrouter / custom)
    PROVIDER=openai
 
-   # Model yang Digunakan
+   # Active Model
    MODEL=gpt-4o
    ```
 
 ---
 
-## ⚙️ Skrip Pengembangan (Scripts)
+## ⚙️ Development Scripts
 
-Di dalam repositori, Anda dapat menggunakan perintah NPM berikut untuk kebutuhan pengembangan:
+Run the following NPM scripts during development:
 
-- **Menjalankan Mode Pengembangan**:
+- **Start Development Mode**:
   ```bash
   npm run dev
   ```
-- **Melanjutkan Sesi Sebelumnya**:
+- **Resume Last Session**:
   ```bash
   npm run dev -- --resume
-  # atau
+  # or
   npm run dev -- -r
   ```
-- **Melakukan Build TypeScript ke JavaScript (Dist)**:
+- **Compile TypeScript**:
   ```bash
   npm run build
   ```
-- **Menjalankan Hasil Build Produksi**:
+- **Run Production Build**:
   ```bash
   npm start
   ```
-- **Menjalankan Pengujian Unit (Unit Testing)**:
+- **Run Unit Tests**:
   ```bash
   npm test
   ```
 
 ---
 
-## 💬 Perintah Pendukung (/ Commands)
+## 💬 Interactive Slash Commands
 
-Selama sesi interaksi terminal aktif, Anda dapat memasukkan perintah berikut untuk memanipulasi alur kerja:
+Superagent supports a wide range of slash commands within the terminal chat to manage session state, configure the assistant, and run commands.
 
-| Perintah | Deskripsi Fungsi |
-| :--- | :--- |
-| `/new` | Memulai sesi percakapan baru, membersihkan histori, serta log tampilan. |
-| `/resume` | Memulihkan sesi sebelumnya dari riwayat global melalui antarmuka dialog interaktif. |
-| `/search-history <query>` | Mencari string pencarian pada seluruh berkas histori sesi kerja lokal secara cepat. |
-| `/checkpoint` | Mengelola pencadangan status percakapan (`list`, `save <nama>`, `restore <id>`). |
-| `/goal <deskripsi>` | Mengaktifkan mode pencapaian target tugas terotomatisasi jangka panjang. |
-| `/init` | Melakukan audit sistem, inisialisasi git repository, dan membuat cetak biru `agents.md`. |
-| `/agents` | Memeriksa daftar tipe subagent terdaftar beserta instans subagent yang aktif saat ini. |
-| `/processes` | Menampilkan proses latar belakang aktif beserta daftar checklist `task.md` (alias: `/procs`). |
-| `/terminal <cmd>` | Menjalankan perintah atau memicu preset terkonfigurasi pada terminal pop-up baru. |
-| `/skills` | Membuka repositori templat/panduan otomatisasi alur kerja (*skills*) yang terpasang. |
-| `/install <owner/repo>` | Memasang modul otomatisasi/panduan alur kerja baru dari repositori. |
-| `/login` | Mengatur provider aktif dan menyimpan otentikasi kunci API secara aman. |
-| `/model <nama>` | Mengganti atau menampilkan model bahasa besar aktif yang sedang dikoneksikan. |
-| `/help` | Menampilkan pesan panduan instruksi bantuan ini. |
-| `/quit` | Keluar dari aplikasi. |
+### Navigation & Session Control
+- **`/new`**: Starts a fresh conversation session. Wipes the chat history, resets agent states, and deletes temporary checkpoints.
+- **`/resume`**: Opens an interactive visual wizard listing previous session histories, allowing you to select and resume any past conversation.
+- **`/clear`**: Wipes the visual logs and terminal chat screen while maintaining the current conversation history.
+- **`/compact`**: Shows a condensed summary of the active conversation history to help you audit and optimize prompt context usage.
+- **`/quit`** or **`/exit`**: Safely exits the application.
+
+### State Checkpoints
+- **`/checkpoint`** (or **`/checkpoint <name>`**): Saves a snapshot of your current conversation history, active model state, and planning states.
+- **`/checkpoint list`**: Displays a styled timeline list of all saved checkpoints in the current session, showing their unique IDs, timestamps, and message counts.
+- **`/checkpoint restore <id>`**: Restores a checkpoint by its ID. It automatically terminates running subagents/tasks and reverts the agent's internal state to the checkpoint.
+
+### Automation & Tasks
+- **`/goal <description>`**: Activates **Goal Mode**. The assistant enters a persistent, autonomous loop (up to 200 iterations) to accomplish the goal (e.g., `/goal write a full suite of unit tests for auth.ts`).
+- **`/init`**: Runs a system audit. Checks OS info, Node.js version, Git repository status, active model configuration, and auto-generates the `agents.md` specification file.
+- **`/agents`**: Lists all active subagents and details about the preconfigured types (`researcher`, `coder`, `reviewer`).
+- **`/processes`** (or **`/procs`**): Displays active background processes managed by the agent, along with a visual progress bar and a checklist parsed from the current `task.md`.
+
+### Terminal & Presets
+- **`/terminal <command>`**: Spawns a visible, popped-up terminal window executing the specified command.
+- **`/terminal preset <name>`** (or **`/terminal <preset_name>`**): Executes a command preset defined in your `terminal-presets.json` or `.superagent-r/terminal-presets.json`.
+- **`/terminal init`**: Launches an interactive, AI-guided wizard that scans your workspace files (like `package.json`, `Cargo.toml`, etc.), suggests relevant run commands, and writes them to `.superagent-r/terminal-presets.json`.
+
+### Skills & Plugins
+- **`/skills`**: Displays a visual wizard containing all currently installed automation templates and guidelines.
+- **`/install <owner/repo>`**: Installs new automated developer *skills* directly from remote repositories via `npx skills add`.
+
+### Provider & Model Settings
+- **`/login`**: Opens a visual wizard to add API credentials, switch active providers, or list configured providers. You can also log in directly via `/login <key>` or `/login custom <base_url> <key>`.
+- **`/model <name>`**: Switches the active Large Language Model (e.g., `/model openai/gpt-4o` or `/model google/gemini-2.5-flash`). Running without arguments prints the active model name.
 
 ---
 
-## ✍️ Kontributor & Penulis (Author)
+## ✍️ Authors & Contributors
 
-Proyek ini dirancang, dikembangkan, dan dipelihara oleh:
+Developed and maintained by:
 - **Rudy H.** ([GitHub Profile](https://github.com/RudyCity)) - *Creator & Lead Developer*
 
-Terima kasih kepada seluruh kontributor yang telah membantu dalam perbaikan bug, penyempurnaan fitur, dan penulisan dokumentasi. Jika Anda ingin berkontribusi, silakan pelajari berkas [CONTRIBUTING.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/CONTRIBUTING.md).
+For guidelines on how to contribute to features and bug fixes, please see [CONTRIBUTING.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/CONTRIBUTING.md).
 
 ---
 
-## 📄 Lisensi
+## 📄 License
 
-Proyek ini dilisensikan di bawah **MIT License** - lihat berkas [LICENSE](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/LICENSE) untuk detail lebih lanjut.
-
+This project is licensed under the **MIT License** - see the [LICENSE](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/LICENSE) file for details.
