@@ -82,6 +82,7 @@ export function App({
   const [terminalPresets, setTerminalPresets] = useState<{ key: string; label: string }[]>([]);
   const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
   const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
+  const [gitBranch, setGitBranch] = useState<string>("");
   const addLine = useCallback((line: ChatLine) => {
     setLines((prev) => [...prev, line]);
   }, []);
@@ -149,6 +150,20 @@ export function App({
     return () => {
       process.stdout.off("resize", handleResize);
     };
+  }, []);
+
+  useEffect(() => {
+    const fetchBranch = async () => {
+      try {
+        const { stdout } = await execa("git", ["branch", "--show-current"], { cwd: process.cwd(), reject: false });
+        setGitBranch(stdout?.trim() || "");
+      } catch {
+        // ignore
+      }
+    };
+    fetchBranch();
+    const interval = setInterval(fetchBranch, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -2627,14 +2642,21 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   {visibleLines.map((line, i) => {
                     const originalIndex = startIndex + i;
                     return (
-                      <ChatLineComponent key={originalIndex} line={line} isFirst={originalIndex === 0} />
+                      <ChatLineComponent
+                        key={originalIndex}
+                        line={line}
+                        isFirst={originalIndex === 0}
+                        tokensUp={tokensUp}
+                        tokensDown={tokensDown}
+                        modelName={modelName}
+                      />
                     );
                   })}
 
                   {shouldRenderStream && (
                     <Box flexDirection="column">
                       <Text color="magenta">
-                        {visibleLines.length === 0 ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text> ]
+                        {visibleLines.length === 0 ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown + liveStreamTokens)})</Text> ]
                       </Text>
                       {renderMarkdown(
                         truncateStreamDisplay(streamDisplay, streamVisibleLinesCount, chatWidth),
@@ -2648,9 +2670,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             })()}
 
             {scrollOffset === 0 && isProcessing && (!streamDisplay || streamDisplay.trim().length === 0) && activeWizard?.type !== "permission" && !isExecutingTool && (
-              <Box flexDirection="column" marginTop={1}>
+              <Box flexDirection="column" marginTop={2}>
                 <Text color="magenta">
-                  ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text> ]
+                  ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown)})</Text> ]
                 </Text>
                 <Box flexDirection="row">
                   <Text color="magenta">│    </Text>
@@ -2660,7 +2682,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             )}
 
             {scrollOffset === 0 && isExecutingTool && (
-              <Box flexDirection="column" marginTop={1}>
+              <Box flexDirection="column" marginTop={2}>
                 <Text color="yellow">
                   ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
                 </Text>
@@ -2700,7 +2722,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           <Box flexDirection="column" paddingX={1} marginTop={1}>
             {/* Active Subagents & Tasks Live List */}
             {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
-              <Box flexDirection="column" paddingX={1} marginBottom={1}>
+              <Box flexDirection="column" marginBottom={1}>
                 {runningSubagentsCount > 0 && (
                   <Box flexDirection="column">
                     <Text color="yellow" bold>🤖 ACTIVE SUBAGENTS:</Text>
@@ -3060,6 +3082,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             <Text>
               <Text color="gray">Workspace: </Text>
               <Text dimColor>{process.cwd()}</Text>
+              {gitBranch && (
+                <>
+                  <Text color="gray"> │ </Text>
+                  <Text color="gray">Branch: </Text>
+                  <Text color="green" bold>🌿 {gitBranch}</Text>
+                </>
+              )}
             </Text>
           </Box>
           <Box>
@@ -3084,7 +3113,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               <Text color="gray"> │ </Text>
               <Text color="cyan">Tab</Text><Text dimColor> Autocomplete</Text>
               <Text color="gray"> │ </Text>
-              <Text color="cyan">PgUp/PgDn</Text><Text dimColor> Scroll</Text>
+              <Text color="cyan">Ctrl+↑/↓</Text><Text dimColor> Scroll</Text>
             </Text>
           </Box>
         </Box>
@@ -3241,8 +3270,14 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
         }
 
         let listPrefix = "";
+        let isSysLine = false;
         let remainingText = l;
-        if (l.trim().startsWith("- ")) {
+        if (l.trim().startsWith("[SYS]")) {
+          isSysLine = true;
+          const sysIndex = l.indexOf("[SYS]");
+          listPrefix = l.slice(0, sysIndex);
+          remainingText = l.slice(sysIndex + 5);
+        } else if (l.trim().startsWith("- ")) {
           const indent = l.indexOf("- ");
           listPrefix = " ".repeat(indent) + "• ";
           remainingText = l.slice(indent + 2);
@@ -3302,7 +3337,14 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
         return (
           <Box key={idx} flexDirection="row">
             <Text color={themeColor}>│    </Text>
-            {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
+            {isSysLine ? (
+              <Text>
+                {listPrefix}
+                <Text bold color="yellow">[SYS]</Text>
+              </Text>
+            ) : listPrefix ? (
+              <Text color="magenta" bold>{listPrefix}</Text>
+            ) : null}
             <Box flexShrink={1}>
               <Text>
                 {parsedElements}
@@ -3427,7 +3469,19 @@ function truncateStreamDisplay(text: string, maxLines: number, width: number): s
   return resultLines.join("\n");
 }
 
-const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst }: { line: ChatLine; isFirst: boolean }) {
+const ChatLineComponent = React.memo(function ChatLineComponent({
+  line,
+  isFirst,
+  tokensUp,
+  tokensDown,
+  modelName,
+}: {
+  line: ChatLine;
+  isFirst: boolean;
+  tokensUp?: number;
+  tokensDown?: number;
+  modelName?: string;
+}) {
   switch (line.type) {
     case "user": {
       const content = line.content.replace(/^❯ /, "");
@@ -3452,7 +3506,7 @@ const ChatLineComponent = React.memo(function ChatLineComponent({ line, isFirst 
       return (
         <Box flexDirection="column">
           <Text color="magenta">
-            {isFirst ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT</Text> ]
+            {isFirst ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT{modelName ? ` (${modelName})` : ""}</Text><Text dimColor> (▲{formatCompactNumber(tokensUp || 0)} | ▼{formatCompactNumber(tokensDown || 0)})</Text> ]
           </Text>
           {renderMarkdown(line.content, "magenta")}
           <Box flexDirection="row">

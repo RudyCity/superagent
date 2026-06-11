@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.34] - 2026-06-11
+
+### Added
+- **Fuzzy Autocomplete Suggestions**: Implemented fuzzy matching/search for commands and slash commands.
+- **Enhanced Terminal UI Layout**: Added current Git branch name rendering and polling, plus token metric counts (▲ upload / ▼ download) in the cognitive node streaming/thinking headers.
+- **System Log Indicators**: Added parsing of `[SYS]` prefix to display system messages in yellow.
+- **Visible & Background Command Options**: Added support for visible and background task execution with autocomplete and descriptions.
+
+---
+
 ## [1.1.27] - 2026-06-11
 
 ### Added
