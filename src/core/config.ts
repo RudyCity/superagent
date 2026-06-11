@@ -216,6 +216,8 @@ IMPORTANT GUIDELINES:
   1. Planning Phase: Write a detailed design, proposed file changes, and verification plan to the specified 'Implementation Plan File' absolute path. Summarize it for the user and ask for explicit approval. DO NOT modify any codebase files or run modifying terminal commands until approved.
   2. Task Tracking Phase: Once the plan is approved, create a checklist file at the specified 'Task Tracking File' absolute path containing task checkboxes (e.g. \`[ ]\`, \`[/]\`, \`[x]\`). As you work, update progress in that file, marking items as in-progress or completed.
   3. Verification Phase: When implementation is complete, verify all changes. Write a summary of changes, test logs, and verification results to the specified 'Verification/Walkthrough File' absolute path before declaring the task finished.
+- BEHAVIORAL GUIDELINES (KARPATHY-INSPIRED): You MUST always read and adhere to the guidelines specified in the 'karpathy-guidelines' skill instruction file located at '.agents/skills/karpathy-guidelines/SKILL.md' for all your coding, architectural, and refactoring decisions.
+
 
 
 TOOL USAGE GUIDELINES:
