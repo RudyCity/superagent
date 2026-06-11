@@ -2436,7 +2436,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   // Base chrome height: Banner is 6 (if shown), Input wrapper base is 2 (header + margin + prompt border/spacers), Status bar is 5 (5 lines + margin)
   let chromeHeight = (showBanner ? 14 : 7) + inputLinesCount;
   if (isExecutingTool) {
-    chromeHeight += 2; // Loader header + loader line
+    chromeHeight += 3; // Loader header + loader line + top margin
     if (activeToolLinesCount > 0) {
       chromeHeight += activeToolLinesCount + 1; // Live output header + lines
     }
@@ -2472,7 +2472,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     if (streamDisplay && streamDisplay.trim().length > 0) {
       chromeHeight += 2; // Stream header and spacing
     } else if (activeWizard?.type !== "permission" && !isExecutingTool) {
-      chromeHeight += 2; // Thinking loading indicator
+      chromeHeight += 3; // Thinking loading indicator + top margin
     }
   }
 
@@ -2565,7 +2565,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             })()}
 
             {scrollOffset === 0 && isProcessing && (!streamDisplay || streamDisplay.trim().length === 0) && activeWizard?.type !== "permission" && !isExecutingTool && (
-              <Box flexDirection="column">
+              <Box flexDirection="column" marginTop={1}>
                 <Text color="magenta">
                   ├───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text> ]
                 </Text>
@@ -2577,7 +2577,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             )}
 
             {scrollOffset === 0 && isExecutingTool && (
-              <Box flexDirection="column">
+              <Box flexDirection="column" marginTop={1}>
                 <Text color="yellow">
                   ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
                 </Text>
