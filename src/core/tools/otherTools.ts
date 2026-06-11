@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { execa } from "execa";
 import { Tool, ScheduleJob } from "./types.js";
-import { scheduledJobs } from "./state.js";
+import { scheduledJobs, notifyScheduleTriggered } from "./state.js";
 import { ensureAndroidCliInstalled } from "../androidSetup.js";
 
 export const askQuestionTool: Tool = {
@@ -139,6 +139,7 @@ export const scheduleTool: Tool = {
       } else {
         job.timer = setTimeout(() => {
           console.log(`\n[Schedule Triggered (ID: ${jobId})]: ${prompt}`);
+          notifyScheduleTriggered(jobId, prompt);
           scheduledJobs.delete(jobId);
         }, ms);
         scheduledJobs.set(jobId, job);
@@ -159,6 +160,7 @@ export const scheduleTool: Tool = {
 
       job.interval = setInterval(() => {
         console.log(`\n[Recurring Schedule Triggered (ID: ${jobId})]: ${prompt}`);
+        notifyScheduleTriggered(jobId, prompt);
       }, ms);
       scheduledJobs.set(jobId, job);
       return `Recurring schedule configured with ID: ${jobId} (triggers every ${cronExpression})`;

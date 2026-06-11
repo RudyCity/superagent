@@ -10,7 +10,8 @@ Superagent is an interactive, terminal-based AI coding assistant designed to hel
 - **Context Usage Tracker**: Real-time visualization of prompt size, completion token count, message history size, active LLM model, and system context limits.
 - **Global Config Path**: Configuration `.env`, command log (`superagent.log`), and history files are stored securely in `~/.superagent-r` (global user directory), preventing clutter in project repositories while keeping user session states globally accessible.
 - **Permissions Control**: Prompts users before running system commands or reading/writing files, ensuring execution safety.
-- **Resumable Sessions**: Automatically resumes previous sessions using the `--resume` or `-r` flags.
+- **Resumable Sessions & Checkpoints**: Automatically resumes previous sessions using the `--resume` or `-r` flags, and supports session checkpoints for reliability.
+- **Subagent-Driven Execution**: Spawns concurrent background subagents with robust wait synchronization to execute complex parallel tasks cleanly.
 - **Structured Planning Mode**: For complex changes, Superagent drafts an `implementation_plan.md` in the workspace root, requiring user approval before modifying code.
 - **Robust String Matching**: File-editing tools normalize whitespace and line endings to make search-and-replace modifications extremely robust.
 - **Structured Patching (`apply_patch`)**: Supports applying standard unified search-and-replace/diff patches safely.

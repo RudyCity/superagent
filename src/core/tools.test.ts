@@ -233,32 +233,32 @@ describe("Command execution and Task management tools", () => {
   });
 
   it("should run background commands, list them, and terminate them", async () => {
-    const runBg = getToolByName("run_background");
-    const manageTask = getToolByName("manage_task");
+    const runBg = getToolByName("run_background_process");
+    const manageTask = getToolByName("manage_background_process");
 
     const runResult = await runBg?.execute({ command: "sleep 10", cwd: "src" }, process.cwd());
-    expect(runResult).toContain("Started task in background");
+    expect(runResult).toContain("Started background process");
 
-    const taskId = runResult?.split("ID: ")[1]?.trim() || "";
+    const processId = runResult?.split("ID: ")[1]?.trim() || "";
 
     const listResult = await manageTask?.execute({ action: "list" }, process.cwd());
-    expect(listResult).toContain(taskId);
+    expect(listResult).toContain(processId);
 
-    const statusResult = await manageTask?.execute({ action: "status", taskId }, process.cwd());
+    const statusResult = await manageTask?.execute({ action: "status", processId }, process.cwd());
     expect(statusResult).toContain("Running/Completed");
 
-    const killResult = await manageTask?.execute({ action: "kill", taskId }, process.cwd());
+    const killResult = await manageTask?.execute({ action: "kill", processId }, process.cwd());
     expect(killResult).toContain("killed successfully");
   });
 
   it("should fail instantly for bad background commands", async () => {
-    const runBg = getToolByName("run_background");
+    const runBg = getToolByName("run_background_process");
     const result = await runBg?.execute({ command: "invalid_command" }, process.cwd());
-    expect(result).toContain("Error: Background task failed instantly");
+    expect(result).toContain("Error: Background process failed instantly");
   });
 
   it("should write background task outputs to a .log file and truncate instant exits if they exceed 20 lines", async () => {
-    const runBg = getToolByName("run_background");
+    const runBg = getToolByName("run_background_process");
     // "long_output" does not sleep, so it exits instantly
     const result = await runBg?.execute({ command: "long_output" }, process.cwd());
     
@@ -280,17 +280,17 @@ describe("Command execution and Task management tools", () => {
   });
 
   it("should truncate status outputs to 50 lines if task is running and outputs exceed 50 lines", async () => {
-    const runBg = getToolByName("run_background");
-    const manageTask = getToolByName("manage_task");
+    const runBg = getToolByName("run_background_process");
+    const manageTask = getToolByName("manage_background_process");
     
     // Run background task that sleeps and produces long output
     const runResult = await runBg?.execute({ command: "sleep 10 long_output" }, process.cwd());
-    const taskId = runResult?.split("ID: ")[1]?.trim() || "";
+    const processId = runResult?.split("ID: ")[1]?.trim() || "";
     
     // Wait slightly for data events to be processed
     await new Promise((resolve) => setTimeout(resolve, 50));
     
-    const statusResult = await manageTask?.execute({ action: "status", taskId }, process.cwd());
+    const statusResult = await manageTask?.execute({ action: "status", processId }, process.cwd());
     expect(statusResult).toContain("output truncated, full logs saved at:");
     
     const match = statusResult?.match(/full logs saved at: (.*\.log)/);
@@ -301,7 +301,7 @@ describe("Command execution and Task management tools", () => {
     expect(statusResult).toContain("line");
     
     // Clean up
-    await manageTask?.execute({ action: "kill", taskId }, process.cwd());
+    await manageTask?.execute({ action: "kill", processId }, process.cwd());
     try {
       await fs.unlink(logPath);
     } catch {}
@@ -313,6 +313,20 @@ describe("Scheduler and Subagent tools", () => {
     const tool = getToolByName("schedule");
     const result = await tool?.execute({ prompt: "My timer", durationSeconds: 2 }, process.cwd());
     expect(result).toContain("One-shot timer scheduled");
+  });
+
+  it("should support subscribeToSchedules and notify when a schedule triggers", async () => {
+    const { subscribeToSchedules, notifyScheduleTriggered } = await import("./tools/state.js");
+    const triggered: Array<{ jobId: string; prompt: string }> = [];
+    const unsub = subscribeToSchedules((jobId, prompt) => {
+      triggered.push({ jobId, prompt });
+    });
+
+    notifyScheduleTriggered("job123", "Hello schedule");
+    expect(triggered).toHaveLength(1);
+    expect(triggered[0]).toEqual({ jobId: "job123", prompt: "Hello schedule" });
+
+    unsub();
   });
 
   it("should define, invoke, list, and message subagents with delegation depth checks", async () => {
@@ -328,7 +342,7 @@ describe("Scheduler and Subagent tools", () => {
     expect(defRes).toContain("Subagent type \"test_subagent\" defined");
 
     const invRes = await invSub?.execute(
-      { typeName: "test_subagent", role: "reviewer", prompt: "review this code" },
+      { typeName: "test_subagent", role: "reviewer", prompt: "review this code", wait: false },
       process.cwd()
     );
     expect(invRes).toBeDefined();

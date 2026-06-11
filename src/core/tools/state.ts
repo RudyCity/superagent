@@ -56,6 +56,22 @@ export function appendActiveToolOutput(text: string) {
 }
 
 export const scheduledJobs = new Map<string, ScheduleJob>();
+export type ScheduleChangeListener = (jobId: string, prompt: string) => void;
+export const scheduleChangeListeners = new Set<ScheduleChangeListener>();
+
+export function subscribeToSchedules(listener: ScheduleChangeListener) {
+  scheduleChangeListeners.add(listener);
+  return () => {
+    scheduleChangeListeners.delete(listener);
+  };
+}
+
+export function notifyScheduleTriggered(jobId: string, prompt: string) {
+  for (const listener of scheduleChangeListeners) {
+    listener(jobId, prompt);
+  }
+}
+
 export const subagentTypes = new Map<string, SubagentType>();
 export const subagentInstances = new Map<string, SubagentInstance>();
 

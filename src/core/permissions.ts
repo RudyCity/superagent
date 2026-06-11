@@ -58,8 +58,8 @@ export function getToolDescription(
       return `Fetching URL: ${args.url}`;
     case "ripgrep_search":
       return `Searching codebase with ripgrep for: ${args.pattern}`;
-    case "run_background":
-      return `Starting background task: ${args.command}${args.cwd ? ` (in ${args.cwd})` : ""}`;
+    case "run_background_process":
+      return `Starting background process: ${args.command}${args.cwd ? ` (in ${args.cwd})` : ""}`;
     case "write_to_file":
       return `Writing file: ${args.filePath}`;
     case "replace_file_content":
@@ -68,8 +68,8 @@ export function getToolDescription(
       return `Replacing multiple blocks in file: ${args.filePath}`;
     case "run_command":
       return `Running command: ${args.command}${args.cwd ? ` (in ${args.cwd})` : ""}`;
-    case "manage_task":
-      return `Managing task (${args.action}): ${args.taskId || ""}`;
+    case "manage_background_process":
+      return `Managing background process (${args.action}): ${args.processId || ""}`;
     case "schedule":
       return `Scheduling job: ${args.prompt}`;
     case "define_subagent":

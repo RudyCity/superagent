@@ -11,6 +11,8 @@ export interface BackgroundTask {
   process: any;
   output: string[];
   logPath?: string;
+  hasExited?: boolean;
+  exitCode?: number | null;
 }
 
 export type TaskChangeListener = () => void;

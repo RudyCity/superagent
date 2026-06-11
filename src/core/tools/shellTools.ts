@@ -124,7 +124,7 @@ export const bashTool: Tool = {
         output = truncateOutput(output);
         
         if (interactiveWarning) {
-          return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background', then monitor it with 'manage_task' (action: 'status') and send inputs using 'manage_task' (action: 'send_input').`;
+          return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background_process', then monitor it with 'manage_background_process' (action: 'status') and send inputs using 'manage_background_process' (action: 'send_input').`;
         }
 
         if (result.exitCode !== 0) {
@@ -241,13 +241,13 @@ export const runCommandTool: Tool = {
         output = truncateOutput(output);
 
         if (interactiveWarning) {
-          return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background', then monitor it with 'manage_task' (action: 'status') and send inputs using 'manage_task' (action: 'send_input').`;
+          return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background_process', then monitor it with 'manage_background_process' (action: 'status') and send inputs using 'manage_background_process' (action: 'send_input').`;
         }
         return output || "(no output)";
       } catch (innerErr: any) {
         if (innerErr && innerErr.name === "TimeoutError") {
           killProcessTree(proc.pid);
-          return `Error executing command: Timeout of ${timeout}ms exceeded. If this command is a long-running process (like a dev server, watcher, or database), please run it in the background using 'run_background' instead.`;
+          return `Error executing command: Timeout of ${timeout}ms exceeded. If this command is a long-running process (like a dev server, watcher, or database), please run it in the background using 'run_background_process' instead.`;
         }
         throw innerErr;
       } finally {
@@ -269,9 +269,9 @@ export const runCommandTool: Tool = {
   },
 };
 
-export const runBackgroundTool: Tool = {
-  name: "run_background",
-  description: "Run a shell command in the background. Returns a task ID.",
+export const runBackgroundProcessTool: Tool = {
+  name: "run_background_process",
+  description: "Run a shell command in the background. Returns a process ID.",
   parameters: {
     type: "object",
     properties: {
@@ -350,6 +350,8 @@ export const runBackgroundTool: Tool = {
       proc.on("close", (code) => {
         hasExited = true;
         exitCode = code;
+        task.hasExited = true;
+        task.exitCode = code;
         const exitMsg = `\n[Process exited with code ${code}]`;
         task.output.push(exitMsg);
         try {
@@ -369,85 +371,85 @@ export const runBackgroundTool: Tool = {
         const logs = task.output.join("");
         const formattedLogs = formatAndTruncateOutput(logs, 20, logPath);
         if (exitCode !== 0) {
-          return `Error: Background task failed instantly (exit code ${exitCode}).\nLogs:\n${formattedLogs}`;
+          return `Error: Background process failed instantly (exit code ${exitCode}).\nLogs:\n${formattedLogs}`;
         }
-        return `Background task finished successfully immediately.\nOutput:\n${formattedLogs}`;
+        return `Background process finished successfully immediately.\nOutput:\n${formattedLogs}`;
       }
 
-      return `Started task in background. Task ID: ${taskId}`;
+      return `Started background process. Process ID: ${taskId}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      return `Failed to start background task: ${message}`;
+      return `Failed to start background process: ${message}`;
     }
   },
 };
 
-export const killTaskTool: Tool = {
-  name: "kill_task",
-  description: "Terminate a background task by ID.",
+export const killBackgroundProcessTool: Tool = {
+  name: "kill_background_process",
+  description: "Terminate a background process by ID.",
   parameters: {
     type: "object",
     properties: {
-      taskId: {
+      processId: {
         type: "string",
-        description: "The Task ID returned by run_background",
+        description: "The Process ID returned by run_background_process",
       },
     },
-    required: ["taskId"],
+    required: ["processId"],
   },
   async execute(args, cwd, signal) {
-    const taskId = args.taskId as string;
-    const task = backgroundTasks.get(taskId);
+    const processId = args.processId as string;
+    const task = backgroundTasks.get(processId);
     if (!task) {
-      return `Error: No task found with ID "${taskId}"`;
+      return `Error: No background process found with ID "${processId}"`;
     }
 
     try {
       killProcessTree(task.process.pid);
-      backgroundTasks.delete(taskId);
+      backgroundTasks.delete(processId);
       notifyTasksChanged();
-      return `Task "${taskId}" has been killed successfully.`;
+      return `Background process "${processId}" has been killed successfully.`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      return `Error killing task: ${message}`;
+      return `Error killing background process: ${message}`;
     }
   },
 };
 
-export const viewBackgroundTasksTool: Tool = {
-  name: "view_background_tasks",
-  description: "List running background tasks and show their recent output logs.",
+export const viewBackgroundProcessesTool: Tool = {
+  name: "view_background_processes",
+  description: "List running background processes and show their recent output logs.",
   parameters: {
     type: "object",
     properties: {
-      taskId: {
+      processId: {
         type: "string",
-        description: "Optional Task ID to view detailed output for. If omitted, lists all tasks.",
+        description: "Optional Process ID to view detailed output for. If omitted, lists all processes.",
       },
     },
   },
   async execute(args, cwd, signal) {
-    const taskId = args.taskId as string;
-    if (taskId) {
-      const task = backgroundTasks.get(taskId);
-      if (!task) return `No task found with ID "${taskId}"`;
+    const processId = args.processId as string;
+    if (processId) {
+      const task = backgroundTasks.get(processId);
+      if (!task) return `No background process found with ID "${processId}"`;
       const fullOutput = task.output.join("");
       const formattedOutput = formatAndTruncateOutput(fullOutput, 50, task.logPath || "");
-      return `Task: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${formattedOutput}`;
+      return `Process: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${formattedOutput}`;
     }
 
-    if (backgroundTasks.size === 0) return "No active background tasks.";
+    if (backgroundTasks.size === 0) return "No active background processes.";
     const lines: string[] = [];
     for (const [id, task] of backgroundTasks.entries()) {
-      lines.push(`Task ID: ${id} | Command: ${task.command}`);
+      lines.push(`Process ID: ${id} | Command: ${task.command}`);
     }
     return lines.join("\n");
   },
 };
 
-export const manageTaskTool: Tool = {
-  name: "manage_task",
-  description: "Manage background tasks: list them, check status/output, send input, or kill them.",
+export const manageBackgroundProcessTool: Tool = {
+  name: "manage_background_process",
+  description: "Manage background processes: list them, check status/output, send input, or kill them.",
   parameters: {
     type: "object",
     properties: {
@@ -456,9 +458,9 @@ export const manageTaskTool: Tool = {
         enum: ["list", "status", "send_input", "kill"],
         description: "Action to perform",
       },
-      taskId: {
+      processId: {
         type: "string",
-        description: "The background task ID",
+        description: "The background process ID",
       },
       input: {
         type: "string",
@@ -469,31 +471,31 @@ export const manageTaskTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const action = args.action as string;
-    const taskId = args.taskId as string;
+    const processId = args.processId as string;
     const input = args.input as string;
 
     if (action === "list") {
-      if (backgroundTasks.size === 0) return "No active background tasks.";
+      if (backgroundTasks.size === 0) return "No active background processes.";
       const lines: string[] = [];
       for (const [id, task] of backgroundTasks.entries()) {
-        lines.push(`Task ID: ${id} | Command: ${task.command}`);
+        lines.push(`Process ID: ${id} | Command: ${task.command}`);
       }
       return lines.join("\n");
     }
 
-    if (!taskId) {
-      return "Error: taskId is required for status, send_input, and kill actions.";
+    if (!processId) {
+      return "Error: processId is required for status, send_input, and kill actions.";
     }
 
-    const task = backgroundTasks.get(taskId);
+    const task = backgroundTasks.get(processId);
     if (!task) {
-      return `Error: No task found with ID "${taskId}"`;
+      return `Error: No background process found with ID "${processId}"`;
     }
 
     if (action === "status") {
       const fullOutput = task.output.join("");
       const formattedOutput = formatAndTruncateOutput(fullOutput, 50, task.logPath || "");
-      return `Task: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${formattedOutput}`;
+      return `Process: ${task.command}\nStatus: ${task.process.killed ? "Killed" : "Running/Completed"}\nOutput:\n${formattedOutput}`;
     }
 
     if (action === "send_input") {
@@ -502,7 +504,7 @@ export const manageTaskTool: Tool = {
       }
       try {
         task.process.stdin?.write(input + "\n");
-        return `Sent input to task "${taskId}".`;
+        return `Sent input to process "${processId}".`;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return `Error sending input: ${message}`;
@@ -512,12 +514,12 @@ export const manageTaskTool: Tool = {
     if (action === "kill") {
       try {
         killProcessTree(task.process.pid);
-        backgroundTasks.delete(taskId);
+        backgroundTasks.delete(processId);
         notifyTasksChanged();
-        return `Task "${taskId}" has been killed successfully.`;
+        return `Process "${processId}" has been killed successfully.`;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        return `Error killing task: ${message}`;
+        return `Error killing process: ${message}`;
       }
     }
 

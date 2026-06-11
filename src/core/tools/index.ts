@@ -17,8 +17,8 @@ import {
 import { 
   bashTool, 
   runCommandTool, 
-  runBackgroundTool, 
-  manageTaskTool 
+  runBackgroundProcessTool, 
+  manageBackgroundProcessTool 
 } from "./shellTools.js";
 
 import { 
@@ -50,12 +50,12 @@ export const allTools: Tool[] = [
   webSearchTool,
   fetchUrlTool,
   ripgrepSearchTool,
-  runBackgroundTool,
+  runBackgroundProcessTool,
   writeToFileTool,
   replaceFileContentTool,
   multiReplaceFileContentTool,
   runCommandTool,
-  manageTaskTool,
+  manageBackgroundProcessTool,
   scheduleTool,
   defineSubagentTool,
   invokeSubagentTool,
@@ -95,12 +95,6 @@ registerSubagentType(
   "researcher",
   "Specialized in codebase research, file analysis, web searching, and gathering context/information without modifications.",
   "You are a research subagent. Your goal is to gather information, read files, search the codebase, use web search, and analyze code or documentation. Do not modify any files or execute write operations unless explicitly instructed. Keep your findings concise and organized."
-);
-
-registerSubagentType(
-  "explorer",
-  "Specialized in exploring codebase structure, finding required references, APIs, or resources requested by the main agent.",
-  "You are an explorer subagent. Your goal is to explore the codebase, APIs, documentation, or other resources to find references and details needed by the main agent. Focus on discovery, map out relationships, and report your findings clearly."
 );
 
 registerSubagentType(

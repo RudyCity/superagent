@@ -284,7 +284,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - You are running with a strict step limit of ${maxIterations} agent iterations per request.
 - Current Step: ${currentStep} of ${maxIterations}.
 - Be highly efficient. If the task is complex, requires multiple steps, or involves extensive research/coding across different components, DO NOT try to do everything in a single sequential thread.
-- Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'explorer', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
+- Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
 - Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.
 ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${planStateNotice}${planStateAddendum}`;
 
@@ -530,7 +530,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           }
 
           if (
-            tc.name === "bash" || tc.name === "run_command" || tc.name === "run_background"
+            tc.name === "bash" || tc.name === "run_command" || tc.name === "run_background_process"
           ) {
             if (this.planState === "PLANNING_PENDING") {
               const cmd = (tc.args.command as string || "").trim();

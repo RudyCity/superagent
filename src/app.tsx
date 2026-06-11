@@ -11,7 +11,7 @@ import { getGlobalConfigDir } from "./core/config.js";
 import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
-import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToActiveOutput, registerQuestionHandler } from "./core/tools.js";
+import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler } from "./core/tools.js";
 import { WizardDialog } from "./components/wizard-dialog.js";
 import { execa } from "execa";
 import { resolveCarriageReturns, formatArgs, formatCompactNumber } from "./utils/text.js";
@@ -93,7 +93,37 @@ export function App({
 
   useEffect(() => {
     const unsubTasks = subscribeToTasks(() => {
-      setRunningTasksCount(backgroundTasks.size);
+      setRunningTasksCount(
+        Array.from(backgroundTasks.values()).filter((t) => !t.hasExited).length
+      );
+      // Push notifications: Log completed background tasks
+      const activeList = Array.from(backgroundTasks.values());
+      activeList.forEach((task) => {
+        if (task.hasExited && !(task as any).notified) {
+          (task as any).notified = true;
+          const msg = `⚙️ [BACKGROUND TASK NOTIFICATION]: Task ${task.id} ("${task.command}") has completed with exit code ${task.exitCode}!`;
+          addLine({
+            type: "system",
+            content: msg,
+            timestamp: Date.now()
+          });
+
+          // Auto-resume agent with the notification if it's idle!
+          if (agentRef.current && !agentRef.current.isAgentRunning()) {
+            setIsProcessing(true);
+            addLine({
+              type: "user",
+              content: `❯ [SYSTEM TRIGGER] ${msg}`,
+              timestamp: Date.now()
+            });
+            agentRef.current.sendMessage(msg).then(() => {
+              if (agentRef.current) {
+                setPlanState(agentRef.current.planState);
+              }
+            });
+          }
+        }
+      });
     });
     const unsubSubagents = subscribeToSubagents(() => {
       setRunningSubagentsCount(
@@ -104,18 +134,67 @@ export function App({
       activeList.forEach((inst) => {
         if (inst.status === "completed" && inst.result && !(inst as any).notified) {
           (inst as any).notified = true;
+          const msg = `🤖 [SUBAGENT NOTIFICATION]: Subagent ${inst.id} (${inst.role}) has completed!\nReport Summary:\n${inst.result}`;
           addLine({
             type: "system",
-            content: `🤖 [SUBAGENT NOTIFICATION]: Subagent ${inst.id} (${inst.role}) has completed!\nReport Summary:\n${inst.result}`,
+            content: msg,
             timestamp: Date.now()
           });
+
+          // Auto-resume agent with the notification if it's idle!
+          if (agentRef.current && !agentRef.current.isAgentRunning()) {
+            setIsProcessing(true);
+            addLine({
+              type: "user",
+              content: `❯ [SYSTEM TRIGGER] ${msg}`,
+              timestamp: Date.now()
+            });
+            agentRef.current.sendMessage(msg).then(() => {
+              if (agentRef.current) {
+                setPlanState(agentRef.current.planState);
+              }
+            });
+          }
         }
       });
     });
-    setRunningTasksCount(backgroundTasks.size);
+
+    const unsubSchedules = subscribeToSchedules((jobId, prompt) => {
+      const msg = `⏳ [SCHEDULE NOTIFICATION]: Schedule job ${jobId} triggered! Prompt: ${prompt}`;
+      addLine({
+        type: "system",
+        content: msg,
+        timestamp: Date.now()
+      });
+
+      // Auto-resume agent with the notification if it's idle!
+      if (agentRef.current && !agentRef.current.isAgentRunning()) {
+        setIsProcessing(true);
+        addLine({
+          type: "user",
+          content: `❯ [SYSTEM TRIGGER] ${msg}`,
+          timestamp: Date.now()
+        });
+        agentRef.current.sendMessage(msg).then(() => {
+          if (agentRef.current) {
+            setPlanState(agentRef.current.planState);
+          }
+        });
+      }
+    });
+
+    setRunningTasksCount(
+      Array.from(backgroundTasks.values()).filter((t) => !t.hasExited).length
+    );
     setRunningSubagentsCount(
       Array.from(subagentInstances.values()).filter((s) => s.status === "running").length
     );
+
+    return () => {
+      unsubTasks();
+      unsubSubagents();
+      unsubSchedules();
+    };
   }, [addLine]);
 
   const [activeToolOutput, setActiveToolOutput] = useState("");
@@ -2359,7 +2438,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 )}
                 {runningTasksCount > 0 && (
                   <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
-                    <Text color="cyan" bold>⚙️ ACTIVE TASKS:</Text>
+                    <Text color="cyan" bold>⚙️ ACTIVE PROCESSES:</Text>
                     {Array.from(backgroundTasks.entries())
                       .map(([id, task]) => (
                         <Text key={id} color="cyan">
@@ -2662,7 +2741,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               <Text color="gray"> │ </Text>
               <Text color="white">Msg: {messageCount}</Text>
               <Text color="gray"> • </Text>
-              <Text color="yellow">Task: {runningTasksCount}</Text>
+              <Text color="yellow">Proc: {runningTasksCount}</Text>
               <Text color="gray"> • </Text>
               <Text color="magenta">Sub: {runningSubagentsCount}</Text>
             </Text>

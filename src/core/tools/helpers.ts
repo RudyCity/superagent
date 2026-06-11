@@ -226,7 +226,7 @@ export function detectInteractivePrompt(text: string): string | null {
   ];
   for (const pattern of patterns) {
     if (pattern.test(text)) {
-      return `Warning: Interactive prompt detected ("${text.trim().slice(-30)}"). The command may hang. Use run_background and manage_task 'send_input' to interact.`;
+      return `Warning: Interactive prompt detected ("${text.trim().slice(-30)}"). The command may hang. Use run_background_process and manage_background_process 'send_input' to interact.`;
     }
   }
   return null;

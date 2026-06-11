@@ -72,7 +72,7 @@ export const invokeSubagentTool: Tool = {
       },
       wait: {
         type: "boolean",
-        description: "Whether to wait synchronously for the subagent to finish and return its final report/output.",
+        description: "Whether to wait synchronously for the subagent to finish and return its final report/output. Defaults to true.",
       },
     },
     required: ["typeName", "role", "prompt"],
@@ -81,7 +81,7 @@ export const invokeSubagentTool: Tool = {
     const typeName = args.typeName as string;
     const role = args.role as string;
     const prompt = args.prompt as string;
-    const wait = !!args.wait;
+    const wait = args.wait !== false;
 
     const parentAgent = agentLocalStorage.getStore();
     const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;
@@ -249,7 +249,7 @@ export const sendMessageTool: Tool = {
       },
       wait: {
         type: "boolean",
-        description: "Whether to wait synchronously for the subagent to finish and return its final report/output.",
+        description: "Whether to wait synchronously for the subagent to finish and return its final report/output. Defaults to true.",
       },
     },
     required: ["recipientId", "message"],
@@ -257,7 +257,7 @@ export const sendMessageTool: Tool = {
   async execute(args, cwd, signal) {
     const recipientId = args.recipientId as string;
     const message = args.message as string;
-    const wait = !!args.wait;
+    const wait = args.wait !== false;
 
     const instance = subagentInstances.get(recipientId);
     if (!instance) {

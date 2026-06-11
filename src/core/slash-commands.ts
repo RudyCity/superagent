@@ -793,7 +793,6 @@ export function handleSlashCommand(
         "│ ",
         "│ [DEFINED TYPES]",
         "│  ├─ researcher : codebase research & context gathering",
-        "│  ├─ explorer   : codebase structure, references, APIs, or resources exploration",
         "│  ├─ coder      : code writing & editing",
         "│  └─ reviewer   : debugging, review & testing",
         "│ ",
@@ -825,14 +824,15 @@ export function handleSlashCommand(
       });
       break;
     }
-    case "tasks": {
+    case "processes":
+    case "procs": {
       const taskList = Array.from(backgroundTasks.entries());
       const lines = [
-        "┌───[ ⚙️ RUNNING BACKGROUND TASKS ]",
+        "┌───[ ⚙️ RUNNING BACKGROUND PROCESSES ]",
         "│ ",
       ];
       if (taskList.length === 0) {
-        lines.push("│  No active background tasks.");
+        lines.push("│  No active background processes.");
       } else {
         for (const [id, task] of taskList) {
           lines.push(`│  • ID: ${id} | Command: ${task.command}`);
@@ -992,7 +992,7 @@ export function handleSlashCommand(
           "              Usage: /goal <description>  (e.g. /goal implement JWT auth end-to-end)",
           "  /init     - Initialize project (Git setup, agents.md generation, system audit)",
           "  /agents   - List active subagents and defined subagent types",
-          "  /tasks    - List running background tasks",
+          "  /processes - List running background processes (shortcut: /procs)",
           "  /skills   - List all installed agent skills and templates",
           "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",
           "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
