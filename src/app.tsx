@@ -64,7 +64,7 @@ export function App({
   const [toolStartTime, setToolStartTime] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [activeWizard, setActiveWizard] = useState<{
-    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint";
+    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills";
     step: number;
     data: Record<string, string>;
   } | null>(null);
@@ -2021,6 +2021,38 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           setCheckpointsList([]);
           return;
         }
+      } else if (activeWizard.type === "skills" && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          return;
+        }
+        if (key.return) {
+          const skillsList = getInstalledSkills();
+          const chosen = skillsList[wizardSelectedIndex];
+          if (chosen) {
+            const now = Date.now();
+            const detailLines = [
+              "┌───[ 📂 INSTALLED AGENT SKILLS ]",
+              `│  • Name        : ${chosen.name}`,
+              `│    Description : ${chosen.description}`,
+              `│    Path        : ${chosen.path}`,
+              "└──────────────────────────────────────────────"
+            ];
+            addLine({
+              type: "system",
+              content: detailLines.join("\n"),
+              timestamp: now,
+            });
+          }
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
       }
     }
 
@@ -2579,6 +2611,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 title="📚 RESUME SESSION — Pilih sesi untuk dilanjutkan (↑/↓ Navigate, Enter: Load, Esc: Cancel):"
                 description="Sesi diurutkan dari yang paling baru:"
                 borderColor="magenta"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+                maxVisible={8}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "skills" && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="📂 INSTALLED AGENT SKILLS — Pilih skill untuk melihat detail (↑/↓ Navigate, Enter: View, Esc: Cancel):"
+                description="Daftar kemampuan khusus agen yang terpasang:"
+                borderColor="cyan"
                 options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
                 maxVisible={8}

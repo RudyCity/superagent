@@ -77,7 +77,7 @@ export function handleSlashCommand(
     agent: Agent | null;
     clearLines?: () => void;
     setContextLimit?: (limit: number) => void;
-    setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint"; step: number; data: Record<string, string> } | null) => void;
+    setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills"; step: number; data: Record<string, string> } | null) => void;
     setWizardOptions?: (options: string[]) => void;
     setWizardSelectedIndex?: (index: number) => void;
     resumeSession?: () => Promise<void>;
@@ -952,27 +952,22 @@ export function handleSlashCommand(
     }
     case "skills": {
       const skills = getInstalledSkills();
-      const lines = [
-        "┌───[ 📂 INSTALLED AGENT SKILLS ]",
-        "│ ",
-      ];
       if (skills.length === 0) {
-        lines.push("│  No skills installed. Use /install <owner/repo> to install skills.");
-      } else {
-        for (const s of skills) {
-          lines.push(`│  • Name        : ${s.name}`);
-          lines.push(`│    Description : ${s.description}`);
-          lines.push(`│    Path        : ${s.path}`);
-          lines.push("│ ");
-        }
-        lines.pop();
+        ctx.addLine({
+          type: "system",
+          content: "No skills installed. Use /install <owner/repo> to install skills.",
+          timestamp: now,
+        });
+        break;
       }
-      lines.push("└──────────────────────────────────────────────");
-      ctx.addLine({
-        type: "system",
-        content: lines.join("\n"),
-        timestamp: now,
+      const options = skills.map(s => `• ${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`);
+      ctx.setActiveWizard?.({
+        type: "skills",
+        step: 1,
+        data: {},
       });
+      ctx.setWizardOptions?.(options);
+      ctx.setWizardSelectedIndex?.(0);
       break;
     }
     case "help":
