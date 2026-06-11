@@ -989,12 +989,12 @@ export function handleSlashCommand(
         ctx.setIsProcessing?.(true);
         ctx.agent?.sendMessage(
           "USER COMMAND: /terminal init\n\n" +
-          "Please guide the user to create a terminal preset for their project.\n" +
-          "Use the `ask_question` tool to ask questions interactively and guide them through defining:\n" +
-          "1. Preset Name (e.g. 'sipdev').\n" +
-          "2. Command or multiple commands to run (e.g. 'npm run tauri:api' and 'npm run tauri:dev').\n" +
-          "3. Optional directory path (cwd) or custom environment variables (env) for the command(s).\n\n" +
-          "Once you have all the inputs, write the final configuration back to the local project file `.superagent-r/terminal-presets.json` using a file writing tool. Tell the user once it is done."
+          "You are initializing terminal presets for the user's workspace. Follow these steps:\n" +
+          "1. Inspect the workspace files (e.g. read package.json scripts/dependencies, Cargo.toml, go.mod, requirements.txt, or list directories) to identify the project type and find common commands.\n" +
+          "2. Dynamically construct AI suggestions/recommendations of potential terminal preset commands (e.g. dev/start servers, watch processes, test suites, builds) based on your discovery.\n" +
+          "3. Ask the user to select which commands they want to set up as presets. You MUST call the `ask_question` tool with `isMultiSelect: true` so the user can check/uncheck multiple suggested commands using Space and Enter.\n" +
+          "4. Once selected, guide them or define the preset names, custom working directories, and env variables if needed.\n" +
+          "5. Write the final configuration back to the local project file `.superagent-r/terminal-presets.json` using a file writing tool. Confirm to the user once it is completed."
         ).catch((err: any) => {
           ctx.addLine({ type: "error", content: `Wizard error: ${err.message}`, timestamp: Date.now() });
         });

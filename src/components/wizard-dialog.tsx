@@ -8,6 +8,8 @@ interface WizardDialogProps {
   options: string[];
   selectedIndex: number;
   maxVisible?: number;
+  isMultiSelect?: boolean;
+  selectedSet?: Set<number>;
 }
 
 export function WizardDialog({
@@ -17,6 +19,8 @@ export function WizardDialog({
   options = [],
   selectedIndex = 0,
   maxVisible,
+  isMultiSelect = false,
+  selectedSet,
 }: WizardDialogProps) {
   const actualOptions = Array.isArray(options) ? options : [];
   const total = actualOptions.length;
@@ -67,12 +71,14 @@ export function WizardDialog({
       {visibleOptions.map((opt, idx) => {
         const originalIndex = start + idx;
         const isSelected = originalIndex === selectedIndex;
+        const isChecked = selectedSet?.has(originalIndex) ?? false;
         const optStr = typeof opt === "string" ? opt : JSON.stringify(opt);
+        const checkPrefix = isMultiSelect ? (isChecked ? "[x] " : "[ ] ") : "";
         return (
           <Box key={`${optStr}-${originalIndex}`} flexDirection="row">
             <Text color={borderColor}>│ </Text>
             <Text color={isSelected ? borderColor : "gray"} bold={isSelected}>
-              {isSelected ? "❯ " : "  "} {optStr}
+              {isSelected ? "❯ " : "  "} {checkPrefix}{optStr}
             </Text>
           </Box>
         );

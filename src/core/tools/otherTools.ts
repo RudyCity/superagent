@@ -22,6 +22,10 @@ export const askQuestionTool: Tool = {
         },
         description: "List of options for the user to choose from",
       },
+      isMultiSelect: {
+        type: "boolean",
+        description: "If true, the user can select multiple options using space and submit with Enter",
+      },
     },
     required: ["question", "options"],
   },
@@ -36,7 +40,7 @@ export const askQuestionTool: Tool = {
     }
 
     try {
-      const selected = await handler(question, options);
+      const selected = await handler(question, options, args.isMultiSelect as boolean | undefined);
       return `User selected option: "${selected}"`;
     } catch (err: any) {
       return `Error getting user answer: ${err.message}`;

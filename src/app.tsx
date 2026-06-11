@@ -68,7 +68,9 @@ export function App({
     type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills";
     step: number;
     data: Record<string, string>;
+    isMultiSelect?: boolean;
   } | null>(null);
+  const [wizardSelectedSet, setWizardSelectedSet] = useState<Set<number>>(new Set());
   const [checkpointsList, setCheckpointsList] = useState<Checkpoint[]>([]);
   const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
@@ -82,6 +84,12 @@ export function App({
   const addLine = useCallback((line: ChatLine) => {
     setLines((prev) => [...prev, line]);
   }, []);
+
+  useEffect(() => {
+    if (!activeWizard) {
+      setWizardSelectedSet(new Set());
+    }
+  }, [activeWizard]);
 
   useEffect(() => {
     if (input.startsWith("/terminal")) {
@@ -326,17 +334,19 @@ export function App({
   );
 
   const questionHandler: QuestionHandler = useCallback(
-    (question: string, options: string[]) => {
+    (question: string, options: string[], isMultiSelect?: boolean) => {
       return new Promise<string>((resolve) => {
         const hasOptions = Array.isArray(options) && options.length > 0;
         const allOptions = hasOptions ? [...options, "Custom..."] : [];
         setPendingQuestion({ question, options: allOptions, resolve });
         setWizardOptions(allOptions);
         setWizardSelectedIndex(0);
+        setWizardSelectedSet(new Set());
         setActiveWizard({
           type: "question",
           step: hasOptions ? 1 : 2,
           data: { question },
+          isMultiSelect,
         });
       });
     },
@@ -1484,12 +1494,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     "/init",
     "/new",
     "/resume",
+    "/search-history",
     "/quit",
     "/exit",
     "/login",
     "/model",
     "/agents",
     "/tasks",
+    "/processes",
+    "/procs",
     "/install",
     "/skills",
     "/terminal",
@@ -1854,6 +1867,18 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
       } else if (activeWizard.type === "question" && wizardOptions.length > 0) {
+        if (activeWizard.isMultiSelect && inputChar === " ") {
+          setWizardSelectedSet((prev) => {
+            const next = new Set(prev);
+            if (next.has(wizardSelectedIndex)) {
+              next.delete(wizardSelectedIndex);
+            } else {
+              next.add(wizardSelectedIndex);
+            }
+            return next;
+          });
+          return;
+        }
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
@@ -1863,6 +1888,24 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
         if (key.return) {
+          if (activeWizard.isMultiSelect) {
+            const selectedList = Array.from(wizardSelectedSet).map(idx => wizardOptions[idx]).filter(Boolean);
+            const answer = selectedList.join(", ");
+            if (pendingQuestion) {
+              pendingQuestion.resolve(answer);
+              addLine({
+                type: "system",
+                content: `❓ Answered: "${answer}"`,
+                timestamp: Date.now(),
+              });
+              setPendingQuestion(null);
+              setActiveWizard(null);
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+              setWizardSelectedSet(new Set());
+            }
+            return;
+          }
           const selectedOption = wizardOptions[wizardSelectedIndex];
           if (pendingQuestion) {
             if (selectedOption === "Custom...") {
@@ -2327,25 +2370,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
     // If there is a space, we are offering suggestions for subcommands / arguments
     if (mainCommand === "/terminal") {
-      const subCommands = ["init", "preset"];
       const presetKeys = terminalPresets;
 
+      if (currentInput.startsWith("/terminal preset")) {
+        return presetKeys.map(pk => `/terminal preset ${pk}`).filter(p => p.startsWith(currentInput));
+      }
+
+      const subCommands = ["init", "preset"];
       let possibilities: string[] = [];
       possibilities.push(...subCommands.map(sub => `/terminal ${sub}`));
       possibilities.push(...presetKeys.map(pk => `/terminal ${pk}`));
-      possibilities.push(...presetKeys.map(pk => `/terminal preset ${pk}`));
 
       const uniquePossibilities = Array.from(new Set(possibilities));
       return uniquePossibilities.filter(p => p.startsWith(currentInput));
     }
 
     if (mainCommand === "/checkpoint") {
+      if (currentInput.startsWith("/checkpoint restore")) {
+        const checkpointIds = checkpointsListState.map(c => c.id);
+        return checkpointIds.map(id => `/checkpoint restore ${id}`).filter(p => p.startsWith(currentInput));
+      }
+
       const subCommands = ["list", "restore"];
       let possibilities: string[] = [];
       possibilities.push(...subCommands.map(sub => `/checkpoint ${sub}`));
-
-      const checkpointIds = checkpointsListState.map(c => c.id);
-      possibilities.push(...checkpointIds.map(id => `/checkpoint restore ${id}`));
 
       const uniquePossibilities = Array.from(new Set(possibilities));
       return uniquePossibilities.filter(p => p.startsWith(currentInput));
@@ -2669,11 +2717,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
             {activeWizard && activeWizard.type === "question" && pendingQuestion && (
               <WizardDialog
-                title={activeWizard.step === 2 ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):" : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):"}
+                title={activeWizard.step === 2 ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):" : (activeWizard.isMultiSelect ? "❓ QUESTION FROM AGENT (Arrows: navigate, Space: select, Enter: submit):" : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):")}
                 description={pendingQuestion.question}
                 borderColor="cyan"
                 options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
+                isMultiSelect={activeWizard.isMultiSelect}
+                selectedSet={wizardSelectedSet}
               />
             )}
 

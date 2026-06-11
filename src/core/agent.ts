@@ -34,7 +34,8 @@ export type PermissionHandler = (
 
 export type QuestionHandler = (
   question: string,
-  options: string[]
+  options: string[],
+  isMultiSelect?: boolean
 ) => Promise<string>;
 
 export class Agent {
@@ -473,7 +474,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               return String(o);
             });
             try {
-              const selected = await this.onQuestion(question, options);
+              const selected = await this.onQuestion(question, options, tc.args.isMultiSelect as boolean | undefined);
               const toolResult: ToolResult = {
                 toolCallId: tc.id,
                 name: tc.name,

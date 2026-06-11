@@ -41,4 +41,4 @@ export interface SubagentInstance {
   result?: string;
 }
 
-export type QuestionHandler = (question: string, options: string[]) => Promise<string>;
+export type QuestionHandler = (question: string, options: string[], isMultiSelect?: boolean) => Promise<string>;
