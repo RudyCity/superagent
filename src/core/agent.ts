@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs";
 import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir } from "./config.js";
 import { Conversation } from "./conversation.js";
-import { getToolDefinitions } from "./tools.js";
+import { getToolDefinitions, backgroundTasks } from "./tools.js";
 import {
   executeToolCall,
   getToolDescription,
@@ -278,6 +278,14 @@ The user has APPROVED your implementation plan. You are now fully authorized to 
         }
 
         const currentStep = i + 1;
+        const runningProcesses = Array.from(backgroundTasks.entries())
+          .filter(([_, t]) => !t.hasExited)
+          .map(([id, t]) => `- Process ID: ${id}, Command: "${t.command}"`)
+          .join("\n");
+        const processNotice = runningProcesses
+          ? `\n\n⚙️ RUNNING BACKGROUND/TERMINAL PROCESSES:\nYou are aware that the following background/terminal processes are currently running in the environment:\n${runningProcesses}`
+          : "";
+
         const systemPrompt = `${baseSystemPrompt}
 
 CRITICAL TASK EXECUTION CONTEXT:
@@ -286,7 +294,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - Be highly efficient. If the task is complex, requires multiple steps, or involves extensive research/coding across different components, DO NOT try to do everything in a single sequential thread.
 - Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
 - Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.
-${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${planStateNotice}${planStateAddendum}`;
+${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${planStateNotice}${planStateAddendum}${processNotice}`;
 
         let textContent = "";
         const toolCalls: ToolCall[] = [];

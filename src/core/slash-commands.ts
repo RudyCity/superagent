@@ -19,9 +19,10 @@ import {
   restoreCheckpointById,
   terminateActiveTasksAndSubagents,
 } from "./checkpoints.js";
+import os from "os";
 import { searchHistory } from "./historySearch.js";
 import { getToolDescription } from "./permissions.js";
-import { allTools, backgroundTasks, subagentInstances } from "./tools.js";
+import { allTools, backgroundTasks, subagentInstances, notifyTasksChanged, BackgroundTask } from "./tools.js";
 import { formatArgs } from "../utils/text.js";
 
 export interface ChatLine {
@@ -970,6 +971,197 @@ export function handleSlashCommand(
       ctx.setWizardSelectedIndex?.(0);
       break;
     }
+    case "terminal": {
+      const args = cmd.slice(name.length + 2).trim();
+      const cwd = process.cwd();
+
+      if (args.toLowerCase() === "init") {
+        ctx.addLine({
+          type: "user",
+          content: "❯ /terminal init",
+          timestamp: Date.now()
+        });
+        ctx.addLine({
+          type: "system",
+          content: "Starting interactive preset creator wizard guided by AI...",
+          timestamp: Date.now()
+        });
+        ctx.setIsProcessing?.(true);
+        ctx.agent?.sendMessage(
+          "USER COMMAND: /terminal init\n\n" +
+          "Please guide the user to create a terminal preset for their project.\n" +
+          "Use the `ask_question` tool to ask questions interactively and guide them through defining:\n" +
+          "1. Preset Name (e.g. 'sipdev').\n" +
+          "2. Command or multiple commands to run (e.g. 'npm run tauri:api' and 'npm run tauri:dev').\n" +
+          "3. Optional directory path (cwd) or custom environment variables (env) for the command(s).\n\n" +
+          "Once you have all the inputs, write the final configuration back to the local project file `.superagent-r/terminal-presets.json` using a file writing tool. Tell the user once it is done."
+        ).catch((err: any) => {
+          ctx.addLine({ type: "error", content: `Wizard error: ${err.message}`, timestamp: Date.now() });
+        });
+        break;
+      }
+      
+      const loadPresetsAndRun = async () => {
+        const localPresetDir = path.join(cwd, ".superagent-r");
+        const localPresetPath = path.join(localPresetDir, "terminal-presets.json");
+        const localRootPresetPath = path.join(cwd, "terminal-presets.json");
+        const globalPresetPath = path.join(os.homedir(), ".superagent-r", "terminal-presets.json");
+
+        const paths = [localPresetPath, localRootPresetPath, globalPresetPath];
+        let presets: Record<string, string | string[]> = {};
+        for (const p of paths) {
+          try {
+            const content = await fs.readFile(p, "utf-8");
+            const data = JSON.parse(content);
+            if (data && data.presets) {
+              presets = data.presets;
+            } else {
+              presets = data;
+            }
+            break;
+          } catch {
+            // ignore
+          }
+        }
+
+        if (!args) {
+          const keys = Object.keys(presets);
+          const presetsList = keys.length > 0
+            ? keys.map(k => `  • ${k}: ${JSON.stringify(presets[k])}`).join("\n")
+            : "  (No presets configured)";
+          ctx.addLine({
+            type: "system",
+            content: [
+              "🖥️ TERMINAL COMMAND & PRESETS",
+              "Usage:",
+              "  /terminal <command>         - Run command in a new terminal window",
+              "  /terminal preset <name>     - Run a configured preset",
+              "  /terminal <preset_name>     - Run a preset directly (if name matches)",
+              "",
+              "Available Presets:",
+              presetsList,
+              "",
+              "Presets can be configured in `.superagent-r/terminal-presets.json` or `terminal-presets.json`.",
+            ].join("\n"),
+            timestamp: Date.now()
+          });
+          return;
+        }
+
+        let commandToRun: any = args;
+        let isPreset = false;
+        let presetName = "";
+
+        if (args.toLowerCase().startsWith("preset ")) {
+          presetName = args.slice(7).trim();
+          if (presets[presetName]) {
+            commandToRun = presets[presetName];
+            isPreset = true;
+          } else {
+            ctx.addLine({
+              type: "error",
+              content: `Error: Preset "${presetName}" not found.`,
+              timestamp: Date.now()
+            });
+            return;
+          }
+        } else if (presets[args]) {
+          commandToRun = presets[args];
+          isPreset = true;
+          presetName = args;
+        }
+
+        const runCmd = async (singleCmd: any) => {
+          let commandStr = "";
+          let runCwd = cwd;
+          let runEnv = { ...process.env };
+
+          if (typeof singleCmd === "object" && singleCmd !== null) {
+            commandStr = singleCmd.command || "";
+            if (singleCmd.cwd) {
+              runCwd = path.resolve(cwd, singleCmd.cwd);
+            }
+            if (singleCmd.env) {
+              runEnv = { ...runEnv, ...singleCmd.env };
+            }
+          } else {
+            commandStr = String(singleCmd);
+          }
+
+          if (!commandStr) return;
+
+          const taskId = `term-${Math.random().toString(36).substring(2, 9)}`;
+          ctx.addLine({
+            type: "system",
+            content: `🖥️ Spawning non-headless terminal [ID: ${taskId}]: "${commandStr}" (cwd: ${runCwd})`,
+            timestamp: Date.now()
+          });
+
+          let proc;
+          if (process.platform === "win32") {
+            proc = execa("cmd.exe", ["/k", commandStr], {
+              cwd: runCwd,
+              detached: true,
+              stdio: ["pipe", "ignore", "ignore"],
+              windowsHide: false,
+              env: runEnv
+            });
+          } else if (process.platform === "darwin") {
+            const script = `tell application "Terminal" to do script "cd ${JSON.stringify(runCwd)} && ${commandStr}"`;
+            proc = execa("osascript", ["-e", script], {
+              detached: true,
+              stdio: ["pipe", "ignore", "ignore"]
+            });
+          } else {
+            proc = execa("x-terminal-emulator", ["-e", `bash -c "cd ${runCwd} && ${commandStr}; exec bash"`], {
+              detached: true,
+              stdio: ["pipe", "ignore", "ignore"],
+              reject: false
+            });
+          }
+
+          proc.unref();
+
+          const task: BackgroundTask = {
+            id: taskId,
+            command: commandStr,
+            process: proc,
+            output: ["[Output is displayed in the popped-up terminal window]"],
+          };
+
+          backgroundTasks.set(taskId, task);
+          notifyTasksChanged();
+
+          proc.on("close", (code) => {
+            task.hasExited = true;
+            task.exitCode = code;
+            notifyTasksChanged();
+          });
+        };
+
+        if (Array.isArray(commandToRun)) {
+          ctx.addLine({
+            type: "system",
+            content: `Running preset "${presetName}" with ${commandToRun.length} commands...`,
+            timestamp: Date.now()
+          });
+          for (const c of commandToRun) {
+            await runCmd(c);
+          }
+        } else {
+          await runCmd(commandToRun);
+        }
+      };
+
+      loadPresetsAndRun().catch(err => {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to execute terminal command: ${err.message}`,
+          timestamp: Date.now()
+        });
+      });
+      break;
+    }
     case "help":
       ctx.addLine({
         type: "system",
@@ -988,6 +1180,8 @@ export function handleSlashCommand(
           "  /init     - Initialize project (Git setup, agents.md generation, system audit)",
           "  /agents   - List active subagents and defined subagent types",
           "  /processes - List running background processes (shortcut: /procs)",
+          "  /terminal - Run a command or preset in a new visible (non-headless) window",
+          "              Usage: /terminal <command> or /terminal preset <name>",
           "  /skills   - List all installed agent skills and templates",
           "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",
           "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",

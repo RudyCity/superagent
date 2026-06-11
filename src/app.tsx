@@ -11,6 +11,7 @@ import { getGlobalConfigDir } from "./core/config.js";
 import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
+import os from "os";
 import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler } from "./core/tools.js";
 import { WizardDialog } from "./components/wizard-dialog.js";
 import { execa } from "execa";
@@ -74,11 +75,59 @@ export function App({
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [focusMode, setFocusMode] = useState<"input" | "history">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
+  const [checkpointsListState, setCheckpointsListState] = useState<Checkpoint[]>([]);
+  const [terminalPresets, setTerminalPresets] = useState<string[]>([]);
   const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
   const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
   const addLine = useCallback((line: ChatLine) => {
     setLines((prev) => [...prev, line]);
   }, []);
+
+  useEffect(() => {
+    if (input.startsWith("/terminal")) {
+      const loadPresets = async () => {
+        try {
+          const cwd = process.cwd();
+          const localPresetDir = path.join(cwd, ".superagent-r");
+          const localPresetPath = path.join(localPresetDir, "terminal-presets.json");
+          const localRootPresetPath = path.join(cwd, "terminal-presets.json");
+          const globalPresetPath = path.join(os.homedir(), ".superagent-r", "terminal-presets.json");
+
+          const paths = [localPresetPath, localRootPresetPath, globalPresetPath];
+          let presets: Record<string, any> = {};
+          for (const p of paths) {
+            try {
+              const content = await fs.readFile(p, "utf-8");
+              const data = JSON.parse(content);
+              if (data && data.presets) {
+                presets = data.presets;
+              } else {
+                presets = data;
+              }
+              break;
+            } catch {
+              // ignore
+            }
+          }
+          setTerminalPresets(Object.keys(presets));
+        } catch {
+          // ignore
+        }
+      };
+      loadPresets();
+    }
+  }, [input]);
+
+  useEffect(() => {
+    if (input.startsWith("/checkpoint") && agentRef.current) {
+      const sessionPath = agentRef.current.getCurrentHistoryFilePath();
+      listCheckpointsForSession(sessionPath)
+        .then((list) => {
+          setCheckpointsListState(list);
+        })
+        .catch(() => {});
+    }
+  }, [input]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -1443,6 +1492,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     "/tasks",
     "/install",
     "/skills",
+    "/terminal",
     ...skillCommands
   ];
 
@@ -2191,7 +2241,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     if (key.tab && !isProcessing) {
       if (input.startsWith("/")) {
         const prefix = lastTabPrefix || input;
-        const matches = commands.filter((c) => c.startsWith(prefix));
+        const matches = getSuggestions(prefix);
         if (matches.length > 0) {
           const currentMatchIndex = matches.indexOf(input);
           let nextIndex = 0;
@@ -2262,10 +2312,74 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     return "Enter value...";
   };
 
-  const getSuggestions = () => {
-    if (!input.startsWith("/")) return [];
-    const prefix = lastTabPrefix || input;
-    return commands.filter((c) => c.startsWith(prefix));
+  const getSuggestions = (currentInput = input) => {
+    if (!currentInput.startsWith("/")) return [];
+
+    // Split by spaces, but keep the space formatting
+    const trimmed = currentInput.trim();
+    const parts = trimmed.split(/\s+/);
+    const mainCommand = parts[0];
+
+    // If typing the main command itself (e.g. "/" or "/t" or "/terminal" without space)
+    if (!currentInput.includes(" ")) {
+      return commands.filter((c) => c.startsWith(currentInput));
+    }
+
+    // If there is a space, we are offering suggestions for subcommands / arguments
+    if (mainCommand === "/terminal") {
+      const subCommands = ["init", "preset"];
+      const presetKeys = terminalPresets;
+
+      let possibilities: string[] = [];
+      possibilities.push(...subCommands.map(sub => `/terminal ${sub}`));
+      possibilities.push(...presetKeys.map(pk => `/terminal ${pk}`));
+      possibilities.push(...presetKeys.map(pk => `/terminal preset ${pk}`));
+
+      const uniquePossibilities = Array.from(new Set(possibilities));
+      return uniquePossibilities.filter(p => p.startsWith(currentInput));
+    }
+
+    if (mainCommand === "/checkpoint") {
+      const subCommands = ["list", "restore"];
+      let possibilities: string[] = [];
+      possibilities.push(...subCommands.map(sub => `/checkpoint ${sub}`));
+
+      const checkpointIds = checkpointsListState.map(c => c.id);
+      possibilities.push(...checkpointIds.map(id => `/checkpoint restore ${id}`));
+
+      const uniquePossibilities = Array.from(new Set(possibilities));
+      return uniquePossibilities.filter(p => p.startsWith(currentInput));
+    }
+
+    if (mainCommand === "/login") {
+      const providers = ["openrouter", "anthropic", "openai", "custom"];
+      const possibilities = providers.map(p => `/login ${p}`);
+      return possibilities.filter(p => p.startsWith(currentInput));
+    }
+
+    if (mainCommand === "/model") {
+      const commonModels = [
+        "google/gemini-2.5-flash",
+        "google/gemini-2.5-pro",
+        "anthropic/claude-3-5-sonnet",
+        "openai/gpt-4o",
+        "openai/gpt-4o-mini"
+      ];
+      const possibilities = commonModels.map(m => `/model ${m}`);
+      return possibilities.filter(p => p.startsWith(currentInput));
+    }
+
+    if (mainCommand === "/install") {
+      const commonSkills = [
+        "obra/superpowers-skills/find-skills",
+        "obra/superpowers-skills/agent-browser",
+        "obra/superpowers-skills/systematic-debugging"
+      ];
+      const possibilities = commonSkills.map(s => `/install ${s}`);
+      return possibilities.filter(p => p.startsWith(currentInput));
+    }
+
+    return [];
   };
 
   const suggestions = getSuggestions();
