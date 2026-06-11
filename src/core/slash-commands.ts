@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import fsCb from "fs";
 import path from "path";
 import { execa } from "execa";
 import { Agent } from "./agent.js";
@@ -9,7 +10,8 @@ import {
   listHistorySessions, 
   fetchAndCacheModels, 
   updateEnvFile, 
-  getContextWindowLimit 
+  getContextWindowLimit,
+  getGlobalConfigDir,
 } from "./config.js";
 import {
   createCheckpoint,
@@ -23,6 +25,7 @@ import os from "os";
 import { searchHistory } from "./historySearch.js";
 import { getToolDescription } from "./permissions.js";
 import { allTools, backgroundTasks, subagentInstances, notifyTasksChanged, BackgroundTask } from "./tools.js";
+import { killProcessTree } from "./tools/shellTools.js";
 import { formatArgs } from "../utils/text.js";
 
 export interface ChatLine {
@@ -1000,6 +1003,185 @@ export function handleSlashCommand(
         });
         break;
       }
+
+      // /terminal stop [id|all] — kill running terminal processes
+      if (args.toLowerCase() === "stop" || args.toLowerCase().startsWith("stop ")) {
+        const stopArg = args.slice(4).trim().toLowerCase();
+        const termTasks = Array.from(backgroundTasks.entries()).filter(([id]) => id.startsWith("term-"));
+
+        if (termTasks.length === 0) {
+          ctx.addLine({
+            type: "system",
+            content: "🖥️ No running terminal processes to stop.",
+            timestamp: Date.now()
+          });
+          return;
+        }
+
+        if (!stopArg || stopArg === "all") {
+          // Stop all terminal processes
+          let count = 0;
+          for (const [id, task] of termTasks) {
+            try { killProcessTree(task.process.pid); } catch {}
+            task.hasExited = true;
+            backgroundTasks.delete(id);
+            count++;
+          }
+          notifyTasksChanged();
+          ctx.addLine({
+            type: "system",
+            content: `🛑 Stopped ${count} terminal process${count !== 1 ? "es" : ""}.`,
+            timestamp: Date.now()
+          });
+        } else {
+          // Stop specific task by ID (accept with or without "term-" prefix)
+          const fullId = stopArg.startsWith("term-") ? stopArg : `term-${stopArg}`;
+          const task = backgroundTasks.get(fullId);
+          if (!task) {
+            const ids = termTasks.map(([id]) => id).join(", ");
+            ctx.addLine({
+              type: "error",
+              content: `Error: Terminal process "${fullId}" not found.\nRunning IDs: ${ids || "(none)"}`,
+              timestamp: Date.now()
+            });
+            return;
+          }
+          try { killProcessTree(task.process.pid); } catch {}
+          task.hasExited = true;
+          backgroundTasks.delete(fullId);
+          notifyTasksChanged();
+          ctx.addLine({
+            type: "system",
+            content: `🛑 Stopped terminal process [${fullId}]: "${task.command}"`,
+            timestamp: Date.now()
+          });
+        }
+        return;
+      }
+
+      // /terminal bg [preset] <name|command> — run headless in background, capture output
+      if (args.toLowerCase() === "bg" || args.toLowerCase().startsWith("bg ")) {
+        const bgRaw = args.slice(2).trim(); // everything after "bg"
+
+        (async () => {
+          // Load presets
+          const localPresetDir = path.join(cwd, ".superagent-r");
+          const localPresetPath = path.join(localPresetDir, "terminal-presets.json");
+          const localRootPresetPath = path.join(cwd, "terminal-presets.json");
+          const globalPresetPath = path.join(os.homedir(), ".superagent-r", "terminal-presets.json");
+          const paths = [localPresetPath, localRootPresetPath, globalPresetPath];
+          let presets: Record<string, any> = {};
+          for (const p of paths) {
+            try {
+              const content = await fs.readFile(p, "utf-8");
+              const data = JSON.parse(content);
+              presets = data?.presets ?? data;
+              break;
+            } catch { /* ignore */ }
+          }
+
+          if (!bgRaw) {
+            // Show list of bg-able presets
+            const keys = Object.keys(presets);
+            const presetsList = keys.length > 0
+              ? keys.map(k => `  • ${k}: ${JSON.stringify(presets[k])}`).join("\n")
+              : "  (No presets configured)";
+            ctx.addLine({
+              type: "system",
+              content: [
+                "🖥️ TERMINAL BG — Run preset or command silently in background",
+                "Usage:",
+                "  /terminal bg <command>          - Run any command in background",
+                "  /terminal bg preset <name>      - Run a configured preset in background",
+                "  /terminal bg <preset_name>      - Run preset directly by name",
+                "",
+                "Available Presets:",
+                presetsList,
+              ].join("\n"),
+              timestamp: Date.now()
+            });
+            return;
+          }
+
+          // Resolve command string from preset or raw input
+          let commandStr = bgRaw;
+          let bgPresetName = "";
+          if (bgRaw.toLowerCase().startsWith("preset ")) {
+            bgPresetName = bgRaw.slice(7).trim();
+            if (!presets[bgPresetName]) {
+              ctx.addLine({ type: "error", content: `Error: Preset "${bgPresetName}" not found.`, timestamp: Date.now() });
+              return;
+            }
+            const val = presets[bgPresetName];
+            commandStr = typeof val === "object" && val !== null ? (val.command || JSON.stringify(val)) : String(val);
+          } else if (presets[bgRaw]) {
+            bgPresetName = bgRaw;
+            const val = presets[bgRaw];
+            commandStr = typeof val === "object" && val !== null ? (val.command || JSON.stringify(val)) : String(val);
+          }
+
+          const taskId = `term-bg-${Math.random().toString(36).substring(2, 9)}`;
+          const tasksLogDir = path.join(getGlobalConfigDir(), "tasks");
+          if (!fsCb.existsSync(tasksLogDir)) fsCb.mkdirSync(tasksLogDir, { recursive: true });
+          const logPath = path.join(tasksLogDir, `${taskId}.log`);
+          try { fsCb.writeFileSync(logPath, ""); } catch { /* ignore */ }
+
+          // Resolve shell
+          let shellPath: string | boolean = true;
+          if (process.platform === "win32") {
+            shellPath = "powershell.exe";
+          }
+
+          const proc = execa(commandStr, {
+            shell: shellPath,
+            cwd,
+            reject: false,
+            all: true,
+          });
+
+          const task: BackgroundTask = {
+            id: taskId,
+            command: commandStr,
+            process: proc,
+            output: [],
+            logPath,
+          };
+
+          backgroundTasks.set(taskId, task);
+          notifyTasksChanged();
+
+          proc.all?.on("data", (data: Buffer) => {
+            const text = data.toString();
+            task.output.push(text);
+            if (task.output.length > 1000) task.output.shift();
+            try { fsCb.appendFileSync(logPath, text); } catch { /* ignore */ }
+          });
+
+          proc.on("close", (code: number | null) => {
+            task.hasExited = true;
+            task.exitCode = code;
+            const exitMsg = `\n[Process exited with code ${code}]`;
+            task.output.push(exitMsg);
+            try { fsCb.appendFileSync(logPath, exitMsg); } catch { /* ignore */ }
+            notifyTasksChanged();
+          });
+
+          ctx.addLine({
+            type: "system",
+            content: [
+              `⚙️ Background process started [ID: ${taskId}]`,
+              `  Command : ${commandStr}`,
+              `  Log     : ${logPath}`,
+              bgPresetName ? `  Preset  : ${bgPresetName}` : "",
+              `Use /processes to monitor, or /terminal stop ${taskId} to kill.`,
+            ].filter(Boolean).join("\n"),
+            timestamp: Date.now()
+          });
+        })().catch(err => {
+          ctx.addLine({ type: "error", content: `Failed to start background process: ${err.message}`, timestamp: Date.now() });
+        });
+        return;
+      }
       
       const loadPresetsAndRun = async () => {
         const localPresetDir = path.join(cwd, ".superagent-r");
@@ -1052,7 +1234,30 @@ export function handleSlashCommand(
         let isPreset = false;
         let presetName = "";
 
-        if (args.toLowerCase().startsWith("preset ")) {
+        if (args.toLowerCase() === "preset") {
+          // `/terminal preset` with no name — show list of presets
+          const keys = Object.keys(presets);
+          const presetsList = keys.length > 0
+            ? keys.map(k => `  • ${k}: ${JSON.stringify(presets[k])}`).join("\n")
+            : "  (No presets configured)";
+          ctx.addLine({
+            type: "system",
+            content: [
+              "🖥️ TERMINAL COMMAND & PRESETS",
+              "Usage:",
+              "  /terminal preset <name>     - Run a configured preset",
+              "  /terminal <preset_name>     - Run a preset directly (if name matches)",
+              "",
+              "Available Presets:",
+              presetsList,
+              "",
+              "Presets can be configured in `.superagent-r/terminal-presets.json` or `terminal-presets.json`.",
+              "Run `/terminal init` to set up presets with AI guidance.",
+            ].join("\n"),
+            timestamp: Date.now()
+          });
+          return;
+        } else if (args.toLowerCase().startsWith("preset ")) {
           presetName = args.slice(7).trim();
           if (presets[presetName]) {
             commandToRun = presets[presetName];
@@ -1060,7 +1265,7 @@ export function handleSlashCommand(
           } else {
             ctx.addLine({
               type: "error",
-              content: `Error: Preset "${presetName}" not found.`,
+              content: `Error: Preset "${presetName}" not found. Run /terminal preset to see available presets.`,
               timestamp: Date.now()
             });
             return;
@@ -1099,13 +1304,20 @@ export function handleSlashCommand(
 
           let proc;
           if (process.platform === "win32") {
-            proc = execa("cmd.exe", ["/k", commandStr], {
-              cwd: runCwd,
-              detached: true,
-              stdio: ["pipe", "ignore", "ignore"],
-              windowsHide: false,
-              env: runEnv
-            });
+            // Use `cmd /c start` to force-open a new visible console window.
+            // Without `start`, the child process inherits the parent's console and stays hidden.
+            // The first argument after `start` is the window title (can be empty string "").
+            const windowTitle = presetName || commandStr.split(" ")[0];
+            proc = execa(
+              "cmd.exe",
+              ["/c", "start", windowTitle, "cmd.exe", "/k", commandStr],
+              {
+                cwd: runCwd,
+                detached: true,
+                stdio: "ignore",
+                env: runEnv,
+              }
+            );
           } else if (process.platform === "darwin") {
             const script = `tell application "Terminal" to do script "cd ${JSON.stringify(runCwd)} && ${commandStr}"`;
             proc = execa("osascript", ["-e", script], {
@@ -1180,8 +1392,10 @@ export function handleSlashCommand(
           "  /init     - Initialize project (Git setup, agents.md generation, system audit)",
           "  /agents   - List active subagents and defined subagent types",
           "  /processes - List running background processes (shortcut: /procs)",
-          "  /terminal - Run a command or preset in a new visible (non-headless) window",
+          "  /terminal - Run a command or preset in a new window or background",
           "              Usage: /terminal <command> or /terminal preset <name>",
+          "              Background: /terminal bg <command> or /terminal bg preset <name>",
+          "              Stop:  /terminal stop [id|all]  - Kill running terminal processes",
           "  /skills   - List all installed agent skills and templates",
           "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",
           "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",

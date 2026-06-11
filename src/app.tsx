@@ -2376,7 +2376,31 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         return presetKeys.map(pk => `/terminal preset ${pk}`).filter(p => p.startsWith(currentInput));
       }
 
-      const subCommands = ["init", "preset"];
+      if (currentInput.startsWith("/terminal bg preset")) {
+        return presetKeys.map(pk => `/terminal bg preset ${pk}`).filter(p => p.startsWith(currentInput));
+      }
+
+      if (currentInput.startsWith("/terminal bg")) {
+        // Offer both `/terminal bg preset <name>` and `/terminal bg <preset_name>`
+        const bgPossibilities = [
+          "/terminal bg preset",
+          ...presetKeys.map(pk => `/terminal bg preset ${pk}`),
+          ...presetKeys.map(pk => `/terminal bg ${pk}`)
+        ];
+        return bgPossibilities.filter(p => p.startsWith(currentInput));
+      }
+
+      if (currentInput.startsWith("/terminal stop")) {
+        const stopSuggestions = ["/terminal stop all"];
+        for (const [id] of backgroundTasks.entries()) {
+          if (id.startsWith("term-")) {
+            stopSuggestions.push(`/terminal stop ${id}`);
+          }
+        }
+        return stopSuggestions.filter(p => p.startsWith(currentInput));
+      }
+
+      const subCommands = ["init", "preset", "bg", "stop"];
       let possibilities: string[] = [];
       possibilities.push(...subCommands.map(sub => `/terminal ${sub}`));
       possibilities.push(...presetKeys.map(pk => `/terminal ${pk}`));
