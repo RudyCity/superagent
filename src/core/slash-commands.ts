@@ -1351,7 +1351,9 @@ export function handleSlashCommand(
           const logDir  = path.join(getGlobalConfigDir(), "tasks");
           if (!fsCb.existsSync(logDir)) fsCb.mkdirSync(logDir, { recursive: true });
           const logPath = path.join(logDir, `${taskId}.log`);
+          const closeSignalPath = path.join(logDir, `${taskId}.closed.json`);
           fsCb.writeFileSync(logPath, `[Terminal: ${windowLabel}]\n[Command: ${commandStr}]\n[Started: ${new Date().toISOString()}]\n\n`);
+          try { fsCb.rmSync(closeSignalPath, { force: true }); } catch { /* ignore */ }
 
           ctx.addLine({
             type: "system",
@@ -1401,42 +1403,64 @@ export function handleSlashCommand(
             const safeCwd   = runCwd.replace(/"/g, "");
 
             if (process.platform === "win32") {
-              // Write a polling viewer script to avoid Get-Content -Wait never-exit bug
+              const safeCloseSignal = closeSignalPath.replace(/\\/g, "\\\\").replace(/'/g, "''");
+              // Write a polling viewer script to avoid Get-Content -Wait never-exit bug.
+              // The finally block signals Superagent when the user closes the viewer window.
               const viewerScript = [
                 `$logPath = '${safeLog}'`,
+                `$closeSignalPath = '${safeCloseSignal}'`,
                 `$lastPos = 0`,
-                `Write-Host "=== ${safeTitle} === (Ctrl+C to force close)" -ForegroundColor Cyan`,
-                `Write-Host ''`,
-                `while ($true) {`,
+                `try {`,
+                `  Write-Host "=== ${safeTitle} === (close window to stop process)" -ForegroundColor Cyan`,
+                `  Write-Host ''`,
+                `  while ($true) {`,
+                `    try {`,
+                `      $bytes = [System.IO.File]::ReadAllBytes($logPath)`,
+                `      if ($bytes.Length -gt $lastPos) {`,
+                `        $chunk = [System.Text.Encoding]::UTF8.GetString($bytes, $lastPos, $bytes.Length - $lastPos)`,
+                `        Write-Host $chunk -NoNewline`,
+                `        $lastPos = $bytes.Length`,
+                `      }`,
+                `      if ($lastPos -gt 0) {`,
+                `        $tail = [System.Text.Encoding]::UTF8.GetString($bytes)`,
+                `        if ($tail -match '\\[Process exited') { break }`,
+                `      }`,
+                `    } catch {}`,
+                `    Start-Sleep -Milliseconds 200`,
+                `  }`,
+                `  Write-Host ''`,
+                `  Write-Host '[Process finished. Press Enter to close.]' -ForegroundColor Green`,
+                `  Read-Host`,
+                `} finally {`,
                 `  try {`,
-                `    $bytes = [System.IO.File]::ReadAllBytes($logPath)`,
-                `    if ($bytes.Length -gt $lastPos) {`,
-                `      $chunk = [System.Text.Encoding]::UTF8.GetString($bytes, $lastPos, $bytes.Length - $lastPos)`,
-                `      Write-Host $chunk -NoNewline`,
-                `      $lastPos = $bytes.Length`,
-                `    }`,
-                `    if ($lastPos -gt 0) {`,
-                `      $tail = [System.Text.Encoding]::UTF8.GetString($bytes)`,
-                `      if ($tail -match '\\[Process exited') { break }`,
-                `    }`,
+                `    $payload = @{ action = 'closed'; timestamp = (Get-Date).ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress`,
+                `    [System.IO.File]::WriteAllText($closeSignalPath, $payload, [System.Text.Encoding]::UTF8)`,
                 `  } catch {}`,
-                `  Start-Sleep -Milliseconds 200`,
+                `  try { Remove-Item $MyInvocation.MyCommand.Path -Force } catch {}`,
                 `}`,
-                `Write-Host ''`,
-                `Write-Host '[Process finished. Press Enter to close.]' -ForegroundColor Green`,
-                `Read-Host`,
-                `# Auto-delete this viewer script on exit to clean up`,
-                `try { Remove-Item $MyInvocation.MyCommand.Path -Force } catch {}`,
               ].join("\n");
               const viewerScriptPath = path.join(logDir, `${taskId}-viewer.ps1`);
               fsCb.writeFileSync(viewerScriptPath, viewerScript, "utf8");
 
               const viewerProc = execa(
                 "cmd.exe",
-                ["/c", `start "${safeTitle}" /D "${safeCwd}" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${viewerScriptPath}"`],
-                { detached: true, stdio: "ignore", windowsVerbatimArguments: true }
+                ["/c", `start /wait "${safeTitle}" /D "${safeCwd}" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${viewerScriptPath}"`],
+                { detached: true, stdio: "ignore", windowsVerbatimArguments: true, reject: false }
               );
-              viewerProc.unref();
+              const handleViewerExit = () => {
+                if (!task.hasExited) {
+                  const closeMsg = `\n[Terminal window closed; process killed at ${new Date().toISOString()}]`;
+                  task.hasExited = true;
+                  task.exitCode = null;
+                  task.output.push(closeMsg);
+                  try { fsCb.appendFileSync(logPath, closeMsg); } catch { /* ignore */ }
+                  try { killProcessTree(proc.pid); } catch { /* ignore */ }
+                  backgroundTasks.delete(taskId);
+                  notifyTasksChanged();
+                }
+              };
+              viewerProc.on("close", handleViewerExit);
+              viewerProc.on("exit", handleViewerExit);
             } else if (process.platform === "darwin") {
               const script = `tell application "Terminal" to do script "tail -f '${safeLog}'"`;
               execa("osascript", ["-e", script], { detached: true, stdio: "ignore" }).unref();

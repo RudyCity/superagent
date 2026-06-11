@@ -1316,13 +1316,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         return [...prev, trimmed];
       });
 
-      if (trimmed.startsWith("/")) {
-        if (trimmed.toLowerCase().startsWith("/clear") || trimmed.toLowerCase().startsWith("/new")) {
+      const commandInput = trimmed.startsWith("!") ? `/terminal ${trimmed.slice(1).trim()}` : trimmed;
+
+      if (commandInput.startsWith("/")) {
+        if (commandInput.toLowerCase().startsWith("/clear") || commandInput.toLowerCase().startsWith("/new")) {
           setTokensUp(0);
           setTokensDown(0);
           setLastPromptTokens(0);
         }
-        handleSlashCommand(trimmed, {
+        handleSlashCommand(commandInput, {
           addLine,
           exit,
           agent: agentRef.current,
