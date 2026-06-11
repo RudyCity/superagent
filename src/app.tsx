@@ -2155,8 +2155,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   const activeToolLinesCount = activeToolLines.length;
 
   const showBanner = messageCount === 0;
-  // Base chrome height: Banner is 7 (if shown), Input wrapper base is 3 (header + margin + prompt border/spacers), Status bar is 3 (3 lines + margin)
-  let chromeHeight = (showBanner ? 12 : 5) + inputLinesCount;
+  // Base chrome height: Banner is 6 (if shown), Input wrapper base is 2 (header + margin + prompt border/spacers), Status bar is 5 (5 lines + margin)
+  let chromeHeight = (showBanner ? 14 : 7) + inputLinesCount;
   if (isExecutingTool) {
     chromeHeight += 2; // Loader header + loader line
     if (activeToolLinesCount > 0) {
@@ -2652,47 +2652,61 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
       {/* Status bar */}
       <Box flexDirection="column" paddingX={1} marginTop={1}>
+        <Text color="gray">──────────────────────────────────────────────────────────────────────</Text>
         <Box justifyContent="space-between" paddingX={0}>
           <Box>
-            <Text color="magenta" bold>ONLINE</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="white">MSGS: {messageCount}</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="cyan" bold>TASKS: {runningTasksCount}</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="yellow" bold>SUBAGENTS: {runningSubagentsCount}</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="yellow" bold>↑ UP: {formatCompactNumber(tokensUp)}</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="green" bold>↓ DOWN: {formatCompactNumber(tokensDown + liveStreamTokens)}</Text>
+            <Text>
+              <Text color="green" bold>🟢 ONLINE</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="cyan" bold>{modelName}</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="white">Msg: {messageCount}</Text>
+              <Text color="gray"> • </Text>
+              <Text color="yellow">Task: {runningTasksCount}</Text>
+              <Text color="gray"> • </Text>
+              <Text color="magenta">Sub: {runningSubagentsCount}</Text>
+            </Text>
           </Box>
           <Box>
             <Text color="magenta" bold>
-              CTX_USAGE: {formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)} ({contextPercentage}%)
+              Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})
             </Text>
           </Box>
         </Box>
         <Box justifyContent="space-between" paddingX={0} marginTop={0}>
           <Box>
-            <Text dimColor>{process.cwd()}</Text>
+            <Text>
+              <Text color="gray">Workspace: </Text>
+              <Text dimColor>{process.cwd()}</Text>
+            </Text>
           </Box>
           <Box>
-            <Text color="blue" bold>{modelName}</Text>
+            <Text>
+              <Text color="yellow">▲ {formatCompactNumber(tokensUp)}</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="green">▼ {formatCompactNumber(tokensDown + liveStreamTokens)}</Text>
+            </Text>
           </Box>
         </Box>
         <Box justifyContent="space-between" paddingX={0} marginTop={0}>
           <Box>
-            <Text color="gray">Ctrl+C </Text><Text dimColor>Abort/Exit</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="gray">Ctrl+↑/↓, PgUp/PgDn </Text><Text dimColor>Scroll</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="gray">Esc </Text><Text dimColor>Clear/Cancel</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="gray">↑/↓ </Text><Text dimColor>History</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="gray">Tab </Text><Text dimColor>Autocomplete</Text>
+            <Text>
+              <Text color="gray">Shortcuts: </Text>
+              <Text color="cyan">Ctrl+C</Text><Text dimColor> Exit</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="cyan">Ctrl+P</Text><Text dimColor> Checkpoint</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="cyan">Esc</Text><Text dimColor> Clear</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="cyan">↑/↓</Text><Text dimColor> History</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="cyan">Tab</Text><Text dimColor> Autocomplete</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="cyan">PgUp/PgDn</Text><Text dimColor> Scroll</Text>
+            </Text>
           </Box>
         </Box>
+        <Text color="gray">──────────────────────────────────────────────────────────────────────</Text>
       </Box>
     </Box>
   );

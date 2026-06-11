@@ -35,43 +35,29 @@ export function Banner() {
   return (
     <Box flexDirection="column" paddingX={1} marginY={1}>
       <Box flexDirection="row" alignItems="center">
-        {/* Mascot Column - Sleek Futuristic Emblem */}
+        {/* Mascot Column - Simple Garuda Mascot (Yellow/Gold) */}
         <Box flexDirection="column" marginRight={3} alignItems="center">
           <Box flexDirection="row">
-            <Text color="magenta">◿ </Text>
-            <Text color="cyan" bold>▲</Text>
-            <Text color="magenta"> ◺</Text>
+            <Text color="yellow" bold> ◥█◣  ▲  ◢█◤ </Text>
           </Box>
           <Box flexDirection="row">
-            <Text color="cyan">◢█</Text>
-            <Text color="magenta">▒</Text>
-            <Text color="cyan">█◣</Text>
+            <Text color="yellow" bold>  ◥██ █ ██◤  </Text>
           </Box>
           <Box flexDirection="row">
-            <Text color="magenta">◥</Text>
-            <Text color="cyan">██</Text>
-            <Text color="magenta">▒</Text>
-            <Text color="cyan">██</Text>
-            <Text color="magenta">◤</Text>
+            <Text color="yellow" bold>   ◥█████◤   </Text>
           </Box>
           <Box flexDirection="row">
-            <Text color="cyan">◥█</Text>
-            <Text color="magenta">▒</Text>
-            <Text color="cyan">█◤</Text>
-          </Box>
-          <Box flexDirection="row">
-            <Text color="magenta">◥</Text>
-            <Text color="cyan" bold>▼</Text>
-            <Text color="magenta">◤</Text>
+            <Text color="yellow" bold>     ◥█◤     </Text>
           </Box>
         </Box>
 
         {/* Info Column */}
         <Box flexDirection="column" justifyContent="center">
           <Box flexDirection="row" marginBottom={1} alignItems="center">
-            <Text color="cyan" bold>S U P E R A G E N T</Text>
+            <Text color="red" bold>S U P E R</Text>
+            <Text color="white" bold>A G E N T</Text>
             <Text color="gray"> │ </Text>
-            <Text color="magenta" bold>COGNITIVE SYSTEM v{version}</Text>
+            <Text color="yellow" bold>COGNITIVE SYSTEM v{version}</Text>
             <Text color="gray"> │ </Text>
             <Text color="green" bold>● READY</Text>
           </Box>
