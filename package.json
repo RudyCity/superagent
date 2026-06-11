@@ -10,7 +10,8 @@
     "dev": "tsx src/cli.tsx",
     "build": "tsc",
     "start": "node dist/cli.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "npx patch-package"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",

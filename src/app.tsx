@@ -33,6 +33,7 @@ export function App({
   const { exit } = useApp();
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [input, setInput] = useState("");
+  const [isPasted, setIsPasted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExecutingTool, setIsExecutingTool] = useState(false);
   const [streamDisplay, setStreamDisplay] = useState("");
@@ -92,6 +93,12 @@ export function App({
       setWizardSelectedSet(new Set());
     }
   }, [activeWizard]);
+
+  useEffect(() => {
+    if (input.length === 0) {
+      setIsPasted(false);
+    }
+  }, [input]);
 
   useEffect(() => {
     if (input.startsWith("/terminal")) {
@@ -1301,6 +1308,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       if (isProcessing && !activeWizard) return;
 
       setInput("");
+      setIsPasted(false);
       setLastTabPrefix(null);
       setHistoryIndex(-1);
       setScrollOffset(0);
@@ -1492,6 +1500,16 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
   const handleInputChange = useCallback((val: string) => {
     setInput(val);
+    const lengthDiff = val.length - input.length;
+    const containsNewline = val.includes("\n");
+    if (lengthDiff < 0) {
+      // User is deleting characters — never treat as paste
+      setIsPasted(false);
+    } else if (lengthDiff > 15 || containsNewline) {
+      setIsPasted(true);
+    } else if (val.length === 0 || (val.length <= 200 && !containsNewline)) {
+      setIsPasted(false);
+    }
     if (lastTabPrefix && !val.startsWith(lastTabPrefix)) {
       setLastTabPrefix(null);
     }
@@ -1499,7 +1517,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     if (activeWizard?.type === "model" && wizardOptions.length > 0) {
       setWizardSelectedIndex(0);
     }
-  }, [lastTabPrefix, activeWizard, wizardOptions]);
+  }, [input, lastTabPrefix, activeWizard, wizardOptions]);
 
   const installedSkills = getInstalledSkills();
   const skillCommands = installedSkills.map(s => {
@@ -2268,12 +2286,24 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         agentRef.current?.abort();
       } else {
         setInput("");
+        setIsPasted(false);
         setHistoryIndex(-1);
       }
     }
 
+    if ((key.backspace || key.delete) && isPasted && !isProcessing) {
+      setInput((prev) => {
+        const next = prev.slice(0, -1);
+        const hasNewline = next.includes("\n");
+        if (next.length <= 200 && !hasNewline) {
+          setIsPasted(false);
+        }
+        return next;
+      });
+    }
+
     if (key.return && !isProcessing) {
-      if (input.length > 200 || input.includes("\n")) {
+      if (isPasted && (input.length > 200 || input.includes("\n"))) {
         handleSubmit(input);
       }
     }
@@ -2288,6 +2318,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
       setHistoryIndex(newIndex);
       setInput(history[newIndex]);
+      setIsPasted(false);
     }
 
     if (key.downArrow && !isProcessing) {
@@ -2295,10 +2326,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         if (historyIndex === history.length - 1) {
           setHistoryIndex(-1);
           setInput(tempInput);
+          setIsPasted(false);
         } else {
           const newIndex = historyIndex + 1;
           setHistoryIndex(newIndex);
           setInput(history[newIndex]);
+          setIsPasted(false);
         }
       }
     }
@@ -2316,6 +2349,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             setLastTabPrefix(input);
           }
           setInput(matches[nextIndex]);
+          setIsPasted(false);
         }
       }
     }
@@ -3036,7 +3070,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 <Text color={activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>│ ❯ </Text>
                 {isProcessing && !activeWizard ? (
                   <ProcessingIndicator scrollOffset={scrollOffset} />
-                ) : (input.length > 200 || input.includes("\n")) ? (
+                ) : (isPasted && (input.length > 200 || input.includes("\n"))) ? (
                   <Box flexDirection="row">
                     <Text color="yellow" bold>[Pasted Text: {input.length} chars, {input.split("\n").length} lines] </Text>
                     <Text dimColor>(Press Enter to send, Esc to clear)</Text>
