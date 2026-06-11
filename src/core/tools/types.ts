@@ -13,6 +13,11 @@ export interface BackgroundTask {
   logPath?: string;
   hasExited?: boolean;
   exitCode?: number | null;
+  /** true for non-headless terminals launched via /terminal — the launcher
+   *  process exits immediately but the visible window keeps running. */
+  isDetachedWindow?: boolean;
+  /** Human-readable label for the window (preset name or first word of cmd) */
+  windowLabel?: string;
 }
 
 export type TaskChangeListener = () => void;

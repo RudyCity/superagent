@@ -6,6 +6,7 @@ import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agen
 import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
 import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, listHistorySessions, fetchAndCacheModels } from "./core/config.js";
+import { getPresetLabel } from "./core/slash-commands.js";
 import { createCheckpoint, listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, type Checkpoint } from "./core/checkpoints.js";
 import { getGlobalConfigDir } from "./core/config.js";
 import { getToolDescription } from "./core/permissions.js";
@@ -15,7 +16,7 @@ import os from "os";
 import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler } from "./core/tools.js";
 import { WizardDialog } from "./components/wizard-dialog.js";
 import { execa } from "execa";
-import { resolveCarriageReturns, formatArgs, formatCompactNumber } from "./utils/text.js";
+import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions } from "./utils/text.js";
 import { handleSlashCommand, getProviderLabel, getDefaultModel } from "./core/slash-commands.js";
 import type { ChatLine } from "./core/slash-commands.js";
 
@@ -78,7 +79,7 @@ export function App({
   const [focusMode, setFocusMode] = useState<"input" | "history">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
   const [checkpointsListState, setCheckpointsListState] = useState<Checkpoint[]>([]);
-  const [terminalPresets, setTerminalPresets] = useState<string[]>([]);
+  const [terminalPresets, setTerminalPresets] = useState<{ key: string; label: string }[]>([]);
   const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
   const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
   const addLine = useCallback((line: ChatLine) => {
@@ -117,7 +118,9 @@ export function App({
               // ignore
             }
           }
-          setTerminalPresets(Object.keys(presets));
+          setTerminalPresets(
+            Object.keys(presets).map(k => ({ key: k, label: getPresetLabel(k, presets[k]) }))
+          );
         } catch {
           // ignore
         }
@@ -150,12 +153,14 @@ export function App({
 
   useEffect(() => {
     const unsubTasks = subscribeToTasks(() => {
+      const allTasks = Array.from(backgroundTasks.values());
+      // Detached windows never set hasExited; count them as always running
       setRunningTasksCount(
-        Array.from(backgroundTasks.values()).filter((t) => !t.hasExited).length
+        allTasks.filter((t) => t.isDetachedWindow || !t.hasExited).length
       );
-      // Push notifications: Log completed background tasks
-      const activeList = Array.from(backgroundTasks.values());
-      activeList.forEach((task) => {
+      // Push notifications: Log completed background tasks (skip detached windows)
+      allTasks.forEach((task) => {
+        if (task.isDetachedWindow) return;   // window is alive independently — no completion event
         if (task.hasExited && !(task as any).notified) {
           (task as any).notified = true;
           const msg = `⚙️ [BACKGROUND TASK NOTIFICATION]: Task ${task.id} ("${task.command}") has completed with exit code ${task.exitCode}!`;
@@ -2365,27 +2370,28 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
     // If typing the main command itself (e.g. "/" or "/t" or "/terminal" without space)
     if (!currentInput.includes(" ")) {
-      return commands.filter((c) => c.startsWith(currentInput));
+      return filterSuggestions(commands, currentInput);
     }
 
     // If there is a space, we are offering suggestions for subcommands / arguments
     if (mainCommand === "/terminal") {
-      const presetKeys = terminalPresets;
+      const presetEntries = terminalPresets;
+      const presetLabels = presetEntries.map(p => p.label);
 
-      if (currentInput.startsWith("/terminal preset")) {
-        return presetKeys.map(pk => `/terminal preset ${pk}`).filter(p => p.startsWith(currentInput));
+      if (currentInput.startsWith("/terminal preset ") || currentInput === "/terminal preset") {
+        return presetLabels.map(lbl => `/terminal preset ${lbl}`).filter(p => p.startsWith(currentInput));
       }
 
-      if (currentInput.startsWith("/terminal bg preset")) {
-        return presetKeys.map(pk => `/terminal bg preset ${pk}`).filter(p => p.startsWith(currentInput));
+      if (currentInput.startsWith("/terminal bg preset ") || currentInput === "/terminal bg preset") {
+        return presetLabels.map(lbl => `/terminal bg preset ${lbl}`).filter(p => p.startsWith(currentInput));
       }
 
-      if (currentInput.startsWith("/terminal bg")) {
+      if (currentInput.startsWith("/terminal bg ") || currentInput === "/terminal bg") {
         // Offer both `/terminal bg preset <name>` and `/terminal bg <preset_name>`
         const bgPossibilities = [
           "/terminal bg preset",
-          ...presetKeys.map(pk => `/terminal bg preset ${pk}`),
-          ...presetKeys.map(pk => `/terminal bg ${pk}`)
+          ...presetLabels.map(lbl => `/terminal bg preset ${lbl}`),
+          ...presetLabels.map(lbl => `/terminal bg ${lbl}`)
         ];
         return bgPossibilities.filter(p => p.startsWith(currentInput));
       }
@@ -2400,33 +2406,35 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         return stopSuggestions.filter(p => p.startsWith(currentInput));
       }
 
-      const subCommands = ["init", "preset", "bg", "stop"];
+      const subCommands = ["init", "all", "preset", "bg", "stop"];
       let possibilities: string[] = [];
       possibilities.push(...subCommands.map(sub => `/terminal ${sub}`));
-      possibilities.push(...presetKeys.map(pk => `/terminal ${pk}`));
+      possibilities.push(...presetLabels.map(lbl => `/terminal ${lbl}`));
 
       const uniquePossibilities = Array.from(new Set(possibilities));
-      return uniquePossibilities.filter(p => p.startsWith(currentInput));
+      const query = currentInput.replace("/terminal", "").trim();
+      return query ? filterSuggestions(uniquePossibilities, query) : filterSuggestions(uniquePossibilities, currentInput);
     }
 
     if (mainCommand === "/checkpoint") {
       if (currentInput.startsWith("/checkpoint restore")) {
         const checkpointIds = checkpointsListState.map(c => c.id);
-        return checkpointIds.map(id => `/checkpoint restore ${id}`).filter(p => p.startsWith(currentInput));
+        const possibilities = checkpointIds.map(id => `/checkpoint restore ${id}`);
+        const query = currentInput.replace("/checkpoint restore", "").trim();
+        return query ? filterSuggestions(possibilities, query) : possibilities;
       }
 
       const subCommands = ["list", "restore"];
-      let possibilities: string[] = [];
-      possibilities.push(...subCommands.map(sub => `/checkpoint ${sub}`));
-
-      const uniquePossibilities = Array.from(new Set(possibilities));
-      return uniquePossibilities.filter(p => p.startsWith(currentInput));
+      const possibilities = subCommands.map(sub => `/checkpoint ${sub}`);
+      const query = currentInput.replace("/checkpoint", "").trim();
+      return query ? filterSuggestions(possibilities, query) : possibilities;
     }
 
     if (mainCommand === "/login") {
       const providers = ["openrouter", "anthropic", "openai", "custom"];
       const possibilities = providers.map(p => `/login ${p}`);
-      return possibilities.filter(p => p.startsWith(currentInput));
+      const query = currentInput.replace("/login", "").trim();
+      return query ? filterSuggestions(possibilities, query) : possibilities;
     }
 
     if (mainCommand === "/model") {
@@ -2438,7 +2446,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         "openai/gpt-4o-mini"
       ];
       const possibilities = commonModels.map(m => `/model ${m}`);
-      return possibilities.filter(p => p.startsWith(currentInput));
+      const query = currentInput.replace("/model", "").trim();
+      return query ? filterSuggestions(possibilities, query) : possibilities;
     }
 
     if (mainCommand === "/install") {
@@ -2448,11 +2457,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         "obra/superpowers-skills/systematic-debugging"
       ];
       const possibilities = commonSkills.map(s => `/install ${s}`);
-      return possibilities.filter(p => p.startsWith(currentInput));
+      const query = currentInput.replace("/install", "").trim();
+      return query ? filterSuggestions(possibilities, query) : possibilities;
     }
 
     return [];
   };
+
 
   const suggestions = getSuggestions();
   const messageCount = lines.filter(

@@ -158,12 +158,24 @@ describe("config", () => {
         mtime: new Date(),
       } as any);
 
-      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockReturnValue(
-        JSON.stringify([
+      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation((p) => {
+        const filePath = typeof p === "string" ? p : p.toString();
+        if (filePath.includes("my_awesome_project_src")) {
+          // Object format
+          return JSON.stringify({
+            messages: [
+              { role: "user", content: "hello from object" },
+              { role: "assistant", content: "hi from object" }
+            ],
+            planState: "IDLE"
+          });
+        }
+        // Legacy array format
+        return JSON.stringify([
           { role: "user", content: "hello" },
           { role: "assistant", content: "hi" }
-        ])
-      );
+        ]);
+      });
 
       try {
         const sessions = listHistorySessions();
@@ -173,7 +185,12 @@ describe("config", () => {
         // (case-insensitive and prefix-matched)
         expect(sessions.length).toBe(2);
         expect(sessions[0].filePath).toContain("my_awesome_project");
+        expect(sessions[0].messageCount).toBe(2);
+        expect(sessions[0].preview).toBe("hello");
+
         expect(sessions[1].filePath).toContain("my_awesome_project_src");
+        expect(sessions[1].messageCount).toBe(2);
+        expect(sessions[1].preview).toBe("hello from object");
       } finally {
         spyCwd.mockRestore();
         spyExistsSync.mockRestore();

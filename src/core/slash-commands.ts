@@ -40,6 +40,60 @@ export interface ChatLine {
   timestamp: number;
 }
 
+export function formatPresetValue(preset: any): string {
+  if (!preset) return "";
+  if (typeof preset === "string") {
+    return preset;
+  }
+  if (Array.isArray(preset)) {
+    return `[ ${preset.map(p => formatPresetValue(p)).join(" ; ")} ]`;
+  }
+  if (typeof preset === "object" && preset !== null) {
+    const parts: string[] = [];
+    if (preset.command) {
+      parts.push(`cmd: "${preset.command}"`);
+    }
+    if (preset.description) {
+      parts.push(`desc: "${preset.description}"`);
+    }
+    if (preset.cwd) {
+      parts.push(`cwd: "${preset.cwd}"`);
+    }
+    if (preset.background) {
+      parts.push("bg: true");
+    }
+    if (preset.env && Object.keys(preset.env).length > 0) {
+      parts.push(`env: ${JSON.stringify(preset.env)}`);
+    }
+    return `{ ${parts.join(", ")} }`;
+  }
+  return JSON.stringify(preset);
+}
+
+export function getPresetLabel(key: string, val: any): string {
+  if (val && typeof val === "object" && val.name) {
+    return val.name;
+  }
+  return key;
+}
+
+export function findPreset(presets: Record<string, any>, nameOrKey: string): { key: string; value: any } | null {
+  if (presets[nameOrKey] !== undefined) {
+    return { key: nameOrKey, value: presets[nameOrKey] };
+  }
+  const lowerName = nameOrKey.toLowerCase();
+  for (const k of Object.keys(presets)) {
+    if (k.toLowerCase() === lowerName) {
+      return { key: k, value: presets[k] };
+    }
+    const val = presets[k];
+    if (val && typeof val === "object" && val.name && String(val.name).toLowerCase() === lowerName) {
+      return { key: k, value: val };
+    }
+  }
+  return null;
+}
+
 export function getProviderLabel(): string {
   const active = process.env.ACTIVE_PROVIDER;
   if (active) {
@@ -233,6 +287,7 @@ export function handleSlashCommand(
       const planState = ctx.agent.planState;
 
       const parts = args.split(/\s+/);
+      const subCommands = ["init", "all", "preset", "bg", "stop"];
       const subCommand = parts[0] ? parts[0].toLowerCase() : "";
 
       if (subCommand === "list") {
@@ -835,12 +890,30 @@ export function handleSlashCommand(
         "┌───[ ⚙️ RUNNING BACKGROUND PROCESSES ]",
         "│ ",
       ];
+
+      const windowTasks  = taskList.filter(([, t]) => (t as any).isDetachedWindow);
+      const bgTasks      = taskList.filter(([, t]) => !(t as any).isDetachedWindow);
+
+      if (windowTasks.length > 0) {
+        lines.push("│  🖥️  TERMINAL WINDOWS (detached)");
+        for (const [id, task] of windowTasks) {
+          const label = (task as any).windowLabel || task.command.split(" ")[0];
+          lines.push(`│    • [${id}] "${label}"  →  ${task.command}`);
+          lines.push(`│       status: running (window alive — stop with /terminal stop ${id})`);
+        }
+        lines.push("│ ");
+      }
+
+      if (bgTasks.length > 0) {
+        lines.push("│  ⚙️  HEADLESS BACKGROUND TASKS");
+        for (const [id, task] of bgTasks) {
+          lines.push(`│    • ID: ${id} | Command: ${task.command}`);
+        }
+        lines.push("│ ");
+      }
+
       if (taskList.length === 0) {
         lines.push("│  No active background processes.");
-      } else {
-        for (const [id, task] of taskList) {
-          lines.push(`│  • ID: ${id} | Command: ${task.command}`);
-        }
       }
       lines.push("├──────────────────────────────────────────────");
       lines.push("│ ");
@@ -1023,6 +1096,12 @@ export function handleSlashCommand(
           let count = 0;
           for (const [id, task] of termTasks) {
             try { killProcessTree(task.process.pid); } catch {}
+            // Append exit marker so the viewer loop breaks
+            try {
+              if (task.logPath) {
+                fsCb.appendFileSync(task.logPath, `\n[Process exited via force stop at ${new Date().toISOString()}]\n`);
+              }
+            } catch {}
             task.hasExited = true;
             backgroundTasks.delete(id);
             count++;
@@ -1047,6 +1126,11 @@ export function handleSlashCommand(
             return;
           }
           try { killProcessTree(task.process.pid); } catch {}
+          try {
+            if (task.logPath) {
+              fsCb.appendFileSync(task.logPath, `\n[Process exited via force stop at ${new Date().toISOString()}]\n`);
+            }
+          } catch {}
           task.hasExited = true;
           backgroundTasks.delete(fullId);
           notifyTasksChanged();
@@ -1084,7 +1168,7 @@ export function handleSlashCommand(
             // Show list of bg-able presets
             const keys = Object.keys(presets);
             const presetsList = keys.length > 0
-              ? keys.map(k => `  • ${k}: ${JSON.stringify(presets[k])}`).join("\n")
+              ? keys.map(k => `  • ${getPresetLabel(k, presets[k])}: ${formatPresetValue(presets[k])}`).join("\n")
               : "  (No presets configured)";
             ctx.addLine({
               type: "system",
@@ -1107,17 +1191,22 @@ export function handleSlashCommand(
           let commandStr = bgRaw;
           let bgPresetName = "";
           if (bgRaw.toLowerCase().startsWith("preset ")) {
-            bgPresetName = bgRaw.slice(7).trim();
-            if (!presets[bgPresetName]) {
-              ctx.addLine({ type: "error", content: `Error: Preset "${bgPresetName}" not found.`, timestamp: Date.now() });
+            const requestedName = bgRaw.slice(7).trim();
+            const found = findPreset(presets, requestedName);
+            if (!found) {
+              ctx.addLine({ type: "error", content: `Error: Preset "${requestedName}" not found.`, timestamp: Date.now() });
               return;
             }
-            const val = presets[bgPresetName];
+            bgPresetName = getPresetLabel(found.key, found.value);
+            const val = found.value;
             commandStr = typeof val === "object" && val !== null ? (val.command || JSON.stringify(val)) : String(val);
-          } else if (presets[bgRaw]) {
-            bgPresetName = bgRaw;
-            const val = presets[bgRaw];
-            commandStr = typeof val === "object" && val !== null ? (val.command || JSON.stringify(val)) : String(val);
+          } else {
+            const found = findPreset(presets, bgRaw);
+            if (found) {
+              bgPresetName = getPresetLabel(found.key, found.value);
+              const val = found.value;
+              commandStr = typeof val === "object" && val !== null ? (val.command || JSON.stringify(val)) : String(val);
+            }
           }
 
           const taskId = `term-bg-${Math.random().toString(36).substring(2, 9)}`;
@@ -1209,7 +1298,7 @@ export function handleSlashCommand(
         if (!args) {
           const keys = Object.keys(presets);
           const presetsList = keys.length > 0
-            ? keys.map(k => `  • ${k}: ${JSON.stringify(presets[k])}`).join("\n")
+            ? keys.map(k => `  • ${getPresetLabel(k, presets[k])}: ${formatPresetValue(presets[k])}`).join("\n")
             : "  (No presets configured)";
           ctx.addLine({
             type: "system",
@@ -1217,6 +1306,7 @@ export function handleSlashCommand(
               "🖥️ TERMINAL COMMAND & PRESETS",
               "Usage:",
               "  /terminal <command>         - Run command in a new terminal window",
+              "  /terminal all               - Launch ALL configured presets at once",
               "  /terminal preset <name>     - Run a configured preset",
               "  /terminal <preset_name>     - Run a preset directly (if name matches)",
               "",
@@ -1234,11 +1324,183 @@ export function handleSlashCommand(
         let isPreset = false;
         let presetName = "";
 
-        if (args.toLowerCase() === "preset") {
+        // Declare runCmd up-front so it can be referenced by the "all" branch below
+        const runCmd = async (singleCmd: any, labelOverride?: string) => {
+          let commandStr = "";
+          let runCwd = cwd;
+          let runEnv = { ...process.env };
+
+          if (typeof singleCmd === "object" && singleCmd !== null) {
+            commandStr = singleCmd.command || "";
+            if (singleCmd.cwd) {
+              runCwd = path.resolve(cwd, singleCmd.cwd);
+            }
+            if (singleCmd.env) {
+              runEnv = { ...runEnv, ...singleCmd.env };
+            }
+          } else {
+            commandStr = String(singleCmd);
+          }
+
+          if (!commandStr) return;
+
+          const taskId    = `term-${Math.random().toString(36).substring(2, 9)}`;
+          const windowLabel = labelOverride || presetName || commandStr.split(" ")[0];
+
+          // ── Log file setup ────────────────────────────────────────────
+          const logDir  = path.join(getGlobalConfigDir(), "tasks");
+          if (!fsCb.existsSync(logDir)) fsCb.mkdirSync(logDir, { recursive: true });
+          const logPath = path.join(logDir, `${taskId}.log`);
+          fsCb.writeFileSync(logPath, `[Terminal: ${windowLabel}]\n[Command: ${commandStr}]\n[Started: ${new Date().toISOString()}]\n\n`);
+
+          ctx.addLine({
+            type: "system",
+            content: `🖥️ Spawning terminal [ID: ${taskId}]: "${commandStr}" (cwd: ${runCwd})\n   Log: ${logPath}`,
+            timestamp: Date.now()
+          });
+
+          // ── Spawn the REAL process (we keep the handle for output capture) ──
+          let shellExe: string | boolean = true;
+          if (process.platform === "win32") shellExe = "powershell.exe";
+
+          const proc = execa(commandStr, {
+            shell: shellExe,
+            cwd: runCwd,
+            env: runEnv,
+            reject: false,
+            all: true,
+          });
+
+          const task: BackgroundTask = {
+            id: taskId,
+            command: commandStr,
+            process: proc,
+            output: [],
+            logPath,
+            isDetachedWindow: true,
+            windowLabel,
+          };
+
+          backgroundTasks.set(taskId, task);
+          notifyTasksChanged();
+
+          // Stream stdout+stderr → task.output[] AND log file
+          proc.all?.on("data", (data: Buffer) => {
+            const text = data.toString();
+            task.output.push(text);
+            if (task.output.length > 2000) task.output.shift();
+            try { fsCb.appendFileSync(logPath, text); } catch { /* ignore */ }
+          });
+
+          // ── Open a VIEWER window that tails the log file ───────────────
+          // Write a temp PS1 polling script so the window shows live output
+          // and cleanly prompts on exit (Get-Content -Wait never exits on its own).
+          try {
+            const safeLog   = logPath.replace(/\\/g, "\\\\").replace(/'/g, "''");
+            const safeTitle = windowLabel.replace(/"/g, "");
+            const safeCwd   = runCwd.replace(/"/g, "");
+
+            if (process.platform === "win32") {
+              // Write a polling viewer script to avoid Get-Content -Wait never-exit bug
+              const viewerScript = [
+                `$logPath = '${safeLog}'`,
+                `$lastPos = 0`,
+                `Write-Host "=== ${safeTitle} === (Ctrl+C to force close)" -ForegroundColor Cyan`,
+                `Write-Host ''`,
+                `while ($true) {`,
+                `  try {`,
+                `    $bytes = [System.IO.File]::ReadAllBytes($logPath)`,
+                `    if ($bytes.Length -gt $lastPos) {`,
+                `      $chunk = [System.Text.Encoding]::UTF8.GetString($bytes, $lastPos, $bytes.Length - $lastPos)`,
+                `      Write-Host $chunk -NoNewline`,
+                `      $lastPos = $bytes.Length`,
+                `    }`,
+                `    if ($lastPos -gt 0) {`,
+                `      $tail = [System.Text.Encoding]::UTF8.GetString($bytes)`,
+                `      if ($tail -match '\\[Process exited') { break }`,
+                `    }`,
+                `  } catch {}`,
+                `  Start-Sleep -Milliseconds 200`,
+                `}`,
+                `Write-Host ''`,
+                `Write-Host '[Process finished. Press Enter to close.]' -ForegroundColor Green`,
+                `Read-Host`,
+                `# Auto-delete this viewer script on exit to clean up`,
+                `try { Remove-Item $MyInvocation.MyCommand.Path -Force } catch {}`,
+              ].join("\n");
+              const viewerScriptPath = path.join(logDir, `${taskId}-viewer.ps1`);
+              fsCb.writeFileSync(viewerScriptPath, viewerScript, "utf8");
+
+              const viewerProc = execa(
+                "cmd.exe",
+                ["/c", `start "${safeTitle}" /D "${safeCwd}" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${viewerScriptPath}"`],
+                { detached: true, stdio: "ignore", windowsVerbatimArguments: true }
+              );
+              viewerProc.unref();
+            } else if (process.platform === "darwin") {
+              const script = `tell application "Terminal" to do script "tail -f '${safeLog}'"`;
+              execa("osascript", ["-e", script], { detached: true, stdio: "ignore" }).unref();
+            } else {
+              execa("x-terminal-emulator", ["-e", `bash -c "tail -f '${safeLog}'"`],
+                { detached: true, stdio: "ignore", reject: false }).unref();
+            }
+          } catch { /* viewer is optional — main process still runs */ }
+
+          // ── Track exit (we have the real handle now) ───────────────────
+          proc.on("close", (code: number | null) => {
+            task.hasExited = true;
+            task.exitCode  = code;
+            const exitMsg  = `\n[Process exited with code ${code} at ${new Date().toISOString()}]`;
+            task.output.push(exitMsg);
+            try { fsCb.appendFileSync(logPath, exitMsg); } catch { /* ignore */ }
+            notifyTasksChanged();
+          });
+
+          // ── Add to chat as context for AI (do NOT sendMessage — that wakes AI) ──
+          ctx.addLine({
+            type: "system",
+            content:
+              `[TERMINAL CONTEXT] ID: ${taskId} | Label: ${windowLabel}\n` +
+              `  Command : ${commandStr}\n` +
+              `  Log     : ${logPath}\n` +
+              `  AI can read this log file to see the live output.`,
+            timestamp: Date.now(),
+          });
+        };
+
+        if (args.toLowerCase() === "all") {
+          // `/terminal all` — launch every preset in its own window
+          const keys = Object.keys(presets);
+          if (keys.length === 0) {
+            ctx.addLine({
+              type: "system",
+              content: "No presets configured. Run `/terminal init` to set some up.",
+              timestamp: Date.now()
+            });
+            return;
+          }
+          ctx.addLine({
+            type: "system",
+            content: `🚀 Launching all ${keys.length} preset(s)…`,
+            timestamp: Date.now()
+          });
+          for (const k of keys) {
+            const val = presets[k];
+            const label = getPresetLabel(k, val);
+            if (Array.isArray(val)) {
+              for (const item of val) {
+                await runCmd(item, label);
+              }
+            } else {
+              await runCmd(val, label);
+            }
+          }
+          return;
+        } else if (args.toLowerCase() === "preset") {
           // `/terminal preset` with no name — show list of presets
           const keys = Object.keys(presets);
           const presetsList = keys.length > 0
-            ? keys.map(k => `  • ${k}: ${JSON.stringify(presets[k])}`).join("\n")
+            ? keys.map(k => `  • ${getPresetLabel(k, presets[k])}: ${formatPresetValue(presets[k])}`).join("\n")
             : "  (No presets configured)";
           ctx.addLine({
             type: "system",
@@ -1258,98 +1520,28 @@ export function handleSlashCommand(
           });
           return;
         } else if (args.toLowerCase().startsWith("preset ")) {
-          presetName = args.slice(7).trim();
-          if (presets[presetName]) {
-            commandToRun = presets[presetName];
+          const requestedName = args.slice(7).trim();
+          const found = findPreset(presets, requestedName);
+          if (found) {
+            commandToRun = found.value;
             isPreset = true;
+            presetName = getPresetLabel(found.key, found.value);
           } else {
             ctx.addLine({
               type: "error",
-              content: `Error: Preset "${presetName}" not found. Run /terminal preset to see available presets.`,
+              content: `Error: Preset "${requestedName}" not found. Run /terminal preset to see available presets.`,
               timestamp: Date.now()
             });
             return;
           }
-        } else if (presets[args]) {
-          commandToRun = presets[args];
-          isPreset = true;
-          presetName = args;
+        } else {
+          const found = findPreset(presets, args);
+          if (found) {
+            commandToRun = found.value;
+            isPreset = true;
+            presetName = getPresetLabel(found.key, found.value);
+          }
         }
-
-        const runCmd = async (singleCmd: any) => {
-          let commandStr = "";
-          let runCwd = cwd;
-          let runEnv = { ...process.env };
-
-          if (typeof singleCmd === "object" && singleCmd !== null) {
-            commandStr = singleCmd.command || "";
-            if (singleCmd.cwd) {
-              runCwd = path.resolve(cwd, singleCmd.cwd);
-            }
-            if (singleCmd.env) {
-              runEnv = { ...runEnv, ...singleCmd.env };
-            }
-          } else {
-            commandStr = String(singleCmd);
-          }
-
-          if (!commandStr) return;
-
-          const taskId = `term-${Math.random().toString(36).substring(2, 9)}`;
-          ctx.addLine({
-            type: "system",
-            content: `🖥️ Spawning non-headless terminal [ID: ${taskId}]: "${commandStr}" (cwd: ${runCwd})`,
-            timestamp: Date.now()
-          });
-
-          let proc;
-          if (process.platform === "win32") {
-            // Use `cmd /c start` to force-open a new visible console window.
-            // Without `start`, the child process inherits the parent's console and stays hidden.
-            // The first argument after `start` is the window title (can be empty string "").
-            const windowTitle = presetName || commandStr.split(" ")[0];
-            proc = execa(
-              "cmd.exe",
-              ["/c", "start", windowTitle, "cmd.exe", "/k", commandStr],
-              {
-                cwd: runCwd,
-                detached: true,
-                stdio: "ignore",
-                env: runEnv,
-              }
-            );
-          } else if (process.platform === "darwin") {
-            const script = `tell application "Terminal" to do script "cd ${JSON.stringify(runCwd)} && ${commandStr}"`;
-            proc = execa("osascript", ["-e", script], {
-              detached: true,
-              stdio: ["pipe", "ignore", "ignore"]
-            });
-          } else {
-            proc = execa("x-terminal-emulator", ["-e", `bash -c "cd ${runCwd} && ${commandStr}; exec bash"`], {
-              detached: true,
-              stdio: ["pipe", "ignore", "ignore"],
-              reject: false
-            });
-          }
-
-          proc.unref();
-
-          const task: BackgroundTask = {
-            id: taskId,
-            command: commandStr,
-            process: proc,
-            output: ["[Output is displayed in the popped-up terminal window]"],
-          };
-
-          backgroundTasks.set(taskId, task);
-          notifyTasksChanged();
-
-          proc.on("close", (code) => {
-            task.hasExited = true;
-            task.exitCode = code;
-            notifyTasksChanged();
-          });
-        };
 
         if (Array.isArray(commandToRun)) {
           ctx.addLine({

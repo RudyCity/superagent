@@ -60,8 +60,15 @@ export function listHistorySessions(): HistorySession[] {
     try {
       const stat = fs.statSync(filePath);
       const raw = fs.readFileSync(filePath, "utf-8");
-      const messages: Array<{ role: string; content: string; timestamp?: number }> = JSON.parse(raw);
-      if (!Array.isArray(messages)) continue;
+      const parsed = JSON.parse(raw);
+      let messages: Array<{ role: string; content: string; timestamp?: number }> = [];
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+        messages = parsed.messages;
+      } else if (Array.isArray(parsed)) {
+        messages = parsed;
+      } else {
+        continue;
+      }
 
       // Reconstruct display name from sanitized filename
       const nameWithoutExt = file.replace(/\.json$/, "");
