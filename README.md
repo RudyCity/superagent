@@ -14,6 +14,19 @@ Superagent bridges this gap by providing an integrated terminal environment that
 
 ---
 
+## 💎 Unique Advantages
+
+Unlike standard headless execution bots or basic shell wrappers, Superagent is designed from the ground up as a fully interactive developer workspace companion:
+
+- **Real-Time Context Window Tracking & Compacting**: Traditional assistants run blind to token consumption. Superagent features a continuous visual dashboard tracking prompt tokens, completion costs, and remaining context windows. If the context grows too large, the `/compact` command generates an optimized context summary to save API costs.
+- **Granular Session Checkpoints**: Never lose progress. Superagent lets you snapshot your conversational and code states into checkpoints (via `/checkpoint`). If an experimental approach fails, you can revert back instantly to a previous checkpoint, restoring the entire session timeline.
+- **Parallel Multi-Agent Orchestration**: Instead of doing all work sequentially under a single LLM thread, Superagent spawns specialized background agents (`researcher`, `coder`, `reviewer`) that can run independent tasks (like researching code or running tests) concurrently in isolated workspaces.
+- **Visible, Non-Headless Interactive Terminals**: Most agents run shell commands in the background without visibility or interactivity. With `/terminal`, Superagent spawns a real, popped-up host emulator terminal window. This is perfect for running interactive servers, watch scripts, and commands that require manual inputs.
+- **Global Config & Repository Hygiene**: No messy `.env` or log files cluttering your project codebase. All API keys, environment settings, and session logs are kept safe and clean in your user's global directory (`~/.superagent-r/`).
+- **AI-Guided Preset Initialization**: Configure your workspace commands effortlessly. Superagent scans your codebase structure (such as dependencies, packages, and scripts) to automatically recommend, select, and construct terminal command presets with the `/terminal init` wizard.
+
+---
+
 ## 🛠️ Tech Stack & Architecture
 
 Superagent is built on modern Node.js technologies for high performance and modular architecture:
