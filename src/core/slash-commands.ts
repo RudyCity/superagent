@@ -885,6 +885,72 @@ export function handleSlashCommand(
     }
     case "processes":
     case "procs": {
+      const args = cmd.slice(name.length + 2).trim();
+      const lowerArgs = args.toLowerCase();
+
+      if (lowerArgs === "stop" || lowerArgs.startsWith("stop ")) {
+        const stopArg = args.slice(4).trim();
+        const taskList = Array.from(backgroundTasks.entries());
+
+        if (taskList.length === 0) {
+          ctx.addLine({
+            type: "system",
+            content: "⚙️ No running background processes to stop.",
+            timestamp: Date.now(),
+          });
+          return;
+        }
+
+        if (!stopArg || stopArg.toLowerCase() === "all") {
+          let count = 0;
+          for (const [id, task] of taskList) {
+            try { killProcessTree(task.process.pid); } catch {}
+            try {
+              if (task.logPath) {
+                fsCb.appendFileSync(task.logPath, `\n[Process exited via force stop at ${new Date().toISOString()}]\n`);
+              }
+            } catch {}
+            task.hasExited = true;
+            backgroundTasks.delete(id);
+            count++;
+          }
+          notifyTasksChanged();
+          ctx.addLine({
+            type: "system",
+            content: `🛑 Stopped ${count} background process${count !== 1 ? "es" : ""}.`,
+            timestamp: Date.now(),
+          });
+          return;
+        }
+
+        const task = backgroundTasks.get(stopArg);
+        if (!task) {
+          const ids = taskList.map(([id]) => id).join(", ");
+          ctx.addLine({
+            type: "error",
+            content: `Error: Background process "${stopArg}" not found.\nRunning IDs: ${ids || "(none)"}`,
+            timestamp: Date.now(),
+          });
+          return;
+        }
+
+        try { killProcessTree(task.process.pid); } catch {}
+        try {
+          if (task.logPath) {
+            fsCb.appendFileSync(task.logPath, `\n[Process exited via force stop at ${new Date().toISOString()}]\n`);
+          }
+        } catch {}
+        task.hasExited = true;
+        backgroundTasks.delete(stopArg);
+        notifyTasksChanged();
+        ctx.addLine({
+          type: "system",
+          content: `🛑 Stopped background process [${stopArg}]: "${task.command}"`,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
       const taskList = Array.from(backgroundTasks.entries());
       const lines = [
         "┌───[ ⚙️ RUNNING BACKGROUND PROCESSES ]",
@@ -1262,7 +1328,7 @@ export function handleSlashCommand(
               `  Command : ${commandStr}`,
               `  Log     : ${logPath}`,
               bgPresetName ? `  Preset  : ${bgPresetName}` : "",
-              `Use /processes to monitor, or /terminal stop ${taskId} to kill.`,
+              `Use /processes to monitor, or /processes stop ${taskId} to kill.`,
             ].filter(Boolean).join("\n"),
             timestamp: Date.now()
           });
@@ -1608,6 +1674,7 @@ export function handleSlashCommand(
           "  /init     - Initialize project (Git setup, agents.md generation, system audit)",
           "  /agents   - List active subagents and defined subagent types",
           "  /processes - List running background processes (shortcut: /procs)",
+          "  /processes stop [id|all] - Stop background processes",
           "  /terminal - Run a command or preset in a new window or background",
           "              Usage: /terminal <command> or /terminal preset <name>",
           "              Background: /terminal bg <command> or /terminal bg preset <name>",

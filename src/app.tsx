@@ -1308,10 +1308,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         if (agentRef.current) {
           agentRef.current.approvePlan();
           setPlanState("APPROVED");
+          setIsProcessing(true);
+          streamBufferRef.current = "";
+          setStreamDisplay("");
+          agentRef.current.sendMessage("Implementation plan approved via interactive approval wizard. Continue with the approved plan now.").catch((err: any) => {
+            setIsProcessing(false);
+            addLine({ type: "error", content: `Plan approval resume error: ${err.message}`, timestamp: Date.now() });
+          });
         }
         addLine({
           type: "system",
-          content: "✓ Implementation plan approved! The agent is now allowed to perform code and file modifications.",
+          content: "✓ Implementation plan approved! Continuing with the approved plan now.",
           timestamp: now,
         });
       } else {
@@ -2518,6 +2525,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     }
 
     // If there is a space, we are offering suggestions for subcommands / arguments
+    if (mainCommand === "/processes" || mainCommand === "/procs") {
+      if (currentInput.startsWith(`${mainCommand} stop`)) {
+        const stopSuggestions = [`${mainCommand} stop all`];
+        for (const [id] of backgroundTasks.entries()) {
+          stopSuggestions.push(`${mainCommand} stop ${id}`);
+        }
+        return stopSuggestions.filter(p => p.startsWith(currentInput));
+      }
+      return [`${mainCommand} stop`, `${mainCommand} stop all`].filter(p => p.startsWith(currentInput));
+    }
+
     if (mainCommand === "/terminal") {
       const presetEntries = terminalPresets;
       const presetLabels = presetEntries.map(p => p.label);
