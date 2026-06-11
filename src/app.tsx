@@ -3299,37 +3299,119 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
         while (currentText.length > 0) {
           const boldIdx = currentText.indexOf("**");
           const codeIdx = currentText.indexOf("`");
+          const linkIdx = currentText.indexOf("[");
+          
+          // Check for raw URLs (file:///, http://, https://)
+          const fileUrlIdx = currentText.indexOf("file://");
+          const httpUrlIdx = currentText.indexOf("http://");
+          const httpsUrlIdx = currentText.indexOf("https://");
+          
+          let rawUrlIdx = -1;
+          if (fileUrlIdx !== -1) {
+            rawUrlIdx = fileUrlIdx;
+          }
+          if (httpUrlIdx !== -1 && (rawUrlIdx === -1 || httpUrlIdx < rawUrlIdx)) {
+            rawUrlIdx = httpUrlIdx;
+          }
+          if (httpsUrlIdx !== -1 && (rawUrlIdx === -1 || httpsUrlIdx < rawUrlIdx)) {
+            rawUrlIdx = httpsUrlIdx;
+          }
 
-          if (boldIdx === -1 && codeIdx === -1) {
+          let minIdx = -1;
+          let tokenType: "bold" | "code" | "link" | "rawUrl" | "none" = "none";
+
+          if (boldIdx !== -1) {
+            minIdx = boldIdx;
+            tokenType = "bold";
+          }
+
+          if (codeIdx !== -1 && (minIdx === -1 || codeIdx < minIdx)) {
+            minIdx = codeIdx;
+            tokenType = "code";
+          }
+
+          if (linkIdx !== -1 && (minIdx === -1 || linkIdx < minIdx)) {
+            const closeBracketIdx = currentText.indexOf("]", linkIdx);
+            if (closeBracketIdx !== -1 && currentText[closeBracketIdx + 1] === "(") {
+              const closeParenIdx = currentText.indexOf(")", closeBracketIdx + 2);
+              if (closeParenIdx !== -1) {
+                minIdx = linkIdx;
+                tokenType = "link";
+              }
+            }
+          }
+
+          if (rawUrlIdx !== -1 && (minIdx === -1 || rawUrlIdx < minIdx)) {
+            const remainingFromUrl = currentText.slice(rawUrlIdx);
+            const match = remainingFromUrl.match(/^(file:\/\/\/[^\s`'"\(\)\[\]<>]+|https?:\/\/[^\s`'"\(\)\[\]<>]+)/);
+            if (match) {
+              minIdx = rawUrlIdx;
+              tokenType = "rawUrl";
+            }
+          }
+
+          if (tokenType === "none" || minIdx === -1) {
             parsedElements.push(<Text key={parsedElements.length}>{currentText}</Text>);
             break;
           }
 
-          if (boldIdx !== -1 && (codeIdx === -1 || boldIdx < codeIdx)) {
-            if (boldIdx > 0) {
-              parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(0, boldIdx)}</Text>);
-            }
-            const nextBoldIdx = currentText.indexOf("**", boldIdx + 2);
+          if (minIdx > 0) {
+            parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(0, minIdx)}</Text>);
+          }
+
+          currentText = currentText.slice(minIdx);
+
+          if (tokenType === "bold") {
+            const nextBoldIdx = currentText.indexOf("**", 2);
             if (nextBoldIdx !== -1) {
-              const boldText = currentText.slice(boldIdx + 2, nextBoldIdx);
-              parsedElements.push(<Text key={parsedElements.length} bold color="yellow">{boldText}</Text>);
+              const boldContent = currentText.slice(2, nextBoldIdx);
+              parsedElements.push(<Text key={parsedElements.length} bold color="yellow">{boldContent}</Text>);
               currentText = currentText.slice(nextBoldIdx + 2);
             } else {
-              parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(boldIdx)}</Text>);
-              break;
+              parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(0, 2)}</Text>);
+              currentText = currentText.slice(2);
             }
-          } else {
-            if (codeIdx > 0) {
-              parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(0, codeIdx)}</Text>);
-            }
-            const nextCodeIdx = currentText.indexOf("`", codeIdx + 1);
+          } else if (tokenType === "code") {
+            const nextCodeIdx = currentText.indexOf("`", 1);
             if (nextCodeIdx !== -1) {
-              const codeText = currentText.slice(codeIdx + 1, nextCodeIdx);
-              parsedElements.push(<Text key={parsedElements.length} color="cyan" bold>{codeText}</Text>);
+              const codeContent = currentText.slice(1, nextCodeIdx);
+              parsedElements.push(<Text key={parsedElements.length} color="cyan" bold>{codeContent}</Text>);
               currentText = currentText.slice(nextCodeIdx + 1);
             } else {
-              parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(codeIdx)}</Text>);
-              break;
+              parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(0, 1)}</Text>);
+              currentText = currentText.slice(1);
+            }
+          } else if (tokenType === "link") {
+            const closeBracketIdx = currentText.indexOf("]");
+            const closeParenIdx = currentText.indexOf(")", closeBracketIdx + 2);
+            const linkText = currentText.slice(1, closeBracketIdx);
+            const linkUrl = currentText.slice(closeBracketIdx + 2, closeParenIdx);
+            
+            const osc8Link = `\u001B]8;;${linkUrl}\u0007${linkText}\u001B]8;;\u0007`;
+            parsedElements.push(
+              <Text key={parsedElements.length} color="cyan" underline>
+                {osc8Link}
+              </Text>
+            );
+            currentText = currentText.slice(closeParenIdx + 1);
+          } else if (tokenType === "rawUrl") {
+            const match = currentText.match(/^(file:\/\/\/[^\s`'"\(\)\[\]<>]+|https?:\/\/[^\s`'"\(\)\[\]<>]+)/);
+            if (match) {
+              let url = match[0];
+              // Strip trailing punctuation if it was just sentence punctuation
+              while (url.length > 0 && /[.,;:!?]$/.test(url)) {
+                url = url.slice(0, -1);
+              }
+              const osc8Link = `\u001B]8;;${url}\u0007${url}\u001B]8;;\u0007`;
+              parsedElements.push(
+                <Text key={parsedElements.length} color="cyan" underline>
+                  {osc8Link}
+                </Text>
+              );
+              currentText = currentText.slice(url.length);
+            } else {
+              parsedElements.push(<Text key={parsedElements.length}>{currentText[0]}</Text>);
+              currentText = currentText.slice(1);
             }
           }
         }
