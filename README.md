@@ -135,7 +135,19 @@ Superagent implements a background scheduler supporting:
    npm install
    ```
 
-3. Configure Global API Credentials:
+3. Make Superagent Executable Globally:
+   To install the `superagent` command globally on your system so you can invoke it from any directory, build the project and run `npm link`:
+   ```bash
+   npm run build
+   npm link
+   ```
+   This compiles the TypeScript files to JavaScript and registers a global symlink pointing to your local repository build. Now, you can start the assistant from any directory simply by typing:
+   ```bash
+   superagent
+   ```
+   *(To uninstall the global symlink, run `npm unlink` inside this directory).*
+
+4. Configure Global API Credentials:
    Superagent isolates config files outside the project repository. Create a `.env` file in `~/.superagent-r/` (e.g., `C:\Users\<Username>\.superagent-r\.env` on Windows, or `~/.superagent-r/.env` on macOS/Linux):
    ```env
    # API Keys (Provide at least one)
