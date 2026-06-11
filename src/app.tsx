@@ -2031,26 +2031,79 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
         if (key.return) {
+          if (activeWizard.step === 1) {
+            setActiveWizard({
+              type: "skills",
+              step: 2,
+              data: { skillIndex: String(wizardSelectedIndex) },
+            });
+            setWizardOptions([
+              "✓ Use / Activate Skill",
+              "ℹ View Details",
+              "← Back to List",
+            ]);
+            setWizardSelectedIndex(0);
+            return;
+          }
+
+          const skillIndex = parseInt(activeWizard.data.skillIndex || "0", 10);
           const skillsList = getInstalledSkills();
-          const chosen = skillsList[wizardSelectedIndex];
-          if (chosen) {
+          const chosen = skillsList[skillIndex];
+          if (!chosen) return;
+
+          if (wizardSelectedIndex === 0) {
+            // Use / Activate Skill
+            const now = Date.now();
+            const slug = chosen.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+            addLine({
+              type: "user",
+              content: `❯ /skill-${slug}`,
+              timestamp: now,
+            });
+            addLine({
+              type: "system",
+              content: `Activating skill "${chosen.name}"...\nInstruction path: ${chosen.path}`,
+              timestamp: now,
+            });
+            setIsProcessing(true);
+            agentRef.current?.sendMessage(
+              `I would like you to use the following skill: "${chosen.name}".\nPlease read its instruction file at "${chosen.path}" using a file read tool first, and then help me with my request based on its instructions.`
+            ).catch((err: any) => {
+              addLine({ type: "error", content: `Skill activation error: ${err.message}`, timestamp: Date.now() });
+            });
+
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+          } else if (wizardSelectedIndex === 1) {
+            // View Details
             const now = Date.now();
             const detailLines = [
               "┌───[ 📂 INSTALLED AGENT SKILLS ]",
               `│  • Name        : ${chosen.name}`,
               `│    Description : ${chosen.description}`,
               `│    Path        : ${chosen.path}`,
-              "└──────────────────────────────────────────────"
+              "└──────────────────────────────────────────────",
             ];
             addLine({
               type: "system",
               content: detailLines.join("\n"),
               timestamp: now,
             });
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+          } else {
+            // Back to List
+            const options = skillsList.map((s) => `• ${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`);
+            setActiveWizard({
+              type: "skills",
+              step: 1,
+              data: {},
+            });
+            setWizardOptions(options);
+            setWizardSelectedIndex(skillIndex);
           }
-          setActiveWizard(null);
-          setWizardOptions([]);
-          setWizardSelectedIndex(0);
           return;
         }
       }
@@ -2617,16 +2670,24 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               />
             )}
 
-            {activeWizard && activeWizard.type === "skills" && wizardOptions.length > 0 && (
-              <WizardDialog
-                title="📂 INSTALLED AGENT SKILLS — Pilih skill untuk melihat detail (↑/↓ Navigate, Enter: View, Esc: Cancel):"
-                description="Daftar kemampuan khusus agen yang terpasang:"
-                borderColor="cyan"
-                options={wizardOptions}
-                selectedIndex={wizardSelectedIndex}
-                maxVisible={8}
-              />
-            )}
+            {activeWizard && activeWizard.type === "skills" && wizardOptions.length > 0 && (() => {
+              const skillTitle = activeWizard.step === 2
+                ? `📂 SKILL ACTION — Pilih tindakan untuk skill: "${getInstalledSkills()[parseInt(activeWizard.data.skillIndex || "0", 10)]?.name || ""}" (↑/↓ Navigate, Enter: Select):`
+                : "📂 INSTALLED AGENT SKILLS — Pilih skill (↑/↓ Navigate, Enter: Choose, Esc: Cancel):";
+              const skillDesc = activeWizard.step === 2
+                ? "Silakan pilih apakah ingin mengaktifkan skill ini untuk agen atau melihat detail lokasinya:"
+                : "Daftar kemampuan khusus agen yang terpasang:";
+              return (
+                <WizardDialog
+                  title={skillTitle}
+                  description={skillDesc}
+                  borderColor="cyan"
+                  options={wizardOptions}
+                  selectedIndex={wizardSelectedIndex}
+                  maxVisible={8}
+                />
+              );
+            })()}
 
             {activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 1 && wizardOptions.length > 0 && (
               <WizardDialog
