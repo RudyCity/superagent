@@ -161,6 +161,15 @@ Superagent implements a background scheduler supporting:
    MODEL=gpt-4o
    ```
 
+### 🔑 Multi-API Key Management
+Superagent natively supports configuring multiple API providers concurrently. Inside the global `.env` file, you can define individual credential keys for different services:
+- `PROVIDER_OPENAI_API_KEY`: API key for OpenAI.
+- `PROVIDER_ANTHROPIC_API_KEY`: API key for Anthropic.
+- `PROVIDER_OPENROUTER_API_KEY`: API key for OpenRouter.
+- `PROVIDER_CUSTOM_API_KEY` & `PROVIDER_CUSTOM_BASE_URL`: API key and base URL for any custom local or self-hosted LLM endpoints.
+
+To dynamically switch your active API provider at runtime, use the `/login` slash command or wizard. It instantly updates the active session's memory and rewrites the global `ACTIVE_PROVIDER` setting in the `.env` file without requiring you to restart the CLI.
+
 ---
 
 ## ⚙️ Development Scripts
