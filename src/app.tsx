@@ -3304,7 +3304,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
       {/* Status bar */}
       <Box flexDirection="column" paddingX={1} marginTop={1}>
-        <Text color="gray">──────────────────────────────────────────────────────────────────────</Text>
         <Box justifyContent="space-between" paddingX={0}>
           <Box>
             <Text>
@@ -3365,7 +3364,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             </Text>
           </Box>
         </Box>
-        <Text color="gray">──────────────────────────────────────────────────────────────────────</Text>
       </Box>
     </Box>
   );

@@ -196,8 +196,13 @@ describe("config", () => {
         spyExistsSync.mockRestore();
         spyReaddirSync.mockRestore();
         spyStatSync.mockRestore();
-        spyReadFileSync.mockRestore();
       }
     });
+  });
+
+  it("should namespace getGlobalConfigDir if process.env.SUPERAGENT_SESSION_ID is set", () => {
+    process.env.SUPERAGENT_SESSION_ID = "session-123456";
+    const dir = getGlobalConfigDir();
+    expect(dir).toContain(path.join(".superagent-r", "sessions", "session-123456"));
   });
 });

@@ -6,8 +6,6 @@ import {
   activeQuestionHandler 
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
-import { subagentToolsets, defaultSubagentToolset } from "./toolsets.js";
-import { getSubagentSystemPrompt } from "../prompts.js";
 
 const SUBAGENT_REPORT_INSTRUCTION = `
 CRITICAL INSTRUCTION FOR SUBAGENT REPORTING:
@@ -129,9 +127,10 @@ export const invokeSubagentTool: Tool = {
       return `{ ${parts.join(", ")} }`;
     }
 
-    const systemPromptWithReport = `${getSubagentSystemPrompt(typeName, subType.systemPrompt)}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
-
-    // Pick the restricted toolset for this subagent type
+    // Pick the restricted toolset and prompt (dynamic import to avoid circular dep with toolsets.ts)
+    const { subagentToolsets, defaultSubagentToolset } = await import("./toolsets.js");
+    const { getSubagentSystemPrompt } = await import("../prompts.js");
+    const resolvedPrompt = `${getSubagentSystemPrompt(typeName, subType.systemPrompt)}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
     const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
 
     const agentInstance = new Agent(
@@ -181,7 +180,7 @@ export const invokeSubagentTool: Tool = {
         }
         return options[0] || "";
       },
-      systemPromptWithReport,
+      resolvedPrompt,
       toolset
     );
 

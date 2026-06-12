@@ -9,11 +9,23 @@ import { resolveWindowsShell } from "./tools/helpers.js";
 
 export type Provider = "anthropic" | "openai" | "custom";
 
-export function getGlobalConfigDir(): string {
+export function getRootConfigDir(): string {
   return path.join(os.homedir(), ".superagent-r");
 }
 
+export function getGlobalConfigDir(): string {
+  const root = getRootConfigDir();
+  if (process.env.SUPERAGENT_SESSION_ID) {
+    return path.join(root, "sessions", process.env.SUPERAGENT_SESSION_ID);
+  }
+  return root;
+}
+
 export function ensureGlobalConfigDir(): void {
+  const rootDir = getRootConfigDir();
+  if (!fs.existsSync(rootDir)) {
+    fs.mkdirSync(rootDir, { recursive: true });
+  }
   const dir = getGlobalConfigDir();
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -418,7 +430,7 @@ export async function fetchAndCacheModels(): Promise<void> {
       }
 
       ensureGlobalConfigDir();
-      const cachePath = path.join(getGlobalConfigDir(), "models_cache.json");
+      const cachePath = path.join(getRootConfigDir(), "models_cache.json");
       let existingCache: Record<string, number> = {};
       if (fs.existsSync(cachePath)) {
         try {
@@ -446,7 +458,7 @@ export function getContextWindowLimit(model: string): number {
 
   // 2. Read from models_cache.json
   try {
-    const cachePath = path.join(getGlobalConfigDir(), "models_cache.json");
+    const cachePath = path.join(getRootConfigDir(), "models_cache.json");
     if (fs.existsSync(cachePath)) {
       const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
       if (cache && typeof cache[model] === "number") {
@@ -470,7 +482,7 @@ export function getContextWindowLimit(model: string): number {
 
 export function updateEnvFile(updates: Record<string, string>): string {
   ensureGlobalConfigDir();
-  const envPath = path.join(getGlobalConfigDir(), ".env");
+  const envPath = path.join(getRootConfigDir(), ".env");
 
   let content = "";
   if (fs.existsSync(envPath)) {

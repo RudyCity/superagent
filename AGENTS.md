@@ -4,17 +4,46 @@ This file contains key information about the project for AI agents to study and 
 
 ## Project Overview
 - **Name**: Superagent
-- **Description**: An interactive, terminal-based AI coding assistant featuring a cyberpunk style terminal UI, context token tracking, and subagent orchestration.
+- **Description**: An interactive, terminal-based AI coding assistant featuring a cyberpunk style terminal UI, context token tracking, and a 3-tier multi-agent orchestration system (Master Agent → Superagent → Subagent).
 - **Technology Stack**: Node.js, TypeScript, React, Ink (Terminal UI Components), Vercel AI SDK, Execa, Vitest
+
+## 3-Tier Multi-Agent Architecture
+
+Superagent supports a full 3-tier agent hierarchy activated via `superagent --multi`:
+
+```
+Master Agent  (orchestrator)
+  └── Superagent  (per-feature, isolated in git worktree)
+        └── Subagent  (atomic ops, ephemeral)
+```
+
+### Tier Responsibilities
+| Tier | Role | Toolset | Isolation |
+|------|------|---------|-----------|
+| **Master Agent** | Orchestration, planning, result merging | `invokeSubagentTool`, `listSubagentsTool`, `mergeSubagentResultTool`, `manageSubagentsTool` | Main repo |
+| **Superagent** | Feature-level development | Shell tools + File tools (restricted) | Isolated git worktree (`~/.superagent-r/worktrees/<name>`) |
+| **Subagent** | Atomic file/search operations | File tools only (read/write/search/grep) | Ephemeral, within parent worktree |
+
+### Key Files
+- `src/core/masterAgent.ts` — Master Agent entry point and orchestrator logic
+- `src/core/tools/types.ts` — Shared types: `AgentTier`, `SubagentInstance`, `ToolSet`
+- `src/core/tools/toolsets.ts` — ToolSet definitions keyed per tier (`masterToolset`, `superagentToolsets`, `subagentToolsets`)
+- `src/core/tools/prompts.ts` — System prompts per tier with dynamic context injection
+- `src/core/tools/state.ts` — Shared subagent registry, instances map, event emitters
+- `src/core/tools/superagentTools.ts` — Master tier tools: invoke/list/merge/manage Superagents
+- `src/core/tools/subagentTools.ts` — Superagent tier tools: spawn ephemeral Subagents
 
 ## Coding Guidelines & Constraints
 - **Shell Commands**: On Windows (PowerShell/CMD), the statement separator for terminal commands MUST be `;` instead of `&&`. When invoking or proposing commands, ensure OS-compatibility checks are implemented.
 - **Strict Naming Rules**: Do NOT mention proprietary brand names like "Claude Code" or generic "CLI" terms in user-facing documentation or UI descriptions. Refer to the project as a terminal-based AI coding assistant.
-- **Workspace Isolation**: Configuration `.env`, logs (`superagent.log`), and session histories MUST be stored in the global home directory under `~/.superagent-r/` instead of cluttering the target project repository.
+- **Workspace Isolation**: Configuration `.env`, logs (`superagent.log`), and session histories MUST be stored in the global home directory under `~/.superagent-r/` instead of cluttering the target project repository. Superagent worktrees are stored under `~/.superagent-r/worktrees/<name>`.
 - **Interactive Prompts**: Ensure any executed shell command processes are monitored for interactive inputs (such as asking for yes/no confirmation) to alert the user rather than hanging in the background.
 - **Test Location**: Always create and place all test files inside the `tests/` directory at the project root. Do not place test files under the `src/` directory.
+- **Circular Dependency Prevention**: `toolsets.ts` and `prompts.ts` are imported by multiple tool files. Any tool file that needs to import from `toolsets.ts` or `prompts.ts` MUST use dynamic `import()` inside the `execute()` function body — never a top-level static import — to avoid circular module dependency errors.
+- **Tier Enforcement**: Do NOT add orchestration tools (e.g., `invokeSubagentTool`) to Superagent or Subagent toolsets. Each tier must only have the tools listed in `toolsets.ts` for that tier.
 
 ## Verification Checklist
 - Run `npm test` to verify that all unit tests pass before committing.
 - Build the project using `npm run build` to verify there are no TypeScript compilation errors.
-
+- After adding new tools, verify they are added to the correct tier toolset in `toolsets.ts` and not to other tiers.
+- After modifying `subagentTools.ts` or `superagentTools.ts`, check for circular dependency issues — imports of `toolsets.ts`/`prompts.ts` must be dynamic.

@@ -3,7 +3,7 @@ import { exec } from "child_process";
 import path from "path";
 import fs from "fs";
 import { Tool, BackgroundTask } from "./types.js";
-import { getGlobalConfigDir } from "../config.js";
+import { getGlobalConfigDir, getRootConfigDir } from "../config.js";
 import { 
   formatCommandForPowerShell, 
   truncateOutput, 
@@ -16,6 +16,82 @@ import {
   clearActiveToolOutput, 
   appendActiveToolOutput 
 } from "./state.js";
+import net from "net";
+
+async function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => {
+      server.close();
+      resolve(true);
+    });
+    server.listen(port);
+  });
+}
+
+async function findAvailablePort(startPort: number): Promise<number> {
+  let port = startPort;
+  while (!(await isPortAvailable(port))) {
+    port++;
+  }
+  return port;
+}
+
+export async function adjustCommandPorts(command: string): Promise<string> {
+  let adjusted = command;
+  const portRegexes = [
+    /(PORT=)(\d+)/gi,
+    /(--port\s+)(\d+)/gi,
+    /(-p\s+)(\d+)/gi
+  ];
+
+  for (const regex of portRegexes) {
+    let match;
+    while ((match = regex.exec(adjusted)) !== null) {
+      const prefix = match[1];
+      const originalPort = parseInt(match[2], 10);
+      if (!isNaN(originalPort)) {
+        const newPort = await findAvailablePort(originalPort);
+        if (newPort !== originalPort) {
+          adjusted = adjusted.replace(match[0], `${prefix}${newPort}`);
+        }
+      }
+    }
+  }
+  return adjusted;
+}
+
+export async function acquireNpmLock(): Promise<() => void> {
+  const lockPath = path.join(getRootConfigDir(), "npm_install.lock");
+  const start = Date.now();
+  while (true) {
+    try {
+      const fd = fs.openSync(lockPath, "wx");
+      fs.writeSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      return () => {
+        try {
+          fs.unlinkSync(lockPath);
+        } catch {}
+      };
+    } catch (err: any) {
+      if (err.code === "EEXIST") {
+        try {
+          const stat = fs.statSync(lockPath);
+          if (Date.now() - stat.mtimeMs > 120000) {
+            try { fs.unlinkSync(lockPath); } catch {}
+            continue;
+          }
+        } catch {}
+      }
+      if (Date.now() - start > 60000) {
+        return () => {};
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+}
 
 function formatAndTruncateOutput(output: string, maxLines: number, logPath: string): string {
   const trimmed = output.trim();
@@ -184,6 +260,13 @@ export const runCommandTool: Tool = {
       : cwd;
     const timeout = (args.timeout as number) || 120000;
 
+    command = await adjustCommandPorts(command);
+
+    let releaseLock: (() => void) | undefined;
+    if (command.includes("npm install") || command.includes("npm i") || command.includes("yarn install")) {
+      releaseLock = await acquireNpmLock();
+    }
+
     let shellPath: string | boolean = true;
     if (process.platform === "win32") {
       const resolved = resolveWindowsShell();
@@ -255,6 +338,7 @@ export const runCommandTool: Tool = {
         if (signal) {
           signal.removeEventListener("abort", abortHandler);
         }
+        if (releaseLock) releaseLock();
       }
     } catch (err: unknown) {
       clearActiveToolOutput();
@@ -291,6 +375,8 @@ export const runBackgroundProcessTool: Tool = {
     const targetCwd = args.cwd 
       ? path.resolve(cwd, args.cwd as string)
       : cwd;
+
+    command = await adjustCommandPorts(command);
 
     let shellPath: string | boolean = true;
     if (process.platform === "win32") {

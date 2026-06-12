@@ -2,7 +2,7 @@
 
 Superagent is an interactive, terminal-based AI coding assistant designed to facilitate the cycle of development, testing, debugging, and application optimization directly from your workspace.
 
-It features a cyberpunk-styled terminal user interface built with terminal UI components, automatic tracking of model context token limits, a robust security permission layer, multi-agent orchestration (parallel subagents), and persistent integration with local terminal shells.
+It features a cyberpunk-styled terminal user interface built with terminal UI components, automatic tracking of model context token limits, a robust security permission layer, a **3-tier multi-agent orchestration system** (Master Agent → Superagent → Subagent), and persistent integration with local terminal shells.
 
 ![Superagent Cyberpunk Terminal UI](assets/Video_SuperAgent.gif)
 
@@ -22,7 +22,7 @@ Unlike standard headless execution bots or basic shell wrappers, Superagent is d
 
 - **Real-Time Context Window Tracking & Compacting**: Traditional assistants run blind to token consumption. Superagent features a continuous visual dashboard tracking prompt tokens, completion costs, and remaining context windows. If the context grows too large, the `/compact` command generates an optimized context summary to save API costs.
 - **Granular Session Checkpoints**: Never lose progress. Superagent lets you snapshot your conversational and code states into checkpoints (via `/checkpoint`). If an experimental approach fails, you can revert back instantly to a previous checkpoint, restoring the entire session timeline.
-- **Parallel Multi-Agent Orchestration**: Instead of doing all work sequentially under a single LLM thread, Superagent spawns specialized background agents (`researcher`, `coder`, `reviewer`) that can run independent tasks (like researching code or running tests) concurrently in isolated workspaces.
+- **3-Tier Multi-Agent Orchestration**: Instead of doing all work sequentially under a single LLM thread, Superagent supports a full 3-tier agent hierarchy. A **Master Agent** orchestrates one or more **Superagents**, each isolated in their own git worktree for independent feature development. Superagents can further delegate atomic operations to ephemeral **Subagents**. Launch with `superagent --multi`.
 - **Visible, Non-Headless Interactive Terminals**: Most agents run shell commands in the background without visibility or interactivity. With `/terminal`, Superagent spawns a real, popped-up host emulator terminal window. This is perfect for running interactive servers, watch scripts, and commands that require manual inputs.
 - **Global Config & Repository Hygiene**: No messy `.env` or log files cluttering your project codebase. All API keys, environment settings, and session logs are kept safe and clean in your user's global directory (`~/.superagent-r/`).
 - **AI-Guided Preset Initialization**: Configure your workspace commands effortlessly. Superagent scans your codebase structure (such as dependencies, packages, and scripts) to automatically recommend, select, and construct terminal command presets with the `/terminal init` wizard.
@@ -45,21 +45,27 @@ Superagent is built on modern Node.js technologies for high performance and modu
 ```
 superagent/
 ├── src/
-│   ├── cli.tsx                 # Main entrypoint
-│   ├── app.tsx                 # React UI wrapper and command handling logic
+│   ├── cli.tsx                    # Main entrypoint; routes --multi flag to masterAgent
+│   ├── app.tsx                    # React UI wrapper and command handling logic
 │   ├── core/
-│   │   ├── agent.ts            # Core cognitive loop and instruction runner
-│   │   ├── config.ts           # Environment variable and global config management
-│   │   ├── checkpoints.ts      # Conversation state checkpoint save/load logic
-│   │   ├── slash-commands.ts   # Interactive command definitions
-│   │   └── tools/              # Specialized tools equipped by the agent
-│   │       ├── shellTools.ts   # Command execution and background task control
-│   │       ├── systemTools.ts  # File operations, directory creation, port checks
-│   │       ├── subagentTools.ts# Secondary agent instantiation and management
-│   │       └── networkTools.ts # Web content fetch and browser integration
-│   └── components/             # React Ink components (visual stats, wizards)
-├── tests/                      # Unit test suites using Vitest
-└── package.json                # Project manifest and scripts
+│   │   ├── agent.ts               # Core cognitive loop and instruction runner
+│   │   ├── masterAgent.ts         # Master Agent orchestrator (3-tier entry point)
+│   │   ├── config.ts              # Environment variable and global config management
+│   │   ├── checkpoints.ts         # Conversation state checkpoint save/load logic
+│   │   ├── slash-commands.ts      # Interactive command definitions
+│   │   └── tools/
+│   │       ├── types.ts           # Shared types: AgentTier, SubagentInstance, ToolSet
+│   │       ├── toolsets.ts        # ToolSet definitions per tier (master/super/sub)
+│   │       ├── prompts.ts         # System prompts per tier with dynamic context
+│   │       ├── state.ts           # Shared subagent registry and event emitters
+│   │       ├── shellTools.ts      # Command execution and background task control
+│   │       ├── systemTools.ts     # File operations, directory creation, port checks
+│   │       ├── subagentTools.ts   # Subagent instantiation (superagent tier)
+│   │       ├── superagentTools.ts # Superagent orchestration tools (master tier)
+│   │       └── networkTools.ts    # Web content fetch and browser integration
+│   └── components/                # React Ink components (visual stats, wizards)
+├── tests/                         # Unit test suites using Vitest
+└── package.json                   # Project manifest and scripts
 ```
 
 ---
@@ -72,8 +78,32 @@ A rich terminal interface showing live statistics on active prompt sizes, comple
 ### 2. Session Management & Checkpoints
 Allows developers to save the current state of a coding conversation and restore it at any point using `/checkpoint save <name>` and `/checkpoint restore <id>`. This allows you to safely experiment with different implementations. Use the `--resume` or `-r` flag to continue where you left off.
 
-### 3. Subagent Orchestration
-Superagent can launch concurrent secondary agents to perform parallel tasks:
+### 3. 3-Tier Multi-Agent Orchestration (`--multi`)
+Launch with `superagent --multi` to activate the full 3-tier hierarchy:
+
+```
+superagent --multi
+      │
+  Master Agent  (orchestrator tier)
+  Tools: invokeSubagent, listSubagents, mergeResult, manageSubagents
+  Spawns Superagents with git worktree isolation
+      │
+  Superagent  (per-feature tier)
+  Tools: shell + file tools (restricted scope)
+  Isolated in its own git worktree
+  Can spawn Subagents for atomic ops
+      │
+  Subagent  (atomic operation tier)
+  Tools: file tools only (read/write/search)
+  Ephemeral, single-purpose execution
+```
+
+**Tier Responsibilities:**
+- **Master Agent**: High-level planning, task decomposition, and result merging. Manages which Superagents are alive and what they're doing.
+- **Superagent**: Feature-level development in an isolated git worktree. Responsible for implementing a single feature or fix end-to-end.
+- **Subagent**: Atomic file/search operations delegated by a Superagent. Ephemeral — lives only for the duration of a single task.
+
+**Standard subagent roles (single-agent mode):**
 - **Researcher**: Explores the codebase and retrieves context (Read-Only).
 - **Coder**: Implements code modifications and refactoring.
 - **Reviewer**: Audits changes, runs tests, and validates implementations.
@@ -96,11 +126,13 @@ Superagent proactively audits and prepares your local machine's developer enviro
 - **Automatic Utility Provisioning**: If `ripgrep` (`rg` for high-speed workspace indexing) or `curl` (on Windows) is missing on your host machine, Superagent automatically downloads, extracts, and places the binaries locally in `~/.superagent-r/bin/`.
 - **Android CLI Orchestrator**: Scans and provisions Google's official Android SDK command-line utilities using custom PowerShell (`install.cmd` for Windows) and Shell (`install.sh` for macOS/Linux) scripts.
 
-### 2. Multi-Agent Delegation & Standardized Reporting (`subagentTools.ts`)
-For parallel work, Superagent supports spawning concurrent subagents:
-- **Delegation Guardrails**: To prevent runaway loops or infinite resource spending, subagent delegation depth is restricted to a maximum level of `2`.
-- **Structured Markdown Reporting**: Every subagent completes its task by printing a standardized markdown block containing the initial goal, actions taken, key findings, and final outcome status.
-- **Visual Log Streaming**: Subagent actions, thoughts, tool calls, and execution errors are formatted and logged in a nested visual tree layout.
+### 2. 3-Tier Multi-Agent Architecture (`masterAgent.ts`, `superagentTools.ts`, `subagentTools.ts`)
+For parallel feature development, Superagent implements a 3-tier hierarchy:
+- **Tier Isolation**: Each Superagent runs in an isolated git worktree (`~/.superagent-r/worktrees/<name>`), preventing file conflicts between concurrent agents.
+- **Delegation Guardrails**: Delegation depth is enforced per-tier — Master can spawn Superagents, Superagents can spawn Subagents, Subagents cannot spawn further agents.
+- **Permission Scoping**: Each tier gets a strictly scoped toolset. Master agents get orchestration tools; Superagents get shell + file tools; Subagents get file tools only.
+- **Structured Markdown Reporting**: Every Superagent completes its task by printing a standardized markdown report (goal, actions taken, key findings, outcome status) that the Master Agent can parse and merge.
+- **Visual Log Streaming**: Agent actions, thoughts, tool calls, and execution errors are formatted and logged in a nested visual tree layout with tier-aware indentation.
 
 ### 3. Execution Safety Guardrails (`permissions.ts`)
 A dedicated validation layer inspects all terminal execution commands before they are executed. It immediately blocks destructive command invocations, including:
@@ -181,6 +213,12 @@ Run the following NPM scripts during development:
 - **Start Development Mode**:
   ```bash
   npm run dev
+  ```
+- **Start Multi-Agent Mode (3-tier orchestration)**:
+  ```bash
+  npm run dev -- --multi
+  # or globally:
+  superagent --multi
   ```
 - **Resume Last Session**:
   ```bash

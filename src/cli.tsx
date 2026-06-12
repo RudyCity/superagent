@@ -95,7 +95,7 @@ if (process.stdin.isTTY) {
 
     // Question handler: forward to dashboard's interactive wizard
     // This is registered so subagents can also ask the user questions
-    const questionHandlerRef: { current: ((q: string, opts: string[]) => Promise<string>) | null } = { current: null };
+    const questionHandlerRef: { current: ((q: string, opts: string[], isMultiSelect?: boolean) => Promise<string>) | null } = { current: null };
 
     const agent = new Agent(
       (event: AgentEvent) => {
@@ -115,9 +115,9 @@ if (process.stdin.isTTY) {
         logHandler?.(`[AUTO-APPROVE] ${description}`);
         return true;
       },
-      async (question, options) => {
+      async (question, options, isMultiSelect) => {
         if (questionHandlerRef.current) {
-          return questionHandlerRef.current(question, options);
+          return questionHandlerRef.current(question, options, isMultiSelect);
         }
         logHandler?.(`[QUESTION] ${question} (auto-selected: ${options[0]})`);
         return options[0];
@@ -130,9 +130,9 @@ if (process.stdin.isTTY) {
     agent.tier = "master";
 
     // Register question handler so subagents/superagents can ask user questions
-    registerQuestionHandler(async (question, options) => {
+    registerQuestionHandler(async (question, options, isMultiSelect) => {
       if (questionHandlerRef.current) {
-        return questionHandlerRef.current(question, options);
+        return questionHandlerRef.current(question, options, isMultiSelect);
       }
       return options[0] ?? "";
     });

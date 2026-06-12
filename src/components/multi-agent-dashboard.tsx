@@ -14,13 +14,21 @@ import {
 } from "../core/tools/state.js";
 import { Agent } from "../core/agent.js";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
+import path from "path";
 import { 
   updateEnvFile, 
   switchActiveProvider, 
   listHistorySessions, 
-  fetchAndCacheModels 
+  fetchAndCacheModels,
+  getConfiguredProviders,
+  getContextWindowLimit,
+  getInstalledSkills,
+  getGlobalConfigDir
 } from "../core/config.js";
 import { filterSuggestions } from "../utils/text.js";
+import { WizardDialog } from "./wizard-dialog.js";
+import { handleSlashCommand } from "../core/slash-commands.js";
+import { listCheckpointsForSession, restoreCheckpoint } from "../core/checkpoints.js";
 
 export interface AgentSession {
   id: string;
@@ -61,7 +69,7 @@ export function MultiAgentDashboard({
 }: {
   agent: Agent;
   registerLogHandler: (handler: (msg: string) => void) => void;
-  registerQuestionHandlerRef?: (setter: (q: string, opts: string[]) => Promise<string>) => void;
+  registerQuestionHandlerRef?: (setter: (q: string, opts: string[], isMultiSelect?: boolean) => Promise<string>) => void;
 }) {
   const { exit } = useApp();
   const [sessions, setSessions] = useState<AgentSession[]>([]);
@@ -73,10 +81,52 @@ export function MultiAgentDashboard({
   const [currentTask, setCurrentTask] = useState("Idle - Ready for input");
   const [gitBranch, setGitBranch] = useState("main");
   const [cachedSessions, setCachedSessions] = useState<any[]>([]);
+  const [activeWizard, setActiveWizard] = useState<{
+    type: "login" | "model" | "resume" | "checkpoint" | "skills" | "permission" | "question" | "plan_approve" | "goal";
+    step: number;
+    data: Record<string, string>;
+    isMultiSelect?: boolean;
+  } | null>(null);
+  const [wizardOptions, setWizardOptions] = useState<string[]>([]);
+  const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
+  const [wizardSelectedSet, setWizardSelectedSet] = useState<Set<number>>(new Set());
+  const [pendingQuestion, setPendingQuestion] = useState<{
+    question: string;
+    options: string[];
+    resolve: (value: string) => void;
+  } | null>(null);
+  const [checkpointsList, setCheckpointsList] = useState<any[]>([]);
+
+  // Register the interactive question handler
+  useEffect(() => {
+    if (registerQuestionHandlerRef) {
+      registerQuestionHandlerRef(async (question, options, isMultiSelect) => {
+        return new Promise<string>((resolve) => {
+          const hasOptions = Array.isArray(options) && options.length > 0;
+          const allOptions = hasOptions ? [...options, "Custom..."] : [];
+          setPendingQuestion({ question, options: allOptions, resolve });
+          setWizardOptions(allOptions);
+          setWizardSelectedIndex(0);
+          setWizardSelectedSet(new Set());
+          setActiveWizard({
+            type: "question",
+            step: hasOptions ? 1 : 2,
+            data: { question },
+            isMultiSelect,
+          });
+        });
+      });
+    }
+  }, [registerQuestionHandlerRef]);
 
   const getSuggestions = () => {
     if (!query.startsWith("/")) return [];
-    const commands = ["/model", "/login", "/resume"];
+    const commands = [
+      "/model", "/login", "/resume", "/clear", "/new", "/exit", 
+      "/quit", "/checkpoint", "/install", "/skills", "/procs", 
+      "/processes", "/agents", "/search-history", "/compact", 
+      "/init", "/terminal", "/help"
+    ];
     const parts = query.split(/\s+/);
     const mainCommand = parts[0].toLowerCase();
     
@@ -190,115 +240,462 @@ export function MultiAgentDashboard({
     });
   }, [registerLogHandler]);
 
-  const handleQuerySubmit = (val: string) => {
-    if (!val.trim()) return;
-    const cleanVal = val.trim();
+  const handleWizardSubmit = async (value: string) => {
+    if (!activeWizard) return;
 
-    if (cleanVal.startsWith("/")) {
-      const parts = cleanVal.split(/\s+/);
-      const commandName = parts[0].toLowerCase();
-
-      if (commandName === "/model") {
-        const modelName = parts[1];
-        if (modelName) {
-          try {
-            updateEnvFile({ MODEL: modelName });
-            fetchAndCacheModels().catch(() => {});
-            setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`, `[MASTER] Model switched to: ${modelName}`].slice(-50));
-          } catch (err: any) {
-            setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`, `[ERROR] Failed to switch model: ${err.message}`].slice(-50));
-          }
+    if (activeWizard.type === "login") {
+      if (activeWizard.step === 1) {
+        const choice = value.toLowerCase();
+        let provider = "";
+        if (choice.includes("openrouter") || choice.includes("1")) {
+          provider = "openrouter";
+        } else if (choice.includes("openai") || choice.includes("2")) {
+          provider = "openai";
+        } else if (choice.includes("anthropic") || choice.includes("3")) {
+          provider = "anthropic";
+        } else if (choice.includes("custom") || choice.includes("4")) {
+          provider = "custom";
         } else {
-          setMasterLogs((prev) => [
-            ...prev,
-            `[USER] ${cleanVal}`,
-            `[MASTER] Active Model: ${process.env.MODEL || "google/gemini-2.5-flash"}`,
-            `[MASTER] Common models: google/gemini-2.5-flash, google/gemini-2.5-pro, anthropic/claude-3-5-sonnet, openai/gpt-4o`,
-            `[MASTER] Usage: /model <model_name>`
-          ].slice(-50));
+          setMasterLogs((prev) => [...prev, `[ERROR] Invalid provider choice.`].slice(-50));
+          return;
         }
-        setQuery("");
-        return;
-      }
 
-      if (commandName === "/login") {
-        const providerName = parts[1];
-        const apiKey = parts[2];
-        if (providerName && apiKey) {
-          try {
-            const profileName = providerName.toLowerCase();
-            const prefix = `PROVIDER_${profileName.toUpperCase()}`;
-            const updates: Record<string, string> = {
-              ACTIVE_PROVIDER: profileName,
-              [`${prefix}_TYPE`]: profileName,
-              [`${prefix}_API_KEY`]: apiKey,
-            };
-            if (profileName === "openrouter") {
-              updates[`${prefix}_BASE_URL`] = "https://openrouter.ai/api/v1";
+        if (provider === "custom") {
+          setActiveWizard({
+            type: "login",
+            step: 3,
+            data: { provider },
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setMasterLogs((prev) => [...prev, `[MASTER] Custom provider selected. Enter Custom Base URL:`].slice(-50));
+        } else {
+          setActiveWizard({
+            type: "login",
+            step: 4,
+            data: { provider },
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setMasterLogs((prev) => [...prev, `[MASTER] Enter API key for ${provider}:`].slice(-50));
+        }
+      } else if (activeWizard.step === 3) {
+        const baseUrl = value.trim();
+        if (!baseUrl) return;
+        setActiveWizard({
+          type: "login",
+          step: 4,
+          data: { ...activeWizard.data, baseUrl },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setMasterLogs((prev) => [...prev, `[MASTER] Base URL set to: ${baseUrl}. Enter API Key:`].slice(-50));
+      } else if (activeWizard.step === 4) {
+        const apiKey = value.trim();
+        if (!apiKey) return;
+        const provider = activeWizard.data.provider;
+        const baseUrl = activeWizard.data.baseUrl;
+        try {
+          const prefix = `PROVIDER_${provider.toUpperCase()}`;
+          const updates: Record<string, string> = {
+            ACTIVE_PROVIDER: provider,
+            [`${prefix}_TYPE`]: provider,
+            [`${prefix}_API_KEY`]: apiKey,
+          };
+          if (baseUrl) {
+            updates[`${prefix}_BASE_URL`] = baseUrl;
+          } else if (provider === "openrouter") {
+            updates[`${prefix}_BASE_URL`] = "https://openrouter.ai/api/v1";
+          }
+          updateEnvFile(updates);
+          switchActiveProvider(provider);
+          setMasterLogs((prev) => [...prev, `[MASTER] Successfully logged in to provider: ${provider}`].slice(-50));
+        } catch (err: any) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to save credentials: ${err.message}`].slice(-50));
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+      }
+    } else if (activeWizard.type === "model") {
+      if (activeWizard.step === 1) {
+        const choice = value.toLowerCase();
+        let provider = "";
+        if (choice.includes("openrouter") || choice.includes("1")) {
+          provider = "openrouter";
+        } else if (choice.includes("openai") || choice.includes("2")) {
+          provider = "openai";
+        } else if (choice.includes("anthropic") || choice.includes("3")) {
+          provider = "anthropic";
+        } else if (choice.includes("custom") || choice.includes("4")) {
+          provider = "custom";
+        } else {
+          setMasterLogs((prev) => [...prev, `[ERROR] Invalid provider choice.`].slice(-50));
+          return;
+        }
+
+        setActiveWizard({
+          type: "model",
+          step: 2,
+          data: { provider },
+        });
+
+        let initialModels: string[] = [];
+        if (provider === "openrouter") {
+          initialModels = [
+            "google/gemini-2.5-flash",
+            "meta-llama/llama-3.3-70b-instruct",
+            "deepseek/deepseek-chat",
+            "anthropic/claude-3.5-sonnet",
+          ];
+          fetch("https://openrouter.ai/api/v1/models")
+            .then(async (res) => {
+              if (res.ok) {
+                const data = await res.json() as any;
+                if (data && Array.isArray(data.data)) {
+                  const modelsList = data.data.map((m: any) => m.id);
+                  setWizardOptions(modelsList);
+                }
+              }
+            })
+            .catch(() => {});
+        } else if (provider === "openai") {
+          initialModels = [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "o1",
+            "o1-mini",
+            "o1-preview",
+            "o3-mini",
+          ];
+          const apiKey = process.env.OPENAI_API_KEY || process.env.CUSTOM_API_KEY;
+          if (apiKey) {
+            fetch("https://api.openai.com/v1/models", {
+              headers: {
+                Authorization: `Bearer ${apiKey}`
+              }
+            })
+              .then(async (res) => {
+                if (res.ok) {
+                   const data = await res.json() as any;
+                   if (data && Array.isArray(data.data)) {
+                     const modelsList = data.data.map((m: any) => m.id);
+                     setWizardOptions(modelsList);
+                   }
+                }
+              })
+              .catch(() => {});
+          }
+        } else if (provider === "anthropic") {
+          initialModels = [
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229",
+          ];
+        } else if (provider === "custom") {
+          initialModels = [
+            "deepseek-chat",
+            "llama-3.3-70b-instruct",
+          ];
+          const baseUrl = process.env.CUSTOM_BASE_URL;
+          const apiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY;
+          if (baseUrl) {
+            const headers: Record<string, string> = {};
+            if (apiKey) {
+              headers["Authorization"] = `Bearer ${apiKey}`;
             }
-            updateEnvFile(updates);
-            switchActiveProvider(profileName);
-            setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`, `[MASTER] Switched provider profile to: ${profileName}`].slice(-50));
-          } catch (err: any) {
-            setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`, `[ERROR] Login switch failed: ${err.message}`].slice(-50));
+            fetch(`${baseUrl}/models`, { headers })
+              .then(async (res) => {
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  if (data && Array.isArray(data.data)) {
+                    const modelsList = data.data.map((m: any) => m.id);
+                    setWizardOptions(modelsList);
+                  }
+                }
+              })
+              .catch(() => {});
           }
-        } else {
+        }
+
+        setWizardOptions(initialModels);
+        setWizardSelectedIndex(0);
+        setMasterLogs((prev) => [...prev, `[MASTER] Provider ${provider} selected. Choose a model below:`].slice(-50));
+      } else {
+        const modelName = value;
+        try {
+          const envPath = updateEnvFile({ MODEL: modelName });
+          const limit = getContextWindowLimit(modelName);
           setMasterLogs((prev) => [
             ...prev,
-            `[USER] ${cleanVal}`,
-            `[MASTER] Usage: /login <provider_name> <api_key>`,
-            `[MASTER] E.g. /login openrouter sk-or-v1-xxxxxxxx`
+            `[MASTER] Model successfully changed to: ${modelName}`,
+            `[MASTER] Context Limit: ${limit.toLocaleString()} tokens`,
+            `[MASTER] Saved to: ${envPath}`
+          ].slice(-50));
+          fetchAndCacheModels().catch(() => {});
+        } catch (err: any) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to set model: ${err.message}`].slice(-50));
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+      }
+    } else if (activeWizard.type === "resume") {
+      const chosen = cachedSessions[wizardSelectedIndex];
+      if (!chosen) return;
+      try {
+        await agent.loadHistoryFromPath(chosen.filePath);
+        const msgs = agent.getHistory().getMessages();
+        const loadedLogs: string[] = [];
+        for (const m of msgs) {
+          if (m.role === "user") {
+            loadedLogs.push(`[USER] ${m.content}`);
+          } else if (m.role === "assistant") {
+            if (m.content) {
+              loadedLogs.push(`[AGENT] ${m.content}`);
+            }
+          }
+        }
+        setMasterLogs(loadedLogs.slice(-50));
+        setMasterLogs((prev) => [...prev, `[MASTER] Successfully resumed session: ${chosen.displayName}`].slice(-50));
+      } catch (err: any) {
+        setMasterLogs((prev) => [...prev, `[ERROR] Failed to resume session: ${err.message}`].slice(-50));
+      }
+      setActiveWizard(null);
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
+    } else if (activeWizard.type === "skills") {
+      if (activeWizard.step === 1) {
+        setActiveWizard({
+          type: "skills",
+          step: 2,
+          data: { skillIndex: String(wizardSelectedIndex) },
+        });
+        setWizardOptions([
+          "✓ Use / Activate Skill",
+          "ℹ View Details",
+          "← Back to List",
+        ]);
+        setWizardSelectedIndex(0);
+      } else {
+        const skillIndex = parseInt(activeWizard.data.skillIndex || "0", 10);
+        const skillsList = getInstalledSkills();
+        const chosen = skillsList[skillIndex];
+        if (!chosen) return;
+
+        if (wizardSelectedIndex === 0) {
+          // Use / Activate Skill
+          const slug = chosen.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+          setMasterLogs((prev) => [...prev, `[USER] /skill-${slug}`, `[MASTER] Activating skill "${chosen.name}"...\nInstruction path: ${chosen.path}`].slice(-50));
+          agent.sendMessage(
+            `I would like you to use the following skill: "${chosen.name}".\nPlease read its instruction file at "${chosen.path}" using a file read tool first, and then help me with my request based on its instructions.`
+          ).catch((err: any) => {
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message}`].slice(-50));
+          });
+        } else if (wizardSelectedIndex === 1) {
+          // View Details
+          setMasterLogs((prev) => [
+            ...prev,
+            `[MASTER] Skill Details: ${chosen.name}`,
+            `[MASTER] Description: ${chosen.description}`,
+            `[MASTER] Path: ${chosen.path}`
           ].slice(-50));
         }
-        setQuery("");
-        return;
-      }
 
-      if (commandName === "/resume") {
-        const targetArg = parts[1];
-        const sessionsList = listHistorySessions();
-        if (sessionsList.length === 0) {
-          setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`, `[MASTER] No active sessions found in workspace.`].slice(-50));
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+      }
+    } else if (activeWizard.type === "checkpoint") {
+      if (activeWizard.step === 1) {
+        const chosen = checkpointsList[wizardSelectedIndex];
+        if (!chosen) return;
+
+        if (chosen.gitSha) {
+          setActiveWizard({ type: "checkpoint", step: 2, data: { checkpointIndex: String(wizardSelectedIndex) } });
+          setWizardOptions(["✓ Ya, pulihkan workspace ke commit ini (git stash & checkout)", "✗ Tidak, hanya pulihkan riwayat percakapan saja"]);
+          setWizardSelectedIndex(0);
+          return;
+        }
+
+        const sessionPath = agent.getCurrentHistoryFilePath();
+        if (!sessionPath) return;
+        const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
+        const sessionBase = path.basename(sessionPath, ".json");
+        const chkPath = path.join(checkpointsDir, `${sessionBase}_checkpoint_${chosen.timestamp}.json`);
+
+        restoreCheckpoint(chkPath, sessionPath)
+          .then(async () => {
+            await agent.loadHistoryFromPath(sessionPath);
+            const msgs = agent.getHistory().getMessages();
+            const loadedLogs: string[] = [];
+            for (const m of msgs) {
+              if (m.role === "user") loadedLogs.push(`[USER] ${m.content}`);
+              else if (m.role === "assistant" && m.content) loadedLogs.push(`[AGENT] ${m.content}`);
+            }
+            setMasterLogs(loadedLogs.slice(-50));
+            setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${chosen.name}" successfully restored! (${chosen.messages.length} messages)`].slice(-50));
+          })
+          .catch((err: any) => {
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to restore checkpoint: ${err.message}`].slice(-50));
+          });
+
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setCheckpointsList([]);
+      } else if (activeWizard.step === 2) {
+        const chkIndex = parseInt(activeWizard.data.checkpointIndex || "0", 10);
+        const chosen = checkpointsList[chkIndex];
+        if (!chosen) return;
+        const doGitRestore = wizardSelectedIndex === 0;
+        const sessionPath = agent.getCurrentHistoryFilePath();
+        if (!sessionPath) return;
+
+        const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
+        const sessionBase = path.basename(sessionPath, ".json");
+        const chkPath = path.join(checkpointsDir, `${sessionBase}_checkpoint_${chosen.timestamp}.json`);
+
+        (async () => {
+          try {
+            if (doGitRestore && chosen.gitSha) {
+              try {
+                const { execa: execaFn } = await import("execa");
+                await execaFn("git", ["stash", "--include-untracked"], { cwd: process.cwd(), reject: false });
+                await execaFn("git", ["checkout", chosen.gitSha], { cwd: process.cwd(), reject: false });
+                setMasterLogs((prev) => [...prev, `[MASTER] Workspace restored to Git commit: ${chosen.gitSha}`].slice(-50));
+              } catch (gitErr: any) {
+                setMasterLogs((prev) => [...prev, `[ERROR] Git restore failed: ${gitErr.message}. Conversation history restored anyway.`].slice(-50));
+              }
+            }
+
+            await restoreCheckpoint(chkPath, sessionPath);
+            await agent.loadHistoryFromPath(sessionPath);
+            const msgs = agent.getHistory().getMessages();
+            const loadedLogs: string[] = [];
+            for (const m of msgs) {
+              if (m.role === "user") loadedLogs.push(`[USER] ${m.content}`);
+              else if (m.role === "assistant" && m.content) loadedLogs.push(`[AGENT] ${m.content}`);
+            }
+            setMasterLogs(loadedLogs.slice(-50));
+            setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${chosen.name}" successfully restored! (${chosen.messages.length} messages)`].slice(-50));
+          } catch (err: any) {
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to restore checkpoint: ${err.message}`].slice(-50));
+          }
+        })();
+
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setCheckpointsList([]);
+      }
+    } else if (activeWizard.type === "question") {
+      if (activeWizard.step === 1) {
+        const selectedOption = value;
+        if (selectedOption === "Custom...") {
+          setActiveWizard({
+            type: "question",
+            step: 2,
+            data: { question: pendingQuestion?.question || "" },
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
           setQuery("");
           return;
         }
 
-        if (!targetArg) {
-          const logLines = [`[USER] ${cleanVal}`, `[MASTER] Select session to resume:`];
-          sessionsList.forEach((s, idx) => {
-            logLines.push(`[MASTER]   [${idx + 1}] ${s.displayName} (${s.messageCount} msgs)`);
-          });
-          logLines.push(`[MASTER] Usage: /resume <session_number>`);
-          setMasterLogs((prev) => [...prev, ...logLines].slice(-50));
-          setCachedSessions(sessionsList);
-        } else {
-          const index = parseInt(targetArg, 10);
-          const selected = (index > 0 && index <= sessionsList.length) 
-            ? sessionsList[index - 1]
-            : sessionsList.find(s => s.displayName.toLowerCase().includes(targetArg.toLowerCase()));
-
-          if (selected) {
-            agent.loadHistoryFromPath(selected.filePath)
-              .then(() => {
-                setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`, `[MASTER] Session loaded successfully: ${selected.displayName}`].slice(-50));
-              })
-              .catch((err: any) => {
-                setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`, `[ERROR] Session load failed: ${err.message}`].slice(-50));
-              });
-          } else {
-            setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`, `[ERROR] Session index/name "${targetArg}" not found.`].slice(-50));
-          }
+        if (pendingQuestion) {
+          pendingQuestion.resolve(selectedOption);
+          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${selectedOption}"`].slice(-50));
         }
+      } else {
+        if (pendingQuestion) {
+          pendingQuestion.resolve(value);
+          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${value}"`].slice(-50));
+        }
+      }
+
+      setActiveWizard(null);
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
+      setWizardSelectedSet(new Set());
+      setPendingQuestion(null);
+    }
+  };
+
+  const handleQuerySubmit = (val: string) => {
+    const cleanVal = val.trim();
+
+    if (activeWizard) {
+      if (activeWizard.type === "question" && activeWizard.isMultiSelect) {
+        const selectedList = Array.from(wizardSelectedSet).map(idx => wizardOptions[idx]).filter(Boolean);
+        const answer = selectedList.join(", ");
+        if (pendingQuestion) {
+          pendingQuestion.resolve(answer);
+          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${answer}"`].slice(-50));
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setWizardSelectedSet(new Set());
+        setPendingQuestion(null);
         setQuery("");
         return;
       }
+
+      const hasOptions = wizardOptions.length > 0;
+      const finalValue = hasOptions && wizardSelectedIndex >= 0 && wizardSelectedIndex < wizardOptions.length
+        ? wizardOptions[wizardSelectedIndex]
+        : cleanVal;
+
+      handleWizardSubmit(finalValue);
+      setQuery("");
+      return;
+    }
+
+    if (!cleanVal) return;
+
+    if (cleanVal.startsWith("/")) {
+      if (cleanVal.toLowerCase().startsWith("/goal")) {
+        setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`, `[ERROR] /goal command is disabled in Multi-Agent Dashboard.`].slice(-50));
+        setQuery("");
+        return;
+      }
+
+      if (cleanVal.toLowerCase().startsWith("/checkpoint")) {
+        const sessionFilePath = agent.getCurrentHistoryFilePath();
+        listCheckpointsForSession(sessionFilePath)
+          .then((list) => {
+            setCheckpointsList(list);
+          })
+          .catch(() => {});
+      }
+
+      handleSlashCommand(cleanVal, {
+        addLine: (line) => setMasterLogs((prev) => [...prev, `[${line.type.toUpperCase()}] ${line.content}`].slice(-50)),
+        exit,
+        agent,
+        clearLines: () => setMasterLogs([]),
+        setContextLimit: () => {},
+        setActiveWizard: (val) => {
+          if (val && val.type === "goal") return;
+          setActiveWizard(val);
+        },
+        setWizardOptions,
+        setWizardSelectedIndex,
+        setPlanState: () => {},
+        setGoalMode: () => {},
+        setIsProcessing: () => {},
+        resumeSession: async () => {}
+      });
+      setQuery("");
+      return;
     }
 
     setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`].slice(-50));
     setQuery("");
     setCurrentTask(cleanVal);
 
-    // Spawn subtask logs and actual agents
     agent.sendMessage(cleanVal)
       .then(() => {
         setCurrentTask(`Idle - Completed: ${cleanVal}`);
@@ -412,9 +809,9 @@ export function MultiAgentDashboard({
     branch: "N/A",
   };
 
-  const workspaceHeight = Math.max(10, terminalSize.height - 9);
+  const workspaceHeight = Math.max(10, terminalSize.height - 10);
   const leftTopHeight = Math.max(5, workspaceHeight - 7);
-  const logBoxHeight = Math.max(5, workspaceHeight - 3);
+  const logBoxHeight = Math.max(5, workspaceHeight - 4);
   const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
   const logsCount = showCursor ? Math.max(1, logBoxHeight - 1) : logBoxHeight;
 
@@ -558,6 +955,40 @@ export function MultiAgentDashboard({
       return;
     }
 
+    if (activeWizard) {
+      if (key.upArrow) {
+        setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+        return;
+      }
+      if (activeWizard.isMultiSelect && input === " ") {
+        setWizardSelectedSet((prev) => {
+          const next = new Set(prev);
+          if (next.has(wizardSelectedIndex)) {
+            next.delete(wizardSelectedIndex);
+          } else {
+            next.add(wizardSelectedIndex);
+          }
+          return next;
+        });
+        return;
+      }
+      if (key.escape) {
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setWizardSelectedSet(new Set());
+        if (pendingQuestion) {
+          pendingQuestion.resolve("");
+          setPendingQuestion(null);
+        }
+        return;
+      }
+    }
+
     if (key.tab) {
       if (focusArea === "input" && query.startsWith("/")) {
         if (suggestions.length > 0) {
@@ -642,15 +1073,17 @@ export function MultiAgentDashboard({
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0} width={terminalSize.width}>
       {/* Header Banner - High Tech Cyberpunk Style */}
-      <Box flexDirection="column" marginBottom={1} paddingX={1}>
-        <Box flexDirection="row" justifyContent="space-between">
-          <Box flexDirection="row">
-            <Text color="cyan" bold>◣ M U L T I - A G E N T ◢</Text>
-            <Text color="gray">   </Text>
-            <Text color="yellow" bold>COGNITIVE CONTROL STATION</Text>
-          </Box>
-          <Text color="magenta" bold>ACTIVE_SYSTEM: ONLINE</Text>
+      <Box flexDirection="row" justifyContent="space-between" paddingX={0} marginBottom={1}>
+        <Box flexDirection="row">
+          <Text color="cyan" bold>❖ SUPERAGENT: MULTI-AGENT ORCHESTRATOR</Text>
+          <Text color="gray"> │ </Text>
+          <Text color="magenta" bold>Branch: {gitBranch}</Text>
+          <Text color="gray"> │ </Text>
+          <Text color="yellow" bold>Model: {process.env.MODEL || "google/gemini-2.5-flash"}</Text>
+          <Text color="gray"> │ </Text>
+          <Text color="cyan" bold>Threads: {sessions.length}</Text>
         </Box>
+        <Text color="green" bold>🟢 ONLINE</Text>
       </Box>
 
       {/* Main Workspace Split */}
@@ -689,6 +1122,35 @@ export function MultiAgentDashboard({
               })
             )}
           </Box>
+
+          {/* Wizard Dialog (if active) */}
+          {activeWizard && (
+            <Box flexDirection="column" marginY={1}>
+              <WizardDialog
+                title={
+                  activeWizard.type === "model" ? `⚙️ SELECT MODEL PROVIDER (Step ${activeWizard.step}):` :
+                  activeWizard.type === "resume" ? `📁 SELECT SESSION TO RESUME:` :
+                  activeWizard.type === "skills" ? `🛠️ SKILLS MANAGER (Step ${activeWizard.step}):` :
+                  activeWizard.type === "checkpoint" ? `📋 CHECKPOINT MANAGER (Step ${activeWizard.step}):` :
+                  activeWizard.type === "question" ? (
+                    activeWizard.step === 2 
+                      ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):" 
+                      : (activeWizard.isMultiSelect 
+                          ? "❓ QUESTION FROM AGENT (Arrows: navigate, Space: select, Enter: submit):" 
+                          : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):")
+                  ) :
+                  `🔑 PROVIDER CREDENTIALS (Step ${activeWizard.step}):`
+                }
+                description={activeWizard.type === "question" ? (pendingQuestion?.question || "") : undefined}
+                borderColor="magenta"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+                maxVisible={5}
+                isMultiSelect={activeWizard.isMultiSelect}
+                selectedSet={wizardSelectedSet}
+              />
+            </Box>
+          )}
 
           {/* Bottom Left: Interactive Console Prompt */}
           <Box flexDirection="column" width="100%" marginTop={1}>
@@ -758,26 +1220,32 @@ export function MultiAgentDashboard({
         </Box>
       </Box>
 
-      {/* Footer System statistics */}
-      <Box marginTop={1} paddingX={1} flexDirection="row">
-        <Text color="gray">SYS_STATUS: </Text>
-        <Text color="green" bold>● ONLINE</Text>
-        <Text color="gray">  MODEL: </Text>
-        <Text color="yellow" bold>{process.env.MODEL || "google/gemini-2.5-flash"}</Text>
-        <Text color="gray">  MASTER: </Text>
-        <Text color="magenta" bold>{sessions.find(s => s.type === "MASTER")?.tokens.toLocaleString() ?? 0}t</Text>
-        <Text color="gray">  SUPERAGENTS({[...superagentInstances.values()].length}): </Text>
-        <Text color="cyan" bold>
-          {[...superagentInstances.values()]
-            .reduce((acc, i) => acc + (i.tokenUsage?.prompt ?? 0) + (i.tokenUsage?.completion ?? 0), 0)
-            .toLocaleString()}t
-        </Text>
-      </Box>
-
-      {/* System Legend Shortcuts */}
-      <Box paddingX={1} flexDirection="row" marginTop={0}>
-        <Text bold color={focusArea === "input" ? "green" : "cyan"}>⌨️  </Text>
-        <Text color="gray" dimColor>[Tab] Cycle Focus  [▲/▼] Navigate/Scroll  [Esc] Snap Bottom  [Ctrl+C] Exit</Text>
+      {/* Footer System statistics & shortcuts */}
+      <Box flexDirection="column" paddingX={1} marginTop={1}>
+        <Box flexDirection="row" justifyContent="space-between">
+          <Box>
+            <Text>
+              <Text color="green" bold>🟢 ONLINE</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="yellow" bold>{process.env.MODEL || "google/gemini-2.5-flash"}</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="magenta" bold>Master: {sessions.find(s => s.type === "MASTER")?.tokens.toLocaleString() ?? 0}t</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="cyan" bold>Superagents({[...superagentInstances.values()].length}): {[...superagentInstances.values()].reduce((acc, i) => acc + (i.tokenUsage?.prompt ?? 0) + (i.tokenUsage?.completion ?? 0), 0).toLocaleString()}t</Text>
+            </Text>
+          </Box>
+        </Box>
+        <Box flexDirection="row" justifyContent="space-between" marginTop={0}>
+          <Box>
+            <Text>
+              <Text color="gray">Workspace: </Text>
+              <Text color="white" bold>{process.cwd()}</Text>
+            </Text>
+          </Box>
+        </Box>
+        <Box flexDirection="row" marginTop={0}>
+          <Text color="gray" dimColor>[Tab] Cycle Focus  [▲/▼] Navigate/Scroll  [Esc] Snap Bottom  [Ctrl+C] Exit</Text>
+        </Box>
       </Box>
     </Box>
   );
