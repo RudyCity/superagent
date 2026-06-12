@@ -40,12 +40,19 @@ import {
   searchHistoryTool,
 } from "./otherTools.js";
 
+import {
+  invokeSuperagentTool,
+  awaitSuperagentsTool,
+  mergeSuperagentsTool,
+} from "./superagentTools.js";
+
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Focused on orchestration. Does NOT write code itself.
-// invoke_superagent / await_superagents / merge_superagents are added at runtime
-// from superagentTools.ts to avoid circular imports.
 export const masterToolset: Tool[] = [
   askQuestionTool,
+  invokeSuperagentTool,  // spawn superagent in worktree
+  awaitSuperagentsTool,  // wait for all superagents to finish
+  mergeSuperagentsTool,  // merge all completed branches
   manageSubagentsTool,   // monitor/kill subagents if needed
   scheduleTool,
   searchHistoryTool,

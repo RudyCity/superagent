@@ -33,6 +33,12 @@ import {
   manageSubagentsTool 
 } from "./subagentTools.js";
 
+import {
+  invokeSuperagentTool,
+  awaitSuperagentsTool,
+  mergeSuperagentsTool,
+} from "./superagentTools.js";
+
 import { 
   askQuestionTool, 
   scheduleTool, 
@@ -61,6 +67,9 @@ export const allTools: Tool[] = [
   invokeSubagentTool,
   sendMessageTool,
   manageSubagentsTool,
+  invokeSuperagentTool,
+  awaitSuperagentsTool,
+  mergeSuperagentsTool,
   applyPatchTool,
   gitActionTool,
   screenshotTool,

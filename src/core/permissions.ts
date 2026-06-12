@@ -1,3 +1,4 @@
+import path from "path";
 import { getToolByName } from "./tools.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 
@@ -33,6 +34,42 @@ const DANGEROUS_PATTERNS = [
 
 export function isDangerousCommand(command: string): boolean {
   return DANGEROUS_PATTERNS.some((p) => p.test(command));
+}
+
+/**
+ * Checks whether a file path is inside the given worktree directory.
+ */
+export function isPathInWorktree(filePath: string, worktreePath: string): boolean {
+  const resolved = path.resolve(filePath);
+  const worktree = path.resolve(worktreePath);
+  return resolved.startsWith(worktree + path.sep) || resolved === worktree;
+}
+
+/**
+ * Returns true if a Superagent's tool call targets a file OUTSIDE its worktree.
+ * Only checked for file-modifying tools.
+ */
+export function isSuperagentOutOfBounds(
+  toolCall: { name: string; args: Record<string, unknown> },
+  worktreePath: string
+): boolean {
+  // Only check file-writing tools
+  const fileModifyingTools = [
+    "write", "write_to_file", "edit", "replace_file_content",
+    "multi_replace_file_content", "apply_patch",
+  ];
+  if (!fileModifyingTools.includes(toolCall.name)) return false;
+
+  const candidatePaths = [
+    toolCall.args.filePath,
+    toolCall.args.TargetFile,
+    toolCall.args.path,
+  ].filter((v): v is string => typeof v === "string");
+
+  for (const fp of candidatePaths) {
+    if (!isPathInWorktree(fp, worktreePath)) return true;
+  }
+  return false;
 }
 
 export function getToolDescription(
@@ -80,6 +117,12 @@ export function getToolDescription(
       return `Sending message to subagent: ${args.recipientId}`;
     case "manage_subagents":
       return `Managing subagents (${args.action})`;
+    case "invoke_superagent":
+      return `Spawning Superagent "${args.role}" on branch ${args.branch}`;
+    case "await_superagents":
+      return `Waiting for all Superagents to finish`;
+    case "merge_superagents":
+      return `Merging all completed Superagent branches`;
     case "apply_patch":
       return `Applying patch to file: ${args.filePath}`;
     case "git_action":

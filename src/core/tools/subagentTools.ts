@@ -6,6 +6,8 @@ import {
   activeQuestionHandler 
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
+import { subagentToolsets, defaultSubagentToolset } from "./toolsets.js";
+import { getSubagentSystemPrompt } from "../prompts.js";
 
 const SUBAGENT_REPORT_INSTRUCTION = `
 CRITICAL INSTRUCTION FOR SUBAGENT REPORTING:
@@ -127,7 +129,10 @@ export const invokeSubagentTool: Tool = {
       return `{ ${parts.join(", ")} }`;
     }
 
-    const systemPromptWithReport = `${subType.systemPrompt}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
+    const systemPromptWithReport = `${getSubagentSystemPrompt(typeName, subType.systemPrompt)}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
+
+    // Pick the restricted toolset for this subagent type
+    const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
 
     const agentInstance = new Agent(
       (event) => {
@@ -164,8 +169,11 @@ export const invokeSubagentTool: Tool = {
           logs.push(`│\n`);
         }
       },
-      async (toolCall, desc) => {
-        return true;
+      // Permission: block destructive commands, auto-approve everything else
+      async (toolCall, _desc) => {
+        const cmd = (toolCall.args.command as string || "").trim();
+        const isDestructive = /(rm\s+-rf\s+[\/~]|git\s+reset\s+--hard|git\s+clean\s+-fd|mkfs|dd\s+if=)/i.test(cmd);
+        return !isDestructive;
       },
       async (question, options) => {
         if (activeQuestionHandler) {
@@ -173,10 +181,12 @@ export const invokeSubagentTool: Tool = {
         }
         return options[0] || "";
       },
-      systemPromptWithReport
+      systemPromptWithReport,
+      toolset
     );
 
     agentInstance.delegationDepth = parentDepth + 1;
+    agentInstance.tier = "subagent";
 
     const instance: SubagentInstance = {
       id: subagentId,
@@ -196,6 +206,7 @@ export const invokeSubagentTool: Tool = {
         flushTextBuffer();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
+        instance.completedAt = Date.now();
         const msgs = agentInstance.getHistory().getMessages();
         const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
         if (lastAssistantMsg) {
@@ -207,6 +218,7 @@ export const invokeSubagentTool: Tool = {
         flushTextBuffer();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
+        instance.completedAt = Date.now();
         notifySubagentsChanged();
         return `Subagent failed: ${err.message}`;
       }
@@ -215,6 +227,7 @@ export const invokeSubagentTool: Tool = {
         flushTextBuffer();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
+        instance.completedAt = Date.now();
         const msgs = agentInstance.getHistory().getMessages();
         const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
         if (lastAssistantMsg) {
@@ -225,6 +238,7 @@ export const invokeSubagentTool: Tool = {
         flushTextBuffer();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
+        instance.completedAt = Date.now();
         notifySubagentsChanged();
       });
 

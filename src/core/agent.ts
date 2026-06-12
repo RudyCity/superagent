@@ -6,11 +6,13 @@ import fs from "fs";
 import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
+import type { Tool, AgentTier } from "./tools.js";
 import {
   executeToolCall,
   getToolDescription,
   isDangerousCommand,
   MODIFYING_TOOLS,
+  isSuperagentOutOfBounds,
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { AsyncLocalStorage } from "async_hooks";
@@ -40,11 +42,17 @@ export type QuestionHandler = (
 
 export class Agent {
   public delegationDepth = 0;
+  /** Agent tier in the 3-tier hierarchy: master | superagent | subagent */
+  public tier: AgentTier = "master";
+  /** For superagents: absolute path to the isolated git worktree */
+  public worktreePath: string | null = null;
   public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
   public goalMode: string | null = null;
   public goalMaxIterations: number = 200;
   private conversation: Conversation;
   private customSystemPrompt?: string;
+  /** Custom tool list for this agent (tier-specific). Undefined = use allTools. */
+  private customTools?: Tool[];
   private get config() {
     return getConfig();
   }
@@ -62,9 +70,11 @@ export class Agent {
     onEvent: (event: AgentEvent) => void,
     onPermission: PermissionHandler,
     onQuestion: QuestionHandler,
-    customSystemPrompt?: string
+    customSystemPrompt?: string,
+    customTools?: Tool[]
   ) {
     this.customSystemPrompt = customSystemPrompt;
+    this.customTools = customTools;
     this.conversation = new Conversation();
     this.onEvent = (event: AgentEvent) => {
       if (event.type === "error") {
@@ -252,7 +262,14 @@ CRITICAL GOAL MODE RULES:
       for (let i = 0; i < maxIterations; i++) {
         await this.compactHistoryIfNeeded();
         const messages = this.buildMessages();
-        const toolDefs = getToolDefinitions();
+        // Use tier-specific toolset if provided, otherwise use all tools
+        const toolDefs = this.customTools
+          ? this.customTools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters,
+            }))
+          : getToolDefinitions();
 
         const planStateNotice = `
 
@@ -573,9 +590,29 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
             }
           }
 
+          // Superagent out-of-bounds file access check
+          if (this.tier === "superagent" && this.worktreePath) {
+            if (isSuperagentOutOfBounds(tc, this.worktreePath)) {
+              const blocked: ToolResult = {
+                toolCallId: tc.id,
+                name: tc.name,
+                result: `Error: Access denied. As a Superagent you may only access files within your worktree: ${this.worktreePath}`,
+                isError: true,
+              };
+              toolResults.push(blocked);
+              this.onEvent({ type: "tool_end", toolResult: blocked, description });
+              continue;
+            }
+          }
+
+          // Use worktreePath as CWD for superagents, otherwise use configured workingDirectory
+          const effectiveCwd = (this.tier === "superagent" && this.worktreePath)
+            ? this.worktreePath
+            : this.config.workingDirectory;
+
           const toolResult = await executeToolCall(
             tc,
-            this.config.workingDirectory,
+            effectiveCwd,
             this.abortController?.signal
           );
           toolResults.push(toolResult);
