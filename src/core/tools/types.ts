@@ -49,6 +49,7 @@ export interface SubagentInstance {
   completedAt?: number;
   tokenUsage?: { prompt: number; completion: number };
   parentId?: string;
+  historyFilePath?: string;
 }
 
 export interface SuperagentInstance {
@@ -63,6 +64,7 @@ export interface SuperagentInstance {
   result?: string;
   completedAt?: number;
   tokenUsage?: { prompt: number; completion: number };
+  historyFilePath?: string;
 }
 
 export type QuestionHandler = (question: string, options: string[], isMultiSelect?: boolean) => Promise<string>;

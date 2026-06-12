@@ -205,6 +205,7 @@ export const invokeSuperagentTool: Tool = {
       status: "running" as const,
       logs,
       tokenUsage: { prompt: 0, completion: 0 },
+      historyFilePath: agentInstance.getCurrentHistoryFilePath(),
     };
     superagentInstances.set(superagentId, instance);
     notifySuperagentsChanged();

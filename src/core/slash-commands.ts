@@ -24,7 +24,17 @@ import {
 import os from "os";
 import { searchHistory } from "./historySearch.js";
 import { getToolDescription } from "./permissions.js";
-import { allTools, backgroundTasks, subagentInstances, notifyTasksChanged, BackgroundTask } from "./tools.js";
+import { 
+  allTools, 
+  backgroundTasks, 
+  subagentInstances, 
+  notifyTasksChanged, 
+  BackgroundTask,
+  superagentInstances,
+  notifySuperagentsChanged,
+  notifySubagentsChanged,
+  setHistoricalSuperagentTokens
+} from "./tools.js";
 import { killProcessTree } from "./tools/shellTools.js";
 import { formatArgs } from "../utils/text.js";
 
@@ -185,8 +195,10 @@ export function handleSlashCommand(
 
   switch (name.toLowerCase()) {
     case "new":
-      if (ctx.agent) {
-        const sessionFilePath = ctx.agent.getCurrentHistoryFilePath();
+    case "clear": {
+      const isMulti = ctx.agent?.isMultiAgent || false;
+      const sessionFilePath = ctx.agent?.getCurrentHistoryFilePath() || "";
+      if (sessionFilePath) {
         deleteCheckpointsForSession(sessionFilePath).catch(() => {});
       }
       ctx.agent?.clearHistory();
@@ -194,11 +206,36 @@ export function handleSlashCommand(
         ctx.agent.planState = "IDLE";
         ctx.agent.goalMode = null;
       }
+
+      // Cleanup multi-agent instances and tokens
+      for (const inst of superagentInstances.values()) {
+        if (inst.status === "running" && inst.agent && typeof inst.agent.abort === "function") {
+          try {
+            inst.agent.abort();
+          } catch {}
+        }
+      }
+      superagentInstances.clear();
+      notifySuperagentsChanged();
+
+      for (const inst of subagentInstances.values()) {
+        if (inst.status === "running" && inst.agent && typeof inst.agent.abort === "function") {
+          try {
+            inst.agent.abort();
+          } catch {}
+        }
+      }
+      subagentInstances.clear();
+      notifySubagentsChanged();
+
+      setHistoricalSuperagentTokens(0);
+
       ctx.setPlanState?.("IDLE");
       ctx.setGoalMode?.(null);
       ctx.clearLines?.();
       ctx.addLine({ type: "system", content: "New conversation started. History and terminal cleared.", timestamp: now });
       break;
+    }
     case "resume": {
       const isMulti = ctx.agent?.isMultiAgent || false;
       const sessions = listHistorySessions(isMulti);

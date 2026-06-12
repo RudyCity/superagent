@@ -113,6 +113,9 @@ export let historicalSuperagentTokens = 0;
 export function addHistoricalSuperagentTokens(tokens: number) {
   historicalSuperagentTokens += tokens;
 }
+export function setHistoricalSuperagentTokens(tokens: number) {
+  historicalSuperagentTokens = tokens;
+}
 
 export type SuperagentChangeListener = () => void;
 export const superagentChangeListeners = new Set<SuperagentChangeListener>();

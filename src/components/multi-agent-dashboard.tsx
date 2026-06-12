@@ -224,10 +224,12 @@ function ThinkingSpinner() {
 
 export function MultiAgentDashboard({
   agent,
+  autoResume = false,
   registerLogHandler,
   registerQuestionHandlerRef,
 }: {
   agent: Agent;
+  autoResume?: boolean;
   registerLogHandler: (handler: (msg: string) => void) => void;
   registerQuestionHandlerRef?: (setter: (q: string, opts: string[], isMultiSelect?: boolean) => Promise<string>) => void;
 }) {
@@ -416,11 +418,17 @@ export function MultiAgentDashboard({
       try {
         const msgs = agent.getHistory().getMessages();
         const userInputs: string[] = [];
+        const loadedLogs: string[] = [];
         for (const m of msgs) {
           if (m.role === "user" && m.content) {
             const content = m.content.trim();
             if (content) {
               userInputs.push(content);
+            }
+            loadedLogs.push(`[USER] ${m.content}`);
+          } else if (m.role === "assistant") {
+            if (m.content) {
+              loadedLogs.push(`[AGENT] ${m.content}`);
             }
           }
         }
@@ -432,6 +440,10 @@ export function MultiAgentDashboard({
             }
           }
           setHistory(uniqueUserInputs);
+        }
+        if (loadedLogs.length > 0) {
+          setMasterLogs(loadedLogs.slice(-500));
+          setMasterLogs((prev) => [...prev, "[MASTER] Successfully resumed session"].slice(-500));
         }
       } catch {}
     }
@@ -1349,7 +1361,27 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setPlanState,
         setGoalMode: () => {},
         setIsProcessing: () => {},
-        resumeSession: async () => {}
+        resumeSession: async () => {},
+        resumeFromPath: async (filePath: string) => {
+          try {
+            await agent.loadHistoryFromPath(filePath);
+            const msgs = agent.getHistory().getMessages();
+            const loadedLogs: string[] = [];
+            for (const m of msgs) {
+              if (m.role === "user" && m.content) {
+                loadedLogs.push(`[USER] ${m.content}`);
+              } else if (m.role === "assistant") {
+                if (m.content) {
+                  loadedLogs.push(`[AGENT] ${m.content}`);
+                }
+              }
+            }
+            setMasterLogs(loadedLogs.slice(-500));
+            setMasterLogs((prev) => [...prev, `[MASTER] Successfully loaded session history from: ${filePath}`].slice(-500));
+          } catch (err: any) {
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to load session from path: ${err.message}`].slice(-500));
+          }
+        }
       });
       setQuery("");
       return;
@@ -1851,9 +1883,43 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   }
                 }
                 const visibleCount = Math.min(total, maxVisible);
-                const y_bottom = 6 + workspaceHeight;
-                const optStartRow = y_bottom - 2 - visibleCount;
-                const optEndRow = y_bottom - 3;
+
+                // Calculate options row positions dynamically based on preceding layouts
+                const workspaceStartRow = 7; // Header banner has fixed height of 6 lines (1-indexed)
+                let description = undefined;
+                if (activeWizard.type === "plan_approve") {
+                  description = `Model AI telah merancang rencana di file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}`;
+                } else if (activeWizard.type === "question") {
+                  description = pendingQuestion?.question || "";
+                } else if (activeWizard.type === "login" && activeWizard.step === 10) {
+                  description = "Choose a template catalog stack or let AI dynamically design your project details:";
+                } else if (activeWizard.type === "login" && activeWizard.step === 11) {
+                  description = "Specify the name for this workspace:";
+                } else if (activeWizard.type === "login" && activeWizard.step === 12) {
+                  description = "Give a one-sentence overview description of this software:";
+                } else if (activeWizard.type === "login" && activeWizard.step === 13) {
+                  description = "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:";
+                }
+
+                let descLines = 0;
+                if (description) {
+                  const descWidth = Math.max(10, Math.floor(terminalSize.width * 0.40) - 4);
+                  descLines = wrapTextForDisplay(description, descWidth).length;
+                }
+
+                const isLoading = (activeWizard.type === "model" && activeWizard.step === 2) && wizardIsLoadingModels;
+
+                const y_options_start = workspaceStartRow
+                  + leftTopHeight
+                  + 1  // registry marginBottom
+                  + 1  // wizard top spacer │
+                  + 1  // dialog title
+                  + (description ? descLines + 1 : 0)  // description + description spacer
+                  + (isLoading ? 2 : 0)  // loading indicator + its spacer
+                  + (start > 0 ? 1 : 0); // scroll indicator ▲
+
+                const optStartRow = y_options_start;
+                const optEndRow = optStartRow + visibleCount - 1;
 
                 if (y >= optStartRow && y <= optEndRow) {
                   const idx = y - optStartRow;
@@ -1893,7 +1959,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 }
               }
             } else {
-              const promptStartRow = 3 + workspaceHeight - 2;
+              const promptStartRow = 7 + leftTopHeight + 1;
               if (y >= promptStartRow) {
                 setFocusArea("input");
               } else {

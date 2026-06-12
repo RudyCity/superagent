@@ -19,6 +19,7 @@ vi.mock("../src/core/agent.js", () => {
         { role: "assistant", content: "### SUPERAGENT TASK REPORT\n- **Status**: Completed" }
       ]
     });
+    public getCurrentHistoryFilePath = vi.fn().mockReturnValue("/dummy/history.json");
   }
   return {
     Agent: MockAgent,

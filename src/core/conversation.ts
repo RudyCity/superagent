@@ -1,5 +1,13 @@
 import fs from "fs/promises";
 import path from "path";
+import { 
+  superagentInstances, 
+  subagentInstances, 
+  notifySuperagentsChanged, 
+  notifySubagentsChanged,
+  historicalSuperagentTokens,
+  setHistoricalSuperagentTokens
+} from "./tools/state.js";
 
 export interface Message {
   role: "user" | "assistant" | "system" | "tool";
@@ -30,9 +38,29 @@ export class Conversation {
   async saveToFile(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED"): Promise<void> {
     try {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
+
+      const serializedSuperagents = Array.from(superagentInstances.values()).map(inst => {
+        const { agent, ...rest } = inst;
+        return {
+          ...rest,
+          historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
+        };
+      });
+
+      const serializedSubagents = Array.from(subagentInstances.values()).map(inst => {
+        const { agent, ...rest } = inst;
+        return {
+          ...rest,
+          historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
+        };
+      });
+
       const data = {
         messages: this.messages,
         planState,
+        superagents: serializedSuperagents,
+        subagents: serializedSubagents,
+        historicalSuperagentTokens,
       };
       await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
     } catch (err) {
@@ -47,9 +75,89 @@ export class Conversation {
       if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
         this.messages = parsed.messages;
         this.loadedPlanState = parsed.planState;
+
+        // Restore historical superagent tokens
+        setHistoricalSuperagentTokens(parsed.historicalSuperagentTokens || 0);
+
+        // Restore superagents
+        if (Array.isArray(parsed.superagents)) {
+          for (const inst of superagentInstances.values()) {
+            if (inst.status === "running" && inst.agent && typeof inst.agent.abort === "function") {
+              try {
+                inst.agent.abort();
+              } catch {}
+            }
+          }
+          superagentInstances.clear();
+          for (const s of parsed.superagents) {
+            let status = s.status;
+            let result = s.result;
+            const logs = [...(s.logs || [])];
+            let completedAt = s.completedAt;
+
+            if (status === "running") {
+              status = "error";
+              result = "[Interrupted by session exit]";
+              completedAt = completedAt || Date.now();
+              logs.push("\n[SYSTEM: Resumed session, marked as interrupted]\n");
+            }
+
+            superagentInstances.set(s.id, {
+              ...s,
+              status,
+              result,
+              logs,
+              completedAt,
+              agent: {
+                abort: () => {},
+                getCurrentHistoryFilePath: () => s.historyFilePath || "",
+              }
+            });
+          }
+          notifySuperagentsChanged();
+        }
+
+        // Restore subagents
+        if (Array.isArray(parsed.subagents)) {
+          for (const inst of subagentInstances.values()) {
+            if (inst.status === "running" && inst.agent && typeof inst.agent.abort === "function") {
+              try {
+                inst.agent.abort();
+              } catch {}
+            }
+          }
+          subagentInstances.clear();
+          for (const s of parsed.subagents) {
+            let status = s.status;
+            let result = s.result;
+            const logs = [...(s.logs || [])];
+            let completedAt = s.completedAt;
+
+            if (status === "running" || status === "idle") {
+              status = "completed";
+              result = "[Interrupted by session exit]";
+              completedAt = completedAt || Date.now();
+              logs.push("\n[SYSTEM: Resumed session, marked as interrupted]\n");
+            }
+
+            subagentInstances.set(s.id, {
+              ...s,
+              status,
+              result,
+              logs,
+              completedAt,
+              agent: {
+                abort: () => {},
+                getCurrentHistoryFilePath: () => s.historyFilePath || "",
+              }
+            });
+          }
+          notifySubagentsChanged();
+        }
       } else if (Array.isArray(parsed)) {
         this.messages = parsed;
         this.loadedPlanState = undefined;
+        setHistoricalSuperagentTokens(0);
       }
     } catch (err: any) {
       if (err.code !== "ENOENT") {

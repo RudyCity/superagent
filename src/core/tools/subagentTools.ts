@@ -207,6 +207,7 @@ export const invokeSubagentTool: Tool = {
       status: "running",
       logs,
       parentId,
+      historyFilePath: agentInstance.getCurrentHistoryFilePath(),
     };
 
     subagentInstances.set(subagentId, instance);

@@ -131,6 +131,14 @@ if (process.stdin.isTTY) {
     agent.tier = "master";
     agent.isMultiAgent = true;
 
+    if (autoResume) {
+      try {
+        await agent.loadHistory(true);
+      } catch (err: any) {
+        // Ignore and start clean if history load fails
+      }
+    }
+
     // Register question handler so subagents/superagents can ask user questions
     registerQuestionHandler(async (question, options, isMultiSelect) => {
       if (questionHandlerRef.current) {
@@ -143,6 +151,7 @@ if (process.stdin.isTTY) {
     const { waitUntilExit } = render(
       React.createElement(MultiAgentDashboard, {
         agent,
+        autoResume,
         registerLogHandler: (handler) => {
           logHandler = handler;
         },
