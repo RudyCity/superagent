@@ -437,7 +437,7 @@ export function MultiAgentDashboard({
       const sanitized = output.replace(/\r\n/g, "\n").replace(/\r/g, "");
       if (sanitized.trim()) {
         const newLogs = sanitized.split("\n").filter(Boolean);
-        setMasterLogs((prev) => [...prev, ...newLogs].slice(-50));
+        setMasterLogs((prev) => [...prev, ...newLogs].slice(-500));
       }
     });
   }, []);
@@ -474,16 +474,16 @@ export function MultiAgentDashboard({
           const cleanMsg = msg.replace(/^\[AGENT\]/, "");
           // Append directly: streaming chunks already carry their own spacing/newlines
           updated[lastIdx] = last + cleanMsg;
-          return updated.slice(-50);
+          return updated.slice(-500);
         }
 
         if (!isTag(msg) && !isTag(last)) {
           const updated = [...prev];
           updated[lastIdx] = last + "\n" + msg;
-          return updated.slice(-50);
+          return updated.slice(-500);
         }
         
-        return [...prev, msg].slice(-50);
+        return [...prev, msg].slice(-500);
       });
     });
   }, [registerLogHandler]);
@@ -518,7 +518,7 @@ export function MultiAgentDashboard({
           setMasterLogs((prev) => [
             ...prev,
             `[SYSTEM] Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})${p.isActive ? " [Active]" : ""}`).join("\n")
-          ].slice(-50));
+          ].slice(-500));
           setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);
@@ -535,14 +535,14 @@ export function MultiAgentDashboard({
         } else if (choice === "4" || choice.includes("custom")) {
           provider = "custom";
         } else {
-          setMasterLogs((prev) => [...prev, `[ERROR] Invalid choice. Please select 1, 2, 3, or 4.`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[ERROR] Invalid choice. Please select 1, 2, 3, or 4.`].slice(-500));
           return;
         }
 
         setMasterLogs((prev) => [
           ...prev,
           `[MASTER] Selected provider type: ${provider}\nStep 3: Enter config profile name (e.g. ${provider}, deepseek, or press Enter for default):`
-        ].slice(-50));
+        ].slice(-500));
 
         setActiveWizard({
           type: "login",
@@ -560,7 +560,7 @@ export function MultiAgentDashboard({
           setMasterLogs((prev) => [
             ...prev,
             `[MASTER] Config Name: ${profileName}\nStep 4: Please enter your Base URL (e.g. http://localhost:11434/v1):`
-          ].slice(-50));
+          ].slice(-500));
           setActiveWizard({
             type: "login",
             step: 4,
@@ -570,7 +570,7 @@ export function MultiAgentDashboard({
           setMasterLogs((prev) => [
             ...prev,
             `[MASTER] Config Name: ${profileName}\nStep 6: Please enter your API Key:`
-          ].slice(-50));
+          ].slice(-500));
           setActiveWizard({
             type: "login",
             step: 6,
@@ -587,7 +587,7 @@ export function MultiAgentDashboard({
         setMasterLogs((prev) => [
           ...prev,
           `[MASTER] Entered Base URL: ${baseUrl}\nStep 6: Please enter your API Key:`
-        ].slice(-50));
+        ].slice(-500));
         setActiveWizard({
           type: "login",
           step: 6,
@@ -605,12 +605,12 @@ export function MultiAgentDashboard({
             setMasterLogs((prev) => [
               ...prev,
               `[SYSTEM] Switched active provider to: ${chosen.name}\nSaved to: ${envPath}`
-            ].slice(-50));
+            ].slice(-500));
           } catch (err: any) {
-            setMasterLogs((prev) => [...prev, `[ERROR] Failed to switch provider: ${err.message}`].slice(-50));
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to switch provider: ${err.message}`].slice(-500));
           }
         } else {
-          setMasterLogs((prev) => [...prev, `[ERROR] Provider "${value}" not found in configured list.`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[ERROR] Provider "${value}" not found in configured list.`].slice(-500));
         }
         setActiveWizard(null);
         setWizardOptions([]);
@@ -641,7 +641,7 @@ export function MultiAgentDashboard({
           setMasterLogs((prev) => [
             ...prev,
             `[SYSTEM] Successfully configured and activated provider profile: ${profileName} (${provider})!\nSaved to: ${envPath}`
-          ].slice(-50));
+          ].slice(-500));
 
           if (provider === "openrouter" && !process.env.MODEL) {
             updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
@@ -649,7 +649,7 @@ export function MultiAgentDashboard({
 
           fetchAndCacheModels().catch(() => {});
         } catch (err: any) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Failed to save credentials: ${err.message}`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to save credentials: ${err.message}`].slice(-500));
         }
         setActiveWizard(null);
         setWizardOptions([]);
@@ -660,7 +660,7 @@ export function MultiAgentDashboard({
           setMasterLogs((prev) => [
             ...prev,
             `[SYSTEM] Selected AI-Assisted Initialization.\nStep 13: Briefly describe what you want to build (e.g. "A simple markdown parser command line tool in TypeScript"):`
-          ].slice(-50));
+          ].slice(-500));
           setActiveWizard({
             type: "login",
             step: 13,
@@ -676,7 +676,7 @@ export function MultiAgentDashboard({
           setMasterLogs((prev) => [
             ...prev,
             `[SYSTEM] Selected Stack: ${stack}\nStep 11: Enter Project Name (or press Enter for default "${path.basename(process.cwd())}"):`
-          ].slice(-50));
+          ].slice(-500));
           setActiveWizard({
             type: "login",
             step: 11,
@@ -690,7 +690,7 @@ export function MultiAgentDashboard({
         setMasterLogs((prev) => [
           ...prev,
           `[SYSTEM] Project Name: ${projectName}\nStep 12: Enter a short Project Description:`
-        ].slice(-50));
+        ].slice(-500));
         setActiveWizard({
           type: "login",
           step: 12,
@@ -725,7 +725,7 @@ export function MultiAgentDashboard({
           setMasterLogs((prev) => [
             ...prev,
             `[SYSTEM] 📄 Generated agents.md (created: ${projectName}, ${projectTech})`
-          ].slice(-50));
+          ].slice(-500));
 
           // Run audit/git setup summary
           const gitStatusLabel = activeWizard.data.gitStatus === "ACTIVE" ? "✓ ACTIVE" : activeWizard.data.gitStatus === "INITIALIZED" ? "✓ INITIALIZED (new)" : `✗ ${activeWizard.data.gitStatus}`;
@@ -761,9 +761,9 @@ export function MultiAgentDashboard({
             "│ ",
             "└──────────────────────────────────────────────"
           ];
-          setMasterLogs((prev) => [...prev, `[SYSTEM] ${auditLines.join("\n")}`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[SYSTEM] ${auditLines.join("\n")}`].slice(-500));
         })().catch(err => {
-          setMasterLogs((prev) => [...prev, `[ERROR] Failed to complete project initialization: ${err.message}`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to complete project initialization: ${err.message}`].slice(-500));
         });
 
         setActiveWizard(null);
@@ -772,12 +772,12 @@ export function MultiAgentDashboard({
       } else if (activeWizard.step === 13) {
         const goal = value.trim();
         if (!goal) {
-          setMasterLogs((prev) => [...prev, `[ERROR] AI prompt cannot be empty. Initialization cancelled.`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[ERROR] AI prompt cannot be empty. Initialization cancelled.`].slice(-500));
           setActiveWizard(null);
           return;
         }
 
-        setMasterLogs((prev) => [...prev, `[SYSTEM] 🤖 Consulting AI to formulate project structure...`].slice(-50));
+        setMasterLogs((prev) => [...prev, `[SYSTEM] 🤖 Consulting AI to formulate project structure...`].slice(-500));
         setCurrentTask("Consulting AI for project structure...");
 
         (async () => {
@@ -809,7 +809,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const cwd = process.cwd();
             const agentsPath = path.resolve(cwd, "agents.md");
             await fs.writeFile(agentsPath, content, "utf-8");
-            setMasterLogs((prev) => [...prev, `[SYSTEM] 📄 Generated agents.md successfully!`].slice(-50));
+            setMasterLogs((prev) => [...prev, `[SYSTEM] 📄 Generated agents.md successfully!`].slice(-500));
 
             // Extract project details dynamically from AI generated content
             let projectName = path.basename(cwd);
@@ -852,9 +852,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               "│ ",
               "└──────────────────────────────────────────────"
             ];
-            setMasterLogs((prev) => [...prev, `[SYSTEM] ${auditLines.join("\n")}`].slice(-50));
+            setMasterLogs((prev) => [...prev, `[SYSTEM] ${auditLines.join("\n")}`].slice(-500));
           } catch (aiErr: any) {
-            setMasterLogs((prev) => [...prev, `[ERROR] AI code completion request failed: ${aiErr.message}. Falling back to default project structure.`].slice(-50));
+            setMasterLogs((prev) => [...prev, `[ERROR] AI code completion request failed: ${aiErr.message}. Falling back to default project structure.`].slice(-500));
             
             // Fallback content write
             const cwd = process.cwd();
@@ -992,7 +992,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           }
         }
 
-        setMasterLogs((prev) => [...prev, `[MASTER] Provider ${provider} selected. Choose a model below:`].slice(-50));
+        setMasterLogs((prev) => [...prev, `[MASTER] Provider ${provider} selected. Choose a model below:`].slice(-500));
       } else {
         const modelName = value;
         try {
@@ -1003,10 +1003,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             `[MASTER] Model successfully changed to: ${modelName}`,
             `[MASTER] Context Limit: ${limit.toLocaleString()} tokens`,
             `[MASTER] Saved to: ${envPath}`
-          ].slice(-50));
+          ].slice(-500));
           fetchAndCacheModels().catch(() => {});
         } catch (err: any) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Failed to set model: ${err.message}`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to set model: ${err.message}`].slice(-500));
         }
         setActiveWizard(null);
         setWizardOptions([]);
@@ -1031,10 +1031,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             }
           }
         }
-        setMasterLogs(loadedLogs.slice(-50));
-        setMasterLogs((prev) => [...prev, `[MASTER] Successfully resumed session: ${chosen.displayName}`].slice(-50));
+        setMasterLogs(loadedLogs.slice(-500));
+        setMasterLogs((prev) => [...prev, `[MASTER] Successfully resumed session: ${chosen.displayName}`].slice(-500));
       } catch (err: any) {
-        setMasterLogs((prev) => [...prev, `[ERROR] Failed to resume session: ${err.message}`].slice(-50));
+        setMasterLogs((prev) => [...prev, `[ERROR] Failed to resume session: ${err.message}`].slice(-500));
       }
       setActiveWizard(null);
       setWizardOptions([]);
@@ -1061,11 +1061,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         if (wizardSelectedIndex === 0) {
           // Use / Activate Skill
           const slug = chosen.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-          setMasterLogs((prev) => [...prev, `[USER] /skill-${slug}`, `[MASTER] Activating skill "${chosen.name}"...\nInstruction path: ${chosen.path}`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[USER] /skill-${slug}`, `[MASTER] Activating skill "${chosen.name}"...\nInstruction path: ${chosen.path}`].slice(-500));
           agent.sendMessage(
             `I would like you to use the following skill: "${chosen.name}".\nPlease read its instruction file at "${chosen.path}" using a file read tool first, and then help me with my request based on its instructions.`
           ).catch((err: any) => {
-            setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message}`].slice(-50));
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message}`].slice(-500));
           });
         } else if (wizardSelectedIndex === 1) {
           // View Details
@@ -1074,7 +1074,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             `[MASTER] Skill Details: ${chosen.name}`,
             `[MASTER] Description: ${chosen.description}`,
             `[MASTER] Path: ${chosen.path}`
-          ].slice(-50));
+          ].slice(-500));
         }
 
         setActiveWizard(null);
@@ -1107,11 +1107,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               if (m.role === "user") loadedLogs.push(`[USER] ${m.content}`);
               else if (m.role === "assistant" && m.content) loadedLogs.push(`[AGENT] ${m.content}`);
             }
-            setMasterLogs(loadedLogs.slice(-50));
-            setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${chosen.name}" successfully restored! (${chosen.messages.length} messages)`].slice(-50));
+            setMasterLogs(loadedLogs.slice(-500));
+            setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${chosen.name}" successfully restored! (${chosen.messages.length} messages)`].slice(-500));
           })
           .catch((err: any) => {
-            setMasterLogs((prev) => [...prev, `[ERROR] Failed to restore checkpoint: ${err.message}`].slice(-50));
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to restore checkpoint: ${err.message}`].slice(-500));
           });
 
         setActiveWizard(null);
@@ -1138,12 +1138,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 await execaFn("git", ["stash", "--include-untracked"], { cwd: targetCwd, reject: false });
                 const checkoutRes = await execaFn("git", ["checkout", chosen.gitSha], { cwd: targetCwd, reject: false });
                 if (checkoutRes.failed) {
-                  setMasterLogs((prev) => [...prev, `[ERROR] Git restore failed: ${checkoutRes.stderr || checkoutRes.message}. Conversation history restored anyway.`].slice(-50));
+                  setMasterLogs((prev) => [...prev, `[ERROR] Git restore failed: ${checkoutRes.stderr || checkoutRes.message}. Conversation history restored anyway.`].slice(-500));
                 } else {
-                  setMasterLogs((prev) => [...prev, `[MASTER] Workspace restored to Git commit: ${chosen.gitSha}`].slice(-50));
+                  setMasterLogs((prev) => [...prev, `[MASTER] Workspace restored to Git commit: ${chosen.gitSha}`].slice(-500));
                 }
               } catch (gitErr: any) {
-                setMasterLogs((prev) => [...prev, `[ERROR] Git restore error: ${gitErr.message}. Conversation history restored anyway.`].slice(-50));
+                setMasterLogs((prev) => [...prev, `[ERROR] Git restore error: ${gitErr.message}. Conversation history restored anyway.`].slice(-500));
               }
             }
 
@@ -1155,10 +1155,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               if (m.role === "user") loadedLogs.push(`[USER] ${m.content}`);
               else if (m.role === "assistant" && m.content) loadedLogs.push(`[AGENT] ${m.content}`);
             }
-            setMasterLogs(loadedLogs.slice(-50));
-            setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${chosen.name}" successfully restored! (${chosen.messages.length} messages)`].slice(-50));
+            setMasterLogs(loadedLogs.slice(-500));
+            setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${chosen.name}" successfully restored! (${chosen.messages.length} messages)`].slice(-500));
           } catch (err: any) {
-            setMasterLogs((prev) => [...prev, `[ERROR] Failed to restore checkpoint: ${err.message}`].slice(-50));
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to restore checkpoint: ${err.message}`].slice(-500));
           }
         })();
 
@@ -1184,12 +1184,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
         if (pendingQuestion) {
           pendingQuestion.resolve(selectedOption);
-          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${selectedOption}"`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${selectedOption}"`].slice(-500));
         }
       } else {
         if (pendingQuestion) {
           pendingQuestion.resolve(value);
-          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${value}"`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${value}"`].slice(-500));
         }
       }
 
@@ -1210,7 +1210,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const answer = selectedList.join(", ");
         if (pendingQuestion) {
           pendingQuestion.resolve(answer);
-          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${answer}"`].slice(-50));
+          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${answer}"`].slice(-500));
         }
         setActiveWizard(null);
         setWizardOptions([]);
@@ -1262,7 +1262,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
     if (commandInput.startsWith("/")) {
       if (commandInput.toLowerCase().startsWith("/goal")) {
-        setMasterLogs((prev) => [...prev, `[USER] ${commandInput}`, `[ERROR] /goal command is disabled in Multi-Agent Dashboard.`].slice(-50));
+        setMasterLogs((prev) => [...prev, `[USER] ${commandInput}`, `[ERROR] /goal command is disabled in Multi-Agent Dashboard.`].slice(-500));
         setQuery("");
         return;
       }
@@ -1277,7 +1277,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
 
       handleSlashCommand(commandInput, {
-        addLine: (line) => setMasterLogs((prev) => [...prev, `[${line.type.toUpperCase()}] ${line.content}`].slice(-50)),
+        addLine: (line) => setMasterLogs((prev) => [...prev, `[${line.type.toUpperCase()}] ${line.content}`].slice(-500)),
         exit,
         agent,
         clearLines: () => setMasterLogs([]),
@@ -1300,7 +1300,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       return;
     }
 
-    setMasterLogs((prev) => [...prev, `[USER] ${commandInput}`].slice(-50));
+    setMasterLogs((prev) => [...prev, `[USER] ${commandInput}`].slice(-500));
     setQuery("");
     setCurrentTask(commandInput);
 
@@ -1310,7 +1310,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       })
       .catch((err) => {
         setCurrentTask(`Error: ${err.message || err}`);
-        setMasterLogs((prev) => [...prev, `[ERROR] ${err.message || err}`].slice(-50));
+        setMasterLogs((prev) => [...prev, `[ERROR] ${err.message || err}`].slice(-500));
       });
   };
 
@@ -1915,7 +1915,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     if (count > 0) {
       notifySubagentsChanged();
       notifySuperagentsChanged();
-      setMasterLogs((prev) => [...prev, `[SYSTEM] 🛑 Interrupted ${count} running agent(s) via Ctrl+C.`].slice(-50));
+      setMasterLogs((prev) => [...prev, `[SYSTEM] 🛑 Interrupted ${count} running agent(s) via Ctrl+C.`].slice(-500));
     }
     return count;
   };
