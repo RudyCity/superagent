@@ -22,9 +22,14 @@ describe("response scroll helpers", () => {
     expect(getTruncatedAssistantIndexes(lines, 2, 80)).toEqual([2]);
   });
 
-  it("wraps long display lines", () => {
+  it("clamps display wrapping width to at least 10", () => {
     expect(wrapTextForDisplay("abcdefghij", 4)).toEqual(["abcdefghij"]);
     expect(wrapTextForDisplay("abcdefghijk", 4)).toEqual(["abcdefghij", "k"]);
+  });
+
+  it("wraps long display lines when width is at least 10", () => {
+    expect(wrapTextForDisplay("abcdefghijkl", 12)).toEqual(["abcdefghijkl"]);
+    expect(wrapTextForDisplay("abcdefghijklm", 12)).toEqual(["abcdefghijkl", "m"]);
   });
 
   it("renders scrollbar progress", () => {

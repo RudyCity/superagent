@@ -108,7 +108,21 @@ export async function verifySyntax(filePath: string): Promise<string | null> {
     const code = await fs.readFile(filePath, "utf-8");
     const sourceKind = ext === ".tsx" || ext === ".jsx" ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
     const sourceFile = ts.createSourceFile(filePath, code, ts.ScriptTarget.Latest, true, sourceKind);
-    const diagnostics = (sourceFile as ts.SourceFile & { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] }).parseDiagnostics ?? [];
+    const compilerHost = ts.createCompilerHost({
+      jsx: ts.JsxEmit.React,
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ESNext,
+      noEmit: true,
+    });
+    compilerHost.getSourceFile = (requestedFileName, languageVersion) => {
+      if (path.resolve(requestedFileName) === path.resolve(filePath)) {
+        return sourceFile;
+      }
+      return ts.createCompilerHost({}).getSourceFile(requestedFileName, languageVersion);
+    };
+    compilerHost.writeFile = () => {};
+    const program = ts.createProgram([filePath], { noEmit: true, jsx: ts.JsxEmit.React }, compilerHost);
+    const diagnostics = program.getSyntacticDiagnostics(sourceFile);
 
     if (diagnostics.length === 0) {
       return null;

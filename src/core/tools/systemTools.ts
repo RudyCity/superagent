@@ -6,6 +6,54 @@ import { Tool } from "./types.js";
 import { normalizeForMatching, verifySyntax } from "./helpers.js";
 import { getLocalRgPath, isRgInstalledGlobally, ensureRgInstalled } from "../androidSetup.js";
 
+
+function buildEditSummary(before: string, after: string, filePath: string, existedBefore = true): string {
+  if (before === after) {
+    return `No changes made: ${filePath}`;
+  }
+
+  const beforeLines = existedBefore || before.length > 0 ? before.split(/\r?\n/) : [];
+  const afterLines = after.length > 0 ? after.split(/\r?\n/) : [];
+  const m = beforeLines.length;
+  const n = afterLines.length;
+  const dp = Array.from({ length: m + 1 }, () => Array<number>(n + 1).fill(0));
+
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = beforeLines[i] === afterLines[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  let i = 0;
+  let j = 0;
+  let added = 0;
+  let removed = 0;
+  const preview: string[] = [];
+  const pushPreview = (line: string) => {
+    if (preview.length < 16) preview.push(line);
+  };
+
+  while (i < m || j < n) {
+    if (i < m && j < n && beforeLines[i] === afterLines[j]) {
+      i++;
+      j++;
+    } else if (j < n && (i === m || dp[i][j + 1] >= dp[i + 1][j])) {
+      added++;
+      pushPreview(`+ ${afterLines[j]}`);
+      j++;
+    } else if (i < m) {
+      removed++;
+      pushPreview(`- ${beforeLines[i]}`);
+      i++;
+    }
+  }
+
+  const action = existedBefore ? "Changed" : "Created";
+  const previewText = preview.length > 0 ? `\nDiff preview:\n${preview.join("\n")}` : "";
+  return `${action}: +${added} -${removed}\nFile: ${filePath}${previewText}`;
+}
+
+
 export const readTool: Tool = {
   name: "read",
   description: "Read file contents. Returns lines with line numbers.",
@@ -461,13 +509,27 @@ export const writeToFileTool: Tool = {
           // File does not exist, safe to write
         }
       }
-      await fs.mkdir(path.dirname(filePath), { recursive: true });
-      await fs.writeFile(filePath, args.content as string, "utf-8");
-      const syntaxError = await verifySyntax(filePath);
-      if (syntaxError) {
-        return `Warning: ${syntaxError}. File written successfully: ${filePath}`;
+      let previousContent = "";
+      let existedBefore = true;
+      try {
+        previousContent = await fs.readFile(filePath, "utf-8");
+      } catch {
+        existedBefore = false;
       }
-      return `File written successfully: ${filePath}`;
+      const nextContent = args.content as string;
+      const summary = buildEditSummary(previousContent, nextContent, filePath, existedBefore);
+      if (previousContent === nextContent && existedBefore) {
+        return summary;
+      }
+
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, nextContent, "utf-8");
+      const syntaxError = await verifySyntax(filePath);
+      const action = existedBefore ? "File written successfully" : "Created file";
+      if (syntaxError) {
+        return `Warning: ${syntaxError}. ${action}: ${filePath}\n${summary}`;
+      }
+      return `${action}: ${filePath}\n${summary}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error writing file: ${message}`;
@@ -565,14 +627,19 @@ export const replaceFileContentTool: Tool = {
       ];
 
       const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
-      await fs.writeFile(filePath, newLines.join(originalEnding), "utf-8");
+      const nextContent = newLines.join(originalEnding);
+      const summary = buildEditSummary(content, nextContent, filePath);
+      if (content === nextContent) {
+        return summary;
+      }
+      await fs.writeFile(filePath, nextContent, "utf-8");
 
       const syntaxError = await verifySyntax(filePath);
       if (syntaxError) {
-        return `Warning: ${syntaxError}. File updated: ${filePath}`;
+        return `Warning: ${syntaxError}. File updated: ${filePath}\n${summary}`;
       }
 
-      return `File updated successfully: ${filePath}`;
+      return `File updated successfully: ${filePath}\n${summary}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error replacing file content: ${message}`;
@@ -660,12 +727,17 @@ export const multiReplaceFileContentTool: Tool = {
         ];
       }
 
-      await fs.writeFile(filePath, lines.join("\n"), "utf-8");
+      const nextContent = lines.join("\n");
+      const summary = buildEditSummary(content, nextContent, filePath);
+      if (content === nextContent) {
+        return summary;
+      }
+      await fs.writeFile(filePath, nextContent, "utf-8");
       const syntaxError = await verifySyntax(filePath);
       if (syntaxError) {
-        return `Warning: ${syntaxError}. File updated successfully with ${chunks.length} changes: ${filePath}`;
+        return `Warning: ${syntaxError}. File updated successfully with ${chunks.length} changes: ${filePath}\n${summary}`;
       }
-      return `File updated successfully with ${chunks.length} changes: ${filePath}`;
+      return `File updated successfully with ${chunks.length} changes: ${filePath}\n${summary}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error in multi-replace: ${message}`;
@@ -694,7 +766,8 @@ export const applyPatchTool: Tool = {
     const filePath = path.resolve(cwd, args.filePath as string);
     const patchContent = args.patchContent as string;
     try {
-      let content = await fs.readFile(filePath, "utf-8");
+      const originalContent = await fs.readFile(filePath, "utf-8");
+      let content = originalContent;
       
       // If it looks like a unified diff
       if (patchContent.includes("@@ ") || patchContent.startsWith("---") || patchContent.startsWith("diff")) {
@@ -834,12 +907,16 @@ export const applyPatchTool: Tool = {
         }
       }
 
+      const summary = buildEditSummary(originalContent, content, filePath);
+      if (originalContent === content) {
+        return summary;
+      }
       await fs.writeFile(filePath, content, "utf-8");
       const syntaxError = await verifySyntax(filePath);
       if (syntaxError) {
-        return `Warning: ${syntaxError}. Applied patch to file: ${filePath}`;
+        return `Warning: ${syntaxError}. Applied patch to file: ${filePath}\n${summary}`;
       }
-      return `Patch applied successfully to ${filePath}`;
+      return `Patch applied successfully to ${filePath}\n${summary}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error applying patch: ${message}`;

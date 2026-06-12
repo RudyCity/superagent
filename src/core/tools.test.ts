@@ -179,23 +179,66 @@ describe("File tools", () => {
     await fs.unlink(binaryFile);
   });
 
-  it("should replace file content using replaceFileContentTool", async () => {
+  it("should replace file content using replaceFileContentTool and show a diff summary", async () => {
     const tool = getToolByName("replace_file_content");
     const result = await tool?.execute(
       { filePath: "temp_unit_test.txt", targetContent: "line B", replacementContent: "line B Edited", startLine: 1, endLine: 3 },
       process.cwd()
     );
     expect(result).toContain("File updated successfully");
+    expect(result).toContain("Changed: +1 -1");
+    expect(result).toContain("Diff preview:");
     const data = await fs.readFile(testFile, "utf-8");
     expect(data).toContain("line B Edited");
   });
 
-  it("should write to file using writeToFileTool", async () => {
+  it("should write to file using writeToFileTool and show create/no-op summaries", async () => {
     const tool = getToolByName("write_to_file");
-    const result = await tool?.execute({ filePath: "temp_unit_test.txt", content: "overwritten content", overwrite: true }, process.cwd());
-    expect(result).toContain("File written successfully");
-    const data = await fs.readFile(testFile, "utf-8");
-    expect(data).toBe("overwritten content");
+    const createdFile = path.resolve(process.cwd(), "temp_created_unit_test.txt");
+    try { await fs.unlink(createdFile); } catch {}
+    const result = await tool?.execute({ filePath: "temp_created_unit_test.txt", content: "created content", overwrite: false }, process.cwd());
+    expect(result).toContain("Created file");
+    expect(result).toContain("Created: +1 -0");
+
+    const noOpResult = await tool?.execute({ filePath: "temp_created_unit_test.txt", content: "created content", overwrite: true }, process.cwd());
+    expect(noOpResult).toContain("No changes made");
+    await fs.unlink(createdFile);
+  });
+
+  it("should apply patch and multi-replace with diff summaries", async () => {
+    const patchTool = getToolByName("apply_patch");
+    const patchResult = await patchTool?.execute(
+      {
+        filePath: "temp_unit_test.txt",
+        patchContent: "<<<<<<< SEARCH\nline B\n=======\nline B Patched\n>>>>>>> REPLACE",
+      },
+      process.cwd()
+    );
+    expect(patchResult).toContain("Patch applied successfully");
+    expect(patchResult).toContain("Changed: +1 -1");
+
+    const multiTool = getToolByName("multi_replace_file_content");
+    const multiResult = await multiTool?.execute(
+      {
+        filePath: "temp_unit_test.txt",
+        chunks: [
+          { targetContent: "line A", replacementContent: "line A Multi", startLine: 1, endLine: 2 },
+          { targetContent: "line C", replacementContent: "line C Multi", startLine: 1, endLine: 2 },
+        ],
+      },
+      process.cwd()
+    );
+    expect(multiResult).toContain("File updated successfully with 2 changes");
+    expect(multiResult).toContain("Changed: +2 -2");
+  });
+
+  it("should include edit summary when syntax warning is returned", async () => {
+    const tool = getToolByName("write_to_file");
+    const brokenFile = path.resolve(process.cwd(), "temp_broken_syntax.ts");
+    const result = await tool?.execute({ filePath: "temp_broken_syntax.ts", content: "const x = ;", overwrite: true }, process.cwd());
+    expect(result).toContain("Warning: Syntax check failed");
+    expect(result).toContain("Created: +1 -0");
+    await fs.unlink(brokenFile);
   });
 });
 
