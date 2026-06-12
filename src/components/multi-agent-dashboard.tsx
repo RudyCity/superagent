@@ -1471,24 +1471,31 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
   const activeLogs = selectedSession.logs.map(l => l.trim()).filter(Boolean);
 
+  interface LogGroup {
+    isBox: boolean;
+    label: string;
+    color: string;
+    isBold: boolean;
+    dimColor: boolean;
+    parseMarkdown: boolean;
+    rawLines: string[];
+  }
 
+  const groups: LogGroup[] = [];
   for (let logIdx = 0; logIdx < activeLogs.length; logIdx++) {
     const logStr = activeLogs[logIdx];
-
-    // Check if it's a box line (e.g. from subagents)
     const isBoxLine = /^[┌├│└─]/.test(logStr);
 
     if (isBoxLine) {
-      // For box lines, render directly without any label or border wrapping
-      const subLines = wrapTextForDisplay(logStr, feedWidth);
-      for (let i = 0; i < subLines.length; i++) {
-        const lineText = subLines[i];
-        wrappedLines.push(
-          <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
-            <Text color={selectedSession.type === "SUBAGENT" ? "green" : "gray"}>{lineText}</Text>
-          </Box>
-        );
-      }
+      groups.push({
+        isBox: true,
+        label: "",
+        color: selectedSession.type === "SUBAGENT" ? "green" : "gray",
+        isBold: false,
+        dimColor: false,
+        parseMarkdown: false,
+        rawLines: [logStr],
+      });
       continue;
     }
 
@@ -1559,126 +1566,171 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       isBold = true;
     }
 
-    const prefix = logIdx === 0 ? "┌───" : (logIdx === activeLogs.length - 1 ? "└───" : "├───");
-    const subLinePrefix = logIdx === activeLogs.length - 1 ? "    " : "│   ";
+    const lastGroup = groups[groups.length - 1];
+    if (
+      lastGroup &&
+      !lastGroup.isBox &&
+      lastGroup.label === label &&
+      lastGroup.color === color &&
+      lastGroup.isBold === isBold &&
+      lastGroup.dimColor === dimColor &&
+      lastGroup.parseMarkdown === parseMarkdown
+    ) {
+      lastGroup.rawLines.push(content);
+    } else {
+      groups.push({
+        isBox: false,
+        label,
+        color,
+        isBold,
+        dimColor,
+        parseMarkdown,
+        rawLines: [content],
+      });
+    }
+  }
+
+  for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
+    const group = groups[groupIdx];
+
+    if (group.isBox) {
+      // For box lines, render directly without any label or border wrapping
+      for (const logStr of group.rawLines) {
+        const subLines = wrapTextForDisplay(logStr, feedWidth);
+        for (let i = 0; i < subLines.length; i++) {
+          const lineText = subLines[i];
+          wrappedLines.push(
+            <Box flexDirection="row" key={`log-line-${groupIdx}-${i}`} width={feedWidth}>
+              <Text color={group.color}>{lineText}</Text>
+            </Box>
+          );
+        }
+      }
+      continue;
+    }
+
+    const prefix = groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───");
+    const subLinePrefix = groupIdx === groups.length - 1 ? "    " : "│   ";
 
     // Format header border line
     wrappedLines.push(
-      <Box flexDirection="row" key={`log-header-${logIdx}`} width={feedWidth}>
-        <Text color={color === "gray" ? "gray" : color} bold>
+      <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
+        <Text color={group.color === "gray" ? "gray" : group.color} bold>
           {prefix} <Text color="white" bold>[ </Text>
-          <Text color={color === "gray" ? "gray" : color} bold>{label}</Text>
+          <Text color={group.color === "gray" ? "gray" : group.color} bold>{group.label}</Text>
           <Text color="white" bold> ]</Text>
         </Text>
       </Box>
     );
 
-    // Format content lines
-    // We indent with the subLinePrefix (4 chars: "│   " or "    ")
-    const subLines = wrapTextForDisplay(content, Math.max(10, feedWidth - 4));
+    // Format content lines of the group
     let inCode = false;
+    for (let rawLineIdx = 0; rawLineIdx < group.rawLines.length; rawLineIdx++) {
+      const content = group.rawLines[rawLineIdx];
+      const subLines = wrapTextForDisplay(content, Math.max(10, feedWidth - 4));
 
-    for (let i = 0; i < subLines.length; i++) {
-      const lineText = subLines[i];
-      const trimmed = lineText.trim();
+      for (let i = 0; i < subLines.length; i++) {
+        const lineText = subLines[i];
+        const trimmed = lineText.trim();
 
-      if (parseMarkdown) {
-        // Code Block detection
-        if (trimmed.startsWith("```")) {
-          inCode = !inCode;
-          const codeLang = trimmed.slice(3).trim() || "TEXT";
-          wrappedLines.push(
-            <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
-              <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
-              <Text color="gray" italic>{inCode ? `┌─── [ CODE: ${codeLang} ]` : "└─── [ END CODE ]"}</Text>
-            </Box>
-          );
-          continue;
-        }
-
-        if (inCode) {
-          wrappedLines.push(
-            <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
-              <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
-              <Text color="green">{lineText}</Text>
-            </Box>
-          );
-          continue;
-        }
-
-        // Header lines
-        if (trimmed.startsWith("# ")) {
-          wrappedLines.push(
-            <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
-              <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
-              <Text bold color="yellow">{lineText.slice(2)}</Text>
-            </Box>
-          );
-          continue;
-        }
-        if (trimmed.startsWith("## ")) {
-          wrappedLines.push(
-            <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
-              <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
-              <Text bold color="cyan">{lineText.slice(3)}</Text>
-            </Box>
-          );
-          continue;
-        }
-        if (trimmed.startsWith("### ")) {
-          wrappedLines.push(
-            <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
-              <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
-              <Text bold color="blue">{lineText.slice(4)}</Text>
-            </Box>
-          );
-          continue;
-        }
-
-        // List item checking
-        let listPrefix = "";
-        let remainingLine = lineText;
-        if (trimmed.startsWith("- ")) {
-          const indent = lineText.indexOf("- ");
-          listPrefix = " ".repeat(indent) + "• ";
-          remainingLine = lineText.slice(indent + 2);
-        } else if (trimmed.startsWith("* ")) {
-          const indent = lineText.indexOf("* ");
-          listPrefix = " ".repeat(indent) + "• ";
-          remainingLine = lineText.slice(indent + 2);
-        } else if (/^\d+\.\s/.test(trimmed)) {
-          const match = lineText.match(/^(\s*)(\d+\.\s)(.*)/);
-          if (match) {
-            listPrefix = match[1] + match[2];
-            remainingLine = match[3];
+        if (group.parseMarkdown) {
+          // Code Block detection
+          if (trimmed.startsWith("```")) {
+            inCode = !inCode;
+            const codeLang = trimmed.slice(3).trim() || "TEXT";
+            wrappedLines.push(
+              <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+                <Text color="gray" italic>{inCode ? `┌─── [ CODE: ${codeLang} ]` : "└─── [ END CODE ]"}</Text>
+              </Box>
+            );
+            continue;
           }
-        }
 
-        wrappedLines.push(
-          <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
-            <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
-            {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
-            <Box flexShrink={1}>
-              {renderLogInlineStyles(remainingLine, color === "gray" ? "gray" : color, isBold, dimColor)}
+          if (inCode) {
+            wrappedLines.push(
+              <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+                <Text color="green">{lineText}</Text>
+              </Box>
+            );
+            continue;
+          }
+
+          // Header lines
+          if (trimmed.startsWith("# ")) {
+            wrappedLines.push(
+              <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+                <Text bold color="yellow">{lineText.slice(2)}</Text>
+              </Box>
+            );
+            continue;
+          }
+          if (trimmed.startsWith("## ")) {
+            wrappedLines.push(
+              <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+                <Text bold color="cyan">{lineText.slice(3)}</Text>
+              </Box>
+            );
+            continue;
+          }
+          if (trimmed.startsWith("### ")) {
+            wrappedLines.push(
+              <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+                <Text bold color="blue">{lineText.slice(4)}</Text>
+              </Box>
+            );
+            continue;
+          }
+
+          // List item checking
+          let listPrefix = "";
+          let remainingLine = lineText;
+          if (trimmed.startsWith("- ")) {
+            const indent = lineText.indexOf("- ");
+            listPrefix = " ".repeat(indent) + "• ";
+            remainingLine = lineText.slice(indent + 2);
+          } else if (trimmed.startsWith("* ")) {
+            const indent = lineText.indexOf("* ");
+            listPrefix = " ".repeat(indent) + "• ";
+            remainingLine = lineText.slice(indent + 2);
+          } else if (/^\d+\.\s/.test(trimmed)) {
+            const match = lineText.match(/^(\s*)(\d+\.\s)(.*)/);
+            if (match) {
+              listPrefix = match[1] + match[2];
+              remainingLine = match[3];
+            }
+          }
+
+          wrappedLines.push(
+            <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
+              <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+              {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
+              <Box flexShrink={1}>
+                {renderLogInlineStyles(remainingLine, group.color === "gray" ? "gray" : group.color, group.isBold, group.dimColor)}
+              </Box>
             </Box>
-          </Box>
-        );
-      } else {
-        // Plain text or standard rendering without full markdown parsing
-        wrappedLines.push(
-          <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
-            <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
-            <Text color={color === "gray" ? "gray" : color} bold={isBold} dimColor={dimColor} wrap="truncate-end">{lineText}</Text>
-          </Box>
-        );
+          );
+        } else {
+          // Plain text or standard rendering without full markdown parsing
+          wrappedLines.push(
+            <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
+              <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+              <Text color={group.color === "gray" ? "gray" : group.color} bold={group.isBold} dimColor={group.dimColor} wrap="truncate-end">{lineText}</Text>
+            </Box>
+          );
+        }
       }
     }
 
-    // Add empty space/separator line between logs if it's not the last one
-    if (logIdx < activeLogs.length - 1) {
+    // Add empty space/separator line between groups if it's not the last one
+    if (groupIdx < groups.length - 1) {
       wrappedLines.push(
-        <Box flexDirection="row" key={`log-sep-${logIdx}`}>
-          <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
+        <Box flexDirection="row" key={`log-sep-${groupIdx}`}>
+          <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
         </Box>
       );
     }
