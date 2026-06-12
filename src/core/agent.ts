@@ -64,9 +64,17 @@ export class Agent {
   private onQuestion: QuestionHandler;
   private abortController: AbortController | null = null;
   private isRunning = false;
+  private textLogBuffer = "";
 
   public approvePlan(): void {
     this.planState = "APPROVED";
+  }
+
+  private flushTextLogBuffer(): void {
+    if (this.textLogBuffer) {
+      this.writeToLogFile("TEXT", this.textLogBuffer.trim());
+      this.textLogBuffer = "";
+    }
   }
 
   constructor(
@@ -82,10 +90,32 @@ export class Agent {
     this.workingDirectory = workingDirectory || getConfig().workingDirectory;
     this.conversation = new Conversation();
     this.onEvent = (event: AgentEvent) => {
-      if (event.type === "error") {
-        this.writeToLogFile(event.message);
-      } else if (event.type === "tool_end" && event.toolResult.isError) {
-        this.writeToLogFile(`Tool '${event.toolResult.name}' failed: ${event.toolResult.result}`);
+      if (event.type !== "text") {
+        this.flushTextLogBuffer();
+      }
+
+      if (event.type === "text") {
+        this.textLogBuffer += event.content;
+      } else if (event.type === "tool_start") {
+        const argsStr = JSON.stringify(event.toolCall.args);
+        this.writeToLogFile("TOOL_START", `Tool: ${event.toolCall.name}, Description: ${event.description}, Args: ${argsStr}`);
+      } else if (event.type === "tool_end") {
+        const success = !event.toolResult.isError;
+        const resultStr = typeof event.toolResult.result === "string"
+          ? event.toolResult.result
+          : JSON.stringify(event.toolResult.result);
+        const truncatedResult = resultStr.length > 500 ? resultStr.substring(0, 500) + "... (truncated)" : resultStr;
+        this.writeToLogFile("TOOL_END", `Tool: ${event.toolResult.name}, Success: ${success}, Result: ${truncatedResult}`);
+      } else if (event.type === "error") {
+        this.writeToLogFile("ERROR", event.message);
+      } else if (event.type === "permission_required") {
+        this.writeToLogFile("PERMISSION_REQUIRED", `Tool: ${event.toolCall.name}, Description: ${event.description}`);
+      } else if (event.type === "token_usage") {
+        this.writeToLogFile("TOKEN_USAGE", `Prompt Tokens: ${event.promptTokens}, Completion Tokens: ${event.completionTokens}`);
+      } else if (event.type === "goal_done") {
+        this.writeToLogFile("GOAL_DONE", `Goal: ${event.goal}\nSummary: ${event.summary}`);
+      } else if (event.type === "done") {
+        this.writeToLogFile("DONE", "Agent execution iteration/loop done");
       }
       onEvent(event);
     };
@@ -93,13 +123,15 @@ export class Agent {
     this.onQuestion = onQuestion;
   }
 
-  private writeToLogFile(message: string): void {
+  private writeToLogFile(level: string, message: string): void {
     try {
       ensureGlobalConfigDir();
       const logPath = path.join(getGlobalConfigDir(), "superagent.log");
       const timestamp = new Date().toISOString();
-      const logMessage = `[${timestamp}] [ERROR] ${message}\n`;
-      fs.appendFileSync(logPath, logMessage, "utf-8");
+      const prefix = `[${timestamp}] [tier:${this.tier}] [depth:${this.delegationDepth}] [multi:${this.isMultiAgent}] [${level}]`;
+      const lines = message.split("\n");
+      const formattedLines = lines.map(line => `${prefix} ${line}`).join("\n") + "\n";
+      fs.appendFileSync(logPath, formattedLines, "utf-8");
     } catch (err) {
       // Ignore log write errors to prevent crashing the agent
     }
@@ -219,6 +251,9 @@ export class Agent {
     this.isRunning = true;
     this.abortController = new AbortController();
 
+    this.writeToLogFile("INFO", `Agent execution started (tier: ${this.tier}, depth: ${this.delegationDepth}, isMultiAgent: ${this.isMultiAgent}, workingDirectory: ${this.workingDirectory}, worktreePath: ${this.worktreePath})`);
+    this.writeToLogFile("INFO", `Received user message: "${userInput}"`);
+
     this.conversation.addUserMessage(userInput);
     await this.compactHistoryIfNeeded();
     await this.saveHistory();
@@ -233,6 +268,7 @@ export class Agent {
         this.onEvent({ type: "error", message });
       }
     } finally {
+      this.flushTextLogBuffer();
       this.isRunning = false;
       this.abortController = null;
       this.onEvent({ type: "done" });
@@ -533,22 +569,87 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
             }
           }
 
+          if (tc.name === "invoke_superagent" || tc.name === "merge_superagents") {
+            if (this.planState !== "APPROVED") {
+              let msg = "";
+              if (this.planState === "PLANNING_PENDING") {
+                msg = `Error: Spawning or merging Superagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
+              } else {
+                msg = `Error: Spawning or merging Superagents is blocked. You must first write an implementation plan to '${this.getPlanFilePath()}' and have the user approve it before you can invoke any Superagents.`;
+              }
+              const blocked: ToolResult = {
+                toolCallId: tc.id,
+                name: tc.name,
+                result: msg,
+                isError: true,
+              };
+              toolResults.push(blocked);
+              this.onEvent({ type: "tool_end", toolResult: blocked, description });
+              continue;
+            }
+          }
+
           if (MODIFYING_TOOLS.includes(tc.name)) {
             const filePath = tc.args.filePath as string || tc.args.TargetFile as string || "";
             const planFilePath = this.getPlanFilePath();
+            const taskFilePath = this.getTaskFilePath();
+            const walkthroughFilePath = this.getWalkthroughFilePath();
             const isPlanFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(planFilePath).toLowerCase();
+            const isTaskFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(taskFilePath).toLowerCase();
+            const isWalkthroughFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(walkthroughFilePath).toLowerCase();
+
+            if (this.tier === "master" && !isPlanFile && !isTaskFile && !isWalkthroughFile) {
+              const blocked: ToolResult = {
+                toolCallId: tc.id,
+                name: tc.name,
+                result: "Error: The Master Agent is restricted from directly modifying source code files in the codebase. You must delegate all code modifications to Superagents by invoking them.",
+                isError: true,
+              };
+              toolResults.push(blocked);
+              this.onEvent({ type: "tool_end", toolResult: blocked, description });
+              continue;
+            }
 
             if (isPlanFile) {
-              const planContent = (tc.args.content as string || tc.args.codeContent as string || tc.args.CodeContent as string || "").trim();
-              const hasProposedChanges = /proposed\s+changes/i.test(planContent) || /rencana\s+perubahan/i.test(planContent);
-              const hasVerificationPlan = /verification\s+plan/i.test(planContent) || /rencana\s+verifikasi/i.test(planContent);
-              const hasTitle = /^#\s+.+/m.test(planContent);
+              let planContent = "";
+              if (tc.name === "write" || tc.name === "write_to_file") {
+                planContent = (tc.args.content as string || tc.args.codeContent as string || tc.args.CodeContent as string || "").trim();
+              } else if (tc.name === "replace_file_content") {
+                const target = tc.args.TargetContent as string || "";
+                const replacement = tc.args.ReplacementContent as string || "";
+                const existing = fs.existsSync(planFilePath) ? fs.readFileSync(planFilePath, "utf8") : "";
+                planContent = existing.replace(target, replacement);
+              } else if (tc.name === "multi_replace_file_content") {
+                let existing = fs.existsSync(planFilePath) ? fs.readFileSync(planFilePath, "utf8") : "";
+                const chunks = (tc.args.ReplacementChunks as any[]) || [];
+                for (const chunk of chunks) {
+                  const target = chunk.TargetContent as string || "";
+                  const replacement = chunk.ReplacementContent as string || "";
+                  existing = existing.replace(target, replacement);
+                }
+                planContent = existing;
+              } else {
+                planContent = (tc.args.content as string || tc.args.codeContent as string || tc.args.CodeContent as string || "").trim();
+              }
 
-              if (!hasTitle || (!hasProposedChanges && !hasVerificationPlan)) {
+              const hasTitle = /^#\s+.+/m.test(planContent);
+              const hasProposedChanges = /##\s+(proposed\s+changes|rencana\s+perubahan)/i.test(planContent);
+              const hasVerificationPlan = /##\s+(verification\s+plan|rencana\s+verifikasi)/i.test(planContent);
+              const hasAutomatedTests = /###\s+(automated\s+tests|test\s+otomatis)/i.test(planContent);
+              const hasManualVerification = /###\s+(manual\s+verification|verifikasi\s+manual|manual\s+testing)/i.test(planContent);
+
+              const missing: string[] = [];
+              if (!hasTitle) missing.push("Main Title (e.g., '# Goal Description')");
+              if (!hasProposedChanges) missing.push("Proposed Changes section ('## Proposed Changes')");
+              if (!hasVerificationPlan) missing.push("Verification Plan section ('## Verification Plan')");
+              if (!hasAutomatedTests) missing.push("Automated Tests sub-section ('### Automated Tests')");
+              if (!hasManualVerification) missing.push("Manual Verification sub-section ('### Manual Verification')");
+
+              if (missing.length > 0) {
                 const blocked: ToolResult = {
                   toolCallId: tc.id,
                   name: tc.name,
-                  result: "Error: The implementation plan is invalid or lacks structure. A valid plan must include a main title (e.g., '# Goal Description') and sections for 'Proposed Changes' and 'Verification Plan'. Please rewrite the plan with these sections included.",
+                  result: `Error: The implementation plan is invalid or lacks deep structure. A valid global plan must include:\n${missing.map(m => `- ${m}`).join("\n")}\n\nPlease rewrite the plan with all required sections and headers included.`,
                   isError: true,
                 };
                 toolResults.push(blocked);

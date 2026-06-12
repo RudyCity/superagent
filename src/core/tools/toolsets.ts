@@ -64,6 +64,11 @@ export const masterToolset: Tool[] = [
   globTool,
   grepTool,
   gitWorktreeTool,
+  writeToFileTool,       // for planning files
+  replaceFileContentTool,// for planning files
+  multiReplaceFileContentTool, // for planning files
+  runCommandTool,        // for running validation / test commands
+  bashTool,              // for running validation / test commands
 ];
 
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────

@@ -80,7 +80,7 @@ describe("superagentTools", () => {
     });
 
     it("should successfully invoke superagent in background and register the instance", async () => {
-      const parentAgent = { delegationDepth: 0 } as any;
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
       
       vi.spyOn(fs, "existsSync").mockReturnValue(false);
       vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
@@ -105,7 +105,7 @@ describe("superagentTools", () => {
     });
 
     it("should successfully run and wait for superagent if wait is true", async () => {
-      const parentAgent = { delegationDepth: 0 } as any;
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
       
       vi.spyOn(fs, "existsSync").mockReturnValue(false);
       vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
@@ -171,7 +171,7 @@ describe("superagentTools", () => {
     });
 
     it("should return message if no completed superagents found", async () => {
-      const parentAgent = { delegationDepth: 0 } as any;
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
       const result = await agentLocalStorage.run(parentAgent, () => {
         return mergeSuperagentsTool.execute({}, process.cwd());
       });
@@ -179,7 +179,7 @@ describe("superagentTools", () => {
     });
 
     it("should merge branch and cleanup worktree if completed", async () => {
-      const parentAgent = { delegationDepth: 0 } as any;
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
       
       superagentInstances.set("agent-2", {
         id: "agent-2",
@@ -362,6 +362,38 @@ describe("superagentTools", () => {
       expect(mockAbort2).not.toHaveBeenCalled();
       expect(superagentInstances.get("agent-kill-all-1")?.status).toBe("error");
       expect(superagentInstances.get("agent-kill-all-2")?.status).toBe("completed");
+    });
+  });
+
+  describe("Master Agent Workflow guards", () => {
+    it("should reject invoke_superagent if plan is pending approval", async () => {
+      const parentAgent = {
+        delegationDepth: 0,
+        planState: "PLANNING_PENDING",
+        getPlanFilePath: () => "/dummy/plan.md"
+      } as any;
+      const result = await agentLocalStorage.run(parentAgent, () => {
+        return invokeSuperagentTool.execute(
+          { role: "developer", task: "code", branch: "feat/some" },
+          process.cwd()
+        );
+      });
+      expect(result).toContain("Spawning or merging Superagents is blocked. A plan is pending approval.");
+    });
+
+    it("should reject invoke_superagent if plan is IDLE (not written yet)", async () => {
+      const parentAgent = {
+        delegationDepth: 0,
+        planState: "IDLE",
+        getPlanFilePath: () => "/dummy/plan.md"
+      } as any;
+      const result = await agentLocalStorage.run(parentAgent, () => {
+        return invokeSuperagentTool.execute(
+          { role: "developer", task: "code", branch: "feat/some" },
+          process.cwd()
+        );
+      });
+      expect(result).toContain("Spawning or merging Superagents is blocked. You must first write an implementation plan");
     });
   });
 });

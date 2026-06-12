@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import fs from "fs";
 import { Agent } from "./agent.js";
 import type { AgentEvent } from "./agent.js";
 
@@ -194,3 +195,63 @@ describe("Agent – workingDirectory", () => {
     expect(agent.workingDirectory).toBe(customDir);
   });
 });
+
+// ─── Agent Logging ─────────────────────────────────────────────────────────────
+
+describe("Agent – logging to superagent.log", () => {
+  let appendSpy: any;
+
+  beforeEach(() => {
+    appendSpy = vi.spyOn(fs, "appendFileSync").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    appendSpy.mockRestore();
+  });
+
+  it("should format and write logs correctly for different events", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    
+    // Trigger tool start event
+    (agent as any).onEvent({
+      type: "tool_start",
+      toolCall: { id: "call1", name: "test_tool", args: { x: 1 } },
+      description: "running test tool",
+    });
+
+    // Check appendFileSync call
+    expect(appendSpy).toHaveBeenCalled();
+    const [logPath, logMessage] = appendSpy.mock.calls[0];
+    expect(logPath).toContain("superagent.log");
+    expect(logMessage).toContain("[tier:master]");
+    expect(logMessage).toContain("[depth:0]");
+    expect(logMessage).toContain("[multi:false]");
+    expect(logMessage).toContain("[TOOL_START]");
+    expect(logMessage).toContain("Tool: test_tool");
+    expect(logMessage).toContain('Args: {"x":1}');
+  });
+
+  it("should buffer text events and flush them on non-text events", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+
+    (agent as any).onEvent({ type: "text", content: "Hello " });
+    (agent as any).onEvent({ type: "text", content: "World!" });
+
+    // Should not have logged the text yet
+    expect(appendSpy).not.toHaveBeenCalled();
+
+    // Trigger non-text event
+    (agent as any).onEvent({ type: "done" });
+
+    // Should flush the text first, then log the done event
+    expect(appendSpy).toHaveBeenCalledTimes(2);
+    const firstCall = appendSpy.mock.calls[0][1];
+    const secondCall = appendSpy.mock.calls[1][1];
+
+    expect(firstCall).toContain("[TEXT] Hello World!");
+    expect(secondCall).toContain("[DONE]");
+  });
+});
+

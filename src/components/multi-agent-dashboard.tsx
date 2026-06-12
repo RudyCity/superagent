@@ -274,6 +274,32 @@ export function MultiAgentDashboard({
   } | null>(null);
   const [checkpointsList, setCheckpointsList] = useState<any[]>([]);
   const [worktreeCount, setWorktreeCount] = useState<number>(0);
+  const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
+
+  // Periodic sync of agent properties (e.g. planState)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (agent) {
+        const currentPlanState = agent.planState;
+        setPlanState((prev) => {
+          if (prev !== currentPlanState) {
+            if (currentPlanState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve") {
+              setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+              setWizardSelectedIndex(0);
+              setActiveWizard({
+                type: "plan_approve",
+                step: 1,
+                data: {},
+              });
+            }
+            return currentPlanState;
+          }
+          return prev;
+        });
+      }
+    }, 250);
+    return () => clearInterval(timer);
+  }, [agent, activeWizard]);
 
   // Register the interactive question handler
   useEffect(() => {
@@ -1198,6 +1224,23 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setWizardSelectedIndex(0);
       setWizardSelectedSet(new Set());
       setPendingQuestion(null);
+    } else if (activeWizard.type === "plan_approve") {
+      const approved = value === "Approve Plan & Proceed";
+      if (approved) {
+        agent.approvePlan();
+        setPlanState("APPROVED");
+        setMasterLogs((prev) => [...prev, "✓ Implementation plan approved! Continuing with the approved plan now."].slice(-500));
+        agent.sendMessage("Implementation plan approved via interactive approval wizard. Continue with the approved plan now.").catch((err: any) => {
+          setMasterLogs((prev) => [...prev, `[ERROR] Plan approval resume error: ${err.message}`].slice(-500));
+        });
+      } else {
+        agent.planState = "IDLE";
+        setPlanState("IDLE");
+        setMasterLogs((prev) => [...prev, "✗ Implementation plan rejected. Please type your feedback below and press Enter to send it to the agent."].slice(-500));
+      }
+      setActiveWizard(null);
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
     }
   };
 
@@ -1239,6 +1282,18 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
 
       handleWizardSubmit(finalValue);
+      setQuery("");
+      return;
+    }
+
+    if (planState === "PLANNING_PENDING") {
+      setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+      setWizardSelectedIndex(0);
+      setActiveWizard({
+        type: "plan_approve",
+        step: 1,
+        data: {},
+      });
       setQuery("");
       return;
     }
@@ -1291,7 +1346,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         },
         setWizardOptions,
         setWizardSelectedIndex,
-        setPlanState: () => {},
+        setPlanState,
         setGoalMode: () => {},
         setIsProcessing: () => {},
         resumeSession: async () => {}
@@ -2249,6 +2304,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                       activeWizard.type === "resume" ? `📁 SELECT SESSION TO RESUME:` :
                       activeWizard.type === "skills" ? `🛠️ SKILLS MANAGER (Step ${activeWizard.step}):` :
                       activeWizard.type === "checkpoint" ? `📋 CHECKPOINT MANAGER (Step ${activeWizard.step}):` :
+                      activeWizard.type === "plan_approve" ? `⚠️ PLAN APPROVAL REQUIRED (Use Arrow Keys Up/Down & Enter):` :
                       activeWizard.type === "question" ? (
                         activeWizard.step === 2
                           ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):"
@@ -2266,6 +2322,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                       `🔑 PROVIDER CREDENTIALS (Step ${activeWizard.step}):`
                     }
                     description={
+                      activeWizard.type === "plan_approve" ? `Model AI telah merancang rencana di file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}` :
                       activeWizard.type === "question" ? (pendingQuestion?.question || "") :
                       activeWizard.type === "login" && activeWizard.step === 10 ? "Choose a template catalog stack or let AI dynamically design your project details:" :
                       activeWizard.type === "login" && activeWizard.step === 11 ? "Specify the name for this workspace:" :
@@ -2291,6 +2348,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
           {/* Bottom Left: Interactive Console Prompt */}
           <Box flexDirection="column" width="100%" marginTop={0}>
+            {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (() => {
+              const planUrl = "file:///" + path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/");
+              return (
+                <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
+                  <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
+                  <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">{planUrl}</Text></Text>
+                  <Text color="yellow">Silakan kirim pesan/masukan apa saja untuk menampilkan kembali dialog persetujuan wizard.</Text>
+                </Box>
+              );
+            })()}
+
             {/* Active Subagents & Tasks Live List */}
             {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
               <Box flexDirection="column" marginBottom={1}>

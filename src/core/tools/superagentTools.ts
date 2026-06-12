@@ -81,6 +81,14 @@ export const invokeSuperagentTool: Tool = {
              `You are at depth ${parentDepth}. Use invoke_subagent instead.`;
     }
 
+    if (parentAgent && parentAgent.planState !== "APPROVED") {
+      if (parentAgent.planState === "PLANNING_PENDING") {
+        return `Error: Spawning or merging Superagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
+      } else {
+        return `Error: Spawning or merging Superagents is blocked. You must first write an implementation plan to '${parentAgent.getPlanFilePath()}' and have the user approve it before you can invoke any Superagents.`;
+      }
+    }
+
     // Sanitize branch name for use as a directory name
     const safeBranchName = branch.replace(/\//g, "-").replace(/[^a-zA-Z0-9-_]/g, "");
 
@@ -345,6 +353,14 @@ export const mergeSuperagentsTool: Tool = {
     const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;
     if (parentDepth > 0) {
       return `Error: merge_superagents can only be called by the Master Agent (depth 0).`;
+    }
+
+    if (parentAgent && parentAgent.planState !== "APPROVED") {
+      if (parentAgent.planState === "PLANNING_PENDING") {
+        return `Error: Spawning or merging Superagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
+      } else {
+        return `Error: Spawning or merging Superagents is blocked. You must first write an implementation plan to '${parentAgent.getPlanFilePath()}' and have the user approve it before you can invoke any Superagents.`;
+      }
     }
 
     const completed = [...superagentInstances.values()].filter(
