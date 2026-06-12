@@ -10,7 +10,8 @@ import {
   backgroundTasks, 
   subscribeToTasks,
   subscribeToActiveOutput,
-  notifySubagentsChanged
+  notifySubagentsChanged,
+  notifySuperagentsChanged
 } from "../core/tools/state.js";
 import { Agent } from "../core/agent.js";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
@@ -77,6 +78,9 @@ export function MultiAgentDashboard({
   const [focusArea, setFocusArea] = useState<"list" | "logs" | "input">("input");
   const [query, setQuery] = useState("");
   const [masterLogs, setMasterLogs] = useState<string[]>(["[MASTER] System initialised. Ready for tasks."]);
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [tempInput, setTempInput] = useState("");
 
   const [currentTask, setCurrentTask] = useState("Idle - Ready for input");
   const [gitBranch, setGitBranch] = useState("main");
@@ -169,6 +173,32 @@ export function MultiAgentDashboard({
       if (branch) setGitBranch(branch);
     } catch {}
   }, []);
+
+  useEffect(() => {
+    if (agent) {
+      try {
+        const msgs = agent.getHistory().getMessages();
+        const userInputs: string[] = [];
+        for (const m of msgs) {
+          if (m.role === "user" && m.content) {
+            const content = m.content.trim();
+            if (content) {
+              userInputs.push(content);
+            }
+          }
+        }
+        if (userInputs.length > 0) {
+          const uniqueUserInputs: string[] = [];
+          for (const input of userInputs) {
+            if (uniqueUserInputs.length === 0 || uniqueUserInputs[uniqueUserInputs.length - 1] !== input) {
+              uniqueUserInputs.push(input);
+            }
+          }
+          setHistory(uniqueUserInputs);
+        }
+      } catch {}
+    }
+  }, [agent]);
 
   const [terminalSize, setTerminalSize] = useState({
     width: process.stdout.columns || 110,
@@ -655,14 +685,25 @@ export function MultiAgentDashboard({
 
     if (!cleanVal) return;
 
-    if (cleanVal.startsWith("/")) {
-      if (cleanVal.toLowerCase().startsWith("/goal")) {
-        setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`, `[ERROR] /goal command is disabled in Multi-Agent Dashboard.`].slice(-50));
+    // Save to history
+    setHistory((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1] === cleanVal) {
+        return prev;
+      }
+      return [...prev, cleanVal];
+    });
+    setHistoryIndex(-1);
+
+    const commandInput = cleanVal.startsWith("!") ? `/terminal ${cleanVal.slice(1).trim()}` : cleanVal;
+
+    if (commandInput.startsWith("/")) {
+      if (commandInput.toLowerCase().startsWith("/goal")) {
+        setMasterLogs((prev) => [...prev, `[USER] ${commandInput}`, `[ERROR] /goal command is disabled in Multi-Agent Dashboard.`].slice(-50));
         setQuery("");
         return;
       }
 
-      if (cleanVal.toLowerCase().startsWith("/checkpoint")) {
+      if (commandInput.toLowerCase().startsWith("/checkpoint")) {
         const sessionFilePath = agent.getCurrentHistoryFilePath();
         listCheckpointsForSession(sessionFilePath)
           .then((list) => {
@@ -671,7 +712,7 @@ export function MultiAgentDashboard({
           .catch(() => {});
       }
 
-      handleSlashCommand(cleanVal, {
+      handleSlashCommand(commandInput, {
         addLine: (line) => setMasterLogs((prev) => [...prev, `[${line.type.toUpperCase()}] ${line.content}`].slice(-50)),
         exit,
         agent,
@@ -692,13 +733,13 @@ export function MultiAgentDashboard({
       return;
     }
 
-    setMasterLogs((prev) => [...prev, `[USER] ${cleanVal}`].slice(-50));
+    setMasterLogs((prev) => [...prev, `[USER] ${commandInput}`].slice(-50));
     setQuery("");
-    setCurrentTask(cleanVal);
+    setCurrentTask(commandInput);
 
-    agent.sendMessage(cleanVal)
+    agent.sendMessage(commandInput)
       .then(() => {
-        setCurrentTask(`Idle - Completed: ${cleanVal}`);
+        setCurrentTask(`Idle - Completed: ${commandInput}`);
       })
       .catch((err) => {
         setCurrentTask(`Error: ${err.message || err}`);
@@ -948,11 +989,97 @@ export function MultiAgentDashboard({
     };
   }, [wrappedLines.length, logsCount, terminalSize.width, terminalSize.height]);
 
+  const stopAllRunningAgents = () => {
+    let count = 0;
+    
+    // Abort running subagents
+    for (const inst of subagentInstances.values()) {
+      if (inst.status === "running") {
+        try {
+          inst.agent.abort();
+        } catch {}
+        inst.status = "completed";
+        inst.result = "[Cancelled by user (Ctrl+C)]";
+        count++;
+      }
+    }
+    
+    // Abort running superagents
+    for (const inst of superagentInstances.values()) {
+      if (inst.status === "running") {
+        try {
+          inst.agent.abort();
+        } catch {}
+        superagentInstances.set(inst.id, {
+          ...inst,
+          status: "error",
+          result: "[Cancelled by user (Ctrl+C)]",
+          completedAt: Date.now()
+        });
+        count++;
+      }
+    }
+    
+    // Abort master agent
+    if (agent) {
+      try {
+        agent.abort();
+      } catch {}
+    }
+
+    if (count > 0) {
+      notifySubagentsChanged();
+      notifySuperagentsChanged();
+      setMasterLogs((prev) => [...prev, `[SYSTEM] 🛑 Interrupted ${count} running agent(s) via Ctrl+C.`].slice(-50));
+    }
+    return count;
+  };
+
   // Handle user inputs
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
+      if (stopAllRunningAgents() > 0) {
+        setCurrentTask("Idle - Interrupted");
+        return;
+      }
       exit();
       return;
+    }
+
+    if (focusArea === "input" && !activeWizard) {
+      if (key.escape) {
+        setQuery("");
+        setHistoryIndex(-1);
+        setLogScrollOffset(0);
+        return;
+      }
+
+      if (key.upArrow && history.length > 0) {
+        let newIndex = historyIndex;
+        if (historyIndex === -1) {
+          setTempInput(query);
+          newIndex = history.length - 1;
+        } else if (historyIndex > 0) {
+          newIndex = historyIndex - 1;
+        }
+        setHistoryIndex(newIndex);
+        setQuery(history[newIndex]);
+        return;
+      }
+
+      if (key.downArrow) {
+        if (historyIndex !== -1) {
+          if (historyIndex === history.length - 1) {
+            setHistoryIndex(-1);
+            setQuery(tempInput);
+          } else {
+            const newIndex = historyIndex + 1;
+            setHistoryIndex(newIndex);
+            setQuery(history[newIndex]);
+          }
+        }
+        return;
+      }
     }
 
     if (activeWizard) {
@@ -1071,19 +1198,41 @@ export function MultiAgentDashboard({
   const visibleSessions = sessions.slice(startIdx, startIdx + maxVisibleSessions);
 
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={0} width={terminalSize.width}>
+    <Box flexDirection="column" paddingX={1} paddingY={0} width={terminalSize.width} height={terminalSize.height}>
       {/* Header Banner - High Tech Cyberpunk Style */}
-      <Box flexDirection="row" justifyContent="space-between" paddingX={0} marginBottom={1}>
-        <Box flexDirection="row">
-          <Text color="cyan" bold>❖ SUPERAGENT: MULTI-AGENT ORCHESTRATOR</Text>
-          <Text color="gray"> │ </Text>
-          <Text color="magenta" bold>Branch: {gitBranch}</Text>
-          <Text color="gray"> │ </Text>
-          <Text color="yellow" bold>Model: {process.env.MODEL || "google/gemini-2.5-flash"}</Text>
-          <Text color="gray"> │ </Text>
-          <Text color="cyan" bold>Threads: {sessions.length}</Text>
+      <Box flexDirection="row" justifyContent="space-between" paddingX={0} marginBottom={2} alignItems="center">
+        <Box flexDirection="row" alignItems="center">
+          {/* Mascot Column - Simple Garuda Mascot (Yellow/Gold) */}
+          <Box flexDirection="column" marginRight={3} alignItems="center">
+            <Box flexDirection="row">
+              <Text color="yellow" bold> ◥█◣  ▲  ◢█◤ </Text>
+            </Box>
+            <Box flexDirection="row">
+              <Text color="yellow" bold>  ◥██ █ ██◤  </Text>
+            </Box>
+            <Box flexDirection="row">
+              <Text color="yellow" bold>   ◥█████◤   </Text>
+            </Box>
+            <Box flexDirection="row">
+              <Text color="yellow" bold>     ◥█◤     </Text>
+            </Box>
+          </Box>
+
+          {/* Info Column */}
+          <Box flexDirection="column" justifyContent="center">
+            <Box flexDirection="row" alignItems="center">
+              <Text color="red" bold>S U P E R</Text>
+              <Text color="white" bold>A G E N T</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="yellow" bold>MULTI-AGENT SYSTEM</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="magenta" bold>Branch: {gitBranch}</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="cyan" bold>Threads: {sessions.length}</Text>
+            </Box>
+          </Box>
         </Box>
-        <Text color="green" bold>🟢 ONLINE</Text>
+        <Text color="green" bold>● ONLINE</Text>
       </Box>
 
       {/* Main Workspace Split */}
@@ -1096,7 +1245,8 @@ export function MultiAgentDashboard({
               <Text bold color={focusArea === "list" ? "green" : "cyan"}>📡 WORKSPACE REGISTRY</Text>
             </Box>
             {sessions.length === 0 ? (
-              <Box justifyContent="center" marginTop={1}>
+              <Box flexDirection="row" marginTop={0}>
+                <Text color="cyan" dimColor>│ </Text>
                 <Text color="gray" dimColor>No active agent threads detected</Text>
               </Box>
             ) : (
@@ -1106,11 +1256,14 @@ export function MultiAgentDashboard({
                 const color = isSelected ? "cyan" : tierColor[session.type];
                 return (
                   <Box key={session.id} flexDirection="row" justifyContent="space-between" marginTop={0}>
-                    <Text bold={isSelected} color={color} wrap="truncate-end">
-                      {isSelected ? "▶ " : "  "}
-                      {tierIcon[session.type]} [{globalIndex + 1}] {session.id.slice(0, 14)}
-                    </Text>
-                    <Box>
+                    <Box flexDirection="row" flexShrink={1}>
+                      <Text color="cyan" dimColor>├── </Text>
+                      <Text bold={isSelected} color={color} wrap="truncate-end">
+                        {isSelected ? "▶ " : "  "}
+                        {tierIcon[session.type]} [{globalIndex + 1}] {session.id.slice(0, 14)}
+                      </Text>
+                    </Box>
+                    <Box flexShrink={0}>
                       {renderStatusBadge(session.status)}
                       {session.tokens > 0 
                         ? <Text color="cyan" dimColor> {session.tokens.toLocaleString()}t</Text>
@@ -1121,11 +1274,17 @@ export function MultiAgentDashboard({
                 );
               })
             )}
+            <Box flexDirection="row" marginTop={0}>
+              <Text color="cyan" dimColor>│</Text>
+            </Box>
           </Box>
 
           {/* Wizard Dialog (if active) */}
           {activeWizard && (
-            <Box flexDirection="column" marginY={1}>
+            <Box flexDirection="column" marginY={0}>
+              <Box flexDirection="row" marginTop={0}>
+                <Text color="magenta">│</Text>
+              </Box>
               <WizardDialog
                 title={
                   activeWizard.type === "model" ? `⚙️ SELECT MODEL PROVIDER (Step ${activeWizard.step}):` :
@@ -1148,15 +1307,20 @@ export function MultiAgentDashboard({
                 maxVisible={5}
                 isMultiSelect={activeWizard.isMultiSelect}
                 selectedSet={wizardSelectedSet}
+                marginY={0}
               />
+              <Box flexDirection="row" marginTop={0}>
+                <Text color="magenta">│</Text>
+              </Box>
             </Box>
           )}
 
           {/* Bottom Left: Interactive Console Prompt */}
-          <Box flexDirection="column" width="100%" marginTop={1}>
+          <Box flexDirection="column" width="100%" marginTop={0}>
 
             {focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (
-              <Box flexDirection="row" marginBottom={1} paddingLeft={2}>
+              <Box flexDirection="row" marginBottom={1}>
+                <Text color="cyan" dimColor>│   </Text>
                 <Text color="gray" dimColor>Suggestions: </Text>
                 {suggestions.slice(0, 3).map((s, idx) => (
                   <Text key={s} color={s === query ? "cyan" : "gray"} bold={s === query} underline={s === query}>
@@ -1167,8 +1331,8 @@ export function MultiAgentDashboard({
               </Box>
             )}
             <Box flexDirection="row" marginTop={0} width="100%">
-              <Text bold color={focusArea === "input" ? "green" : "cyan"}>⚡ PROMPT ❯ </Text>
-              <Box width={Math.max(10, Math.floor(terminalSize.width * 0.40) - 12)}>
+              <Text bold color={focusArea === "input" ? "green" : "cyan"}>└───[ ⚡ PROMPT ] ❯ </Text>
+              <Box width={Math.max(10, Math.floor(terminalSize.width * 0.40) - 22)}>
                 <TextInput
                   value={query}
                   onChange={(val) => setQuery(stripSgrMouseSequences(val))}

@@ -10,6 +10,7 @@ interface WizardDialogProps {
   maxVisible?: number;
   isMultiSelect?: boolean;
   selectedSet?: Set<number>;
+  marginY?: number;
 }
 
 export function WizardDialog({
@@ -21,6 +22,7 @@ export function WizardDialog({
   maxVisible,
   isMultiSelect = false,
   selectedSet,
+  marginY = 1,
 }: WizardDialogProps) {
   const actualOptions = Array.isArray(options) ? options : [];
   const total = actualOptions.length;
@@ -39,7 +41,7 @@ export function WizardDialog({
   }
 
   return (
-    <Box flexDirection="column" marginY={1}>
+    <Box flexDirection="column" marginY={marginY}>
       {/* Top border connecting to the timeline */}
       <Text color={borderColor}>
         ├───[ <Text bold color={borderColor}>{title}</Text> ]
