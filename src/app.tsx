@@ -2391,7 +2391,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
     }
 
-    if ((key.backspace || key.delete) && isPasted && !isProcessing) {
+    if (
+      (key.backspace || key.delete) &&
+      isPasted &&
+      (input.length > 200 || input.includes("\n")) &&
+      !isProcessing
+    ) {
       setInput((prev) => {
         const next = prev.slice(0, -1);
         const hasNewline = next.includes("\n");
