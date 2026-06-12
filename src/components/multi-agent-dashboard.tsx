@@ -1325,6 +1325,25 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       const subagentTokens = [...subagentInstances.values()]
         .reduce((acc, i) => acc + (i.tokenUsage?.prompt ?? 0) + (i.tokenUsage?.completion ?? 0), 0);
 
+      // Prepare subagents grouped by parentId
+      const subagentSessionsMap = new Map<string, AgentSession[]>();
+      for (const [id, instance] of subagentInstances.entries()) {
+        const parentId = (instance as any).parentId || "master";
+        if (!subagentSessionsMap.has(parentId)) {
+          subagentSessionsMap.set(parentId, []);
+        }
+        subagentSessionsMap.get(parentId)!.push({
+          id: `${instance.typeName}-${id}`,
+          type: "SUBAGENT",
+          task: `Role: ${instance.role}`,
+          status: instance.status === "running" ? "WORKING" : instance.status === "completed" ? "COMPLETED" : "IDLE",
+          tokens: (instance.tokenUsage?.prompt ?? 0) + (instance.tokenUsage?.completion ?? 0),
+          logs: instance.logs && instance.logs.length > 0 ? instance.logs : ["Awaiting output..."],
+          branch: "worktree",
+        });
+      }
+
+      // 1. Master session
       list.push({
         id: "master-orchestrator",
         type: "MASTER",
@@ -1334,6 +1353,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         logs: masterLogs,
         branch: gitBranch,
       });
+
+      // Immediately push all subagent sessions belonging to "master"
+      const masterSubs = subagentSessionsMap.get("master") || [];
+      list.push(...masterSubs);
 
       // 2. Superagent instances (depth 1 — feature developers in worktrees)
       for (const [id, instance] of superagentInstances.entries()) {
@@ -1349,19 +1372,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           branch: instance.branch,
           worktreePath: instance.worktreePath,
         });
+
+        // Immediately push all subagent sessions belonging to this superagent
+        const saSubs = subagentSessionsMap.get(id) || [];
+        list.push(...saSubs);
       }
 
-      // 3. Subagent instances (depth 2 — specialized workers)
-      for (const [id, instance] of subagentInstances.entries()) {
-        list.push({
-          id: `${instance.typeName}-${id}`,
-          type: "SUBAGENT",
-          task: `Role: ${instance.role}`,
-          status: instance.status === "running" ? "WORKING" : instance.status === "completed" ? "COMPLETED" : "IDLE",
-          tokens: (instance.tokenUsage?.prompt ?? 0) + (instance.tokenUsage?.completion ?? 0),
-          logs: instance.logs && instance.logs.length > 0 ? instance.logs : ["Awaiting output..."],
-          branch: "worktree",
-        });
+      // 3. Fallback: Any remaining Subagents (just in case parentId doesn't match keys)
+      for (const [parentId, subs] of subagentSessionsMap.entries()) {
+        if (parentId !== "master" && !superagentInstances.has(parentId)) {
+          list.push(...subs);
+        }
       }
 
       // 4. Active background tasks
@@ -1417,8 +1438,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     branch: "N/A",
   };
 
+  const runningTasksCount = [...backgroundTasks.values()]
+    .filter((t) => t.isDetachedWindow || !t.hasExited).length;
+
+  const runningSubagentsCount = [...subagentInstances.values()]
+    .filter((s) => s.status === "running").length;
+
+  let liveListHeight = 0;
+  if (runningSubagentsCount > 0 || runningTasksCount > 0) {
+    liveListHeight += 1; // padding/margin
+    if (runningSubagentsCount > 0) {
+      liveListHeight += 1; // header
+      liveListHeight += runningSubagentsCount * 2; // Each subagent takes 2 lines
+    }
+    if (runningTasksCount > 0) {
+      liveListHeight += 1; // header
+      liveListHeight += runningTasksCount; // Each task is 1 line
+      if (runningSubagentsCount > 0) {
+        liveListHeight += 1; // marginTop
+      }
+    }
+  }
+
   const workspaceHeight = Math.max(10, terminalSize.height - 10);
-  const leftTopHeight = Math.max(5, workspaceHeight - 7);
+  const leftTopHeight = Math.max(5, workspaceHeight - 7 - liveListHeight);
   const logBoxHeight = Math.max(5, workspaceHeight - 4);
   const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
   const logsCount = showCursor ? Math.max(1, logBoxHeight - 1) : logBoxHeight;
@@ -1992,7 +2035,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     TASK:       "gray",
   };
 
-  const maxVisibleSessions = Math.max(3, leftTopHeight - 3);
+  const maxVisibleSessions = Math.max(3, leftTopHeight - 4);
   let startIdx = 0;
   if (selectedIndex >= maxVisibleSessions) {
     startIdx = selectedIndex - maxVisibleSessions + 1;
@@ -2002,7 +2045,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   const activeWTs = [...superagentInstances.values()]
     .filter((i) => i.status === "running")
     .map((i) => i.branch);
-
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0} width={terminalSize.width} height={terminalSize.height}>
       {/* Header Banner - High Tech Cyberpunk Style */}
@@ -2046,43 +2088,72 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         {/* Left Column (Registry + Shortcuts + Console Input) */}
         <Box flexDirection="column" width="40%" height={workspaceHeight}>
           {/* Top Left: Workspace Registry */}
-          <Box flexDirection="column" flexGrow={1}>
-            <Box marginBottom={1}>
+          <Box 
+            flexDirection="column" 
+            borderStyle="round" 
+            borderColor={focusArea === "list" ? "green" : "cyan"} 
+            paddingX={1}
+            height={leftTopHeight}
+            marginBottom={1}
+          >
+            <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
               <Text bold color={focusArea === "list" ? "green" : "cyan"}>📡 WORKSPACE REGISTRY</Text>
+              {focusArea === "list" && (
+                <Text color="gray" dimColor> [↑/↓ Navigate • Enter Inspect]</Text>
+              )}
             </Box>
             {sessions.length === 0 ? (
               <Box flexDirection="row" marginTop={0}>
-                <Text color="cyan" dimColor>│ </Text>
                 <Text color="gray" dimColor>No active agent threads detected</Text>
               </Box>
             ) : (
               visibleSessions.map((session, index) => {
                 const globalIndex = startIdx + index;
                 const isSelected = globalIndex === selectedIndex;
-                const color = isSelected ? "cyan" : tierColor[session.type];
+                const color = isSelected ? (focusArea === "list" ? "green" : "cyan") : tierColor[session.type];
+                
+                const isFocused = focusArea === "list";
+                const rowBg = isSelected && isFocused ? "green" : undefined;
+                const rowTextColor = isSelected && isFocused ? "black" : color;
+                const tokenColor = isSelected && isFocused ? "black" : "cyan";
+                
+                const isSubagent = session.type === "SUBAGENT";
+                let label = "";
+                
+                if (session.type === "MASTER") {
+                  label = `[${globalIndex + 1}] master ❯ ${session.task}`;
+                } else if (session.type === "SUPERAGENT") {
+                  const action = getLatestSuperagentAction(session.logs);
+                  const role = session.id.split("-")[1] || "superagent";
+                  label = `[${globalIndex + 1}] ${role} ❯ ${action}`;
+                } else if (session.type === "SUBAGENT") {
+                  const action = getLatestSubagentAction(session.logs);
+                  const name = session.id.split("-")[0];
+                  label = `[${globalIndex + 1}] ${name} ❯ ${action}`;
+                } else {
+                  label = `[${globalIndex + 1}] ${session.id.slice(0, 14)}`;
+                }
+                
                 return (
                   <Box key={session.id} flexDirection="row" justifyContent="space-between" marginTop={0}>
                     <Box flexDirection="row" flexShrink={1}>
-                      <Text color="cyan" dimColor>├── </Text>
-                      <Text bold={isSelected} color={color} wrap="truncate-end">
+                      <Text bold={isSelected} color={rowTextColor} backgroundColor={rowBg} wrap="truncate-end">
                         {isSelected ? "▶ " : "  "}
-                        {tierIcon[session.type]} [{globalIndex + 1}] {session.id.slice(0, 14)}
+                        {isSubagent ? "  └─ 🔍 " : `${tierIcon[session.type]} `}
+                        {label}
                       </Text>
                     </Box>
                     <Box flexShrink={0}>
                       {renderStatusBadge(session.status)}
                       {session.tokens > 0 
-                        ? <Text color="cyan" dimColor> {session.tokens.toLocaleString()}t</Text>
-                        : <Text color="gray" dimColor> --</Text>
+                        ? <Text color={tokenColor} backgroundColor={rowBg} dimColor={!isSelected || !isFocused}> {session.tokens.toLocaleString()}t</Text>
+                        : <Text color={isSelected && isFocused ? "black" : "gray"} backgroundColor={rowBg} dimColor> --</Text>
                       }
                     </Box>
                   </Box>
                 );
               })
             )}
-            <Box flexDirection="row" marginTop={0}>
-              <Text color="cyan" dimColor>│</Text>
-            </Box>
           </Box>
 
           {/* Wizard Dialog (if active) */}
@@ -2168,6 +2239,40 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
           {/* Bottom Left: Interactive Console Prompt */}
           <Box flexDirection="column" width="100%" marginTop={0}>
+            {/* Active Subagents & Tasks Live List */}
+            {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
+              <Box flexDirection="column" marginBottom={1}>
+                {runningSubagentsCount > 0 && (
+                  <Box flexDirection="column">
+                    <Text color="yellow" bold>🤖 ACTIVE SUBAGENTS:</Text>
+                    {Array.from(subagentInstances.values())
+                      .filter((s) => s.status === "running")
+                      .map((inst) => (
+                        <Box key={inst.id} flexDirection="column">
+                          <Text color="yellow">
+                            ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
+                          </Text>
+                          <Text color="yellow">
+                            │  └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
+                          </Text>
+                        </Box>
+                      ))}
+                  </Box>
+                )}
+                {runningTasksCount > 0 && (
+                  <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
+                    <Text color="cyan" bold>⚙️ ACTIVE PROCESSES:</Text>
+                    {Array.from(backgroundTasks.entries())
+                      .filter(([id, task]) => !task.hasExited)
+                      .map(([id, task]) => (
+                        <Text key={id} color="cyan">
+                          ├─ [{id}] Command: {task.command}
+                        </Text>
+                      ))}
+                  </Box>
+                )}
+              </Box>
+            )}
 
             {focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (
               <Box flexDirection="row" marginBottom={1}>
@@ -2267,6 +2372,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               <Text color="cyan" bold>Superagents({[...superagentInstances.values()].filter(i => i.status === "running").length} active): {historicalSuperagentTokens.toLocaleString()}t</Text>
               <Text color="gray"> │ </Text>
               <Text color="blue" bold>Worktrees: {worktreeCount}</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="yellow" bold>Proc: {runningTasksCount}</Text>
+              <Text color="gray"> • </Text>
+              <Text color="magenta" bold>Sub: {runningSubagentsCount}</Text>
             </Text>
           </Box>
         </Box>
@@ -2290,4 +2399,45 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       </Box>
     </Box>
   );
+}
+
+function getLatestSubagentAction(logs: string[]): string {
+  if (!logs || logs.length === 0) return "Initializing...";
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const raw = logs[i].trim();
+    if (raw) {
+      let clean = raw
+        .replace(/^.*?───\[\s*/, "")
+        .replace(/\s*\]$/, "")
+        .replace(/^[│┌├└─\s]+/, "")
+        .trim();
+      clean = clean.replace(/^Description:\s*/i, "");
+      clean = clean.replace(/^Args:\s*/i, "");
+      if (clean) {
+        return clean.length > 80 ? clean.slice(0, 80) + "..." : clean;
+      }
+    }
+  }
+  return "Processing...";
+}
+
+function getLatestSuperagentAction(logs: string[]): string {
+  if (!logs || logs.length === 0) return "Initializing...";
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const raw = logs[i].trim();
+    if (raw) {
+      let clean = raw
+        .replace(/^\[THINK\]\s*/i, "")
+        .replace(/^\[TOOL:START\]\s*/i, "")
+        .replace(/^\[TOOL:SUCCESS\]\s*/i, "")
+        .replace(/^\[TOOL:FAILED\]\s*/i, "")
+        .replace(/^\[ERROR\]\s*/i, "")
+        .replace(/^[│┌├└─\s]+/, "")
+        .trim();
+      if (clean) {
+        return clean.length > 60 ? clean.slice(0, 60) + "..." : clean;
+      }
+    }
+  }
+  return "Processing...";
 }

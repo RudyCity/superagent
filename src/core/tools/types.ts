@@ -48,6 +48,7 @@ export interface SubagentInstance {
   result?: string;
   completedAt?: number;
   tokenUsage?: { prompt: number; completion: number };
+  parentId?: string;
 }
 
 export interface SuperagentInstance {

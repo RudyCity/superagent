@@ -2,6 +2,7 @@ import { Tool, SubagentInstance } from "./types.js";
 import { 
   subagentTypes, 
   subagentInstances, 
+  superagentInstances,
   notifySubagentsChanged, 
   activeQuestionHandler 
 } from "./state.js";
@@ -84,6 +85,16 @@ export const invokeSubagentTool: Tool = {
     const wait = args.wait !== false;
 
     const parentAgent = agentLocalStorage.getStore();
+    let parentId = "master";
+    if (parentAgent) {
+      for (const [saId, saInstance] of superagentInstances.entries()) {
+        if (saInstance.agent === parentAgent) {
+          parentId = saId;
+          break;
+        }
+      }
+    }
+
     const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;
     if (parentDepth >= 2) {
       return `Error: Maximum subagent delegation depth (2) reached. Spawning subagents from this subagent is blocked.`;
@@ -195,6 +206,7 @@ export const invokeSubagentTool: Tool = {
       agent: agentInstance,
       status: "running",
       logs,
+      parentId,
     };
 
     subagentInstances.set(subagentId, instance);
