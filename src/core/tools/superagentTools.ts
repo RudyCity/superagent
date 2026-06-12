@@ -19,7 +19,6 @@ import {
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
 import { MasterAgent } from "../masterAgent.js";
-import { SUPERAGENT_SYSTEM_PROMPT } from "../prompts.js";
 import { ensureGitIgnore, pruneWorktrees } from "../workspaceIsolation.js";
 
 const SUPERAGENT_REPORT_INSTRUCTION = `
@@ -129,6 +128,7 @@ export const invokeSuperagentTool: Tool = {
     }
 
     // Build full system prompt for this Superagent
+    const { SUPERAGENT_SYSTEM_PROMPT } = await import("../prompts.js");
     const systemPrompt =
       SUPERAGENT_SYSTEM_PROMPT(role, branch, worktreePath) +
       "\n\n" +
@@ -414,5 +414,109 @@ export const mergeSuperagentsTool: Tool = {
     }
 
     return results.join("\n");
+  },
+};
+
+// ─── manage_superagents ───────────────────────────────────────────────────────
+
+export const manageSuperagentsTool: Tool = {
+  name: "manage_superagents",
+  description: "List active Superagents, check logs, retrieve reports, or terminate them.",
+  parameters: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        enum: ["list", "logs", "report", "kill", "kill_all"],
+        description: "Action to perform",
+      },
+      superagentIds: {
+        type: "array",
+        items: { type: "string" },
+        description: "List of Superagent IDs to kill or read logs/reports from",
+      },
+    },
+    required: ["action"],
+  },
+  async execute(args, cwd, signal) {
+    const action = args.action as string;
+    const superagentIds = args.superagentIds as string[];
+
+    // Only Master Agent (depth 0) may manage Superagents
+    const parentAgent = agentLocalStorage.getStore();
+    const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;
+    if (parentDepth > 0) {
+      return `Error: manage_superagents can only be called by the Master Agent (depth 0).`;
+    }
+
+    if (action === "list") {
+      const lines: string[] = ["Active Superagent Instances:"];
+      if (superagentInstances.size === 0) lines.push("  None");
+      for (const [id, inst] of superagentInstances.entries()) {
+        let line = `  - ID: ${id} | Role: ${inst.role} | Branch: ${inst.branch} | Status: ${inst.status}`;
+        if (inst.status === "completed" && inst.result) {
+          const snippet = inst.result.length > 120 ? inst.result.slice(0, 120) + "..." : inst.result;
+          line += `\n    Report: ${snippet.replace(/\n/g, "\n    ")}`;
+        }
+        lines.push(line);
+      }
+      return lines.join("\n");
+    }
+
+    if (action === "logs") {
+      if (!superagentIds || superagentIds.length === 0) {
+        return "Error: superagentIds is required to retrieve logs.";
+      }
+      const id = superagentIds[0];
+      const inst = superagentInstances.get(id);
+      if (!inst) {
+        return `Error: Superagent instance "${id}" not found.`;
+      }
+      return `Logs for Superagent ${id} (${inst.role}):\n${inst.logs.join("") || "(no logs yet)"}`;
+    }
+
+    if (action === "report") {
+      if (!superagentIds || superagentIds.length === 0) {
+        return "Error: superagentIds is required to retrieve the report.";
+      }
+      const id = superagentIds[0];
+      const inst = superagentInstances.get(id);
+      if (!inst) {
+        return `Error: Superagent instance "${id}" not found.`;
+      }
+      return `Report for Superagent ${id} (${inst.role}):\n\n${inst.result || "No report available yet."}`;
+    }
+
+    if (action === "kill") {
+      if (!superagentIds || superagentIds.length === 0) {
+        return "Error: superagentIds is required for kill action.";
+      }
+      for (const id of superagentIds) {
+        const inst = superagentInstances.get(id);
+        if (inst) {
+          inst.agent.abort();
+          inst.status = "error";
+          inst.completedAt = Date.now();
+          inst.logs.push("[TERMINATED] Superagent terminated by Master Agent.\n");
+        }
+      }
+      notifySuperagentsChanged();
+      return `Terminated Superagents: ${superagentIds.join(", ")}`;
+    }
+
+    if (action === "kill_all") {
+      for (const [id, inst] of superagentInstances.entries()) {
+        if (inst.status === "running") {
+          inst.agent.abort();
+          inst.status = "error";
+          inst.completedAt = Date.now();
+          inst.logs.push("[TERMINATED] Superagent terminated by Master Agent.\n");
+        }
+      }
+      notifySuperagentsChanged();
+      return "All running Superagent instances terminated.";
+    }
+
+    return `Error: Unknown action "${action}"`;
   },
 };

@@ -375,3 +375,82 @@ export const searchHistoryTool: Tool = {
     }
   },
 };
+
+// ─── git_worktree ────────────────────────────────────────────────────────────
+
+export const gitWorktreeTool: Tool = {
+  name: "git_worktree",
+  description: "Manage Git worktrees (list, add, remove, prune) to inspect or clean up isolated workspaces.",
+  parameters: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        enum: ["list", "add", "remove", "prune"],
+        description: "The action to perform: 'list' (list worktrees), 'add' (create a worktree), 'remove' (remove a worktree), 'prune' (prune stale worktree metadata)",
+      },
+      path: {
+        type: "string",
+        description: "Path for the worktree directory (required for add and remove)",
+      },
+      branch: {
+        type: "string",
+        description: "Branch name or commit hash to check out (optional/required for add)",
+      },
+      force: {
+        type: "boolean",
+        description: "Force remove the worktree (optional for remove)",
+      },
+    },
+    required: ["action"],
+  },
+  async execute(args, cwd, signal) {
+    const action = args.action as string;
+    const worktreePath = args.path as string;
+    const branch = args.branch as string;
+    const force = args.force === true;
+
+    try {
+      if (action === "list") {
+        const { stdout } = await execa("git", ["worktree", "list"], { cwd, cancelSignal: signal });
+        return stdout || "No Git worktrees found.";
+      }
+
+      if (action === "prune") {
+        const { stdout } = await execa("git", ["worktree", "prune"], { cwd, cancelSignal: signal });
+        return stdout || "Git worktrees pruned successfully.";
+      }
+
+      if (action === "add") {
+        if (!worktreePath) {
+          return "Error: path parameter is required to add a worktree.";
+        }
+        const absolutePath = path.resolve(cwd, worktreePath);
+        const argsList = ["worktree", "add", absolutePath];
+        if (branch) {
+          argsList.push(branch);
+        }
+        const { stdout } = await execa("git", argsList, { cwd, cancelSignal: signal });
+        return stdout || `Worktree added at ${absolutePath}`;
+      }
+
+      if (action === "remove") {
+        if (!worktreePath) {
+          return "Error: path parameter is required to remove a worktree.";
+        }
+        const absolutePath = path.resolve(cwd, worktreePath);
+        const argsList = ["worktree", "remove", absolutePath];
+        if (force) {
+          argsList.push("--force");
+        }
+        const { stdout } = await execa("git", argsList, { cwd, cancelSignal: signal });
+        return stdout || `Worktree at ${absolutePath} removed successfully.`;
+      }
+
+      return `Error: Unknown action "${action}"`;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return `Git worktree error: ${message}`;
+    }
+  },
+};

@@ -4,6 +4,11 @@ import { fuzzyScore, searchHistory } from "../src/core/historySearch.js";
 import { searchHistoryTool } from "../src/core/tools/otherTools.js";
 import { agentLocalStorage } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
+import { generateText } from "ai";
+
+vi.mock("ai", () => ({
+  generateText: vi.fn(),
+}));
 
 vi.mock("../src/core/config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof configModule>();
@@ -11,6 +16,7 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
     ...actual,
     listHistorySessions: vi.fn(),
     getConfig: vi.fn().mockReturnValue({ apiKey: "" }),
+    getModelInstance: vi.fn().mockReturnValue({}),
   };
 });
 
@@ -87,6 +93,66 @@ describe("historySearch", () => {
       const resultFuzzy = await searchHistory("subsequence fuzzy", false);
       expect(resultFuzzy).toContain("Session Object Format");
       expect(resultFuzzy).not.toContain("Session Array Format");
+    });
+
+    it("should handle messages with non-string or missing content gracefully without throwing", async () => {
+      const mockSessions = [
+        {
+          filePath: "/path/to/bad_session.json",
+          displayName: "Bad Session",
+          messageCount: 3,
+          lastModified: new Date(),
+          preview: "Preview",
+        },
+      ];
+
+      vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
+      vi.spyOn(fs, "readFileSync").mockReturnValue(
+        JSON.stringify([
+          { role: "user" }, // missing content
+          { role: "assistant", content: null }, // non-string content
+          { role: "user", content: "valid search query here" },
+        ])
+      );
+
+      const result = await searchHistory("search query", false);
+      expect(result).toContain("Bad Session");
+    });
+
+    it("should perform AI Semantic Search when apiKey is configured, using correct index bounds", async () => {
+      const mockSessions = [
+        {
+          filePath: "/path/to/ai_session.json",
+          displayName: "AI Session",
+          messageCount: 1,
+          lastModified: new Date(),
+          preview: "Preview",
+        },
+      ];
+
+      vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
+      vi.mocked(configModule.getConfig).mockReturnValue({ apiKey: "valid-api-key" });
+      vi.spyOn(fs, "readFileSync").mockReturnValue(
+        JSON.stringify([
+          { role: "user", content: "Query about neural networks" },
+        ])
+      );
+
+      // 1. Success case: AI returns valid candidate index [0]
+      vi.mocked(generateText)
+        .mockResolvedValueOnce({ text: "[0]" } as any) // Filter prompt
+        .mockResolvedValueOnce({ text: "This session is about neural networks." } as any); // Summary prompt
+
+      const result = await searchHistory("neural networks", false);
+      expect(result).toContain("[AI SEMANTIC SEARCH]");
+      expect(result).toContain("This session is about neural networks.");
+
+      // 2. Hallucinated out-of-bounds case: AI returns indices that are out of bounds of candidates
+      vi.mocked(generateText)
+        .mockResolvedValueOnce({ text: "[5]" } as any); // Filter prompt returns out of bounds index (only 1 candidate)
+
+      const resultOob = await searchHistory("neural networks", false);
+      expect(resultOob).toContain("No semantically relevant conversation history found");
     });
   });
 

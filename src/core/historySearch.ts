@@ -43,7 +43,7 @@ export function fuzzyScore(text: string, query: string): number {
 export function cleanTranscriptForLLM(messages: any[]): string {
   return messages
     .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => `[${m.role.toUpperCase()}]: ${m.content}`)
+    .map((m) => `[${m.role.toUpperCase()}]: ${m.content || ""}`)
     .join("\n\n");
 }
 
@@ -113,7 +113,7 @@ export async function searchHistory(query: string, isMulti = false): Promise<str
       const queryWords = query.toLowerCase().split(/\s+/).filter(Boolean);
       const matchedTurns: string[] = [];
       for (const msg of item.messages) {
-        if (msg.role === "user" || msg.role === "assistant") {
+        if ((msg.role === "user" || msg.role === "assistant") && typeof msg.content === "string") {
           const contentLower = msg.content.toLowerCase();
           if (queryWords.some((word) => contentLower.includes(word))) {
             const cleaned = msg.content.replace(/\r?\n/g, " ");
@@ -177,7 +177,7 @@ If no sessions are relevant, return an empty array: []`;
 
     const reports: string[] = [];
     for (const idx of indices) {
-      if (idx < 0 || idx >= scoredSessions.length) continue;
+      if (idx < 0 || idx >= candidates.length) continue;
       const match = scoredSessions[idx];
 
       const truncatedTranscript = match.dialogueText.slice(-15000);
@@ -196,6 +196,10 @@ Please summarize what was discussed, decided, or implemented in this session reg
       });
 
       reports.push(`📁 **${match.session.displayName}**\n${summary.trim()}`);
+    }
+
+    if (reports.length === 0) {
+      return `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
     }
 
     return `[AI SEMANTIC SEARCH] Found relevant history for "${query}":\n\n` + reports.join("\n\n");

@@ -85,11 +85,11 @@ Launch with `superagent --multi` to activate the full 3-tier hierarchy:
 superagent --multi
       │
   Master Agent  (orchestrator tier)
-  Tools: invokeSubagent, listSubagents, mergeResult, manageSubagents
+  Tools: invokeSuperagent, awaitSuperagents, mergeSuperagents, manageSuperagents, manageSubagents, gitWorktree
   Spawns Superagents with git worktree isolation
       │
   Superagent  (per-feature tier)
-  Tools: shell + file tools (restricted scope)
+  Tools: shell + file tools, invokeSubagent, manageSubagents, gitWorktree
   Isolated in its own git worktree
   Can spawn Subagents for atomic ops
       │

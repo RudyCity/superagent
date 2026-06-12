@@ -38,12 +38,14 @@ import {
   screenshotTool,
   androidCliTool,
   searchHistoryTool,
+  gitWorktreeTool,
 } from "./otherTools.js";
 
 import {
   invokeSuperagentTool,
   awaitSuperagentsTool,
   mergeSuperagentsTool,
+  manageSuperagentsTool,
 } from "./superagentTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
@@ -53,6 +55,7 @@ export const masterToolset: Tool[] = [
   invokeSuperagentTool,  // spawn superagent in worktree
   awaitSuperagentsTool,  // wait for all superagents to finish
   mergeSuperagentsTool,  // merge all completed branches
+  manageSuperagentsTool, // list/logs/report/kill superagents
   manageSubagentsTool,   // monitor/kill subagents if needed
   scheduleTool,
   searchHistoryTool,
@@ -60,6 +63,7 @@ export const masterToolset: Tool[] = [
   readTool,              // read-only: inspect results
   globTool,
   grepTool,
+  gitWorktreeTool,
 ];
 
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
@@ -81,6 +85,7 @@ export const superagentToolset: Tool[] = [
   webSearchTool,
   fetchUrlTool,
   gitActionTool,         // commit to own branch
+  gitWorktreeTool,
   defineSubagentTool,    // define specialized subagents
   invokeSubagentTool,    // spawn subagents (depth 2)
   sendMessageTool,

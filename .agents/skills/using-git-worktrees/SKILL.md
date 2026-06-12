@@ -95,8 +95,11 @@ case $LOCATION in
     ;;
 esac
 
-# Create worktree with new branch
-git worktree add "$path" -b "$BRANCH_NAME"
+# Create worktree with new branch using the git_worktree tool:
+# Call git_worktree with:
+# - action: "add"
+# - path: "$path"
+# - branch: "$BRANCH_NAME"
 cd "$path"
 ```
 
@@ -180,7 +183,7 @@ You: I'm using the Using Git Worktrees skill to set up an isolated workspace.
 
 [Check .worktrees/ - exists]
 [Verify .gitignore - contains .worktrees/]
-[Create worktree: git worktree add .worktrees/auth -b feature/auth]
+[Create worktree: call git_worktree with action="add", path=".worktrees/auth", branch="feature/auth"]
 [Run npm install]
 [Run npm test - 47 passing]
 

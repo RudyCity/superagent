@@ -20,8 +20,8 @@ Master Agent  (orchestrator)
 ### Tier Responsibilities
 | Tier | Role | Toolset | Isolation |
 |------|------|---------|-----------|
-| **Master Agent** | Orchestration, planning, result merging | `invokeSubagentTool`, `listSubagentsTool`, `mergeSubagentResultTool`, `manageSubagentsTool` | Main repo |
-| **Superagent** | Feature-level development | Shell tools + File tools (restricted) | Isolated git worktree (`~/.superagent-r/worktrees/<name>`) |
+| **Master Agent** | Orchestration, planning, result merging | `invokeSuperagentTool`, `awaitSuperagentsTool`, `mergeSuperagentsTool`, `manageSuperagentsTool`, `manageSubagentsTool`, `gitWorktreeTool` | Main repo |
+| **Superagent** | Feature-level development | Shell + File tools + `invokeSubagentTool`, `manageSubagentsTool`, `gitWorktreeTool` | Isolated git worktree (`~/.superagent-r/worktrees/<name>`) |
 | **Subagent** | Atomic file/search operations | File tools only (read/write/search/grep) | Ephemeral, within parent worktree |
 
 ### Key Files
