@@ -44,8 +44,11 @@ export class Agent {
   public delegationDepth = 0;
   /** Agent tier in the 3-tier hierarchy: master | superagent | subagent */
   public tier: AgentTier = "master";
+  /** Whether the agent is running in multi-agent orchestrator mode */
+  public isMultiAgent: boolean = false;
   /** For superagents: absolute path to the isolated git worktree */
   public worktreePath: string | null = null;
+  public workingDirectory: string;
   public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
   public goalMode: string | null = null;
   public goalMaxIterations: number = 200;
@@ -71,10 +74,12 @@ export class Agent {
     onPermission: PermissionHandler,
     onQuestion: QuestionHandler,
     customSystemPrompt?: string,
-    customTools?: Tool[]
+    customTools?: Tool[],
+    workingDirectory?: string
   ) {
     this.customSystemPrompt = customSystemPrompt;
     this.customTools = customTools;
+    this.workingDirectory = workingDirectory || getConfig().workingDirectory;
     this.conversation = new Conversation();
     this.onEvent = (event: AgentEvent) => {
       if (event.type === "error") {
@@ -119,44 +124,57 @@ export class Agent {
 
   private resolveHistoryFilePath(autoResume: boolean): string {
     ensureGlobalConfigDir();
-    const sanitizedPath = this.config.workingDirectory.replace(/[^a-zA-Z0-9]/g, "_");
-    const historyDir = path.join(getGlobalConfigDir(), "history");
+    const sanitizedPath = this.workingDirectory.replace(/[^a-zA-Z0-9]/g, "_");
+    const mode = this.isMultiAgent ? "multi" : "single";
+    const historyDir = path.join(getGlobalConfigDir(), "history", mode);
 
     if (autoResume) {
       try {
-        const files = fs.readdirSync(historyDir);
-        const matchedFiles = files.filter(f => {
-          if (!f.endsWith(".json")) return false;
-          const nameWithoutExt = f.replace(/\.json$/, "").toLowerCase();
-          return nameWithoutExt === sanitizedPath.toLowerCase() || nameWithoutExt.startsWith(sanitizedPath.toLowerCase() + "_");
-        });
+        if (fs.existsSync(historyDir)) {
+          const dirs = fs.readdirSync(historyDir);
+          const matchedDirs = dirs.filter(d => {
+            const nameLower = d.toLowerCase();
+            return nameLower === sanitizedPath.toLowerCase() || nameLower.startsWith(sanitizedPath.toLowerCase() + "_");
+          });
 
-        if (matchedFiles.length > 0) {
-          const sorted = matchedFiles.map(f => {
-            const filePath = path.join(historyDir, f);
-            const stat = fs.statSync(filePath);
-            return { filePath, mtime: stat.mtime.getTime() };
-          }).sort((a, b) => b.mtime - a.mtime);
+          if (matchedDirs.length > 0) {
+            const sorted = matchedDirs.map(d => {
+              const dirPath = path.join(historyDir, d);
+              const filePath = path.join(dirPath, `${d}.json`);
+              let mtime = 0;
+              try {
+                mtime = fs.statSync(filePath).mtime.getTime();
+              } catch {
+                mtime = fs.statSync(dirPath).mtime.getTime();
+              }
+              return { filePath, mtime };
+            }).sort((a, b) => b.mtime - a.mtime);
 
-          return sorted[0].filePath;
+            return sorted[0].filePath;
+          }
         }
       } catch {
         // Ignore and generate a new one
       }
     }
 
-    return path.join(historyDir, `${sanitizedPath}_${Date.now()}.json`);
+    const timestamp = Date.now();
+    const sessionId = `${sanitizedPath}_${timestamp}`;
+    const sessionDir = path.join(historyDir, sessionId);
+    return path.join(sessionDir, `${sessionId}.json`);
   }
 
   public getCurrentHistoryFilePath(): string {
     if (!this.currentHistoryFilePath) {
       this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
     }
+    process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
     return this.currentHistoryFilePath;
   }
 
   async loadHistory(autoResume = false): Promise<void> {
     this.currentHistoryFilePath = this.resolveHistoryFilePath(autoResume);
+    process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
     await this.conversation.loadFromFile(this.currentHistoryFilePath);
     if (this.conversation.loadedPlanState) {
       this.planState = this.conversation.loadedPlanState;
@@ -165,6 +183,7 @@ export class Agent {
 
   async loadHistoryFromPath(filePath: string): Promise<void> {
     this.currentHistoryFilePath = filePath;
+    process.env.SUPERAGENT_SESSION_PATH = filePath;
     await this.conversation.loadFromFile(filePath);
     if (this.conversation.loadedPlanState) {
       this.planState = this.conversation.loadedPlanState;
@@ -175,6 +194,7 @@ export class Agent {
     if (!this.currentHistoryFilePath) {
       this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
     }
+    process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
     await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState);
   }
 
@@ -232,7 +252,7 @@ export class Agent {
     // Load scratchpad content if it exists
     let scratchpadText = "";
     try {
-      const scratchpadPath = path.resolve(this.config.workingDirectory, "scratch", "scratchpad.md");
+      const scratchpadPath = path.resolve(this.workingDirectory, "scratch", "scratchpad.md");
       if (fs.existsSync(scratchpadPath)) {
         scratchpadText = fs.readFileSync(scratchpadPath, "utf-8");
       }
@@ -608,7 +628,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           // Use worktreePath as CWD for superagents, otherwise use configured workingDirectory
           const effectiveCwd = (this.tier === "superagent" && this.worktreePath)
             ? this.worktreePath
-            : this.config.workingDirectory;
+            : this.workingDirectory;
 
           const toolResult = await executeToolCall(
             tc,

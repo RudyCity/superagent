@@ -24,16 +24,46 @@ export function getTruncatedAssistantIndexes(lines: ChatLine[], maxLines: number
     .map(({ index }) => index);
 }
 
+// Strip ANSI/SGR escape codes to get the visible character length of a string
+function visibleLength(str: string): number {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").length;
+}
+
 export function wrapTextForDisplay(text: string, width: number): string[] {
   const safeWidth = Math.max(10, width);
   const wrapped: string[] = [];
-  for (const rawLine of text.split("\n")) {
-    if (rawLine.length <= safeWidth) {
+  // Normalize \r\n -> \n, strip bare \r (defensive: prevents col-0 bleed if \r slips through)
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "");
+  for (const rawLine of normalized.split("\n")) {
+    // Use visible length to avoid splitting inside ANSI escape sequences
+    if (visibleLength(rawLine) <= safeWidth) {
       wrapped.push(rawLine);
       continue;
     }
-    for (let i = 0; i < rawLine.length; i += safeWidth) {
-      wrapped.push(rawLine.slice(i, i + safeWidth));
+    // Walk the string character by character, tracking visible width
+    let lineStart = 0;
+    let visibleCount = 0;
+    let i = 0;
+    while (i < rawLine.length) {
+      // Detect ANSI escape sequence and skip it (count 0 visible chars)
+      // eslint-disable-next-line no-control-regex
+      if (rawLine[i] === "\x1b" && rawLine[i + 1] === "[") {
+        let j = i + 2;
+        while (j < rawLine.length && !/[A-Za-z]/.test(rawLine[j])) j++;
+        i = j + 1; // skip past the escape sequence
+        continue;
+      }
+      visibleCount++;
+      i++;
+      if (visibleCount >= safeWidth) {
+        wrapped.push(rawLine.slice(lineStart, i));
+        lineStart = i;
+        visibleCount = 0;
+      }
+    }
+    if (lineStart < rawLine.length) {
+      wrapped.push(rawLine.slice(lineStart));
     }
   }
   return wrapped.length > 0 ? wrapped : [""];

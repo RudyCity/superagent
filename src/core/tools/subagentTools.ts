@@ -181,7 +181,8 @@ export const invokeSubagentTool: Tool = {
         return options[0] || "";
       },
       resolvedPrompt,
-      toolset
+      toolset,
+      cwd
     );
 
     agentInstance.delegationDepth = parentDepth + 1;

@@ -15,10 +15,12 @@ import {
   superagentInstances,
   notifySuperagentsChanged,
   activeQuestionHandler,
+  addHistoricalSuperagentTokens,
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
 import { MasterAgent } from "../masterAgent.js";
 import { SUPERAGENT_SYSTEM_PROMPT } from "../prompts.js";
+import { ensureGitIgnore, pruneWorktrees } from "../workspaceIsolation.js";
 
 const SUPERAGENT_REPORT_INSTRUCTION = `
 When you have completed your task, provide a final report formatted exactly as:
@@ -82,6 +84,14 @@ export const invokeSuperagentTool: Tool = {
 
     // Sanitize branch name for use as a directory name
     const safeBranchName = branch.replace(/\//g, "-").replace(/[^a-zA-Z0-9-_]/g, "");
+
+    // Ensure .gitignore has .worktrees and prune orphaned worktrees
+    ensureGitIgnore();
+    try {
+      await pruneWorktrees();
+    } catch {
+      // Ignore if not in git
+    }
 
     // Create .worktrees directory if it doesn't exist
     const worktreesDir = path.join(cwd, ".worktrees");
@@ -150,6 +160,7 @@ export const invokeSuperagentTool: Tool = {
               completion: (inst.tokenUsage?.completion ?? 0) + event.completionTokens,
             };
           }
+          addHistoricalSuperagentTokens(event.promptTokens + event.completionTokens);
         }
       },
       // Permission handler: auto-approve but never approve destructive commands
@@ -166,7 +177,8 @@ export const invokeSuperagentTool: Tool = {
         return options[0] ?? "";
       },
       systemPrompt,
-      superagentToolset
+      superagentToolset,
+      worktreePath
     );
 
     // Mark as superagent tier, set working directory to worktree

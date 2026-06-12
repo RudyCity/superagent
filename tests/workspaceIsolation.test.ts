@@ -11,6 +11,8 @@ vi.mock("execa", () => ({
 describe("workspaceIsolation", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
+    vi.spyOn(fs, "appendFileSync").mockImplementation(() => {});
   });
 
   describe("ensureGitIgnore", () => {

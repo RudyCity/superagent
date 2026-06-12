@@ -83,6 +83,7 @@ export function App({
   const [checkpointsList, setCheckpointsList] = useState<Checkpoint[]>([]);
   const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
+  const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [focusMode, setFocusMode] = useState<"input" | "history">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
@@ -1570,7 +1571,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const msgs = agentRef.current.getHistory().getMessages();
         if (msgs.length > 0) {
           const preview = trimmed.slice(0, 40) + (trimmed.length > 40 ? "…" : "");
-          createCheckpoint(sessionPath, `Auto: ${preview}`, msgs, agentRef.current.planState).catch(() => {});
+          createCheckpoint(sessionPath, `Auto: ${preview}`, msgs, agentRef.current.planState, agentRef.current.workingDirectory).catch(() => {});
         }
       }
 
@@ -1642,6 +1643,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     "/login",
     "/model",
     "/agents",
+    "/worktree",
+    "/worktrees",
     "/tasks",
     "/processes",
     "/procs",
@@ -1906,6 +1909,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               "deepseek/deepseek-chat",
               "anthropic/claude-3.5-sonnet",
             ];
+            setWizardIsLoadingModels(true);
             fetch("https://openrouter.ai/api/v1/models")
               .then(async (res) => {
                 if (res.ok) {
@@ -1916,7 +1920,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   }
                 }
               })
-              .catch(() => {});
+              .catch(() => {})
+              .finally(() => setWizardIsLoadingModels(false));
           } else if (type === "openai" || chosen.name === "openai") {
             initialModels = [
               "gpt-4o",
@@ -1929,6 +1934,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               "gpt-4",
             ];
             if (apiKey) {
+              setWizardIsLoadingModels(true);
               fetch("https://api.openai.com/v1/models", {
                 headers: {
                   Authorization: `Bearer ${apiKey}`
@@ -1943,7 +1949,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     }
                   }
                 })
-                .catch(() => {});
+                .catch(() => {})
+                .finally(() => setWizardIsLoadingModels(false));
             }
           } else if (type === "anthropic" || chosen.name === "anthropic") {
             initialModels = [
@@ -1963,6 +1970,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               if (apiKey) {
                 headers["Authorization"] = `Bearer ${apiKey}`;
               }
+              setWizardIsLoadingModels(true);
               fetch(`${baseUrl}/models`, { headers })
                 .then(async (res) => {
                   if (res.ok) {
@@ -1973,7 +1981,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     }
                   }
                 })
-                .catch(() => {});
+                .catch(() => {})
+                .finally(() => setWizardIsLoadingModels(false));
             }
           }
 
@@ -2026,6 +2035,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           setInput("");
           setActiveWizard(null);
           setWizardOptions([]);
+          setWizardIsLoadingModels(false);
           setWizardSelectedIndex(0);
           return;
         }
@@ -2198,9 +2208,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           // Perform restore (no git)
           const sessionPath = agentRef.current?.getCurrentHistoryFilePath();
           if (!sessionPath) return;
-          const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
-          const sessionBase = path.basename(sessionPath, ".json");
-          const chkPath = path.join(checkpointsDir, `${sessionBase}_checkpoint_${chosen.timestamp}.json`);
+          const checkpointsDir = path.join(path.dirname(sessionPath), "checkpoints");
+          const chkPath = path.join(checkpointsDir, `checkpoint_${chosen.timestamp}.json`);
 
           terminateActiveTasksAndSubagents();
 
@@ -2254,9 +2263,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const sessionPath = agentRef.current?.getCurrentHistoryFilePath();
           if (!sessionPath) return;
 
-          const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
-          const sessionBase = path.basename(sessionPath, ".json");
-          const chkPath = path.join(checkpointsDir, `${sessionBase}_checkpoint_${chosen.timestamp}.json`);
+          const checkpointsDir = path.join(path.dirname(sessionPath), "checkpoints");
+          const chkPath = path.join(checkpointsDir, `checkpoint_${chosen.timestamp}.json`);
 
           terminateActiveTasksAndSubagents();
 
@@ -2266,9 +2274,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               if (doGitRestore && chosen.gitSha) {
                 try {
                   const { execa: execaFn } = await import("execa");
-                  await execaFn("git", ["stash", "--include-untracked"], { cwd: process.cwd(), reject: false });
-                  await execaFn("git", ["checkout", chosen.gitSha], { cwd: process.cwd(), reject: false });
-                  addLine({ type: "system", content: `✓ Workspace dipulihkan ke Git commit: ${chosen.gitSha} (uncommitted changes di-stash)`, timestamp: now });
+                  const targetCwd = agentRef.current?.workingDirectory || process.cwd();
+                  await execaFn("git", ["stash", "--include-untracked"], { cwd: targetCwd, reject: false });
+                  const checkoutRes = await execaFn("git", ["checkout", chosen.gitSha], { cwd: targetCwd, reject: false });
+                  if (checkoutRes.failed) {
+                    addLine({ type: "error", content: `Git restore gagal: ${checkoutRes.stderr || checkoutRes.message}. Riwayat percakapan tetap dipulihkan.`, timestamp: now });
+                  } else {
+                    addLine({ type: "system", content: `✓ Workspace dipulihkan ke Git commit: ${chosen.gitSha} (uncommitted changes di-stash)`, timestamp: now });
+                  }
                 } catch (gitErr: any) {
                   addLine({ type: "error", content: `Git restore gagal: ${gitErr.message}. Riwayat percakapan tetap dipulihkan.`, timestamp: now });
                 }
@@ -3116,7 +3129,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
               const searchTitle = modelSearchQuery
                 ? `⚙️ SELECT MODEL — 🔍 "${input.trim()}" (${filteredModels.length}/${wizardOptions.length} results):`
-                : `⚙️ SELECT MODEL (Type to search, arrows to navigate, Enter to select):`;
+                : `⚙️ SELECT MODEL (${wizardOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
               return (
                 <WizardDialog
                   title={searchTitle}
@@ -3124,6 +3137,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   options={filteredModels.length > 0 ? filteredModels : ["(no results)"]}
                   selectedIndex={clampedIndex}
                   maxVisible={6}
+                  isLoading={wizardIsLoadingModels}
                 />
               );
             })()}

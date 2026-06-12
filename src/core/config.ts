@@ -34,6 +34,14 @@ export function ensureGlobalConfigDir(): void {
   if (!fs.existsSync(historyDir)) {
     fs.mkdirSync(historyDir, { recursive: true });
   }
+  const singleDir = path.join(historyDir, "single");
+  if (!fs.existsSync(singleDir)) {
+    fs.mkdirSync(singleDir, { recursive: true });
+  }
+  const multiDir = path.join(historyDir, "multi");
+  if (!fs.existsSync(multiDir)) {
+    fs.mkdirSync(multiDir, { recursive: true });
+  }
   const checkpointsDir = path.join(dir, "checkpoints");
   if (!fs.existsSync(checkpointsDir)) {
     fs.mkdirSync(checkpointsDir, { recursive: true });
@@ -48,27 +56,30 @@ export interface HistorySession {
   preview: string;
 }
 
-export function listHistorySessions(): HistorySession[] {
-  const historyDir = path.join(getGlobalConfigDir(), "history");
+export function listHistorySessions(isMulti = false): HistorySession[] {
+  const mode = isMulti ? "multi" : "single";
+  const historyDir = path.join(getGlobalConfigDir(), "history", mode);
   if (!fs.existsSync(historyDir)) return [];
 
   const currentDir = process.cwd();
   const currentSanitized = currentDir.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
 
-  let files: string[];
+  let dirs: string[];
   try {
-    files = fs.readdirSync(historyDir).filter((f) => {
-      if (!f.endsWith(".json")) return false;
-      const nameWithoutExt = f.replace(/\.json$/, "").toLowerCase();
-      return nameWithoutExt === currentSanitized || nameWithoutExt.startsWith(currentSanitized + "_");
+    dirs = fs.readdirSync(historyDir).filter((d) => {
+      const nameLower = d.toLowerCase();
+      return nameLower === currentSanitized || nameLower.startsWith(currentSanitized + "_");
     });
   } catch {
     return [];
   }
 
   const sessions: HistorySession[] = [];
-  for (const file of files) {
-    const filePath = path.join(historyDir, file);
+  for (const d of dirs) {
+    const dirPath = path.join(historyDir, d);
+    const filePath = path.join(dirPath, `${d}.json`);
+    if (!fs.existsSync(filePath)) continue;
+
     try {
       const stat = fs.statSync(filePath);
       const raw = fs.readFileSync(filePath, "utf-8");
@@ -83,9 +94,8 @@ export function listHistorySessions(): HistorySession[] {
       }
 
       // Reconstruct display name from sanitized filename
-      const nameWithoutExt = file.replace(/\.json$/, "");
       // Strip trailing timestamp suffix if present (e.g. _1717999999)
-      const cleanName = nameWithoutExt.replace(/_\d+$/, "");
+      const cleanName = d.replace(/_\d+$/, "");
       const displayName = cleanName
         .replace(/^([a-zA-Z])__/, "$1:\\")
         .replace(/^_+/, "/")
@@ -443,6 +453,20 @@ export async function fetchAndCacheModels(): Promise<void> {
   } catch (err) {
     // Ignore fetching errors
   }
+}
+
+/** Returns the list of model IDs cached from the last successful API fetch. */
+export function getCachedModelIds(): string[] {
+  try {
+    const cachePath = path.join(getRootConfigDir(), "models_cache.json");
+    if (fs.existsSync(cachePath)) {
+      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as Record<string, number>;
+      return Object.keys(cache);
+    }
+  } catch {
+    // Ignore
+  }
+  return [];
 }
 
 export function getContextWindowLimit(model: string): number {

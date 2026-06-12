@@ -136,23 +136,23 @@ describe("config", () => {
 
   describe("listHistorySessions", () => {
     it("should only return history sessions matching the current active project path or its subdirectories", () => {
-      const historyDir = path.join(getGlobalConfigDir(), "history");
+      const historyDirSingle = path.join(getGlobalConfigDir(), "history", "single");
 
       const mockCwd = "D:\\projects\\my-awesome-project";
       const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
 
       const spyExistsSync = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
-        if (p === historyDir) return true;
+        const pathStr = typeof p === "string" ? p : p.toString();
+        if (pathStr.includes("history")) return true;
         return false;
       });
 
-      const mockFiles = [
-        "D__projects_my_awesome_project.json",
-        "d__projects_my_awesome_project_src.json",
-        "D__projects_another_project.json",
-        "some-other-file.txt",
+      const mockDirs = [
+        "D__projects_my_awesome_project_123",
+        "d__projects_my_awesome_project_src_456",
+        "D__projects_another_project_789",
       ];
-      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(mockFiles as any);
+      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(mockDirs as any);
 
       const spyStatSync = vi.spyOn(fs, "statSync").mockReturnValue({
         mtime: new Date(),
@@ -180,9 +180,8 @@ describe("config", () => {
       try {
         const sessions = listHistorySessions();
         // Should only match:
-        // - "D__projects__my-awesome-project.json"
-        // - "d__projects__my-awesome-project__src.json"
-        // (case-insensitive and prefix-matched)
+        // - "D__projects_my_awesome_project_123"
+        // - "d__projects_my_awesome_project_src_456"
         expect(sessions.length).toBe(2);
         expect(sessions[0].filePath).toContain("my_awesome_project");
         expect(sessions[0].messageCount).toBe(2);
@@ -196,6 +195,55 @@ describe("config", () => {
         spyExistsSync.mockRestore();
         spyReaddirSync.mockRestore();
         spyStatSync.mockRestore();
+        spyReadFileSync.mockRestore();
+      }
+    });
+
+    it("should filter between single-agent and multi-agent sessions when isMulti flag is provided", () => {
+      const mockCwd = "D:\\projects\\my-awesome-project";
+      const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
+
+      const spyExistsSync = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+        const pathStr = typeof p === "string" ? p : p.toString();
+        if (pathStr.includes("history")) return true;
+        return false;
+      });
+
+      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockImplementation((p) => {
+        const pathStr = typeof p === "string" ? p : p.toString();
+        if (pathStr.includes("single")) {
+          return ["D__projects_my_awesome_project_123"] as any;
+        }
+        if (pathStr.includes("multi")) {
+          return ["D__projects_my_awesome_project_456"] as any;
+        }
+        return [] as any;
+      });
+
+      const spyStatSync = vi.spyOn(fs, "statSync").mockReturnValue({
+        mtime: new Date(),
+      } as any);
+
+      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockReturnValue(
+        JSON.stringify({
+          messages: [{ role: "user", content: "hello" }],
+        })
+      );
+
+      try {
+        const singleSessions = listHistorySessions(false);
+        expect(singleSessions.length).toBe(1);
+        expect(singleSessions[0].filePath).toContain("my_awesome_project_123");
+
+        const multiSessions = listHistorySessions(true);
+        expect(multiSessions.length).toBe(1);
+        expect(multiSessions[0].filePath).toContain("my_awesome_project_456");
+      } finally {
+        spyCwd.mockRestore();
+        spyExistsSync.mockRestore();
+        spyReaddirSync.mockRestore();
+        spyStatSync.mockRestore();
+        spyReadFileSync.mockRestore();
       }
     });
   });

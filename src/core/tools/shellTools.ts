@@ -387,7 +387,9 @@ export const runBackgroundProcessTool: Tool = {
       }
     }
     const taskId = Math.random().toString(36).substring(2, 9);
-    const tasksLogDir = path.join(getGlobalConfigDir(), "tasks");
+    const tasksLogDir = process.env.SUPERAGENT_SESSION_PATH
+      ? path.join(path.dirname(process.env.SUPERAGENT_SESSION_PATH), "tasks")
+      : path.join(getGlobalConfigDir(), "tasks");
     if (!fs.existsSync(tasksLogDir)) {
       fs.mkdirSync(tasksLogDir, { recursive: true });
     }

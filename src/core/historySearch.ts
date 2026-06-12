@@ -50,8 +50,8 @@ export function cleanTranscriptForLLM(messages: any[]): string {
 /**
  * Perform a hybrid AI-powered semantic search with an offline fuzzy fallback.
  */
-export async function searchHistory(query: string): Promise<string> {
-  const sessions = listHistorySessions();
+export async function searchHistory(query: string, isMulti = false): Promise<string> {
+  const sessions = listHistorySessions(isMulti);
   if (sessions.length === 0) {
     return "No conversation history sessions found in the workspace.";
   }

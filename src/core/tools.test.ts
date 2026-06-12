@@ -495,11 +495,13 @@ patched line
 
   it("should execute search_history tool and find matches in mock files", async () => {
     const tool = getToolByName("search_history");
-    const historyDir = path.join(getGlobalConfigDir(), "history");
-    await fs.mkdir(historyDir, { recursive: true });
-
+    const historyDir = path.join(getGlobalConfigDir(), "history", "single");
     const currentSanitized = process.cwd().replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
-    const mockFilePath = path.join(historyDir, `${currentSanitized}_unit_test_search.json`);
+    const sessionId = `${currentSanitized}_unit_test_search`;
+    const sessionDir = path.join(historyDir, sessionId);
+    await fs.mkdir(sessionDir, { recursive: true });
+
+    const mockFilePath = path.join(sessionDir, `${sessionId}.json`);
 
     const mockContent = [
       { role: "user", content: "How do we write a database schema?" },
@@ -515,6 +517,7 @@ patched line
     } finally {
       try {
         await fs.unlink(mockFilePath);
+        await fs.rmdir(sessionDir);
       } catch {}
     }
   });

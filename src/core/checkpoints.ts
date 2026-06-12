@@ -23,11 +23,12 @@ export interface Checkpoint {
 /**
  * Gets the current short git SHA from the repository.
  */
-export function getGitSha(): string | undefined {
+export function getGitSha(cwd?: string): string | undefined {
   try {
     return execSync("git rev-parse --short HEAD", {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      cwd: cwd || process.cwd(),
     }).trim();
   } catch {
     return undefined;
@@ -41,7 +42,8 @@ export async function createCheckpoint(
   sessionFilePath: string,
   name: string,
   messages: Message[],
-  planState: "IDLE" | "PLANNING_PENDING" | "APPROVED"
+  planState: "IDLE" | "PLANNING_PENDING" | "APPROVED",
+  workingDirectory?: string
 ): Promise<Checkpoint> {
   const planPath = sessionFilePath.replace(/\.json$/, "_implementation_plan.md");
   const taskPath = sessionFilePath.replace(/\.json$/, "_task.md");
@@ -61,7 +63,7 @@ export async function createCheckpoint(
     walkthroughFileContent = await fs.readFile(walkthroughPath, "utf-8");
   } catch {}
 
-  const gitSha = getGitSha();
+  const gitSha = getGitSha(workingDirectory);
   const timestamp = Date.now();
   const id = `chk_${timestamp}`;
 
@@ -78,18 +80,17 @@ export async function createCheckpoint(
     gitSha,
   };
 
-  const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
-  ensureGlobalConfigDir();
+  const checkpointsDir = path.join(path.dirname(sessionFilePath), "checkpoints");
+  await fs.mkdir(checkpointsDir, { recursive: true });
 
-  const sessionBase = path.basename(sessionFilePath, ".json");
-  const checkpointPath = path.join(checkpointsDir, `${sessionBase}_checkpoint_${timestamp}.json`);
+  const checkpointPath = path.join(checkpointsDir, `checkpoint_${timestamp}.json`);
 
   await fs.writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2), "utf-8");
 
   // Pruning logic - keep max 30 checkpoints for the current session
   try {
     const files = await fs.readdir(checkpointsDir);
-    const prefix = `${sessionBase}_checkpoint_`;
+    const prefix = "checkpoint_";
     const matched = files.filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
 
     if (matched.length > 30) {
@@ -117,11 +118,10 @@ export async function createCheckpoint(
 export async function listCheckpointsForSession(
   sessionFilePath: string
 ): Promise<Checkpoint[]> {
-  const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
+  const checkpointsDir = path.join(path.dirname(sessionFilePath), "checkpoints");
   if (!fsSync.existsSync(checkpointsDir)) return [];
 
-  const sessionBase = path.basename(sessionFilePath, ".json");
-  const prefix = `${sessionBase}_checkpoint_`;
+  const prefix = "checkpoint_";
 
   try {
     const files = await fs.readdir(checkpointsDir);
@@ -197,21 +197,21 @@ export async function restoreCheckpoint(
 export async function deleteCheckpointsForSession(
   sessionFilePath: string
 ): Promise<void> {
-  const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
-  if (!fsSync.existsSync(checkpointsDir)) return;
+  const sessionDir = path.dirname(sessionFilePath);
 
-  const sessionBase = path.basename(sessionFilePath, ".json");
-  const prefix = `${sessionBase}_checkpoint_`;
+  const checkpointsDir = path.join(sessionDir, "checkpoints");
+  if (fsSync.existsSync(checkpointsDir)) {
+    try {
+      await fs.rm(checkpointsDir, { recursive: true, force: true });
+    } catch {}
+  }
 
-  try {
-    const files = await fs.readdir(checkpointsDir);
-    const matched = files.filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
-    for (const file of matched) {
-      try {
-        await fs.unlink(path.join(checkpointsDir, file));
-      } catch {}
-    }
-  } catch {}
+  const tasksLogDir = path.join(sessionDir, "tasks");
+  if (fsSync.existsSync(tasksLogDir)) {
+    try {
+      await fs.rm(tasksLogDir, { recursive: true, force: true });
+    } catch {}
+  }
 }
 
 /**
@@ -251,8 +251,8 @@ export async function restoreCheckpointById(
   const found = checkpoints.find((c) => c.id === id);
   if (!found) return undefined;
 
-  const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
-  const checkpointPath = path.join(checkpointsDir, `${path.basename(sessionFilePath, ".json")}_checkpoint_${found.timestamp}.json`);
+  const checkpointsDir = path.join(path.dirname(sessionFilePath), "checkpoints");
+  const checkpointPath = path.join(checkpointsDir, `checkpoint_${found.timestamp}.json`);
 
   return await restoreCheckpoint(checkpointPath, sessionFilePath);
 }

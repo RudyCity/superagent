@@ -14,12 +14,12 @@ import {
 import type { Message } from "./conversation.js";
 
 describe("checkpoints", () => {
-  const checkpointsDir = path.join(getGlobalConfigDir(), "checkpoints");
   const sessionFilePath = path.join(
     getGlobalConfigDir(),
     "history",
     "test_session.json"
   );
+  const checkpointsDir = path.join(path.dirname(sessionFilePath), "checkpoints");
 
   const sampleMessages: Message[] = [
     { role: "user", content: "hello", timestamp: 1000 },
@@ -83,10 +83,9 @@ describe("checkpoints", () => {
     expect(checkpoint.timestamp).toBeGreaterThan(0);
 
     // Verify file was written
-    const sessionBase = path.basename(sessionFilePath, ".json");
     const expectedPath = path.join(
       checkpointsDir,
-      `${sessionBase}_checkpoint_${checkpoint.timestamp}.json`
+      `checkpoint_${checkpoint.timestamp}.json`
     );
     createdFiles.push(expectedPath);
 
@@ -113,9 +112,8 @@ describe("checkpoints", () => {
       "PLANNING_PENDING"
     );
 
-    const sessionBase = path.basename(sessionFilePath, ".json");
     createdFiles.push(
-      path.join(checkpointsDir, `${sessionBase}_checkpoint_${checkpoint.timestamp}.json`)
+      path.join(checkpointsDir, `checkpoint_${checkpoint.timestamp}.json`)
     );
 
     expect(checkpoint.planFileContent).toBe("# My Plan\nSome plan content");
@@ -132,11 +130,10 @@ describe("checkpoints", () => {
     await new Promise((r) => setTimeout(r, 10));
     const c3 = await createCheckpoint(sessionFilePath, "Third", sampleMessages, "IDLE");
 
-    const sessionBase = path.basename(sessionFilePath, ".json");
     createdFiles.push(
-      path.join(checkpointsDir, `${sessionBase}_checkpoint_${c1.timestamp}.json`),
-      path.join(checkpointsDir, `${sessionBase}_checkpoint_${c2.timestamp}.json`),
-      path.join(checkpointsDir, `${sessionBase}_checkpoint_${c3.timestamp}.json`)
+      path.join(checkpointsDir, `checkpoint_${c1.timestamp}.json`),
+      path.join(checkpointsDir, `checkpoint_${c2.timestamp}.json`),
+      path.join(checkpointsDir, `checkpoint_${c3.timestamp}.json`)
     );
 
     const list = await listCheckpointsForSession(sessionFilePath);
@@ -157,7 +154,6 @@ describe("checkpoints", () => {
     const taskContent = "- [x] Done";
 
     // Create a checkpoint manually
-    const sessionBase = path.basename(sessionFilePath, ".json");
     const timestamp = Date.now();
     const checkpointData: Checkpoint = {
       id: `chk_${timestamp}`,
@@ -173,7 +169,7 @@ describe("checkpoints", () => {
 
     const checkpointPath = path.join(
       checkpointsDir,
-      `${sessionBase}_checkpoint_${timestamp}.json`
+      `checkpoint_${timestamp}.json`
     );
     fs.writeFileSync(checkpointPath, JSON.stringify(checkpointData, null, 2), "utf-8");
     createdFiles.push(checkpointPath);
@@ -210,9 +206,8 @@ describe("checkpoints", () => {
     const c1 = await createCheckpoint(sessionFilePath, "Del1", sampleMessages, "IDLE");
     const c2 = await createCheckpoint(sessionFilePath, "Del2", sampleMessages, "IDLE");
 
-    const sessionBase = path.basename(sessionFilePath, ".json");
-    const f1 = path.join(checkpointsDir, `${sessionBase}_checkpoint_${c1.timestamp}.json`);
-    const f2 = path.join(checkpointsDir, `${sessionBase}_checkpoint_${c2.timestamp}.json`);
+    const f1 = path.join(checkpointsDir, `checkpoint_${c1.timestamp}.json`);
+    const f2 = path.join(checkpointsDir, `checkpoint_${c2.timestamp}.json`);
 
     expect(fs.existsSync(f1)).toBe(true);
     expect(fs.existsSync(f2)).toBe(true);
@@ -224,8 +219,6 @@ describe("checkpoints", () => {
   });
 
   it("createCheckpoint should prune older checkpoints beyond 30", async () => {
-    const sessionBase = path.basename(sessionFilePath, ".json");
-
     // Create 32 fake checkpoint files (pre-existing)
     const oldTimestamps: number[] = [];
     for (let i = 0; i < 32; i++) {
@@ -239,7 +232,7 @@ describe("checkpoints", () => {
         messages: sampleMessages,
         planState: "IDLE",
       };
-      const fp = path.join(checkpointsDir, `${sessionBase}_checkpoint_${ts}.json`);
+      const fp = path.join(checkpointsDir, `checkpoint_${ts}.json`);
       fs.writeFileSync(fp, JSON.stringify(chk), "utf-8");
       createdFiles.push(fp);
     }
@@ -252,7 +245,7 @@ describe("checkpoints", () => {
       "IDLE"
     );
     createdFiles.push(
-      path.join(checkpointsDir, `${sessionBase}_checkpoint_${newChk.timestamp}.json`)
+      path.join(checkpointsDir, `checkpoint_${newChk.timestamp}.json`)
     );
 
     // After pruning, total should be <= 30
@@ -262,7 +255,7 @@ describe("checkpoints", () => {
     // Oldest files should have been deleted
     const oldestPath = path.join(
       checkpointsDir,
-      `${sessionBase}_checkpoint_${oldTimestamps[0]}.json`
+      `checkpoint_${oldTimestamps[0]}.json`
     );
     expect(fs.existsSync(oldestPath)).toBe(false);
   });

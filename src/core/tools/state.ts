@@ -109,6 +109,10 @@ export function getActiveQuestionHandler(): QuestionHandler | null {
 // ─── Superagent Instances ────────────────────────────────────────────────────
 
 export const superagentInstances = new Map<string, SuperagentInstance>();
+export let historicalSuperagentTokens = 0;
+export function addHistoricalSuperagentTokens(tokens: number) {
+  historicalSuperagentTokens += tokens;
+}
 
 export type SuperagentChangeListener = () => void;
 export const superagentChangeListeners = new Set<SuperagentChangeListener>();

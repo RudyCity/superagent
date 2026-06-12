@@ -40,25 +40,30 @@ export function isDangerousCommand(command: string): boolean {
  * Checks whether a file path is inside the given worktree directory.
  */
 export function isPathInWorktree(filePath: string, worktreePath: string): boolean {
-  const resolved = path.resolve(filePath);
+  const resolved = path.isAbsolute(filePath)
+    ? path.resolve(filePath)
+    : path.resolve(worktreePath, filePath);
   const worktree = path.resolve(worktreePath);
   return resolved.startsWith(worktree + path.sep) || resolved === worktree;
 }
 
 /**
  * Returns true if a Superagent's tool call targets a file OUTSIDE its worktree.
- * Only checked for file-modifying tools.
+ * Checked for both modifying and reading/search tools.
  */
 export function isSuperagentOutOfBounds(
   toolCall: { name: string; args: Record<string, unknown> },
   worktreePath: string
 ): boolean {
-  // Only check file-writing tools
   const fileModifyingTools = [
     "write", "write_to_file", "edit", "replace_file_content",
     "multi_replace_file_content", "apply_patch",
   ];
-  if (!fileModifyingTools.includes(toolCall.name)) return false;
+  const fileReadingTools = [
+    "read", "grep", "glob", "ripgrep_search",
+  ];
+  const checkedTools = [...fileModifyingTools, ...fileReadingTools];
+  if (!checkedTools.includes(toolCall.name)) return false;
 
   const candidatePaths = [
     toolCall.args.filePath,
@@ -66,11 +71,17 @@ export function isSuperagentOutOfBounds(
     toolCall.args.path,
   ].filter((v): v is string => typeof v === "string");
 
+  // If no path is specified for search tools, they default to cwd (which is the worktree)
+  if (candidatePaths.length === 0 && ["glob", "grep", "ripgrep_search"].includes(toolCall.name)) {
+    return false;
+  }
+
   for (const fp of candidatePaths) {
     if (!isPathInWorktree(fp, worktreePath)) return true;
   }
   return false;
 }
+
 
 export function getToolDescription(
   toolCall: ToolCall

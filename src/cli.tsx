@@ -99,13 +99,14 @@ if (process.stdin.isTTY) {
 
     const agent = new Agent(
       (event: AgentEvent) => {
-        if (event.type === "text" && event.content.trim()) {
-          logHandler?.(`[AGENT] ${event.content}`);
+        if (event.type === "text" && event.content !== "") {
+          logHandler?.(`[AGENT]${event.content}`);
         } else if (event.type === "tool_start") {
           logHandler?.(`[TOOL START] ${event.description}`);
         } else if (event.type === "tool_end") {
           logHandler?.(`[TOOL END] ${event.description}`);
         } else if (event.type === "error") {
+
           logHandler?.(`[ERROR] ${event.message}`);
         } else if (event.type === "token_usage") {
           // token_usage tracked per-agent in superagentInstances
@@ -128,6 +129,7 @@ if (process.stdin.isTTY) {
 
     // Set master tier
     agent.tier = "master";
+    agent.isMultiAgent = true;
 
     // Register question handler so subagents/superagents can ask user questions
     registerQuestionHandler(async (question, options, isMultiSelect) => {

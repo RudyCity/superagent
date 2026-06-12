@@ -200,7 +200,8 @@ export function handleSlashCommand(
       ctx.addLine({ type: "system", content: "New conversation started. History and terminal cleared.", timestamp: now });
       break;
     case "resume": {
-      const sessions = listHistorySessions();
+      const isMulti = ctx.agent?.isMultiAgent || false;
+      const sessions = listHistorySessions(isMulti);
       if (sessions.length === 0) {
         ctx.addLine({ type: "system", content: "No previous sessions found. Start a conversation first!", timestamp: now });
         break;
@@ -240,7 +241,7 @@ export function handleSlashCommand(
         timestamp: now,
       });
       ctx.setIsProcessing?.(true);
-      searchHistory(query)
+      searchHistory(query, ctx.agent?.isMultiAgent || false)
         .then((result) => {
           ctx.addLine({
             type: "system",
@@ -348,11 +349,30 @@ export function handleSlashCommand(
             });
 
             if (checkpoint.gitSha) {
-              ctx.addLine({
-                type: "system",
-                content: `ℹ Note: Workspace files were at Git commit: ${checkpoint.gitSha}\n  To sync workspace codebase files, run: git checkout ${checkpoint.gitSha}`,
-                timestamp: Date.now()
-              });
+              const targetCwd = ctx.agent?.workingDirectory || process.cwd();
+              try {
+                await execa("git", ["stash", "--include-untracked"], { cwd: targetCwd, reject: false });
+                const checkoutRes = await execa("git", ["checkout", checkpoint.gitSha], { cwd: targetCwd, reject: false });
+                if (checkoutRes.failed) {
+                  ctx.addLine({
+                    type: "error",
+                    content: `Git restore gagal: ${checkoutRes.stderr || checkoutRes.message}. Riwayat percakapan tetap dipulihkan.`,
+                    timestamp: Date.now()
+                  });
+                } else {
+                  ctx.addLine({
+                    type: "system",
+                    content: `✓ Workspace dipulihkan ke Git commit: ${checkpoint.gitSha} (uncommitted changes di-stash)`,
+                    timestamp: Date.now()
+                  });
+                }
+              } catch (gitErr: any) {
+                ctx.addLine({
+                  type: "error",
+                  content: `Git restore gagal: ${gitErr.message}. Riwayat percakapan tetap dipulihkan.`,
+                  timestamp: Date.now()
+                });
+              }
             }
           })
           .catch((err) => {
@@ -362,7 +382,7 @@ export function handleSlashCommand(
         // Create a checkpoint
         const checkpointName = args || `Manual: Checkpoint at ${new Date(now).toLocaleTimeString()}`;
         ctx.addLine({ type: "system", content: `Creating checkpoint "${checkpointName}"...`, timestamp: now });
-        createCheckpoint(sessionFilePath, checkpointName, messages, planState)
+        createCheckpoint(sessionFilePath, checkpointName, messages, planState, ctx.agent?.workingDirectory)
           .then((c) => {
             const gitInfo = c.gitSha ? ` (Git: ${c.gitSha})` : "";
             ctx.addLine({
@@ -883,6 +903,47 @@ export function handleSlashCommand(
       });
       break;
     }
+    case "worktree":
+    case "worktrees": {
+      ctx.addLine({
+        type: "system",
+        content: "Retrieving git worktrees...",
+        timestamp: now,
+      });
+      ctx.setIsProcessing?.(true);
+      execa("git", ["worktree", "list"])
+        .then((result) => {
+          const lines = result.stdout.trim().split("\n").filter(Boolean);
+          const formatted = [
+            "┌───[ 📁 GIT WORKTREES ]",
+            "│",
+            ...lines.map((line, index) => {
+              const isLast = index === lines.length - 1;
+              const branchChar = isLast ? "└─" : "├─";
+              return `│  ${branchChar} ${line}`;
+            }),
+            "└──────────────────────────────────────────────"
+          ].join("\n");
+          ctx.addLine({
+            type: "system",
+            content: formatted,
+            timestamp: Date.now(),
+          });
+        })
+        .catch((err) => {
+          const isNotGit = err.stderr && err.stderr.toLowerCase().includes("not a git repository");
+          const errorMsg = isNotGit ? "Not a Git repository." : err.message;
+          ctx.addLine({
+            type: "error",
+            content: `Failed to retrieve worktrees: ${errorMsg}`,
+            timestamp: Date.now(),
+          });
+        })
+        .finally(() => {
+          ctx.setIsProcessing?.(false);
+        });
+      break;
+    }
     case "processes":
     case "procs": {
       const args = cmd.slice(name.length + 2).trim();
@@ -1276,7 +1337,9 @@ export function handleSlashCommand(
           }
 
           const taskId = `term-bg-${Math.random().toString(36).substring(2, 9)}`;
-          const tasksLogDir = path.join(getGlobalConfigDir(), "tasks");
+          const tasksLogDir = process.env.SUPERAGENT_SESSION_PATH
+            ? path.join(path.dirname(process.env.SUPERAGENT_SESSION_PATH), "tasks")
+            : path.join(getGlobalConfigDir(), "tasks");
           if (!fsCb.existsSync(tasksLogDir)) fsCb.mkdirSync(tasksLogDir, { recursive: true });
           const logPath = path.join(tasksLogDir, `${taskId}.log`);
           try { fsCb.writeFileSync(logPath, ""); } catch { /* ignore */ }
@@ -1673,6 +1736,7 @@ export function handleSlashCommand(
           "              Usage: /goal <description>  (e.g. /goal implement JWT auth end-to-end)",
           "  /init     - Initialize project (Git setup, agents.md generation, system audit)",
           "  /agents   - List active subagents and defined subagent types",
+          "  /worktrees - List all registered Git worktrees (alias: /worktree)",
           "  /processes - List running background processes (shortcut: /procs)",
           "  /processes stop [id|all] - Stop background processes",
           "  /terminal - Run a command or preset in a new window or background",

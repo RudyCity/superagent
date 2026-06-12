@@ -164,6 +164,33 @@ describe("Agent – history sessions", () => {
     const { onEvent, onPermission, onQuestion } = makeHandlers();
     const agent = new Agent(onEvent, onPermission, onQuestion);
     const resolvedPath = (agent as any).resolveHistoryFilePath(false);
-    expect(resolvedPath).toMatch(/_\d+\.json$/);
+    expect(resolvedPath).toContain("single");
+    expect(resolvedPath).toMatch(/_\d+[\\/]\w+_\d+\.json$/);
+  });
+
+  it("places history in multi subdirectory when isMultiAgent is true", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.isMultiAgent = true;
+    const resolvedPath = (agent as any).resolveHistoryFilePath(false);
+    expect(resolvedPath).toContain("multi");
+    expect(resolvedPath).toMatch(/_\d+[\\/]\w+_\d+\.json$/);
+  });
+});
+
+// ─── Agent Working Directory ──────────────────────────────────────────────────
+
+describe("Agent – workingDirectory", () => {
+  it("defaults to getConfig().workingDirectory", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    expect(agent.workingDirectory).toBeDefined();
+  });
+
+  it("can be customized via constructor parameter", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const customDir = "/path/to/custom/dir";
+    const agent = new Agent(onEvent, onPermission, onQuestion, undefined, undefined, customDir);
+    expect(agent.workingDirectory).toBe(customDir);
   });
 });

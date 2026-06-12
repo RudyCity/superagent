@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 
 interface WizardDialogProps {
@@ -11,6 +11,19 @@ interface WizardDialogProps {
   isMultiSelect?: boolean;
   selectedSet?: Set<number>;
   marginY?: number;
+  isLoading?: boolean;
+  searchQuery?: string;
+  searchPlaceholder?: string;
+}
+
+function WizardSpinner({ color }: { color: string }) {
+  const [frame, setFrame] = useState(0);
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  useEffect(() => {
+    const t = setInterval(() => setFrame(f => (f + 1) % frames.length), 80);
+    return () => clearInterval(t);
+  }, []);
+  return <Text color={color as any} bold>{frames[frame]}</Text>;
 }
 
 export function WizardDialog({
@@ -23,6 +36,9 @@ export function WizardDialog({
   isMultiSelect = false,
   selectedSet,
   marginY = 1,
+  isLoading = false,
+  searchQuery,
+  searchPlaceholder = "Type to filter...",
 }: WizardDialogProps) {
   const actualOptions = Array.isArray(options) ? options : [];
   const total = actualOptions.length;
@@ -62,6 +78,30 @@ export function WizardDialog({
         </Box>
       )}
 
+      {/* Search bar — shown when searchQuery prop is provided */}
+      {searchQuery !== undefined && (
+        <Box flexDirection="row">
+          <Text color={borderColor}>│ </Text>
+          <Text color="cyan" bold>🔍 </Text>
+          <Text color="white">{searchQuery || <Text color="gray" dimColor>{searchPlaceholder}</Text>}</Text>
+          <Text color="cyan" bold>█</Text>
+        </Box>
+      )}
+
+      {/* Loading indicator */}
+      {isLoading && (
+        <Box flexDirection="row">
+          <Text color={borderColor}>│ </Text>
+          <WizardSpinner color={borderColor} />
+          <Text color="yellow">  Fetching models from API...</Text>
+        </Box>
+      )}
+
+      {/* Spacer after search/loading */}
+      {(searchQuery !== undefined || isLoading) && (
+        <Box flexDirection="row"><Text color={borderColor}>│</Text></Box>
+      )}
+
       {/* Options prefixed with timeline line */}
       {start > 0 && (
         <Box flexDirection="row">
@@ -86,6 +126,13 @@ export function WizardDialog({
         );
       })}
 
+      {/* Empty state when no options match */}
+      {!isLoading && total === 0 && searchQuery !== undefined && (
+        <Box flexDirection="row">
+          <Text color={borderColor}>│ </Text>
+          <Text color="gray" dimColor>  No models match "{searchQuery || ""}". Try a different term.</Text>
+        </Box>
+      )}
 
       {end < total && (
         <Box flexDirection="row">
