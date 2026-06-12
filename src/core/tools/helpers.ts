@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
 import { execSync } from "child_process";
+import ts from "typescript";
 
 interface WindowsShellResult {
   shellPath: string;
@@ -99,106 +100,28 @@ export function normalizeForMatching(str: string): string {
 
 export async function verifySyntax(filePath: string): Promise<string | null> {
   const ext = path.extname(filePath);
-  if (ext === ".ts" || ext === ".tsx" || ext === ".js" || ext === ".jsx") {
-    try {
-      const code = await fs.readFile(filePath, "utf-8");
-      const stack: string[] = [];
-      const pairs: Record<string, string> = { "}": "{", ")": "(", "]": "[" };
-      
-      let i = 0;
-      while (i < code.length) {
-        const c = code[i];
-        
-        // Skip single-line comments
-        if (c === "/" && code[i + 1] === "/") {
-          i += 2;
-          while (i < code.length && code[i] !== "\n") {
-            i++;
-          }
-          continue;
-        }
-        
-        // Skip multi-line comments
-        if (c === "/" && code[i + 1] === "*") {
-          i += 2;
-          while (i < code.length && !(code[i] === "*" && code[i + 1] === "/")) {
-            i++;
-          }
-          i += 2; // skip */
-          continue;
-        }
-        
-        // Skip string literals (single, double, template quotes)
-        if (c === "'" || c === '"' || c === "`") {
-          const quote = c;
-          i++;
-          while (i < code.length) {
-            if (code[i] === "\\") {
-              i += 2; // skip escape sequence
-              continue;
-            }
-            if (code[i] === quote) {
-              i++;
-              break;
-            }
-            i++;
-          }
-          continue;
-        }
-        
-        // Skip regex literals (simplified heuristic)
-        if (c === "/") {
-          let isRegex = false;
-          let prevIdx = i - 1;
-          while (prevIdx >= 0 && /\s/.test(code[prevIdx])) {
-            prevIdx--;
-          }
-          if (prevIdx >= 0) {
-            const prevChar = code[prevIdx];
-            if ("=,([:?!&|;~+*-%^<>".includes(prevChar)) {
-              isRegex = true;
-            }
-          } else {
-            isRegex = true; // start of file
-          }
-          
-          if (isRegex) {
-            i++;
-            while (i < code.length) {
-              if (code[i] === "\\") {
-                i += 2;
-                continue;
-              }
-              if (code[i] === "/") {
-                i++;
-                break;
-              }
-              i++;
-            }
-            continue;
-          }
-        }
-
-        // Bracket matching
-        if (c === "{" || c === "(" || c === "[") {
-          stack.push(c);
-        } else if (c === "}" || c === ")" || c === "]") {
-          if (stack.length === 0 || stack[stack.length - 1] !== pairs[c]) {
-            return `Syntax check failed: Unmatched bracket/brace "${c}" near character ${i}`;
-          }
-          stack.pop();
-        }
-        i++;
-      }
-      
-      if (stack.length > 0) {
-        return `Syntax check failed: Unmatched opening bracket/brace "${stack[stack.length - 1]}"`;
-      }
-    } catch {
-      // Ignored
-    }
+  if (ext !== ".ts" && ext !== ".tsx" && ext !== ".js" && ext !== ".jsx") {
+    return null;
   }
-  return null;
+
+  try {
+    const code = await fs.readFile(filePath, "utf-8");
+    const sourceKind = ext === ".tsx" || ext === ".jsx" ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+    const sourceFile = ts.createSourceFile(filePath, code, ts.ScriptTarget.Latest, true, sourceKind);
+    const diagnostics = (sourceFile as ts.SourceFile & { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] }).parseDiagnostics ?? [];
+
+    if (diagnostics.length === 0) {
+      return null;
+    }
+
+    const diagnostic = diagnostics[0];
+    const position = diagnostic.start ?? 0;
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(position);
+    const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+    return `Syntax check failed: ${message} at ${path.basename(filePath)}:${line + 1}:${character + 1}`;
+  } catch {
+    return null;
+  }
 }
 
 export function truncateOutput(output: string, maxLines = 100): string {

@@ -143,6 +143,14 @@ describe("verifySyntax", () => {
     const result = await verifySyntax(tempTestFile);
     expect(result).toBeNull();
   });
+
+  it("should parse TSX instead of using noisy bracket heuristics", async () => {
+    const tempTsxFile = path.resolve(process.cwd(), "temp_syntax_test.tsx");
+    await fs.writeFile(tempTsxFile, "const x = <Text>{\"[ok]\"}</Text>;", "utf-8");
+    const result = await verifySyntax(tempTsxFile);
+    expect(result).toBeNull();
+    await fs.unlink(tempTsxFile);
+  });
 });
 
 describe("File tools", () => {

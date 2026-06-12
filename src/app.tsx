@@ -17,6 +17,7 @@ import { registerSubagentType, allTools, backgroundTasks, subagentInstances, sub
 import { WizardDialog } from "./components/wizard-dialog.js";
 import { execa } from "execa";
 import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions } from "./utils/text.js";
+import { capDisplayLines, getTruncatedAssistantIndexes, renderScrollBar, wrapTextForDisplay } from "./utils/responseScroll.js";
 import { handleSlashCommand, getProviderLabel, getDefaultModel } from "./core/slash-commands.js";
 import type { ChatLine } from "./core/slash-commands.js";
 
@@ -64,6 +65,8 @@ export function App({
   const [tempInput, setTempInput] = useState("");
   const agentRef = useRef<Agent | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [focusedResponseIndex, setFocusedResponseIndex] = useState<number | null>(null);
+  const [focusedResponseOffset, setFocusedResponseOffset] = useState(0);
   const [runningTasksCount, setRunningTasksCount] = useState(0);
   const [runningSubagentsCount, setRunningSubagentsCount] = useState(0);
   const [goalMode, setGoalMode] = useState<{ goal: string; startedAt: number } | null>(null);
@@ -100,6 +103,20 @@ export function App({
   const addLine = useCallback((line: ChatLine) => {
     setLines((prev) => [...prev, line]);
   }, []);
+  const openLatestTruncatedResponse = useCallback(() => {
+    const width = Math.max(20, terminalWidth - 6);
+    const maxLines = Math.max(8, Math.min(18, Math.floor(terminalHeight * 0.45)));
+    const truncatedIndexes = getTruncatedAssistantIndexes(lines, maxLines, width);
+    const latestIndex = truncatedIndexes[truncatedIndexes.length - 1];
+    if (latestIndex !== undefined) {
+      setFocusedResponseIndex(latestIndex);
+      setFocusedResponseOffset(0);
+      setScrollOffset(0);
+      return true;
+    }
+    addLine({ type: "system", content: "No long response to open.", timestamp: Date.now() });
+    return false;
+  }, [addLine, lines, terminalHeight, terminalWidth]);
 
   const stopRunningSubagents = useCallback(() => {
     const runningSubagents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
@@ -1635,6 +1652,55 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   ];
 
   useInput((inputChar, key) => {
+    if (focusedResponseIndex !== null) {
+      const width = Math.max(20, terminalWidth - 6);
+      const maxLines = Math.max(8, Math.min(18, Math.floor(terminalHeight * 0.45)));
+      const truncatedIndexes = getTruncatedAssistantIndexes(lines, maxLines, width);
+      const currentPosition = truncatedIndexes.indexOf(focusedResponseIndex);
+      const focusedLine = lines[focusedResponseIndex];
+      const responseLines = focusedLine?.type === "assistant" ? wrapTextForDisplay(focusedLine.content, Math.max(20, width - 6)) : [];
+      const focusWindowHeight = Math.max(5, terminalHeight - 13);
+      const maxOffset = Math.max(0, responseLines.length - focusWindowHeight);
+
+      if (key.escape) {
+        setFocusedResponseIndex(null);
+        setFocusedResponseOffset(0);
+        return;
+      }
+      if (inputChar === "n" && currentPosition >= 0 && currentPosition < truncatedIndexes.length - 1) {
+        setFocusedResponseIndex(truncatedIndexes[currentPosition + 1]);
+        setFocusedResponseOffset(0);
+        return;
+      }
+      if (inputChar === "p" && currentPosition > 0) {
+        setFocusedResponseIndex(truncatedIndexes[currentPosition - 1]);
+        setFocusedResponseOffset(0);
+        return;
+      }
+      if (key.pageUp || (key.ctrl && key.upArrow)) {
+        setFocusedResponseOffset((prev) => Math.max(0, prev - focusWindowHeight));
+        return;
+      }
+      if (key.pageDown || (key.ctrl && key.downArrow)) {
+        setFocusedResponseOffset((prev) => Math.min(maxOffset, prev + focusWindowHeight));
+        return;
+      }
+      if (key.upArrow) {
+        setFocusedResponseOffset((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setFocusedResponseOffset((prev) => Math.min(maxOffset, prev + 1));
+        return;
+      }
+      return;
+    }
+
+    if (key.ctrl && inputChar === "o") {
+      if (!activeWizard) openLatestTruncatedResponse();
+      return;
+    }
+
     if (key.ctrl && inputChar === "h") {
       setFocusMode((prev) => {
         const next = prev === "input" ? "history" : "input";
@@ -2660,10 +2726,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     return count;
   };
 
+  const maxAssistantResponseLines = Math.max(8, Math.min(18, Math.floor(terminalHeight * 0.45)));
+
   // Dynamic estimate of ChatLine height in terminal rows
   const estimateChatLineHeight = (line: ChatLine, width: number): number => {
     let linesCount = 2; // Border header + spacing lines
     const textLines = line.content.split("\n");
+    const maxContentLines = line.type === "assistant" ? maxAssistantResponseLines + 1 : Number.POSITIVE_INFINITY;
     for (const l of textLines) {
       let rawText = l;
       if (line.type === "user") {
@@ -2672,6 +2741,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         rawText = l.replace(/^⚡ /, "");
       }
       linesCount += Math.max(1, Math.ceil(rawText.length / width));
+      if (linesCount >= maxContentLines + 2) {
+        return maxContentLines + 2;
+      }
     }
     return linesCount;
   };
@@ -2755,7 +2827,29 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         <Box flexDirection="column" width="100%" flexGrow={1}>
           {/* Messages */}
           <Box flexDirection="column" paddingX={1} flexGrow={1}>
-            {(() => {
+            {focusedResponseIndex !== null ? (() => {
+              const width = Math.max(20, chatWidth - 6);
+              const maxLines = Math.max(8, Math.min(18, Math.floor(terminalHeight * 0.45)));
+              const truncatedIndexes = getTruncatedAssistantIndexes(lines, maxLines, chatWidth);
+              const currentPosition = Math.max(0, truncatedIndexes.indexOf(focusedResponseIndex));
+              const focusedLine = lines[focusedResponseIndex];
+              if (!focusedLine || focusedLine.type !== "assistant") return null;
+              const focusWindowHeight = Math.max(5, chatHeightLimit - 3);
+              const responseLines = wrapTextForDisplay(focusedLine.content, width);
+              const maxOffset = Math.max(0, responseLines.length - focusWindowHeight);
+              const safeOffset = Math.min(focusedResponseOffset, maxOffset);
+              const visibleText = responseLines.slice(safeOffset, safeOffset + focusWindowHeight).join("\n");
+              const visibleEnd = Math.min(responseLines.length, safeOffset + focusWindowHeight);
+              return (
+                <Box flexDirection="column">
+                  <Text color="yellow">
+                    ┌───[ <Text bold color="yellow">RESPONSE_SCROLL</Text><Text dimColor> {currentPosition + 1}/{Math.max(1, truncatedIndexes.length)} line {safeOffset + 1}-{visibleEnd} / {responseLines.length} {renderScrollBar(safeOffset, focusWindowHeight, responseLines.length)} | n/p switch | Esc close</Text> ]
+                  </Text>
+                  {renderMarkdown(visibleText, "magenta")}
+                  <Text color="yellow">└───[ focused assistant response #{focusedResponseIndex + 1} ]</Text>
+                </Box>
+              );
+            })() : (() => {
               let startIndex = lines.length;
               let accumulatedHeight = 0;
               const endIndex = scrollOffset === 0 ? lines.length : Math.max(0, lines.length - scrollOffset);
@@ -2801,6 +2895,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                         tokensUp={tokensUp}
                         tokensDown={tokensDown}
                         modelName={modelName}
+                        maxResponseLines={maxAssistantResponseLines}
+                        chatWidth={chatWidth}
                       />
                     );
                   })}
@@ -3709,12 +3805,16 @@ const ChatLineComponent = React.memo(function ChatLineComponent({
   tokensUp,
   tokensDown,
   modelName,
+  maxResponseLines,
+  chatWidth,
 }: {
   line: ChatLine;
   isFirst: boolean;
   tokensUp?: number;
   tokensDown?: number;
   modelName?: string;
+  maxResponseLines?: number;
+  chatWidth?: number;
 }) {
   switch (line.type) {
     case "user": {
@@ -3736,18 +3836,26 @@ const ChatLineComponent = React.memo(function ChatLineComponent({
         </Box>
       );
     }
-    case "assistant":
+    case "assistant": {
+      const capped = capDisplayLines(line.content, maxResponseLines || 12, chatWidth || 80);
       return (
         <Box flexDirection="column">
           <Text color="magenta">
             {isFirst ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT{modelName ? ` (${modelName})` : ""}</Text><Text dimColor> (▲{formatCompactNumber(tokensUp || 0)} | ▼{formatCompactNumber(tokensDown || 0)})</Text> ]
           </Text>
-          {renderMarkdown(line.content, "magenta")}
+          {renderMarkdown(capped.text, "magenta")}
+          {capped.truncated && (
+            <Box flexDirection="row">
+              <Text color="magenta">│    </Text>
+              <Text color="yellow">... [response panjang dipotong; Ctrl+O buka response scroll, PageUp/Ctrl+Up scroll history] ...</Text>
+            </Box>
+          )}
           <Box flexDirection="row">
             <Text color="magenta">│ </Text>
           </Box>
         </Box>
       );
+    }
     case "tool_start": {
       const content = line.content.replace(/^⚡ /, "");
       return (
