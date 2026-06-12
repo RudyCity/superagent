@@ -84,10 +84,11 @@ export function getToolDefinitions(): Array<{
   }));
 }
 
-// Re-export state and helpers
+// Re-export state, helpers, and toolsets
 export * from "./types.js";
 export * from "./helpers.js";
 export * from "./state.js";
+export * from "./toolsets.js";
 export { killProcessTree } from "./shellTools.js";
 
 // Register default subagent types

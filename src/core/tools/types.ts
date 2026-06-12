@@ -1,3 +1,5 @@
+export type AgentTier = "master" | "superagent" | "subagent";
+
 export interface Tool {
   name: string;
   description: string;
@@ -44,6 +46,22 @@ export interface SubagentInstance {
   status: "idle" | "running" | "completed";
   logs: string[];
   result?: string;
+  completedAt?: number;
+  tokenUsage?: { prompt: number; completion: number };
+}
+
+export interface SuperagentInstance {
+  id: string;
+  role: string;
+  task: string;
+  branch: string;
+  worktreePath: string;
+  agent: any;
+  status: "running" | "completed" | "error";
+  logs: string[];
+  result?: string;
+  completedAt?: number;
+  tokenUsage?: { prompt: number; completion: number };
 }
 
 export type QuestionHandler = (question: string, options: string[], isMultiSelect?: boolean) => Promise<string>;

@@ -5,6 +5,7 @@ import {
   ScheduleJob, 
   SubagentType, 
   SubagentInstance, 
+  SuperagentInstance,
   QuestionHandler 
 } from "./types.js";
 
@@ -104,3 +105,46 @@ export function registerQuestionHandler(handler: QuestionHandler | null) {
 export function getActiveQuestionHandler(): QuestionHandler | null {
   return activeQuestionHandler;
 }
+
+// ─── Superagent Instances ────────────────────────────────────────────────────
+
+export const superagentInstances = new Map<string, SuperagentInstance>();
+
+export type SuperagentChangeListener = () => void;
+export const superagentChangeListeners = new Set<SuperagentChangeListener>();
+
+export function subscribeToSuperagents(listener: SuperagentChangeListener) {
+  superagentChangeListeners.add(listener);
+  return () => superagentChangeListeners.delete(listener);
+}
+
+export function notifySuperagentsChanged() {
+  for (const listener of superagentChangeListeners) {
+    listener();
+  }
+}
+
+// ─── TTL Cleanup ─────────────────────────────────────────────────────────────
+
+const INSTANCE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+export function cleanupStaleInstances(): void {
+  const now = Date.now();
+  for (const [id, inst] of superagentInstances.entries()) {
+    if (inst.status !== "running" && inst.completedAt) {
+      if (now - inst.completedAt > INSTANCE_TTL_MS) {
+        superagentInstances.delete(id);
+      }
+    }
+  }
+  for (const [id, inst] of subagentInstances.entries()) {
+    if (inst.status === "completed" && inst.completedAt) {
+      if (now - inst.completedAt > INSTANCE_TTL_MS) {
+        subagentInstances.delete(id);
+      }
+    }
+  }
+}
+
+// Run cleanup every 5 minutes
+setInterval(cleanupStaleInstances, 5 * 60 * 1000).unref();
