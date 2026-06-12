@@ -93,19 +93,23 @@ export function listHistorySessions(isMulti = false): HistorySession[] {
         continue;
       }
 
-      // Reconstruct display name from sanitized filename
-      // Strip trailing timestamp suffix if present (e.g. _1717999999)
-      const cleanName = d.replace(/_\d+$/, "");
-      const displayName = cleanName
-        .replace(/^([a-zA-Z])__/, "$1:\\")
-        .replace(/^_+/, "/")
-        .replace(/_/g, "/");
-
       const userMessages = messages.filter((m) => m.role === "user");
       const lastUser = userMessages[userMessages.length - 1];
       const preview = lastUser
         ? lastUser.content.slice(0, 60).replace(/\n/g, " ") + (lastUser.content.length > 60 ? "…" : "")
         : "(no user messages)";
+
+      // Reconstruct display name from sanitized filename as fallback
+      // Strip trailing timestamp suffix if present (e.g. _1717999999)
+      const cleanName = d.replace(/_\d+$/, "");
+      const folderPathName = cleanName
+        .replace(/^([a-zA-Z])__/, "$1:\\")
+        .replace(/^_+/, "/")
+        .replace(/_/g, "/");
+
+      const displayName = lastUser && lastUser.content && lastUser.content.trim()
+        ? lastUser.content.trim().slice(0, 60).replace(/\n/g, " ") + (lastUser.content.trim().length > 60 ? "…" : "")
+        : folderPathName;
 
       sessions.push({
         filePath,
@@ -263,12 +267,12 @@ TOOL USAGE GUIDELINES:
 4. Command & Task Execution:
    - Use 'run_command' for fast synchronous shell execution.
    - Use 'bash' if you need a custom execution timeout.
-   - Use 'run_background_process' for long-running processes (e.g. dev servers, watch processes, or long test suites). You must monitor background processes using 'manage_background_process' (action: 'status') to inspect their logs and verify if they completed successfully.
+   - Use 'run_background_process' for long-running processes (e.g. dev servers, watch processes, or long test suites). You must monitor background processes using 'manage_background_process' (action: 'status') to inspect their logs and verify if they completed successfully. To avoid busy-waiting or loop polling (which wastes tokens and blocks progress), schedule a check-in using the 'schedule' tool (e.g. '10s' or '30s') to pause and check later.
 5. Web & Information Gathering:
    - Use 'web_search' to search the internet for documentation or current information.
    - Use 'fetch_url' to download and extract clean text from a specific webpage.
 6. Scheduling & Delegation:
-   - Use 'schedule' to set timers or recurring cron notifications in the background.
+    - Use 'schedule' to set timers or recurring cron notifications in the background. Use this to schedule future check-ins on asynchronous tasks (like background processes or subagents) instead of polling them in a loop.
    - Use 'invoke_subagent' to spawn pre-defined subagents ('researcher', 'coder', 'reviewer') or custom subagents defined via 'define_subagent' to work on parallel/subtasks. Because they run asynchronously, you must monitor them using 'manage_subagents' (action: 'list' or 'logs') to retrieve their output, and send follow-up instructions via 'send_message'.
 7. Operational Best Practices:
    - Avoid reading huge files all at once; use the 'offset' and 'limit' parameters of 'read' to view only necessary sections.

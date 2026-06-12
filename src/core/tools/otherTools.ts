@@ -64,7 +64,7 @@ export const scheduleTool: Tool = {
       },
       cronExpression: {
         type: "string",
-        description: "Simple interval (e.g. '5m' for 5 minutes, '1h' for 1 hour) for recurring checks",
+        description: "Simple interval (e.g. '1s' for 1 second, '5m' for 5 minutes, '1h' for 1 hour) for recurring checks",
       },
       wait: {
         type: "boolean",
@@ -365,8 +365,11 @@ export const searchHistoryTool: Tool = {
       return "Error: query parameter is required.";
     }
     try {
+      const { agentLocalStorage } = await import("../agent.js");
+      const currentAgent = agentLocalStorage.getStore();
+      const isMulti = currentAgent?.isMultiAgent || false;
       const { searchHistory } = await import("../historySearch.js");
-      return await searchHistory(query);
+      return await searchHistory(query, isMulti);
     } catch (err: any) {
       return `Error searching history: ${err.message}`;
     }

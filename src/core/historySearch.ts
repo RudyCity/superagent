@@ -66,8 +66,15 @@ export async function searchHistory(query: string, isMulti = false): Promise<str
   for (const session of sessions) {
     try {
       const raw = fs.readFileSync(session.filePath, "utf-8");
-      const messages = JSON.parse(raw);
-      if (!Array.isArray(messages)) continue;
+      const parsed = JSON.parse(raw);
+      let messages: any[];
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+        messages = parsed.messages;
+      } else if (Array.isArray(parsed)) {
+        messages = parsed;
+      } else {
+        continue;
+      }
 
       const dialogueText = cleanTranscriptForLLM(messages);
       const score = fuzzyScore(dialogueText, query);

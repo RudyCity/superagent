@@ -513,7 +513,7 @@ patched line
     try {
       const result = await tool?.execute({ query: "Knex Postgres" }, process.cwd());
       expect(result).toContain("Postgres with Knex migrations");
-      expect(result).toContain("unit/test/search");
+      expect(result).toContain("How do we write a database schema?");
     } finally {
       try {
         await fs.unlink(mockFilePath);

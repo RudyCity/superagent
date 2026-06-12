@@ -55,6 +55,159 @@ export function stripSgrMouseSequences(value: string): string {
               .replace(/<\d+;\d+;\d+[Mm]/g, "");
 }
 
+function renderLogInlineStyles(
+  text: string,
+  defaultColor: string,
+  isBold: boolean,
+  dimColor: boolean
+): React.ReactNode {
+  const parsedElements: React.ReactNode[] = [];
+  let currentText = text;
+
+  while (currentText.length > 0) {
+    const boldIdx = currentText.indexOf("**");
+    const codeIdx = currentText.indexOf("`");
+    const linkIdx = currentText.indexOf("[");
+
+    // Check for raw URLs (file:///, http://, https://)
+    const fileUrlIdx = currentText.indexOf("file://");
+    const httpUrlIdx = currentText.indexOf("http://");
+    const httpsUrlIdx = currentText.indexOf("https://");
+
+    let rawUrlIdx = -1;
+    if (fileUrlIdx !== -1) rawUrlIdx = fileUrlIdx;
+    if (httpUrlIdx !== -1 && (rawUrlIdx === -1 || httpUrlIdx < rawUrlIdx)) rawUrlIdx = httpUrlIdx;
+    if (httpsUrlIdx !== -1 && (rawUrlIdx === -1 || httpsUrlIdx < rawUrlIdx)) rawUrlIdx = httpsUrlIdx;
+
+    let minIdx = -1;
+    let tokenType: "bold" | "code" | "link" | "rawUrl" | "none" = "none";
+
+    if (boldIdx !== -1) {
+      minIdx = boldIdx;
+      tokenType = "bold";
+    }
+
+    if (codeIdx !== -1 && (minIdx === -1 || codeIdx < minIdx)) {
+      minIdx = codeIdx;
+      tokenType = "code";
+    }
+
+    if (linkIdx !== -1 && (minIdx === -1 || linkIdx < minIdx)) {
+      const closeBracketIdx = currentText.indexOf("]", linkIdx);
+      if (closeBracketIdx !== -1 && currentText[closeBracketIdx + 1] === "(") {
+        const closeParenIdx = currentText.indexOf(")", closeBracketIdx + 2);
+        if (closeParenIdx !== -1) {
+          minIdx = linkIdx;
+          tokenType = "link";
+        }
+      }
+    }
+
+    if (rawUrlIdx !== -1 && (minIdx === -1 || rawUrlIdx < minIdx)) {
+      const remainingFromUrl = currentText.slice(rawUrlIdx);
+      const match = remainingFromUrl.match(/^(file:\/\/\/[^\s`'"\(\)\[\]<>]+|https?:\/\/[^\s`'"\(\)\[\]<>]+)/);
+      if (match) {
+        minIdx = rawUrlIdx;
+        tokenType = "rawUrl";
+      }
+    }
+
+    if (tokenType === "none" || minIdx === -1) {
+      parsedElements.push(
+        <Text key={parsedElements.length} color={defaultColor} bold={isBold} dimColor={dimColor}>
+          {currentText}
+        </Text>
+      );
+      break;
+    }
+
+    if (minIdx > 0) {
+      parsedElements.push(
+        <Text key={parsedElements.length} color={defaultColor} bold={isBold} dimColor={dimColor}>
+          {currentText.slice(0, minIdx)}
+        </Text>
+      );
+    }
+
+    currentText = currentText.slice(minIdx);
+
+    if (tokenType === "bold") {
+      const nextBoldIdx = currentText.indexOf("**", 2);
+      if (nextBoldIdx !== -1) {
+        const boldContent = currentText.slice(2, nextBoldIdx);
+        parsedElements.push(
+          <Text key={parsedElements.length} bold color="yellow">
+            {boldContent}
+          </Text>
+        );
+        currentText = currentText.slice(nextBoldIdx + 2);
+      } else {
+        parsedElements.push(
+          <Text key={parsedElements.length} color={defaultColor} bold={isBold} dimColor={dimColor}>
+            {currentText.slice(0, 2)}
+          </Text>
+        );
+        currentText = currentText.slice(2);
+      }
+    } else if (tokenType === "code") {
+      const nextCodeIdx = currentText.indexOf("`", 1);
+      if (nextCodeIdx !== -1) {
+        const codeContent = currentText.slice(1, nextCodeIdx);
+        parsedElements.push(
+          <Text key={parsedElements.length} color="cyan" bold>
+            {codeContent}
+          </Text>
+        );
+        currentText = currentText.slice(nextCodeIdx + 1);
+      } else {
+        parsedElements.push(
+          <Text key={parsedElements.length} color={defaultColor} bold={isBold} dimColor={dimColor}>
+            {currentText.slice(0, 1)}
+          </Text>
+        );
+        currentText = currentText.slice(1);
+      }
+    } else if (tokenType === "link") {
+      const closeBracketIdx = currentText.indexOf("]");
+      const closeParenIdx = currentText.indexOf(")", closeBracketIdx + 2);
+      const linkText = currentText.slice(1, closeBracketIdx);
+      const linkUrl = currentText.slice(closeBracketIdx + 2, closeParenIdx);
+
+      const osc8Link = `\u001B]8;;${linkUrl}\u0007${linkText}\u001B]8;;\u0007`;
+      parsedElements.push(
+        <Text key={parsedElements.length} color="cyan" underline>
+          {osc8Link}
+        </Text>
+      );
+      currentText = currentText.slice(closeParenIdx + 1);
+    } else if (tokenType === "rawUrl") {
+      const match = currentText.match(/^(file:\/\/\/[^\s`'"\(\)\[\]<>]+|https?:\/\/[^\s`'"\(\)\[\]<>]+)/);
+      if (match) {
+        let url = match[0];
+        while (url.length > 0 && /[.,;:!?]$/.test(url)) {
+          url = url.slice(0, -1);
+        }
+        const osc8Link = `\u001B]8;;${url}\u0007${url}\u001B]8;;\u0007`;
+        parsedElements.push(
+          <Text key={parsedElements.length} color="cyan" underline>
+            {osc8Link}
+          </Text>
+        );
+        currentText = currentText.slice(url.length);
+      } else {
+        parsedElements.push(
+          <Text key={parsedElements.length} color={defaultColor} bold={isBold} dimColor={dimColor}>
+            {currentText[0]}
+          </Text>
+        );
+        currentText = currentText.slice(1);
+      }
+    }
+  }
+
+  return <>{parsedElements}</>;
+}
+
 function ThinkingSpinner() {
   const [frame, setFrame] = useState(0);
   const spinners = ["▰▱▱▱▱▱▱", "▰▰▱▱▱▱▱", "▰▰▰▱▱▱▱", "▰▰▰▰▱▱▱", "▰▰▰▰▰▱▱", "▰▰▰▰▰▰▱", "▰▰▰▰▰▰▰"];
@@ -143,6 +296,13 @@ export function MultiAgentDashboard({
       });
     }
   }, [registerQuestionHandlerRef]);
+
+  // Automatically focus the input area when any wizard is active
+  useEffect(() => {
+    if (activeWizard) {
+      setFocusArea("input");
+    }
+  }, [activeWizard]);
 
   const getSuggestions = () => {
     if (!query.startsWith("/")) return [];
@@ -1271,11 +1431,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
   for (let logIdx = 0; logIdx < activeLogs.length; logIdx++) {
     const logStr = activeLogs[logIdx];
+
+    // Check if it's a box line (e.g. from subagents)
+    const isBoxLine = /^[┌├│└─]/.test(logStr);
+
+    if (isBoxLine) {
+      // For box lines, render directly without any label or border wrapping
+      const subLines = wrapTextForDisplay(logStr, feedWidth);
+      for (let i = 0; i < subLines.length; i++) {
+        const lineText = subLines[i];
+        wrappedLines.push(
+          <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
+            <Text color={selectedSession.type === "SUBAGENT" ? "green" : "gray"}>{lineText}</Text>
+          </Box>
+        );
+      }
+      continue;
+    }
+
     let label = "INFO";
     let content = logStr;
     let color = "green";
     let isBold = false;
     let dimColor = false;
+    let parseMarkdown = false;
 
     if (logStr.startsWith("[USER]")) {
       label = "👤 USER";
@@ -1291,7 +1470,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       label = "🧠 AGENT";
       content = logStr.replace("[AGENT]", "").trim();
       color = "white";
-      isBold = true;
+      isBold = false;
+      parseMarkdown = true;
     } else if (logStr.startsWith("[TOOL START]")) {
       label = "🔧 TOOL START";
       content = logStr.replace("[TOOL START]", "").trim();
@@ -1314,6 +1494,26 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       label = "❓ QUESTION";
       content = logStr.replace("[QUESTION]", "").trim();
       color = "magenta";
+    } else if (logStr.startsWith("[THINK]")) {
+      label = "🧠 THINK";
+      content = logStr.replace("[THINK]", "").trim();
+      color = "magenta";
+      dimColor = true;
+      parseMarkdown = true;
+    } else if (logStr.startsWith("[TOOL:START]")) {
+      label = "🔧 TOOL START";
+      content = logStr.replace("[TOOL:START]", "").trim();
+      color = "cyan";
+    } else if (logStr.startsWith("[TOOL:OK]")) {
+      label = "✅ TOOL OK";
+      content = logStr.replace("[TOOL:OK]", "").trim();
+      color = "gray";
+      dimColor = true;
+    } else if (logStr.startsWith("[TOOL:FAIL]")) {
+      label = "🚨 TOOL FAIL";
+      content = logStr.replace("[TOOL:FAIL]", "").trim();
+      color = "red";
+      isBold = true;
     }
 
     const prefix = logIdx === 0 ? "┌───" : (logIdx === activeLogs.length - 1 ? "└───" : "├───");
@@ -1333,14 +1533,102 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     // Format content lines
     // We indent with the subLinePrefix (4 chars: "│   " or "    ")
     const subLines = wrapTextForDisplay(content, Math.max(10, feedWidth - 4));
+    let inCode = false;
+
     for (let i = 0; i < subLines.length; i++) {
       const lineText = subLines[i];
-      wrappedLines.push(
-        <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
-          <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
-          <Text color={color === "gray" ? "gray" : color} bold={isBold} dimColor={dimColor} wrap="truncate-end">{lineText}</Text>
-        </Box>
-      );
+      const trimmed = lineText.trim();
+
+      if (parseMarkdown) {
+        // Code Block detection
+        if (trimmed.startsWith("```")) {
+          inCode = !inCode;
+          const codeLang = trimmed.slice(3).trim() || "TEXT";
+          wrappedLines.push(
+            <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
+              <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
+              <Text color="gray" italic>{inCode ? `┌─── [ CODE: ${codeLang} ]` : "└─── [ END CODE ]"}</Text>
+            </Box>
+          );
+          continue;
+        }
+
+        if (inCode) {
+          wrappedLines.push(
+            <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
+              <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
+              <Text color="green">{lineText}</Text>
+            </Box>
+          );
+          continue;
+        }
+
+        // Header lines
+        if (trimmed.startsWith("# ")) {
+          wrappedLines.push(
+            <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
+              <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
+              <Text bold color="yellow">{lineText.slice(2)}</Text>
+            </Box>
+          );
+          continue;
+        }
+        if (trimmed.startsWith("## ")) {
+          wrappedLines.push(
+            <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
+              <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
+              <Text bold color="cyan">{lineText.slice(3)}</Text>
+            </Box>
+          );
+          continue;
+        }
+        if (trimmed.startsWith("### ")) {
+          wrappedLines.push(
+            <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
+              <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
+              <Text bold color="blue">{lineText.slice(4)}</Text>
+            </Box>
+          );
+          continue;
+        }
+
+        // List item checking
+        let listPrefix = "";
+        let remainingLine = lineText;
+        if (trimmed.startsWith("- ")) {
+          const indent = lineText.indexOf("- ");
+          listPrefix = " ".repeat(indent) + "• ";
+          remainingLine = lineText.slice(indent + 2);
+        } else if (trimmed.startsWith("* ")) {
+          const indent = lineText.indexOf("* ");
+          listPrefix = " ".repeat(indent) + "• ";
+          remainingLine = lineText.slice(indent + 2);
+        } else if (/^\d+\.\s/.test(trimmed)) {
+          const match = lineText.match(/^(\s*)(\d+\.\s)(.*)/);
+          if (match) {
+            listPrefix = match[1] + match[2];
+            remainingLine = match[3];
+          }
+        }
+
+        wrappedLines.push(
+          <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
+            <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
+            {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
+            <Box flexShrink={1}>
+              {renderLogInlineStyles(remainingLine, color === "gray" ? "gray" : color, isBold, dimColor)}
+            </Box>
+          </Box>
+        );
+      } else {
+        // Plain text or standard rendering without full markdown parsing
+        wrappedLines.push(
+          <Box flexDirection="row" key={`log-line-${logIdx}-${i}`} width={feedWidth}>
+            <Text color={color === "gray" ? "gray" : color} dimColor={dimColor}>{subLinePrefix}</Text>
+            <Text color={color === "gray" ? "gray" : color} bold={isBold} dimColor={dimColor} wrap="truncate-end">{lineText}</Text>
+          </Box>
+        );
+      }
     }
 
     // Add empty space/separator line between logs if it's not the last one
@@ -1388,11 +1676,79 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const rightStart = Math.floor(terminalSize.width * 0.42);
 
           if (x <= leftLimit) {
-            const promptStartRow = 3 + workspaceHeight - 2;
-            if (y >= promptStartRow) {
+            if (activeWizard) {
               setFocusArea("input");
+
+              // Handle wizard option clicking
+              let options = wizardOptions;
+              let maxVisible = 5;
+              if (activeWizard.type === "model" && activeWizard.step === 2) {
+                const lc = query.trim().toLowerCase();
+                options = lc
+                  ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
+                  : wizardAllOptions;
+                maxVisible = 8;
+              }
+
+              const total = options.length;
+              if (total > 0) {
+                let start = 0;
+                if (total > maxVisible) {
+                  start = Math.max(0, wizardSelectedIndex - Math.floor(maxVisible / 2));
+                  const end = start + maxVisible;
+                  if (end > total) {
+                    start = Math.max(0, total - maxVisible);
+                  }
+                }
+                const visibleCount = Math.min(total, maxVisible);
+                const y_bottom = 6 + workspaceHeight;
+                const optStartRow = y_bottom - 2 - visibleCount;
+                const optEndRow = y_bottom - 3;
+
+                if (y >= optStartRow && y <= optEndRow) {
+                  const idx = y - optStartRow;
+                  const targetIndex = start + idx;
+                  if (
+                    targetIndex >= 0 &&
+                    targetIndex < total &&
+                    options[targetIndex] !== "(no results — try different search)"
+                  ) {
+                    if (activeWizard.isMultiSelect) {
+                      setWizardSelectedSet((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(targetIndex)) {
+                          next.delete(targetIndex);
+                        } else {
+                          next.add(targetIndex);
+                        }
+                        return next;
+                      });
+                    } else {
+                      setWizardSelectedIndex(targetIndex);
+                      const selectedOption = options[targetIndex];
+                      if (selectedOption === "Custom...") {
+                        setActiveWizard({
+                          type: "question",
+                          step: 2,
+                          data: { question: pendingQuestion?.question || "" },
+                        });
+                        setWizardOptions([]);
+                        setWizardSelectedIndex(0);
+                        setQuery("");
+                      } else {
+                        handleWizardSubmit(selectedOption);
+                      }
+                    }
+                  }
+                }
+              }
             } else {
-              setFocusArea("list");
+              const promptStartRow = 3 + workspaceHeight - 2;
+              if (y >= promptStartRow) {
+                setFocusArea("input");
+              } else {
+                setFocusArea("list");
+              }
             }
           } else if (x >= rightStart) {
             setFocusArea("logs");
@@ -1408,7 +1764,20 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       process.stdin.off("data", handleMouseInput);
       process.stdout.write(disableMouseTracking);
     };
-  }, [wrappedLines.length, logsCount, terminalSize.width, terminalSize.height]);
+  }, [
+    wrappedLines.length,
+    logsCount,
+    terminalSize.width,
+    terminalSize.height,
+    activeWizard,
+    wizardOptions,
+    wizardSelectedIndex,
+    pendingQuestion,
+    handleWizardSubmit,
+    query,
+    wizardAllOptions,
+    workspaceHeight,
+  ]);
 
   const stopAllRunningAgents = () => {
     let count = 0;

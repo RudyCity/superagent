@@ -187,9 +187,12 @@ describe("config", () => {
         expect(sessions[0].messageCount).toBe(2);
         expect(sessions[0].preview).toBe("hello");
 
+        expect(sessions[0].displayName).toBe("hello");
+
         expect(sessions[1].filePath).toContain("my_awesome_project_src");
         expect(sessions[1].messageCount).toBe(2);
         expect(sessions[1].preview).toBe("hello from object");
+        expect(sessions[1].displayName).toBe("hello from object");
       } finally {
         spyCwd.mockRestore();
         spyExistsSync.mockRestore();
