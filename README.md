@@ -76,7 +76,7 @@ superagent/
 A rich terminal interface showing live statistics on active prompt sizes, completion token counts, token cost summaries, active models, and remaining context windows.
 
 ### 2. Session Management & Checkpoints
-Allows developers to save the current state of a coding conversation and restore it at any point using `/checkpoint save <name>` and `/checkpoint restore <id>`. This allows you to safely experiment with different implementations. Use the `--resume` or `-r` flag to continue where you left off.
+Allows developers to save the current state of a coding conversation and restore it at any point using `/checkpoint save <name>` and `/checkpoint restore <id>`. This allows you to safely experiment with different implementations. Use the `--resume` or `-r` flag to continue where you left off. Multi-agent sessions are fully serialized, ensuring smooth restore and resume of running tasks and interactive prompts.
 
 ### 3. 3-Tier Multi-Agent Orchestration (`--multi`)
 Launch with `superagent --multi` to activate the full 3-tier hierarchy:
@@ -112,8 +112,11 @@ superagent --multi
 ### 4. Visible Terminal Windows (`/terminal`)
 Runs development servers, local builds, or test watchers in popped-up, visible OS terminal windows (Windows cmd, macOS Terminal, Linux x-terminal). It includes an AI-assisted preset initializer (`/terminal init`) to auto-configure workspace command presets.
 
-### 5. Structured Planning
-For complex changes, Superagent writes a detailed `implementation_plan.md` to the workspace root for user approval before modifying code.
+### 5. Structured Planning & Approvals
+For complex changes, the Master Agent writes a detailed `implementation_plan.md` to the workspace root. It requires explicit user approval and validation of the plan before invoking, executing, or merging any Superagent operations, guaranteeing safety and control.
+
+### 6. Centralized Logging
+All agent operations, including single-agent and 3-tier multi-agent processes, are dynamically logged to a central log file in the user's home directory (`~/.superagent-r/superagent.log`). The log maintains tier-aware indentation to cleanly trace parallel execution branches.
 
 ---
 
@@ -132,7 +135,7 @@ For parallel feature development, Superagent implements a 3-tier hierarchy:
 - **Delegation Guardrails**: Delegation depth is enforced per-tier — Master can spawn Superagents, Superagents can spawn Subagents, Subagents cannot spawn further agents.
 - **Permission Scoping**: Each tier gets a strictly scoped toolset. Master agents get orchestration tools; Superagents get shell + file tools; Subagents get file tools only.
 - **Structured Markdown Reporting**: Every Superagent completes its task by printing a standardized markdown report (goal, actions taken, key findings, outcome status) that the Master Agent can parse and merge.
-- **Visual Log Streaming**: Agent actions, thoughts, tool calls, and execution errors are formatted and logged in a nested visual tree layout with tier-aware indentation.
+- **Visual Log Streaming & Centralized Logging**: Agent actions, thoughts, tool calls, and execution errors are formatted and logged in a nested visual tree layout with tier-aware indentation. All logs are dynamically captured and written to the global directory at `~/.superagent-r/superagent.log`.
 
 ### 3. Execution Safety Guardrails (`permissions.ts`)
 A dedicated validation layer inspects all terminal execution commands before they are executed. It immediately blocks destructive command invocations, including:
@@ -202,7 +205,7 @@ Superagent natively supports configuring multiple API providers concurrently. In
 - `PROVIDER_OPENROUTER_API_KEY`: API key for OpenRouter.
 - `PROVIDER_CUSTOM_API_KEY` & `PROVIDER_CUSTOM_BASE_URL`: API key and base URL for any custom local or self-hosted LLM endpoints.
 
-To dynamically switch your active API provider at runtime, use the `/login` slash command or wizard. It instantly updates the active session's memory and rewrites the global `ACTIVE_PROVIDER` setting in the `.env` file without requiring you to restart the CLI.
+To dynamically switch your active API provider at runtime, use the `/login` slash command or wizard. It instantly updates the active session's memory and rewrites the global `ACTIVE_PROVIDER` setting in the `.env` file without requiring you to restart the assistant.
 
 ---
 
