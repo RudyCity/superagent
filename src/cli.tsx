@@ -60,11 +60,13 @@ Usage: superagent [options] [prompt]
 
 Options:
   -r, --resume    Resume the last active session
+  --multi         Start in Multi Superagent master orchestrator mode
   -h, --help      Show this help message and exit
 
 Examples:
   superagent
   superagent --resume
+  superagent --multi
   superagent "explain quantum computing in simple terms"
 `);
   process.exit(0);
@@ -73,29 +75,99 @@ Examples:
 import readline from "readline";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
+import { MASTER_AGENT_SYSTEM_PROMPT } from "./core/prompts.js";
+import { masterToolset } from "./core/tools/toolsets.js";
+import { registerQuestionHandler } from "./core/tools/index.js";
 
 if (process.stdin.isTTY) {
   const autoResume = process.argv.includes("--resume") || process.argv.includes("-r");
-  const flags = ["--resume", "-r", "--help", "-h"];
+  const flags = ["--resume", "-r", "--help", "-h", "--multi"];
   const positionalArgs = process.argv.slice(2).filter(arg => !flags.includes(arg));
   const initialPrompt = positionalArgs.join(" ");
 
+  const isMulti = process.argv.includes("--multi");
+
   let hasCurrentHistory = false;
   console.clear();
-  const { waitUntilExit } = render(
-    React.createElement(App, {
-      autoResume,
-      initialPrompt,
-      onHistoryChange: (exists) => {
-        hasCurrentHistory = exists;
+
+  if (isMulti) {
+    let logHandler: ((msg: string) => void) | null = null;
+
+    // Question handler: forward to dashboard's interactive wizard
+    // This is registered so subagents can also ask the user questions
+    const questionHandlerRef: { current: ((q: string, opts: string[]) => Promise<string>) | null } = { current: null };
+
+    const agent = new Agent(
+      (event: AgentEvent) => {
+        if (event.type === "text" && event.content.trim()) {
+          logHandler?.(`[AGENT] ${event.content}`);
+        } else if (event.type === "tool_start") {
+          logHandler?.(`[TOOL START] ${event.description}`);
+        } else if (event.type === "tool_end") {
+          logHandler?.(`[TOOL END] ${event.description}`);
+        } else if (event.type === "error") {
+          logHandler?.(`[ERROR] ${event.message}`);
+        } else if (event.type === "token_usage") {
+          // token_usage tracked per-agent in superagentInstances
+        }
       },
-    })
-  );
-  waitUntilExit().then(() => {
-    if (hasCurrentHistory) {
-      console.log("\n💡 You can resume this session later by running /resume inside superagent, or by starting with: `superagent --resume` or `superagent -r`\n");
-    }
-  });
+      async (toolCall, description) => {
+        logHandler?.(`[AUTO-APPROVE] ${description}`);
+        return true;
+      },
+      async (question, options) => {
+        if (questionHandlerRef.current) {
+          return questionHandlerRef.current(question, options);
+        }
+        logHandler?.(`[QUESTION] ${question} (auto-selected: ${options[0]})`);
+        return options[0];
+      },
+      MASTER_AGENT_SYSTEM_PROMPT,  // Master orchestrator system prompt
+      masterToolset                // Master-only toolset (no direct coding tools)
+    );
+
+    // Set master tier
+    agent.tier = "master";
+
+    // Register question handler so subagents/superagents can ask user questions
+    registerQuestionHandler(async (question, options) => {
+      if (questionHandlerRef.current) {
+        return questionHandlerRef.current(question, options);
+      }
+      return options[0] ?? "";
+    });
+
+    const { MultiAgentDashboard } = await import("./components/multi-agent-dashboard.js");
+    const { waitUntilExit } = render(
+      React.createElement(MultiAgentDashboard, {
+        agent,
+        registerLogHandler: (handler) => {
+          logHandler = handler;
+        },
+        registerQuestionHandlerRef: (setter) => {
+          questionHandlerRef.current = setter;
+        },
+      })
+    );
+    waitUntilExit().then(() => {
+      process.exit(0);
+    });
+  } else {
+    const { waitUntilExit } = render(
+      React.createElement(App, {
+        autoResume,
+        initialPrompt,
+        onHistoryChange: (exists) => {
+          hasCurrentHistory = exists;
+        },
+      })
+    );
+    waitUntilExit().then(() => {
+      if (hasCurrentHistory) {
+        console.log("\n💡 You can resume this session later by running /resume inside superagent, or by starting with: `superagent --resume` or `superagent -r`\n");
+      }
+    });
+  }
 } else {
   const agent = new Agent(
     (event: AgentEvent) => {
