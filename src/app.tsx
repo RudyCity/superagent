@@ -1725,17 +1725,29 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
   const handleSubmit = useCallback(
     async (value: string) => {
-      const trimmed = value.trim();
-      if (!trimmed) return;
       if (isProcessing && !activeWizard) return;
 
-      setInput("");
-      setIsPasted(false);
-      setLastTabPrefix(null);
-      setHistoryIndex(-1);
-      setScrollOffset(0);
+      const trimmed = value.trim();
 
       if (activeWizard) {
+        setInput("");
+        setIsPasted(false);
+        setLastTabPrefix(null);
+        setHistoryIndex(-1);
+        setScrollOffset(0);
+
+        // Guard: if this is a selection step where useInput already handles the Enter key,
+        // we skip here to prevent double-firing.
+        const isSelectionStep = 
+          (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 5 || activeWizard.step === 10)) ||
+          (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3)) ||
+          (activeWizard.type === "permission") ||
+          (activeWizard.type === "question" && wizardOptions.length > 0);
+
+        if (isSelectionStep) {
+          return;
+        }
+
         // For plan_approve wizard, map selection index to approve/reject instead of raw text
         if (activeWizard.type === "plan_approve" && wizardOptions.length > 0) {
           const isApprove = wizardSelectedIndex === 0;
@@ -1745,6 +1757,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         }
         return;
       }
+
+      if (!trimmed) return;
+
+      setInput("");
+      setIsPasted(false);
+      setLastTabPrefix(null);
+      setHistoryIndex(-1);
+      setScrollOffset(0);
       setHistory((prev) => {
         if (prev.length > 0 && prev[prev.length - 1] === trimmed) {
           return prev;
