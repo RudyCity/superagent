@@ -8,10 +8,10 @@ const __dirname = path.dirname(__filename);
 
 import os from "os";
 
-// Load global .env first
-dotenv.config({ path: path.join(os.homedir(), ".superagent-r", ".env") });
 // Load local .env from current working directory to allow project-level overrides
 dotenv.config();
+// Load global .env as fallback
+dotenv.config({ path: path.join(os.homedir(), ".superagent-r", ".env") });
 import React from "react";
 import { render } from "ink";
 import { App } from "./app.js";
@@ -92,6 +92,7 @@ if (process.stdin.isTTY) {
 
   if (isMulti) {
     let logHandler: ((msg: string) => void) | null = null;
+    let eventHandler: ((event: AgentEvent) => void) | null = null;
 
     // Question handler: forward to dashboard's interactive wizard
     // This is registered so subagents can also ask the user questions
@@ -99,6 +100,9 @@ if (process.stdin.isTTY) {
 
     const agent = new Agent(
       (event: AgentEvent) => {
+        if (eventHandler) {
+          eventHandler(event);
+        }
         if (event.type === "text" && event.content !== "") {
           logHandler?.(`[AGENT]${event.content}`);
         } else if (event.type === "tool_start") {
@@ -154,6 +158,9 @@ if (process.stdin.isTTY) {
         autoResume,
         registerLogHandler: (handler) => {
           logHandler = handler;
+        },
+        registerEventHandler: (handler) => {
+          eventHandler = handler;
         },
         registerQuestionHandlerRef: (setter) => {
           questionHandlerRef.current = setter;

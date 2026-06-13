@@ -72,8 +72,8 @@ superagent/
 
 ## 🌟 Key Developer Features
 
-### 1. Cyberpunk Terminal UI & Token Tracking
-A rich terminal interface showing live statistics on active prompt sizes, completion token counts, token cost summaries, active models, and remaining context windows.
+### 1. Cyberpunk Terminal UI, Token Tracking & Model Speed
+A rich terminal interface showing live statistics on active prompt sizes, completion token counts, token cost summaries, active models, remaining context windows, and real-time model generation speed (tokens per second).
 
 ### 2. Session Management & Checkpoints
 Allows developers to save the current state of a coding conversation and restore it at any point using `/checkpoint save <name>` and `/checkpoint restore <id>`. This allows you to safely experiment with different implementations. Use the `--resume` or `-r` flag to continue where you left off. Multi-agent sessions are fully serialized, ensuring smooth restore and resume of running tasks and interactive prompts.
@@ -201,14 +201,14 @@ Superagent implements a background scheduler supporting:
    MODEL=gpt-4o
    ```
 
-### 🔑 Multi-API Key Management
-Superagent natively supports configuring multiple API providers concurrently. Inside the global `.env` file, you can define individual credential keys for different services:
+### 🔑 Multi-API Key & Model Management
+Superagent natively supports configuring multiple API providers concurrently. Inside the global `.env` file, you can define individual credential keys and default models for different services:
 - `PROVIDER_OPENAI_API_KEY`: API key for OpenAI.
 - `PROVIDER_ANTHROPIC_API_KEY`: API key for Anthropic.
 - `PROVIDER_OPENROUTER_API_KEY`: API key for OpenRouter.
-- `PROVIDER_CUSTOM_API_KEY` & `PROVIDER_CUSTOM_BASE_URL`: API key and base URL for any custom local or self-hosted LLM endpoints.
+- `PROVIDER_CUSTOM_API_KEY` & `PROVIDER_CUSTOM_BASE_URL`: API key and base URL for any custom local or self-hosted LLM endpoints. Custom endpoints that are Anthropic-compatible (e.g. self-hosted Claude API proxies) are automatically detected and run with the Anthropic driver.
 
-To dynamically switch your active API provider at runtime, use the `/login` slash command or wizard. It instantly updates the active session's memory and rewrites the global `ACTIVE_PROVIDER` setting in the `.env` file without requiring you to restart the assistant.
+To dynamically switch your active API provider or model at runtime, use the `/login` or `/model` slash commands or wizards. It instantly updates the active session's memory, updates provider-specific model configs (e.g., `PROVIDER_<PROVIDER>_MODEL`), and rewrites the settings in the global `.env` file without requiring you to restart the assistant.
 
 ---
 

@@ -56,6 +56,7 @@ export function App({
   const [tokensUp, setTokensUp] = useState(0);
   const [tokensDown, setTokensDown] = useState(0);
   const [lastPromptTokens, setLastPromptTokens] = useState(0);
+  const [lastSpeed, setLastSpeed] = useState<number | null>(null);
   const [contextLimit, setContextLimit] = useState(256000);
   const streamBufferRef = useRef("");
   const lastStreamUpdateRef = useRef<number>(0);
@@ -86,6 +87,7 @@ export function App({
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
   const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
+  const [activeModel, setActiveModel] = useState(() => process.env.MODEL || getDefaultModel());
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
   const [focusMode, setFocusMode] = useState<"input" | "history">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
@@ -680,6 +682,10 @@ export function App({
           setTokensUp((prev) => prev + event.promptTokens);
           setTokensDown((prev) => prev + event.completionTokens);
           setLastPromptTokens(event.promptTokens);
+          if (event.durationMs && event.completionTokens > 0) {
+            const speed = event.completionTokens / (event.durationMs / 1000);
+            setLastSpeed(speed);
+          }
           break;
       }
       if (agentRef.current) {
@@ -953,6 +959,14 @@ export function App({
               content: `Switched active provider to: ${chosen.name}\nSaved to: ${envPath}`,
               timestamp: now,
             });
+            fetchAndCacheModels()
+              .then(() => {
+                const currentModel = process.env.MODEL || getDefaultModel();
+                const limit = getContextWindowLimit(currentModel);
+                setContextLimit(limit);
+                setActiveModel(currentModel);
+              })
+              .catch(() => {});
           } catch (err: any) {
             addLine({
               type: "error",
@@ -1008,6 +1022,7 @@ export function App({
               const currentModel = process.env.MODEL || getDefaultModel();
               const limit = getContextWindowLimit(currentModel);
               setContextLimit(limit);
+              setActiveModel(currentModel);
             })
             .catch(() => {});
         } catch (err: any) {
@@ -1457,7 +1472,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           let targetLabel = "";
           if (tier === "default") {
             envPath = switchActiveProvider(profileName);
-            updateEnvFile({ MODEL: modelName });
+            updateEnvFile({ 
+              MODEL: modelName,
+              [`PROVIDER_${profileName.toUpperCase()}_MODEL`]: modelName
+            });
             targetLabel = "Default Model";
           } else if (tier === "all") {
             const activeProvider = process.env.ACTIVE_PROVIDER || "";
@@ -1513,11 +1531,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           
           if (tier === "default" || tier === "all") {
             setContextLimit(limit);
+            setActiveModel(modelName);
           }
           
+          const currentModel = process.env.MODEL || getDefaultModel();
+          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          
+          let updatedList = `\n\nUpdated Models:\n` +
+            `  Default Model: ${currentModel}\n` +
+            `  Master Agent (depth 0): ${masterModel}\n` +
+            `  Superagent (depth 1): ${superagentModel}\n` +
+            `  Subagent (depth 2): ${subagentModel}`;
+
+          for (const [key, value] of Object.entries(process.env)) {
+            if (value && key.startsWith("MODEL_SUBAGENT_")) {
+              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              updatedList += `\n  Subagent "${name}": ${value}`;
+            }
+          }
+
           addLine({
             type: "system",
-            content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+            content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}${updatedList}`,
             timestamp: now,
           });
           
@@ -1653,6 +1690,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           setTokensUp(0);
           setTokensDown(0);
           setLastPromptTokens(0);
+          setLastSpeed(null);
         }
         handleSlashCommand(commandInput, {
           addLine,
@@ -1660,6 +1698,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           agent: agentRef.current,
           clearLines: () => setLines([]),
           setContextLimit,
+          setActiveModel,
           setActiveWizard,
           setWizardOptions,
           setWizardSelectedIndex,
@@ -2080,6 +2119,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     const currentModel = process.env.MODEL || getDefaultModel();
                     const limit = getContextWindowLimit(currentModel);
                     setContextLimit(limit);
+                    setActiveModel(currentModel);
                   })
                   .catch(() => {});
               } catch (err: any) {
@@ -2140,9 +2180,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
       } else if (activeWizard.type === "model" && activeWizard.step === 3 && wizardOptions.length > 0) {
-        const modelSearchQuery = input.trim().toLowerCase();
+        const modelSearchQuery = input.trim();
         const filteredModels = modelSearchQuery
-          ? wizardOptions.filter((m) => m.toLowerCase().includes(modelSearchQuery))
+          ? filterSuggestions(wizardOptions, modelSearchQuery)
           : wizardOptions;
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
@@ -2833,7 +2873,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   const messageCount = lines.filter(
     (l) => l.type === "user" || l.type === "assistant"
   ).length;
-  const modelName = process.env.MODEL || getDefaultModel();
+  const modelName = activeModel;
   const liveStreamTokens = Math.ceil(streamDisplay.length / 4);
   const activeContextUsage = lastPromptTokens > 0 ? (lastPromptTokens + liveStreamTokens) : 0;
   const contextPercentage = contextLimit > 0 ? ((activeContextUsage / contextLimit) * 100).toFixed(2) : "0.00";
@@ -3317,7 +3357,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
             {activeWizard && activeWizard.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0 && (
               <WizardDialog
-                title="⚙️ SELECT PROVIDER FOR MODELS (Use Arrow Keys Up/Down & Enter):"
+                title={`⚙️ SELECT PROVIDER FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"} (Use Arrow Keys Up/Down & Enter):`}
                 borderColor="cyan"
                 options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
@@ -3325,14 +3365,16 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             )}
 
             {activeWizard && activeWizard.type === "model" && activeWizard.step === 3 && wizardOptions.length > 0 && (() => {
-              const modelSearchQuery = input.trim().toLowerCase();
+              const modelSearchQuery = input.trim();
               const filteredModels = modelSearchQuery
-                ? wizardOptions.filter((m) => m.toLowerCase().includes(modelSearchQuery))
+                ? filterSuggestions(wizardOptions, modelSearchQuery)
                 : wizardOptions;
               const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
+              const tierStr = activeWizard.data.tier ? ` FOR ${activeWizard.data.tier.toUpperCase()}` : "";
+              const provStr = activeWizard.data.provider ? ` VIA ${activeWizard.data.provider.toUpperCase()}` : "";
               const searchTitle = modelSearchQuery
-                ? `⚙️ SELECT MODEL — 🔍 "${input.trim()}" (${filteredModels.length}/${wizardOptions.length} results):`
-                : `⚙️ SELECT MODEL (${wizardOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
+                ? `⚙️ SELECT MODEL${tierStr}${provStr} — 🔍 "${input.trim()}" (${filteredModels.length}/${wizardOptions.length} results):`
+                : `⚙️ SELECT MODEL${tierStr}${provStr} (${wizardOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
               return (
                 <WizardDialog
                   title={searchTitle}
@@ -3527,6 +3569,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               <Text color="green" bold>🟢 ONLINE</Text>
               <Text color="gray"> │ </Text>
               <Text color="cyan" bold>{modelName}</Text>
+              {lastSpeed !== null && (
+                <>
+                  <Text color="gray"> │ </Text>
+                  <Text color="yellow" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
+                </>
+              )}
               <Text color="gray"> │ </Text>
               <Text color="white">Msg: {messageCount}</Text>
               <Text color="gray"> • </Text>

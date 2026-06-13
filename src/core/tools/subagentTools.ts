@@ -177,6 +177,14 @@ export const invokeSubagentTool: Tool = {
             logs.push(`│       ${line}\n`);
           }
           logs.push(`│\n`);
+        } else if (event.type === "token_usage") {
+          const inst = subagentInstances.get(subagentId);
+          if (inst) {
+            inst.tokenUsage = {
+              prompt: (inst.tokenUsage?.prompt ?? 0) + event.promptTokens,
+              completion: (inst.tokenUsage?.completion ?? 0) + event.completionTokens,
+            };
+          }
         }
       },
       // Permission: block destructive commands, auto-approve everything else

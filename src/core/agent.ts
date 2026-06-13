@@ -27,7 +27,7 @@ export type AgentEvent =
   | { type: "done" }
   | { type: "goal_done"; goal: string; summary: string }
   | { type: "permission_required"; toolCall: ToolCall; description: string }
-  | { type: "token_usage"; promptTokens: number; completionTokens: number };
+  | { type: "token_usage"; promptTokens: number; completionTokens: number; durationMs?: number };
 
 export type PermissionHandler = (
   toolCall: ToolCall,
@@ -52,6 +52,7 @@ export class Agent {
   public subagentType?: string;
   public workingDirectory: string;
   public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
+  public lastSpeed: number | null = null;
   public goalMode: string | null = null;
   public goalMaxIterations: number = 200;
   private conversation: Conversation;
@@ -113,7 +114,11 @@ export class Agent {
       } else if (event.type === "permission_required") {
         this.writeToLogFile("PERMISSION_REQUIRED", `Tool: ${event.toolCall.name}, Description: ${event.description}`);
       } else if (event.type === "token_usage") {
-        this.writeToLogFile("TOKEN_USAGE", `Prompt Tokens: ${event.promptTokens}, Completion Tokens: ${event.completionTokens}`);
+        let logMsg = `Prompt Tokens: ${event.promptTokens}, Completion Tokens: ${event.completionTokens}`;
+        if (event.durationMs !== undefined) {
+          logMsg += `, Duration: ${event.durationMs}ms`;
+        }
+        this.writeToLogFile("TOKEN_USAGE", logMsg);
       } else if (event.type === "goal_done") {
         this.writeToLogFile("GOAL_DONE", `Goal: ${event.goal}\nSummary: ${event.summary}`);
       } else if (event.type === "done") {
@@ -376,6 +381,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
 
           while (true) {
             try {
+              const startTime = Date.now();
               const result = await generateText({
                 model: this.getModel(),
                 system: systemPrompt,
@@ -406,12 +412,17 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   });
                 }
               }
+              const durationMs = Date.now() - startTime;
               const usage = result.usage;
               if (usage) {
+                if (durationMs > 0 && usage.completionTokens > 0) {
+                  this.lastSpeed = usage.completionTokens / (durationMs / 1000);
+                }
                 this.onEvent({
                   type: "token_usage",
                   promptTokens: usage.promptTokens,
                   completionTokens: usage.completionTokens,
+                  durationMs,
                 });
               }
               break;
@@ -440,6 +451,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               textContent = "";
               toolCalls.length = 0;
 
+              const startTime = Date.now();
               const result = streamText({
                 model: this.getModel(),
                 system: systemPrompt,
@@ -481,11 +493,16 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
 
               try {
                 const usage = await result.usage;
+                const durationMs = Date.now() - startTime;
                 if (usage) {
+                  if (durationMs > 0 && usage.completionTokens > 0) {
+                    this.lastSpeed = usage.completionTokens / (durationMs / 1000);
+                  }
                   this.onEvent({
                     type: "token_usage",
                     promptTokens: usage.promptTokens,
                     completionTokens: usage.completionTokens,
+                    durationMs,
                   });
                 }
               } catch (err) {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString } from "./config.js";
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible } from "./config.js";
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -319,6 +319,14 @@ describe("config", () => {
 
       const model: any = getModelInstanceForString("myprovider:some-cool-model");
       expect(model.modelId).toBe("some-cool-model");
+    });
+
+    it("should correctly identify Anthropic-compatible endpoints using isAnthropicCompatible", () => {
+      expect(isAnthropicCompatible("https://api.anthropic.com", "claude-3-5-sonnet")).toBe(true);
+      expect(isAnthropicCompatible("https://anthropic-proxy.corp.internal/v1", "claude-3-5-sonnet")).toBe(true);
+      expect(isAnthropicCompatible("https://openrouter.ai/api/v1", "anthropic/claude-3.5-sonnet")).toBe(false);
+      expect(isAnthropicCompatible("http://localhost:11434/v1", "llama3")).toBe(false);
+      expect(isAnthropicCompatible("https://api.litellm.ai", "claude-3-haiku")).toBe(false);
     });
   });
 });

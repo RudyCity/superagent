@@ -226,11 +226,13 @@ export function MultiAgentDashboard({
   agent,
   autoResume = false,
   registerLogHandler,
+  registerEventHandler,
   registerQuestionHandlerRef,
 }: {
   agent: Agent;
   autoResume?: boolean;
   registerLogHandler: (handler: (msg: string) => void) => void;
+  registerEventHandler?: (handler: (event: any) => void) => void;
   registerQuestionHandlerRef?: (setter: (q: string, opts: string[], isMultiSelect?: boolean) => Promise<string>) => void;
 }) {
   const { exit } = useApp();
@@ -242,6 +244,8 @@ export function MultiAgentDashboard({
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [tempInput, setTempInput] = useState("");
+  const [activeModel, setActiveModel] = useState(() => process.env.MODEL || getDefaultModel());
+  const [lastSpeed, setLastSpeed] = useState<number | null>(null);
 
   // Persist input history to disk so it survives restarts
   const HISTORY_FILE = path.join(getRootConfigDir(), "input-history-multi.json");
@@ -567,6 +571,20 @@ export function MultiAgentDashboard({
     });
   }, [registerLogHandler]);
 
+  // Register the agent event handler on mount
+  useEffect(() => {
+    if (registerEventHandler) {
+      registerEventHandler((event) => {
+        if (event.type === "token_usage") {
+          if (event.durationMs && event.completionTokens > 0) {
+            const speed = event.completionTokens / (event.durationMs / 1000);
+            setLastSpeed(speed);
+          }
+        }
+      });
+    }
+  }, [registerEventHandler]);
+
   const handleWizardSubmit = async (value: string) => {
     if (!activeWizard) return;
     const now = Date.now();
@@ -685,6 +703,12 @@ export function MultiAgentDashboard({
               ...prev,
               `[SYSTEM] Switched active provider to: ${chosen.name}\nSaved to: ${envPath}`
             ].slice(-500));
+            fetchAndCacheModels()
+              .then(() => {
+                const currentModel = process.env.MODEL || getDefaultModel();
+                setActiveModel(currentModel);
+              })
+              .catch(() => {});
           } catch (err: any) {
             setMasterLogs((prev) => [...prev, `[ERROR] Failed to switch provider: ${err.message}`].slice(-500));
           }
@@ -726,7 +750,12 @@ export function MultiAgentDashboard({
             updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
           }
 
-          fetchAndCacheModels().catch(() => {});
+          fetchAndCacheModels()
+            .then(() => {
+              const currentModel = process.env.MODEL || getDefaultModel();
+              setActiveModel(currentModel);
+            })
+            .catch(() => {});
         } catch (err: any) {
           setMasterLogs((prev) => [...prev, `[ERROR] Failed to save credentials: ${err.message}`].slice(-500));
         }
@@ -1153,7 +1182,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           let targetLabel = "";
 
           if (tier === "default") {
-            updates = { MODEL: selectedModel };
+            updates = { 
+              MODEL: selectedModel,
+              [`PROVIDER_${provider.toUpperCase()}_MODEL`]: selectedModel
+            };
             targetLabel = "Default Model";
             switchActiveProvider(provider);
           } else if (tier === "all") {
@@ -1204,12 +1236,36 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           }
 
           const envPath = updateEnvFile(updates);
+          if (tier === "default" || tier === "all") {
+            setActiveModel(selectedModel);
+          }
           const limit = getContextWindowLimit(selectedModel);
+          const currentModel = process.env.MODEL || getDefaultModel();
+          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          
+          const updatedLogs = [
+            `[MASTER] Updated Models:`,
+            `[MASTER]   Default Model: ${currentModel}`,
+            `[MASTER]   Master Agent (depth 0): ${masterModel}`,
+            `[MASTER]   Superagent (depth 1): ${superagentModel}`,
+            `[MASTER]   Subagent (depth 2): ${subagentModel}`,
+          ];
+
+          for (const [key, value] of Object.entries(process.env)) {
+            if (value && key.startsWith("MODEL_SUBAGENT_")) {
+              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              updatedLogs.push(`[MASTER]   Subagent "${name}": ${value}`);
+            }
+          }
+
           setMasterLogs((prev) => [
             ...prev,
             `[MASTER] ${targetLabel} successfully changed to: ${selectedModel}`,
             `[MASTER] Context Limit: ${limit.toLocaleString()} tokens`,
-            `[MASTER] Saved to: ${envPath}`
+            `[MASTER] Saved to: ${envPath}`,
+            ...updatedLogs
           ].slice(-500));
           
           if (tier === "default") {
@@ -1461,9 +1517,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       // because wizardOptions is intentionally set to [] for step 2 (filtering done at render time)
       let finalValue: string;
       if (activeWizard.type === "model" && activeWizard.step === 3) {
-        const lc = query.trim().toLowerCase();
+        const lc = query.trim();
         const filteredModels = lc
-          ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
+          ? filterSuggestions(wizardAllOptions, lc)
           : wizardAllOptions;
         const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
         finalValue = filteredModels[clampedIndex] || cleanVal;
@@ -1528,8 +1584,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         addLine: (line) => setMasterLogs((prev) => [...prev, `[${line.type.toUpperCase()}] ${line.content}`].slice(-500)),
         exit,
         agent,
-        clearLines: () => setMasterLogs([]),
+        clearLines: () => {
+          setMasterLogs([]);
+          setLastSpeed(null);
+        },
         setContextLimit: () => {},
+        setActiveModel,
         setActiveWizard: (val) => {
           if (val && val.type === "goal") return;
           setActiveWizard(val);
@@ -2291,9 +2351,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       if (key.downArrow) {
         // For model step 3: navigate within filtered results based on current query
         if (activeWizard.type === "model" && activeWizard.step === 3) {
-          const lc = query.toLowerCase();
+          const lc = query.trim();
           const len = lc
-            ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc)).length
+            ? filterSuggestions(wizardAllOptions, lc).length
             : wizardAllOptions.length;
           setWizardSelectedIndex((prev) => Math.min(Math.max(0, len - 1), prev + 1));
         } else {
@@ -2532,16 +2592,18 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 </Box>
                 {/* Model step 3: split out to handle query-based filtering like single agent */}
                 {activeWizard.type === "model" && activeWizard.step === 3 && (() => {
-                  const lc = query.trim().toLowerCase();
+                  const lc = query.trim();
                   const filteredModels = lc
-                    ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
+                    ? filterSuggestions(wizardAllOptions, lc)
                     : wizardAllOptions;
                   const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
+                  const tierStr = activeWizard.data.tier ? ` FOR ${activeWizard.data.tier.toUpperCase()}` : "";
+                  const provStr = activeWizard.data.provider ? ` VIA ${activeWizard.data.provider.toUpperCase()}` : "";
                   const searchTitle = wizardIsLoadingModels
-                    ? `⚙️ SELECT MODEL — ⏳ loading...`
+                    ? `⚙️ SELECT MODEL${tierStr}${provStr} — ⏳ loading...`
                     : lc
-                      ? `⚙️ SELECT MODEL — 🔍 "${query.trim()}" (${filteredModels.length}/${wizardAllOptions.length} results):`
-                      : `⚙️ SELECT MODEL (${wizardAllOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
+                      ? `⚙️ SELECT MODEL${tierStr}${provStr} — 🔍 "${query.trim()}" (${filteredModels.length}/${wizardAllOptions.length} results):`
+                      : `⚙️ SELECT MODEL${tierStr}${provStr} (${wizardAllOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
                   return (
                     <WizardDialog
                       title={searchTitle}
@@ -2560,7 +2622,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   <WizardDialog
                     title={
                       activeWizard.type === "model" && activeWizard.step === 1 ? `⚙️ SELECT AGENT TIER TO CONFIGURE:` :
-                      activeWizard.type === "model" && activeWizard.step === 2 ? `⚙️ SELECT MODEL PROVIDER:` :
+                      activeWizard.type === "model" && activeWizard.step === 2 ? `⚙️ SELECT MODEL PROVIDER FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"}:` :
                       activeWizard.type === "resume" ? `📁 SELECT SESSION TO RESUME:` :
                       activeWizard.type === "skills" ? `🛠️ SKILLS MANAGER (Step ${activeWizard.step}):` :
                       activeWizard.type === "checkpoint" ? `📋 CHECKPOINT MANAGER (Step ${activeWizard.step}):` :
@@ -2795,7 +2857,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             <Text>
               <Text color="green" bold>🟢 ONLINE</Text>
               <Text color="gray"> │ </Text>
-              <Text color="yellow" bold>{process.env.MODEL || "google/gemini-2.5-flash"}</Text>
+              <Text color="yellow" bold>{activeModel}</Text>
+              {lastSpeed !== null && (
+                <>
+                  <Text color="gray"> │ </Text>
+                  <Text color="cyan" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
+                </>
+              )}
               <Text color="gray"> │ </Text>
               <Text color="magenta" bold>Master: {sessions.find(s => s.type === "MASTER")?.tokens.toLocaleString() ?? 0}t</Text>
               <Text color="gray"> │ </Text>

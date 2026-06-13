@@ -145,6 +145,7 @@ export function handleSlashCommand(
     agent: Agent | null;
     clearLines?: () => void;
     setContextLimit?: (limit: number) => void;
+    setActiveModel?: (model: string) => void;
     setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills"; step: number; data: Record<string, string> } | null) => void;
     setWizardOptions?: (options: string[]) => void;
     setWizardSelectedIndex?: (index: number) => void;
@@ -842,6 +843,9 @@ export function handleSlashCommand(
 
         if (provider === "openrouter" && !process.env.MODEL) {
           updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
+          if (ctx.setActiveModel) {
+            ctx.setActiveModel("google/gemini-2.5-flash");
+          }
         }
 
         fetchAndCacheModels()
@@ -850,6 +854,9 @@ export function handleSlashCommand(
             const limit = getContextWindowLimit(currentModel);
             if (ctx.setContextLimit) {
               ctx.setContextLimit(limit);
+            }
+            if (ctx.setActiveModel) {
+              ctx.setActiveModel(currentModel);
             }
           })
           .catch(() => {});
@@ -892,6 +899,10 @@ export function handleSlashCommand(
           
           if (!tierArg) {
             updates = { MODEL: modelName };
+            const activeProvider = process.env.ACTIVE_PROVIDER || "";
+            if (activeProvider) {
+              updates[`PROVIDER_${activeProvider.toUpperCase()}_MODEL`] = modelName;
+            }
             targetLabel = "Default Model";
           } else {
             const key = tierArg.toLowerCase();
@@ -919,13 +930,36 @@ export function handleSlashCommand(
           const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
           const limit = getContextWindowLimit(cleanModelName);
           
-          if (!tierArg && ctx.setContextLimit) {
-            ctx.setContextLimit(limit);
+          if (!tierArg) {
+            if (ctx.setContextLimit) {
+              ctx.setContextLimit(limit);
+            }
+            if (ctx.setActiveModel) {
+              ctx.setActiveModel(modelName);
+            }
           }
           
+          const currentModel = process.env.MODEL || getDefaultModel();
+          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          
+          let updatedList = `\n\nUpdated Models:\n` +
+            `  Default Model: ${currentModel}\n` +
+            `  Master Agent (depth 0): ${masterModel}\n` +
+            `  Superagent (depth 1): ${superagentModel}\n` +
+            `  Subagent (depth 2): ${subagentModel}`;
+
+          for (const [key, value] of Object.entries(process.env)) {
+            if (value && key.startsWith("MODEL_SUBAGENT_")) {
+              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              updatedList += `\n  Subagent "${name}": ${value}`;
+            }
+          }
+
           ctx.addLine({
             type: "system",
-            content: `${targetLabel} changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+            content: `${targetLabel} changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}${updatedList}`,
             timestamp: now,
           });
 

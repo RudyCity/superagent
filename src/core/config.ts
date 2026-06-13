@@ -606,6 +606,23 @@ export function switchActiveProvider(name: string): string {
     ACTIVE_PROVIDER: name,
   };
 
+  const savedModel = process.env[`${prefix}_MODEL`];
+  if (savedModel) {
+    updates["MODEL"] = savedModel;
+  } else {
+    const typeLower = (type || "").toLowerCase();
+    const nameLower = name.toLowerCase();
+    if (typeLower === "openrouter" || nameLower === "openrouter") {
+      updates["MODEL"] = "google/gemini-2.5-flash";
+    } else if (typeLower === "anthropic" || nameLower === "anthropic") {
+      updates["MODEL"] = "claude-3-5-sonnet-20241022";
+    } else if (typeLower === "openai" || nameLower === "openai") {
+      updates["MODEL"] = "gpt-4o";
+    } else {
+      updates["MODEL"] = "gpt-4o";
+    }
+  }
+
   if (type === "openrouter" || name.toLowerCase() === "openrouter") {
     updates["CUSTOM_BASE_URL"] = "https://openrouter.ai/api/v1";
     updates["CUSTOM_API_KEY"] = apiKey;
@@ -639,6 +656,24 @@ export function switchActiveProvider(name: string): string {
   }
 
   return updateEnvFile(updates);
+}
+
+export function isAnthropicCompatible(baseUrl: string, modelName: string): boolean {
+  const urlLower = baseUrl.toLowerCase();
+  const modelLower = modelName.toLowerCase();
+  if (urlLower.includes("anthropic")) return true;
+  if (
+    urlLower.includes("openrouter.ai") ||
+    urlLower.includes("openai.com") ||
+    urlLower.includes("litellm") ||
+    urlLower.includes("ollama") ||
+    urlLower.includes("groq") ||
+    urlLower.includes("deepinfra") ||
+    urlLower.includes("together")
+  ) {
+    return false;
+  }
+  return modelLower.includes("claude");
 }
 
 export function getModelInstance() {
@@ -699,8 +734,11 @@ export function getModelInstanceForString(modelStr: string) {
     }
   }
 
-  if (provider === "anthropic") {
-    const anthropic = createAnthropic({ apiKey });
+  if (provider === "anthropic" || (provider === "custom" && isAnthropicCompatible(baseUrl || "", modelName))) {
+    const anthropic = createAnthropic({
+      apiKey,
+      ...(baseUrl && { baseURL: baseUrl }),
+    });
     return anthropic(modelName);
   }
 
