@@ -13,7 +13,7 @@ import { getToolDescription } from "./core/permissions.js";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { registerSubagentType, allTools, backgroundTasks, subagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged } from "./core/tools.js";
+import { registerSubagentType, allTools, backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged } from "./core/tools.js";
 import { WizardDialog } from "./components/wizard-dialog.js";
 import { execa } from "execa";
 import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions } from "./utils/text.js";
@@ -69,6 +69,7 @@ export function App({
   const [focusedResponseOffset, setFocusedResponseOffset] = useState(0);
   const [runningTasksCount, setRunningTasksCount] = useState(0);
   const [runningSubagentsCount, setRunningSubagentsCount] = useState(0);
+  const [runningSuperagentsCount, setRunningSuperagentsCount] = useState(0);
   const [goalMode, setGoalMode] = useState<{ goal: string; startedAt: number } | null>(null);
   const [toolTimeout, setToolTimeout] = useState<number | null>(null);
   const [toolStartTime, setToolStartTime] = useState<number | null>(null);
@@ -85,6 +86,7 @@ export function App({
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
   const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
+  const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
   const [focusMode, setFocusMode] = useState<"input" | "history">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
   const [checkpointsListState, setCheckpointsListState] = useState<Checkpoint[]>([]);
@@ -328,6 +330,38 @@ export function App({
       });
     });
 
+    const unsubSuperagents = subscribeToSuperagents(() => {
+      setRunningSuperagentsCount(
+        Array.from(superagentInstances.values()).filter((s) => s.status === "running").length
+      );
+      const activeList = Array.from(superagentInstances.values());
+      activeList.forEach((inst) => {
+        if (inst.status === "completed" && inst.result && !(inst as any).notified) {
+          (inst as any).notified = true;
+          const msg = `⚡ [SUPERAGENT NOTIFICATION]: Superagent ${inst.id} (${inst.role}) has completed!\nReport Summary:\n${inst.result}`;
+          addLine({
+            type: "system",
+            content: msg,
+            timestamp: Date.now()
+          });
+
+          if (agentRef.current && !agentRef.current.isAgentRunning()) {
+            setIsProcessing(true);
+            addLine({
+              type: "user",
+              content: `❯ [SYSTEM TRIGGER] ${msg}`,
+              timestamp: Date.now()
+            });
+            agentRef.current.sendMessage(msg).then(() => {
+              if (agentRef.current) {
+                setPlanState(agentRef.current.planState);
+              }
+            });
+          }
+        }
+      });
+    });
+
     const unsubSchedules = subscribeToSchedules((jobId, prompt) => {
       const msg = `⏳ [SCHEDULE NOTIFICATION]: Schedule job ${jobId} triggered! Prompt: ${prompt}`;
       addLine({
@@ -386,6 +420,46 @@ export function App({
 
     return () => clearInterval(interval);
   }, [isExecutingTool, toolTimeout, toolStartTime]);
+
+  useEffect(() => {
+    let active = true;
+    let intervalId: NodeJS.Timeout | null = null;
+
+    const check = async () => {
+      const taskPath = agentRef.current ? agentRef.current.getTaskFilePath() : null;
+      if (!taskPath) return;
+      try {
+        const content = await fs.readFile(taskPath, "utf-8");
+        if (!active) return;
+        const lines = content.split(/\r?\n/);
+        const items: { status: string; text: string }[] = [];
+        for (const line of lines) {
+          const match = line.match(/^\s*-\s*`\[([xX/ ])\]`?\s*(.*)$/) || line.match(/^\s*-\s*\[([xX/ ])\]\s*(.*)$/);
+          if (match) {
+            items.push({
+              status: match[1].toLowerCase(),
+              text: match[2].trim(),
+            });
+          }
+        }
+        setChecklistTasks(items);
+      } catch (err) {
+        if (active) setChecklistTasks([]);
+      }
+    };
+
+    if (planState === "APPROVED") {
+      check();
+      intervalId = setInterval(check, 2000);
+    } else {
+      setChecklistTasks([]);
+    }
+
+    return () => {
+      active = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [planState]);
 
   useEffect(() => {
     const modelName = process.env.MODEL || getDefaultModel();
@@ -2455,9 +2529,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               content: detailLines.join("\n"),
               timestamp: now,
             });
-            setActiveWizard(null);
-            setWizardOptions([]);
-            setWizardSelectedIndex(0);
           } else {
             // Back to List
             const options = skillsList.map((s) => `• ${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`);
@@ -2880,17 +2951,28 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     }
   }
 
+  if (planState === "APPROVED" && checklistTasks.length > 0) {
+    chromeHeight += 3 + checklistTasks.length;
+  }
+
   let liveListHeight = 0;
-  if (runningSubagentsCount > 0 || runningTasksCount > 0) {
+  if (runningSuperagentsCount > 0 || runningSubagentsCount > 0 || runningTasksCount > 0) {
     liveListHeight += 1; // padding/margin
+    if (runningSuperagentsCount > 0) {
+      liveListHeight += 1; // header
+      liveListHeight += runningSuperagentsCount * 3; // Each superagent takes 3 lines
+    }
     if (runningSubagentsCount > 0) {
       liveListHeight += 1; // header
+      if (runningSuperagentsCount > 0) {
+        liveListHeight += 1; // marginTop
+      }
       liveListHeight += runningSubagentsCount * 2; // Each subagent takes 2 lines
     }
     if (runningTasksCount > 0) {
       liveListHeight += 1; // header
       liveListHeight += runningTasksCount; // Each task is 1 line
-      if (runningSubagentsCount > 0) {
+      if (runningSuperagentsCount > 0 || runningSubagentsCount > 0) {
         liveListHeight += 1; // marginTop
       }
     }
@@ -3050,11 +3132,31 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
           {/* Input */}
           <Box flexDirection="column" paddingX={1} marginTop={1}>
-            {/* Active Subagents & Tasks Live List */}
-            {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
+            {/* Active Superagents, Subagents & Tasks Live List */}
+            {(runningSuperagentsCount > 0 || runningSubagentsCount > 0 || runningTasksCount > 0) && (
               <Box flexDirection="column" marginBottom={1}>
-                {runningSubagentsCount > 0 && (
+                {runningSuperagentsCount > 0 && (
                   <Box flexDirection="column">
+                    <Text color="cyan" bold>⚡ ACTIVE SUPERAGENTS:</Text>
+                    {Array.from(superagentInstances.values())
+                      .filter((s) => s.status === "running")
+                      .map((inst) => (
+                        <Box key={inst.id} flexDirection="column">
+                          <Text color="cyan">
+                            ├─ [{inst.id}] Role: {inst.role} ({inst.status})
+                          </Text>
+                          <Text color="cyan">
+                            │  ├─ Task: <Text color="white">{inst.task}</Text>
+                          </Text>
+                          <Text color="cyan">
+                            │  └─ Action: <Text italic color="white">{getLatestSuperagentAction(inst.logs)}</Text>
+                          </Text>
+                        </Box>
+                      ))}
+                  </Box>
+                )}
+                {runningSubagentsCount > 0 && (
+                  <Box flexDirection="column" marginTop={runningSuperagentsCount > 0 ? 1 : 0}>
                     <Text color="yellow" bold>🤖 ACTIVE SUBAGENTS:</Text>
                     {Array.from(subagentInstances.values())
                       .filter((s) => s.status === "running")
@@ -3071,7 +3173,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   </Box>
                 )}
                 {runningTasksCount > 0 && (
-                  <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
+                  <Box flexDirection="column" marginTop={(runningSuperagentsCount > 0 || runningSubagentsCount > 0) ? 1 : 0}>
                     <Text color="cyan" bold>⚙️ ACTIVE PROCESSES:</Text>
                     {Array.from(backgroundTasks.entries())
                       .map(([id, task]) => (
@@ -3083,6 +3185,51 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 )}
               </Box>
             )}
+
+            {planState === "APPROVED" && checklistTasks.length > 0 && (() => {
+              const totalTasks = checklistTasks.length;
+              const completedTasks = checklistTasks.filter((t) => t.status === "x").length;
+              const inProgressTasks = checklistTasks.filter((t) => t.status === "/").length;
+              const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+              const barLength = Math.max(10, Math.min(25, terminalWidth - 30));
+              const filled = Math.round((pct / 100) * barLength);
+              const bar = "█".repeat(filled) + "░".repeat(barLength - filled);
+              return (
+                <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginBottom={1}>
+                  <Box flexDirection="row" justifyContent="space-between">
+                    <Text bold color="cyan">📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed)</Text>
+                  </Box>
+                  <Box flexDirection="row" marginBottom={1}>
+                    <Text color="cyan">Progress: [ </Text>
+                    <Text color="green" bold>{bar}</Text>
+                    <Text color="cyan"> ] {pct}% ({completedTasks}/{totalTasks} completed, {inProgressTasks} in progress)</Text>
+                  </Box>
+                  {checklistTasks.map((task, idx) => {
+                    let statusChar = "[ ]";
+                    let taskColor = "white";
+                    let statusText = "";
+                    if (task.status === "x") {
+                      statusChar = "[✓]";
+                      taskColor = "gray";
+                    } else if (task.status === "/") {
+                      statusChar = "[/]";
+                      taskColor = "yellow";
+                      statusText = " (in progress)";
+                    }
+                    return (
+                      <Box key={idx} flexDirection="row">
+                        <Text color={task.status === "x" ? "green" : task.status === "/" ? "yellow" : "cyan"}>
+                          {statusChar}{" "}
+                        </Text>
+                        <Text color={taskColor} strikethrough={task.status === "x"}>
+                          {task.text}{statusText}
+                        </Text>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              );
+            })()}
 
             {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (
               <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
@@ -3860,6 +4007,27 @@ function getLatestSubagentAction(logs: string[]): string {
         .trim();
       clean = clean.replace(/^Description:\s*/i, "");
       clean = clean.replace(/^Args:\s*/i, "");
+      if (clean) {
+        return clean.length > 80 ? clean.slice(0, 80) + "..." : clean;
+      }
+    }
+  }
+  return "Processing...";
+}
+
+function getLatestSuperagentAction(logs: string[]): string {
+  if (!logs || logs.length === 0) return "Initializing...";
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const raw = logs[i].trim();
+    if (raw) {
+      let clean = raw
+        .replace(/^\[THINK\]\s*/i, "")
+        .replace(/^\[TOOL:START\]\s*/i, "")
+        .replace(/^\[TOOL:SUCCESS\]\s*/i, "")
+        .replace(/^\[TOOL:FAILED\]\s*/i, "")
+        .replace(/^\[ERROR\]\s*/i, "")
+        .replace(/^[│┌├└─\s]+/, "")
+        .trim();
       if (clean) {
         return clean.length > 80 ? clean.slice(0, 80) + "..." : clean;
       }

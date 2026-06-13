@@ -277,6 +277,7 @@ export function MultiAgentDashboard({
   const [checkpointsList, setCheckpointsList] = useState<any[]>([]);
   const [worktreeCount, setWorktreeCount] = useState<number>(0);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
+  const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
 
   // Periodic sync of agent properties (e.g. planState)
   useEffect(() => {
@@ -302,6 +303,46 @@ export function MultiAgentDashboard({
     }, 250);
     return () => clearInterval(timer);
   }, [agent, activeWizard]);
+
+  useEffect(() => {
+    let active = true;
+    let intervalId: NodeJS.Timeout | null = null;
+
+    const check = async () => {
+      const taskPath = agent ? agent.getTaskFilePath() : null;
+      if (!taskPath) return;
+      try {
+        const content = await fs.readFile(taskPath, "utf-8");
+        if (!active) return;
+        const lines = content.split(/\r?\n/);
+        const items: { status: string; text: string }[] = [];
+        for (const line of lines) {
+          const match = line.match(/^\s*-\s*`\[([xX/ ])\]`?\s*(.*)$/) || line.match(/^\s*-\s*\[([xX/ ])\]\s*(.*)$/);
+          if (match) {
+            items.push({
+              status: match[1].toLowerCase(),
+              text: match[2].trim(),
+            });
+          }
+        }
+        setChecklistTasks(items);
+      } catch (err) {
+        if (active) setChecklistTasks([]);
+      }
+    };
+
+    if (planState === "APPROVED") {
+      check();
+      intervalId = setInterval(check, 2000);
+    } else {
+      setChecklistTasks([]);
+    }
+
+    return () => {
+      active = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [planState, agent]);
 
   // Register the interactive question handler
   useEffect(() => {
@@ -1105,6 +1146,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           ).catch((err: any) => {
             setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message}`].slice(-500));
           });
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
         } else if (wizardSelectedIndex === 1) {
           // View Details
           setMasterLogs((prev) => [
@@ -1113,11 +1157,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             `[MASTER] Description: ${chosen.description}`,
             `[MASTER] Path: ${chosen.path}`
           ].slice(-500));
+        } else {
+          // Back to List
+          const options = skillsList.map((s) => `• ${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`);
+          setActiveWizard({
+            type: "skills",
+            step: 1,
+            data: {},
+          });
+          setWizardOptions(options);
+          setWizardSelectedIndex(skillIndex);
         }
-
-        setActiveWizard(null);
-        setWizardOptions([]);
-        setWizardSelectedIndex(0);
       }
     } else if (activeWizard.type === "checkpoint") {
       if (activeWizard.step === 1) {
@@ -1450,7 +1500,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         list.push({
           id: `sa-${instance.role}-${id}`,
           type: "SUPERAGENT",
-          task: `[${instance.role}] ${instance.task.slice(0, 60)}`,
+          task: `[${instance.role}] ${instance.task}`,
           status: instance.status === "running" ? "WORKING"
                 : instance.status === "completed" ? "COMPLETED"
                 : "ERROR",
@@ -1548,7 +1598,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   }
 
   const workspaceHeight = Math.max(10, terminalSize.height - 10);
-  const leftTopHeight = Math.max(5, workspaceHeight - 7 - liveListHeight);
+  let checklistHeight = 0;
+  if (planState === "APPROVED" && checklistTasks.length > 0) {
+    checklistHeight += 3 + checklistTasks.length;
+  }
+  const leftTopHeight = Math.max(5, workspaceHeight - 5 - liveListHeight - checklistHeight);
   const logBoxHeight = Math.max(5, workspaceHeight - 4);
   const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
   const logsCount = showCursor ? Math.max(1, logBoxHeight - 1) : logBoxHeight;
@@ -2208,7 +2262,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     TASK:       "gray",
   };
 
-  const maxVisibleSessions = Math.max(3, leftTopHeight - 4);
+  const maxVisibleSessions = Math.max(3, leftTopHeight - 2);
   let startIdx = 0;
   if (selectedIndex >= maxVisibleSessions) {
     startIdx = selectedIndex - maxVisibleSessions + 1;
@@ -2263,8 +2317,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           {/* Top Left: Workspace Registry */}
           <Box 
             flexDirection="column" 
-            borderStyle="round" 
-            borderColor={focusArea === "list" ? "green" : "cyan"} 
             paddingX={1}
             height={leftTopHeight}
             marginBottom={1}
@@ -2412,6 +2464,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             );
           })()}
 
+          {/* Spacer to push input to the bottom so it touches the footer */}
+          <Box flexGrow={1} />
+
           {/* Bottom Left: Interactive Console Prompt */}
           <Box flexDirection="column" width="100%" marginTop={0}>
             {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (() => {
@@ -2421,6 +2476,51 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
                   <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">{planUrl}</Text></Text>
                   <Text color="yellow">Silakan kirim pesan/masukan apa saja untuk menampilkan kembali dialog persetujuan wizard.</Text>
+                </Box>
+              );
+            })()}
+
+            {planState === "APPROVED" && checklistTasks.length > 0 && (() => {
+              const totalTasks = checklistTasks.length;
+              const completedTasks = checklistTasks.filter((t) => t.status === "x").length;
+              const inProgressTasks = checklistTasks.filter((t) => t.status === "/").length;
+              const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+              const barLength = Math.max(10, Math.min(20, Math.floor(terminalSize.width * 0.4 - 30)));
+              const filled = Math.round((pct / 100) * barLength);
+              const bar = "█".repeat(filled) + "░".repeat(barLength - filled);
+              return (
+                <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginBottom={1}>
+                  <Box flexDirection="row" justifyContent="space-between">
+                    <Text bold color="cyan">📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed)</Text>
+                  </Box>
+                  <Box flexDirection="row" marginBottom={1}>
+                    <Text color="cyan">Progress: [ </Text>
+                    <Text color="green" bold>{bar}</Text>
+                    <Text color="cyan"> ] {pct}% ({completedTasks}/${totalTasks} completed, {inProgressTasks} in progress)</Text>
+                  </Box>
+                  {checklistTasks.map((task, idx) => {
+                    let statusChar = "[ ]";
+                    let taskColor = "white";
+                    let statusText = "";
+                    if (task.status === "x") {
+                      statusChar = "[✓]";
+                      taskColor = "gray";
+                    } else if (task.status === "/") {
+                      statusChar = "[/]";
+                      taskColor = "yellow";
+                      statusText = " (in progress)";
+                    }
+                    return (
+                      <Box key={idx} flexDirection="row">
+                        <Text color={task.status === "x" ? "green" : task.status === "/" ? "yellow" : "cyan"}>
+                          {statusChar}{" "}
+                        </Text>
+                        <Text color={taskColor} strikethrough={task.status === "x"}>
+                          {task.text}{statusText}
+                        </Text>
+                      </Box>
+                    );
+                  })}
                 </Box>
               );
             })()}
@@ -2529,7 +2629,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             </Box>
           </Box>
           
-          <Text color="white" bold wrap="truncate-end">Task: <Text color="gray" bold={false}>{selectedSession.task}</Text></Text>
+          <Text color="white" bold>Task: <Text color="gray" bold={false}>{selectedSession.task}</Text></Text>
 
           {/* Log Window */}
           <Box flexDirection="column" marginTop={1} height={logBoxHeight} paddingX={1} justifyContent="flex-start">

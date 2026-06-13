@@ -1,6 +1,21 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { Agent } from "../src/core/agent.js";
+import * as configModule from "../src/core/config.js";
+
+vi.mock("../src/core/config.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof configModule>();
+  return {
+    ...actual,
+    getInstalledSkills: () => [
+      {
+        name: "Test Skill",
+        description: "A test skill description",
+        path: "/path/to/test-skill/SKILL.md",
+      }
+    ],
+  };
+});
 
 describe("Slash Command: /model", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -80,5 +95,102 @@ describe("Slash Command: /model", () => {
     handleSlashCommand("/model researcher openai:gpt-researcher", mockCtx);
     expect(process.env.MODEL_SUBAGENT_RESEARCHER).toBe("openai:gpt-researcher");
     expect(process.env.MODEL_RESEARCHER).toBe("openai:gpt-researcher");
+  });
+});
+
+describe("Slash Command: /skills and /skill", () => {
+  let addedLines: ChatLine[] = [];
+  let activeWizard: any = null;
+  let wizardOptions: string[] = [];
+  let wizardSelectedIndex = -1;
+
+  const mockCtx = {
+    addLine: (line: ChatLine) => {
+      addedLines.push(line);
+    },
+    exit: () => {},
+    agent: null as Agent | null,
+    setActiveWizard: (val: any) => {
+      activeWizard = val;
+    },
+    setWizardOptions: (options: string[]) => {
+      wizardOptions = options;
+    },
+    setWizardSelectedIndex: (index: number) => {
+      wizardSelectedIndex = index;
+    },
+  };
+
+  beforeEach(() => {
+    addedLines = [];
+    activeWizard = null;
+    wizardOptions = [];
+    wizardSelectedIndex = -1;
+  });
+
+  it("should open wizard on /skills (plural)", () => {
+    handleSlashCommand("/skills", mockCtx);
+
+    expect(activeWizard).not.toBeNull();
+    expect(activeWizard.type).toBe("skills");
+    expect(activeWizard.step).toBe(1);
+    expect(wizardOptions.length).toBe(1);
+    expect(wizardOptions[0]).toContain("Test Skill");
+  });
+
+  it("should open wizard on /skill (singular without args)", () => {
+    handleSlashCommand("/skill", mockCtx);
+
+    expect(activeWizard).not.toBeNull();
+    expect(activeWizard.type).toBe("skills");
+    expect(activeWizard.step).toBe(1);
+    expect(wizardOptions.length).toBe(1);
+  });
+
+  it("should activate direct skill on /skill <slug> (space separated)", () => {
+    const mockSendMessage = vi.fn().mockResolvedValue({});
+    const mockAgent = {
+      sendMessage: mockSendMessage,
+    } as any;
+
+    const ctxWithAgent = {
+      ...mockCtx,
+      agent: mockAgent,
+    };
+
+    handleSlashCommand("/skill test-skill", ctxWithAgent);
+
+    expect(addedLines.length).toBe(2);
+    expect(addedLines[0].content).toBe("❯ /skill test-skill");
+    expect(addedLines[1].content).toContain("Activating skill \"Test Skill\"");
+    expect(mockSendMessage).toHaveBeenCalled();
+    expect(mockSendMessage.mock.calls[0][0]).toContain("I would like you to use the following skill: \"Test Skill\"");
+  });
+
+  it("should activate direct skill on /skill-<slug> (hyphenated)", () => {
+    const mockSendMessage = vi.fn().mockResolvedValue({});
+    const mockAgent = {
+      sendMessage: mockSendMessage,
+    } as any;
+
+    const ctxWithAgent = {
+      ...mockCtx,
+      agent: mockAgent,
+    };
+
+    handleSlashCommand("/skill-test-skill", ctxWithAgent);
+
+    expect(addedLines.length).toBe(2);
+    expect(addedLines[0].content).toBe("❯ /skill-test-skill");
+    expect(addedLines[1].content).toContain("Activating skill \"Test Skill\"");
+    expect(mockSendMessage).toHaveBeenCalled();
+  });
+
+  it("should report error if direct skill not found", () => {
+    handleSlashCommand("/skill non-existent-skill", mockCtx);
+
+    expect(addedLines.length).toBe(1);
+    expect(addedLines[0].type).toBe("error");
+    expect(addedLines[0].content).toContain("Skill \"non-existent-skill\" not found");
   });
 });

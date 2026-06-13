@@ -155,21 +155,32 @@ export function handleSlashCommand(
     setIsProcessing?: (val: boolean) => void;
   }
 ) {
-  const [name] = cmd.slice(1).split(" ");
+  const [name, ...argsArray] = cmd.slice(1).split(" ");
+  const args = argsArray.join(" ").trim();
   const now = Date.now();
 
+  let isDirectSkill = false;
+  let targetSlug = "";
   if (name.toLowerCase().startsWith("skill-")) {
-    const slug = name.toLowerCase().slice(6);
+    isDirectSkill = true;
+    targetSlug = name.toLowerCase().slice(6);
+  } else if (name.toLowerCase() === "skill" && args) {
+    isDirectSkill = true;
+    targetSlug = args.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  }
+
+  if (isDirectSkill) {
     const skills = getInstalledSkills();
     const matchedSkill = skills.find(s => {
       const sSlug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-      return sSlug === slug;
+      return sSlug === targetSlug;
     });
 
     if (matchedSkill) {
+      const displayCmd = name.toLowerCase().startsWith("skill-") ? `skill-${targetSlug}` : `skill ${args}`;
       ctx.addLine({
         type: "user",
-        content: `❯ /skill-${slug}`,
+        content: `❯ /${displayCmd}`,
         timestamp: now,
       });
       ctx.addLine({
@@ -186,7 +197,7 @@ export function handleSlashCommand(
     } else {
       ctx.addLine({
         type: "error",
-        content: `Skill "${slug}" not found.`,
+        content: `Skill "${targetSlug}" not found.`,
         timestamp: now,
       });
     }
@@ -1268,6 +1279,7 @@ export function handleSlashCommand(
       })();
       break;
     }
+    case "skill":
     case "skills": {
       const skills = getInstalledSkills();
       if (skills.length === 0) {

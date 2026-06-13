@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, loadAgentSkills } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
 import type { Tool, AgentTier } from "./tools.js";
@@ -273,7 +273,13 @@ export class Agent {
     // In goal mode, allow many more auto-continues without prompting the user
     const maxContinues = isGoalMode ? 10 : 3;
 
-    const baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt;
+    let baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt;
+    if (this.customSystemPrompt) {
+      const skillsPrompt = loadAgentSkills();
+      if (skillsPrompt && !baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
+        baseSystemPrompt += "\n\n" + skillsPrompt;
+      }
+    }
 
     // Load scratchpad content if it exists
     let scratchpadText = "";

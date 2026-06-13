@@ -377,7 +377,7 @@ export function getInstalledSkills(): LoadedSkill[] {
   return skills;
 }
 
-function loadAgentSkills(): string {
+export function loadAgentSkills(): string {
   const skills = getInstalledSkills();
   if (skills.length === 0) {
     return "";
