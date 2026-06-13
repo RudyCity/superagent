@@ -5,7 +5,7 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
-import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, listHistorySessions, fetchAndCacheModels } from "./core/config.js";
+import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, listHistorySessions, fetchAndCacheModels, getModelPresets, applyModelPreset } from "./core/config.js";
 import { getPresetLabel } from "./core/slash-commands.js";
 import { createCheckpoint, listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, type Checkpoint } from "./core/checkpoints.js";
 import { getGlobalConfigDir } from "./core/config.js";
@@ -1536,6 +1536,50 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setWizardOptions(initialModels);
         setWizardSelectedIndex(0);
         setInput("");
+      } else if (activeWizard.step === 4) {
+        const presetChoice = value;
+        const presetName = presetChoice.split(" - ")[0].trim();
+        try {
+          const envPath = applyModelPreset(presetName);
+          const nextActiveModel = process.env.MODEL || getDefaultModel();
+          const limit = getContextWindowLimit(nextActiveModel);
+          setContextLimit(limit);
+          setActiveModel(nextActiveModel);
+
+          const currentModel = process.env.MODEL || getDefaultModel();
+          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          
+          let updatedList = `\n\nUpdated Models:\n` +
+            `  Default Model: ${currentModel}\n` +
+            `  Master Agent (depth 0): ${masterModel}\n` +
+            `  Superagent (depth 1): ${superagentModel}\n` +
+            `  Subagent (depth 2): ${subagentModel}`;
+
+          for (const [key, val] of Object.entries(process.env)) {
+            if (val && key.startsWith("MODEL_SUBAGENT_")) {
+              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              updatedList += `\n  Subagent "${name}": ${val}`;
+            }
+          }
+
+          addLine({
+            type: "system",
+            content: `Model preset "${presetName}" applied successfully!\nSaved to: ${envPath}${updatedList}`,
+            timestamp: now,
+          });
+        } catch (err: any) {
+          addLine({
+            type: "error",
+            content: `Failed to apply model preset: ${err.message}`,
+            timestamp: now,
+          });
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setWizardIsLoadingModels(false);
       } else {
         const modelName = value;
         try {
@@ -2349,9 +2393,23 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
         if (key.return) {
-          const tiers = ["default", "master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
+          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "preset", "default", "all"];
           const tier = tiers[wizardSelectedIndex];
           if (!tier) return;
+
+          if (tier === "preset") {
+            setActiveWizard({
+              type: "model",
+              step: 4,
+              data: { tier },
+            });
+            const presets = getModelPresets();
+            const options = presets.map(p => `${p.name} - ${p.description}`);
+            setWizardOptions(options);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          }
 
           setActiveWizard({
             type: "model",
@@ -2399,6 +2457,22 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const selectedModel = filteredModels[wizardSelectedIndex] ?? filteredModels[0];
           if (selectedModel) {
             handleWizardSubmit(selectedModel);
+          }
+          return;
+        }
+      } else if (activeWizard.type === "model" && activeWizard.step === 4 && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+          return;
+        }
+        if (key.return) {
+          const selectedVal = wizardOptions[wizardSelectedIndex];
+          if (selectedVal) {
+            handleWizardSubmit(selectedVal);
           }
           return;
         }

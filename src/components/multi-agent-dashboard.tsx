@@ -31,7 +31,9 @@ import {
   getInstalledSkills,
   getGlobalConfigDir,
   getCachedModelIds,
-  getRootConfigDir
+  getRootConfigDir,
+  getModelPresets,
+  applyModelPreset
 } from "../core/config.js";
 
 import { filterSuggestions, formatCompactNumber } from "../utils/text.js";
@@ -1204,12 +1206,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           tier = "coder";
         } else if (choice.includes("reviewer")) {
           tier = "reviewer";
+        } else if (choice.includes("preset") || choice.includes("load model preset")) {
+          tier = "preset";
+        } else if (choice.includes("default") || choice.includes("default model")) {
+          tier = "default";
         } else if (choice.includes("all")) {
           tier = "all";
         } else {
-          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
+          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "preset", "default", "all"];
           const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
           tier = tiers[idx] || "master";
+        }
+
+        if (tier === "preset") {
+          setActiveWizard({
+            type: "model",
+            step: 4,
+            data: { tier },
+          });
+          const presets = getModelPresets();
+          const options = presets.map(p => `${p.name} - ${p.description}`);
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
         }
 
         setActiveWizard({
@@ -1369,6 +1389,52 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         }
 
         setMasterLogs((prev) => [...prev, `[MASTER] Provider profile "${providerProfileName}" selected. Choose a model below:`].slice(-500));
+      } else if (activeWizard.step === 4) {
+        const presetChoice = value;
+        const presetName = presetChoice.split(" - ")[0].trim();
+        try {
+          const envPath = applyModelPreset(presetName);
+          const nextActiveModel = process.env.MODEL || getDefaultModel();
+          const limit = getContextWindowLimit(nextActiveModel);
+          const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+          setActiveModel(effectiveMasterModel);
+
+          const currentModel = process.env.MODEL || getDefaultModel();
+          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          
+          const updatedLogs = [
+            `[MASTER] Updated Models:`,
+            `[MASTER]   Default Model: ${currentModel}`,
+            `[MASTER]   Master Agent (depth 0): ${masterModel}`,
+            `[MASTER]   Superagent (depth 1): ${superagentModel}`,
+            `[MASTER]   Subagent (depth 2): ${subagentModel}`,
+          ];
+
+          for (const [key, val] of Object.entries(process.env)) {
+            if (val && key.startsWith("MODEL_SUBAGENT_")) {
+              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
+            }
+          }
+
+          setMasterLogs((prev) => [
+            ...prev,
+            `[MASTER] Model preset "${presetName}" applied successfully!`,
+            `[MASTER] Context Limit: ${limit.toLocaleString()} tokens`,
+            `[MASTER] Saved to: ${envPath}`,
+            ...updatedLogs
+          ].slice(-500));
+        } catch (err: any) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to apply model preset: ${err.message}`].slice(-500));
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setWizardAllOptions([]);
+        setWizardIsLoadingModels(false);
+        setQuery("");
       } else {
         const selectedModel = value;
         const tier = activeWizard.data.tier;

@@ -12,6 +12,9 @@ import {
   updateEnvFile, 
   getContextWindowLimit,
   getGlobalConfigDir,
+  getModelPresets,
+  saveModelPreset,
+  applyModelPreset,
 } from "./config.js";
 import {
   createCheckpoint,
@@ -885,8 +888,66 @@ export function handleSlashCommand(
           let modelName = "";
           const parts = argsStr.split(/\s+/);
           
+          const firstWord = parts[0].toLowerCase();
+          if (firstWord === "preset") {
+            if (parts.length === 1 || (parts.length === 2 && parts[1].toLowerCase() === "help")) {
+              ctx.addLine({
+                type: "system",
+                content: `Model Preset Commands:\n` +
+                         `  /model preset list                      - List all available presets\n` +
+                         `  /model preset save <name> [description]  - Save current model configuration\n` +
+                         `  /model preset <name>                     - Load/apply model preset`,
+                timestamp: now,
+              });
+              return;
+            }
+            const subAction = parts[1].toLowerCase();
+            if (subAction === "list") {
+              const presets = getModelPresets();
+              const listStr = presets.map(p => `- **${p.name}**: ${p.description}`).join("\n");
+              ctx.addLine({
+                type: "system",
+                content: `Available Model Presets:\n${listStr}`,
+                timestamp: now,
+              });
+              return;
+            } else if (subAction === "save") {
+              if (parts.length < 3) {
+                throw new Error("Usage: /model preset save <name> [description]");
+              }
+              const presetName = parts[2];
+              const desc = parts.slice(3).join(" ");
+              const savedPath = saveModelPreset(presetName, desc);
+              ctx.addLine({
+                type: "system",
+                content: `Model configuration saved successfully as preset "${presetName}" to: ${savedPath}`,
+                timestamp: now,
+              });
+              return;
+            } else {
+              // Apply preset: /model preset <name>
+              const presetName = parts.slice(1).join(" ");
+              const envPath = applyModelPreset(presetName);
+              const nextActiveModel = process.env.MODEL || getDefaultModel();
+              const limit = getContextWindowLimit(nextActiveModel);
+              
+              if (ctx.setContextLimit) {
+                ctx.setContextLimit(limit);
+              }
+              if (ctx.setActiveModel) {
+                ctx.setActiveModel(nextActiveModel);
+              }
+
+              ctx.addLine({
+                type: "system",
+                content: `Model preset "${presetName}" applied successfully!\nSaved to: ${envPath}`,
+                timestamp: now,
+              });
+              return;
+            }
+          }
+
           if (parts.length >= 2) {
-            const firstWord = parts[0].toLowerCase();
             const knownSubagents = ["researcher", "coder", "reviewer"];
             if (
               ["master", "superagent", "subagent", "depth0", "depth1", "depth2", "dept0", "dept1", "dept2"].includes(firstWord) ||
@@ -1080,7 +1141,9 @@ export function handleSlashCommand(
             `4. Subagent: researcher (${researcherModelFormatted})`,
             `5. Subagent: coder (${coderModelFormatted})`,
             `6. Subagent: reviewer (${reviewerModelFormatted})`,
-            `7. All Tiers (Overwrite All)`
+            `7. Load Model Preset`,
+            `8. Default Model (Only set default fallback)`,
+            `9. All Tiers (Overwrite All)`
           ]);
           ctx.setWizardSelectedIndex?.(0);
         }
