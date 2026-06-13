@@ -46,6 +46,8 @@ import {
   awaitSuperagentsTool,
   mergeSuperagentsTool,
   manageSuperagentsTool,
+  defineSuperagentTool,
+  sendMessageToSuperagentTool,
 } from "./superagentTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
@@ -56,6 +58,8 @@ export const masterToolset: Tool[] = [
   awaitSuperagentsTool,  // wait for all superagents to finish
   mergeSuperagentsTool,  // merge all completed branches
   manageSuperagentsTool, // list/logs/report/kill superagents
+  defineSuperagentTool,  // define custom superagent types
+  sendMessageToSuperagentTool, // send follow-up message to superagent
   manageSubagentsTool,   // monitor/kill subagents if needed
   scheduleTool,
   searchHistoryTool,

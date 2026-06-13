@@ -6,6 +6,7 @@ import {
   SubagentType, 
   SubagentInstance, 
   SuperagentInstance,
+  SuperagentType,
   QuestionHandler 
 } from "./types.js";
 
@@ -76,6 +77,8 @@ export function notifyScheduleTriggered(jobId: string, prompt: string) {
 export const subagentTypes = new Map<string, SubagentType>();
 export const subagentInstances = new Map<string, SubagentInstance>();
 
+export const superagentTypes = new Map<string, SuperagentType>();
+
 export type SubagentChangeListener = () => void;
 export const subagentChangeListeners = new Set<SubagentChangeListener>();
 
@@ -94,6 +97,10 @@ export function notifySubagentsChanged() {
 
 export function registerSubagentType(name: string, description: string, systemPrompt: string) {
   subagentTypes.set(name, { name, description, systemPrompt });
+}
+
+export function registerSuperagentType(name: string, description: string, systemPrompt: string) {
+  superagentTypes.set(name, { name, description, systemPrompt });
 }
 
 export let activeQuestionHandler: QuestionHandler | null = null;

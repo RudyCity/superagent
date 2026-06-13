@@ -85,11 +85,11 @@ Launch with `superagent --multi` to activate the full 3-tier hierarchy:
 superagent --multi
       │
   Master Agent  (orchestrator tier)
-  Tools: invokeSuperagent, awaitSuperagents, mergeSuperagents, manageSuperagents, manageSubagents, gitWorktree
+  Tools: invoke_superagent, await_superagents, merge_superagents, manage_superagents, define_superagent, send_message_to_superagent, manage_subagents, git_worktree
   Spawns Superagents with git worktree isolation
       │
-  Superagent  (per-feature tier)
-  Tools: shell + file tools, invokeSubagent, manageSubagents, gitWorktree
+  Superagent  (per-feature coordinator/lead)
+  Tools: shell + file tools, invoke_subagent, manage_subagents, git_worktree
   Isolated in its own git worktree
   Can spawn Subagents for atomic ops
       │
@@ -99,8 +99,8 @@ superagent --multi
 ```
 
 **Tier Responsibilities:**
-- **Master Agent**: High-level planning, task decomposition, and result merging. Manages which Superagents are alive and what they're doing.
-- **Superagent**: Feature-level development in an isolated git worktree. Responsible for implementing a single feature or fix end-to-end.
+- **Master Agent**: High-level planning, task decomposition, and result merging. Manages which Superagents are running, lets you dynamically define custom Superagent roles/prompts, and allows sending interactive messages/instructions to active Superagents.
+- **Superagent**: Feature coordination and development in an isolated git worktree. Responsible for leading implementation and delegating atomic operations (research, coding, testing) to specialized Subagents.
 - **Subagent**: Atomic file/search operations delegated by a Superagent. Ephemeral — lives only for the duration of a single task.
 
 **Standard subagent roles (single-agent mode):**
@@ -133,7 +133,10 @@ Superagent proactively audits and prepares your local machine's developer enviro
 For parallel feature development, Superagent implements a 3-tier hierarchy:
 - **Tier Isolation**: Each Superagent runs in an isolated git worktree (`~/.superagent-r/worktrees/<name>`), preventing file conflicts between concurrent agents.
 - **Delegation Guardrails**: Delegation depth is enforced per-tier — Master can spawn Superagents, Superagents can spawn Subagents, Subagents cannot spawn further agents.
-- **Permission Scoping**: Each tier gets a strictly scoped toolset. Master agents get orchestration tools; Superagents get shell + file tools; Subagents get file tools only.
+- **Permission Scoping**: Each tier gets a strictly scoped toolset. Master agents get orchestration, definition, and messaging tools; Superagents get shell + file tools; Subagents get file tools only.
+- **Dynamic Custom Roles**: Master Agent can define customized Superagent types/roles dynamically using `define_superagent` with custom system prompts, enabling domain-specific behaviors.
+- **Interactive Messaging**: Master Agent can send follow-up instructions and questions to active Superagents via `send_message_to_superagent`, permitting real-time collaboration during execution.
+- **Robust Worktree Cleanup**: Terminating or killing Superagents (via `manage_superagents` with `kill` or `kill_all` actions) robustly cleans up and removes their corresponding Git worktrees, avoiding disk clutter.
 - **Structured Markdown Reporting**: Every Superagent completes its task by printing a standardized markdown report (goal, actions taken, key findings, outcome status) that the Master Agent can parse and merge.
 - **Visual Log Streaming & Centralized Logging**: Agent actions, thoughts, tool calls, and execution errors are formatted and logged in a nested visual tree layout with tier-aware indentation. All logs are dynamically captured and written to the global directory at `~/.superagent-r/superagent.log`.
 

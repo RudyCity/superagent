@@ -38,6 +38,12 @@ export interface SubagentType {
   systemPrompt: string;
 }
 
+export interface SuperagentType {
+  name: string;
+  description: string;
+  systemPrompt: string;
+}
+
 export interface SubagentInstance {
   id: string;
   typeName: string;

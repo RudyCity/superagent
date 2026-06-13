@@ -63,6 +63,10 @@ export const invokeSuperagentTool: Tool = {
         type: "boolean",
         description: "If true, block and wait for the Superagent to finish before returning. Default: false (parallel).",
       },
+      typeName: {
+        type: "string",
+        description: "The name of the defined Superagent type to invoke (optional).",
+      },
     },
     required: ["role", "task", "branch"],
   },
@@ -71,6 +75,7 @@ export const invokeSuperagentTool: Tool = {
     const role = args.role as string;
     const task = args.task as string;
     const branch = args.branch as string;
+    const typeName = args.typeName as string | undefined;
     const wait = args.wait === true;
 
     // Only depth-0 (Master Agent) may invoke Superagents
@@ -137,10 +142,17 @@ export const invokeSuperagentTool: Tool = {
 
     // Build full system prompt for this Superagent
     const { SUPERAGENT_SYSTEM_PROMPT } = await import("../prompts.js");
-    const systemPrompt =
-      SUPERAGENT_SYSTEM_PROMPT(role, branch, worktreePath) +
-      "\n\n" +
-      SUPERAGENT_REPORT_INSTRUCTION;
+    let basePrompt = SUPERAGENT_SYSTEM_PROMPT(role, branch, worktreePath);
+
+    if (typeName) {
+      const { superagentTypes } = await import("./state.js");
+      const customType = superagentTypes.get(typeName);
+      if (customType) {
+        basePrompt += "\n\n### CUSTOM ROLE SPECIFIC RULES:\n" + customType.systemPrompt;
+      }
+    }
+
+    const systemPrompt = basePrompt + "\n\n" + SUPERAGENT_REPORT_INSTRUCTION;
 
     // Dynamic import to avoid circular dependency at module load time
     const { Agent } = await import("../agent.js");
@@ -422,6 +434,26 @@ export const mergeSuperagentsTool: Tool = {
   },
 };
 
+async function cleanupWorktreeRobust(worktreePath: string, logs: string[], cwd: string) {
+  if (worktreePath && fs.existsSync(worktreePath)) {
+    try {
+      // Cooldown delay for Windows file handles
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await execa("git", ["worktree", "remove", worktreePath, "--force"], { cwd });
+      logs.push(`[CLEANUP] Worktree removed successfully: ${worktreePath}\n`);
+    } catch (err: any) {
+      logs.push(`[CLEANUP] git worktree remove failed: ${err.message}. Trying filesystem force remove...\n`);
+      try {
+        fs.rmSync(worktreePath, { recursive: true, force: true });
+        await execa("git", ["worktree", "prune"], { cwd });
+        logs.push(`[CLEANUP] Worktree directory force removed and pruned.\n`);
+      } catch (fsErr: any) {
+        logs.push(`[CLEANUP] Filesystem force remove failed: ${fsErr.message}\n`);
+      }
+    }
+  }
+}
+
 // ─── manage_superagents ───────────────────────────────────────────────────────
 
 export const manageSuperagentsTool: Tool = {
@@ -503,6 +535,9 @@ export const manageSuperagentsTool: Tool = {
           inst.status = "error";
           inst.completedAt = Date.now();
           inst.logs.push("[TERMINATED] Superagent terminated by Master Agent.\n");
+          if (inst.worktreePath) {
+            await cleanupWorktreeRobust(inst.worktreePath, inst.logs, cwd);
+          }
         }
       }
       notifySuperagentsChanged();
@@ -510,18 +545,129 @@ export const manageSuperagentsTool: Tool = {
     }
 
     if (action === "kill_all") {
+      const terminated: string[] = [];
       for (const [id, inst] of superagentInstances.entries()) {
         if (inst.status === "running") {
           inst.agent.abort();
           inst.status = "error";
           inst.completedAt = Date.now();
           inst.logs.push("[TERMINATED] Superagent terminated by Master Agent.\n");
+          if (inst.worktreePath) {
+            await cleanupWorktreeRobust(inst.worktreePath, inst.logs, cwd);
+          }
+          terminated.push(id);
         }
       }
       notifySuperagentsChanged();
-      return "All running Superagent instances terminated.";
+      return `All running Superagent instances terminated. Terminated: ${terminated.join(", ")}`;
     }
 
     return `Error: Unknown action "${action}"`;
+  },
+};
+
+// ─── define_superagent ────────────────────────────────────────────────────────
+
+export const defineSuperagentTool: Tool = {
+  name: "define_superagent",
+  description: "Define a new Superagent type with specialized rules and a custom system prompt.",
+  parameters: {
+    type: "object",
+    properties: {
+      name: {
+        type: "string",
+        description: "Unique type name of the Superagent",
+      },
+      description: {
+        type: "string",
+        description: "A description of what this Superagent type specializes in",
+      },
+      systemPrompt: {
+        type: "string",
+        description: "The custom system prompt defining additional rules and guidelines for this Superagent. This will be appended to the base Superagent system prompt.",
+      },
+    },
+    required: ["name", "description", "systemPrompt"],
+  },
+  async execute(args, cwd, signal) {
+    // Only Master Agent (depth 0) can define Superagent types
+    const parentAgent = agentLocalStorage.getStore();
+    const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;
+    if (parentDepth > 0) {
+      return `Error: define_superagent can only be called by the Master Agent (depth 0).`;
+    }
+
+    const name = args.name as string;
+    const description = args.description as string;
+    const systemPrompt = args.systemPrompt as string;
+
+    const { registerSuperagentType } = await import("./state.js");
+    registerSuperagentType(name, description, systemPrompt);
+    return `Superagent type "${name}" defined successfully.`;
+  },
+};
+
+// ─── send_message_to_superagent ───────────────────────────────────────────────
+
+export const sendMessageToSuperagentTool: Tool = {
+  name: "send_message_to_superagent",
+  description: "Send a follow-up message or instruction to an active Superagent.",
+  parameters: {
+    type: "object",
+    properties: {
+      superagentId: {
+        type: "string",
+        description: "The ID of the active Superagent",
+      },
+      message: {
+        type: "string",
+        description: "The follow-up message/instruction to send",
+      },
+      wait: {
+        type: "boolean",
+        description: "Whether to wait synchronously for the Superagent to finish and return its report. Defaults to false (parallel).",
+      },
+    },
+    required: ["superagentId", "message"],
+  },
+  async execute(args, cwd, signal) {
+    // Only Master Agent (depth 0) may call this tool
+    const parentAgent = agentLocalStorage.getStore();
+    const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;
+    if (parentDepth > 0) {
+      return `Error: send_message_to_superagent can only be called by the Master Agent (depth 0).`;
+    }
+
+    const superagentId = args.superagentId as string;
+    const message = args.message as string;
+    const wait = args.wait === true;
+
+    const inst = superagentInstances.get(superagentId);
+    if (!inst) {
+      return `Error: Superagent instance "${superagentId}" not found.`;
+    }
+
+    if (inst.status !== "running") {
+      return `Error: Superagent "${superagentId}" is not running (status: ${inst.status}).`;
+    }
+
+    inst.logs.push(`[MESSAGE RECEIVED] ${message}\n`);
+
+    if (wait) {
+      try {
+        await inst.agent.sendMessage(message);
+      } catch (err: any) {
+        inst.status = "error";
+        notifySuperagentsChanged();
+        return `Error while waiting for Superagent: ${err.message}`;
+      }
+      return `Superagent "${superagentId}" finished execution. Report:\n${inst.result || "No report generated."}`;
+    } else {
+      inst.agent.sendMessage(message).catch((err: any) => {
+        inst.status = "error";
+        notifySuperagentsChanged();
+      });
+      return `Message sent to Superagent "${superagentId}". It is processing in the background.`;
+    }
   },
 };

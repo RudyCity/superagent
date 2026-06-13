@@ -37,6 +37,9 @@ import {
   invokeSuperagentTool,
   awaitSuperagentsTool,
   mergeSuperagentsTool,
+  manageSuperagentsTool,
+  defineSuperagentTool,
+  sendMessageToSuperagentTool,
 } from "./superagentTools.js";
 
 import { 
@@ -70,6 +73,9 @@ export const allTools: Tool[] = [
   invokeSuperagentTool,
   awaitSuperagentsTool,
   mergeSuperagentsTool,
+  manageSuperagentsTool,
+  defineSuperagentTool,
+  sendMessageToSuperagentTool,
   applyPatchTool,
   gitActionTool,
   screenshotTool,
