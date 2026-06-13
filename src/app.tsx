@@ -3381,7 +3381,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   borderColor="cyan"
                   options={filteredModels.length > 0 ? filteredModels : ["(no results)"]}
                   selectedIndex={clampedIndex}
-                  maxVisible={6}
+                  maxVisible={10}
                   isLoading={wizardIsLoadingModels}
                 />
               );
@@ -3394,7 +3394,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 borderColor="magenta"
                 options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
-                maxVisible={8}
+                maxVisible={10}
               />
             )}
 
@@ -3412,7 +3412,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   borderColor="cyan"
                   options={wizardOptions}
                   selectedIndex={wizardSelectedIndex}
-                  maxVisible={8}
+                  maxVisible={10}
                 />
               );
             })()}
@@ -3424,7 +3424,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 borderColor="green"
                 options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
-                maxVisible={8}
+                maxVisible={10}
               />
             )}
 

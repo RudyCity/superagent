@@ -1023,12 +1023,12 @@ export function handleSlashCommand(
         });
 
         const getResolvedModelWithProvider = (rawVal: string, isDefault: boolean): string => {
-          const mStr = rawVal || (isDefault ? (process.env.MODEL || getDefaultModel()) : "");
+          const mStr = (rawVal || (isDefault ? (process.env.MODEL || getDefaultModel()) : "")).trim();
           if (!mStr) return "(not set)";
           if (mStr.includes(":")) {
             return mStr;
           }
-          const activeProvider = process.env.ACTIVE_PROVIDER || (process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai");
+          const activeProvider = (process.env.ACTIVE_PROVIDER || (process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai")).trim();
           return `${activeProvider}:${mStr}`;
         };
 

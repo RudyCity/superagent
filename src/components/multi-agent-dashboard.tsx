@@ -2109,7 +2109,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
               // Handle wizard option clicking
               let options = wizardOptions;
-              let maxVisible = 5;
+              let maxVisible = 10;
               if (activeWizard.type === "model" && activeWizard.step === 3) {
                 const lc = query.trim().toLowerCase();
                 options = lc
@@ -2656,7 +2656,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     borderColor={wizardBorderColor}
                     options={wizardOptions}
                     selectedIndex={wizardSelectedIndex}
-                    maxVisible={5}
+                    maxVisible={10}
                     isMultiSelect={activeWizard.isMultiSelect}
                     selectedSet={wizardSelectedSet}
                     marginY={0}
