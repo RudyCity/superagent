@@ -2290,7 +2290,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       const cleanedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
       const subLines = isHistoryTruncated
         ? cleanedContent.split("\n")
-        : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - 4));
+        : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - 8));
 
       for (let i = 0; i < subLines.length; i++) {
         const lineText = subLines[i];
@@ -2313,7 +2313,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           if (inCode) {
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}│  </Text>
                 <Text color="green" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText}</Text>
               </Box>
             );

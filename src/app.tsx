@@ -4103,7 +4103,7 @@ function renderMarkdown(content: string, themeColor: string = "magenta", showCur
         if (inCode) {
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│    </Text>
+              <Text color={themeColor}>│    │  </Text>
               <Text color="green">{l}</Text>
               {showCursor && idx === processedLines.length - 1 && <Text color="green">█</Text>}
             </Box>
