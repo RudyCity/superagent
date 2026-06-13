@@ -3177,7 +3177,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               const isIdleTask = selectedSession.task.startsWith("Idle") || selectedSession.task.startsWith("Error");
               const spinnerType = (selectedSession.type === "MASTER" && !isIdleTask) ? "orchestrating" : "processing";
               return (
-                <Box flexDirection="row" marginTop={0}>
+                <Box flexDirection="row" marginTop={1}>
                   <ThinkingSpinner type={spinnerType} />
                   <BlinkingCursor />
                 </Box>
