@@ -1,7 +1,8 @@
 import type { ChatLine } from "../core/slash-commands.js";
 
 export function capDisplayLines(text: string, maxLines: number, width: number): { text: string; truncated: boolean } {
-  const rawLines = text.split("\n");
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "").replace(/\t/g, "    ");
+  const rawLines = normalized.split("\n");
   let accumulated = 0;
   const resultLines: string[] = [];
 
@@ -34,7 +35,8 @@ export function wrapTextForDisplay(text: string, width: number): string[] {
   const safeWidth = Math.max(10, width);
   const wrapped: string[] = [];
   // Normalize \r\n -> \n, strip bare \r (defensive: prevents col-0 bleed if \r slips through)
-  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "");
+  // Replace tabs with 4 spaces to avoid layout breaking
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "").replace(/\t/g, "    ");
   for (const rawLine of normalized.split("\n")) {
     // Use visible length to avoid splitting inside ANSI escape sequences
     if (visibleLength(rawLine) <= safeWidth) {
