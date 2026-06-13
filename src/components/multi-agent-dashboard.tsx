@@ -1945,7 +1945,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   if (focusArea === "input" && query.startsWith("/") && suggestions.length > 0) {
     bottomPromptHeight += 2;
   }
-  const workspaceHeight = Math.max(10, terminalSize.height - 7 - bottomPromptHeight);
+  const workspaceHeight = Math.max(10, terminalSize.height - 7 - bottomPromptHeight - liveListHeight);
 
   let wizardHeight = 0;
   if (activeWizard) {
@@ -1960,7 +1960,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     checklistHeight += 3 + checklistCount;
   }
 
-  const leftTopHeight = Math.max(5, workspaceHeight - 2 - liveListHeight - checklistHeight - wizardHeight);
+  const leftTopHeight = Math.max(5, workspaceHeight - 2 - checklistHeight - wizardHeight);
   const logBoxHeight = Math.max(5, workspaceHeight - 4);
   const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
   let executingToolHeight = 0;
@@ -3044,60 +3044,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               );
             })()}
 
-            {/* Active Subagents & Tasks Live List */}
-            {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
-              <Box flexDirection="column" marginBottom={1}>
-                {runningSubagentsCount > 0 && (() => {
-                  const runningAgents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
-                  const totalAgents = runningAgents.length;
-                  const hasScroll = totalAgents > maxAgentsVisible;
-                  const scrollIndicator = hasScroll
-                    ? ` [Scroll: ${agentsScrollOffset + 1}-${Math.min(totalAgents, agentsScrollOffset + maxAgentsVisible)}/${totalAgents}]`
-                    : "";
-                  const helpText = focusArea === "agents" ? " [↑/▼ Scroll • Esc Exit]" : "";
-                  const visibleAgents = runningAgents.slice(agentsScrollOffset, agentsScrollOffset + maxAgentsVisible);
-                  return (
-                    <Box flexDirection="column">
-                      <Text color={focusArea === "agents" ? "green" : "yellow"} bold>
-                        🤖 ACTIVE SUBAGENTS:{scrollIndicator}{helpText}
-                      </Text>
-                      {visibleAgents.map((inst) => (
-                        <Box key={inst.id} flexDirection="column">
-                          <Text color="yellow">
-                            ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
-                          </Text>
-                          <Text color="yellow">
-                            │  └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
-                          </Text>
-                        </Box>
-                      ))}
-                    </Box>
-                  );
-                })()}
-                {runningTasksCount > 0 && (() => {
-                  const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited);
-                  const totalProcs = runningProcs.length;
-                  const hasScroll = totalProcs > maxProcsVisible;
-                  const scrollIndicator = hasScroll
-                    ? ` [Scroll: ${procsScrollOffset + 1}-${Math.min(totalProcs, procsScrollOffset + maxProcsVisible)}/${totalProcs}]`
-                    : "";
-                  const helpText = focusArea === "procs" ? " [↑/▼ Scroll • Esc Exit]" : "";
-                  const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
-                  return (
-                    <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
-                      <Text color={focusArea === "procs" ? "green" : "cyan"} bold>
-                        ⚙️ ACTIVE PROCESSES:{scrollIndicator}{helpText}
-                      </Text>
-                      {visibleProcs.map(([id, task]) => (
-                        <Text key={id} color="cyan">
-                          ├─ [{id}] Command: {task.command}
-                        </Text>
-                      ))}
-                    </Box>
-                  );
-                })()}
-              </Box>
-            )}
           </Box>
         </Box>
 
@@ -3169,7 +3115,60 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         </Box>
       </Box>
 
-
+      {/* Active Subagents & Tasks Live List (Full Width) */}
+      {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
+        <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
+          {runningSubagentsCount > 0 && (() => {
+            const runningAgents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
+            const totalAgents = runningAgents.length;
+            const hasScroll = totalAgents > maxAgentsVisible;
+            const scrollIndicator = hasScroll
+              ? ` [Scroll: ${agentsScrollOffset + 1}-${Math.min(totalAgents, agentsScrollOffset + maxAgentsVisible)}/${totalAgents}]`
+              : "";
+            const helpText = focusArea === "agents" ? " [↑/▼ Scroll • Esc Exit]" : "";
+            const visibleAgents = runningAgents.slice(agentsScrollOffset, agentsScrollOffset + maxAgentsVisible);
+            return (
+              <Box flexDirection="column">
+                <Text color={focusArea === "agents" ? "green" : "yellow"} bold>
+                  🤖 ACTIVE SUBAGENTS:{scrollIndicator}{helpText}
+                </Text>
+                {visibleAgents.map((inst) => (
+                  <Box key={inst.id} flexDirection="column">
+                    <Text color="yellow">
+                      ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
+                    </Text>
+                    <Text color="yellow">
+                      │  └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
+                    </Text>
+                  </Box>
+                ))}
+              </Box>
+            );
+          })()}
+          {runningTasksCount > 0 && (() => {
+            const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited);
+            const totalProcs = runningProcs.length;
+            const hasScroll = totalProcs > maxProcsVisible;
+            const scrollIndicator = hasScroll
+              ? ` [Scroll: ${procsScrollOffset + 1}-${Math.min(totalProcs, procsScrollOffset + maxProcsVisible)}/${totalProcs}]`
+              : "";
+            const helpText = focusArea === "procs" ? " [↑/▼ Scroll • Esc Exit]" : "";
+            const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
+            return (
+              <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
+                <Text color={focusArea === "procs" ? "green" : "cyan"} bold>
+                  ⚙️ ACTIVE PROCESSES:{scrollIndicator}{helpText}
+                </Text>
+                {visibleProcs.map(([id, task]) => (
+                  <Text key={id} color="cyan">
+                    ├─ [{id}] Command: {task.command}
+                  </Text>
+                ))}
+              </Box>
+            );
+          })()}
+        </Box>
+      )}
 
       {/* Interactive Full-Width Console Prompt */}
       {focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (
