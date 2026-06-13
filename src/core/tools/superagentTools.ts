@@ -196,6 +196,9 @@ export const invokeSuperagentTool: Tool = {
               prompt: (inst.tokenUsage?.prompt ?? 0) + event.promptTokens,
               completion: (inst.tokenUsage?.completion ?? 0) + event.completionTokens,
             };
+            if (event.durationMs && event.durationMs > 0 && event.completionTokens > 0) {
+              inst.speed = event.completionTokens / (event.durationMs / 1000);
+            }
           }
           addHistoricalSuperagentTokens(event.promptTokens + event.completionTokens);
           notifySuperagentsChanged();

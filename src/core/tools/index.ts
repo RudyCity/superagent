@@ -48,7 +48,8 @@ import {
   gitActionTool, 
   screenshotTool, 
   androidCliTool,
-  searchHistoryTool
+  searchHistoryTool,
+  manageTasksTool
 } from "./otherTools.js";
 
 export const allTools: Tool[] = [
@@ -81,6 +82,7 @@ export const allTools: Tool[] = [
   screenshotTool,
   androidCliTool,
   searchHistoryTool,
+  manageTasksTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {

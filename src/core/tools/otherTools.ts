@@ -454,3 +454,185 @@ export const gitWorktreeTool: Tool = {
     }
   },
 };
+
+export const manageTasksTool: Tool = {
+  name: "manage_tasks",
+  description: "Manage tasks in the active task list (_task.md). Actions: 'list', 'add', 'update', 'remove'.",
+  parameters: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        enum: ["list", "add", "update", "remove"],
+        description: "The action to perform: 'list' (show all tasks), 'add' (add a new task), 'update' (change status of a task), 'remove' (remove a task)",
+      },
+      text: {
+        type: "string",
+        description: "Task description (required for action 'add')",
+      },
+      index: {
+        type: "number",
+        description: "1-based task index (required for actions 'update' and 'remove')",
+      },
+      status: {
+        type: "string",
+        enum: [" ", "/", "x"],
+        description: "New status for the task: ' ' for pending, '/' for in progress, 'x' for completed (required for action 'update')",
+      },
+    },
+    required: ["action"],
+  },
+  async execute(args, cwd, signal) {
+    const action = args.action as string;
+    const text = args.text as string | undefined;
+    const index = args.index as number | undefined;
+    const status = args.status as string | undefined;
+
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+    const taskPath = currentAgent ? currentAgent.getTaskFilePath() : path.resolve(cwd, "task.md");
+
+    const parseTasks = (content: string) => {
+      const lines = content.split(/\r?\n/);
+      const tasks: { lineIndex: number; line: string; status: string; text: string }[] = [];
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const match = line.match(/^\s*-\s*`?\[([xX/ ])\]`?\s*(.*)$/);
+        if (match) {
+          tasks.push({
+            lineIndex: i,
+            line,
+            status: match[1].toLowerCase(),
+            text: match[2].trim(),
+          });
+        }
+      }
+      return { lines, tasks };
+    };
+
+    try {
+      if (action === "list") {
+        let content = "";
+        try {
+          content = await fs.readFile(taskPath, "utf-8");
+        } catch (err: any) {
+          if (err.code === "ENOENT") {
+            return `No active task list found at: ${taskPath}. Use action 'add' to create it.`;
+          }
+          throw err;
+        }
+
+        const { tasks } = parseTasks(content);
+        if (tasks.length === 0) {
+          return "The task list is currently empty.";
+        }
+
+        return tasks
+          .map((t, idx) => `${idx + 1}. [${t.status}] ${t.text}`)
+          .join("\n");
+      }
+
+      if (action === "add") {
+        if (!text || text.trim() === "") {
+          return "Error: The 'text' parameter is required for the 'add' action.";
+        }
+
+        let content = "";
+        try {
+          content = await fs.readFile(taskPath, "utf-8");
+        } catch (err: any) {
+          if (err.code !== "ENOENT") {
+            throw err;
+          }
+          await fs.mkdir(path.dirname(taskPath), { recursive: true });
+        }
+
+        const newTaskLine = `- [ ] ${text.trim()}`;
+        let updatedContent = content;
+        if (content.length > 0 && !content.endsWith("\n")) {
+          updatedContent += "\n";
+        }
+        updatedContent += newTaskLine + "\n";
+
+        await fs.writeFile(taskPath, updatedContent, "utf-8");
+        return `Successfully added task: "${text.trim()}"`;
+      }
+
+      if (action === "update") {
+        if (index === undefined || index <= 0) {
+          return "Error: A valid 1-based 'index' parameter is required for the 'update' action.";
+        }
+        if (!status) {
+          return "Error: The 'status' parameter is required for the 'update' action.";
+        }
+        if (status !== " " && status !== "/" && status !== "x") {
+          return `Error: Invalid status "${status}". Must be one of: ' ' (pending), '/' (in progress), 'x' (completed).`;
+        }
+
+        let content = "";
+        try {
+          content = await fs.readFile(taskPath, "utf-8");
+        } catch (err: any) {
+          if (err.code === "ENOENT") {
+            return `Error: Task list file does not exist at: ${taskPath}. Add a task first.`;
+          }
+          throw err;
+        }
+
+        const { lines, tasks } = parseTasks(content);
+        if (index > tasks.length) {
+          return `Error: Task index ${index} is out of bounds. There are only ${tasks.length} tasks in the list.`;
+        }
+
+        const targetTask = tasks[index - 1];
+        const line = lines[targetTask.lineIndex];
+        const match = line.match(/^(\s*-\s*`?\[)([xX/ ])(\]`?\s*)(.*)$/);
+        
+        if (!match) {
+          return `Error: Failed to parse task line at index ${index} internally.`;
+        }
+
+        const prefix = match[1];
+        const suffix = match[3] + match[4];
+        const newLine = `${prefix}${status}${suffix}`;
+        
+        lines[targetTask.lineIndex] = newLine;
+        await fs.writeFile(taskPath, lines.join("\n"), "utf-8");
+        return `Successfully updated task ${index} to [${status}]: "${targetTask.text}"`;
+      }
+
+      if (action === "remove") {
+        if (index === undefined || index <= 0) {
+          return "Error: A valid 1-based 'index' parameter is required for the 'remove' action.";
+        }
+
+        let content = "";
+        try {
+          content = await fs.readFile(taskPath, "utf-8");
+        } catch (err: any) {
+          if (err.code === "ENOENT") {
+            return `Error: Task list file does not exist at: ${taskPath}.`;
+          }
+          throw err;
+        }
+
+        const { lines, tasks } = parseTasks(content);
+        if (index > tasks.length) {
+          return `Error: Task index ${index} is out of bounds. There are only ${tasks.length} tasks in the list.`;
+        }
+
+        const targetTask = tasks[index - 1];
+        lines.splice(targetTask.lineIndex, 1);
+        
+        await fs.writeFile(taskPath, lines.join("\n"), "utf-8");
+        return `Successfully removed task ${index}: "${targetTask.text}"`;
+      }
+
+      return `Error: Unknown action "${action}"`;
+    } catch (err: any) {
+      return `Error managing tasks: ${err.message}`;
+    }
+  }
+};
+

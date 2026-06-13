@@ -39,6 +39,7 @@ import {
   androidCliTool,
   searchHistoryTool,
   gitWorktreeTool,
+  manageTasksTool,
 } from "./otherTools.js";
 
 import {
@@ -68,6 +69,7 @@ export const masterToolset: Tool[] = [
   globTool,
   grepTool,
   gitWorktreeTool,
+  manageTasksTool,
   writeToFileTool,       // for planning files
   replaceFileContentTool,// for planning files
   multiReplaceFileContentTool, // for planning files
@@ -95,6 +97,7 @@ export const superagentToolset: Tool[] = [
   fetchUrlTool,
   gitActionTool,         // commit to own branch
   gitWorktreeTool,
+  manageTasksTool,
   defineSubagentTool,    // define specialized subagents
   invokeSubagentTool,    // spawn subagents (depth 2)
   sendMessageTool,

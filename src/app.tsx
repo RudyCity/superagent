@@ -89,7 +89,7 @@ export function App({
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [activeModel, setActiveModel] = useState(() => process.env.MODEL || getDefaultModel());
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
-  const [focusMode, setFocusMode] = useState<"input" | "history" | "checklist" | "superagents" | "subagents" | "procs">("input");
+  const [focusMode, setFocusMode] = useState<"input" | "history" | "checklist" | "superagents" | "subagents" | "procs" | "chat">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
 
   const [checklistScrollOffset, setChecklistScrollOffset] = useState(0);
@@ -2083,6 +2083,23 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         return;
       }
       if (key.escape) {
+        setFocusMode("input");
+        return;
+      }
+      return;
+    }
+
+    if (focusMode === "chat") {
+      if (key.upArrow) {
+        scrollChat("up");
+        return;
+      }
+      if (key.downArrow) {
+        scrollChat("down");
+        return;
+      }
+      if (key.escape) {
+        setScrollOffset(0);
         setFocusMode("input");
         return;
       }

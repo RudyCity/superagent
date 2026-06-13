@@ -49,6 +49,7 @@ export interface AgentSession {
   logs: string[];
   branch?: string;
   worktreePath?: string;
+  speed?: number;
 }
 
 export function stripSgrMouseSequences(value: string): string {
@@ -1721,6 +1722,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           tokens: (instance.tokenUsage?.prompt ?? 0) + (instance.tokenUsage?.completion ?? 0),
           logs: instance.logs && instance.logs.length > 0 ? instance.logs : ["Awaiting output..."],
           branch: "worktree",
+          speed: instance.speed,
         });
       }
 
@@ -1759,6 +1761,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           logs: instance.logs.length > 0 ? instance.logs : ["Superagent initialising..."],
           branch: instance.branch,
           worktreePath: instance.worktreePath,
+          speed: instance.speed,
         });
 
         // Immediately push all subagent sessions belonging to this superagent
@@ -2683,6 +2686,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     </Box>
                     <Box flexShrink={0}>
                       {renderStatusBadge(session.status)}
+                      {session.speed !== undefined && session.speed > 0 && (
+                        <Text color={isSelected && isFocused ? "black" : "yellow"} backgroundColor={rowBg} bold> ⚡{session.speed.toFixed(1)}t/s</Text>
+                      )}
                       {session.tokens > 0 
                         ? <Text color={tokenColor} backgroundColor={rowBg} dimColor={!isSelected || !isFocused}> {session.tokens.toLocaleString()}t</Text>
                         : <Text color={isSelected && isFocused ? "black" : "gray"} backgroundColor={rowBg} dimColor> --</Text>
