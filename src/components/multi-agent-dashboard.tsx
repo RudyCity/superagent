@@ -3367,7 +3367,40 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           </Box>
         )}
         <Box flexDirection="row" marginTop={0}>
-          <Text color="gray" dimColor>[Tab] Cycle Focus  [▲/▼] Navigate/Scroll  [Ctrl+T] Toggle Truncate  [Esc] Snap Bottom  [Ctrl+C] Exit</Text>
+          {activeWizard ? (
+            <Text color="yellow">
+              <Text bold color="yellow">⚡ [WIZARD] </Text>
+              {activeWizard.isMultiSelect ? (
+                <Text color="gray" dimColor>[▲/▼] Navigate  [Space] Select/Toggle  [Enter] Confirm  [Esc] Cancel</Text>
+              ) : wizardOptions.length > 0 ? (
+                <Text color="gray" dimColor>[▲/▼] Navigate  [Enter] Select  [Esc] Cancel</Text>
+              ) : (
+                <Text color="gray" dimColor>[Type text...]  [Enter] Submit  [Esc] Cancel</Text>
+              )}
+            </Text>
+          ) : (
+            <Text color="gray" dimColor>
+              <Text bold color="cyan">[{focusArea.toUpperCase()}] </Text>
+              {focusArea === "input" && (
+                <Text>[Tab] Focus List  [▲/▼] History  [Ctrl+T] Toggle Truncate  [Ctrl+C] Exit/Interrupt</Text>
+              )}
+              {focusArea === "list" && (
+                <Text>[▲/▼] Select Session  [1-9] Quick Select  [Enter] View Logs  [Tab] Cycle Focus  [Esc] Focus Input</Text>
+              )}
+              {focusArea === "logs" && (
+                <Text>[▲/▼] Scroll Logs  [Esc] Focus List  [Tab] Cycle Focus</Text>
+              )}
+              {focusArea === "checklist" && (
+                <Text>[▲/▼] Scroll Checklist  [Esc] Focus Input  [Tab] Cycle Focus</Text>
+              )}
+              {focusArea === "agents" && (
+                <Text>[▲/▼] Scroll Agents  [Esc] Focus Input  [Tab] Cycle Focus</Text>
+              )}
+              {focusArea === "procs" && (
+                <Text>[▲/▼] Scroll Processes  [Esc] Focus Input  [Tab] Cycle Focus</Text>
+              )}
+            </Text>
+          )}
         </Box>
       </Box>
     </Box>
