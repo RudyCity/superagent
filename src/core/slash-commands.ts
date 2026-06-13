@@ -844,7 +844,11 @@ export function handleSlashCommand(
         if (provider === "openrouter" && !process.env.MODEL) {
           updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
           if (ctx.setActiveModel) {
-            ctx.setActiveModel("google/gemini-2.5-flash");
+            const isMulti = ctx.agent?.isMultiAgent ?? false;
+            const nextActiveModel = isMulti
+              ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
+              : "google/gemini-2.5-flash";
+            ctx.setActiveModel(nextActiveModel);
           }
         }
 
@@ -856,7 +860,11 @@ export function handleSlashCommand(
               ctx.setContextLimit(limit);
             }
             if (ctx.setActiveModel) {
-              ctx.setActiveModel(currentModel);
+              const isMulti = ctx.agent?.isMultiAgent ?? false;
+              const nextActiveModel = isMulti
+                ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
+                : currentModel;
+              ctx.setActiveModel(nextActiveModel);
             }
           })
           .catch(() => {});
@@ -934,9 +942,13 @@ export function handleSlashCommand(
             if (ctx.setContextLimit) {
               ctx.setContextLimit(limit);
             }
-            if (ctx.setActiveModel) {
-              ctx.setActiveModel(modelName);
-            }
+          }
+          if (ctx.setActiveModel) {
+            const isMulti = ctx.agent?.isMultiAgent ?? false;
+            const nextActiveModel = isMulti
+              ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
+              : (process.env.MODEL || getDefaultModel());
+            ctx.setActiveModel(nextActiveModel);
           }
           
           const currentModel = process.env.MODEL || getDefaultModel();

@@ -244,7 +244,9 @@ export function MultiAgentDashboard({
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [tempInput, setTempInput] = useState("");
-  const [activeModel, setActiveModel] = useState(() => process.env.MODEL || getDefaultModel());
+  const [activeModel, setActiveModel] = useState(() => {
+    return process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+  });
   const [lastSpeed, setLastSpeed] = useState<number | null>(null);
 
   // Persist input history to disk so it survives restarts
@@ -1236,9 +1238,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           }
 
           const envPath = updateEnvFile(updates);
-          if (tier === "default" || tier === "all") {
-            setActiveModel(selectedModel);
-          }
+          const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+          setActiveModel(effectiveMasterModel);
           const limit = getContextWindowLimit(selectedModel);
           const currentModel = process.env.MODEL || getDefaultModel();
           const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
