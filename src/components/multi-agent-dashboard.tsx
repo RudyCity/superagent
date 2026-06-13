@@ -1896,13 +1896,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     }
   }
 
-  const workspaceHeight = Math.max(10, terminalSize.height - 8);
+  const workspaceHeight = Math.max(10, terminalSize.height - 9);
   let checklistHeight = 0;
   if (planState === "APPROVED" && checklistTasks.length > 0) {
     const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
     checklistHeight += 3 + checklistCount;
   }
-  const leftTopHeight = Math.max(5, workspaceHeight - 5 - liveListHeight - checklistHeight);
+  const leftTopHeight = Math.max(5, workspaceHeight - liveListHeight - checklistHeight);
   const logBoxHeight = Math.max(5, workspaceHeight - 4);
   const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
   let executingToolHeight = 0;
@@ -3007,50 +3007,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 })()}
               </Box>
             )}
-
-            {focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (
-              <Box flexDirection="row" marginBottom={1}>
-                <Text color="cyan" dimColor>│   </Text>
-                <Text color="gray" dimColor>Suggestions: </Text>
-                {suggestions.slice(0, 3).map((s, idx) => (
-                  <Text key={s} color={s === query ? "cyan" : "gray"} bold={s === query} underline={s === query}>
-                    {s}{idx < Math.min(suggestions.length, 3) - 1 ? "  " : ""}
-                  </Text>
-                ))}
-                {suggestions.length > 3 && <Text color="gray" dimColor> (+{suggestions.length - 3} more)</Text>}
-              </Box>
-            )}
-            <Box flexDirection="row" marginTop={0} width="100%">
-              <Box flexShrink={0}>
-                <Text bold color={focusArea === "input" ? "green" : "cyan"}>
-                  {activeWizard?.type === "model" && activeWizard.step === 3
-                    ? "└──[ MODEL ] ❯ "
-                    : activeWizard?.type === "model" && activeWizard.step === 2
-                    ? "└──[ PROVIDER ] ❯ "
-                    : activeWizard?.type === "model" && activeWizard.step === 1
-                    ? "└──[ TIER ] ❯ "
-                    : activeWizard?.type === "login"
-                    ? `└──[ LOGIN:${activeWizard.step} ] ❯ `
-                    : activeWizard?.type === "resume"
-                    ? "└──[ RESUME ] ❯ "
-                    : activeWizard?.type === "question"
-                    ? "└──[ ANSWER ] ❯ "
-                    : activeWizard?.type === "skills"
-                    ? `└──[ SKILLS:${activeWizard.step} ] ❯ `
-                    : activeWizard?.type === "checkpoint"
-                    ? "└──[ CHECKPOINT ] ❯ "
-                    : "└───[ ⚡ PROMPT ] ❯ "}
-                </Text>
-              </Box>
-              <Box width={Math.max(10, Math.floor(terminalSize.width * 0.40) - 22)}>
-                <TextInput
-                  value={query}
-                  onChange={(val) => setQuery(stripSgrMouseSequences(val))}
-                  onSubmit={handleQuerySubmit}
-                  focus={focusArea === "input"}
-                />
-              </Box>
-            </Box>
           </Box>
         </Box>
 
@@ -3119,6 +3075,51 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               </Box>
             )}
           </Box>
+        </Box>
+      </Box>
+
+      {/* Interactive Full-Width Console Prompt */}
+      {focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (
+        <Box flexDirection="row" marginBottom={1} paddingX={1}>
+          <Text color="cyan" dimColor>│   </Text>
+          <Text color="gray" dimColor>Suggestions: </Text>
+          {suggestions.slice(0, 5).map((s, idx) => (
+            <Text key={s} color={s === query ? "cyan" : "gray"} bold={s === query} underline={s === query}>
+              {s}{idx < Math.min(suggestions.length, 5) - 1 ? "  " : ""}
+            </Text>
+          ))}
+          {suggestions.length > 5 && <Text color="gray" dimColor> (+{suggestions.length - 5} more)</Text>}
+        </Box>
+      )}
+      <Box flexDirection="row" marginTop={0} paddingX={1} width="100%">
+        <Box flexShrink={0}>
+          <Text bold color={focusArea === "input" ? "green" : "cyan"}>
+            {activeWizard?.type === "model" && activeWizard.step === 3
+              ? "└──[ MODEL ] ❯ "
+              : activeWizard?.type === "model" && activeWizard.step === 2
+              ? "└──[ PROVIDER ] ❯ "
+              : activeWizard?.type === "model" && activeWizard.step === 1
+              ? "└──[ TIER ] ❯ "
+              : activeWizard?.type === "login"
+              ? `└──[ LOGIN:${activeWizard.step} ] ❯ `
+              : activeWizard?.type === "resume"
+              ? "└──[ RESUME ] ❯ "
+              : activeWizard?.type === "question"
+              ? "└──[ ANSWER ] ❯ "
+              : activeWizard?.type === "skills"
+              ? `└──[ SKILLS:${activeWizard.step} ] ❯ `
+              : activeWizard?.type === "checkpoint"
+              ? "└──[ CHECKPOINT ] ❯ "
+              : "└───[ ⚡ PROMPT ] ❯ "}
+          </Text>
+        </Box>
+        <Box flexGrow={1}>
+          <TextInput
+            value={query}
+            onChange={(val) => setQuery(stripSgrMouseSequences(val))}
+            onSubmit={handleQuerySubmit}
+            focus={focusArea === "input"}
+          />
         </Box>
       </Box>
 
