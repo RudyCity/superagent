@@ -227,6 +227,20 @@ function ThinkingSpinner({ type = "orchestrating" }: { type?: "orchestrating" | 
   return <Text color="yellow" bold>⚡ {label} [{spinners[frame]}] </Text>;
 }
 
+function ToolLoadingIndicator() {
+  const [frame, setFrame] = useState(0);
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrame((prev) => (prev + 1) % frames.length);
+    }, 120);
+    return () => clearInterval(interval);
+  }, []);
+
+  return <Text color="yellow">{frames[frame]} Running system tool...</Text>;
+}
+
 export function MultiAgentDashboard({
   agent,
   autoResume = false,
@@ -253,6 +267,12 @@ export function MultiAgentDashboard({
     return process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
   });
   const [lastSpeed, setLastSpeed] = useState<number | null>(null);
+  const [isExecutingTool, setIsExecutingTool] = useState(false);
+  const [activeToolOutput, setActiveToolOutput] = useState("");
+  const [toolTimeout, setToolTimeout] = useState<number | null>(null);
+  const [toolStartTime, setToolStartTime] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [executingToolDescription, setExecutingToolDescription] = useState("");
   const [contextLimit, setContextLimit] = useState(() => {
     const modelName = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
     let initialLimit = getContextWindowLimit(modelName);
@@ -577,14 +597,23 @@ export function MultiAgentDashboard({
   // Subscribe to active output from tools (master agent logs)
   useEffect(() => {
     return subscribeToActiveOutput((output) => {
-      // Normalize \r\n -> \n, then strip bare \r to avoid cursor-to-col-0 bleed
-      const sanitized = output.replace(/\r\n/g, "\n").replace(/\r/g, "");
-      if (sanitized.trim()) {
-        const newLogs = sanitized.split("\n").filter(Boolean);
-        setMasterLogs((prev) => [...prev, ...newLogs].slice(-500));
-      }
+      setActiveToolOutput(output);
     });
   }, []);
+
+  useEffect(() => {
+    if (!isExecutingTool || !toolTimeout || !toolStartTime) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - toolStartTime;
+      const remaining = Math.max(0, Math.ceil((toolTimeout - elapsed) / 1000));
+      setTimeLeft(remaining);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isExecutingTool, toolTimeout, toolStartTime]);
 
   // Register the agent event log handler on mount
   useEffect(() => {
@@ -641,6 +670,24 @@ export function MultiAgentDashboard({
             const speed = event.completionTokens / (event.durationMs / 1000);
             setLastSpeed(speed);
           }
+        } else if (event.type === "tool_start") {
+          setIsExecutingTool(true);
+          setExecutingToolDescription(event.description || event.toolCall.name);
+          const timeoutArg = event.toolCall.args?.timeout;
+          if (typeof timeoutArg === "number") {
+            setToolTimeout(timeoutArg);
+            setToolStartTime(Date.now());
+            setTimeLeft(Math.ceil(timeoutArg / 1000));
+          } else {
+            setToolTimeout(null);
+            setToolStartTime(null);
+            setTimeLeft(null);
+          }
+        } else if (event.type === "tool_end" || event.type === "error" || event.type === "done") {
+          setIsExecutingTool(false);
+          setToolTimeout(null);
+          setToolStartTime(null);
+          setTimeLeft(null);
         }
       });
     }
@@ -1870,7 +1917,21 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   const leftTopHeight = Math.max(5, workspaceHeight - 5 - liveListHeight - checklistHeight);
   const logBoxHeight = Math.max(5, workspaceHeight - 4);
   const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
-  const logsCount = showCursor ? Math.max(1, logBoxHeight - 1) : logBoxHeight;
+  let executingToolHeight = 0;
+  const activeToolLines = (selectedSession.type === "MASTER" && isExecutingTool && activeToolOutput) 
+    ? activeToolOutput.trim().split("\n").slice(-8) 
+    : [];
+  if (selectedSession.type === "MASTER" && isExecutingTool) {
+    executingToolHeight += 2; // Header border + spinner line
+    if (activeToolLines.length > 0) {
+      executingToolHeight += activeToolLines.length + 1; // Header + lines
+    }
+  }
+
+  let logsCount = showCursor ? Math.max(1, logBoxHeight - 1) : logBoxHeight;
+  if (selectedSession.type === "MASTER" && isExecutingTool) {
+    logsCount = Math.max(1, logsCount - executingToolHeight);
+  }
 
   const feedWidth = Math.max(10, Math.floor(terminalSize.width * 0.58) - 4);
   const wrappedLines: React.ReactNode[] = [];
@@ -3035,7 +3096,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           {/* Log Window */}
           <Box flexDirection="column" marginTop={1} height={logBoxHeight} paddingX={1} justifyContent="flex-start">
             {visibleLogs}
-            {selectedSession.status === "WORKING" && logScrollOffset === 0 && (() => {
+            {selectedSession.status === "WORKING" && logScrollOffset === 0 && !isExecutingTool && (() => {
               const isIdleTask = selectedSession.task.startsWith("Idle") || selectedSession.task.startsWith("Error");
               const spinnerType = (selectedSession.type === "MASTER" && !isIdleTask) ? "orchestrating" : "processing";
               return (
@@ -3045,6 +3106,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 </Box>
               );
             })()}
+            {selectedSession.type === "MASTER" && isExecutingTool && (
+              <Box flexDirection="column" marginTop={1}>
+                <Text color="yellow">
+                  ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
+                </Text>
+                <Box flexDirection="row">
+                  <Text color="yellow">│    </Text>
+                  <ToolLoadingIndicator />
+                </Box>
+                {activeToolLines.length > 0 && (
+                  <>
+                    <Text color="yellow">
+                      ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]
+                    </Text>
+                    {activeToolLines.map((line, idx) => (
+                      <Box key={idx} flexDirection="row">
+                        <Text color="yellow">│    </Text>
+                        <Text color="gray">{line}</Text>
+                      </Box>
+                    ))}
+                  </>
+                )}
+              </Box>
+            )}
           </Box>
         </Box>
       </Box>

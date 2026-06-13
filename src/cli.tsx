@@ -127,9 +127,15 @@ if (process.stdin.isTTY) {
         } else if (event.type === "tool_start") {
           logHandler?.(`[TOOL START] ${event.description}`);
         } else if (event.type === "tool_end") {
-          logHandler?.(`[TOOL END] ${event.description}`);
+          const r = event.toolResult;
+          const status = r.isError ? "Failed" : "Completed";
+          const prefix = r.isError ? "✗" : "✓";
+          const snippet = r.result.slice(0, 500) + (r.result.length > 500 ? "..." : "");
+          const resultStr = r.isError 
+            ? `${prefix} ${status} - ${event.description}\nDetail: ${r.result}`
+            : `${prefix} ${status} - ${event.description}\nOutput: ${snippet}`;
+          logHandler?.(`[TOOL END] ${resultStr}`);
         } else if (event.type === "error") {
-
           logHandler?.(`[ERROR] ${event.message}`);
         } else if (event.type === "token_usage") {
           addMasterTokens(event.promptTokens, event.completionTokens);
