@@ -51,6 +51,7 @@ export interface AgentSession {
   branch?: string;
   worktreePath?: string;
   speed?: number;
+  parentId?: string;
 }
 
 export function stripSgrMouseSequences(value: string): string {
@@ -1848,6 +1849,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           logs: instance.logs && instance.logs.length > 0 ? instance.logs : ["Awaiting output..."],
           branch: "worktree",
           speed: instance.speed,
+          parentId,
         });
       }
 
@@ -2845,10 +2847,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
   // Tier prefix icons for hierarchy tree display
   const tierIcon: Record<AgentSession["type"], string> = {
-    MASTER:     "◉",
-    SUPERAGENT: " ▶",
-    SUBAGENT:   "   ·",
-    TASK:       " ⚙",
+    MASTER:     "👑",
+    SUPERAGENT: "⚡",
+    SUBAGENT:   "🔍",
+    TASK:       "⚙",
   };
 
   // Tier colors
@@ -2925,21 +2927,34 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 const rowTextColor = isSelected && isFocused ? "black" : color;
                 const tokenColor = isSelected && isFocused ? "black" : "cyan";
                 
-                const isSubagent = session.type === "SUBAGENT";
+                const depth = session.type === "MASTER" ? 0 
+                            : session.type === "SUPERAGENT" ? 1 
+                            : session.type === "TASK" ? 1
+                            : (session.parentId === "master" ? 1 : 2);
+
+                let prefix = "";
+                if (depth === 0) {
+                  prefix = `${tierIcon[session.type]} `;
+                } else if (depth === 1) {
+                  prefix = `  └─ ${tierIcon[session.type]} `;
+                } else if (depth === 2) {
+                  prefix = `    └─ ${tierIcon[session.type]} `;
+                }
+
                 let label = "";
                 
                 if (session.type === "MASTER") {
-                  label = `[${globalIndex + 1}] master ❯ ${session.task}`;
+                  label = `master ❯ ${session.task}`;
                 } else if (session.type === "SUPERAGENT") {
                   const action = getLatestSuperagentAction(session.logs);
                   const role = session.id.split("-")[1] || "superagent";
-                  label = `[${globalIndex + 1}] ${role} ❯ ${action}`;
+                  label = `${role} ❯ ${action}`;
                 } else if (session.type === "SUBAGENT") {
                   const action = getLatestSubagentAction(session.logs);
                   const name = session.id.split("-")[0];
-                  label = `[${globalIndex + 1}] ${name} ❯ ${action}`;
+                  label = `${name} ❯ ${action}`;
                 } else {
-                  label = `[${globalIndex + 1}] ${session.id.slice(0, 14)}`;
+                  label = `${session.id.slice(0, 14)}`;
                 }
                 
                 const isActive = session.status === "WORKING";
@@ -2959,7 +2974,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                         {indicatorText}
                       </Text>
                       <Text bold={isSelected} color={rowTextColor} backgroundColor={rowBg} wrap="truncate-end">
-                        {isSubagent ? "  └─ 🔍 " : `${tierIcon[session.type]} `}
+                        <Text color={isSelected && isFocused ? "black" : "gray"} dimColor={!isSelected || !isFocused}>[{globalIndex + 1}] </Text>
+                        {prefix}
                         {label}
                       </Text>
                     </Box>
