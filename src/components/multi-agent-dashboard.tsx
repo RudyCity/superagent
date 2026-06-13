@@ -267,6 +267,48 @@ function ToolLoadingIndicator() {
   return <Text color="yellow">{frames[frame]} Running system tool...</Text>;
 }
 
+function ActiveStatusBadge() {
+  const [activeBlink, setActiveBlink] = useState(true);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveBlink((prev) => !prev);
+    }, 600);
+    return () => clearInterval(timer);
+  }, []);
+
+  return activeBlink ? (
+    <Text color="black" backgroundColor="yellow" bold>● ACTIVE</Text>
+  ) : (
+    <Text color="yellow" bold>  ACTIVE</Text>
+  );
+}
+
+function BlinkingCursor() {
+  const [activeBlink, setActiveBlink] = useState(true);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveBlink((prev) => !prev);
+    }, 600);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <Text color="green" bold>{activeBlink ? "█" : " "}</Text>;
+}
+
+function SessionSpinner() {
+  const [frame, setFrame] = useState(0);
+  const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setFrame((prev) => (prev + 1) % spinnerFrames.length);
+    }, 120);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <Text color="yellow" bold>{spinnerFrames[frame]} </Text>;
+}
+
 export function MultiAgentDashboard({
   agent,
   autoResume = false,
@@ -340,13 +382,7 @@ export function MultiAgentDashboard({
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
   const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
   const [wizardSelectedSet, setWizardSelectedSet] = useState<Set<number>>(new Set());
-  const [listSpinnerFrame, setListSpinnerFrame] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setListSpinnerFrame((prev) => (prev + 1) % 10);
-    }, 120);
-    return () => clearInterval(timer);
-  }, []);
+
 
   const handleQueryChange = useCallback((val: string) => {
     const sanitizedVal = stripSgrMouseSequences(val);
@@ -387,13 +423,7 @@ export function MultiAgentDashboard({
   const maxAgentsVisible = 3;
   const maxProcsVisible = 5;
 
-  const [activeBlink, setActiveBlink] = useState(true);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setActiveBlink((prev) => !prev);
-    }, 600);
-    return () => clearInterval(timer);
-  }, []);
+
 
   // Safeguard scroll offsets when lists shrink
   useEffect(() => {
@@ -2834,11 +2864,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
   const renderStatusBadge = (status: AgentSession["status"]) => {
     if (status === "WORKING") {
-      return activeBlink ? (
-        <Text color="black" backgroundColor="yellow" bold>● ACTIVE</Text>
-      ) : (
-        <Text color="yellow" bold>  ACTIVE</Text>
-      );
+      return <ActiveStatusBadge />;
     }
     if (status === "COMPLETED") return <Text color="black" backgroundColor="green" bold> DONE </Text>;
     if (status === "ERROR") return <Text color="black" backgroundColor="red" bold> FAIL </Text>;
@@ -2958,11 +2984,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 }
                 
                 const isActive = session.status === "WORKING";
-                const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-                const spinnerChar = spinnerFrames[listSpinnerFrame] || "●";
-                const indicatorText = isSelected 
-                  ? "▶ " 
-                  : (isActive ? `${spinnerChar} ` : "  ");
+                const isSpinner = !isSelected && isActive;
                 const indicatorColor = isSelected
                   ? (focusArea === "list" ? "green" : "cyan")
                   : (isActive ? "yellow" : "gray");
@@ -2971,7 +2993,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   <Box key={session.id} flexDirection="row" justifyContent="space-between" marginTop={0}>
                     <Box flexDirection="row" flexShrink={1}>
                       <Text bold color={indicatorColor}>
-                        {indicatorText}
+                        {isSelected ? "▶ " : (isSpinner ? <SessionSpinner /> : "  ")}
                       </Text>
                       <Text bold={isSelected} color={rowTextColor} backgroundColor={rowBg} wrap="truncate-end">
                         <Text color={isSelected && isFocused ? "black" : "gray"} dimColor={!isSelected || !isFocused}>[{globalIndex + 1}] </Text>
@@ -3155,7 +3177,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               return (
                 <Box flexDirection="row" marginTop={0}>
                   <ThinkingSpinner type={spinnerType} />
-                  <Text color="green" bold>{activeBlink ? "█" : " "}</Text>
+                  <BlinkingCursor />
                 </Box>
               );
             })()}
