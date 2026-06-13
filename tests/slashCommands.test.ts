@@ -22,6 +22,10 @@ describe("Slash Command: /model", () => {
   let addedLines: ChatLine[] = [];
   let currentContextLimit = 0;
 
+  let activeWizard: any = null;
+  let wizardOptions: string[] = [];
+  let wizardSelectedIndex = 0;
+
   const mockCtx = {
     addLine: (line: ChatLine) => {
       addedLines.push(line);
@@ -31,12 +35,24 @@ describe("Slash Command: /model", () => {
     setContextLimit: (limit: number) => {
       currentContextLimit = limit;
     },
+    setActiveWizard: (w: any) => {
+      activeWizard = w;
+    },
+    setWizardOptions: (opts: string[]) => {
+      wizardOptions = opts;
+    },
+    setWizardSelectedIndex: (idx: number) => {
+      wizardSelectedIndex = idx;
+    },
   };
 
   beforeEach(() => {
     originalEnv = { ...process.env };
     addedLines = [];
     currentContextLimit = 0;
+    activeWizard = null;
+    wizardOptions = [];
+    wizardSelectedIndex = 0;
   });
 
   afterEach(() => {
@@ -59,6 +75,19 @@ describe("Slash Command: /model", () => {
     expect(content).toContain("Superagent (depth 1): anthropic:claude-3-5-sonnet");
     expect(content).toContain("Subagent (depth 2): custom:local-llama");
     expect(content).toContain('Subagent "researcher": openai:gpt-researcher');
+
+    expect(activeWizard).toEqual({
+      type: "model",
+      step: 1,
+      data: {},
+    });
+    expect(wizardOptions).toContain("1. Default / Global Model (openai:gpt-4o)");
+    expect(wizardOptions).toContain("2. Master Agent (depth 0) (openai:gpt-4o-mini)");
+    expect(wizardOptions).toContain("3. Superagent (depth 1) (anthropic:claude-3-5-sonnet)");
+    expect(wizardOptions).toContain("4. Subagent (depth 2) (custom:local-llama)");
+    expect(wizardOptions).toContain("5. Subagent: researcher (openai:gpt-researcher)");
+    expect(wizardOptions).toContain("6. Subagent: coder ((use default: custom:local-llama))");
+    expect(wizardOptions).toContain("7. Subagent: reviewer ((use default: custom:local-llama))");
   });
 
   it("should update standard MODEL when no tier prefix is supplied", () => {

@@ -962,8 +962,42 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
     } else if (activeWizard.type === "model") {
       if (activeWizard.step === 1) {
-        // Parse the provider TYPE from the option string format: "name (type - url) [Active]"
-        // This is more reliable than keyword matching since profile names can be anything
+        const choice = value.toLowerCase();
+        let tier = "";
+        if (choice.includes("default") || choice.includes("global")) {
+          tier = "default";
+        } else if (choice.includes("master") || choice.includes("depth 0")) {
+          tier = "master";
+        } else if (choice.includes("superagent") || choice.includes("depth 1")) {
+          tier = "superagent";
+        } else if (choice.includes("subagents") || choice.includes("depth 2")) {
+          tier = "subagent";
+        } else if (choice.includes("researcher")) {
+          tier = "researcher";
+        } else if (choice.includes("coder")) {
+          tier = "coder";
+        } else if (choice.includes("reviewer")) {
+          tier = "reviewer";
+        } else if (choice.includes("all")) {
+          tier = "all";
+        } else {
+          const tiers = ["default", "master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
+          const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
+          tier = tiers[idx] || "default";
+        }
+
+        setActiveWizard({
+          type: "model",
+          step: 2,
+          data: { tier },
+        });
+
+        const list = getConfiguredProviders();
+        const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
+        setWizardOptions(options.length > 0 ? options : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+        setWizardSelectedIndex(0);
+        setQuery("");
+      } else if (activeWizard.step === 2) {
         const typeMatch = value.match(/\(([^)]+)/);
         const rawType = typeMatch ? typeMatch[1].split("-")[0].trim().toLowerCase() : value.toLowerCase();
         let provider = "";
@@ -976,7 +1010,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         } else if (rawType === "custom") {
           provider = "custom";
         } else {
-          // Fallback: try the configured providers list to find the actual type
           const list = getConfiguredProviders();
           const cleanName = value.replace(/\s*\[Active\]\s*$/, "").split(" (")[0].trim();
           const found = list.find(p => p.name === cleanName);
@@ -985,11 +1018,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
         setActiveWizard({
           type: "model",
-          step: 2,
-          data: { provider },
+          step: 3,
+          data: { ...activeWizard.data, provider },
         });
 
-        // Static fallback models per provider (shown while API fetch is in-flight)
         const initialModels: string[] =
           provider === "openrouter" ? [
             "google/gemini-2.5-flash",
@@ -1012,9 +1044,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           ] : [];
 
         setWizardAllOptions(initialModels);
-        setWizardOptions([]);  // not used for model step 2 — filtering done at render time
+        setWizardOptions([]);
         setWizardSelectedIndex(0);
-        setQuery("");  // clear main input so user can type to search (same as single agent)
+        setQuery("");
 
         if (provider === "openrouter") {
           setWizardIsLoadingModels(true);
@@ -1073,17 +1105,77 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
         setMasterLogs((prev) => [...prev, `[MASTER] Provider ${provider} selected. Choose a model below:`].slice(-500));
       } else {
-        const modelName = value;
+        const selectedModel = value;
+        const tier = activeWizard.data.tier;
+        const provider = activeWizard.data.provider;
+
         try {
-          const envPath = updateEnvFile({ MODEL: modelName });
-          const limit = getContextWindowLimit(modelName);
+          let updates: Record<string, string> = {};
+          let targetLabel = "";
+
+          if (tier === "default") {
+            updates = { MODEL: selectedModel };
+            targetLabel = "Default Model";
+            switchActiveProvider(provider);
+          } else if (tier === "all") {
+            const activeProvider = process.env.ACTIVE_PROVIDER || "";
+            const finalModelName = provider.toLowerCase() !== activeProvider.toLowerCase()
+              ? `${provider.toLowerCase()}:${selectedModel}`
+              : selectedModel;
+            updates = {
+              MODEL: selectedModel,
+              MODEL_DEPTH_0: finalModelName,
+              MODEL_DEPT0: finalModelName,
+              MODEL_DEPTH_1: finalModelName,
+              MODEL_DEPT1: finalModelName,
+              MODEL_DEPTH_2: finalModelName,
+              MODEL_DEPT2: finalModelName,
+              MODEL_SUBAGENT_RESEARCHER: finalModelName,
+              MODEL_RESEARCHER: finalModelName,
+              MODEL_SUBAGENT_CODER: finalModelName,
+              MODEL_CODER: finalModelName,
+              MODEL_SUBAGENT_REVIEWER: finalModelName,
+              MODEL_REVIEWER: finalModelName
+            };
+            targetLabel = "All Tiers & Subagents";
+            switchActiveProvider(provider);
+          } else {
+            const activeProvider = process.env.ACTIVE_PROVIDER || "";
+            const finalModelName = provider.toLowerCase() !== activeProvider.toLowerCase()
+              ? `${provider.toLowerCase()}:${selectedModel}`
+              : selectedModel;
+
+            if (tier === "master") {
+              updates = { MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName };
+              targetLabel = "Master Agent (depth 0) Model";
+            } else if (tier === "superagent") {
+              updates = { MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName };
+              targetLabel = "Superagent (depth 1) Model";
+            } else if (tier === "subagent") {
+              updates = { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName };
+              targetLabel = "Subagent (depth 2) Model";
+            } else {
+              const typeUpper = tier.toUpperCase();
+              updates = {
+                [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
+                [`MODEL_${typeUpper}`]: finalModelName
+              };
+              targetLabel = `Subagent "${tier}" Model`;
+            }
+          }
+
+          const envPath = updateEnvFile(updates);
+          const limit = getContextWindowLimit(selectedModel);
           setMasterLogs((prev) => [
             ...prev,
-            `[MASTER] Model successfully changed to: ${modelName}`,
+            `[MASTER] ${targetLabel} successfully changed to: ${selectedModel}`,
             `[MASTER] Context Limit: ${limit.toLocaleString()} tokens`,
             `[MASTER] Saved to: ${envPath}`
           ].slice(-500));
-          fetchAndCacheModels().catch(() => {});
+          
+          if (tier === "default") {
+            fetchAndCacheModels().catch(() => {});
+          }
         } catch (err: any) {
           setMasterLogs((prev) => [...prev, `[ERROR] Failed to set model: ${err.message}`].slice(-500));
         }
@@ -1329,7 +1421,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       // Special case: model step 2 uses wizardAllOptions (filtered by query) instead of wizardOptions
       // because wizardOptions is intentionally set to [] for step 2 (filtering done at render time)
       let finalValue: string;
-      if (activeWizard.type === "model" && activeWizard.step === 2) {
+      if (activeWizard.type === "model" && activeWizard.step === 3) {
         const lc = query.trim().toLowerCase();
         const filteredModels = lc
           ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
@@ -1918,7 +2010,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               // Handle wizard option clicking
               let options = wizardOptions;
               let maxVisible = 5;
-              if (activeWizard.type === "model" && activeWizard.step === 2) {
+              if (activeWizard.type === "model" && activeWizard.step === 3) {
                 const lc = query.trim().toLowerCase();
                 options = lc
                   ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
@@ -1961,7 +2053,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   descLines = wrapTextForDisplay(description, descWidth).length;
                 }
 
-                const isLoading = (activeWizard.type === "model" && activeWizard.step === 2) && wizardIsLoadingModels;
+                const isLoading = (activeWizard.type === "model" && activeWizard.step === 3) && wizardIsLoadingModels;
 
                 const y_options_start = workspaceStartRow
                   + leftTopHeight
@@ -2148,8 +2240,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         return;
       }
       if (key.downArrow) {
-        // For model step 2: navigate within filtered results based on current query
-        if (activeWizard.type === "model" && activeWizard.step === 2) {
+        // For model step 3: navigate within filtered results based on current query
+        if (activeWizard.type === "model" && activeWizard.step === 3) {
           const lc = query.toLowerCase();
           const len = lc
             ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc)).length
@@ -2389,8 +2481,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 <Box flexDirection="row" marginTop={0}>
                   <Text color={wizardBorderColor}>│</Text>
                 </Box>
-                {/* Model step 2: split out to handle query-based filtering like single agent */}
-                {activeWizard.type === "model" && activeWizard.step === 2 && (() => {
+                {/* Model step 3: split out to handle query-based filtering like single agent */}
+                {activeWizard.type === "model" && activeWizard.step === 3 && (() => {
                   const lc = query.trim().toLowerCase();
                   const filteredModels = lc
                     ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
@@ -2415,10 +2507,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 })()}
 
                 {/* All other wizard types */}
-                {(activeWizard.type !== "model" || activeWizard.step !== 2) && (
+                {(activeWizard.type !== "model" || activeWizard.step !== 3) && (
                   <WizardDialog
                     title={
-                      activeWizard.type === "model" && activeWizard.step === 1 ? `⚙️ SELECT MODEL PROVIDER:` :
+                      activeWizard.type === "model" && activeWizard.step === 1 ? `⚙️ SELECT AGENT TIER TO CONFIGURE:` :
+                      activeWizard.type === "model" && activeWizard.step === 2 ? `⚙️ SELECT MODEL PROVIDER:` :
                       activeWizard.type === "resume" ? `📁 SELECT SESSION TO RESUME:` :
                       activeWizard.type === "skills" ? `🛠️ SKILLS MANAGER (Step ${activeWizard.step}):` :
                       activeWizard.type === "checkpoint" ? `📋 CHECKPOINT MANAGER (Step ${activeWizard.step}):` :
@@ -2575,10 +2668,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             <Box flexDirection="row" marginTop={0} width="100%">
               <Box flexShrink={0}>
                 <Text bold color={focusArea === "input" ? "green" : "cyan"}>
-                  {activeWizard?.type === "model" && activeWizard.step === 2
+                  {activeWizard?.type === "model" && activeWizard.step === 3
                     ? "└──[ MODEL ] ❯ "
-                    : activeWizard?.type === "model" && activeWizard.step === 1
+                    : activeWizard?.type === "model" && activeWizard.step === 2
                     ? "└──[ PROVIDER ] ❯ "
+                    : activeWizard?.type === "model" && activeWizard.step === 1
+                    ? "└──[ TIER ] ❯ "
                     : activeWizard?.type === "login"
                     ? `└──[ LOGIN:${activeWizard.step} ] ❯ `
                     : activeWizard?.type === "resume"

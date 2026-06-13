@@ -976,15 +976,53 @@ export function handleSlashCommand(
           timestamp: now,
         });
 
+        const getResolvedModelWithProvider = (rawVal: string, isDefault: boolean): string => {
+          const mStr = rawVal || (isDefault ? (process.env.MODEL || getDefaultModel()) : "");
+          if (!mStr) return "(not set)";
+          if (mStr.includes(":")) {
+            return mStr;
+          }
+          const activeProvider = process.env.ACTIVE_PROVIDER || (process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai");
+          return `${activeProvider}:${mStr}`;
+        };
+
+        const defaultResolved = getResolvedModelWithProvider("", true);
+        const currentModelFormatted = getResolvedModelWithProvider(process.env.MODEL || "", true);
+        
+        const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+        const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
+        
+        const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+        const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
+        
+        const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+        const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
+        
+        const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
+        const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
+        
+        const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
+        const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
+        
+        const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
+        const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
+
         if (ctx.setActiveWizard) {
           ctx.setActiveWizard({
             type: "model",
             step: 1,
             data: {},
           });
-          const list = getConfiguredProviders();
-          const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-          ctx.setWizardOptions?.(options.length > 0 ? options : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+          ctx.setWizardOptions?.([
+            `1. Default / Global Model (${currentModelFormatted})`,
+            `2. Master Agent (depth 0) (${masterModelFormatted})`,
+            `3. Superagent (depth 1) (${superagentModelFormatted})`,
+            `4. Subagent (depth 2) (${subagentModelFormatted})`,
+            `5. Subagent: researcher (${researcherModelFormatted})`,
+            `6. Subagent: coder (${coderModelFormatted})`,
+            `7. Subagent: reviewer (${reviewerModelFormatted})`,
+            `8. All Tiers (Overwrite All)`
+          ]);
           ctx.setWizardSelectedIndex?.(0);
         }
       }

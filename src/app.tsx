@@ -1257,28 +1257,63 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     } else if (activeWizard.type === "model") {
       if (activeWizard.step === 1) {
         const choice = value.toLowerCase();
-        let provider = "";
-        if (choice === "1" || choice.includes("openrouter")) {
-          provider = "openrouter";
-        } else if (choice === "2" || choice.includes("openai")) {
-          provider = "openai";
-        } else if (choice === "3" || choice.includes("anthropic")) {
-          provider = "anthropic";
-        } else if (choice === "4" || choice.includes("custom")) {
-          provider = "custom";
+        let tier = "";
+        if (choice.includes("default") || choice.includes("global")) {
+          tier = "default";
+        } else if (choice.includes("master") || choice.includes("depth 0")) {
+          tier = "master";
+        } else if (choice.includes("superagent") || choice.includes("depth 1")) {
+          tier = "superagent";
+        } else if (choice.includes("subagents") || choice.includes("depth 2")) {
+          tier = "subagent";
+        } else if (choice.includes("researcher")) {
+          tier = "researcher";
+        } else if (choice.includes("coder")) {
+          tier = "coder";
+        } else if (choice.includes("reviewer")) {
+          tier = "reviewer";
+        } else if (choice.includes("all")) {
+          tier = "all";
         } else {
-          addLine({
-            type: "error",
-            content: "Invalid choice. Please select 1, 2, 3, or 4.",
-            timestamp: now,
-          });
-          return;
+          const tiers = ["default", "master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
+          const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
+          tier = tiers[idx] || "default";
         }
 
         setActiveWizard({
           type: "model",
           step: 2,
-          data: { provider },
+          data: { tier },
+        });
+
+        const list = getConfiguredProviders();
+        const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
+        setWizardOptions(options.length > 0 ? options : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+        setWizardSelectedIndex(0);
+        setInput("");
+      } else if (activeWizard.step === 2) {
+        const typeMatch = value.match(/\(([^)]+)/);
+        const rawType = typeMatch ? typeMatch[1].split("-")[0].trim().toLowerCase() : value.toLowerCase();
+        let provider = "";
+        if (rawType === "openrouter") {
+          provider = "openrouter";
+        } else if (rawType === "openai") {
+          provider = "openai";
+        } else if (rawType === "anthropic") {
+          provider = "anthropic";
+        } else if (rawType === "custom") {
+          provider = "custom";
+        } else {
+          const list = getConfiguredProviders();
+          const cleanName = value.replace(/\s*\[Active\]\s*$/, "").split(" (")[0].trim();
+          const found = list.find(p => p.name === cleanName);
+          provider = found?.type || "openrouter";
+        }
+
+        setActiveWizard({
+          type: "model",
+          step: 3,
+          data: { ...activeWizard.data, provider },
         });
 
         let initialModels: string[] = [];
@@ -1289,6 +1324,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             "deepseek/deepseek-chat",
             "anthropic/claude-3.5-sonnet",
           ];
+          setWizardIsLoadingModels(true);
           fetch("https://openrouter.ai/api/v1/models")
             .then(async (res) => {
               if (res.ok) {
@@ -1299,7 +1335,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 }
               }
             })
-            .catch(() => {});
+            .catch(() => {})
+            .finally(() => setWizardIsLoadingModels(false));
         } else if (provider === "openai") {
           initialModels = [
             "gpt-4o",
@@ -1313,6 +1350,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           ];
           const apiKey = process.env.OPENAI_API_KEY || process.env.CUSTOM_API_KEY;
           if (apiKey) {
+            setWizardIsLoadingModels(true);
             fetch("https://api.openai.com/v1/models", {
               headers: {
                 Authorization: `Bearer ${apiKey}`
@@ -1327,15 +1365,16 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   }
                 }
               })
-              .catch(() => {});
+              .catch(() => {})
+              .finally(() => setWizardIsLoadingModels(false));
           }
         } else if (provider === "anthropic") {
           initialModels = [
+            "claude-opus-4-5",
+            "claude-sonnet-4-5",
             "claude-3-5-sonnet-20241022",
             "claude-3-5-haiku-20241022",
             "claude-3-opus-20240229",
-            "claude-3-sonnet-20240229",
-            "claude-3-haiku-20240307",
           ];
         } else if (provider === "custom") {
           initialModels = [
@@ -1345,6 +1384,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const baseUrl = process.env.CUSTOM_BASE_URL;
           const apiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY;
           if (baseUrl) {
+            setWizardIsLoadingModels(true);
             const headers: Record<string, string> = {};
             if (apiKey) {
               headers["Authorization"] = `Bearer ${apiKey}`;
@@ -1359,7 +1399,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   }
                 }
               })
-              .catch(() => {});
+              .catch(() => {})
+              .finally(() => setWizardIsLoadingModels(false));
           }
         }
 
@@ -1369,20 +1410,86 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       } else {
         const modelName = value;
         try {
-          const envPath = updateEnvFile({ MODEL: modelName });
-          const limit = getContextWindowLimit(modelName);
-          setContextLimit(limit);
+          const profileName = activeWizard.data.provider;
+          const tier = activeWizard.data.tier;
+          let updates: Record<string, string> = {};
+
+          let envPath = "";
+          let targetLabel = "";
+          if (tier === "default") {
+            envPath = switchActiveProvider(profileName);
+            updateEnvFile({ MODEL: modelName });
+            targetLabel = "Default Model";
+          } else if (tier === "all") {
+            const activeProvider = process.env.ACTIVE_PROVIDER || "";
+            const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+              ? `${profileName.toLowerCase()}:${modelName}`
+              : modelName;
+            updates = {
+              MODEL: modelName,
+              MODEL_DEPTH_0: finalModelName,
+              MODEL_DEPT0: finalModelName,
+              MODEL_DEPTH_1: finalModelName,
+              MODEL_DEPT1: finalModelName,
+              MODEL_DEPTH_2: finalModelName,
+              MODEL_DEPT2: finalModelName,
+              MODEL_SUBAGENT_RESEARCHER: finalModelName,
+              MODEL_RESEARCHER: finalModelName,
+              MODEL_SUBAGENT_CODER: finalModelName,
+              MODEL_CODER: finalModelName,
+              MODEL_SUBAGENT_REVIEWER: finalModelName,
+              MODEL_REVIEWER: finalModelName
+            };
+            targetLabel = "All Tiers & Subagents";
+            envPath = switchActiveProvider(profileName);
+            updateEnvFile(updates);
+          } else {
+            const activeProvider = process.env.ACTIVE_PROVIDER || "";
+            const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+              ? `${profileName.toLowerCase()}:${modelName}`
+              : modelName;
+            
+            if (tier === "master") {
+              updates = { MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName };
+              targetLabel = "Master Agent (depth 0) Model";
+            } else if (tier === "superagent") {
+              updates = { MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName };
+              targetLabel = "Superagent (depth 1) Model";
+            } else if (tier === "subagent") {
+              updates = { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName };
+              targetLabel = "Subagent (depth 2) Model";
+            } else {
+              const typeUpper = tier.toUpperCase();
+              updates = {
+                [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
+                [`MODEL_${typeUpper}`]: finalModelName
+              };
+              targetLabel = `Subagent "${tier}" Model`;
+            }
+            envPath = updateEnvFile(updates);
+          }
+
+          const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
+          const limit = getContextWindowLimit(cleanModelName);
+          
+          if (tier === "default" || tier === "all") {
+            setContextLimit(limit);
+          }
+          
           addLine({
             type: "system",
-            content: `Model successfully changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+            content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
             timestamp: now,
           });
-          fetchAndCacheModels()
-            .then(() => {
-              const newLimit = getContextWindowLimit(modelName);
-              setContextLimit(newLimit);
-            })
-            .catch(() => {});
+          
+          if (tier === "default" || tier === "all") {
+            fetchAndCacheModels()
+              .then(() => {
+                const newLimit = getContextWindowLimit(cleanModelName);
+                setContextLimit(newLimit);
+              })
+              .catch(() => {});
+          }
         } catch (err: any) {
           addLine({
             type: "error",
@@ -1393,6 +1500,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setActiveWizard(null);
         setWizardOptions([]);
         setWizardSelectedIndex(0);
+        setWizardIsLoadingModels(false);
       }
     } else if (activeWizard.type === "plan_approve") {
       const approved = value === "approve";
@@ -1959,7 +2067,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
         if (key.return) {
-          const tiers = ["default", "master", "superagent", "subagent", "researcher", "coder", "reviewer"];
+          const tiers = ["default", "master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
           const tier = tiers[wizardSelectedIndex];
           if (!tier) return;
 
@@ -2112,6 +2220,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           try {
             const profileName = activeWizard.data.provider;
             const tier = activeWizard.data.tier;
+            let updates: Record<string, string> = {};
 
             let envPath = "";
             let targetLabel = "";
@@ -2119,13 +2228,35 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               envPath = switchActiveProvider(profileName);
               updateEnvFile({ MODEL: selectedModel });
               targetLabel = "Default Model";
+            } else if (tier === "all") {
+              const activeProvider = process.env.ACTIVE_PROVIDER || "";
+              const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+                ? `${profileName.toLowerCase()}:${selectedModel}`
+                : selectedModel;
+              updates = {
+                MODEL: selectedModel,
+                MODEL_DEPTH_0: finalModelName,
+                MODEL_DEPT0: finalModelName,
+                MODEL_DEPTH_1: finalModelName,
+                MODEL_DEPT1: finalModelName,
+                MODEL_DEPTH_2: finalModelName,
+                MODEL_DEPT2: finalModelName,
+                MODEL_SUBAGENT_RESEARCHER: finalModelName,
+                MODEL_RESEARCHER: finalModelName,
+                MODEL_SUBAGENT_CODER: finalModelName,
+                MODEL_CODER: finalModelName,
+                MODEL_SUBAGENT_REVIEWER: finalModelName,
+                MODEL_REVIEWER: finalModelName
+              };
+              targetLabel = "All Tiers & Subagents";
+              envPath = switchActiveProvider(profileName);
+              updateEnvFile(updates);
             } else {
               const activeProvider = process.env.ACTIVE_PROVIDER || "";
               const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
                 ? `${profileName.toLowerCase()}:${selectedModel}`
                 : selectedModel;
               
-              let updates: Record<string, string> = {};
               if (tier === "master") {
                 updates = { MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName };
                 targetLabel = "Master Agent (depth 0) Model";
@@ -2149,7 +2280,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const cleanModelName = selectedModel.includes(":") ? selectedModel.substring(selectedModel.indexOf(":") + 1) : selectedModel;
             const limit = getContextWindowLimit(cleanModelName);
             
-            if (tier === "default") {
+            if (tier === "default" || tier === "all") {
               setContextLimit(limit);
             }
             
@@ -2159,7 +2290,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               timestamp: now,
             });
             
-            if (tier === "default") {
+            if (tier === "default" || tier === "all") {
               fetchAndCacheModels()
                 .then(() => {
                   const newLimit = getContextWindowLimit(cleanModelName);
