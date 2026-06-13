@@ -89,8 +89,46 @@ export function App({
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [activeModel, setActiveModel] = useState(() => process.env.MODEL || getDefaultModel());
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
-  const [focusMode, setFocusMode] = useState<"input" | "history">("input");
+  const [focusMode, setFocusMode] = useState<"input" | "history" | "checklist" | "superagents" | "subagents" | "procs">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
+
+  const [checklistScrollOffset, setChecklistScrollOffset] = useState(0);
+  const [superagentsScrollOffset, setSuperagentsScrollOffset] = useState(0);
+  const [subagentsScrollOffset, setSubagentsScrollOffset] = useState(0);
+  const [procsScrollOffset, setProcsScrollOffset] = useState(0);
+
+  const maxChecklistVisible = 5;
+  const maxSuperagentsVisible = 2;
+  const maxSubagentsVisible = 3;
+  const maxProcsVisible = 5;
+
+  // Safeguard scroll offsets when lists shrink
+  useEffect(() => {
+    if (checklistScrollOffset >= checklistTasks.length && checklistTasks.length > 0) {
+      setChecklistScrollOffset(Math.max(0, checklistTasks.length - maxChecklistVisible));
+    }
+  }, [checklistTasks.length, checklistScrollOffset]);
+
+  useEffect(() => {
+    const runningSuperagentsCount = [...superagentInstances.values()].filter((s) => s.status === "running").length;
+    if (superagentsScrollOffset >= runningSuperagentsCount && runningSuperagentsCount > 0) {
+      setSuperagentsScrollOffset(Math.max(0, runningSuperagentsCount - maxSuperagentsVisible));
+    }
+  }, [lines, superagentsScrollOffset]);
+
+  useEffect(() => {
+    const runningSubagentsCount = [...subagentInstances.values()].filter((s) => s.status === "running").length;
+    if (subagentsScrollOffset >= runningSubagentsCount && runningSubagentsCount > 0) {
+      setSubagentsScrollOffset(Math.max(0, runningSubagentsCount - maxSubagentsVisible));
+    }
+  }, [lines, subagentsScrollOffset]);
+
+  useEffect(() => {
+    const runningTasksCount = [...backgroundTasks.values()].filter((t) => t.isDetachedWindow || !t.hasExited).length;
+    if (procsScrollOffset >= runningTasksCount && runningTasksCount > 0) {
+      setProcsScrollOffset(Math.max(0, runningTasksCount - maxProcsVisible));
+    }
+  }, [lines, procsScrollOffset]);
   const [checkpointsListState, setCheckpointsListState] = useState<Checkpoint[]>([]);
   const [terminalPresets, setTerminalPresets] = useState<{ key: string; label: string }[]>([]);
   const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
@@ -1967,6 +2005,85 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       return;
     }
 
+    if (focusMode === "checklist") {
+      if (key.upArrow) {
+        setChecklistScrollOffset((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setChecklistScrollOffset((prev) => {
+          const maxScroll = Math.max(0, checklistTasks.length - maxChecklistVisible);
+          return Math.min(prev + 1, maxScroll);
+        });
+        return;
+      }
+      if (key.escape) {
+        setFocusMode("input");
+        return;
+      }
+      return;
+    }
+
+    if (focusMode === "superagents") {
+      if (key.upArrow) {
+        setSuperagentsScrollOffset((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setSuperagentsScrollOffset((prev) => {
+          const runningSuperagentsCount = [...superagentInstances.values()].filter((s) => s.status === "running").length;
+          const maxScroll = Math.max(0, runningSuperagentsCount - maxSuperagentsVisible);
+          return Math.min(prev + 1, maxScroll);
+        });
+        return;
+      }
+      if (key.escape) {
+        setFocusMode("input");
+        return;
+      }
+      return;
+    }
+
+    if (focusMode === "subagents") {
+      if (key.upArrow) {
+        setSubagentsScrollOffset((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setSubagentsScrollOffset((prev) => {
+          const runningSubagentsCount = [...subagentInstances.values()].filter((s) => s.status === "running").length;
+          const maxScroll = Math.max(0, runningSubagentsCount - maxSubagentsVisible);
+          return Math.min(prev + 1, maxScroll);
+        });
+        return;
+      }
+      if (key.escape) {
+        setFocusMode("input");
+        return;
+      }
+      return;
+    }
+
+    if (focusMode === "procs") {
+      if (key.upArrow) {
+        setProcsScrollOffset((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setProcsScrollOffset((prev) => {
+          const runningTasksCount = [...backgroundTasks.values()].filter((t) => t.isDetachedWindow || !t.hasExited).length;
+          const maxScroll = Math.max(0, runningTasksCount - maxProcsVisible);
+          return Math.min(prev + 1, maxScroll);
+        });
+        return;
+      }
+      if (key.escape) {
+        setFocusMode("input");
+        return;
+      }
+      return;
+    }
+
     if (key.ctrl && inputChar === "o") {
       if (!activeWizard) openLatestTruncatedResponse();
       return;
@@ -2699,8 +2816,55 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           }
           setInput(matches[nextIndex]);
           setIsPasted(false);
+          return;
         }
       }
+
+      // Cycle focus area
+      const runningSuperagentsCount = [...superagentInstances.values()].filter((s) => s.status === "running").length;
+      const runningSubagentsCount = [...subagentInstances.values()].filter((s) => s.status === "running").length;
+      const runningTasksCount = [...backgroundTasks.values()].filter((t) => t.isDetachedWindow || !t.hasExited).length;
+
+      if (focusMode === "input") {
+        if (planState === "APPROVED" && checklistTasks.length > 0) {
+          setFocusMode("checklist");
+        } else if (runningSuperagentsCount > 0) {
+          setFocusMode("superagents");
+        } else if (runningSubagentsCount > 0) {
+          setFocusMode("subagents");
+        } else if (runningTasksCount > 0) {
+          setFocusMode("procs");
+        }
+      } else if (focusMode === "checklist") {
+        if (runningSuperagentsCount > 0) {
+          setFocusMode("superagents");
+        } else if (runningSubagentsCount > 0) {
+          setFocusMode("subagents");
+        } else if (runningTasksCount > 0) {
+          setFocusMode("procs");
+        } else {
+          setFocusMode("input");
+        }
+      } else if (focusMode === "superagents") {
+        if (runningSubagentsCount > 0) {
+          setFocusMode("subagents");
+        } else if (runningTasksCount > 0) {
+          setFocusMode("procs");
+        } else {
+          setFocusMode("input");
+        }
+      } else if (focusMode === "subagents") {
+        if (runningTasksCount > 0) {
+          setFocusMode("procs");
+        } else {
+          setFocusMode("input");
+        }
+      } else if (focusMode === "procs") {
+        setFocusMode("input");
+      } else {
+        setFocusMode("input");
+      }
+      return;
     }
   });
 
@@ -2978,7 +3142,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   }
 
   if (planState === "APPROVED" && checklistTasks.length > 0) {
-    chromeHeight += 3 + checklistTasks.length;
+    const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
+    chromeHeight += 3 + checklistCount;
   }
 
   let liveListHeight = 0;
@@ -2986,18 +3151,21 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     liveListHeight += 1; // padding/margin
     if (runningSuperagentsCount > 0) {
       liveListHeight += 1; // header
-      liveListHeight += runningSuperagentsCount * 3; // Each superagent takes 3 lines
+      const superagentsCount = Math.min(runningSuperagentsCount, maxSuperagentsVisible);
+      liveListHeight += superagentsCount * 3; // Each superagent takes 3 lines
     }
     if (runningSubagentsCount > 0) {
       liveListHeight += 1; // header
       if (runningSuperagentsCount > 0) {
         liveListHeight += 1; // marginTop
       }
-      liveListHeight += runningSubagentsCount * 2; // Each subagent takes 2 lines
+      const subagentsCount = Math.min(runningSubagentsCount, maxSubagentsVisible);
+      liveListHeight += subagentsCount * 2; // Each subagent takes 2 lines
     }
     if (runningTasksCount > 0) {
       liveListHeight += 1; // header
-      liveListHeight += runningTasksCount; // Each task is 1 line
+      const procsCount = Math.min(runningTasksCount, maxProcsVisible);
+      liveListHeight += procsCount; // Each task is 1 line
       if (runningSuperagentsCount > 0 || runningSubagentsCount > 0) {
         liveListHeight += 1; // marginTop
       }
@@ -3161,12 +3329,21 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             {/* Active Superagents, Subagents & Tasks Live List */}
             {(runningSuperagentsCount > 0 || runningSubagentsCount > 0 || runningTasksCount > 0) && (
               <Box flexDirection="column" marginBottom={1}>
-                {runningSuperagentsCount > 0 && (
-                  <Box flexDirection="column">
-                    <Text color="cyan" bold>⚡ ACTIVE SUPERAGENTS:</Text>
-                    {Array.from(superagentInstances.values())
-                      .filter((s) => s.status === "running")
-                      .map((inst) => (
+                {runningSuperagentsCount > 0 && (() => {
+                  const runningSuperagents = Array.from(superagentInstances.values()).filter((s) => s.status === "running");
+                  const totalSA = runningSuperagents.length;
+                  const hasScroll = totalSA > maxSuperagentsVisible;
+                  const scrollIndicator = hasScroll
+                    ? ` [Scroll: ${superagentsScrollOffset + 1}-${Math.min(totalSA, superagentsScrollOffset + maxSuperagentsVisible)}/${totalSA}]`
+                    : "";
+                  const helpText = focusMode === "superagents" ? " [↑/▼ Scroll • Esc Exit]" : "";
+                  const visibleSA = runningSuperagents.slice(superagentsScrollOffset, superagentsScrollOffset + maxSuperagentsVisible);
+                  return (
+                    <Box flexDirection="column">
+                      <Text color={focusMode === "superagents" ? "green" : "cyan"} bold>
+                        ⚡ ACTIVE SUPERAGENTS:{scrollIndicator}{helpText}
+                      </Text>
+                      {visibleSA.map((inst) => (
                         <Box key={inst.id} flexDirection="column">
                           <Text color="cyan">
                             ├─ [{inst.id}] Role: {inst.role} ({inst.status})
@@ -3179,14 +3356,24 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                           </Text>
                         </Box>
                       ))}
-                  </Box>
-                )}
-                {runningSubagentsCount > 0 && (
-                  <Box flexDirection="column" marginTop={runningSuperagentsCount > 0 ? 1 : 0}>
-                    <Text color="yellow" bold>🤖 ACTIVE SUBAGENTS:</Text>
-                    {Array.from(subagentInstances.values())
-                      .filter((s) => s.status === "running")
-                      .map((inst) => (
+                    </Box>
+                  );
+                })()}
+                {runningSubagentsCount > 0 && (() => {
+                  const runningSubagents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
+                  const totalSubs = runningSubagents.length;
+                  const hasScroll = totalSubs > maxSubagentsVisible;
+                  const scrollIndicator = hasScroll
+                    ? ` [Scroll: ${subagentsScrollOffset + 1}-${Math.min(totalSubs, subagentsScrollOffset + maxSubagentsVisible)}/${totalSubs}]`
+                    : "";
+                  const helpText = focusMode === "subagents" ? " [↑/▼ Scroll • Esc Exit]" : "";
+                  const visibleSubs = runningSubagents.slice(subagentsScrollOffset, subagentsScrollOffset + maxSubagentsVisible);
+                  return (
+                    <Box flexDirection="column" marginTop={runningSuperagentsCount > 0 ? 1 : 0}>
+                      <Text color={focusMode === "subagents" ? "green" : "yellow"} bold>
+                        🤖 ACTIVE SUBAGENTS:{scrollIndicator}{helpText}
+                      </Text>
+                      {visibleSubs.map((inst) => (
                         <Box key={inst.id} flexDirection="column">
                           <Text color="yellow">
                             ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
@@ -3196,19 +3383,31 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                           </Text>
                         </Box>
                       ))}
-                  </Box>
-                )}
-                {runningTasksCount > 0 && (
-                  <Box flexDirection="column" marginTop={(runningSuperagentsCount > 0 || runningSubagentsCount > 0) ? 1 : 0}>
-                    <Text color="cyan" bold>⚙️ ACTIVE PROCESSES:</Text>
-                    {Array.from(backgroundTasks.entries())
-                      .map(([id, task]) => (
+                    </Box>
+                  );
+                })()}
+                {runningTasksCount > 0 && (() => {
+                  const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited);
+                  const totalProcs = runningProcs.length;
+                  const hasScroll = totalProcs > maxProcsVisible;
+                  const scrollIndicator = hasScroll
+                    ? ` [Scroll: ${procsScrollOffset + 1}-${Math.min(totalProcs, procsScrollOffset + maxProcsVisible)}/${totalProcs}]`
+                    : "";
+                  const helpText = focusMode === "procs" ? " [↑/▼ Scroll • Esc Exit]" : "";
+                  const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
+                  return (
+                    <Box flexDirection="column" marginTop={(runningSuperagentsCount > 0 || runningSubagentsCount > 0) ? 1 : 0}>
+                      <Text color={focusMode === "procs" ? "green" : "cyan"} bold>
+                        ⚙️ ACTIVE PROCESSES:{scrollIndicator}{helpText}
+                      </Text>
+                      {visibleProcs.map(([id, task]) => (
                         <Text key={id} color="cyan">
                           ├─ [{id}] Command: {task.command}
                         </Text>
                       ))}
-                  </Box>
-                )}
+                    </Box>
+                  );
+                })()}
               </Box>
             )}
 
@@ -3220,17 +3419,26 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               const barLength = Math.max(10, Math.min(25, terminalWidth - 30));
               const filled = Math.round((pct / 100) * barLength);
               const bar = "█".repeat(filled) + "░".repeat(barLength - filled);
+              const hasScroll = totalTasks > maxChecklistVisible;
+              const scrollIndicator = hasScroll
+                ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
+                : "";
+              const helpText = focusMode === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : "";
+              const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
               return (
-                <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginBottom={1}>
+                <Box flexDirection="column" borderStyle="round" borderColor={focusMode === "checklist" ? "green" : "cyan"} paddingX={1} marginBottom={1}>
                   <Box flexDirection="row" justifyContent="space-between">
-                    <Text bold color="cyan">📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed)</Text>
+                    <Text bold color={focusMode === "checklist" ? "green" : "cyan"}>
+                      📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}
+                    </Text>
                   </Box>
                   <Box flexDirection="row" marginBottom={1}>
                     <Text color="cyan">Progress: [ </Text>
                     <Text color="green" bold>{bar}</Text>
                     <Text color="cyan"> ] {pct}% ({completedTasks}/{totalTasks} completed, {inProgressTasks} in progress)</Text>
                   </Box>
-                  {checklistTasks.map((task, idx) => {
+                  {visibleChecklist.map((task, index) => {
+                    const idx = checklistScrollOffset + index;
                     let statusChar = "[ ]";
                     let taskColor = "white";
                     let statusText = "";

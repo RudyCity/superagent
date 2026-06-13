@@ -238,7 +238,7 @@ export function MultiAgentDashboard({
   const { exit } = useApp();
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [focusArea, setFocusArea] = useState<"list" | "logs" | "input">("input");
+  const [focusArea, setFocusArea] = useState<"list" | "logs" | "input" | "checklist" | "agents" | "procs">("input");
   const [query, setQuery] = useState("");
   const [masterLogs, setMasterLogs] = useState<string[]>(["[MASTER] System initialised. Ready for tasks."]);
   const [history, setHistory] = useState<string[]>([]);
@@ -284,6 +284,35 @@ export function MultiAgentDashboard({
   const [worktreeCount, setWorktreeCount] = useState<number>(0);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
+
+  const [checklistScrollOffset, setChecklistScrollOffset] = useState(0);
+  const [agentsScrollOffset, setAgentsScrollOffset] = useState(0);
+  const [procsScrollOffset, setProcsScrollOffset] = useState(0);
+
+  const maxChecklistVisible = 5;
+  const maxAgentsVisible = 3;
+  const maxProcsVisible = 5;
+
+  // Safeguard scroll offsets when lists shrink
+  useEffect(() => {
+    if (checklistScrollOffset >= checklistTasks.length && checklistTasks.length > 0) {
+      setChecklistScrollOffset(Math.max(0, checklistTasks.length - maxChecklistVisible));
+    }
+  }, [checklistTasks.length, checklistScrollOffset]);
+
+  useEffect(() => {
+    const runningAgentsCount = [...subagentInstances.values()].filter((s) => s.status === "running").length;
+    if (agentsScrollOffset >= runningAgentsCount && runningAgentsCount > 0) {
+      setAgentsScrollOffset(Math.max(0, runningAgentsCount - maxAgentsVisible));
+    }
+  }, [sessions, agentsScrollOffset]);
+
+  useEffect(() => {
+    const runningTasksCount = [...backgroundTasks.values()].filter((t) => t.isDetachedWindow || !t.hasExited).length;
+    if (procsScrollOffset >= runningTasksCount && runningTasksCount > 0) {
+      setProcsScrollOffset(Math.max(0, runningTasksCount - maxProcsVisible));
+    }
+  }, [sessions, procsScrollOffset]);
 
   // Periodic sync of agent properties (e.g. planState)
   useEffect(() => {
@@ -1780,21 +1809,24 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     liveListHeight += 1; // padding/margin
     if (runningSubagentsCount > 0) {
       liveListHeight += 1; // header
-      liveListHeight += runningSubagentsCount * 2; // Each subagent takes 2 lines
+      const agentsCount = Math.min(runningSubagentsCount, maxAgentsVisible);
+      liveListHeight += agentsCount * 2; // Each subagent takes 2 lines
     }
     if (runningTasksCount > 0) {
       liveListHeight += 1; // header
-      liveListHeight += runningTasksCount; // Each task is 1 line
+      const procsCount = Math.min(runningTasksCount, maxProcsVisible);
+      liveListHeight += procsCount; // Each task is 1 line
       if (runningSubagentsCount > 0) {
         liveListHeight += 1; // marginTop
       }
     }
   }
 
-  const workspaceHeight = Math.max(10, terminalSize.height - 10);
+  const workspaceHeight = Math.max(10, terminalSize.height - 8);
   let checklistHeight = 0;
   if (planState === "APPROVED" && checklistTasks.length > 0) {
-    checklistHeight += 3 + checklistTasks.length;
+    const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
+    checklistHeight += 3 + checklistCount;
   }
   const leftTopHeight = Math.max(5, workspaceHeight - 5 - liveListHeight - checklistHeight);
   const logBoxHeight = Math.max(5, workspaceHeight - 4);
@@ -2104,6 +2136,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const y = parseInt(rowStr, 10);
           const leftLimit = Math.floor(terminalSize.width * 0.40);
           const rightStart = Math.floor(terminalSize.width * 0.42);
+          const workspaceStartRow = 4; // Header banner has fixed height of 3 lines (1-indexed)
 
           if (x <= leftLimit) {
             if (activeWizard) {
@@ -2133,7 +2166,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 const visibleCount = Math.min(total, maxVisible);
 
                 // Calculate options row positions dynamically based on preceding layouts
-                const workspaceStartRow = 7; // Header banner has fixed height of 6 lines (1-indexed)
                 let description = undefined;
                 if (activeWizard.type === "plan_approve") {
                   description = `Model AI telah merancang rencana di file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}`;
@@ -2207,7 +2239,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 }
               }
             } else {
-              const promptStartRow = 7 + leftTopHeight + 1;
+              const promptStartRow = workspaceStartRow + leftTopHeight + 1;
               if (y >= promptStartRow) {
                 setFocusArea("input");
               } else {
@@ -2302,7 +2334,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     }
 
     if (key.escape) {
-      if (!activeWizard) {
+      if (!activeWizard && focusArea === "input") {
         if (stopAllRunningAgents() > 0) {
           setCurrentTask("Idle - Interrupted");
           return;
@@ -2408,6 +2440,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       if (focusArea === "input") {
         setFocusArea("list");
       } else if (focusArea === "list") {
+        if (planState === "APPROVED" && checklistTasks.length > 0) {
+          setFocusArea("checklist");
+        } else if (runningSubagentsCount > 0) {
+          setFocusArea("agents");
+        } else if (runningTasksCount > 0) {
+          setFocusArea("procs");
+        } else {
+          setFocusArea("logs");
+        }
+      } else if (focusArea === "checklist") {
+        if (runningSubagentsCount > 0) {
+          setFocusArea("agents");
+        } else if (runningTasksCount > 0) {
+          setFocusArea("procs");
+        } else {
+          setFocusArea("logs");
+        }
+      } else if (focusArea === "agents") {
+        if (runningTasksCount > 0) {
+          setFocusArea("procs");
+        } else {
+          setFocusArea("logs");
+        }
+      } else if (focusArea === "procs") {
         setFocusArea("logs");
       } else {
         setFocusArea("input");
@@ -2422,6 +2478,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setSelectedIndex((prev) => (prev < sessions.length - 1 ? prev + 1 : 0));
       } else if (key.return) {
         setFocusArea("logs");
+      } else if (key.escape) {
+        setFocusArea("input");
       } else if (input >= "1" && input <= "9") {
         const targetIndex = parseInt(input, 10) - 1;
         if (targetIndex < sessions.length) {
@@ -2439,6 +2497,41 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       } else if (key.escape) {
         setLogScrollOffset(0);
         setFocusArea("list");
+      }
+    } else if (focusArea === "checklist") {
+      if (key.upArrow) {
+        setChecklistScrollOffset((prev) => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setChecklistScrollOffset((prev) => {
+          const maxScroll = Math.max(0, checklistTasks.length - maxChecklistVisible);
+          return Math.min(prev + 1, maxScroll);
+        });
+      } else if (key.escape) {
+        setFocusArea("input");
+      }
+    } else if (focusArea === "agents") {
+      if (key.upArrow) {
+        setAgentsScrollOffset((prev) => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setAgentsScrollOffset((prev) => {
+          const runningAgents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
+          const maxScroll = Math.max(0, runningAgents.length - maxAgentsVisible);
+          return Math.min(prev + 1, maxScroll);
+        });
+      } else if (key.escape) {
+        setFocusArea("input");
+      }
+    } else if (focusArea === "procs") {
+      if (key.upArrow) {
+        setProcsScrollOffset((prev) => Math.max(0, prev - 1));
+      } else if (key.downArrow) {
+        setProcsScrollOffset((prev) => {
+          const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited);
+          const maxScroll = Math.max(0, runningProcs.length - maxProcsVisible);
+          return Math.min(prev + 1, maxScroll);
+        });
+      } else if (key.escape) {
+        setFocusArea("input");
       }
     }
   });
@@ -2481,22 +2574,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       {/* Header Banner - High Tech Cyberpunk Style */}
       <Box flexDirection="row" justifyContent="space-between" paddingX={0} marginBottom={2} alignItems="center">
         <Box flexDirection="row" alignItems="center">
-          {/* Mascot Column - Simple Garuda Mascot (Yellow/Gold) */}
-          <Box flexDirection="column" marginRight={3} alignItems="center">
-            <Box flexDirection="row">
-              <Text color="yellow" bold> ◥█◣  ▲  ◢█◤ </Text>
-            </Box>
-            <Box flexDirection="row">
-              <Text color="yellow" bold>  ◥██ █ ██◤  </Text>
-            </Box>
-            <Box flexDirection="row">
-              <Text color="yellow" bold>   ◥█████◤   </Text>
-            </Box>
-            <Box flexDirection="row">
-              <Text color="yellow" bold>     ◥█◤     </Text>
-            </Box>
-          </Box>
-
           {/* Info Column */}
           <Box flexDirection="column" justifyContent="center">
             <Box flexDirection="row" alignItems="center">
@@ -2695,17 +2772,26 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               const barLength = Math.max(10, Math.min(20, Math.floor(terminalSize.width * 0.4 - 30)));
               const filled = Math.round((pct / 100) * barLength);
               const bar = "█".repeat(filled) + "░".repeat(barLength - filled);
+              const hasScroll = totalTasks > maxChecklistVisible;
+              const scrollIndicator = hasScroll
+                ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
+                : "";
+              const helpText = focusArea === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : "";
+              const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
               return (
-                <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} marginBottom={1}>
+                <Box flexDirection="column" borderStyle="round" borderColor={focusArea === "checklist" ? "green" : "cyan"} paddingX={1} marginBottom={1}>
                   <Box flexDirection="row" justifyContent="space-between">
-                    <Text bold color="cyan">📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed)</Text>
+                    <Text bold color={focusArea === "checklist" ? "green" : "cyan"}>
+                      📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}
+                    </Text>
                   </Box>
                   <Box flexDirection="row" marginBottom={1}>
                     <Text color="cyan">Progress: [ </Text>
                     <Text color="green" bold>{bar}</Text>
                     <Text color="cyan"> ] {pct}% ({completedTasks}/${totalTasks} completed, {inProgressTasks} in progress)</Text>
                   </Box>
-                  {checklistTasks.map((task, idx) => {
+                  {visibleChecklist.map((task, index) => {
+                    const idx = checklistScrollOffset + index;
                     let statusChar = "[ ]";
                     let taskColor = "white";
                     let statusText = "";
@@ -2735,12 +2821,21 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             {/* Active Subagents & Tasks Live List */}
             {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
               <Box flexDirection="column" marginBottom={1}>
-                {runningSubagentsCount > 0 && (
-                  <Box flexDirection="column">
-                    <Text color="yellow" bold>🤖 ACTIVE SUBAGENTS:</Text>
-                    {Array.from(subagentInstances.values())
-                      .filter((s) => s.status === "running")
-                      .map((inst) => (
+                {runningSubagentsCount > 0 && (() => {
+                  const runningAgents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
+                  const totalAgents = runningAgents.length;
+                  const hasScroll = totalAgents > maxAgentsVisible;
+                  const scrollIndicator = hasScroll
+                    ? ` [Scroll: ${agentsScrollOffset + 1}-${Math.min(totalAgents, agentsScrollOffset + maxAgentsVisible)}/${totalAgents}]`
+                    : "";
+                  const helpText = focusArea === "agents" ? " [↑/▼ Scroll • Esc Exit]" : "";
+                  const visibleAgents = runningAgents.slice(agentsScrollOffset, agentsScrollOffset + maxAgentsVisible);
+                  return (
+                    <Box flexDirection="column">
+                      <Text color={focusArea === "agents" ? "green" : "yellow"} bold>
+                        🤖 ACTIVE SUBAGENTS:{scrollIndicator}{helpText}
+                      </Text>
+                      {visibleAgents.map((inst) => (
                         <Box key={inst.id} flexDirection="column">
                           <Text color="yellow">
                             ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
@@ -2750,20 +2845,31 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                           </Text>
                         </Box>
                       ))}
-                  </Box>
-                )}
-                {runningTasksCount > 0 && (
-                  <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
-                    <Text color="cyan" bold>⚙️ ACTIVE PROCESSES:</Text>
-                    {Array.from(backgroundTasks.entries())
-                      .filter(([id, task]) => !task.hasExited)
-                      .map(([id, task]) => (
+                    </Box>
+                  );
+                })()}
+                {runningTasksCount > 0 && (() => {
+                  const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited);
+                  const totalProcs = runningProcs.length;
+                  const hasScroll = totalProcs > maxProcsVisible;
+                  const scrollIndicator = hasScroll
+                    ? ` [Scroll: ${procsScrollOffset + 1}-${Math.min(totalProcs, procsScrollOffset + maxProcsVisible)}/${totalProcs}]`
+                    : "";
+                  const helpText = focusArea === "procs" ? " [↑/▼ Scroll • Esc Exit]" : "";
+                  const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
+                  return (
+                    <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
+                      <Text color={focusArea === "procs" ? "green" : "cyan"} bold>
+                        ⚙️ ACTIVE PROCESSES:{scrollIndicator}{helpText}
+                      </Text>
+                      {visibleProcs.map(([id, task]) => (
                         <Text key={id} color="cyan">
                           ├─ [{id}] Command: {task.command}
                         </Text>
                       ))}
-                  </Box>
-                )}
+                    </Box>
+                  );
+                })()}
               </Box>
             )}
 
