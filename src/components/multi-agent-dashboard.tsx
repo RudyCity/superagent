@@ -2996,7 +2996,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                         {isSelected ? "▶ " : (isSpinner ? <SessionSpinner /> : "  ")}
                       </Text>
                       <Text bold={isSelected} color={rowTextColor} backgroundColor={rowBg} wrap="truncate-end">
-                        <Text color={isSelected && isFocused ? "black" : "gray"} dimColor={!isSelected || !isFocused}>[{globalIndex + 1}] </Text>
+                        <Text color={isSelected && isFocused ? "black" : "gray"} dimColor={!isSelected || !isFocused}>
+                          [{String(globalIndex + 1).padStart(2, " ")}]{" "}
+                        </Text>
                         {prefix}
                         {label}
                       </Text>
