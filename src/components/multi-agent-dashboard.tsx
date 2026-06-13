@@ -208,7 +208,7 @@ function renderLogInlineStyles(
   return <>{parsedElements}</>;
 }
 
-function ThinkingSpinner() {
+function ThinkingSpinner({ type = "orchestrating" }: { type?: "orchestrating" | "processing" }) {
   const [frame, setFrame] = useState(0);
   const spinners = ["▰▱▱▱▱▱▱", "▰▰▱▱▱▱▱", "▰▰▰▱▱▱▱", "▰▰▰▰▱▱▱", "▰▰▰▰▰▱▱", "▰▰▰▰▰▰▱", "▰▰▰▰▰▰▰"];
   
@@ -219,7 +219,8 @@ function ThinkingSpinner() {
     return () => clearInterval(timer);
   }, []);
 
-  return <Text color="yellow" bold>⚡ ORCHESTRATING [{spinners[frame]}] </Text>;
+  const label = type === "orchestrating" ? "ORCHESTRATING" : "PROCESSING";
+  return <Text color="yellow" bold>⚡ {label} [{spinners[frame]}] </Text>;
 }
 
 export function MultiAgentDashboard({
@@ -1709,11 +1710,18 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
 
       // 1. Master session
+      const hasActiveAgentsOrTasks =
+        [...superagentInstances.values()].some((i) => i.status === "running") ||
+        [...subagentInstances.values()].some((s) => s.status === "running") ||
+        [...backgroundTasks.values()].some((t) => t.isDetachedWindow || !t.hasExited);
+
       list.push({
         id: "master-orchestrator",
         type: "MASTER",
         task: currentTask,
-        status: currentTask.startsWith("Idle") ? "IDLE" : currentTask.startsWith("Error") ? "ERROR" : "WORKING",
+        status: hasActiveAgentsOrTasks 
+          ? "WORKING"
+          : (currentTask.startsWith("Idle") ? "IDLE" : (currentTask.startsWith("Error") ? "ERROR" : "WORKING")),
         tokens: superagentTokens + subagentTokens,
         logs: masterLogs,
         branch: gitBranch,
@@ -2985,12 +2993,16 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           {/* Log Window */}
           <Box flexDirection="column" marginTop={1} height={logBoxHeight} paddingX={1} justifyContent="flex-start">
             {visibleLogs}
-            {selectedSession.status === "WORKING" && logScrollOffset === 0 && (
-              <Box flexDirection="row" marginTop={1}>
-                <ThinkingSpinner />
-                <Text color="green" bold>▮</Text>
-              </Box>
-            )}
+            {selectedSession.status === "WORKING" && logScrollOffset === 0 && (() => {
+              const isIdleTask = selectedSession.task.startsWith("Idle") || selectedSession.task.startsWith("Error");
+              const spinnerType = (selectedSession.type === "MASTER" && !isIdleTask) ? "orchestrating" : "processing";
+              return (
+                <Box flexDirection="row" marginTop={1}>
+                  <ThinkingSpinner type={spinnerType} />
+                  <Text color="green" bold>▮</Text>
+                </Box>
+              );
+            })()}
           </Box>
         </Box>
       </Box>
