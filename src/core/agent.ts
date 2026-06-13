@@ -484,6 +484,11 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   durationMs,
                 });
               }
+
+              if (!textContent.trim() && toolCalls.length === 0) {
+                throw new Error("Empty response from model");
+              }
+
               break;
             } catch (err: unknown) {
               if (err instanceof Error && err.name === "AbortError") {
@@ -491,7 +496,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               }
               attempt++;
               if (attempt > maxRetries) {
-                const msg = err instanceof Error ? err.message : String(err);
+                const rawMsg = err instanceof Error ? err.message : String(err);
+                const msg = rawMsg === "Empty response from model"
+                  ? "Empty response from model. Check your endpoint/model config."
+                  : rawMsg;
                 this.onEvent({ type: "error", message: `Generate text failed after ${maxRetries} retries: ${msg}` });
                 return;
               }
@@ -579,6 +587,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 // Ignore or log error silently
               }
 
+              if (!textContent.trim() && toolCalls.length === 0) {
+                throw new Error("Empty response from model");
+              }
+
               break;
             } catch (err: unknown) {
               if (err instanceof Error && err.name === "AbortError") {
@@ -586,7 +598,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               }
               attempt++;
               if (attempt > maxRetries) {
-                const msg = err instanceof Error ? err.message : String(err);
+                const rawMsg = err instanceof Error ? err.message : String(err);
+                const msg = rawMsg === "Empty response from model"
+                  ? "Empty response from model. Check your endpoint/model config."
+                  : rawMsg;
                 this.onEvent({ type: "error", message: `Stream error after ${maxRetries} retries: ${msg}` });
                 return;
               }
