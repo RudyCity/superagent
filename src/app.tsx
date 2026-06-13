@@ -483,8 +483,13 @@ export function App({
           }
         }
         setChecklistTasks(items);
-      } catch (err) {
-        if (active) setChecklistTasks([]);
+      } catch (err: any) {
+        if (agentRef.current) {
+          agentRef.current.writeToLogFile("ERROR", `Failed to read task checklist file from path '${taskPath}': ${err.message}`);
+        }
+        if (active && err.code === "ENOENT") {
+          setChecklistTasks([]);
+        }
       }
     };
 
@@ -3439,24 +3444,55 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   </Box>
                   {visibleChecklist.map((task, index) => {
                     const idx = checklistScrollOffset + index;
+                    let status = task.status;
                     let statusChar = "[ ]";
                     let taskColor = "white";
-                    let statusText = "";
-                    if (task.status === "x") {
+                    let displayStatusText = "";
+
+                    // Dynamic status override in multi-agent mode based on active superagents
+                    if (agentRef.current && agentRef.current.isMultiAgent) {
+                      for (const inst of superagentInstances.values()) {
+                        const roleLower = inst.role.toLowerCase();
+                        if (task.text.toLowerCase().includes(roleLower)) {
+                          const isMergeOrCleanup = /merge|cleanup|prune/i.test(task.text);
+                          if (!isMergeOrCleanup) {
+                            if (inst.status === "running") {
+                              status = "/";
+                            } else if (inst.status === "completed") {
+                              status = "x";
+                            } else if (inst.status === "error") {
+                              status = "error";
+                            }
+                          } else {
+                            if (inst.status === "completed") {
+                              status = "/";
+                            }
+                          }
+                          break;
+                        }
+                      }
+                    }
+
+                    if (status === "x") {
                       statusChar = "[✓]";
                       taskColor = "gray";
-                    } else if (task.status === "/") {
+                    } else if (status === "/") {
                       statusChar = "[/]";
                       taskColor = "yellow";
-                      statusText = " (in progress)";
+                      displayStatusText = " (in progress)";
+                    } else if (status === "error") {
+                      statusChar = "[✗]";
+                      taskColor = "red";
+                      displayStatusText = " (failed)";
                     }
+
                     return (
                       <Box key={idx} flexDirection="row">
-                        <Text color={task.status === "x" ? "green" : task.status === "/" ? "yellow" : "cyan"}>
+                        <Text color={status === "x" ? "green" : status === "/" ? "yellow" : status === "error" ? "red" : "cyan"}>
                           {statusChar}{" "}
                         </Text>
-                        <Text color={taskColor} strikethrough={task.status === "x"}>
-                          {task.text}{statusText}
+                        <Text color={taskColor} strikethrough={status === "x"}>
+                          {task.text}{displayStatusText}
                         </Text>
                       </Box>
                     );

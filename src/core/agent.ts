@@ -130,7 +130,7 @@ export class Agent {
     this.onQuestion = onQuestion;
   }
 
-  private writeToLogFile(level: string, message: string): void {
+  public writeToLogFile(level: string, message: string): void {
     try {
       ensureGlobalConfigDir();
       const logPath = path.join(getGlobalConfigDir(), "superagent.log");
