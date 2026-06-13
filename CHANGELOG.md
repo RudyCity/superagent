@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.44] - 2026-06-13
+
+### Added
+- **AI Model Speed Tracking**: Added generation speed metrics to both single-agent and multi-agent CLI footers.
+- **Scrollable Dashboards**: Implemented scrolling support for active tasks, active agents, and active processes in the multi-agent CLI dashboard to prevent layout overflow.
+- **Real-Time Text Streaming**: Implemented real-time model text streaming and UI notifications for subagents and superagents.
+- **Custom Provider Resolution**: Supported dynamic resolution of custom provider prefixes in `getModelInstanceForString`.
+- **Multi-Agent Active Task Mapping**: Added active superagent status mapping to task lists to automatically reflect real-time task progress.
+
+### Fixed
+- **CLI Footer Model Display**: Fixed footer display in both single-agent and multi-agent CLI modes to correctly show the selected model.
+- **Wizard Model Fetching**: Fixed provider-to-model fetching mapping in the wizard.
+- **Double Plan Approval**: Prevented duplicate plan approval submissions in the wizard.
+- **UI Overflow and Limits**: Increased `maxVisible` options in dropdown lists to 10 and removed the header icon in multi-agent dashboards for cleaner visual layout.
+- **Robust Error Handling**: Added robust file reading error handling (with logging and fallback) for task checklist loading.
+- **Interruption Controls**: Handled Escape key to abort running agents and correctly handle interruptions.
+
+---
+
 ## [1.1.38] - 2026-06-13
 
 ### Added
