@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
 import type { Tool, AgentTier } from "./tools.js";
@@ -48,6 +48,8 @@ export class Agent {
   public isMultiAgent: boolean = false;
   /** For superagents: absolute path to the isolated git worktree */
   public worktreePath: string | null = null;
+  /** For subagents: subagent type name (e.g. researcher, coder, reviewer) */
+  public subagentType?: string;
   public workingDirectory: string;
   public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
   public goalMode: string | null = null;
@@ -231,19 +233,7 @@ export class Agent {
   }
 
   private getModel() {
-    if (this.config.provider === "anthropic") {
-      const anthropic = createAnthropic({ apiKey: this.config.apiKey });
-      return anthropic(this.config.model);
-    }
-    const openai = createOpenAI({
-      apiKey: this.config.apiKey,
-      ...(this.config.baseUrl && { baseURL: this.config.baseUrl }),
-      headers: {
-        "HTTP-Referer": "https://github.com/RudyCity/superagent",
-        "X-Title": "SuperAgent CLI",
-      },
-    });
-    return openai(this.config.model);
+    return getModelInstanceForTier(this.tier, this.delegationDepth, this.subagentType);
   }
 
   async sendMessage(userInput: string): Promise<void> {

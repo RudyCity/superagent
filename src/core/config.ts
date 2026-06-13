@@ -643,19 +643,82 @@ export function switchActiveProvider(name: string): string {
 
 export function getModelInstance() {
   const config = getConfig();
-  if (config.provider === "anthropic") {
-    const anthropic = createAnthropic({ apiKey: config.apiKey });
-    return anthropic(config.model);
+  return getModelInstanceForString(config.model);
+}
+
+export function getModelInstanceForString(modelStr: string) {
+  const config = getConfig();
+  
+  if (!modelStr) {
+    modelStr = config.model;
   }
+
+  let provider = config.provider;
+  let modelName = modelStr;
+  let apiKey = config.apiKey;
+  let baseUrl = config.baseUrl;
+
+  const colonIndex = modelStr.indexOf(":");
+  if (colonIndex > 0) {
+    const prefix = modelStr.substring(0, colonIndex).toLowerCase();
+    const rest = modelStr.substring(colonIndex + 1);
+    if (prefix === "anthropic") {
+      provider = "anthropic";
+      modelName = rest;
+      apiKey = process.env.PROVIDER_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || config.apiKey;
+      baseUrl = undefined;
+    } else if (prefix === "openai") {
+      provider = "openai";
+      modelName = rest;
+      apiKey = process.env.PROVIDER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || config.apiKey;
+      baseUrl = undefined;
+    } else if (prefix === "custom") {
+      provider = "custom";
+      modelName = rest;
+      apiKey = process.env.PROVIDER_CUSTOM_API_KEY || process.env.CUSTOM_API_KEY || config.apiKey;
+      baseUrl = process.env.PROVIDER_CUSTOM_BASE_URL || process.env.CUSTOM_BASE_URL || config.baseUrl;
+    }
+  }
+
+  if (provider === "anthropic") {
+    const anthropic = createAnthropic({ apiKey });
+    return anthropic(modelName);
+  }
+
   const openai = createOpenAI({
-    apiKey: config.apiKey,
-    ...(config.baseUrl && { baseURL: config.baseUrl }),
+    apiKey,
+    ...(baseUrl && { baseURL: baseUrl }),
     headers: {
       "HTTP-Referer": "https://github.com/RudyCity/superagent",
       "X-Title": "SuperAgent CLI",
     },
   });
-  return openai(config.model);
+  return openai(modelName);
 }
+
+export function getModelInstanceForTier(tier: string, depth: number, subagentType?: string) {
+  let modelStr = "";
+
+  if (tier === "master" || depth === 0) {
+    modelStr = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+  } else if (tier === "superagent" || depth === 1) {
+    modelStr = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+  } else if (tier === "subagent" || depth >= 2) {
+    if (subagentType) {
+      const typeUpper = subagentType.toUpperCase();
+      modelStr = process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
+    }
+    if (!modelStr) {
+      modelStr = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+    }
+  }
+
+  if (!modelStr) {
+    modelStr = process.env.MODEL || "";
+  }
+
+  return getModelInstanceForString(modelStr);
+}
+
 
 

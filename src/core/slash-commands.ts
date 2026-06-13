@@ -852,27 +852,82 @@ export function handleSlashCommand(
       break;
     }
     case "model": {
-      const modelName = cmd.slice(name.length + 2).trim();
-      if (modelName) {
+      const argsStr = cmd.slice(name.length + 2).trim();
+      if (argsStr) {
         try {
-          const envPath = updateEnvFile({ MODEL: modelName });
-          const limit = getContextWindowLimit(modelName);
-          if (ctx.setContextLimit) {
+          let tierArg = "";
+          let modelName = "";
+          const parts = argsStr.split(/\s+/);
+          
+          if (parts.length >= 2) {
+            const firstWord = parts[0].toLowerCase();
+            const knownSubagents = ["researcher", "coder", "reviewer"];
+            if (
+              ["master", "superagent", "subagent", "depth0", "depth1", "depth2", "dept0", "dept1", "dept2"].includes(firstWord) ||
+              knownSubagents.includes(firstWord) ||
+              firstWord.startsWith("subagent-")
+            ) {
+              tierArg = firstWord;
+              modelName = parts.slice(1).join(" ");
+            }
+          }
+          
+          if (!tierArg) {
+            modelName = argsStr;
+          }
+
+          let updates: Record<string, string> = {};
+          let targetLabel = "";
+          
+          if (!tierArg) {
+            updates = { MODEL: modelName };
+            targetLabel = "Default Model";
+          } else {
+            const key = tierArg.toLowerCase();
+            if (key === "master" || key === "depth0" || key === "dept0") {
+              updates = { MODEL_DEPTH_0: modelName, MODEL_DEPT0: modelName };
+              targetLabel = "Master Agent (depth 0) Model";
+            } else if (key === "superagent" || key === "depth1" || key === "dept1") {
+              updates = { MODEL_DEPTH_1: modelName, MODEL_DEPT1: modelName };
+              targetLabel = "Superagent (depth 1) Model";
+            } else if (key === "subagent" || key === "depth2" || key === "dept2") {
+              updates = { MODEL_DEPTH_2: modelName, MODEL_DEPT2: modelName };
+              targetLabel = "Subagent (depth 2) Model";
+            } else {
+              const type = key.replace(/^subagent-/, "");
+              const typeUpper = type.toUpperCase();
+              updates = {
+                [`MODEL_SUBAGENT_${typeUpper}`]: modelName,
+                [`MODEL_${typeUpper}`]: modelName
+              };
+              targetLabel = `Subagent "${type}" Model`;
+            }
+          }
+
+          const envPath = updateEnvFile(updates);
+          const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
+          const limit = getContextWindowLimit(cleanModelName);
+          
+          if (!tierArg && ctx.setContextLimit) {
             ctx.setContextLimit(limit);
           }
+          
           ctx.addLine({
             type: "system",
-            content: `Model changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+            content: `${targetLabel} changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
             timestamp: now,
           });
-          fetchAndCacheModels()
-            .then(() => {
-              const newLimit = getContextWindowLimit(modelName);
-              if (ctx.setContextLimit) {
-                ctx.setContextLimit(newLimit);
-              }
-            })
-            .catch(() => {});
+
+          if (!tierArg) {
+            fetchAndCacheModels()
+              .then(() => {
+                const newLimit = getContextWindowLimit(cleanModelName);
+                if (ctx.setContextLimit) {
+                  ctx.setContextLimit(newLimit);
+                }
+              })
+              .catch(() => {});
+          }
         } catch (err: any) {
           ctx.addLine({
             type: "error",
@@ -882,9 +937,31 @@ export function handleSlashCommand(
         }
       } else {
         const currentModel = process.env.MODEL || getDefaultModel();
+        const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+        const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+        const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+        
+        const subagentSpecificOverrides: string[] = [];
+        for (const [key, value] of Object.entries(process.env)) {
+          if (value && key.startsWith("MODEL_SUBAGENT_")) {
+            const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+            subagentSpecificOverrides.push(`  Subagent "${name}": ${value}`);
+          }
+        }
+
+        let content = `Current Models:\n` +
+          `  Default Model: ${currentModel}\n` +
+          `  Master Agent (depth 0): ${masterModel}\n` +
+          `  Superagent (depth 1): ${superagentModel}\n` +
+          `  Subagent (depth 2): ${subagentModel}`;
+        
+        if (subagentSpecificOverrides.length > 0) {
+          content += `\n` + subagentSpecificOverrides.join("\n");
+        }
+
         ctx.addLine({
           type: "system",
-          content: `Current Model: ${currentModel}`,
+          content,
           timestamp: now,
         });
 

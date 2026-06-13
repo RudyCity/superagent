@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions } from "./config.js";
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString } from "./config.js";
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -255,5 +255,53 @@ describe("config", () => {
     process.env.SUPERAGENT_SESSION_ID = "session-123456";
     const dir = getGlobalConfigDir();
     expect(dir).toContain(path.join(".superagent-r", "sessions", "session-123456"));
+  });
+
+  describe("getModelInstanceForTier", () => {
+    beforeEach(() => {
+      process.env.OPENAI_API_KEY = "dummy-openai-key";
+      process.env.ANTHROPIC_API_KEY = "dummy-anthropic-key";
+      process.env.CUSTOM_API_KEY = "dummy-custom-key";
+      process.env.CUSTOM_BASE_URL = "http://localhost:11434/v1";
+    });
+
+    it("should resolve specific model per agent tier using MODEL_DEPTH_x or MODEL_DEPTx", () => {
+      process.env.MODEL_DEPTH_0 = "openai:gpt-4o-mini";
+      process.env.MODEL_DEPT1 = "anthropic:claude-3-5-sonnet";
+      process.env.MODEL_DEPTH_2 = "custom:local-llama";
+
+      const masterModel: any = getModelInstanceForTier("master", 0);
+      expect(masterModel.modelId).toBe("gpt-4o-mini");
+
+      const superagentModel: any = getModelInstanceForTier("superagent", 1);
+      expect(superagentModel.modelId).toBe("claude-3-5-sonnet");
+
+      const subagentModel: any = getModelInstanceForTier("subagent", 2);
+      expect(subagentModel.modelId).toBe("local-llama");
+    });
+
+    it("should resolve subagent-specific model override (MODEL_SUBAGENT_<TYPE> or MODEL_<TYPE>)", () => {
+      process.env.MODEL_DEPTH_2 = "custom:general-subagent-model";
+      process.env.MODEL_SUBAGENT_RESEARCHER = "openai:gpt-4-turbo";
+      process.env.MODEL_CODER = "anthropic:claude-3-5-haiku";
+
+      const researcherModel: any = getModelInstanceForTier("subagent", 2, "researcher");
+      expect(researcherModel.modelId).toBe("gpt-4-turbo");
+
+      const coderModel: any = getModelInstanceForTier("subagent", 2, "coder");
+      expect(coderModel.modelId).toBe("claude-3-5-haiku");
+
+      const reviewerModel: any = getModelInstanceForTier("subagent", 2, "reviewer");
+      expect(reviewerModel.modelId).toBe("general-subagent-model");
+    });
+
+    it("should fallback to default config model if tier-specific environments are not set", () => {
+      delete process.env.MODEL_DEPTH_0;
+      delete process.env.MODEL_DEPT0;
+      process.env.MODEL = "openai:gpt-4o";
+
+      const masterModel: any = getModelInstanceForTier("master", 0);
+      expect(masterModel.modelId).toBe("gpt-4o");
+    });
   });
 });

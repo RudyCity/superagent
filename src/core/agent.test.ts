@@ -255,3 +255,57 @@ describe("Agent – logging to superagent.log", () => {
   });
 });
 
+describe("Agent – tier-specific model resolution", () => {
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    process.env.OPENAI_API_KEY = "dummy-key";
+    process.env.ANTHROPIC_API_KEY = "dummy-key";
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("should use correct model based on agent tier and subagentType", () => {
+    process.env.MODEL_DEPTH_0 = "openai:gpt-4-master";
+    process.env.MODEL_DEPTH_1 = "anthropic:claude-superagent";
+    process.env.MODEL_DEPTH_2 = "openai:gpt-subagent";
+    process.env.MODEL_SUBAGENT_RESEARCHER = "openai:gpt-researcher";
+
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+
+    // Master Agent
+    const masterAgent = new Agent(onEvent, onPermission, onQuestion);
+    masterAgent.tier = "master";
+    masterAgent.delegationDepth = 0;
+    const masterModel: any = (masterAgent as any).getModel();
+    expect(masterModel.modelId).toBe("gpt-4-master");
+
+    // Superagent
+    const superagent = new Agent(onEvent, onPermission, onQuestion);
+    superagent.tier = "superagent";
+    superagent.delegationDepth = 1;
+    const superagentModel: any = (superagent as any).getModel();
+    expect(superagentModel.modelId).toBe("claude-superagent");
+
+    // Subagent
+    const subagent = new Agent(onEvent, onPermission, onQuestion);
+    subagent.tier = "subagent";
+    subagent.delegationDepth = 2;
+    const subagentModel: any = (subagent as any).getModel();
+    expect(subagentModel.modelId).toBe("gpt-subagent");
+
+    // Subagent Coder
+    subagent.subagentType = "coder";
+    const coderModel: any = (subagent as any).getModel();
+    expect(coderModel.modelId).toBe("gpt-subagent");
+
+    // Subagent Researcher
+    subagent.subagentType = "researcher";
+    const researcherModel: any = (subagent as any).getModel();
+    expect(researcherModel.modelId).toBe("gpt-researcher");
+  });
+});
+

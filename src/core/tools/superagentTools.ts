@@ -371,21 +371,9 @@ export const mergeSuperagentsTool: Tool = {
       return "No completed Superagents to merge. Run await_superagents first.";
     }
 
-    // Build LLM model instance for conflict resolution
-    const { getConfig } = await import("../config.js");
-    const { createAnthropic } = await import("@ai-sdk/anthropic");
-    const { createOpenAI } = await import("@ai-sdk/openai");
-    const config = getConfig();
-
-    let model: any;
-    if (config.provider === "anthropic") {
-      model = createAnthropic({ apiKey: config.apiKey })(config.model);
-    } else {
-      model = createOpenAI({
-        apiKey: config.apiKey,
-        ...(config.baseUrl && { baseURL: config.baseUrl }),
-      })(config.model);
-    }
+    // Build LLM model instance for conflict resolution (uses Master Agent's model)
+    const { getModelInstanceForTier } = await import("../config.js");
+    const model = getModelInstanceForTier("master", 0);
 
     const master = new MasterAgent(model);
     const results: string[] = [`Merging ${completed.length} Superagent branch(es):\n`];

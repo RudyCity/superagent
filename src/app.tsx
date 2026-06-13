@@ -1885,14 +1885,41 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
         if (key.return) {
+          const tiers = ["default", "master", "superagent", "subagent", "researcher", "coder", "reviewer"];
+          const tier = tiers[wizardSelectedIndex];
+          if (!tier) return;
+
+          setActiveWizard({
+            type: "model",
+            step: 2,
+            data: { tier },
+          });
+
+          const list = getConfiguredProviders();
+          const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
+          setWizardOptions(options.length > 0 ? options : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+      } else if (activeWizard.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+          return;
+        }
+        if (key.return) {
           const list = getConfiguredProviders();
           const chosen = list[wizardSelectedIndex];
           if (!chosen) return;
           
           setActiveWizard({
             type: "model",
-            step: 2,
-            data: { provider: chosen.name },
+            step: 3,
+            data: { ...activeWizard.data, provider: chosen.name },
           });
 
           // Fetch models from this chosen profile
@@ -1991,7 +2018,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           setInput("");
           return;
         }
-      } else if (activeWizard.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0) {
+      } else if (activeWizard.type === "model" && activeWizard.step === 3 && wizardOptions.length > 0) {
         const modelSearchQuery = input.trim().toLowerCase();
         const filteredModels = modelSearchQuery
           ? wizardOptions.filter((m) => m.toLowerCase().includes(modelSearchQuery))
@@ -2010,21 +2037,62 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const now = Date.now();
           try {
             const profileName = activeWizard.data.provider;
-            const envPath = switchActiveProvider(profileName);
-            updateEnvFile({ MODEL: selectedModel });
-            const limit = getContextWindowLimit(selectedModel);
-            setContextLimit(limit);
+            const tier = activeWizard.data.tier;
+
+            let envPath = "";
+            let targetLabel = "";
+            if (tier === "default") {
+              envPath = switchActiveProvider(profileName);
+              updateEnvFile({ MODEL: selectedModel });
+              targetLabel = "Default Model";
+            } else {
+              const activeProvider = process.env.ACTIVE_PROVIDER || "";
+              const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+                ? `${profileName.toLowerCase()}:${selectedModel}`
+                : selectedModel;
+              
+              let updates: Record<string, string> = {};
+              if (tier === "master") {
+                updates = { MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName };
+                targetLabel = "Master Agent (depth 0) Model";
+              } else if (tier === "superagent") {
+                updates = { MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName };
+                targetLabel = "Superagent (depth 1) Model";
+              } else if (tier === "subagent") {
+                updates = { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName };
+                targetLabel = "Subagent (depth 2) Model";
+              } else {
+                const typeUpper = tier.toUpperCase();
+                updates = {
+                  [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
+                  [`MODEL_${typeUpper}`]: finalModelName
+                };
+                targetLabel = `Subagent "${tier}" Model`;
+              }
+              envPath = updateEnvFile(updates);
+            }
+
+            const cleanModelName = selectedModel.includes(":") ? selectedModel.substring(selectedModel.indexOf(":") + 1) : selectedModel;
+            const limit = getContextWindowLimit(cleanModelName);
+            
+            if (tier === "default") {
+              setContextLimit(limit);
+            }
+            
             addLine({
               type: "system",
-              content: `Switched provider to: ${profileName} and model changed to: ${selectedModel}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
+              content: `${targetLabel} successfully changed to: ${selectedModel} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
               timestamp: now,
             });
-            fetchAndCacheModels()
-              .then(() => {
-                const newLimit = getContextWindowLimit(selectedModel);
-                setContextLimit(newLimit);
-              })
-              .catch(() => {});
+            
+            if (tier === "default") {
+              fetchAndCacheModels()
+                .then(() => {
+                  const newLimit = getContextWindowLimit(cleanModelName);
+                  setContextLimit(newLimit);
+                })
+                .catch(() => {});
+            }
           } catch (err: any) {
             addLine({
               type: "error",
@@ -2583,7 +2651,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       if (activeWizard.step === 13) return "Describe the project (e.g. CLI tool in Rust)...";
     }
     if (activeWizard.type === "model") {
-      if (activeWizard.step === 1) return "Enter provider number (1-4)...";
+      if (activeWizard.step === 1) return "Select agent tier (Use Arrow Keys Up/Down & Enter)...";
+      if (activeWizard.step === 2) return "Enter provider number or select using arrows...";
       return wizardOptions.length > 0
         ? "🔍 Search models (type to filter, arrows to navigate, Enter to select)..."
         : "Enter model name (e.g. google/gemini-2.5-flash)...";
@@ -3114,6 +3183,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
             {activeWizard && activeWizard.type === "model" && activeWizard.step === 1 && wizardOptions.length > 0 && (
               <WizardDialog
+                title="⚙️ SELECT AGENT TIER TO CONFIGURE (Use Arrow Keys Up/Down & Enter):"
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0 && (
+              <WizardDialog
                 title="⚙️ SELECT PROVIDER FOR MODELS (Use Arrow Keys Up/Down & Enter):"
                 borderColor="cyan"
                 options={wizardOptions}
@@ -3121,7 +3199,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               />
             )}
 
-            {activeWizard && activeWizard.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0 && (() => {
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 3 && wizardOptions.length > 0 && (() => {
               const modelSearchQuery = input.trim().toLowerCase();
               const filteredModels = modelSearchQuery
                 ? wizardOptions.filter((m) => m.toLowerCase().includes(modelSearchQuery))
