@@ -235,7 +235,7 @@ export function MultiAgentDashboard({
   registerQuestionHandlerRef,
 }: {
   agent: Agent;
-  autoResume?: boolean;
+  autoResume?: boolean | string;
   registerLogHandler: (handler: (msg: string) => void) => void;
   registerEventHandler?: (handler: (event: any) => void) => void;
   registerQuestionHandlerRef?: (setter: (q: string, opts: string[], isMultiSelect?: boolean) => Promise<string>) => void;
@@ -309,6 +309,14 @@ export function MultiAgentDashboard({
   const maxChecklistVisible = 5;
   const maxAgentsVisible = 3;
   const maxProcsVisible = 5;
+
+  const [activeBlink, setActiveBlink] = useState(true);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveBlink((prev) => !prev);
+    }, 600);
+    return () => clearInterval(timer);
+  }, []);
 
   // Safeguard scroll offsets when lists shrink
   useEffect(() => {
@@ -2568,7 +2576,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   });
 
   const renderStatusBadge = (status: AgentSession["status"]) => {
-    if (status === "WORKING") return <Text color="black" backgroundColor="yellow" bold> ACTIVE </Text>;
+    if (status === "WORKING") {
+      return activeBlink ? (
+        <Text color="black" backgroundColor="yellow" bold>● ACTIVE</Text>
+      ) : (
+        <Text color="yellow" bold>  ACTIVE</Text>
+      );
+    }
     if (status === "COMPLETED") return <Text color="black" backgroundColor="green" bold> DONE </Text>;
     if (status === "ERROR") return <Text color="black" backgroundColor="red" bold> FAIL </Text>;
     return <Text color="black" backgroundColor="gray" bold> IDLE </Text>;
@@ -2618,8 +2632,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               <Text color="yellow" bold>MULTI-AGENT SYSTEM</Text>
               <Text color="gray"> │ </Text>
               <Text color="magenta" bold>Branch: {gitBranch}</Text>
-              <Text color="gray"> │ </Text>
-              <Text color="cyan" bold>Threads: {sessions.length}</Text>
             </Box>
           </Box>
         </Box>
@@ -2675,11 +2687,21 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   label = `[${globalIndex + 1}] ${session.id.slice(0, 14)}`;
                 }
                 
+                const isActive = session.status === "WORKING";
+                const indicatorText = isSelected 
+                  ? "▶ " 
+                  : (isActive ? "● " : "  ");
+                const indicatorColor = isSelected
+                  ? (focusArea === "list" ? "green" : "cyan")
+                  : (isActive ? (activeBlink ? "green" : "gray") : "gray");
+
                 return (
                   <Box key={session.id} flexDirection="row" justifyContent="space-between" marginTop={0}>
                     <Box flexDirection="row" flexShrink={1}>
+                      <Text bold color={indicatorColor}>
+                        {indicatorText}
+                      </Text>
                       <Text bold={isSelected} color={rowTextColor} backgroundColor={rowBg} wrap="truncate-end">
-                        {isSelected ? "▶ " : "  "}
                         {isSubagent ? "  └─ 🔍 " : `${tierIcon[session.type]} `}
                         {label}
                       </Text>
@@ -2807,9 +2829,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               const completedTasks = checklistTasks.filter((t) => t.status === "x").length;
               const inProgressTasks = checklistTasks.filter((t) => t.status === "/").length;
               const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-              const barLength = Math.max(10, Math.min(20, Math.floor(terminalSize.width * 0.4 - 30)));
-              const filled = Math.round((pct / 100) * barLength);
-              const bar = "█".repeat(filled) + "░".repeat(barLength - filled);
               const hasScroll = totalTasks > maxChecklistVisible;
               const scrollIndicator = hasScroll
                 ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
@@ -2824,9 +2843,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     </Text>
                   </Box>
                   <Box flexDirection="row" marginBottom={1}>
-                    <Text color="cyan">Progress: [ </Text>
-                    <Text color="green" bold>{bar}</Text>
-                    <Text color="cyan"> ] {pct}% ({completedTasks}/${totalTasks} completed, {inProgressTasks} in progress)</Text>
+                    <Text color="cyan">Progress: {pct}% ({completedTasks}/{totalTasks} completed, {inProgressTasks} in progress)</Text>
                   </Box>
                   {visibleChecklist.map((task, index) => {
                     const idx = checklistScrollOffset + index;

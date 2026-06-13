@@ -29,10 +29,12 @@ export function stripSgrMouseSequences(value: string): string {
 export function App({
   autoResume = false,
   onHistoryChange,
+  onSessionPath,
   initialPrompt,
 }: {
-  autoResume?: boolean;
+  autoResume?: boolean | string;
   onHistoryChange?: (exists: boolean) => void;
+  onSessionPath?: (filePath: string) => void;
   initialPrompt?: string;
 }) {
   const { exit } = useApp();
@@ -775,6 +777,7 @@ export function App({
     process.on("SIGINT", handleSigint);
 
     agent.loadHistory(autoResume).then(() => {
+      onSessionPath?.(agent.getCurrentHistoryFilePath());
       const msgs = agent.getHistory().getMessages();
       const userInputs: string[] = [];
       const loadedLines: ChatLine[] = [];
@@ -868,7 +871,7 @@ export function App({
       process.off("SIGINT", handleSigint);
       registerQuestionHandler(null);
     };
-  }, [handleEvent, permissionHandler, questionHandler, exit, autoResume, initialPrompt, stopRunningSubagents]);
+  }, [handleEvent, permissionHandler, questionHandler, exit, autoResume, initialPrompt, stopRunningSubagents, onSessionPath]);
 
   useEffect(() => {
     const hasMessages = agentRef.current ? agentRef.current.getHistory().getMessages().length > 0 : false;
@@ -2856,6 +2859,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           setFocusMode("subagents");
         } else if (runningTasksCount > 0) {
           setFocusMode("procs");
+        } else {
+          setFocusMode("chat");
         }
       } else if (focusMode === "checklist") {
         if (runningSuperagentsCount > 0) {
@@ -2865,7 +2870,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         } else if (runningTasksCount > 0) {
           setFocusMode("procs");
         } else {
-          setFocusMode("input");
+          setFocusMode("chat");
         }
       } else if (focusMode === "superagents") {
         if (runningSubagentsCount > 0) {
@@ -2873,15 +2878,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         } else if (runningTasksCount > 0) {
           setFocusMode("procs");
         } else {
-          setFocusMode("input");
+          setFocusMode("chat");
         }
       } else if (focusMode === "subagents") {
         if (runningTasksCount > 0) {
           setFocusMode("procs");
         } else {
-          setFocusMode("input");
+          setFocusMode("chat");
         }
       } else if (focusMode === "procs") {
+        setFocusMode("chat");
+      } else if (focusMode === "chat") {
         setFocusMode("input");
       } else {
         setFocusMode("input");
@@ -3121,7 +3128,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
   const showBanner = messageCount === 0;
   // Base chrome height: Banner is 6 (if shown), Input wrapper base is 2 (header + margin + prompt border/spacers), Status bar is 5 (5 lines + margin)
-  let chromeHeight = (showBanner ? 14 : 7) + inputLinesCount;
+  let chromeHeight = (showBanner ? 15 : 8) + inputLinesCount;
   if (isExecutingTool) {
     chromeHeight += 3; // Loader header + loader line + top margin
     if (activeToolLinesCount > 0) {
@@ -3205,6 +3212,18 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       <Box flexDirection="row" flexGrow={1}>
         {/* Chat Area */}
         <Box flexDirection="column" width="100%" flexGrow={1}>
+          {/* Messages Header */}
+          <Box flexDirection="row" justifyContent="space-between" paddingX={1} marginBottom={0}>
+            <Text color={focusMode === "chat" ? "green" : "cyan"}>
+              ┌───[ <Text bold color={focusMode === "chat" ? "green" : "cyan"}>💬 CONVERSATION LOG</Text>
+              {focusMode === "chat" && <Text dimColor> [↑/▼ Scroll • Esc Exit]</Text>} ]
+            </Text>
+            {scrollOffset > 0 && (
+              <Text color="yellow" bold>
+                [Scroll: -{scrollOffset} lines/msgs - Esc to snap bottom]
+              </Text>
+            )}
+          </Box>
           {/* Messages */}
           <Box flexDirection="column" paddingX={1} flexGrow={1}>
             {focusedResponseIndex !== null ? (() => {
@@ -3271,7 +3290,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                       <ChatLineComponent
                         key={originalIndex}
                         line={line}
-                        isFirst={originalIndex === 0}
+                        isFirst={false}
                         tokensUp={tokensUp}
                         tokensDown={tokensDown}
                         modelName={modelName}
@@ -3438,9 +3457,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               const completedTasks = checklistTasks.filter((t) => t.status === "x").length;
               const inProgressTasks = checklistTasks.filter((t) => t.status === "/").length;
               const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-              const barLength = Math.max(10, Math.min(25, terminalWidth - 30));
-              const filled = Math.round((pct / 100) * barLength);
-              const bar = "█".repeat(filled) + "░".repeat(barLength - filled);
               const hasScroll = totalTasks > maxChecklistVisible;
               const scrollIndicator = hasScroll
                 ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
@@ -3455,9 +3471,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     </Text>
                   </Box>
                   <Box flexDirection="row" marginBottom={1}>
-                    <Text color="cyan">Progress: [ </Text>
-                    <Text color="green" bold>{bar}</Text>
-                    <Text color="cyan"> ] {pct}% ({completedTasks}/{totalTasks} completed, {inProgressTasks} in progress)</Text>
+                    <Text color="cyan">Progress: {pct}% ({completedTasks}/{totalTasks} completed, {inProgressTasks} in progress)</Text>
                   </Box>
                   {visibleChecklist.map((task, index) => {
                     const idx = checklistScrollOffset + index;
@@ -3801,9 +3815,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 </Text> ]
                 {isProcessing && displayPrompt && (
                   <Text color="cyan" bold> ─── [ PROMPT: "{displayPrompt}" ]</Text>
-                )}
-                {scrollOffset > 0 && (
-                  <Text color="yellow" bold> [Scroll: -{scrollOffset} lines/msgs - Press Esc to snap to bottom]</Text>
                 )}
               </Text>
               <Box flexDirection="row">

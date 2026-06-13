@@ -161,11 +161,36 @@ export class Agent {
     return historyPath.replace(/\.json$/, "_walkthrough.md");
   }
 
-  private resolveHistoryFilePath(autoResume: boolean): string {
+  private resolveHistoryFilePath(autoResume: boolean | string): string {
     ensureGlobalConfigDir();
     const sanitizedPath = this.workingDirectory.replace(/[^a-zA-Z0-9]/g, "_");
     const mode = this.isMultiAgent ? "multi" : "single";
     const historyDir = path.join(getGlobalConfigDir(), "history", mode);
+
+    if (typeof autoResume === "string" && autoResume.trim() !== "") {
+      const val = autoResume.trim();
+      // 1. Check if it's a direct path to a json file
+      if (fs.existsSync(val) && val.endsWith(".json")) {
+        return val;
+      }
+      // 2. Check if it's a folder in historyDir
+      const possibleDir = path.join(historyDir, val);
+      const possibleFile = path.join(possibleDir, `${val}.json`);
+      if (fs.existsSync(possibleFile)) {
+        return possibleFile;
+      }
+      // 3. Check if it's a folder name matching any suffix (e.g. timestamp or part of name)
+      if (fs.existsSync(historyDir)) {
+        const dirs = fs.readdirSync(historyDir);
+        const match = dirs.find(d => d.toLowerCase() === val.toLowerCase() || d.toLowerCase().endsWith("_" + val.toLowerCase()));
+        if (match) {
+          const matchFile = path.join(historyDir, match, `${match}.json`);
+          if (fs.existsSync(matchFile)) {
+            return matchFile;
+          }
+        }
+      }
+    }
 
     if (autoResume) {
       try {
@@ -211,7 +236,7 @@ export class Agent {
     return this.currentHistoryFilePath;
   }
 
-  async loadHistory(autoResume = false): Promise<void> {
+  async loadHistory(autoResume: boolean | string = false): Promise<void> {
     this.currentHistoryFilePath = this.resolveHistoryFilePath(autoResume);
     process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
     await this.conversation.loadFromFile(this.currentHistoryFilePath);

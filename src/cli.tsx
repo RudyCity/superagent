@@ -80,14 +80,33 @@ import { masterToolset } from "./core/tools/toolsets.js";
 import { registerQuestionHandler, addMasterTokens } from "./core/tools/index.js";
 
 if (process.stdin.isTTY) {
-  const autoResume = process.argv.includes("--resume") || process.argv.includes("-r");
+  const resumeIndex = process.argv.findIndex(arg => arg === "--resume" || arg === "-r");
+  let resumeVal: string | undefined = undefined;
+  if (resumeIndex !== -1 && resumeIndex + 1 < process.argv.length) {
+    const nextArg = process.argv[resumeIndex + 1];
+    if (!nextArg.startsWith("-")) {
+      resumeVal = nextArg;
+    }
+  }
+  const autoResume = resumeVal !== undefined ? resumeVal : (resumeIndex !== -1 ? true : false);
+
   const flags = ["--resume", "-r", "--help", "-h", "--multi"];
-  const positionalArgs = process.argv.slice(2).filter(arg => !flags.includes(arg));
+  const positionalArgs = process.argv.slice(2).filter((arg, idx) => {
+    if (flags.includes(arg)) return false;
+    if (resumeVal && arg === resumeVal) {
+      const prevArg = process.argv[2 + idx - 1];
+      if (prevArg === "--resume" || prevArg === "-r") {
+        return false;
+      }
+    }
+    return true;
+  });
   const initialPrompt = positionalArgs.join(" ");
 
   const isMulti = process.argv.includes("--multi");
 
   let hasCurrentHistory = false;
+  let sessionPath = "";
   console.clear();
 
   if (isMulti) {
@@ -137,7 +156,7 @@ if (process.stdin.isTTY) {
 
     if (autoResume) {
       try {
-        await agent.loadHistory(true);
+        await agent.loadHistory(autoResume);
       } catch (err: any) {
         // Ignore and start clean if history load fails
       }
@@ -168,6 +187,22 @@ if (process.stdin.isTTY) {
       })
     );
     waitUntilExit().then(() => {
+      const hasHistory = agent.getHistory().getMessages().length > 0;
+      if (hasHistory) {
+        const historyPath = agent.getCurrentHistoryFilePath();
+        let resumeMsg = "\n💡 You can resume this session later by running /resume inside superagent, or by starting with: `superagent --multi --resume` or `superagent --multi -r`";
+        if (historyPath) {
+          const sessionId = path.basename(historyPath, ".json");
+          const parts = sessionId.split("_");
+          const timestamp = parts[parts.length - 1];
+          if (timestamp && /^\d+$/.test(timestamp)) {
+            resumeMsg += `\n   Specifically for this session: \`superagent -r ${timestamp} --multi\``;
+          } else {
+            resumeMsg += `\n   Specifically for this session: \`superagent -r ${sessionId} --multi\``;
+          }
+        }
+        console.log(resumeMsg + "\n");
+      }
       process.exit(0);
     });
   } else {
@@ -178,12 +213,27 @@ if (process.stdin.isTTY) {
         onHistoryChange: (exists) => {
           hasCurrentHistory = exists;
         },
+        onSessionPath: (path) => {
+          sessionPath = path;
+        },
       })
     );
     waitUntilExit().then(() => {
       if (hasCurrentHistory) {
-        console.log("\n💡 You can resume this session later by running /resume inside superagent, or by starting with: `superagent --resume` or `superagent -r`\n");
+        let resumeMsg = "\n💡 You can resume this session later by running /resume inside superagent, or by starting with: `superagent --resume` or `superagent -r`";
+        if (sessionPath) {
+          const sessionId = path.basename(sessionPath, ".json");
+          const parts = sessionId.split("_");
+          const timestamp = parts[parts.length - 1];
+          if (timestamp && /^\d+$/.test(timestamp)) {
+            resumeMsg += `\n   Specifically for this session: \`superagent -r ${timestamp}\``;
+          } else {
+            resumeMsg += `\n   Specifically for this session: \`superagent -r ${sessionId}\``;
+          }
+        }
+        console.log(resumeMsg + "\n");
       }
+      process.exit(0);
     });
   }
 } else {
