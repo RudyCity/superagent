@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { execSync } from "child_process";
 import { Box, Text, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
@@ -264,6 +264,7 @@ export function MultiAgentDashboard({
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [tempInput, setTempInput] = useState("");
+  const [isPasted, setIsPasted] = useState(false);
   const [activeModel, setActiveModel] = useState(() => {
     return process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
   });
@@ -311,6 +312,23 @@ export function MultiAgentDashboard({
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
   const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
   const [wizardSelectedSet, setWizardSelectedSet] = useState<Set<number>>(new Set());
+
+  const handleQueryChange = useCallback((val: string) => {
+    const sanitizedVal = stripSgrMouseSequences(val);
+    setQuery(sanitizedVal);
+    const lengthDiff = sanitizedVal.length - query.length;
+    const containsNewline = sanitizedVal.includes("\n");
+    if (lengthDiff < 0) {
+      setIsPasted(false);
+    } else if (lengthDiff > 15 || containsNewline) {
+      setIsPasted(true);
+    } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
+      setIsPasted(false);
+    }
+    if (activeWizard?.type === "model" && wizardOptions.length > 0) {
+      setWizardSelectedIndex(0);
+    }
+  }, [query, activeWizard, wizardOptions]);
   const [wizardAllOptions, setWizardAllOptions] = useState<string[]>([]);
   const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<{
@@ -1385,7 +1403,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const loadedLogs: string[] = [];
         for (const m of msgs) {
           if (m.role === "user") {
-            loadedLogs.push(`[USER] ${m.content}`);
+            const skillPrefixMatch = m.content.match(/^I would like you to use the following skill:\s*"(.*?)"\.\nPlease read its instruction file at\s*"(.*?)"/);
+            if (skillPrefixMatch) {
+              loadedLogs.push(`[USER] 🛠️ [SKILL USE] ${skillPrefixMatch[1]} (${skillPrefixMatch[2]})`);
+            } else {
+              loadedLogs.push(`[USER] ${m.content}`);
+            }
           } else if (m.role === "assistant") {
             if (m.content) {
               loadedLogs.push(`[AGENT] ${m.content}`);
@@ -1422,7 +1445,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         if (wizardSelectedIndex === 0) {
           // Use / Activate Skill
           const slug = chosen.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-          setMasterLogs((prev) => [...prev, `[USER] /skill-${slug}`, `[MASTER] Activating skill "${chosen.name}"...\nInstruction path: ${chosen.path}`].slice(-500));
+          setMasterLogs((prev) => [...prev, `[USER] 🛠️ [SKILL USE] ${chosen.name} (${chosen.path})`, `[MASTER] Activating skill "${chosen.name}"...\nInstruction path: ${chosen.path}`].slice(-500));
           agent.sendMessage(
             `I would like you to use the following skill: "${chosen.name}".\nPlease read its instruction file at "${chosen.path}" using a file read tool first, and then help me with my request based on its instructions.`
           ).catch((err: any) => {
@@ -1474,8 +1497,16 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const msgs = agent.getHistory().getMessages();
             const loadedLogs: string[] = [];
             for (const m of msgs) {
-              if (m.role === "user") loadedLogs.push(`[USER] ${m.content}`);
-              else if (m.role === "assistant" && m.content) loadedLogs.push(`[AGENT] ${m.content}`);
+              if (m.role === "user") {
+                const skillPrefixMatch = m.content.match(/^I would like you to use the following skill:\s*"(.*?)"\.\nPlease read its instruction file at\s*"(.*?)"/);
+                if (skillPrefixMatch) {
+                  loadedLogs.push(`[USER] 🛠️ [SKILL USE] ${skillPrefixMatch[1]} (${skillPrefixMatch[2]})`);
+                } else {
+                  loadedLogs.push(`[USER] ${m.content}`);
+                }
+              } else if (m.role === "assistant" && m.content) {
+                loadedLogs.push(`[AGENT] ${m.content}`);
+              }
             }
             setMasterLogs(loadedLogs.slice(-500));
             setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${chosen.name}" successfully restored! (${chosen.messages.length} messages)`].slice(-500));
@@ -1522,8 +1553,16 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const msgs = agent.getHistory().getMessages();
             const loadedLogs: string[] = [];
             for (const m of msgs) {
-              if (m.role === "user") loadedLogs.push(`[USER] ${m.content}`);
-              else if (m.role === "assistant" && m.content) loadedLogs.push(`[AGENT] ${m.content}`);
+              if (m.role === "user") {
+                const skillPrefixMatch = m.content.match(/^I would like you to use the following skill:\s*"(.*?)"\.\nPlease read its instruction file at\s*"(.*?)"/);
+                if (skillPrefixMatch) {
+                  loadedLogs.push(`[USER] 🛠️ [SKILL USE] ${skillPrefixMatch[1]} (${skillPrefixMatch[2]})`);
+                } else {
+                  loadedLogs.push(`[USER] ${m.content}`);
+                }
+              } else if (m.role === "assistant" && m.content) {
+                loadedLogs.push(`[AGENT] ${m.content}`);
+              }
             }
             setMasterLogs(loadedLogs.slice(-500));
             setMasterLogs((prev) => [...prev, `[MASTER] Checkpoint "${chosen.name}" successfully restored! (${chosen.messages.length} messages)`].slice(-500));
@@ -1591,6 +1630,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   };
 
   const handleQuerySubmit = (val: string) => {
+    setIsPasted(false);
     const cleanVal = val.trim();
 
     if (activeWizard) {
@@ -1707,7 +1747,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const loadedLogs: string[] = [];
             for (const m of msgs) {
               if (m.role === "user" && m.content) {
-                loadedLogs.push(`[USER] ${m.content}`);
+                const skillPrefixMatch = m.content.match(/^I would like you to use the following skill:\s*"(.*?)"\.\nPlease read its instruction file at\s*"(.*?)"/);
+                if (skillPrefixMatch) {
+                  loadedLogs.push(`[USER] 🛠️ [SKILL USE] ${skillPrefixMatch[1]} (${skillPrefixMatch[2]})`);
+                } else {
+                  loadedLogs.push(`[USER] ${m.content}`);
+                }
               } else if (m.role === "assistant") {
                 if (m.content) {
                   loadedLogs.push(`[AGENT] ${m.content}`);
@@ -2436,6 +2481,38 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       return;
     }
 
+    if (
+      (key.backspace || key.delete) &&
+      isPasted &&
+      (query.length > 200 || query.includes("\n"))
+    ) {
+      setQuery((prev) => {
+        const next = prev.slice(0, -1);
+        const hasNewline = next.includes("\n");
+        if (next.length <= 200 && !hasNewline) {
+          setIsPasted(false);
+        }
+        return next;
+      });
+      return;
+    }
+
+    if (key.return) {
+      if (isPasted && (query.length > 200 || query.includes("\n"))) {
+        handleQuerySubmit(query);
+        return;
+      }
+    }
+
+    if (key.escape) {
+      if (isPasted && (query.length > 200 || query.includes("\n"))) {
+        setQuery("");
+        setIsPasted(false);
+        setHistoryIndex(-1);
+        return;
+      }
+    }
+
     if (key.escape) {
       if (!activeWizard && focusArea === "input") {
         if (stopAllRunningAgents() > 0) {
@@ -2463,6 +2540,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         }
         setHistoryIndex(newIndex);
         setQuery(history[newIndex]);
+        setIsPasted(false);
         return;
       }
 
@@ -2471,10 +2549,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           if (historyIndex === history.length - 1) {
             setHistoryIndex(-1);
             setQuery(tempInput);
+            setIsPasted(false);
           } else {
             const newIndex = historyIndex + 1;
             setHistoryIndex(newIndex);
             setQuery(history[newIndex]);
+            setIsPasted(false);
           }
         }
         return;
@@ -2536,6 +2616,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             nextIndex = (currentMatchIndex + 1) % suggestions.length;
           }
           setQuery(suggestions[nextIndex]);
+          setIsPasted(false);
           return;
         }
       }
@@ -2822,9 +2903,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               const isIdleTask = selectedSession.task.startsWith("Idle") || selectedSession.task.startsWith("Error");
               const spinnerType = (selectedSession.type === "MASTER" && !isIdleTask) ? "orchestrating" : "processing";
               return (
-                <Box flexDirection="row" marginTop={1}>
+                <Box flexDirection="row" marginTop={0}>
                   <ThinkingSpinner type={spinnerType} />
-                  <Text color="green" bold>▮</Text>
+                  <Text color="green" bold>{activeBlink ? "█" : " "}</Text>
                 </Box>
               );
             })()}
@@ -3119,12 +3200,19 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           </Text>
         </Box>
         <Box flexGrow={1}>
-          <TextInput
-            value={query}
-            onChange={(val) => setQuery(stripSgrMouseSequences(val))}
-            onSubmit={handleQuerySubmit}
-            focus={focusArea === "input"}
-          />
+          {isPasted && (query.length > 200 || query.includes("\n")) ? (
+            <Box flexDirection="row">
+              <Text color="yellow" bold>[Pasted Text: {query.length} chars, {query.split("\n").length} lines] </Text>
+              <Text dimColor>(Press Enter to send, Esc to clear)</Text>
+            </Box>
+          ) : (
+            <TextInput
+              value={query}
+              onChange={handleQueryChange}
+              onSubmit={handleQuerySubmit}
+              focus={focusArea === "input"}
+            />
+          )}
         </Box>
       </Box>
 
