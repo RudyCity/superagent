@@ -268,7 +268,7 @@ describe("Agent – tier-specific model resolution", () => {
     process.env = originalEnv;
   });
 
-  it("should use correct model based on agent tier and subagentType", () => {
+  it("should use correct model based on agent tier and subagentType when isMultiAgent is true", () => {
     process.env.MODEL_DEPTH_0 = "openai:gpt-4-master";
     process.env.MODEL_DEPTH_1 = "anthropic:claude-superagent";
     process.env.MODEL_DEPTH_2 = "openai:gpt-subagent";
@@ -278,6 +278,7 @@ describe("Agent – tier-specific model resolution", () => {
 
     // Master Agent
     const masterAgent = new Agent(onEvent, onPermission, onQuestion);
+    masterAgent.isMultiAgent = true;
     masterAgent.tier = "master";
     masterAgent.delegationDepth = 0;
     const masterModel: any = (masterAgent as any).getModel();
@@ -285,6 +286,7 @@ describe("Agent – tier-specific model resolution", () => {
 
     // Superagent
     const superagent = new Agent(onEvent, onPermission, onQuestion);
+    superagent.isMultiAgent = true;
     superagent.tier = "superagent";
     superagent.delegationDepth = 1;
     const superagentModel: any = (superagent as any).getModel();
@@ -292,6 +294,7 @@ describe("Agent – tier-specific model resolution", () => {
 
     // Subagent
     const subagent = new Agent(onEvent, onPermission, onQuestion);
+    subagent.isMultiAgent = true;
     subagent.tier = "subagent";
     subagent.delegationDepth = 2;
     const subagentModel: any = (subagent as any).getModel();
@@ -306,6 +309,18 @@ describe("Agent – tier-specific model resolution", () => {
     subagent.subagentType = "researcher";
     const researcherModel: any = (subagent as any).getModel();
     expect(researcherModel.modelId).toBe("gpt-researcher");
+  });
+
+  it("should use default MODEL in single-agent mode even if tier-specific keys are defined", () => {
+    process.env.MODEL = "openai:my-cool-custom-model";
+    process.env.MODEL_DEPTH_0 = "openai:gpt-4-master";
+
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+
+    const singleAgent = new Agent(onEvent, onPermission, onQuestion);
+    // isMultiAgent remains false (default)
+    const model: any = (singleAgent as any).getModel();
+    expect(model.modelId).toBe("my-cool-custom-model");
   });
 });
 

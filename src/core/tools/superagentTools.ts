@@ -205,6 +205,7 @@ export const invokeSuperagentTool: Tool = {
     agentInstance.delegationDepth = 1;
     agentInstance.tier = "superagent";
     agentInstance.worktreePath = worktreePath;
+    agentInstance.isMultiAgent = true;
 
     // Register the instance in global state
     const instance = {

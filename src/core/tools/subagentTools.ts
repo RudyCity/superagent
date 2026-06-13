@@ -207,6 +207,9 @@ export const invokeSubagentTool: Tool = {
     agentInstance.delegationDepth = parentDepth + 1;
     agentInstance.tier = "subagent";
     agentInstance.subagentType = typeName;
+    if (parentAgent) {
+      agentInstance.isMultiAgent = parentAgent.isMultiAgent;
+    }
 
     const instance: SubagentInstance = {
       id: subagentId,
