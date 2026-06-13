@@ -50,4 +50,32 @@ describe("gitWorktreeTool", () => {
       expect.any(Object)
     );
   });
+
+  it("should prune stale metadata when removing a path that is not a working tree", async () => {
+    vi.mocked(execa)
+      .mockRejectedValueOnce(new Error("fatal: '.worktrees/demo' is not a working tree"))
+      .mockResolvedValueOnce({ stdout: "Pruned" } as any);
+
+    const result = await gitWorktreeTool.execute(
+      { action: "remove", path: "./.worktrees/demo", force: true },
+      process.cwd()
+    );
+
+    expect(result).toContain("Worktree metadata pruned after stale remove");
+    expect(execa).toHaveBeenLastCalledWith("git", ["worktree", "prune"], expect.any(Object));
+  });
+
+  it("should fall back to filesystem removal for forced remove failures", async () => {
+    vi.mocked(execa)
+      .mockRejectedValueOnce(new Error("Filename too long"))
+      .mockResolvedValueOnce({ stdout: "Pruned" } as any);
+
+    const result = await gitWorktreeTool.execute(
+      { action: "remove", path: "./tests/temp-worktree-remove", force: true },
+      process.cwd()
+    );
+
+    expect(result).toContain("Worktree directory removed with filesystem fallback");
+    expect(execa).toHaveBeenLastCalledWith("git", ["worktree", "prune"], expect.any(Object));
+  });
 });

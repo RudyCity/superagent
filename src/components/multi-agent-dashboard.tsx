@@ -39,6 +39,7 @@ import { WizardDialog } from "./wizard-dialog.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint } from "../core/checkpoints.js";
 import { allTools } from "../core/tools.js";
+import { readChecklistTasks } from "../core/taskChecklist.js";
 
 export interface AgentSession {
   id: string;
@@ -392,25 +393,14 @@ export function MultiAgentDashboard({
       const taskPath = agent ? agent.getTaskFilePath() : null;
       if (!taskPath) return;
       try {
-        const content = await fs.readFile(taskPath, "utf-8");
+        const result = await readChecklistTasks(taskPath);
         if (!active) return;
-        const lines = content.split(/\r?\n/);
-        const items: { status: string; text: string }[] = [];
-        for (const line of lines) {
-          const match = line.match(/^\s*-\s*`\[([xX/ ])\]`?\s*(.*)$/) || line.match(/^\s*-\s*\[([xX/ ])\]\s*(.*)$/);
-          if (match) {
-            items.push({
-              status: match[1].toLowerCase(),
-              text: match[2].trim(),
-            });
-          }
-        }
-        setChecklistTasks(items);
+        setChecklistTasks(result.tasks);
       } catch (err: any) {
         if (agent) {
-          agent.writeToLogFile("ERROR", `Failed to read task checklist file from path '${taskPath}': ${err.message}`);
+          agent.writeToLogFile("WARN", `Failed to read task checklist file from path '${taskPath}': ${err.message}`);
         }
-        if (active && err.code === "ENOENT") {
+        if (active) {
           setChecklistTasks([]);
         }
       }

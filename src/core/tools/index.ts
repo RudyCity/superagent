@@ -49,7 +49,9 @@ import {
   screenshotTool, 
   androidCliTool,
   searchHistoryTool,
-  manageTasksTool
+  manageTasksTool,
+  gitWorktreeTool,
+  listPeerSuperagentsTool
 } from "./otherTools.js";
 
 export const allTools: Tool[] = [
@@ -61,6 +63,7 @@ export const allTools: Tool[] = [
   webSearchTool,
   fetchUrlTool,
   ripgrepSearchTool,
+  bashTool,
   runBackgroundProcessTool,
   writeToFileTool,
   replaceFileContentTool,
@@ -80,10 +83,12 @@ export const allTools: Tool[] = [
   sendMessageToSuperagentTool,
   applyPatchTool,
   gitActionTool,
+  gitWorktreeTool,
   screenshotTool,
   androidCliTool,
   searchHistoryTool,
   manageTasksTool,
+  listPeerSuperagentsTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {

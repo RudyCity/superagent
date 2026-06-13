@@ -33,5 +33,6 @@ Thumbs.db
 # Project-specific temp files
 scratch/
 .superagent-r/
+.worktrees/
 temp/
 tmp/

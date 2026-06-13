@@ -5,7 +5,6 @@ import os from "os";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { getStaticModelLimit } from "./model_limits.js";
-import { resolveWindowsShell } from "./tools/helpers.js";
 
 export type Provider = "anthropic" | "openai" | "custom";
 
@@ -219,12 +218,7 @@ export function getConfig(): Config {
 function getSystemPrompt(): string {
   let shellPrompt = "";
   if (process.platform === "win32") {
-    const resolved = resolveWindowsShell();
-    if (resolved.isBash) {
-      shellPrompt = `\n- ACTIVE TERMINAL SHELL: Git Bash (bash.exe). Since Git Bash is available, you CAN run standard Linux/Bash commands (like grep, lsof, piping '|', etc.). Avoid using PowerShell commands unless requested.`;
-    } else {
-      shellPrompt = `\n- ACTIVE TERMINAL SHELL: Windows PowerShell (powershell.exe). Since Git Bash is NOT available, you MUST use Windows/PowerShell syntax. Do NOT use Unix-only commands (like grep, lsof). When chaining multiple commands, use ';' instead of '&&'.`;
-    }
+    shellPrompt = `\n- ACTIVE TERMINAL SHELL: Windows PowerShell-compatible command execution.\n- On Windows, use ';' to separate commands. Do not use '&&' in generated shell commands.\n- Use \`run_command\` for validation commands and pass the 'timeout' parameter when a custom timeout is needed.\n- Use 'run_background_process' for long-running servers, watchers, or interactive processes.\n- Use 'git_worktree' for worktree list/add/remove/prune operations instead of hand-written cleanup chains.`;
   }
 
   const basePrompt = `You are SuperAgent, an interactive CLI coding assistant. You help users with software engineering tasks.
@@ -243,7 +237,7 @@ IMPORTANT GUIDELINES:
 - Never commit changes unless explicitly asked.
 - NEVER expose secrets or keys.
 - Always look for and study the 'agents.md' file in the workspace root if it exists, as it contains critical project information, architecture, and developer guidelines.
-- On Windows, when executing terminal commands, use ';' instead of '&&' as a statement separator (PowerShell syntax).
+- On Windows, use ';' to separate commands. Do not use '&&' in generated shell commands.
 - PLANNING, TASKS & VERIFICATION LIFECYCLE: If a user's request is complex, requires non-trivial refactoring, multi-file modifications, or new architecture/features, you MUST follow this structured lifecycle using session-specific markdown files (the exact absolute paths to use are provided dynamically in the context/system prompt):
   1. Planning Phase: Write a detailed design, proposed file changes, and verification plan to the specified 'Implementation Plan File' absolute path. Summarize it for the user and ask for explicit approval. DO NOT modify any codebase files or run modifying terminal commands until approved.
   2. Task Tracking Phase: Once the plan is approved, create a checklist file at the specified 'Task Tracking File' absolute path containing task checkboxes (e.g. \`[ ]\`, \`[/]\`, \`[x]\`). As you work, update progress in that file, marking items as in-progress or completed.
@@ -266,7 +260,7 @@ TOOL USAGE GUIDELINES:
    - Use 'grep' as a fallback if ripgrep is unavailable.
 4. Command & Task Execution:
    - Use 'run_command' for fast synchronous shell execution.
-   - Use 'bash' if you need a custom execution timeout.
+   - Use \`run_command\` for validation commands and pass the 'timeout' parameter when a custom timeout is needed.
    - Use 'run_background_process' for long-running processes (e.g. dev servers, watch processes, or long test suites). You must monitor background processes using 'manage_background_process' (action: 'status') to inspect their logs and verify if they completed successfully. To avoid busy-waiting or loop polling (which wastes tokens and blocks progress), schedule a check-in using the 'schedule' tool (e.g. '10s' or '30s') to pause and check later.
 5. Web & Information Gathering:
    - Use 'web_search' to search the internet for documentation or current information.
@@ -776,6 +770,4 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
 
   return getModelInstanceForString(modelStr);
 }
-
-
 

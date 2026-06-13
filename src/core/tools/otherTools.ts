@@ -443,8 +443,33 @@ export const gitWorktreeTool: Tool = {
         if (force) {
           argsList.push("--force");
         }
-        const { stdout } = await execa("git", argsList, { cwd, cancelSignal: signal });
-        return stdout || `Worktree at ${absolutePath} removed successfully.`;
+        try {
+          const { stdout } = await execa("git", argsList, { cwd, cancelSignal: signal });
+          return stdout || `Worktree at ${absolutePath} removed successfully.`;
+        } catch (err: any) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (force && /not a working tree/i.test(message)) {
+            const { stdout } = await execa("git", ["worktree", "prune"], { cwd, cancelSignal: signal });
+            return stdout
+              ? `Worktree metadata pruned after stale remove.\n${stdout}`
+              : "Worktree metadata pruned after stale remove.";
+          }
+
+          if (force && /(filename too long|directory not empty|failed to delete)/i.test(message)) {
+            await fs.rm(path.toNamespacedPath(absolutePath), {
+              recursive: true,
+              force: true,
+              maxRetries: 3,
+              retryDelay: 100,
+            });
+            const { stdout } = await execa("git", ["worktree", "prune"], { cwd, cancelSignal: signal });
+            return stdout
+              ? `Worktree directory removed with filesystem fallback: ${absolutePath}\n${stdout}`
+              : `Worktree directory removed with filesystem fallback: ${absolutePath}`;
+          }
+
+          throw err;
+        }
       }
 
       return `Error: Unknown action "${action}"`;
@@ -694,5 +719,4 @@ export const listPeerSuperagentsTool: Tool = {
     return report.trim();
   }
 };
-
 

@@ -326,6 +326,11 @@ export const runCommandTool: Tool = {
         if (interactiveWarning) {
           return `Error: Interactive prompt detected. Foreground execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it in the background using 'run_background_process', then monitor it with 'manage_background_process' (action: 'status') and send inputs using 'manage_background_process' (action: 'send_input').`;
         }
+
+        if (result.exitCode !== 0) {
+          return `Exit code: ${result.exitCode}\n${output}`;
+        }
+
         return output || "(no output)";
       } catch (innerErr: any) {
         if (innerErr && innerErr.name === "TimeoutError") {

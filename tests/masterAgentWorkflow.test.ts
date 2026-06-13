@@ -249,4 +249,84 @@ describe("Master Agent Workflow & Guardrails", () => {
     expect(toolEndEvent[0].toolResult.result).toContain("Automated Tests sub-section");
     expect(toolEndEvent[0].toolResult.result).toContain("Manual Verification sub-section");
   });
+
+  it("should block Superagent execution when the task tracking file is missing", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.tier = "master";
+    agent.planState = "APPROVED";
+    agent.getCurrentHistoryFilePath();
+
+    vi.spyOn(fs, "existsSync").mockImplementation((filePath) => {
+      return String(filePath).endsWith("_implementation_plan.md");
+    });
+
+    let callCount = 0;
+
+    vi.mocked(generateText).mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          text: "",
+          toolCalls: [
+            {
+              toolCallId: "call_invoke",
+              toolName: "invoke_superagent",
+              args: {
+                role: "developer",
+                task: "Implement feature",
+                branch: "feat/test",
+              },
+            },
+          ],
+          finishReason: "stop",
+          usage: { promptTokens: 10, completionTokens: 10 },
+        } as any;
+      }
+      return {
+        text: "Done",
+        toolCalls: [],
+        finishReason: "stop",
+        usage: { promptTokens: 10, completionTokens: 10 },
+      } as any;
+    });
+
+    vi.mocked(streamText).mockImplementation(() => {
+      callCount++;
+      const current = callCount;
+      return {
+        fullStream: (async function* () {
+          if (current === 1) {
+            yield {
+              type: "tool-call",
+              toolCallId: "call_invoke",
+              toolName: "invoke_superagent",
+              args: {
+                role: "developer",
+                task: "Implement feature",
+                branch: "feat/test",
+              },
+            };
+          } else {
+            yield {
+              type: "text-delta",
+              textDelta: "Done",
+            };
+          }
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    await agent.sendMessage("start superagent");
+
+    const toolEndEvent = onEvent.mock.calls.find(
+      call => call[0].type === "tool_end" && call[0].toolResult.name === "invoke_superagent"
+    );
+    expect(toolEndEvent).toBeDefined();
+    expect(toolEndEvent[0].toolResult.isError).toBe(true);
+    expect(toolEndEvent[0].toolResult.result).toContain("Task Tracking File is missing");
+  });
 });

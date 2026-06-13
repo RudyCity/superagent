@@ -628,6 +628,19 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               this.onEvent({ type: "tool_end", toolResult: blocked, description });
               continue;
             }
+
+            const taskFilePath = this.getTaskFilePath();
+            if (!fs.existsSync(taskFilePath)) {
+              const blocked: ToolResult = {
+                toolCallId: tc.id,
+                name: tc.name,
+                result: `Error: Task Tracking File is missing at '${taskFilePath}'. Write a task checklist to this exact file before spawning or merging Superagents.`,
+                isError: true,
+              };
+              toolResults.push(blocked);
+              this.onEvent({ type: "tool_end", toolResult: blocked, description });
+              continue;
+            }
           }
 
           if (MODIFYING_TOOLS.includes(tc.name)) {

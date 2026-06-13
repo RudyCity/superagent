@@ -20,6 +20,7 @@ import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggesti
 import { capDisplayLines, getTruncatedAssistantIndexes, renderScrollBar, wrapTextForDisplay } from "./utils/responseScroll.js";
 import { handleSlashCommand, getProviderLabel, getDefaultModel } from "./core/slash-commands.js";
 import type { ChatLine } from "./core/slash-commands.js";
+import { readChecklistTasks } from "./core/taskChecklist.js";
 
 
 export function stripSgrMouseSequences(value: string): string {
@@ -471,25 +472,14 @@ export function App({
       const taskPath = agentRef.current ? agentRef.current.getTaskFilePath() : null;
       if (!taskPath) return;
       try {
-        const content = await fs.readFile(taskPath, "utf-8");
+        const result = await readChecklistTasks(taskPath);
         if (!active) return;
-        const lines = content.split(/\r?\n/);
-        const items: { status: string; text: string }[] = [];
-        for (const line of lines) {
-          const match = line.match(/^\s*-\s*`\[([xX/ ])\]`?\s*(.*)$/) || line.match(/^\s*-\s*\[([xX/ ])\]\s*(.*)$/);
-          if (match) {
-            items.push({
-              status: match[1].toLowerCase(),
-              text: match[2].trim(),
-            });
-          }
-        }
-        setChecklistTasks(items);
+        setChecklistTasks(result.tasks);
       } catch (err: any) {
         if (agentRef.current) {
-          agentRef.current.writeToLogFile("ERROR", `Failed to read task checklist file from path '${taskPath}': ${err.message}`);
+          agentRef.current.writeToLogFile("WARN", `Failed to read task checklist file from path '${taskPath}': ${err.message}`);
         }
-        if (active && err.code === "ENOENT") {
+        if (active) {
           setChecklistTasks([]);
         }
       }

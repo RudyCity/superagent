@@ -163,6 +163,16 @@ export function getToolDescription(
   }
 }
 
+function isErrorLikeToolResult(result: string): boolean {
+  const trimmed = result.trim();
+  return (
+    /^Error(?:\b|:)/i.test(trimmed) ||
+    /^Error reading file:/i.test(trimmed) ||
+    /^Git worktree error:/i.test(trimmed) ||
+    /^Exit code:\s*[1-9]\d*/i.test(trimmed)
+  );
+}
+
 export async function executeToolCall(
   toolCall: ToolCall,
   cwd: string,
@@ -180,10 +190,12 @@ export async function executeToolCall(
 
   try {
     const result = await tool.execute(toolCall.args, cwd, signal);
+    const isError = isErrorLikeToolResult(result);
     return {
       toolCallId: toolCall.id,
       name: toolCall.name,
       result,
+      ...(isError ? { isError: true } : {}),
     };
   } catch (err: unknown) {
     // Re-throw AbortError so it propagates up to the agent loop's finally block,
