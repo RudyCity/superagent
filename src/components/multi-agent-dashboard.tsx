@@ -1476,6 +1476,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setPendingQuestion(null);
     } else if (activeWizard.type === "plan_approve") {
       const approved = value === "Approve Plan & Proceed";
+      // Guard: skip if already approved (prevent double-fire)
+      if (approved && planState === "APPROVED") return;
       if (approved) {
         agent.approvePlan();
         setPlanState("APPROVED");

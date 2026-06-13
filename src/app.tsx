@@ -1580,6 +1580,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
     } else if (activeWizard.type === "plan_approve") {
       const approved = value === "approve";
+      // Guard: skip if already approved (prevent double-fire from useInput + TextInput.onSubmit)
+      if (approved && planState === "APPROVED") return;
       if (approved) {
         if (agentRef.current) {
           agentRef.current.approvePlan();
@@ -1673,7 +1675,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setScrollOffset(0);
 
       if (activeWizard) {
-        handleWizardSubmit(trimmed);
+        // For plan_approve wizard, map selection index to approve/reject instead of raw text
+        if (activeWizard.type === "plan_approve" && wizardOptions.length > 0) {
+          const isApprove = wizardSelectedIndex === 0;
+          handleWizardSubmit(isApprove ? "approve" : "reject");
+        } else {
+          handleWizardSubmit(trimmed);
+        }
         return;
       }
       setHistory((prev) => {
@@ -2209,8 +2217,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
         if (key.return) {
-          const isApprove = wizardSelectedIndex === 0;
-          handleWizardSubmit(isApprove ? "approve" : "reject");
+          // Do NOT call handleWizardSubmit here — TextInput.onSubmit → handleSubmit handles it.
+          // Just consume the event to prevent it from leaking to other handlers.
           return;
         }
       } else if (activeWizard.type === "permission" && wizardOptions.length > 0) {
