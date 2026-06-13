@@ -2933,7 +2933,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             marginBottom={1}
           >
             <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
-              <Text bold color={focusArea === "list" ? "green" : "cyan"}>📡 WORKSPACE REGISTRY</Text>
+              <Text bold color={focusArea === "list" ? "green" : "cyan"}>📡 WORKSPACE REGISTRY | {sessions.length} threads</Text>
               {focusArea === "list" && (
                 <Text color="gray" dimColor> [↑/↓ Navigate • Enter Inspect]</Text>
               )}
