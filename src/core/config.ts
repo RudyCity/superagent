@@ -539,7 +539,11 @@ export function updateEnvFile(updates: Record<string, string>): string {
 
   // Also update process.env so it's immediate in memory!
   for (const [key, val] of Object.entries(updates)) {
-    process.env[key] = val;
+    if (val === "") {
+      delete process.env[key];
+    } else {
+      process.env[key] = val;
+    }
   }
 
   return envPath;
@@ -599,6 +603,15 @@ export function switchActiveProvider(name: string): string {
   const updates: Record<string, string> = {
     ACTIVE_PROVIDER: name,
   };
+
+  // Reset all tier and subagent specific model overrides to avoid provider mismatch/dead models
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith("MODEL_DEPTH_") || key.startsWith("MODEL_DEPT") || 
+        (key.startsWith("MODEL_") && key !== "MODEL" && key !== "MODEL_LIMITS")) {
+      updates[key] = "";
+      delete process.env[key];
+    }
+  }
 
   const savedModel = process.env[`${prefix}_MODEL`];
   if (savedModel) {
@@ -750,17 +763,36 @@ export function getModelInstanceForString(modelStr: string) {
 export function getModelInstanceForTier(tier: string, depth: number, subagentType?: string) {
   let modelStr = "";
 
-  if (tier === "master" || depth === 0) {
+  if (tier === "single") {
+    modelStr = process.env.MODEL || "";
+  } else if (tier === "master") {
     modelStr = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
-  } else if (tier === "superagent" || depth === 1) {
+  } else if (tier === "superagent") {
     modelStr = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
-  } else if (tier === "subagent" || depth >= 2) {
+  } else if (tier === "subagent") {
     if (subagentType) {
       const typeUpper = subagentType.toUpperCase();
       modelStr = process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
     }
     if (!modelStr) {
       modelStr = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+    }
+  }
+
+  // Fallback to depth check if tier is not recognized or not specified
+  if (!modelStr && tier !== "single") {
+    if (depth === 0) {
+      modelStr = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+    } else if (depth === 1) {
+      modelStr = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+    } else if (depth >= 2) {
+      if (subagentType) {
+        const typeUpper = subagentType.toUpperCase();
+        modelStr = process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
+      }
+      if (!modelStr) {
+        modelStr = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+      }
     }
   }
 

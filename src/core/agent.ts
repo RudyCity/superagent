@@ -263,9 +263,6 @@ export class Agent {
   }
 
   private getModel() {
-    if (!this.isMultiAgent) {
-      return getModelInstanceForString(process.env.MODEL || "");
-    }
     return getModelInstanceForTier(this.tier, this.delegationDepth, this.subagentType);
   }
 
@@ -343,6 +340,32 @@ CRITICAL GOAL MODE RULES:
 `
       : "";
 
+    let guidelinesText = "";
+    try {
+      const searchPaths = [
+        path.join(process.cwd(), "agents.md"),
+        path.join(this.workingDirectory, "agents.md"),
+      ];
+      for (const p of searchPaths) {
+        if (fs.existsSync(p)) {
+          guidelinesText += `\n\nPROJECT GUIDELINES (agents.md):\n${fs.readFileSync(p, "utf-8")}\n`;
+          break;
+        }
+      }
+      const skillPaths = [
+        path.join(process.cwd(), ".agents", "skills", "karpathy-guidelines", "SKILL.md"),
+        path.join(this.workingDirectory, ".agents", "skills", "karpathy-guidelines", "SKILL.md"),
+      ];
+      for (const p of skillPaths) {
+        if (fs.existsSync(p)) {
+          guidelinesText += `\n\nBEHAVIORAL CODING GUIDELINES (karpathy-guidelines):\n${fs.readFileSync(p, "utf-8")}\n`;
+          break;
+        }
+      }
+    } catch {
+      // Ignore guideline loading errors
+    }
+
     try {
       for (let i = 0; i < maxIterations; i++) {
         await this.compactHistoryIfNeeded();
@@ -397,7 +420,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - Be highly efficient. If the task is complex, requires multiple steps, or involves extensive research/coding across different components, DO NOT try to do everything in a single sequential thread.
 - Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
 - Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.
-${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${planStateNotice}${planStateAddendum}${processNotice}`;
+${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${guidelinesText}${planStateNotice}${planStateAddendum}${processNotice}`;
 
         let textContent = "";
         const toolCalls: ToolCall[] = [];

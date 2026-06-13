@@ -906,12 +906,26 @@ export function handleSlashCommand(
           let targetLabel = "";
           
           if (!tierArg) {
-            updates = { MODEL: modelName };
+            updates = {
+              MODEL: modelName,
+              MODEL_DEPTH_0: modelName,
+              MODEL_DEPT0: modelName,
+              MODEL_DEPTH_1: modelName,
+              MODEL_DEPT1: modelName,
+              MODEL_DEPTH_2: modelName,
+              MODEL_DEPT2: modelName,
+              MODEL_SUBAGENT_RESEARCHER: modelName,
+              MODEL_RESEARCHER: modelName,
+              MODEL_SUBAGENT_CODER: modelName,
+              MODEL_CODER: modelName,
+              MODEL_SUBAGENT_REVIEWER: modelName,
+              MODEL_REVIEWER: modelName
+            };
             const activeProvider = process.env.ACTIVE_PROVIDER || "";
             if (activeProvider) {
               updates[`PROVIDER_${activeProvider.toUpperCase()}_MODEL`] = modelName;
             }
-            targetLabel = "Default Model";
+            targetLabel = "All Tiers (Overwrite All)";
           } else {
             const key = tierArg.toLowerCase();
             if (key === "master" || key === "depth0" || key === "dept0") {
@@ -1060,14 +1074,13 @@ export function handleSlashCommand(
             data: {},
           });
           ctx.setWizardOptions?.([
-            `1. Default / Global Model (${currentModelFormatted})`,
-            `2. Master Agent (depth 0) (${masterModelFormatted})`,
-            `3. Superagent (depth 1) (${superagentModelFormatted})`,
-            `4. Subagent (depth 2) (${subagentModelFormatted})`,
-            `5. Subagent: researcher (${researcherModelFormatted})`,
-            `6. Subagent: coder (${coderModelFormatted})`,
-            `7. Subagent: reviewer (${reviewerModelFormatted})`,
-            `8. All Tiers (Overwrite All)`
+            `1. Master Agent (depth 0) (${masterModelFormatted})`,
+            `2. Superagent (depth 1) (${superagentModelFormatted})`,
+            `3. Subagent (depth 2) (${subagentModelFormatted})`,
+            `4. Subagent: researcher (${researcherModelFormatted})`,
+            `5. Subagent: coder (${coderModelFormatted})`,
+            `6. Subagent: reviewer (${reviewerModelFormatted})`,
+            `7. All Tiers (Overwrite All)`
           ]);
           ctx.setWizardSelectedIndex?.(0);
         }

@@ -81,13 +81,12 @@ describe("Slash Command: /model", () => {
       step: 1,
       data: {},
     });
-    expect(wizardOptions).toContain("1. Default / Global Model (openai:gpt-4o)");
-    expect(wizardOptions).toContain("2. Master Agent (depth 0) (openai:gpt-4o-mini)");
-    expect(wizardOptions).toContain("3. Superagent (depth 1) (anthropic:claude-3-5-sonnet)");
-    expect(wizardOptions).toContain("4. Subagent (depth 2) (custom:local-llama)");
-    expect(wizardOptions).toContain("5. Subagent: researcher (openai:gpt-researcher)");
-    expect(wizardOptions).toContain("6. Subagent: coder ((use default: custom:local-llama))");
-    expect(wizardOptions).toContain("7. Subagent: reviewer ((use default: custom:local-llama))");
+    expect(wizardOptions).toContain("1. Master Agent (depth 0) (openai:gpt-4o-mini)");
+    expect(wizardOptions).toContain("2. Superagent (depth 1) (anthropic:claude-3-5-sonnet)");
+    expect(wizardOptions).toContain("3. Subagent (depth 2) (custom:local-llama)");
+    expect(wizardOptions).toContain("4. Subagent: researcher (openai:gpt-researcher)");
+    expect(wizardOptions).toContain("5. Subagent: coder ((use default: custom:local-llama))");
+    expect(wizardOptions).toContain("6. Subagent: reviewer ((use default: custom:local-llama))");
   });
 
   it("should update standard MODEL when no tier prefix is supplied", () => {
@@ -95,7 +94,7 @@ describe("Slash Command: /model", () => {
 
     expect(process.env.MODEL).toBe("anthropic:claude-3-5-haiku");
     expect(addedLines.length).toBe(1);
-    expect(addedLines[0].content).toContain("Default Model changed to: anthropic:claude-3-5-haiku");
+    expect(addedLines[0].content).toContain("All Tiers (Overwrite All) changed to: anthropic:claude-3-5-haiku");
   });
 
   it("should update MODEL_DEPTH_0 when master/depth0/dept0 prefix is supplied", () => {

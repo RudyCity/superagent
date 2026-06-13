@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible } from "./config.js";
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider } from "./config.js";
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -302,6 +302,28 @@ describe("config", () => {
 
       const masterModel: any = getModelInstanceForTier("master", 0);
       expect(masterModel.modelId).toBe("gpt-4o");
+    });
+
+    it("should prioritize tier parameter over depth parameter in getModelInstanceForTier", () => {
+      process.env.MODEL_DEPTH_1 = "openai:gpt-superagent";
+      process.env.MODEL_DEPTH_2 = "custom:local-llama";
+
+      // Even if depth is 1 (which matches superagent), if tier is subagent, it must resolve using subagent model
+      const subagentModel: any = getModelInstanceForTier("subagent", 1);
+      expect(subagentModel.modelId).toBe("local-llama");
+    });
+
+    it("should clear all tier and subagent-specific overrides when switchActiveProvider is called", () => {
+      process.env.MODEL_DEPTH_0 = "openai:gpt-4o-mini";
+      process.env.MODEL_SUBAGENT_RESEARCHER = "openai:gpt-4-turbo";
+      process.env.PROVIDER_ANTHROPIC_TYPE = "anthropic";
+      process.env.PROVIDER_ANTHROPIC_API_KEY = "dummy";
+
+      switchActiveProvider("anthropic");
+
+      expect(process.env.MODEL_DEPTH_0).toBeUndefined();
+      expect(process.env.MODEL_SUBAGENT_RESEARCHER).toBeUndefined();
+      expect(process.env.MODEL).toBe("claude-3-5-sonnet-20241022");
     });
   });
 

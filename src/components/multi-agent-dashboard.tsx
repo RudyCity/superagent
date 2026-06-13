@@ -1091,9 +1091,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       if (activeWizard.step === 1) {
         const choice = value.toLowerCase();
         let tier = "";
-        if (choice.includes("default") || choice.includes("global")) {
-          tier = "default";
-        } else if (choice.includes("master") || choice.includes("depth 0")) {
+        if (choice.includes("master") || choice.includes("depth 0")) {
           tier = "master";
         } else if (choice.includes("superagent") || choice.includes("depth 1")) {
           tier = "superagent";
@@ -1108,9 +1106,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         } else if (choice.includes("all")) {
           tier = "all";
         } else {
-          const tiers = ["default", "master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
+          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
           const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
-          tier = tiers[idx] || "default";
+          tier = tiers[idx] || "master";
         }
 
         setActiveWizard({

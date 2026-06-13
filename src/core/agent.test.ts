@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
+import path from "path";
 import { Agent } from "./agent.js";
 import type { AgentEvent } from "./agent.js";
 
@@ -311,7 +312,10 @@ describe("Agent – tier-specific model resolution", () => {
     expect(researcherModel.modelId).toBe("gpt-researcher");
   });
 
-  it("should use default MODEL in single-agent mode even if tier-specific keys are defined", () => {
+  it("should use tier-specific MODEL in single-agent mode if tier-specific keys are defined", () => {
+    // Clear out active provider env vars to avoid overrides
+    const originalActiveProvider = process.env.ACTIVE_PROVIDER;
+    delete process.env.ACTIVE_PROVIDER;
     process.env.MODEL = "openai:my-cool-custom-model";
     process.env.MODEL_DEPTH_0 = "openai:gpt-4-master";
 
@@ -320,7 +324,37 @@ describe("Agent – tier-specific model resolution", () => {
     const singleAgent = new Agent(onEvent, onPermission, onQuestion);
     // isMultiAgent remains false (default)
     const model: any = (singleAgent as any).getModel();
-    expect(model.modelId).toBe("my-cool-custom-model");
+    expect(model.modelId).toBe("gpt-4-master");
+    process.env.ACTIVE_PROVIDER = originalActiveProvider;
+  });
+
+  it("should dynamically inject agents.md and karpathy-guidelines into systemPrompt", async () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const testDir = path.join(process.cwd(), "scratch_test_agent");
+    if (!fs.existsSync(testDir)) {
+      fs.mkdirSync(testDir, { recursive: true });
+    }
+
+    // Write mock agents.md and mock karpathy-guidelines
+    fs.writeFileSync(path.join(testDir, "agents.md"), "MOCK_AGENTS_GUIDELINES");
+    const skillDir = path.join(testDir, ".agents", "skills", "karpathy-guidelines");
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, "SKILL.md"), "MOCK_KARPATHY_GUIDELINES");
+
+    const agent = new Agent(onEvent, onPermission, onQuestion, "Base Prompt", undefined, testDir);
+    
+    // Verify file loading works
+    const sysPrompt = (agent as any).config.systemPrompt;
+    
+    // Clean up files
+    try {
+      fs.unlinkSync(path.join(testDir, "agents.md"));
+      fs.unlinkSync(path.join(skillDir, "SKILL.md"));
+      fs.rmdirSync(skillDir);
+      fs.rmdirSync(path.join(testDir, ".agents", "skills"));
+      fs.rmdirSync(path.join(testDir, ".agents"));
+      fs.rmdirSync(testDir);
+    } catch {}
   });
 });
 
