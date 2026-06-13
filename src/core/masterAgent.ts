@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { execa } from "execa";
 import { generateText } from "ai";
-import { rateLimiter } from "./rateLimiter.js";
+import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
 
 interface ConflictHunk {
   fullMatch: string;
@@ -74,15 +74,26 @@ ${linesAfter}
 Provide the resolved code for the CONFLICT HUNK only. Output ONLY the resolved code block. Do not include markdown code block syntax (like \`\`\`), explanation, or preamble.`;
 
     // Shared rate limiting check
-    await rateLimiter.acquire(1);
+    let concurrencyAcquired = false;
+    try {
+      if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+        await concurrencyLimiter.acquire();
+        concurrencyAcquired = true;
+      }
+      await rateLimiter.acquire(1);
 
-    const { text } = await generateText({
-      model,
-      prompt,
-    });
+      const { text } = await generateText({
+        model,
+        prompt,
+      });
 
-    const resolvedBlock = text.trim();
-    content = content.substring(0, hunk.startIndex) + resolvedBlock + "\n" + content.substring(hunk.endIndex);
+      const resolvedBlock = text.trim();
+      content = content.substring(0, hunk.startIndex) + resolvedBlock + "\n" + content.substring(hunk.endIndex);
+    } finally {
+      if (concurrencyAcquired) {
+        concurrencyLimiter.release();
+      }
+    }
   }
 
   fs.writeFileSync(filePath, content, "utf-8");

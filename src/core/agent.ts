@@ -7,6 +7,7 @@ import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfi
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
 import type { Tool, AgentTier } from "./tools.js";
+import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
 import {
   executeToolCall,
   getToolDescription,
@@ -431,7 +432,14 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           const baseDelay = 5000;
 
           while (true) {
+            let concurrencyAcquired = false;
             try {
+              if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+                await concurrencyLimiter.acquire();
+                concurrencyAcquired = true;
+              }
+              await rateLimiter.acquire(1);
+
               const startTime = Date.now();
               const result = await generateText({
                 model: this.getModel(),
@@ -490,6 +498,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               const msg = err instanceof Error ? err.message : String(err);
               this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
               await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
+            } finally {
+              if (concurrencyAcquired) {
+                concurrencyLimiter.release();
+              }
             }
           }
         } else {
@@ -498,7 +510,14 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           const baseDelay = 5000;
 
           while (true) {
+            let concurrencyAcquired = false;
             try {
+              if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+                await concurrencyLimiter.acquire();
+                concurrencyAcquired = true;
+              }
+              await rateLimiter.acquire(1);
+
               textContent = "";
               toolCalls.length = 0;
 
@@ -574,6 +593,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               const msg = err instanceof Error ? err.message : String(err);
               this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
               await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
+            } finally {
+              if (concurrencyAcquired) {
+                concurrencyLimiter.release();
+              }
             }
           }
         }
@@ -1045,7 +1068,14 @@ ${formatted}`;
     let result;
 
     while (true) {
+      let concurrencyAcquired = false;
       try {
+        if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+          await concurrencyLimiter.acquire();
+          concurrencyAcquired = true;
+        }
+        await rateLimiter.acquire(1);
+
         result = await generateText({
           model: this.getModel(),
           system: "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
@@ -1062,6 +1092,10 @@ ${formatted}`;
           throw err;
         }
         await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1)));
+      } finally {
+        if (concurrencyAcquired) {
+          concurrencyLimiter.release();
+        }
       }
     }
 

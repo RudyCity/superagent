@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { generateText } from "ai";
 import { listHistorySessions, getModelInstance, getConfig } from "./config.js";
+import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
 
 /**
  * Custom subsequence fuzzy matching and token-based scoring algorithm.
@@ -163,10 +164,25 @@ Identify the indices of the sessions (up to 3) that are semantically relevant to
 Return ONLY a JSON array of numbers representing the relevant session indices. Example: [0, 2]
 If no sessions are relevant, return an empty array: []`;
 
-    const { text: filterResult } = await generateText({
-      model,
-      prompt: filterPrompt,
-    });
+    let concurrencyAcquiredFilter = false;
+    let filterResult = "";
+    try {
+      if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+        await concurrencyLimiter.acquire();
+        concurrencyAcquiredFilter = true;
+      }
+      await rateLimiter.acquire(1);
+
+      const result = await generateText({
+        model,
+        prompt: filterPrompt,
+      });
+      filterResult = result.text;
+    } finally {
+      if (concurrencyAcquiredFilter) {
+        concurrencyLimiter.release();
+      }
+    }
 
     const jsonMatch = filterResult.match(/\[\s*\d*\s*(?:,\s*\d*\s*)*\]/);
     const indices: number[] = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
@@ -190,10 +206,25 @@ ${truncatedTranscript}
 
 Please summarize what was discussed, decided, or implemented in this session regarding the query. Be specific, concise, and reference code or actions where appropriate.`;
 
-      const { text: summary } = await generateText({
-        model,
-        prompt: summaryPrompt,
-      });
+      let concurrencyAcquiredSummary = false;
+      let summary = "";
+      try {
+        if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+          await concurrencyLimiter.acquire();
+          concurrencyAcquiredSummary = true;
+        }
+        await rateLimiter.acquire(1);
+
+        const result = await generateText({
+          model,
+          prompt: summaryPrompt,
+        });
+        summary = result.text;
+      } finally {
+        if (concurrencyAcquiredSummary) {
+          concurrencyLimiter.release();
+        }
+      }
 
       reports.push(`📁 **${match.session.displayName}**\n${summary.trim()}`);
     }
