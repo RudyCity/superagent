@@ -1999,9 +1999,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       wizardHeight += 1;
     }
   }
-
-  const workspaceHeight = Math.max(10, terminalSize.height - 7 - bottomPromptHeight - liveListHeight - wizardHeight);
-
+  const workspaceHeight = Math.max(10, terminalSize.height - 9 - bottomPromptHeight - liveListHeight - wizardHeight);
   let checklistHeight = 0;
   if (planState === "APPROVED" && checklistTasks.length > 0) {
     const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
@@ -3076,6 +3074,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             )}
           </Box>
         </Box>
+      </Box>
+
+      {/* Horizontal Divider Line */}
+      <Box flexDirection="row" paddingX={1} marginTop={1} marginBottom={0}>
+        <Text color="gray" dimColor>{"─".repeat(terminalSize.width - 2)}</Text>
       </Box>
 
       {/* Wizard Dialog (if active - Full Width) */}
