@@ -164,6 +164,18 @@ export const invokeSuperagentTool: Tool = {
       }
     }
 
+    // Inject active peer Superagents context to prevent overlap
+    const activePeers = [...superagentInstances.entries()]
+      .filter(([_, inst]) => inst.status === "running")
+      .map(([id, inst]) => `- **Session ID**: ${id}\n  - **Role**: ${inst.role}\n  - **Branch**: ${inst.branch}\n  - **Task**: "${inst.task}"`)
+      .join("\n");
+
+    if (activePeers) {
+      basePrompt += "\n\n### ACTIVE PEER SUPERAGENTS:\n" +
+        "The following other Superagents are currently running in parallel. Coordinate with them to avoid overlapping work or conflicts:\n" +
+        activePeers;
+    }
+
     const systemPrompt = basePrompt + "\n\n" + SUPERAGENT_REPORT_INSTRUCTION;
 
     // Dynamic import to avoid circular dependency at module load time

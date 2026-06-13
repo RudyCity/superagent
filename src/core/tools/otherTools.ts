@@ -479,6 +479,10 @@ export const manageTasksTool: Tool = {
         enum: [" ", "/", "x"],
         description: "New status for the task: ' ' for pending, '/' for in progress, 'x' for completed (required for action 'update')",
       },
+      sessionId: {
+        type: "string",
+        description: "Optional session ID of another agent to manage tasks for (multi-agent mode)",
+      },
     },
     required: ["action"],
   },
@@ -487,10 +491,17 @@ export const manageTasksTool: Tool = {
     const text = args.text as string | undefined;
     const index = args.index as number | undefined;
     const status = args.status as string | undefined;
+    const sessionId = args.sessionId as string | undefined;
 
     const { agentLocalStorage } = await import("../agent.js");
     const currentAgent = agentLocalStorage.getStore();
-    const taskPath = currentAgent ? currentAgent.getTaskFilePath() : path.resolve(cwd, "task.md");
+    let taskPath: string;
+    if (sessionId) {
+      const { getRootConfigDir } = await import("../config.js");
+      taskPath = path.join(getRootConfigDir(), "history", "multi", sessionId, `${sessionId}_task.md`);
+    } else {
+      taskPath = currentAgent ? currentAgent.getTaskFilePath() : path.resolve(cwd, "task.md");
+    }
 
     const parseTasks = (content: string) => {
       const lines = content.split(/\r?\n/);
@@ -635,4 +646,53 @@ export const manageTasksTool: Tool = {
     }
   }
 };
+
+export const listPeerSuperagentsTool: Tool = {
+  name: "list_peer_superagents",
+  description: "List all other active and completed Superagents running in parallel, including their roles, branches, tasks, and session IDs.",
+  parameters: {
+    type: "object",
+    properties: {},
+    required: [],
+  },
+  async execute(args, cwd, signal) {
+    const { superagentInstances } = await import("./state.js");
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+
+    const peers = [...superagentInstances.entries()].filter(([id, inst]) => {
+      if (currentAgent && inst.agent === currentAgent) {
+        return false;
+      }
+      return true;
+    });
+
+    if (peers.length === 0) {
+      return "No other active or completed Superagents found in this session.";
+    }
+
+    let report = "### Active and Completed Peer Superagents:\n\n";
+    for (const [id, inst] of peers) {
+      const planFile = inst.historyFilePath ? inst.historyFilePath.replace(/\.json$/, "_implementation_plan.md") : "";
+      const taskFile = inst.historyFilePath ? inst.historyFilePath.replace(/\.json$/, "_task.md") : "";
+
+      report += `- **Session ID**: ${id}\n`;
+      report += `  - **Role**: ${inst.role}\n`;
+      report += `  - **Branch**: ${inst.branch}\n`;
+      report += `  - **Status**: ${inst.status}\n`;
+      report += `  - **Task**: "${inst.task}"\n`;
+      report += `  - **Worktree**: ${inst.worktreePath}\n`;
+      if (planFile) {
+        report += `  - **Plan File**: ${planFile}\n`;
+      }
+      if (taskFile) {
+        report += `  - **Task File**: ${taskFile}\n`;
+      }
+      report += "\n";
+    }
+
+    return report.trim();
+  }
+};
+
 

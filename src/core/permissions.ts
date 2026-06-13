@@ -1,6 +1,7 @@
 import path from "path";
 import { getToolByName } from "./tools.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
+import { getRootConfigDir } from "./config.js";
 
 export const MODIFYING_TOOLS = [
   "write",
@@ -76,7 +77,20 @@ export function isSuperagentOutOfBounds(
     return false;
   }
 
+  const rootConfig = path.resolve(getRootConfigDir());
+
   for (const fp of candidatePaths) {
+    const resolved = path.isAbsolute(fp)
+      ? path.resolve(fp)
+      : path.resolve(worktreePath, fp);
+
+    // Allow read-only access to files inside global configuration directory
+    if (fileReadingTools.includes(toolCall.name)) {
+      if (resolved.startsWith(rootConfig + path.sep) || resolved === rootConfig) {
+        continue;
+      }
+    }
+
     if (!isPathInWorktree(fp, worktreePath)) return true;
   }
   return false;

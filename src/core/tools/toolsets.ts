@@ -40,6 +40,7 @@ import {
   searchHistoryTool,
   gitWorktreeTool,
   manageTasksTool,
+  listPeerSuperagentsTool,
 } from "./otherTools.js";
 
 import {
@@ -98,6 +99,7 @@ export const superagentToolset: Tool[] = [
   gitActionTool,         // commit to own branch
   gitWorktreeTool,
   manageTasksTool,
+  listPeerSuperagentsTool,
   defineSubagentTool,    // define specialized subagents
   invokeSubagentTool,    // spawn subagents (depth 2)
   sendMessageTool,

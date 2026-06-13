@@ -8,6 +8,10 @@ vi.mock("../src/core/agent.js", () => {
   const localStore = new AsyncLocalStorage();
 
   class MockAgent {
+    public static constructorArgs: any[] = [];
+    constructor(...args: any[]) {
+      MockAgent.constructorArgs.push(args);
+    }
     public delegationDepth = 0;
     public tier = "master";
     public worktreePath: string | null = null;
@@ -59,10 +63,12 @@ vi.mock("../src/core/masterAgent.js", () => {
 });
 
 describe("superagentTools", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.restoreAllMocks();
     superagentInstances.clear();
     superagentTypes.clear();
+    const { Agent } = await import("../src/core/agent.js");
+    (Agent as any).constructorArgs = [];
   });
 
   afterEach(() => {
@@ -126,6 +132,46 @@ describe("superagentTools", () => {
       expect(superagentInstances.size).toBe(1);
       const instance = Array.from(superagentInstances.values())[0];
       expect(instance.status).toBe("completed");
+    });
+
+    it("should inject active peer superagents context into system prompt when calling invoke_superagent", async () => {
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
+
+      vi.spyOn(fs, "existsSync").mockReturnValue(false);
+      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+
+      // Pre-populate an active peer superagent instance
+      superagentInstances.set("peer-session-123", {
+        id: "peer-session-123",
+        role: "database-specialist",
+        branch: "feat/db",
+        task: "Set up postgres connection",
+        status: "running",
+        logs: [],
+        tokenUsage: { prompt: 0, completion: 0 },
+        historyFilePath: "/dummy/history-peer.json",
+      } as any);
+
+      await agentLocalStorage.run(parentAgent, () => {
+        return invokeSuperagentTool.execute(
+          { role: "ui-developer", task: "implement ui", branch: "feat/ui", wait: false },
+          process.cwd()
+        );
+      });
+
+      const { Agent } = await import("../src/core/agent.js");
+      const argsPassed = (Agent as any).constructorArgs;
+      expect(argsPassed.length).toBe(1);
+
+      const systemPrompt = argsPassed[0][3];
+      expect(systemPrompt).toContain("### ACTIVE PEER SUPERAGENTS");
+      expect(systemPrompt).toContain("- **Session ID**: peer-session-123");
+      expect(systemPrompt).toContain("- **Role**: database-specialist");
+      expect(systemPrompt).toContain("- **Branch**: feat/db");
+      expect(systemPrompt).toContain('- **Task**: "Set up postgres connection"');
+
+      // Wait for background promise to finish to clean up
+      await new Promise((resolve) => setTimeout(resolve, 70));
     });
   });
 

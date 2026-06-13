@@ -117,4 +117,24 @@ describe("isSuperagentOutOfBounds", () => {
     };
     expect(isSuperagentOutOfBounds(toolCall, worktreePath)).toBe(false);
   });
+
+  it("should allow read-only tools to target files under global config directory", async () => {
+    const { getRootConfigDir } = await import("./config.js");
+    const configPath = path.resolve(getRootConfigDir(), "history/multi/sess123/sess123_task.md");
+    const toolCall = {
+      name: "read",
+      args: { filePath: configPath }
+    };
+    expect(isSuperagentOutOfBounds(toolCall, worktreePath)).toBe(false);
+  });
+
+  it("should block modifying tools targeting files under global config directory", async () => {
+    const { getRootConfigDir } = await import("./config.js");
+    const configPath = path.resolve(getRootConfigDir(), "history/multi/sess123/sess123_task.md");
+    const toolCall = {
+      name: "write_to_file",
+      args: { filePath: configPath, content: "hacked" }
+    };
+    expect(isSuperagentOutOfBounds(toolCall, worktreePath)).toBe(true);
+  });
 });
