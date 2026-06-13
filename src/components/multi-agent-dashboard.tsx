@@ -1896,13 +1896,28 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     }
   }
 
-  const workspaceHeight = Math.max(10, terminalSize.height - 9);
+  let bottomHeight = 1; // Prompt input row
+  if (focusArea === "input" && query.startsWith("/") && suggestions.length > 0) {
+    bottomHeight += 2;
+  }
+  if (activeWizard) {
+    const maxVis = activeWizard.type === "model" && activeWizard.step === 3 ? 8 : 10;
+    const optCount = Math.min(wizardOptions.length, maxVis);
+    bottomHeight += 4 + optCount;
+  }
+  if (planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve") {
+    bottomHeight += 4;
+  }
   let checklistHeight = 0;
   if (planState === "APPROVED" && checklistTasks.length > 0) {
     const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
     checklistHeight += 3 + checklistCount;
   }
-  const leftTopHeight = Math.max(5, workspaceHeight - liveListHeight - checklistHeight);
+  bottomHeight += checklistHeight;
+  bottomHeight += liveListHeight;
+
+  const workspaceHeight = Math.max(8, terminalSize.height - 7 - bottomHeight);
+  const leftTopHeight = workspaceHeight;
   const logBoxHeight = Math.max(5, workspaceHeight - 4);
   const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
   let executingToolHeight = 0;
@@ -2771,243 +2786,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             )}
           </Box>
 
-          {/* Wizard Dialog (if active) */}
-          {activeWizard && (() => {
-            const wizardBorderColor = "cyan";
-            return (
-              <Box flexDirection="column" marginY={0}>
-                <Box flexDirection="row" marginTop={0}>
-                  <Text color={wizardBorderColor}>│</Text>
-                </Box>
-                {/* Model step 3: split out to handle query-based filtering like single agent */}
-                {activeWizard.type === "model" && activeWizard.step === 3 && (() => {
-                  const lc = query.trim();
-                  const filteredModels = lc
-                    ? filterSuggestions(wizardAllOptions, lc)
-                    : wizardAllOptions;
-                  const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
-                  const tierStr = activeWizard.data.tier ? ` FOR ${activeWizard.data.tier.toUpperCase()}` : "";
-                  const provStr = activeWizard.data.provider ? ` VIA ${activeWizard.data.provider.toUpperCase()}` : "";
-                  const searchTitle = wizardIsLoadingModels
-                    ? `⚙️ SELECT MODEL${tierStr}${provStr} — ⏳ loading...`
-                    : lc
-                      ? `⚙️ SELECT MODEL${tierStr}${provStr} — 🔍 "${query.trim()}" (${filteredModels.length}/${wizardAllOptions.length} results):`
-                      : `⚙️ SELECT MODEL${tierStr}${provStr} (${wizardAllOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
-                  return (
-                    <WizardDialog
-                      title={searchTitle}
-                      borderColor={wizardBorderColor}
-                      options={filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"]}
-                      selectedIndex={clampedIndex}
-                      maxVisible={8}
-                      marginY={0}
-                      isLoading={wizardIsLoadingModels}
-                    />
-                  );
-                })()}
-
-                {/* All other wizard types */}
-                {(activeWizard.type !== "model" || activeWizard.step !== 3) && (
-                  <WizardDialog
-                    title={
-                      activeWizard.type === "model" && activeWizard.step === 1 ? `⚙️ SELECT AGENT TIER TO CONFIGURE:` :
-                      activeWizard.type === "model" && activeWizard.step === 2 ? `⚙️ SELECT MODEL PROVIDER FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"}:` :
-                      activeWizard.type === "resume" ? `📁 SELECT SESSION TO RESUME:` :
-                      activeWizard.type === "skills" ? `🛠️ SKILLS MANAGER (Step ${activeWizard.step}):` :
-                      activeWizard.type === "checkpoint" ? `📋 CHECKPOINT MANAGER (Step ${activeWizard.step}):` :
-                      activeWizard.type === "plan_approve" ? `⚠️ PLAN APPROVAL REQUIRED (Use Arrow Keys Up/Down & Enter):` :
-                      activeWizard.type === "question" ? (
-                        activeWizard.step === 2
-                          ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):"
-                          : (activeWizard.isMultiSelect
-                              ? "❓ QUESTION FROM AGENT (Arrows: navigate, Space: select, Enter: submit):"
-                              : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):")
-                      ) :
-                      activeWizard.type === "login" && activeWizard.step === 1 ? "🔑 PROVIDER MANAGER (Use Arrow Keys Up/Down & Enter):" :
-                      activeWizard.type === "login" && activeWizard.step === 2 ? "🔑 SELECT PROVIDER TEMPLATE (Use Arrow Keys Up/Down & Enter):" :
-                      activeWizard.type === "login" && activeWizard.step === 5 ? "🔑 SWITCH ACTIVE PROVIDER (Use Arrow Keys Up/Down & Enter):" :
-                      activeWizard.type === "login" && activeWizard.step === 10 ? "🛠️ PROJECT INITIALIZATION — Select Technology Stack (Arrows & Enter):" :
-                      activeWizard.type === "login" && activeWizard.step === 11 ? "🛠️ PROJECT INITIALIZATION — Enter Project Name (Type & Enter):" :
-                      activeWizard.type === "login" && activeWizard.step === 12 ? "🛠️ PROJECT INITIALIZATION — Enter Project Description (Type & Enter):" :
-                      activeWizard.type === "login" && activeWizard.step === 13 ? "🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter):" :
-                      `🔑 PROVIDER CREDENTIALS (Step ${activeWizard.step}):`
-                    }
-                    description={
-                      activeWizard.type === "plan_approve" ? `Model AI telah merancang rencana di file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}` :
-                      activeWizard.type === "question" ? (pendingQuestion?.question || "") :
-                      activeWizard.type === "login" && activeWizard.step === 10 ? "Choose a template catalog stack or let AI dynamically design your project details:" :
-                      activeWizard.type === "login" && activeWizard.step === 11 ? "Specify the name for this workspace:" :
-                      activeWizard.type === "login" && activeWizard.step === 12 ? "Give a one-sentence overview description of this software:" :
-                      activeWizard.type === "login" && activeWizard.step === 13 ? "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:" :
-                      undefined
-                    }
-                    borderColor={wizardBorderColor}
-                    options={wizardOptions}
-                    selectedIndex={wizardSelectedIndex}
-                    maxVisible={10}
-                    isMultiSelect={activeWizard.isMultiSelect}
-                    selectedSet={wizardSelectedSet}
-                    marginY={0}
-                  />
-                )}
-                <Box flexDirection="row" marginTop={0}>
-                  <Text color={wizardBorderColor}>│</Text>
-                </Box>
-              </Box>
-            );
-          })()}
-
-          {/* Spacer to push input to the bottom so it touches the footer */}
-          <Box flexGrow={1} />
-
-          {/* Bottom Left: Interactive Console Prompt */}
-          <Box flexDirection="column" width="100%" marginTop={0}>
-            {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (() => {
-              const planUrl = "file:///" + path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/");
-              return (
-                <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
-                  <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
-                  <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">{planUrl}</Text></Text>
-                  <Text color="yellow">Silakan kirim pesan/masukan apa saja untuk menampilkan kembali dialog persetujuan wizard.</Text>
-                </Box>
-              );
-            })()}
-
-            {planState === "APPROVED" && checklistTasks.length > 0 && (() => {
-              const totalTasks = checklistTasks.length;
-              const completedTasks = checklistTasks.filter((t) => t.status === "x").length;
-              const inProgressTasks = checklistTasks.filter((t) => t.status === "/").length;
-              const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-              const hasScroll = totalTasks > maxChecklistVisible;
-              const scrollIndicator = hasScroll
-                ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
-                : "";
-              const helpText = focusArea === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : "";
-              const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
-              return (
-                <Box flexDirection="column" borderStyle="round" borderColor={focusArea === "checklist" ? "green" : "cyan"} paddingX={1} marginBottom={1}>
-                  <Box flexDirection="row" justifyContent="space-between">
-                    <Text bold color={focusArea === "checklist" ? "green" : "cyan"}>
-                      📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}
-                    </Text>
-                  </Box>
-                  <Box flexDirection="row" marginBottom={1}>
-                    <Text color="cyan">Progress: {pct}% ({completedTasks}/{totalTasks} completed, {inProgressTasks} in progress)</Text>
-                  </Box>
-                  {visibleChecklist.map((task, index) => {
-                    const idx = checklistScrollOffset + index;
-                    let status = task.status;
-                    let statusChar = "[ ]";
-                    let taskColor = "white";
-                    let displayStatusText = "";
-
-                    // Dynamic status override in multi-agent mode based on active superagents
-                    if (agent && agent.isMultiAgent) {
-                      for (const inst of superagentInstances.values()) {
-                        const roleLower = inst.role.toLowerCase();
-                        if (task.text.toLowerCase().includes(roleLower)) {
-                          const isMergeOrCleanup = /merge|cleanup|prune/i.test(task.text);
-                          if (!isMergeOrCleanup) {
-                            if (inst.status === "running") {
-                              status = "/";
-                            } else if (inst.status === "completed") {
-                              status = "x";
-                            } else if (inst.status === "error") {
-                              status = "error";
-                            }
-                          } else {
-                            if (inst.status === "completed") {
-                              status = "/";
-                            }
-                          }
-                          break;
-                        }
-                      }
-                    }
-
-                    if (status === "x") {
-                      statusChar = "[✓]";
-                      taskColor = "gray";
-                    } else if (status === "/") {
-                      statusChar = "[/]";
-                      taskColor = "yellow";
-                      displayStatusText = " (in progress)";
-                    } else if (status === "error") {
-                      statusChar = "[✗]";
-                      taskColor = "red";
-                      displayStatusText = " (failed)";
-                    }
-
-                    return (
-                      <Box key={idx} flexDirection="row">
-                        <Text color={status === "x" ? "green" : status === "/" ? "yellow" : status === "error" ? "red" : "cyan"}>
-                          {statusChar}{" "}
-                        </Text>
-                        <Text color={taskColor} strikethrough={status === "x"}>
-                          {task.text}{displayStatusText}
-                        </Text>
-                      </Box>
-                    );
-                  })}
-                </Box>
-              );
-            })()}
-
-            {/* Active Subagents & Tasks Live List */}
-            {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
-              <Box flexDirection="column" marginBottom={1}>
-                {runningSubagentsCount > 0 && (() => {
-                  const runningAgents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
-                  const totalAgents = runningAgents.length;
-                  const hasScroll = totalAgents > maxAgentsVisible;
-                  const scrollIndicator = hasScroll
-                    ? ` [Scroll: ${agentsScrollOffset + 1}-${Math.min(totalAgents, agentsScrollOffset + maxAgentsVisible)}/${totalAgents}]`
-                    : "";
-                  const helpText = focusArea === "agents" ? " [↑/▼ Scroll • Esc Exit]" : "";
-                  const visibleAgents = runningAgents.slice(agentsScrollOffset, agentsScrollOffset + maxAgentsVisible);
-                  return (
-                    <Box flexDirection="column">
-                      <Text color={focusArea === "agents" ? "green" : "yellow"} bold>
-                        🤖 ACTIVE SUBAGENTS:{scrollIndicator}{helpText}
-                      </Text>
-                      {visibleAgents.map((inst) => (
-                        <Box key={inst.id} flexDirection="column">
-                          <Text color="yellow">
-                            ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
-                          </Text>
-                          <Text color="yellow">
-                            │  └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
-                          </Text>
-                        </Box>
-                      ))}
-                    </Box>
-                  );
-                })()}
-                {runningTasksCount > 0 && (() => {
-                  const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited);
-                  const totalProcs = runningProcs.length;
-                  const hasScroll = totalProcs > maxProcsVisible;
-                  const scrollIndicator = hasScroll
-                    ? ` [Scroll: ${procsScrollOffset + 1}-${Math.min(totalProcs, procsScrollOffset + maxProcsVisible)}/${totalProcs}]`
-                    : "";
-                  const helpText = focusArea === "procs" ? " [↑/▼ Scroll • Esc Exit]" : "";
-                  const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
-                  return (
-                    <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
-                      <Text color={focusArea === "procs" ? "green" : "cyan"} bold>
-                        ⚙️ ACTIVE PROCESSES:{scrollIndicator}{helpText}
-                      </Text>
-                      {visibleProcs.map(([id, task]) => (
-                        <Text key={id} color="cyan">
-                          ├─ [{id}] Command: {task.command}
-                        </Text>
-                      ))}
-                    </Box>
-                  );
-                })()}
-              </Box>
-            )}
-          </Box>
         </Box>
 
         {/* Vertical Spacer */}
@@ -3077,6 +2855,233 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           </Box>
         </Box>
       </Box>
+
+      {/* Wizard Dialog (if active) */}
+      {activeWizard && (
+        <Box flexDirection="column" paddingX={1} width="100%">
+          {activeWizard.type === "model" && activeWizard.step === 3 && (() => {
+            const lc = query.trim();
+            const filteredModels = lc
+              ? filterSuggestions(wizardAllOptions, lc)
+              : wizardAllOptions;
+            const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
+            const tierStr = activeWizard.data.tier ? ` FOR ${activeWizard.data.tier.toUpperCase()}` : "";
+            const provStr = activeWizard.data.provider ? ` VIA ${activeWizard.data.provider.toUpperCase()}` : "";
+            const searchTitle = wizardIsLoadingModels
+              ? `⚙️ SELECT MODEL${tierStr}${provStr} — ⏳ loading...`
+              : lc
+                ? `⚙️ SELECT MODEL${tierStr}${provStr} — 🔍 "${query.trim()}" (${filteredModels.length}/${wizardAllOptions.length} results):`
+                : `⚙️ SELECT MODEL${tierStr}${provStr} (${wizardAllOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
+            return (
+              <WizardDialog
+                title={searchTitle}
+                borderColor="cyan"
+                options={filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"]}
+                selectedIndex={clampedIndex}
+                maxVisible={8}
+                marginY={0}
+                isLoading={wizardIsLoadingModels}
+              />
+            );
+          })()}
+
+          {/* All other wizard types */}
+          {(activeWizard.type !== "model" || activeWizard.step !== 3) && (
+            <WizardDialog
+              title={
+                activeWizard.type === "model" && activeWizard.step === 1 ? `⚙️ SELECT AGENT TIER TO CONFIGURE:` :
+                activeWizard.type === "model" && activeWizard.step === 2 ? `⚙️ SELECT MODEL PROVIDER FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"}:` :
+                activeWizard.type === "resume" ? `📁 SELECT SESSION TO RESUME:` :
+                activeWizard.type === "skills" ? `🛠️ SKILLS MANAGER (Step ${activeWizard.step}):` :
+                activeWizard.type === "checkpoint" ? `📋 CHECKPOINT MANAGER (Step ${activeWizard.step}):` :
+                activeWizard.type === "plan_approve" ? `⚠️ PLAN APPROVAL REQUIRED (Use Arrow Keys Up/Down & Enter):` :
+                activeWizard.type === "question" ? (
+                  activeWizard.step === 2
+                    ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):"
+                    : (activeWizard.isMultiSelect
+                        ? "❓ QUESTION FROM AGENT (Arrows: navigate, Space: select, Enter: submit):"
+                        : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):")
+                ) :
+                activeWizard.type === "login" && activeWizard.step === 1 ? "🔑 PROVIDER MANAGER (Use Arrow Keys Up/Down & Enter):" :
+                activeWizard.type === "login" && activeWizard.step === 2 ? "🔑 SELECT PROVIDER TEMPLATE (Use Arrow Keys Up/Down & Enter):" :
+                activeWizard.type === "login" && activeWizard.step === 5 ? "🔑 SWITCH ACTIVE PROVIDER (Use Arrow Keys Up/Down & Enter):" :
+                activeWizard.type === "login" && activeWizard.step === 10 ? "🛠️ PROJECT INITIALIZATION — Select Technology Stack (Arrows & Enter):" :
+                activeWizard.type === "login" && activeWizard.step === 11 ? "🛠️ PROJECT INITIALIZATION — Enter Project Name (Type & Enter):" :
+                activeWizard.type === "login" && activeWizard.step === 12 ? "🛠️ PROJECT INITIALIZATION — Enter Project Description (Type & Enter):" :
+                activeWizard.type === "login" && activeWizard.step === 13 ? "🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter):" :
+                `🔑 PROVIDER CREDENTIALS (Step ${activeWizard.step}):`
+              }
+              description={
+                activeWizard.type === "plan_approve" ? `Model AI telah merancang rencana di file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}` :
+                activeWizard.type === "question" ? (pendingQuestion?.question || "") :
+                activeWizard.type === "login" && activeWizard.step === 10 ? "Choose a template catalog stack or let AI dynamically design your project details:" :
+                activeWizard.type === "login" && activeWizard.step === 11 ? "Specify the name for this workspace:" :
+                activeWizard.type === "login" && activeWizard.step === 12 ? "Give a one-sentence overview description of this software:" :
+                activeWizard.type === "login" && activeWizard.step === 13 ? "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:" :
+                undefined
+              }
+              borderColor="cyan"
+              options={wizardOptions}
+              selectedIndex={wizardSelectedIndex}
+              maxVisible={10}
+              isMultiSelect={activeWizard.isMultiSelect}
+              selectedSet={wizardSelectedSet}
+              marginY={0}
+            />
+          )}
+        </Box>
+      )}
+
+      {/* Full-Width Checklist & Processes */}
+      {(planState === "PLANNING_PENDING" || (planState === "APPROVED" && checklistTasks.length > 0) || (runningSubagentsCount > 0 || runningTasksCount > 0)) && (
+        <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
+          {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (() => {
+            const planUrl = "file:///" + path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/");
+            return (
+              <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
+                <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
+                <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">{planUrl}</Text></Text>
+                <Text color="yellow">Silakan kirim pesan/masukan apa saja untuk menampilkan kembali dialog persetujuan wizard.</Text>
+              </Box>
+            );
+          })()}
+
+          {planState === "APPROVED" && checklistTasks.length > 0 && (() => {
+            const totalTasks = checklistTasks.length;
+            const completedTasks = checklistTasks.filter((t) => t.status === "x").length;
+            const inProgressTasks = checklistTasks.filter((t) => t.status === "/").length;
+            const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+            const hasScroll = totalTasks > maxChecklistVisible;
+            const scrollIndicator = hasScroll
+              ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
+              : "";
+            const helpText = focusArea === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : "";
+            const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
+            return (
+              <Box flexDirection="column" borderStyle="round" borderColor={focusArea === "checklist" ? "green" : "cyan"} paddingX={1} marginBottom={1}>
+                <Box flexDirection="row" justifyContent="space-between">
+                  <Text bold color={focusArea === "checklist" ? "green" : "cyan"}>
+                    📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}
+                  </Text>
+                </Box>
+                <Box flexDirection="row" marginBottom={1}>
+                  <Text color="cyan">Progress: {pct}% ({completedTasks}/{totalTasks} completed, {inProgressTasks} in progress)</Text>
+                </Box>
+                {visibleChecklist.map((task, index) => {
+                  const idx = checklistScrollOffset + index;
+                  let status = task.status;
+                  let statusChar = "[ ]";
+                  let taskColor = "white";
+                  let displayStatusText = "";
+
+                  // Dynamic status override in multi-agent mode based on active superagents
+                  if (agent && agent.isMultiAgent) {
+                    for (const inst of superagentInstances.values()) {
+                      const roleLower = inst.role.toLowerCase();
+                      if (task.text.toLowerCase().includes(roleLower)) {
+                        const isMergeOrCleanup = /merge|cleanup|prune/i.test(task.text);
+                        if (!isMergeOrCleanup) {
+                          if (inst.status === "running") {
+                            status = "/";
+                          } else if (inst.status === "completed") {
+                            status = "x";
+                          } else if (inst.status === "error") {
+                            status = "error";
+                          }
+                        } else {
+                          if (inst.status === "completed") {
+                            status = "/";
+                          }
+                        }
+                        break;
+                      }
+                    }
+                  }
+
+                  if (status === "x") {
+                    statusChar = "[✓]";
+                    taskColor = "gray";
+                  } else if (status === "/") {
+                    statusChar = "[/]";
+                    taskColor = "yellow";
+                    displayStatusText = " (in progress)";
+                  } else if (status === "error") {
+                    statusChar = "[✗]";
+                    taskColor = "red";
+                    displayStatusText = " (failed)";
+                  }
+
+                  return (
+                    <Box key={idx} flexDirection="row">
+                      <Text color={status === "x" ? "green" : status === "/" ? "yellow" : status === "error" ? "red" : "cyan"}>
+                        {statusChar}{" "}
+                      </Text>
+                      <Text color={taskColor} strikethrough={status === "x"}>
+                        {task.text}{displayStatusText}
+                      </Text>
+                    </Box>
+                  );
+                })}
+              </Box>
+            );
+          })()}
+
+          {/* Active Subagents & Tasks Live List */}
+          {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
+            <Box flexDirection="column" marginBottom={1}>
+              {runningSubagentsCount > 0 && (() => {
+                const runningAgents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
+                const totalAgents = runningAgents.length;
+                const hasScroll = totalAgents > maxAgentsVisible;
+                const scrollIndicator = hasScroll
+                  ? ` [Scroll: ${agentsScrollOffset + 1}-${Math.min(totalAgents, agentsScrollOffset + maxAgentsVisible)}/${totalAgents}]`
+                  : "";
+                const helpText = focusArea === "agents" ? " [↑/▼ Scroll • Esc Exit]" : "";
+                const visibleAgents = runningAgents.slice(agentsScrollOffset, agentsScrollOffset + maxAgentsVisible);
+                return (
+                  <Box flexDirection="column">
+                    <Text color={focusArea === "agents" ? "green" : "yellow"} bold>
+                      🤖 ACTIVE SUBAGENTS:{scrollIndicator}{helpText}
+                    </Text>
+                    {visibleAgents.map((inst) => (
+                      <Box key={inst.id} flexDirection="column">
+                        <Text color="yellow">
+                          ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
+                        </Text>
+                        <Text color="yellow">
+                          │  └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
+                        </Text>
+                      </Box>
+                    ))}
+                  </Box>
+                );
+              })()}
+              {runningTasksCount > 0 && (() => {
+                const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited);
+                const totalProcs = runningProcs.length;
+                const hasScroll = totalProcs > maxProcsVisible;
+                const scrollIndicator = hasScroll
+                  ? ` [Scroll: ${procsScrollOffset + 1}-${Math.min(totalProcs, procsScrollOffset + maxProcsVisible)}/${totalProcs}]`
+                  : "";
+                const helpText = focusArea === "procs" ? " [↑/▼ Scroll • Esc Exit]" : "";
+                const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
+                return (
+                  <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
+                    <Text color={focusArea === "procs" ? "green" : "cyan"} bold>
+                      ⚙️ ACTIVE PROCESSES:{scrollIndicator}{helpText}
+                    </Text>
+                    {visibleProcs.map(([id, task]) => (
+                      <Text key={id} color="cyan">
+                        ├─ [{id}] Command: {task.command}
+                      </Text>
+                    ))}
+                  </Box>
+                );
+              })()}
+            </Box>
+          )}
+        </Box>
+      )}
 
       {/* Interactive Full-Width Console Prompt */}
       {focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (
