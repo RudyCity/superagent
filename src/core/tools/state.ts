@@ -124,6 +124,27 @@ export function setHistoricalSuperagentTokens(tokens: number) {
   historicalSuperagentTokens = tokens;
 }
 
+export let masterPromptTokens = 0;
+export let masterCompletionTokens = 0;
+export let lastMasterPromptTokens = 0;
+
+export function addMasterTokens(prompt: number, completion: number) {
+  masterPromptTokens += prompt;
+  masterCompletionTokens += completion;
+  lastMasterPromptTokens = prompt;
+  notifySuperagentsChanged();
+}
+
+export function setMasterTokens(prompt: number, completion: number) {
+  masterPromptTokens = prompt;
+  masterCompletionTokens = completion;
+}
+
+export function setLastMasterPromptTokens(prompt: number) {
+  lastMasterPromptTokens = prompt;
+  notifySuperagentsChanged();
+}
+
 export type SuperagentChangeListener = () => void;
 export const superagentChangeListeners = new Set<SuperagentChangeListener>();
 

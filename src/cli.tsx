@@ -77,7 +77,7 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 import { MASTER_AGENT_SYSTEM_PROMPT } from "./core/prompts.js";
 import { masterToolset } from "./core/tools/toolsets.js";
-import { registerQuestionHandler } from "./core/tools/index.js";
+import { registerQuestionHandler, addMasterTokens } from "./core/tools/index.js";
 
 if (process.stdin.isTTY) {
   const autoResume = process.argv.includes("--resume") || process.argv.includes("-r");
@@ -113,7 +113,7 @@ if (process.stdin.isTTY) {
 
           logHandler?.(`[ERROR] ${event.message}`);
         } else if (event.type === "token_usage") {
-          // token_usage tracked per-agent in superagentInstances
+          addMasterTokens(event.promptTokens, event.completionTokens);
         }
       },
       async (toolCall, description) => {

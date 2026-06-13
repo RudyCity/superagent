@@ -13,7 +13,10 @@ import {
   subscribeToActiveOutput,
   notifySubagentsChanged,
   notifySuperagentsChanged,
-  historicalSuperagentTokens
+  historicalSuperagentTokens,
+  masterPromptTokens,
+  masterCompletionTokens,
+  lastMasterPromptTokens
 } from "../core/tools/state.js";
 import { Agent } from "../core/agent.js";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
@@ -31,7 +34,7 @@ import {
   getRootConfigDir
 } from "../core/config.js";
 
-import { filterSuggestions } from "../utils/text.js";
+import { filterSuggestions, formatCompactNumber } from "../utils/text.js";
 import { WizardDialog } from "./wizard-dialog.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint } from "../core/checkpoints.js";
@@ -249,6 +252,18 @@ export function MultiAgentDashboard({
     return process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
   });
   const [lastSpeed, setLastSpeed] = useState<number | null>(null);
+  const [contextLimit, setContextLimit] = useState(() => {
+    const modelName = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+    let initialLimit = getContextWindowLimit(modelName);
+    if (process.env.CONTEXT_WINDOW_LIMIT) {
+      const parsed = parseInt(process.env.CONTEXT_WINDOW_LIMIT, 10);
+      if (!isNaN(parsed)) initialLimit = parsed;
+    } else if (process.env.MAX_CONTEXT_TOKENS) {
+      const parsed = parseInt(process.env.MAX_CONTEXT_TOKENS, 10);
+      if (!isNaN(parsed)) initialLimit = parsed;
+    }
+    return initialLimit;
+  });
 
   // Persist input history to disk so it survives restarts
   const HISTORY_FILE = path.join(getRootConfigDir(), "input-history-multi.json");
@@ -1626,7 +1641,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           setMasterLogs([]);
           setLastSpeed(null);
         },
-        setContextLimit: () => {},
+        setContextLimit,
         setActiveModel,
         setActiveWizard: (val) => {
           if (val && val.type === "goal") return;
@@ -1722,7 +1737,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         status: hasActiveAgentsOrTasks 
           ? "WORKING"
           : (currentTask.startsWith("Idle") ? "IDLE" : (currentTask.startsWith("Error") ? "ERROR" : "WORKING")),
-        tokens: superagentTokens + subagentTokens,
+        tokens: masterPromptTokens + masterCompletionTokens,
         logs: masterLogs,
         branch: gitBranch,
       });
@@ -2582,6 +2597,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   const activeWTs = [...superagentInstances.values()]
     .filter((i) => i.status === "running")
     .map((i) => i.branch);
+
+  const activeContextUsage = lastMasterPromptTokens;
+  const contextPercentage = contextLimit > 0 ? ((activeContextUsage / contextLimit) * 100).toFixed(2) : "0.00";
+
   return (
     <Box flexDirection="column" paddingX={1} paddingY={0} width={terminalSize.width} height={terminalSize.height}>
       {/* Header Banner - High Tech Cyberpunk Style */}
@@ -3015,6 +3034,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               <Text color="green" bold>🟢 ONLINE</Text>
               <Text color="gray"> │ </Text>
               <Text color="yellow" bold>{activeModel}</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="green" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
               {lastSpeed !== null && (
                 <>
                   <Text color="gray"> │ </Text>
@@ -3022,9 +3043,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 </>
               )}
               <Text color="gray"> │ </Text>
-              <Text color="magenta" bold>Master: {sessions.find(s => s.type === "MASTER")?.tokens.toLocaleString() ?? 0}t</Text>
+              <Text color="magenta" bold>Master: {(masterPromptTokens + masterCompletionTokens).toLocaleString()}t</Text>
               <Text color="gray"> │ </Text>
               <Text color="cyan" bold>Superagents({[...superagentInstances.values()].filter(i => i.status === "running").length} active): {historicalSuperagentTokens.toLocaleString()}t</Text>
+              <Text color="gray"> │ </Text>
+              <Text color="yellow" bold>Subagents: {[...subagentInstances.values()].reduce((acc, i) => acc + (i.tokenUsage?.prompt ?? 0) + (i.tokenUsage?.completion ?? 0), 0).toLocaleString()}t</Text>
               <Text color="gray"> │ </Text>
               <Text color="blue" bold>Worktrees: {worktreeCount}</Text>
               <Text color="gray"> │ </Text>

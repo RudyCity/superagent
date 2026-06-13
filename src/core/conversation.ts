@@ -6,7 +6,12 @@ import {
   notifySuperagentsChanged, 
   notifySubagentsChanged,
   historicalSuperagentTokens,
-  setHistoricalSuperagentTokens
+  setHistoricalSuperagentTokens,
+  masterPromptTokens,
+  masterCompletionTokens,
+  lastMasterPromptTokens,
+  setMasterTokens,
+  setLastMasterPromptTokens
 } from "./tools/state.js";
 
 export interface Message {
@@ -61,6 +66,9 @@ export class Conversation {
         superagents: serializedSuperagents,
         subagents: serializedSubagents,
         historicalSuperagentTokens,
+        masterPromptTokens,
+        masterCompletionTokens,
+        lastMasterPromptTokens,
       };
       await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
     } catch (err) {
@@ -78,6 +86,8 @@ export class Conversation {
 
         // Restore historical superagent tokens
         setHistoricalSuperagentTokens(parsed.historicalSuperagentTokens || 0);
+        setMasterTokens(parsed.masterPromptTokens || 0, parsed.masterCompletionTokens || 0);
+        setLastMasterPromptTokens(parsed.lastMasterPromptTokens || 0);
 
         // Restore superagents
         if (Array.isArray(parsed.superagents)) {
@@ -158,6 +168,8 @@ export class Conversation {
         this.messages = parsed;
         this.loadedPlanState = undefined;
         setHistoricalSuperagentTokens(0);
+        setMasterTokens(0, 0);
+        setLastMasterPromptTokens(0);
       }
     } catch (err: any) {
       if (err.code !== "ENOENT") {
@@ -213,6 +225,9 @@ export class Conversation {
 
   clear(): void {
     this.messages = [];
+    setHistoricalSuperagentTokens(0);
+    setMasterTokens(0, 0);
+    setLastMasterPromptTokens(0);
   }
 
   pruneToTokenLimit(maxTokens: number): void {
