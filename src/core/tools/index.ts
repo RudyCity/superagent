@@ -54,6 +54,7 @@ import {
 
 export const allTools: Tool[] = [
   readTool,
+  editTool,
   askQuestionTool,
   globTool,
   grepTool,
