@@ -130,14 +130,26 @@ export const invokeSuperagentTool: Tool = {
 
     const superagentId = Math.random().toString(36).substring(2, 9);
     const logs: string[] = [];
-    let textBuffer = "";
+    let lastTextIdx = -1;
 
-    function flushTextBuffer() {
-      const clean = textBuffer.trim();
-      if (clean) {
-        logs.push(`[THINK] ${clean}\n`);
+    function appendToThinkingNode(text: string) {
+      if (lastTextIdx === -1) {
+        logs.push(`[THINK] `);
+        lastTextIdx = logs.length - 1;
       }
-      textBuffer = "";
+      logs[lastTextIdx] += text;
+    }
+
+    function closeThinkingNode() {
+      if (lastTextIdx >= 0) {
+        const trimmed = logs[lastTextIdx].replace("[THINK]", "").trim();
+        if (!trimmed) {
+          logs.pop();
+        } else {
+          logs[lastTextIdx] = logs[lastTextIdx].trimEnd() + "\n";
+        }
+        lastTextIdx = -1;
+      }
     }
 
     // Build full system prompt for this Superagent
@@ -161,17 +173,22 @@ export const invokeSuperagentTool: Tool = {
     const agentInstance = new Agent(
       (event) => {
         if (event.type === "text") {
-          textBuffer += event.content;
+          appendToThinkingNode(event.content);
+          notifySuperagentsChanged();
         } else if (event.type === "error") {
-          flushTextBuffer();
+          closeThinkingNode();
           logs.push(`[ERROR] ${event.message}\n`);
+          notifySuperagentsChanged();
         } else if (event.type === "tool_start") {
-          flushTextBuffer();
+          closeThinkingNode();
           logs.push(`[TOOL:START] ${event.toolCall.name} — ${event.description}\n`);
+          notifySuperagentsChanged();
         } else if (event.type === "tool_end") {
+          closeThinkingNode();
           const status = event.toolResult.isError ? "FAIL" : "OK";
           const resultSnippet = event.toolResult.result.slice(0, 120).replace(/\n/g, " ");
           logs.push(`[TOOL:${status}] ${event.toolResult.name} → ${resultSnippet}\n`);
+          notifySuperagentsChanged();
         } else if (event.type === "token_usage") {
           const inst = superagentInstances.get(superagentId);
           if (inst) {
@@ -181,6 +198,7 @@ export const invokeSuperagentTool: Tool = {
             };
           }
           addHistoricalSuperagentTokens(event.promptTokens + event.completionTokens);
+          notifySuperagentsChanged();
         }
       },
       // Permission handler: auto-approve but never approve destructive commands
@@ -226,7 +244,7 @@ export const invokeSuperagentTool: Tool = {
     const run = async (): Promise<string> => {
       try {
         await agentInstance.sendMessage(task);
-        flushTextBuffer();
+        closeThinkingNode();
 
         // Capture final report from last assistant message
         const msgs = agentInstance.getHistory().getMessages();
@@ -243,7 +261,7 @@ export const invokeSuperagentTool: Tool = {
 
         return `Superagent "${role}" (branch: ${branch}) completed.\n\nReport:\n${result}`;
       } catch (err: any) {
-        flushTextBuffer();
+        closeThinkingNode();
         superagentInstances.set(superagentId, {
           ...superagentInstances.get(superagentId)!,
           status: "error",

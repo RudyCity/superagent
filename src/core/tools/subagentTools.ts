@@ -109,22 +109,49 @@ export const invokeSubagentTool: Tool = {
     const subagentId = Math.random().toString(36).substring(2, 9);
 
     const logs: string[] = [];
-    let textBuffer = "";
+    let lastTextIdx = -1;
     let isFirstNode = true;
 
-    function flushTextBuffer() {
-      if (!textBuffer) return;
-      const cleanText = textBuffer.trim();
-      if (cleanText) {
-        const lines = cleanText.split("\n");
+    function appendToThinkingNode(text: string) {
+      if (lastTextIdx === -1) {
         logs.push(`${isFirstNode ? "┌" : "├"}───[ ✦ COGNITIVE THINKING ]\n`);
         isFirstNode = false;
-        for (const line of lines) {
-          logs.push(`│   ${line}\n`);
-        }
-        logs.push(`│\n`);
+        logs.push(`│   `);
+        lastTextIdx = logs.length - 1;
       }
-      textBuffer = "";
+
+      const parts = text.split("\n");
+      if (parts.length === 1) {
+        logs[lastTextIdx] += parts[0];
+      } else {
+        logs[lastTextIdx] += parts[0] + "\n";
+        for (let i = 1; i < parts.length - 1; i++) {
+          logs.push(`│   ${parts[i]}\n`);
+        }
+        logs.push(`│   `);
+        lastTextIdx = logs.length - 1;
+        logs[lastTextIdx] += parts[parts.length - 1];
+      }
+    }
+
+    function closeThinkingNode() {
+      if (lastTextIdx >= 0) {
+        if (logs[lastTextIdx] === "│   ") {
+          logs.pop();
+          const lastIndex = logs.length - 1;
+          if (lastIndex >= 0 && logs[lastIndex].includes("[ ✦ COGNITIVE THINKING ]")) {
+            logs.pop();
+          } else {
+            logs.push(`│\n`);
+          }
+        } else {
+          if (!logs[lastTextIdx].endsWith("\n")) {
+            logs[lastTextIdx] += "\n";
+          }
+          logs.push(`│\n`);
+        }
+        lastTextIdx = -1;
+      }
     }
 
     function formatSubagentArgs(subArgs: Record<string, unknown>): string {
@@ -147,9 +174,10 @@ export const invokeSubagentTool: Tool = {
     const agentInstance = new Agent(
       (event) => {
         if (event.type === "text") {
-          textBuffer += event.content;
+          appendToThinkingNode(event.content);
+          notifySubagentsChanged();
         } else if (event.type === "error") {
-          flushTextBuffer();
+          closeThinkingNode();
           logs.push(`${isFirstNode ? "┌" : "├"}───[ 🚨 ERROR ]\n`);
           isFirstNode = false;
           const lines = event.message.split("\n");
@@ -157,16 +185,18 @@ export const invokeSubagentTool: Tool = {
             logs.push(`│   ${line}\n`);
           }
           logs.push(`│\n`);
+          notifySubagentsChanged();
         } else if (event.type === "tool_start") {
-          flushTextBuffer();
+          closeThinkingNode();
           logs.push(`${isFirstNode ? "┌" : "├"}───[ ⚙️ TOOL CALL: ${event.toolCall.name} ]\n`);
           isFirstNode = false;
           logs.push(`│   Description: ${event.description}\n`);
           const argLines = formatSubagentArgs(event.toolCall.args);
           logs.push(`│   Args: ${argLines}\n`);
           logs.push(`│\n`);
+          notifySubagentsChanged();
         } else if (event.type === "tool_end") {
-          flushTextBuffer();
+          closeThinkingNode();
           const r = event.toolResult;
           const status = r.isError ? "🔴 FAILED" : "🟢 SUCCESS";
           logs.push(`│   └───[ ${status} ]\n`);
@@ -177,6 +207,7 @@ export const invokeSubagentTool: Tool = {
             logs.push(`│       ${line}\n`);
           }
           logs.push(`│\n`);
+          notifySubagentsChanged();
         } else if (event.type === "token_usage") {
           const inst = subagentInstances.get(subagentId);
           if (inst) {
@@ -185,6 +216,7 @@ export const invokeSubagentTool: Tool = {
               completion: (inst.tokenUsage?.completion ?? 0) + event.completionTokens,
             };
           }
+          notifySubagentsChanged();
         }
       },
       // Permission: block destructive commands, auto-approve everything else
@@ -228,7 +260,7 @@ export const invokeSubagentTool: Tool = {
     if (wait) {
       try {
         await agentInstance.sendMessage(prompt);
-        flushTextBuffer();
+        closeThinkingNode();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();
@@ -240,7 +272,7 @@ export const invokeSubagentTool: Tool = {
         notifySubagentsChanged();
         return `Subagent "${typeName}" (Role: ${role}) finished. Report:\n\n${instance.result || "(no report)"}`;
       } catch (err: any) {
-        flushTextBuffer();
+        closeThinkingNode();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();
@@ -249,7 +281,7 @@ export const invokeSubagentTool: Tool = {
       }
     } else {
       agentInstance.sendMessage(prompt).then(() => {
-        flushTextBuffer();
+        closeThinkingNode();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();
@@ -260,7 +292,7 @@ export const invokeSubagentTool: Tool = {
         }
         notifySubagentsChanged();
       }).catch(() => {
-        flushTextBuffer();
+        closeThinkingNode();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();
