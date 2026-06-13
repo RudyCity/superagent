@@ -222,3 +222,89 @@ describe("Slash Command: /skills and /skill", () => {
     expect(addedLines[0].content).toContain("Skill \"non-existent-skill\" not found");
   });
 });
+
+describe("Slash Commands: /settings & /setting-*", () => {
+  let originalEnv: NodeJS.ProcessEnv;
+  let addedLines: ChatLine[] = [];
+
+  const mockCtx = {
+    addLine: (line: ChatLine) => {
+      addedLines.push(line);
+    },
+    exit: () => {},
+    agent: null,
+  };
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    addedLines = [];
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("should show settings when running /settings", () => {
+    process.env.SUPERAGENT_MAX_CONCURRENCY = "1";
+    process.env.SUPERAGENT_RATE_LIMIT_RPM = "30";
+    process.env.SUPERAGENT_RATE_LIMIT_CAPACITY = "5";
+
+    handleSlashCommand("/settings", mockCtx as any);
+
+    expect(addedLines.length).toBe(1);
+    const content = addedLines[0].content;
+    expect(content).toContain("Concurrency Limit : 1 (enabled)");
+    expect(content).toContain("Rate Limit (RPM)  : 30 RPM");
+    expect(content).toContain("Limit Capacity    : 5");
+  });
+
+  it("should configure concurrency limit when running /setting-concurrency", () => {
+    // Show usage when empty
+    handleSlashCommand("/setting-concurrency", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-concurrency");
+
+    // Invalid value
+    handleSlashCommand("/setting-concurrency invalid", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    // Valid value
+    handleSlashCommand("/setting-concurrency 1", mockCtx as any);
+    expect(process.env.SUPERAGENT_MAX_CONCURRENCY).toBe("1");
+    expect(addedLines[addedLines.length - 1].content).toContain("Concurrency limit set to: 1");
+
+    handleSlashCommand("/setting-concurrency 0", mockCtx as any);
+    expect(process.env.SUPERAGENT_MAX_CONCURRENCY).toBe("0");
+    expect(addedLines[addedLines.length - 1].content).toContain("Concurrency limit set to: 0");
+  });
+
+  it("should configure rate limit when running /setting-rpm", () => {
+    // Show usage when empty
+    handleSlashCommand("/setting-rpm", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-rpm");
+
+    // Invalid value
+    handleSlashCommand("/setting-rpm invalid", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    // Valid value
+    handleSlashCommand("/setting-rpm 45", mockCtx as any);
+    expect(process.env.SUPERAGENT_RATE_LIMIT_RPM).toBe("45");
+    expect(addedLines[addedLines.length - 1].content).toContain("Rate limit set to: 45 RPM");
+  });
+
+  it("should configure rate limit capacity when running /setting-capacity", () => {
+    // Show usage when empty
+    handleSlashCommand("/setting-capacity", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-capacity");
+
+    // Invalid value
+    handleSlashCommand("/setting-capacity invalid", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    // Valid value
+    handleSlashCommand("/setting-capacity 15", mockCtx as any);
+    expect(process.env.SUPERAGENT_RATE_LIMIT_CAPACITY).toBe("15");
+    expect(addedLines[addedLines.length - 1].content).toContain("Rate limit capacity set to: 15");
+  });
+});
+

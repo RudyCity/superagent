@@ -1942,6 +1942,133 @@ export function handleSlashCommand(
       });
       break;
     }
+    case "settings": {
+      const concurrency = process.env.SUPERAGENT_MAX_CONCURRENCY || "0 (disabled)";
+      const rpm = process.env.SUPERAGENT_RATE_LIMIT_RPM || "60";
+      const capacity = process.env.SUPERAGENT_RATE_LIMIT_CAPACITY || "60";
+      ctx.addLine({
+        type: "system",
+        content: [
+          "┌───[ ⚙️ SUPERAGENT SETTINGS ]",
+          "│ ",
+          `│ • Concurrency Limit : ${concurrency === "1" ? "1 (enabled)" : "0 (disabled)"}`,
+          `│ • Rate Limit (RPM)  : ${rpm === "0" ? "0 (disabled)" : `${rpm} RPM`}`,
+          `│ • Limit Capacity    : ${capacity}`,
+          "│ ",
+          "└─────────────────────────────",
+          "Configure these settings using:",
+          "  /setting-concurrency <0|1>",
+          "  /setting-rpm <number>",
+          "  /setting-capacity <number>"
+        ].join("\n"),
+        timestamp: now,
+      });
+      break;
+    }
+    case "setting-concurrency": {
+      const val = args.trim();
+      if (!val) {
+        ctx.addLine({
+          type: "system",
+          content: `Usage: /setting-concurrency <0|1>\nCurrent value: ${process.env.SUPERAGENT_MAX_CONCURRENCY || "0 (disabled)"}`,
+          timestamp: now,
+        });
+        break;
+      }
+      if (val !== "0" && val !== "1") {
+        ctx.addLine({
+          type: "error",
+          content: "Invalid value. Must be 0 (disabled) or 1 (enabled).",
+          timestamp: now,
+        });
+        break;
+      }
+      try {
+        updateEnvFile({ SUPERAGENT_MAX_CONCURRENCY: val });
+        ctx.addLine({
+          type: "system",
+          content: `✓ Concurrency limit set to: ${val === "1" ? "1 (enabled)" : "0 (disabled)"}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to save setting: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      break;
+    }
+    case "setting-rpm": {
+      const val = args.trim();
+      if (!val) {
+        ctx.addLine({
+          type: "system",
+          content: `Usage: /setting-rpm <number>\nCurrent value: ${process.env.SUPERAGENT_RATE_LIMIT_RPM || "60"}`,
+          timestamp: now,
+        });
+        break;
+      }
+      const num = parseInt(val, 10);
+      if (isNaN(num) || num < 0) {
+        ctx.addLine({
+          type: "error",
+          content: "Invalid value. Must be a non-negative integer.",
+          timestamp: now,
+        });
+        break;
+      }
+      try {
+        updateEnvFile({ SUPERAGENT_RATE_LIMIT_RPM: val });
+        ctx.addLine({
+          type: "system",
+          content: `✓ Rate limit set to: ${val === "0" ? "0 (disabled)" : `${val} RPM`}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to save setting: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      break;
+    }
+    case "setting-capacity": {
+      const val = args.trim();
+      if (!val) {
+        ctx.addLine({
+          type: "system",
+          content: `Usage: /setting-capacity <number>\nCurrent value: ${process.env.SUPERAGENT_RATE_LIMIT_CAPACITY || "60"}`,
+          timestamp: now,
+        });
+        break;
+      }
+      const num = parseInt(val, 10);
+      if (isNaN(num) || num <= 0) {
+        ctx.addLine({
+          type: "error",
+          content: "Invalid value. Must be a positive integer.",
+          timestamp: now,
+        });
+        break;
+      }
+      try {
+        updateEnvFile({ SUPERAGENT_RATE_LIMIT_CAPACITY: val });
+        ctx.addLine({
+          type: "system",
+          content: `✓ Rate limit capacity set to: ${val}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to save setting: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      break;
+    }
     case "help":
       ctx.addLine({
         type: "system",
@@ -1970,6 +2097,10 @@ export function handleSlashCommand(
           "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",
           "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
           "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",
+          "  /settings - Show current rate limit & concurrency settings",
+          "  /setting-concurrency <0|1> - Set LLM concurrency limit",
+          "  /setting-rpm <number>      - Set rate limit RPM",
+          "  /setting-capacity <number> - Set rate limit capacity",
           "  /help     - Show this help",
           "  /quit     - Exit the app",
           "",
