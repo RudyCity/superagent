@@ -427,8 +427,8 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
 
         if (this.config.disableStreaming) {
           let attempt = 0;
-          const maxRetries = 3;
-          const baseDelay = 1000;
+          const maxRetries = 10;
+          const baseDelay = 5000;
 
           while (true) {
             try {
@@ -494,8 +494,8 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           }
         } else {
           let attempt = 0;
-          const maxRetries = 3;
-          const baseDelay = 1000;
+          const maxRetries = 10;
+          const baseDelay = 5000;
 
           while (true) {
             try {
@@ -1040,8 +1040,8 @@ PAST CHAT HISTORY:
 ${formatted}`;
 
     let attempt = 0;
-    const maxRetries = 3;
-    const baseDelay = 1000;
+    const maxRetries = 10;
+    const baseDelay = 5000;
     let result;
 
     while (true) {
