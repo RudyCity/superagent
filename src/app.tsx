@@ -740,11 +740,11 @@ export function App({
           });
           break;
         case "token_usage":
-          setTokensUp((prev) => prev + event.promptTokens);
-          setTokensDown((prev) => prev + event.completionTokens);
-          setLastPromptTokens(event.promptTokens);
+          setTokensUp((prev) => prev + (event.promptTokens || 0));
+          setTokensDown((prev) => prev + (event.completionTokens || 0));
+          setLastPromptTokens(event.promptTokens || 0);
           if (event.durationMs && event.completionTokens > 0) {
-            const speed = event.completionTokens / (event.durationMs / 1000);
+            const speed = (event.completionTokens || 0) / (event.durationMs / 1000);
             setLastSpeed(speed);
           }
           break;
@@ -3420,7 +3420,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           <Box flexDirection="column" paddingX={1} marginTop={1}>
             {/* Active Superagents, Subagents & Tasks Live List */}
             {(runningSuperagentsCount > 0 || runningSubagentsCount > 0 || runningTasksCount > 0) && (
-              <Box flexDirection="column" marginBottom={1}>
+              <Box flexDirection="column" marginBottom={0}>
                 {runningSuperagentsCount > 0 && (() => {
                   const runningSuperagents = Array.from(superagentInstances.values()).filter((s) => s.status === "running");
                   const totalSA = runningSuperagents.length;
@@ -3433,18 +3433,18 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   return (
                     <Box flexDirection="column">
                       <Text color={focusMode === "superagents" ? "green" : "cyan"} bold>
-                        ⚡ ACTIVE SUPERAGENTS:{scrollIndicator}{helpText}
+                        ┌───[ ⚡ ACTIVE SUPERAGENTS ]{scrollIndicator}{helpText}
                       </Text>
                       {visibleSA.map((inst) => (
                         <Box key={inst.id} flexDirection="column">
                           <Text color="cyan">
-                            ├─ [{inst.id}] Role: {inst.role} ({inst.status})
+                            ├─── [{inst.id}] Role: {inst.role} ({inst.status})
                           </Text>
                           <Text color="cyan">
-                            │  ├─ Task: <Text color="white">{inst.task}</Text>
+                            │    ├─── Task: <Text color="white">{inst.task}</Text>
                           </Text>
                           <Text color="cyan">
-                            │  └─ Action: <Text italic color="white">{getLatestSuperagentAction(inst.logs)}</Text>
+                            │    └─ Action: <Text italic color="white">{getLatestSuperagentAction(inst.logs)}</Text>
                           </Text>
                         </Box>
                       ))}
@@ -3460,18 +3460,19 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     : "";
                   const helpText = focusMode === "subagents" ? " [↑/▼ Scroll • Esc Exit]" : "";
                   const visibleSubs = runningSubagents.slice(subagentsScrollOffset, subagentsScrollOffset + maxSubagentsVisible);
+                  const isFirstHeader = runningSuperagentsCount === 0;
                   return (
-                    <Box flexDirection="column" marginTop={runningSuperagentsCount > 0 ? 1 : 0}>
+                    <Box flexDirection="column" marginTop={0}>
                       <Text color={focusMode === "subagents" ? "green" : "yellow"} bold>
-                        🤖 ACTIVE SUBAGENTS:{scrollIndicator}{helpText}
+                        {isFirstHeader ? "┌───" : "├───"}[ 🤖 ACTIVE SUBAGENTS ]{scrollIndicator}{helpText}
                       </Text>
                       {visibleSubs.map((inst) => (
                         <Box key={inst.id} flexDirection="column">
                           <Text color="yellow">
-                            ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
+                            ├─── [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
                           </Text>
                           <Text color="yellow">
-                            │  └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
+                            │    └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
                           </Text>
                         </Box>
                       ))}
@@ -3487,14 +3488,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     : "";
                   const helpText = focusMode === "procs" ? " [↑/▼ Scroll • Esc Exit]" : "";
                   const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
+                  const isFirstHeader = runningSuperagentsCount === 0 && runningSubagentsCount === 0;
                   return (
-                    <Box flexDirection="column" marginTop={(runningSuperagentsCount > 0 || runningSubagentsCount > 0) ? 1 : 0}>
+                    <Box flexDirection="column" marginTop={0}>
                       <Text color={focusMode === "procs" ? "green" : "cyan"} bold>
-                        ⚙️ ACTIVE PROCESSES:{scrollIndicator}{helpText}
+                        {isFirstHeader ? "┌───" : "├───"}[ ⚙️ ACTIVE PROCESSES ]{scrollIndicator}{helpText}
                       </Text>
                       {visibleProcs.map(([id, task]) => (
                         <Text key={id} color="cyan">
-                          ├─ [{id}] Command: {task.command}
+                          ├─── [{id}] Command: {task.command}
                         </Text>
                       ))}
                     </Box>

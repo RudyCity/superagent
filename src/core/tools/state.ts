@@ -118,10 +118,10 @@ export function getActiveQuestionHandler(): QuestionHandler | null {
 export const superagentInstances = new Map<string, SuperagentInstance>();
 export let historicalSuperagentTokens = 0;
 export function addHistoricalSuperagentTokens(tokens: number) {
-  historicalSuperagentTokens += tokens;
+  historicalSuperagentTokens += tokens || 0;
 }
 export function setHistoricalSuperagentTokens(tokens: number) {
-  historicalSuperagentTokens = tokens;
+  historicalSuperagentTokens = tokens || 0;
 }
 
 export let masterPromptTokens = 0;
@@ -129,19 +129,19 @@ export let masterCompletionTokens = 0;
 export let lastMasterPromptTokens = 0;
 
 export function addMasterTokens(prompt: number, completion: number) {
-  masterPromptTokens += prompt;
-  masterCompletionTokens += completion;
-  lastMasterPromptTokens = prompt;
+  masterPromptTokens += prompt || 0;
+  masterCompletionTokens += completion || 0;
+  lastMasterPromptTokens = prompt || 0;
   notifySuperagentsChanged();
 }
 
 export function setMasterTokens(prompt: number, completion: number) {
-  masterPromptTokens = prompt;
-  masterCompletionTokens = completion;
+  masterPromptTokens = prompt || 0;
+  masterCompletionTokens = completion || 0;
 }
 
 export function setLastMasterPromptTokens(prompt: number) {
-  lastMasterPromptTokens = prompt;
+  lastMasterPromptTokens = prompt || 0;
   notifySuperagentsChanged();
 }
 

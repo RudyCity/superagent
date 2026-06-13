@@ -1828,9 +1828,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
       // 1. Master Orchestrator — real token accumulation from all events
       const superagentTokens = [...superagentInstances.values()]
-        .reduce((acc, i) => acc + (i.tokenUsage?.prompt ?? 0) + (i.tokenUsage?.completion ?? 0), 0);
+        .reduce((acc, i) => acc + (i.tokenUsage?.prompt || 0) + (i.tokenUsage?.completion || 0), 0);
       const subagentTokens = [...subagentInstances.values()]
-        .reduce((acc, i) => acc + (i.tokenUsage?.prompt ?? 0) + (i.tokenUsage?.completion ?? 0), 0);
+        .reduce((acc, i) => acc + (i.tokenUsage?.prompt || 0) + (i.tokenUsage?.completion || 0), 0);
 
       // Prepare subagents grouped by parentId
       const subagentSessionsMap = new Map<string, AgentSession[]>();
@@ -1844,7 +1844,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           type: "SUBAGENT",
           task: `Role: ${instance.role}`,
           status: instance.status === "running" ? "WORKING" : instance.status === "completed" ? "COMPLETED" : "IDLE",
-          tokens: (instance.tokenUsage?.prompt ?? 0) + (instance.tokenUsage?.completion ?? 0),
+          tokens: (instance.tokenUsage?.prompt || 0) + (instance.tokenUsage?.completion || 0),
           logs: instance.logs && instance.logs.length > 0 ? instance.logs : ["Awaiting output..."],
           branch: "worktree",
           speed: instance.speed,
@@ -1882,7 +1882,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           status: instance.status === "running" ? "WORKING"
                 : instance.status === "completed" ? "COMPLETED"
                 : "ERROR",
-          tokens: (instance.tokenUsage?.prompt ?? 0) + (instance.tokenUsage?.completion ?? 0),
+          tokens: (instance.tokenUsage?.prompt || 0) + (instance.tokenUsage?.completion || 0),
           logs: instance.logs.length > 0 ? instance.logs : ["Superagent initialising..."],
           branch: instance.branch,
           worktreePath: instance.worktreePath,
@@ -2044,7 +2044,22 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   }
 
   const leftTopHeight = Math.max(5, workspaceHeight - 2 - checklistHeight);
-  const logBoxHeight = Math.max(5, workspaceHeight - 4);
+  const feedWidth = Math.max(10, Math.floor(terminalSize.width * 0.58) - 4);
+  const taskStr = selectedSession.task || "";
+  const normalizedTask = taskStr.replace(/\r\n/g, "\n").replace(/\r/g, "");
+  const taskLines = normalizedTask.split("\n").filter(line => line.trim() !== "");
+  let renderedTaskLinesCount = 0;
+  if (taskLines.length > 0) {
+    if (isHistoryTruncated) {
+      renderedTaskLinesCount = 1;
+    } else {
+      renderedTaskLinesCount = 1; // "Task:" label line
+      for (const line of taskLines) {
+        renderedTaskLinesCount += Math.max(1, Math.ceil(line.length / feedWidth));
+      }
+    }
+  }
+  const logBoxHeight = Math.max(5, workspaceHeight - 3 - (renderedTaskLinesCount || 1));
   const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
   let executingToolHeight = 0;
   const activeToolLines = (selectedSession.type === "MASTER" && isExecutingTool && activeToolOutput) 
@@ -2062,7 +2077,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     logsCount = Math.max(1, logsCount - executingToolHeight);
   }
 
-  const feedWidth = Math.max(10, Math.floor(terminalSize.width * 0.58) - 4);
   const wrappedLines: React.ReactNode[] = [];
 
   const activeLogs = selectedSession.logs.map(l => l.trim()).filter(Boolean);
@@ -2192,12 +2206,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     if (group.isBox) {
       // For box lines, render directly without any label or border wrapping
       for (const logStr of group.rawLines) {
-        const subLines = wrapTextForDisplay(logStr, feedWidth);
+        const cleanedLogStr = logStr.replace(/\r\n/g, "\n").replace(/\r/g, "");
+        const subLines = isHistoryTruncated
+          ? cleanedLogStr.split("\n")
+          : wrapTextForDisplay(cleanedLogStr, feedWidth);
         for (let i = 0; i < subLines.length; i++) {
           const lineText = subLines[i];
           wrappedLines.push(
             <Box flexDirection="row" key={`log-line-${groupIdx}-${i}`} width={feedWidth}>
-              <Text color={group.color}>{lineText}</Text>
+              <Text color={group.color} wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText}</Text>
             </Box>
           );
         }
@@ -2211,7 +2228,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     // Format header border line
     wrappedLines.push(
       <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
-        <Text color={group.color === "gray" ? "gray" : group.color} bold>
+        <Text color={group.color === "gray" ? "gray" : group.color} bold wrap={isHistoryTruncated ? "truncate-end" : undefined}>
           {prefix} <Text color="white" bold>[ </Text>
           <Text color={group.color === "gray" ? "gray" : group.color} bold>{group.label}</Text>
           <Text color="white" bold> ]</Text>
@@ -2223,7 +2240,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     let inCode = false;
     for (let rawLineIdx = 0; rawLineIdx < group.rawLines.length; rawLineIdx++) {
       const content = group.rawLines[rawLineIdx];
-      const subLines = wrapTextForDisplay(content, Math.max(10, feedWidth - 4));
+      const cleanedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
+      const subLines = isHistoryTruncated
+        ? cleanedContent.split("\n")
+        : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - 4));
 
       for (let i = 0; i < subLines.length; i++) {
         const lineText = subLines[i];
@@ -2237,7 +2257,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
                 <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text color="gray" italic>{inCode ? `┌─── [ CODE: ${codeLang} ]` : "└─── [ END CODE ]"}</Text>
+                <Text color="gray" italic wrap={isHistoryTruncated ? "truncate-end" : undefined}>{inCode ? `┌─── [ CODE: ${codeLang} ]` : "└─── [ END CODE ]"}</Text>
               </Box>
             );
             continue;
@@ -2247,7 +2267,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
                 <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text color="green">{lineText}</Text>
+                <Text color="green" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText}</Text>
               </Box>
             );
             continue;
@@ -2258,7 +2278,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
                 <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text bold color="yellow">{lineText.slice(2)}</Text>
+                <Text bold color="yellow" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText.slice(2)}</Text>
               </Box>
             );
             continue;
@@ -2267,7 +2287,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
                 <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text bold color="cyan">{lineText.slice(3)}</Text>
+                <Text bold color="cyan" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText.slice(3)}</Text>
               </Box>
             );
             continue;
@@ -2276,7 +2296,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
                 <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text bold color="blue">{lineText.slice(4)}</Text>
+                <Text bold color="blue" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText.slice(4)}</Text>
               </Box>
             );
             continue;
@@ -2306,7 +2326,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
               {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
               <Box flexShrink={1}>
-                {renderLogInlineStyles(remainingLine, group.color === "gray" ? "gray" : group.color, group.isBold, group.dimColor)}
+                <Text wrap={isHistoryTruncated ? "truncate-end" : undefined}>
+                  {renderLogInlineStyles(remainingLine, group.color === "gray" ? "gray" : group.color, group.isBold, group.dimColor)}
+                </Text>
               </Box>
             </Box>
           );
@@ -3066,7 +3088,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         >
           <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
             <Box flexDirection="row">
-              <Text bold color={focusArea === "logs" ? "green" : "cyan"}>🔎 INSPECT: {selectedSession.id.slice(0, 20)}</Text>
+              <Text bold color={focusArea === "logs" ? "green" : "cyan"}>
+                🔎 INSPECT: {selectedSession.id.slice(0, 20)}
+                <Text color="gray" dimColor> {isHistoryTruncated ? "(Truncated)" : "(Full)"}</Text>
+              </Text>
               {logScrollOffset > 0 && (
                 <Text color="yellow" bold> [Scroll: -{logScrollOffset} - Esc to snap bottom]</Text>
               )}
@@ -3079,7 +3104,31 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             </Box>
           </Box>
           
-          <Text color="white" bold>Task: <Text color="gray" bold={false}>{selectedSession.task}</Text></Text>
+          {(() => {
+            const taskStr = selectedSession.task || "";
+            const normalizedTask = taskStr.replace(/\r\n/g, "\n").replace(/\r/g, "");
+            const lines = normalizedTask.split("\n").filter(line => line.trim() !== "");
+            if (lines.length === 0) return null;
+
+            if (isHistoryTruncated) {
+              const displayLine = lines[0];
+              const suffix = lines.length > 1 ? " ... (Truncated, Ctrl+T for full)" : "";
+              return (
+                <Text color="white" bold wrap="truncate-end">
+                  Task: <Text color="gray" bold={false}>{displayLine}{suffix}</Text>
+                </Text>
+              );
+            }
+
+            return (
+              <Box flexDirection="column" width={feedWidth}>
+                <Text color="white" bold>Task:</Text>
+                {lines.map((line, idx) => (
+                  <Text key={idx} color="gray">{line}</Text>
+                ))}
+              </Box>
+            );
+          })()}
 
           {/* Log Window */}
           <Box flexDirection="column" marginTop={1} height={logBoxHeight} paddingX={1} justifyContent="flex-start">
@@ -3215,7 +3264,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
       {/* Active Subagents & Tasks Live List (Full Width) */}
       {(runningSubagentsCount > 0 || runningTasksCount > 0) && (
-        <Box flexDirection="column" paddingX={1} marginBottom={1} width="100%">
+        <Box flexDirection="column" paddingX={1} marginBottom={0} width="100%">
           {runningSubagentsCount > 0 && (() => {
             const runningAgents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
             const totalAgents = runningAgents.length;
@@ -3228,15 +3277,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             return (
               <Box flexDirection="column">
                 <Text color={focusArea === "agents" ? "green" : "yellow"} bold>
-                  🤖 ACTIVE SUBAGENTS:{scrollIndicator}{helpText}
+                  ┌───[ 🤖 ACTIVE SUBAGENTS ]{scrollIndicator}{helpText}
                 </Text>
                 {visibleAgents.map((inst) => (
                   <Box key={inst.id} flexDirection="column">
                     <Text color="yellow">
-                      ├─ [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
+                      ├─── [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
                     </Text>
                     <Text color="yellow">
-                      │  └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
+                      │    └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
                     </Text>
                   </Box>
                 ))}
@@ -3252,14 +3301,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               : "";
             const helpText = focusArea === "procs" ? " [↑/▼ Scroll • Esc Exit]" : "";
             const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
+            const isFirstHeader = runningSubagentsCount === 0;
             return (
-              <Box flexDirection="column" marginTop={runningSubagentsCount > 0 ? 1 : 0}>
+              <Box flexDirection="column" marginTop={0}>
                 <Text color={focusArea === "procs" ? "green" : "cyan"} bold>
-                  ⚙️ ACTIVE PROCESSES:{scrollIndicator}{helpText}
+                  {isFirstHeader ? "┌───" : "├───"}[ ⚙️ ACTIVE PROCESSES ]{scrollIndicator}{helpText}
                 </Text>
                 {visibleProcs.map(([id, task]) => (
                   <Text key={id} color="cyan">
-                    ├─ [{id}] Command: {task.command}
+                    ├─── [{id}] Command: {task.command}
                   </Text>
                 ))}
               </Box>
@@ -3349,9 +3399,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               <Text color="gray"> │ </Text>
               <Text color="magenta" bold>Master: {(masterPromptTokens + masterCompletionTokens).toLocaleString()}t</Text>
               <Text color="gray"> │ </Text>
-              <Text color="cyan" bold>Superagents({[...superagentInstances.values()].filter(i => i.status === "running").length} active): {historicalSuperagentTokens.toLocaleString()}t</Text>
+              <Text color="cyan" bold>Superagents({[...superagentInstances.values()].filter(i => i.status === "running").length} active): {(historicalSuperagentTokens || 0).toLocaleString()}t</Text>
               <Text color="gray"> │ </Text>
-              <Text color="yellow" bold>Subagents: {[...subagentInstances.values()].reduce((acc, i) => acc + (i.tokenUsage?.prompt ?? 0) + (i.tokenUsage?.completion ?? 0), 0).toLocaleString()}t</Text>
+              <Text color="yellow" bold>Subagents: {[...subagentInstances.values()].reduce((acc, i) => acc + (i.tokenUsage?.prompt || 0) + (i.tokenUsage?.completion || 0), 0).toLocaleString()}t</Text>
               <Text color="gray"> │ </Text>
               <Text color="blue" bold>Worktrees: {worktreeCount}</Text>
               <Text color="gray"> │ </Text>

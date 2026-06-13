@@ -205,14 +205,14 @@ export const invokeSuperagentTool: Tool = {
           const inst = superagentInstances.get(superagentId);
           if (inst) {
             inst.tokenUsage = {
-              prompt: (inst.tokenUsage?.prompt ?? 0) + event.promptTokens,
-              completion: (inst.tokenUsage?.completion ?? 0) + event.completionTokens,
+              prompt: (inst.tokenUsage?.prompt || 0) + (event.promptTokens || 0),
+              completion: (inst.tokenUsage?.completion || 0) + (event.completionTokens || 0),
             };
             if (event.durationMs && event.durationMs > 0 && event.completionTokens > 0) {
               inst.speed = event.completionTokens / (event.durationMs / 1000);
             }
           }
-          addHistoricalSuperagentTokens(event.promptTokens + event.completionTokens);
+          addHistoricalSuperagentTokens((event.promptTokens || 0) + (event.completionTokens || 0));
           notifySuperagentsChanged();
         }
       },

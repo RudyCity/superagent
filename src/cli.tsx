@@ -138,7 +138,7 @@ if (process.stdin.isTTY) {
         } else if (event.type === "error") {
           logHandler?.(`[ERROR] ${event.message}`);
         } else if (event.type === "token_usage") {
-          addMasterTokens(event.promptTokens, event.completionTokens);
+          addMasterTokens(event.promptTokens || 0, event.completionTokens || 0);
         }
       },
       async (toolCall, description) => {

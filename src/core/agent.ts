@@ -471,8 +471,8 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 }
                 this.onEvent({
                   type: "token_usage",
-                  promptTokens: usage.promptTokens,
-                  completionTokens: usage.completionTokens,
+                  promptTokens: usage.promptTokens || 0,
+                  completionTokens: usage.completionTokens || 0,
                   durationMs,
                 });
               }
@@ -551,8 +551,8 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   }
                   this.onEvent({
                     type: "token_usage",
-                    promptTokens: usage.promptTokens,
-                    completionTokens: usage.completionTokens,
+                    promptTokens: usage.promptTokens || 0,
+                    completionTokens: usage.completionTokens || 0,
                     durationMs,
                   });
                 }
