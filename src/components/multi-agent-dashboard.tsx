@@ -339,6 +339,13 @@ export function MultiAgentDashboard({
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
   const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
   const [wizardSelectedSet, setWizardSelectedSet] = useState<Set<number>>(new Set());
+  const [listSpinnerFrame, setListSpinnerFrame] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setListSpinnerFrame((prev) => (prev + 1) % 10);
+    }, 120);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleQueryChange = useCallback((val: string) => {
     const sanitizedVal = stripSgrMouseSequences(val);
@@ -2914,12 +2921,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 }
                 
                 const isActive = session.status === "WORKING";
+                const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+                const spinnerChar = spinnerFrames[listSpinnerFrame] || "●";
                 const indicatorText = isSelected 
                   ? "▶ " 
-                  : (isActive ? "● " : "  ");
+                  : (isActive ? `${spinnerChar} ` : "  ");
                 const indicatorColor = isSelected
                   ? (focusArea === "list" ? "green" : "cyan")
-                  : (isActive ? (activeBlink ? "green" : "gray") : "gray");
+                  : (isActive ? "yellow" : "gray");
 
                 return (
                   <Box key={session.id} flexDirection="row" justifyContent="space-between" marginTop={0}>
@@ -3075,7 +3084,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           {/* Log Window */}
           <Box flexDirection="column" marginTop={1} height={logBoxHeight} paddingX={1} justifyContent="flex-start">
             {visibleLogs}
-            {selectedSession.status === "WORKING" && logScrollOffset === 0 && !isExecutingTool && (() => {
+            {selectedSession.status === "WORKING" && logScrollOffset === 0 && (selectedSession.type !== "MASTER" || !isExecutingTool) && (() => {
               const isIdleTask = selectedSession.task.startsWith("Idle") || selectedSession.task.startsWith("Error");
               const spinnerType = (selectedSession.type === "MASTER" && !isIdleTask) ? "orchestrating" : "processing";
               return (
