@@ -1091,11 +1091,26 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
             // Make direct completion request to active provider/model
             const { generateText } = await import("ai");
+            const { rateLimiter, concurrencyLimiter } = await import("../core/rateLimiter.js");
             const modelConfig = (agent as any).getModel();
-            const response = await generateText({
-              model: modelConfig,
-              prompt: prompt,
-            });
+            
+            let concurrencyAcquired = false;
+            let response;
+            try {
+              if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+                await concurrencyLimiter.acquire();
+                concurrencyAcquired = true;
+              }
+              await rateLimiter.acquire(1);
+              response = await generateText({
+                model: modelConfig,
+                prompt: prompt,
+              });
+            } finally {
+              if (concurrencyAcquired) {
+                concurrencyLimiter.release();
+              }
+            }
 
             const content = response.text || "";
             const cwd = process.cwd();
