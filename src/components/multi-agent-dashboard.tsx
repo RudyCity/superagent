@@ -998,48 +998,88 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setWizardSelectedIndex(0);
         setQuery("");
       } else if (activeWizard.step === 2) {
-        const typeMatch = value.match(/\(([^)]+)/);
-        const rawType = typeMatch ? typeMatch[1].split("-")[0].trim().toLowerCase() : value.toLowerCase();
-        let provider = "";
-        if (rawType === "openrouter") {
-          provider = "openrouter";
-        } else if (rawType === "openai") {
-          provider = "openai";
-        } else if (rawType === "anthropic") {
-          provider = "anthropic";
-        } else if (rawType === "custom") {
-          provider = "custom";
+        const list = getConfiguredProviders();
+        const cleanName = value.replace(/\s*\[Active\]\s*$/, "").split(" (")[0].trim();
+        const nameWithoutNumber = cleanName.replace(/^\d+\.\s*/, "").trim();
+        const found = list.find(p => p.name.toLowerCase() === nameWithoutNumber.toLowerCase());
+
+        let providerProfileName = "";
+        let providerType = "";
+        let resolvedApiKey = "";
+        let resolvedBaseUrl = "";
+
+        if (found) {
+          providerProfileName = found.name;
+          providerType = found.type;
+          resolvedBaseUrl = found.baseUrl || "";
+          
+          const prefix = `PROVIDER_${found.name.toUpperCase()}`;
+          resolvedApiKey = process.env[`${prefix}_API_KEY`] || "";
+          
+          if (!resolvedApiKey) {
+            if (found.name.toLowerCase() === "openai") {
+              resolvedApiKey = process.env.OPENAI_API_KEY || "";
+            } else if (found.name.toLowerCase() === "anthropic") {
+              resolvedApiKey = process.env.ANTHROPIC_API_KEY || "";
+            } else if (found.name.toLowerCase() === "openrouter") {
+              resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+            } else if (found.type === "custom") {
+              resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+            }
+          }
+          
+          if (found.name.toLowerCase() === "openrouter") {
+            providerType = "openrouter";
+          }
         } else {
-          const list = getConfiguredProviders();
-          const cleanName = value.replace(/\s*\[Active\]\s*$/, "").split(" (")[0].trim();
-          const found = list.find(p => p.name === cleanName);
-          provider = found?.type || "openrouter";
+          const lowerName = nameWithoutNumber.toLowerCase();
+          if (lowerName.includes("openrouter")) {
+            providerProfileName = "openrouter";
+            providerType = "openrouter";
+            resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+          } else if (lowerName.includes("openai")) {
+            providerProfileName = "openai";
+            providerType = "openai";
+            resolvedApiKey = process.env.OPENAI_API_KEY || "";
+          } else if (lowerName.includes("anthropic")) {
+            providerProfileName = "anthropic";
+            providerType = "anthropic";
+            resolvedApiKey = process.env.ANTHROPIC_API_KEY || "";
+          } else if (lowerName.includes("custom")) {
+            providerProfileName = "custom";
+            providerType = "custom";
+            resolvedBaseUrl = process.env.CUSTOM_BASE_URL || "";
+            resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+          } else {
+            providerProfileName = "openrouter";
+            providerType = "openrouter";
+          }
         }
 
         setActiveWizard({
           type: "model",
           step: 3,
-          data: { ...activeWizard.data, provider },
+          data: { ...activeWizard.data, provider: providerProfileName },
         });
 
         const initialModels: string[] =
-          provider === "openrouter" ? [
+          providerType === "openrouter" ? [
             "google/gemini-2.5-flash",
             "meta-llama/llama-3.3-70b-instruct",
             "deepseek/deepseek-chat",
             "anthropic/claude-3.5-sonnet",
           ] :
-          provider === "openai" ? [
+          providerType === "openai" ? [
             "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-preview", "o3-mini",
           ] :
-          provider === "anthropic" ? [
+          providerType === "anthropic" ? [
             "claude-opus-4-5",
             "claude-sonnet-4-5",
             "claude-3-5-sonnet-20241022",
             "claude-3-5-haiku-20241022",
             "claude-3-opus-20240229",
           ] :
-          provider === "custom" ? [
+          providerType === "custom" ? [
             "deepseek-chat", "llama-3.3-70b-instruct",
           ] : [];
 
@@ -1048,9 +1088,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setWizardSelectedIndex(0);
         setQuery("");
 
-        if (provider === "openrouter") {
+        if (providerType === "openrouter") {
           setWizardIsLoadingModels(true);
-          fetch("https://openrouter.ai/api/v1/models")
+          const headers: Record<string, string> = {};
+          if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
+          fetch("https://openrouter.ai/api/v1/models", { headers })
             .then(async (res) => {
               if (res.ok) {
                 const data = await res.json() as any;
@@ -1062,12 +1104,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             })
             .catch(() => {})
             .finally(() => setWizardIsLoadingModels(false));
-        } else if (provider === "openai") {
-          const apiKey = process.env.OPENAI_API_KEY || process.env.CUSTOM_API_KEY;
-          if (apiKey) {
+        } else if (providerType === "openai") {
+          if (resolvedApiKey) {
             setWizardIsLoadingModels(true);
             fetch("https://api.openai.com/v1/models", {
-              headers: { Authorization: `Bearer ${apiKey}` }
+              headers: { Authorization: `Bearer ${resolvedApiKey}` }
             })
               .then(async (res) => {
                 if (res.ok) {
@@ -1081,14 +1122,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               .catch(() => {})
               .finally(() => setWizardIsLoadingModels(false));
           }
-        } else if (provider === "custom") {
-          const baseUrl = process.env.CUSTOM_BASE_URL;
-          const apiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY;
-          if (baseUrl) {
+        } else if (providerType === "custom") {
+          if (resolvedBaseUrl) {
             setWizardIsLoadingModels(true);
             const headers: Record<string, string> = {};
-            if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-            fetch(`${baseUrl}/models`, { headers })
+            if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
+            fetch(`${resolvedBaseUrl}/models`, { headers })
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
@@ -1103,7 +1142,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           }
         }
 
-        setMasterLogs((prev) => [...prev, `[MASTER] Provider ${provider} selected. Choose a model below:`].slice(-500));
+        setMasterLogs((prev) => [...prev, `[MASTER] Provider profile "${providerProfileName}" selected. Choose a model below:`].slice(-500));
       } else {
         const selectedModel = value;
         const tier = activeWizard.data.tier;
@@ -2173,16 +2212,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     }
     
     // Abort master agent
-    if (agent) {
+    if (agent && agent.isAgentRunning()) {
       try {
         agent.abort();
       } catch {}
+      count++;
     }
 
     if (count > 0) {
       notifySubagentsChanged();
       notifySuperagentsChanged();
-      setMasterLogs((prev) => [...prev, `[SYSTEM] 🛑 Interrupted ${count} running agent(s) via Ctrl+C.`].slice(-500));
+      setMasterLogs((prev) => [...prev, `[SYSTEM] 🛑 Interrupted ${count} running agent(s).`].slice(-500));
     }
     return count;
   };
@@ -2196,6 +2236,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
       exit();
       return;
+    }
+
+    if (key.escape) {
+      if (!activeWizard) {
+        if (stopAllRunningAgents() > 0) {
+          setCurrentTask("Idle - Interrupted");
+          return;
+        }
+      }
     }
 
     if (focusArea === "input" && !activeWizard) {

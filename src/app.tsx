@@ -1292,32 +1292,72 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setWizardSelectedIndex(0);
         setInput("");
       } else if (activeWizard.step === 2) {
-        const typeMatch = value.match(/\(([^)]+)/);
-        const rawType = typeMatch ? typeMatch[1].split("-")[0].trim().toLowerCase() : value.toLowerCase();
-        let provider = "";
-        if (rawType === "openrouter") {
-          provider = "openrouter";
-        } else if (rawType === "openai") {
-          provider = "openai";
-        } else if (rawType === "anthropic") {
-          provider = "anthropic";
-        } else if (rawType === "custom") {
-          provider = "custom";
+        const list = getConfiguredProviders();
+        const cleanName = value.replace(/\s*\[Active\]\s*$/, "").split(" (")[0].trim();
+        const nameWithoutNumber = cleanName.replace(/^\d+\.\s*/, "").trim();
+        const found = list.find(p => p.name.toLowerCase() === nameWithoutNumber.toLowerCase());
+
+        let providerProfileName = "";
+        let providerType = "";
+        let resolvedApiKey = "";
+        let resolvedBaseUrl = "";
+
+        if (found) {
+          providerProfileName = found.name;
+          providerType = found.type;
+          resolvedBaseUrl = found.baseUrl || "";
+          
+          const prefix = `PROVIDER_${found.name.toUpperCase()}`;
+          resolvedApiKey = process.env[`${prefix}_API_KEY`] || "";
+          
+          if (!resolvedApiKey) {
+            if (found.name.toLowerCase() === "openai") {
+              resolvedApiKey = process.env.OPENAI_API_KEY || "";
+            } else if (found.name.toLowerCase() === "anthropic") {
+              resolvedApiKey = process.env.ANTHROPIC_API_KEY || "";
+            } else if (found.name.toLowerCase() === "openrouter") {
+              resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+            } else if (found.type === "custom") {
+              resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+            }
+          }
+          
+          if (found.name.toLowerCase() === "openrouter") {
+            providerType = "openrouter";
+          }
         } else {
-          const list = getConfiguredProviders();
-          const cleanName = value.replace(/\s*\[Active\]\s*$/, "").split(" (")[0].trim();
-          const found = list.find(p => p.name === cleanName);
-          provider = found?.type || "openrouter";
+          const lowerName = nameWithoutNumber.toLowerCase();
+          if (lowerName.includes("openrouter")) {
+            providerProfileName = "openrouter";
+            providerType = "openrouter";
+            resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+          } else if (lowerName.includes("openai")) {
+            providerProfileName = "openai";
+            providerType = "openai";
+            resolvedApiKey = process.env.OPENAI_API_KEY || "";
+          } else if (lowerName.includes("anthropic")) {
+            providerProfileName = "anthropic";
+            providerType = "anthropic";
+            resolvedApiKey = process.env.ANTHROPIC_API_KEY || "";
+          } else if (lowerName.includes("custom")) {
+            providerProfileName = "custom";
+            providerType = "custom";
+            resolvedBaseUrl = process.env.CUSTOM_BASE_URL || "";
+            resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+          } else {
+            providerProfileName = "openrouter";
+            providerType = "openrouter";
+          }
         }
 
         setActiveWizard({
           type: "model",
           step: 3,
-          data: { ...activeWizard.data, provider },
+          data: { ...activeWizard.data, provider: providerProfileName },
         });
 
         let initialModels: string[] = [];
-        if (provider === "openrouter") {
+        if (providerType === "openrouter") {
           initialModels = [
             "google/gemini-2.5-flash",
             "meta-llama/llama-3.3-70b-instruct",
@@ -1325,7 +1365,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             "anthropic/claude-3.5-sonnet",
           ];
           setWizardIsLoadingModels(true);
-          fetch("https://openrouter.ai/api/v1/models")
+          const headers: Record<string, string> = {};
+          if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
+          fetch("https://openrouter.ai/api/v1/models", { headers })
             .then(async (res) => {
               if (res.ok) {
                 const data = await res.json() as any;
@@ -1337,7 +1379,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             })
             .catch(() => {})
             .finally(() => setWizardIsLoadingModels(false));
-        } else if (provider === "openai") {
+        } else if (providerType === "openai") {
           initialModels = [
             "gpt-4o",
             "gpt-4o-mini",
@@ -1348,12 +1390,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             "gpt-4-turbo",
             "gpt-4",
           ];
-          const apiKey = process.env.OPENAI_API_KEY || process.env.CUSTOM_API_KEY;
-          if (apiKey) {
+          if (resolvedApiKey) {
             setWizardIsLoadingModels(true);
             fetch("https://api.openai.com/v1/models", {
               headers: {
-                Authorization: `Bearer ${apiKey}`
+                Authorization: `Bearer ${resolvedApiKey}`
               }
             })
               .then(async (res) => {
@@ -1368,7 +1409,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               .catch(() => {})
               .finally(() => setWizardIsLoadingModels(false));
           }
-        } else if (provider === "anthropic") {
+        } else if (providerType === "anthropic") {
           initialModels = [
             "claude-opus-4-5",
             "claude-sonnet-4-5",
@@ -1376,20 +1417,18 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             "claude-3-5-haiku-20241022",
             "claude-3-opus-20240229",
           ];
-        } else if (provider === "custom") {
+        } else if (providerType === "custom") {
           initialModels = [
             "deepseek-chat",
             "llama-3.3-70b-instruct",
           ];
-          const baseUrl = process.env.CUSTOM_BASE_URL;
-          const apiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY;
-          if (baseUrl) {
+          if (resolvedBaseUrl) {
             setWizardIsLoadingModels(true);
             const headers: Record<string, string> = {};
-            if (apiKey) {
-              headers["Authorization"] = `Bearer ${apiKey}`;
+            if (resolvedApiKey) {
+              headers["Authorization"] = `Bearer ${resolvedApiKey}`;
             }
-            fetch(`${baseUrl}/models`, { headers })
+            fetch(`${resolvedBaseUrl}/models`, { headers })
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
@@ -2094,110 +2133,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
         if (key.return) {
-          const list = getConfiguredProviders();
-          const chosen = list[wizardSelectedIndex];
-          if (!chosen) return;
-          
-          setActiveWizard({
-            type: "model",
-            step: 3,
-            data: { ...activeWizard.data, provider: chosen.name },
-          });
-
-          // Fetch models from this chosen profile
-          const prefix = `PROVIDER_${chosen.name.toUpperCase()}`;
-          const type = chosen.type;
-          const baseUrl = chosen.baseUrl || (type === "openrouter" ? "https://openrouter.ai/api/v1" : type === "openai" ? "https://api.openai.com/v1" : "");
-          const apiKey = process.env[`${prefix}_API_KEY`] || (type === "openai" ? process.env.OPENAI_API_KEY : type === "anthropic" ? process.env.ANTHROPIC_API_KEY : "");
-
-          let initialModels: string[] = [];
-          if (type === "openrouter" || chosen.name === "openrouter") {
-            initialModels = [
-              "google/gemini-2.5-flash",
-              "meta-llama/llama-3.3-70b-instruct",
-              "deepseek/deepseek-chat",
-              "anthropic/claude-3.5-sonnet",
-            ];
-            setWizardIsLoadingModels(true);
-            fetch("https://openrouter.ai/api/v1/models")
-              .then(async (res) => {
-                if (res.ok) {
-                  const data = await res.json() as any;
-                  if (data && Array.isArray(data.data)) {
-                    const modelsList = data.data.map((m: any) => m.id);
-                    setWizardOptions(modelsList);
-                  }
-                }
-              })
-              .catch(() => {})
-              .finally(() => setWizardIsLoadingModels(false));
-          } else if (type === "openai" || chosen.name === "openai") {
-            initialModels = [
-              "gpt-4o",
-              "gpt-4o-mini",
-              "o1",
-              "o1-mini",
-              "o1-preview",
-              "o3-mini",
-              "gpt-4-turbo",
-              "gpt-4",
-            ];
-            if (apiKey) {
-              setWizardIsLoadingModels(true);
-              fetch("https://api.openai.com/v1/models", {
-                headers: {
-                  Authorization: `Bearer ${apiKey}`
-                }
-              })
-                .then(async (res) => {
-                  if (res.ok) {
-                    const data = await res.json() as any;
-                    if (data && Array.isArray(data.data)) {
-                      const modelsList = data.data.map((m: any) => m.id);
-                      setWizardOptions(modelsList);
-                    }
-                  }
-                })
-                .catch(() => {})
-                .finally(() => setWizardIsLoadingModels(false));
-            }
-          } else if (type === "anthropic" || chosen.name === "anthropic") {
-            initialModels = [
-              "claude-3-5-sonnet-20241022",
-              "claude-3-5-haiku-20241022",
-              "claude-3-opus-20240229",
-              "claude-3-sonnet-20240229",
-              "claude-3-haiku-20240307",
-            ];
-          } else {
-            initialModels = [
-              "deepseek-chat",
-              "llama-3.3-70b-instruct",
-            ];
-            if (baseUrl) {
-              const headers: Record<string, string> = {};
-              if (apiKey) {
-                headers["Authorization"] = `Bearer ${apiKey}`;
-              }
-              setWizardIsLoadingModels(true);
-              fetch(`${baseUrl}/models`, { headers })
-                .then(async (res) => {
-                  if (res.ok) {
-                    const data = await res.json() as any;
-                    if (data && Array.isArray(data.data)) {
-                      const modelsList = data.data.map((m: any) => m.id);
-                      setWizardOptions(modelsList);
-                    }
-                  }
-                })
-                .catch(() => {})
-                .finally(() => setWizardIsLoadingModels(false));
-            }
+          const selectedVal = wizardOptions[wizardSelectedIndex];
+          if (selectedVal) {
+            handleWizardSubmit(selectedVal);
           }
-
-          setWizardOptions(initialModels);
-          setWizardSelectedIndex(0);
-          setInput("");
           return;
         }
       } else if (activeWizard.type === "model" && activeWizard.step === 3 && wizardOptions.length > 0) {
@@ -2215,101 +2154,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         }
         if (key.return) {
           const selectedModel = filteredModels[wizardSelectedIndex] ?? filteredModels[0];
-          if (!selectedModel) return;
-          const now = Date.now();
-          try {
-            const profileName = activeWizard.data.provider;
-            const tier = activeWizard.data.tier;
-            let updates: Record<string, string> = {};
-
-            let envPath = "";
-            let targetLabel = "";
-            if (tier === "default") {
-              envPath = switchActiveProvider(profileName);
-              updateEnvFile({ MODEL: selectedModel });
-              targetLabel = "Default Model";
-            } else if (tier === "all") {
-              const activeProvider = process.env.ACTIVE_PROVIDER || "";
-              const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-                ? `${profileName.toLowerCase()}:${selectedModel}`
-                : selectedModel;
-              updates = {
-                MODEL: selectedModel,
-                MODEL_DEPTH_0: finalModelName,
-                MODEL_DEPT0: finalModelName,
-                MODEL_DEPTH_1: finalModelName,
-                MODEL_DEPT1: finalModelName,
-                MODEL_DEPTH_2: finalModelName,
-                MODEL_DEPT2: finalModelName,
-                MODEL_SUBAGENT_RESEARCHER: finalModelName,
-                MODEL_RESEARCHER: finalModelName,
-                MODEL_SUBAGENT_CODER: finalModelName,
-                MODEL_CODER: finalModelName,
-                MODEL_SUBAGENT_REVIEWER: finalModelName,
-                MODEL_REVIEWER: finalModelName
-              };
-              targetLabel = "All Tiers & Subagents";
-              envPath = switchActiveProvider(profileName);
-              updateEnvFile(updates);
-            } else {
-              const activeProvider = process.env.ACTIVE_PROVIDER || "";
-              const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-                ? `${profileName.toLowerCase()}:${selectedModel}`
-                : selectedModel;
-              
-              if (tier === "master") {
-                updates = { MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName };
-                targetLabel = "Master Agent (depth 0) Model";
-              } else if (tier === "superagent") {
-                updates = { MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName };
-                targetLabel = "Superagent (depth 1) Model";
-              } else if (tier === "subagent") {
-                updates = { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName };
-                targetLabel = "Subagent (depth 2) Model";
-              } else {
-                const typeUpper = tier.toUpperCase();
-                updates = {
-                  [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
-                  [`MODEL_${typeUpper}`]: finalModelName
-                };
-                targetLabel = `Subagent "${tier}" Model`;
-              }
-              envPath = updateEnvFile(updates);
-            }
-
-            const cleanModelName = selectedModel.includes(":") ? selectedModel.substring(selectedModel.indexOf(":") + 1) : selectedModel;
-            const limit = getContextWindowLimit(cleanModelName);
-            
-            if (tier === "default" || tier === "all") {
-              setContextLimit(limit);
-            }
-            
-            addLine({
-              type: "system",
-              content: `${targetLabel} successfully changed to: ${selectedModel} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}`,
-              timestamp: now,
-            });
-            
-            if (tier === "default" || tier === "all") {
-              fetchAndCacheModels()
-                .then(() => {
-                  const newLimit = getContextWindowLimit(cleanModelName);
-                  setContextLimit(newLimit);
-                })
-                .catch(() => {});
-            }
-          } catch (err: any) {
-            addLine({
-              type: "error",
-              content: `Failed to set model: ${err.message}`,
-              timestamp: now,
-            });
+          if (selectedModel) {
+            handleWizardSubmit(selectedModel);
           }
-          setInput("");
-          setActiveWizard(null);
-          setWizardOptions([]);
-          setWizardIsLoadingModels(false);
-          setWizardSelectedIndex(0);
           return;
         }
       } else if (activeWizard.type === "plan_approve" && wizardOptions.length > 0) {
