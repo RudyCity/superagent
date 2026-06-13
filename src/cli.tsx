@@ -77,7 +77,7 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 import { MASTER_AGENT_SYSTEM_PROMPT } from "./core/prompts.js";
 import { masterToolset } from "./core/tools/toolsets.js";
-import { registerQuestionHandler, addMasterTokens } from "./core/tools/index.js";
+import { registerQuestionHandler, addMasterTokens, subscribeToMasterLogs } from "./core/tools/index.js";
 
 if (process.stdin.isTTY) {
   const resumeIndex = process.argv.findIndex(arg => arg === "--resume" || arg === "-r");
@@ -183,6 +183,9 @@ if (process.stdin.isTTY) {
         autoResume,
         registerLogHandler: (handler) => {
           logHandler = handler;
+          subscribeToMasterLogs((msg) => {
+            handler(msg);
+          });
         },
         registerEventHandler: (handler) => {
           eventHandler = handler;

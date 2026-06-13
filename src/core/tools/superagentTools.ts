@@ -16,6 +16,7 @@ import {
   notifySuperagentsChanged,
   activeQuestionHandler,
   addHistoricalSuperagentTokens,
+  appendMasterLog,
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
 import { MasterAgent } from "../masterAgent.js";
@@ -255,6 +256,7 @@ export const invokeSuperagentTool: Tool = {
     };
     superagentInstances.set(superagentId, instance);
     notifySuperagentsChanged();
+    appendMasterLog(`[INFO] Spawning Superagent "${role}" on branch ${branch}...`);
 
     const run = async (): Promise<string> => {
       try {
@@ -273,6 +275,7 @@ export const invokeSuperagentTool: Tool = {
           completedAt: Date.now(),
         });
         notifySuperagentsChanged();
+        appendMasterLog(`[INFO] Superagent "${role}" (branch: ${branch}) completed successfully.`);
 
         return `Superagent "${role}" (branch: ${branch}) completed.\n\nReport:\n${result}`;
       } catch (err: any) {
@@ -283,6 +286,7 @@ export const invokeSuperagentTool: Tool = {
           completedAt: Date.now(),
         });
         notifySuperagentsChanged();
+        appendMasterLog(`[ERROR] Superagent "${role}" (branch: ${branch}) failed: ${err.message}`);
         return `Superagent "${role}" failed: ${err.message}`;
       }
     };

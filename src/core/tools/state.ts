@@ -159,6 +159,24 @@ export function notifySuperagentsChanged() {
   }
 }
 
+// ─── Master Log Listeners ───────────────────────────────────────────────────
+
+export type MasterLogListener = (msg: string) => void;
+export const masterLogListeners = new Set<MasterLogListener>();
+
+export function subscribeToMasterLogs(listener: MasterLogListener) {
+  masterLogListeners.add(listener);
+  return () => {
+    masterLogListeners.delete(listener);
+  };
+}
+
+export function appendMasterLog(msg: string) {
+  for (const listener of masterLogListeners) {
+    listener(msg);
+  }
+}
+
 // ─── TTL Cleanup ─────────────────────────────────────────────────────────────
 
 const INSTANCE_TTL_MS = 10 * 60 * 1000; // 10 minutes

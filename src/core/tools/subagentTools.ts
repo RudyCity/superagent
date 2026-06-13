@@ -4,7 +4,8 @@ import {
   subagentInstances, 
   superagentInstances,
   notifySubagentsChanged, 
-  activeQuestionHandler 
+  activeQuestionHandler,
+  appendMasterLog
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
 
@@ -259,6 +260,7 @@ export const invokeSubagentTool: Tool = {
 
     subagentInstances.set(subagentId, instance);
     notifySubagentsChanged();
+    appendMasterLog(`[INFO] Spawning Subagent "${typeName}" (Role: ${role}) [ID: ${subagentId}]...`);
 
     if (wait) {
       try {
@@ -273,6 +275,7 @@ export const invokeSubagentTool: Tool = {
           instance.result = lastAssistantMsg.content;
         }
         notifySubagentsChanged();
+        appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
         return `Subagent "${typeName}" (Role: ${role}) finished. Report:\n\n${instance.result || "(no report)"}`;
       } catch (err: any) {
         closeThinkingNode();
@@ -280,6 +283,7 @@ export const invokeSubagentTool: Tool = {
         instance.status = "completed";
         instance.completedAt = Date.now();
         notifySubagentsChanged();
+        appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${err.message}`);
         return `Subagent failed: ${err.message}`;
       }
     } else {
@@ -294,12 +298,14 @@ export const invokeSubagentTool: Tool = {
           instance.result = lastAssistantMsg.content;
         }
         notifySubagentsChanged();
-      }).catch(() => {
+        appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
+      }).catch((err: any) => {
         closeThinkingNode();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();
         notifySubagentsChanged();
+        appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${err.message || err}`);
       });
 
       return `Invoked subagent "${typeName}" (Role: ${role}) in background. Conversation ID: ${subagentId}`;
