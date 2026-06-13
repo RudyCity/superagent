@@ -328,6 +328,7 @@ export function MultiAgentDashboard({
 
   const [currentTask, setCurrentTask] = useState("Idle - Ready for input");
   const [gitBranch, setGitBranch] = useState("main");
+  const [isHistoryTruncated, setIsHistoryTruncated] = useState(true);
   const [cachedSessions, setCachedSessions] = useState<any[]>([]);
   const [activeWizard, setActiveWizard] = useState<{
     type: "login" | "model" | "resume" | "checkpoint" | "skills" | "permission" | "question" | "plan_approve" | "goal";
@@ -2307,7 +2308,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           wrappedLines.push(
             <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
               <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-              <Text color={group.color === "gray" ? "gray" : group.color} bold={group.isBold} dimColor={group.dimColor} wrap="truncate-end">{lineText}</Text>
+              <Text color={group.color === "gray" ? "gray" : group.color} bold={group.isBold} dimColor={group.dimColor} wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText}</Text>
             </Box>
           );
         }
@@ -2551,6 +2552,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         return;
       }
       exit();
+      return;
+    }
+
+    if (key.ctrl && input === "t") {
+      setIsHistoryTruncated((prev) => !prev);
       return;
     }
 
@@ -3361,7 +3367,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           </Box>
         )}
         <Box flexDirection="row" marginTop={0}>
-          <Text color="gray" dimColor>[Tab] Cycle Focus  [▲/▼] Navigate/Scroll  [Esc] Snap Bottom  [Ctrl+C] Exit</Text>
+          <Text color="gray" dimColor>[Tab] Cycle Focus  [▲/▼] Navigate/Scroll  [Ctrl+T] Toggle Truncate  [Esc] Snap Bottom  [Ctrl+C] Exit</Text>
         </Box>
       </Box>
     </Box>
