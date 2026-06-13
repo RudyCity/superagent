@@ -677,6 +677,25 @@ export function getModelInstanceForString(modelStr: string) {
       modelName = rest;
       apiKey = process.env.PROVIDER_CUSTOM_API_KEY || process.env.CUSTOM_API_KEY || config.apiKey;
       baseUrl = process.env.PROVIDER_CUSTOM_BASE_URL || process.env.CUSTOM_BASE_URL || config.baseUrl;
+    } else {
+      const providerUpper = prefix.toUpperCase();
+      const customKey = process.env[`PROVIDER_${providerUpper}_API_KEY`];
+      const customBase = process.env[`PROVIDER_${providerUpper}_BASE_URL`];
+      const customType = process.env[`PROVIDER_${providerUpper}_TYPE`];
+      if (customKey !== undefined || customBase !== undefined || customType !== undefined) {
+        apiKey = customKey || "";
+        baseUrl = customBase || undefined;
+        modelName = rest;
+        const typeLower = (customType || "").toLowerCase();
+        if (typeLower === "anthropic") {
+          provider = "anthropic";
+          baseUrl = undefined;
+        } else if (typeLower === "custom" || typeLower === "openrouter" || baseUrl) {
+          provider = "custom";
+        } else {
+          provider = "openai";
+        }
+      }
     }
   }
 

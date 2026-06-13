@@ -304,4 +304,21 @@ describe("config", () => {
       expect(masterModel.modelId).toBe("gpt-4o");
     });
   });
+
+  describe("getModelInstanceForString", () => {
+    afterEach(() => {
+      delete process.env.PROVIDER_MYPROVIDER_API_KEY;
+      delete process.env.PROVIDER_MYPROVIDER_BASE_URL;
+      delete process.env.PROVIDER_MYPROVIDER_TYPE;
+    });
+
+    it("should dynamically resolve custom provider prefix", () => {
+      process.env.PROVIDER_MYPROVIDER_API_KEY = "my-api-key";
+      process.env.PROVIDER_MYPROVIDER_BASE_URL = "https://api.myprovider.com/v1";
+      process.env.PROVIDER_MYPROVIDER_TYPE = "openai";
+
+      const model: any = getModelInstanceForString("myprovider:some-cool-model");
+      expect(model.modelId).toBe("some-cool-model");
+    });
+  });
 });
