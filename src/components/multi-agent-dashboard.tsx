@@ -60,6 +60,30 @@ export function stripSgrMouseSequences(value: string): string {
               .replace(/<\d+;\d+;\d+[Mm]/g, "");
 }
 
+export function getInsertion(oldVal: string, newVal: string): { prefix: string; inserted: string; suffix: string } {
+  let start = 0;
+  while (start < oldVal.length && start < newVal.length && oldVal[start] === newVal[start]) {
+    start++;
+  }
+  let endOld = oldVal.length - 1;
+  let endNew = newVal.length - 1;
+  while (endOld >= start && endNew >= start && oldVal[endOld] === newVal[endNew]) {
+    endOld--;
+    endNew--;
+  }
+  const prefix = oldVal.slice(0, start);
+  const inserted = newVal.slice(start, endNew + 1);
+  const suffix = oldVal.slice(endOld + 1);
+  return { prefix, inserted, suffix };
+}
+
+export function getPasteSplit(currentInput: string, prefixLen: number, suffixLen: number) {
+  const prefix = currentInput.slice(0, Math.min(currentInput.length, prefixLen));
+  const suffix = suffixLen > 0 ? currentInput.slice(Math.max(prefix.length, currentInput.length - suffixLen)) : "";
+  const inserted = currentInput.slice(prefix.length, currentInput.length - suffix.length);
+  return { prefix, inserted, suffix };
+}
+
 function renderLogInlineStyles(
   text: string,
   defaultColor: string,
@@ -265,6 +289,8 @@ export function MultiAgentDashboard({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [tempInput, setTempInput] = useState("");
   const [isPasted, setIsPasted] = useState(false);
+  const [pastePrefixLength, setPastePrefixLength] = useState(0);
+  const [pasteSuffixLength, setPasteSuffixLength] = useState(0);
   const [activeModel, setActiveModel] = useState(() => {
     return process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
   });
@@ -315,16 +341,19 @@ export function MultiAgentDashboard({
 
   const handleQueryChange = useCallback((val: string) => {
     const sanitizedVal = stripSgrMouseSequences(val);
-    setQuery(sanitizedVal);
     const lengthDiff = sanitizedVal.length - query.length;
     const containsNewline = sanitizedVal.includes("\n");
     if (lengthDiff < 0) {
       setIsPasted(false);
     } else if (lengthDiff > 15 || containsNewline) {
       setIsPasted(true);
+      const { prefix, suffix } = getInsertion(query, sanitizedVal);
+      setPastePrefixLength(prefix.length);
+      setPasteSuffixLength(suffix.length);
     } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
       setIsPasted(false);
     }
+    setQuery(sanitizedVal);
     if (activeWizard?.type === "model" && wizardOptions.length > 0) {
       setWizardSelectedIndex(0);
     }
@@ -2525,15 +2554,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       return;
     }
 
+    const { inserted: currentInserted } = getPasteSplit(query, pastePrefixLength, pasteSuffixLength);
+    const isPasteActive = isPasted && (currentInserted.length > 200 || currentInserted.includes("\n"));
+
     if (
       (key.backspace || key.delete) &&
-      isPasted &&
-      (query.length > 200 || query.includes("\n"))
+      isPasteActive
     ) {
       setQuery((prev) => {
         const next = prev.slice(0, -1);
-        const hasNewline = next.includes("\n");
-        if (next.length <= 200 && !hasNewline) {
+        const { inserted: nextInserted } = getPasteSplit(next, pastePrefixLength, pasteSuffixLength);
+        if (next.length <= pastePrefixLength + pasteSuffixLength || (nextInserted.length <= 200 && !nextInserted.includes("\n"))) {
           setIsPasted(false);
         }
         return next;
@@ -2542,14 +2573,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     }
 
     if (key.return) {
-      if (isPasted && (query.length > 200 || query.includes("\n"))) {
+      if (isPasteActive) {
         handleQuerySubmit(query);
         return;
       }
     }
 
     if (key.escape) {
-      if (isPasted && (query.length > 200 || query.includes("\n"))) {
+      if (isPasteActive) {
         setQuery("");
         setIsPasted(false);
         setHistoryIndex(-1);
@@ -3258,19 +3289,29 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           </Text>
         </Box>
         <Box flexGrow={1}>
-          {isPasted && (query.length > 200 || query.includes("\n")) ? (
-            <Box flexDirection="row">
-              <Text color="yellow" bold>[Pasted Text: {query.length} chars, {query.split("\n").length} lines] </Text>
-              <Text dimColor>(Press Enter to send, Esc to clear)</Text>
-            </Box>
-          ) : (
-            <TextInput
-              value={query}
-              onChange={handleQueryChange}
-              onSubmit={handleQuerySubmit}
-              focus={focusArea === "input"}
-            />
-          )}
+          {(() => {
+            const { prefix, inserted, suffix } = getPasteSplit(query, pastePrefixLength, pasteSuffixLength);
+            const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
+            if (isPasteActive) {
+              const lineCount = inserted.split("\n").length;
+              return (
+                <Box flexDirection="row">
+                  {prefix ? <Text>{prefix}</Text> : null}
+                  <Text color="yellow" bold>[Pasted Text: {inserted.length} chars, {lineCount} lines] </Text>
+                  {suffix ? <Text>{suffix}</Text> : null}
+                  <Text dimColor>(Press Enter to send, Esc to clear)</Text>
+                </Box>
+              );
+            }
+            return (
+              <TextInput
+                value={query}
+                onChange={handleQueryChange}
+                onSubmit={handleQuerySubmit}
+                focus={focusArea === "input"}
+              />
+            );
+          })()}
         </Box>
       </Box>
 

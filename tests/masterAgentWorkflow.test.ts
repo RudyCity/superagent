@@ -329,4 +329,216 @@ describe("Master Agent Workflow & Guardrails", () => {
     expect(toolEndEvent[0].toolResult.isError).toBe(true);
     expect(toolEndEvent[0].toolResult.result).toContain("Task Tracking File is missing");
   });
+
+  it("should block Master Agent from writing an implementation plan that lacks superagent/spawning references", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.tier = "master";
+    agent.planState = "APPROVED";
+    agent.getCurrentHistoryFilePath();
+    const planPath = agent.getPlanFilePath();
+
+    vi.spyOn(fsPromises, "writeFile").mockResolvedValue(undefined);
+    vi.spyOn(fsPromises, "mkdir").mockResolvedValue(undefined);
+
+    const planWithoutSuperagent = `# My Plan\n## Proposed Changes\n- Modify local file directly\n## Verification Plan\n### Automated Tests\n- npm test\n### Manual Verification\n- test UI`;
+
+    let callCount = 0;
+    vi.mocked(generateText).mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          text: "",
+          toolCalls: [
+            {
+              toolCallId: "call_plan_no_sa",
+              toolName: "write_to_file",
+              args: { filePath: planPath, content: planWithoutSuperagent },
+            },
+          ],
+          finishReason: "stop",
+          usage: { promptTokens: 10, completionTokens: 10 },
+        } as any;
+      }
+      return {
+        text: "Done",
+        toolCalls: [],
+        finishReason: "stop",
+        usage: { promptTokens: 10, completionTokens: 10 },
+      } as any;
+    });
+
+    vi.mocked(streamText).mockImplementation(() => {
+      callCount++;
+      const current = callCount;
+      return {
+        fullStream: (async function* () {
+          if (current === 1) {
+            yield {
+              type: "tool-call",
+              toolCallId: "call_plan_no_sa",
+              toolName: "write_to_file",
+              args: { filePath: planPath, content: planWithoutSuperagent },
+            };
+          } else {
+            yield {
+              type: "text-delta",
+              textDelta: "Done",
+            };
+          }
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    await agent.sendMessage("write plan");
+
+    const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
+    expect(toolEndEvent).toBeDefined();
+    expect(toolEndEvent[0].toolResult.isError).toBe(true);
+    expect(toolEndEvent[0].toolResult.result).toContain("References to Superagent spawning or task delegation");
+  });
+
+  it("should block Master Agent from writing a task list that lacks superagent/spawning/merge references", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.tier = "master";
+    agent.planState = "APPROVED";
+    agent.getCurrentHistoryFilePath();
+    const taskPath = agent.getTaskFilePath();
+
+    vi.spyOn(fsPromises, "writeFile").mockResolvedValue(undefined);
+    vi.spyOn(fsPromises, "mkdir").mockResolvedValue(undefined);
+
+    const taskWithoutSuperagent = `- [ ] Edit index.ts\n- [ ] Edit config.ts`;
+
+    let callCount = 0;
+    vi.mocked(generateText).mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          text: "",
+          toolCalls: [
+            {
+              toolCallId: "call_task_no_sa",
+              toolName: "write_to_file",
+              args: { filePath: taskPath, content: taskWithoutSuperagent },
+            },
+          ],
+          finishReason: "stop",
+          usage: { promptTokens: 10, completionTokens: 10 },
+        } as any;
+      }
+      return {
+        text: "Done",
+        toolCalls: [],
+        finishReason: "stop",
+        usage: { promptTokens: 10, completionTokens: 10 },
+      } as any;
+    });
+
+    vi.mocked(streamText).mockImplementation(() => {
+      callCount++;
+      const current = callCount;
+      return {
+        fullStream: (async function* () {
+          if (current === 1) {
+            yield {
+              type: "tool-call",
+              toolCallId: "call_task_no_sa",
+              toolName: "write_to_file",
+              args: { filePath: taskPath, content: taskWithoutSuperagent },
+            };
+          } else {
+            yield {
+              type: "text-delta",
+              textDelta: "Done",
+            };
+          }
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    await agent.sendMessage("write tasks");
+
+    const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
+    expect(toolEndEvent).toBeDefined();
+    expect(toolEndEvent[0].toolResult.isError).toBe(true);
+    expect(toolEndEvent[0].toolResult.result).toContain("Task Tracking File is invalid or lacks multi-agent context");
+  });
+
+  it("should allow Master Agent to write a task list with superagent/spawning/merge references", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.tier = "master";
+    agent.planState = "APPROVED";
+    agent.getCurrentHistoryFilePath();
+    const taskPath = agent.getTaskFilePath();
+
+    vi.spyOn(fsPromises, "writeFile").mockResolvedValue(undefined);
+    vi.spyOn(fsPromises, "mkdir").mockResolvedValue(undefined);
+
+    const taskWithSuperagent = `- [ ] Spawn superagent coder\n- [ ] Merge completed branch`;
+
+    let callCount = 0;
+    vi.mocked(generateText).mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          text: "",
+          toolCalls: [
+            {
+              toolCallId: "call_task_sa",
+              toolName: "write_to_file",
+              args: { filePath: taskPath, content: taskWithSuperagent },
+            },
+          ],
+          finishReason: "stop",
+          usage: { promptTokens: 10, completionTokens: 10 },
+        } as any;
+      }
+      return {
+        text: "Done",
+        toolCalls: [],
+        finishReason: "stop",
+        usage: { promptTokens: 10, completionTokens: 10 },
+      } as any;
+    });
+
+    vi.mocked(streamText).mockImplementation(() => {
+      callCount++;
+      const current = callCount;
+      return {
+        fullStream: (async function* () {
+          if (current === 1) {
+            yield {
+              type: "tool-call",
+              toolCallId: "call_task_sa",
+              toolName: "write_to_file",
+              args: { filePath: taskPath, content: taskWithSuperagent },
+            };
+          } else {
+            yield {
+              type: "text-delta",
+              textDelta: "Done",
+            };
+          }
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    await agent.sendMessage("write tasks with superagent");
+
+    const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
+    expect(toolEndEvent).toBeDefined();
+    expect(toolEndEvent[0].toolResult.isError).toBeUndefined(); // should be successful
+  });
 });

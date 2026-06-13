@@ -41,6 +41,7 @@ Master Agent  (orchestrator)
 - **Test Location**: Always create and place all test files inside the `tests/` directory at the project root. Do not place test files under the `src/` directory.
 - **Circular Dependency Prevention**: `toolsets.ts` and `prompts.ts` are imported by multiple tool files. Any tool file that needs to import from `toolsets.ts` or `prompts.ts` MUST use dynamic `import()` inside the `execute()` function body — never a top-level static import — to avoid circular module dependency errors.
 - **Tier Enforcement**: Do NOT add orchestration tools (e.g., `invokeSubagentTool`) to Superagent or Subagent toolsets. Each tier must only have the tools listed in `toolsets.ts` for that tier.
+- **Master Agent Planning**: The Master Agent is restricted from directly modifying codebase files and MUST delegate all feature implementation to Superagents. Therefore, the Master Agent's Implementation Plan and Task Tracking files MUST explicitly focus on spawning, monitoring, and merging Superagents (specifying their roles, git branches, and feature tasks) rather than detailing direct file edits as if it were performing them itself.
 
 ## Verification Checklist
 - Run `npm test` to verify that all unit tests pass before committing.

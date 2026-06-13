@@ -27,6 +27,30 @@ export function stripSgrMouseSequences(value: string): string {
   return value.replace(/(?:\x1b)?\[<\d+;\d+;\d+[Mm]/g, "");
 }
 
+export function getInsertion(oldVal: string, newVal: string): { prefix: string; inserted: string; suffix: string } {
+  let start = 0;
+  while (start < oldVal.length && start < newVal.length && oldVal[start] === newVal[start]) {
+    start++;
+  }
+  let endOld = oldVal.length - 1;
+  let endNew = newVal.length - 1;
+  while (endOld >= start && endNew >= start && oldVal[endOld] === newVal[endNew]) {
+    endOld--;
+    endNew--;
+  }
+  const prefix = oldVal.slice(0, start);
+  const inserted = newVal.slice(start, endNew + 1);
+  const suffix = oldVal.slice(endOld + 1);
+  return { prefix, inserted, suffix };
+}
+
+export function getPasteSplit(currentInput: string, prefixLen: number, suffixLen: number) {
+  const prefix = currentInput.slice(0, Math.min(currentInput.length, prefixLen));
+  const suffix = suffixLen > 0 ? currentInput.slice(Math.max(prefix.length, currentInput.length - suffixLen)) : "";
+  const inserted = currentInput.slice(prefix.length, currentInput.length - suffix.length);
+  return { prefix, inserted, suffix };
+}
+
 export function App({
   autoResume = false,
   onHistoryChange,
@@ -42,6 +66,8 @@ export function App({
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [input, setInput] = useState("");
   const [isPasted, setIsPasted] = useState(false);
+  const [pastePrefixLength, setPastePrefixLength] = useState(0);
+  const [pasteSuffixLength, setPasteSuffixLength] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExecutingTool, setIsExecutingTool] = useState(false);
   const [streamDisplay, setStreamDisplay] = useState("");
@@ -1905,7 +1931,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
   const handleInputChange = useCallback((val: string) => {
     const sanitizedVal = stripSgrMouseSequences(val);
 
-    setInput(sanitizedVal);
     const lengthDiff = sanitizedVal.length - input.length;
     const containsNewline = sanitizedVal.includes("\n");
     if (lengthDiff < 0) {
@@ -1913,9 +1938,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setIsPasted(false);
     } else if (lengthDiff > 15 || containsNewline) {
       setIsPasted(true);
+      const { prefix, suffix } = getInsertion(input, sanitizedVal);
+      setPastePrefixLength(prefix.length);
+      setPasteSuffixLength(suffix.length);
     } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
       setIsPasted(false);
     }
+    setInput(sanitizedVal);
     if (lastTabPrefix && !sanitizedVal.startsWith(lastTabPrefix)) {
       setLastTabPrefix(null);
     }
@@ -2766,25 +2795,38 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
     }
 
+    const { inserted: currentInserted } = getPasteSplit(input, pastePrefixLength, pasteSuffixLength);
+    const isPasteActive = isPasted && (currentInserted.length > 200 || currentInserted.includes("\n"));
+
     if (
       (key.backspace || key.delete) &&
-      isPasted &&
-      (input.length > 200 || input.includes("\n")) &&
+      isPasteActive &&
       !isProcessing
     ) {
       setInput((prev) => {
         const next = prev.slice(0, -1);
-        const hasNewline = next.includes("\n");
-        if (next.length <= 200 && !hasNewline) {
+        const { inserted: nextInserted } = getPasteSplit(next, pastePrefixLength, pasteSuffixLength);
+        if (next.length <= pastePrefixLength + pasteSuffixLength || (nextInserted.length <= 200 && !nextInserted.includes("\n"))) {
           setIsPasted(false);
         }
         return next;
       });
+      return;
     }
 
     if (key.return && !isProcessing) {
-      if (isPasted && (input.length > 200 || input.includes("\n"))) {
+      if (isPasteActive) {
         handleSubmit(input);
+        return;
+      }
+    }
+
+    if (key.escape) {
+      if (isPasteActive) {
+        setInput("");
+        setIsPasted(false);
+        setHistoryIndex(-1);
+        return;
       }
     }
 
@@ -3810,20 +3852,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 <Text color={activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>│ ❯ </Text>
                 {isProcessing && !activeWizard ? (
                   <ProcessingIndicator scrollOffset={scrollOffset} />
-                ) : (isPasted && (input.length > 200 || input.includes("\n"))) ? (
-                  <Box flexDirection="row">
-                    <Text color="yellow" bold>[Pasted Text: {input.length} chars, {input.split("\n").length} lines] </Text>
-                    <Text dimColor>(Press Enter to send, Esc to clear)</Text>
-                  </Box>
-                ) : (
-                  <TextInput
-                    focus={focusMode === "input"}
-                    value={input}
-                    onChange={handleInputChange}
-                    onSubmit={handleSubmit}
-                    placeholder={getWizardPlaceholder()}
-                  />
-                )}
+                ) : (() => {
+                  const { prefix, inserted, suffix } = getPasteSplit(input, pastePrefixLength, pasteSuffixLength);
+                  const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
+                  if (isPasteActive) {
+                    const lineCount = inserted.split("\n").length;
+                    return (
+                      <Box flexDirection="row">
+                        {prefix ? <Text>{prefix}</Text> : null}
+                        <Text color="yellow" bold>[Pasted Text: {inserted.length} chars, {lineCount} lines] </Text>
+                        {suffix ? <Text>{suffix}</Text> : null}
+                        <Text dimColor>(Press Enter to send, Esc to clear)</Text>
+                      </Box>
+                    );
+                  }
+                  return (
+                    <TextInput
+                      focus={focusMode === "input"}
+                      value={input}
+                      onChange={handleInputChange}
+                      onSubmit={handleSubmit}
+                      placeholder={getWizardPlaceholder()}
+                    />
+                  );
+                })()}
               </Box>
             </Box>
           </Box>

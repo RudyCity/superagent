@@ -722,6 +722,13 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               if (!hasAutomatedTests) missing.push("Automated Tests sub-section ('### Automated Tests')");
               if (!hasManualVerification) missing.push("Manual Verification sub-section ('### Manual Verification')");
 
+              if (this.tier === "master") {
+                const hasSuperagentOrDelegate = /superagent|spawning|delegate|worktree/i.test(planContent);
+                if (!hasSuperagentOrDelegate) {
+                  missing.push("References to Superagent spawning or task delegation (the Master Agent cannot edit codebase files directly, so the 'Proposed Changes' section MUST detail the Superagents to be spawned, their roles, and branch names)");
+                }
+              }
+
               if (missing.length > 0) {
                 const blocked: ToolResult = {
                   toolCallId: tc.id,
@@ -740,7 +747,47 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               } else {
                 this.planState = "PLANNING_PENDING";
               }
-            } else if (this.planState === "PLANNING_PENDING") {
+            }
+
+            if (isTaskFile) {
+              let taskContent = "";
+              if (tc.name === "write" || tc.name === "write_to_file") {
+                taskContent = (tc.args.content as string || tc.args.codeContent as string || tc.args.CodeContent as string || "").trim();
+              } else if (tc.name === "replace_file_content") {
+                const target = tc.args.TargetContent as string || "";
+                const replacement = tc.args.ReplacementContent as string || "";
+                const existing = fs.existsSync(taskFilePath) ? fs.readFileSync(taskFilePath, "utf8") : "";
+                taskContent = existing.replace(target, replacement);
+              } else if (tc.name === "multi_replace_file_content") {
+                let existing = fs.existsSync(taskFilePath) ? fs.readFileSync(taskFilePath, "utf8") : "";
+                const chunks = (tc.args.ReplacementChunks as any[]) || [];
+                for (const chunk of chunks) {
+                  const target = chunk.TargetContent as string || "";
+                  const replacement = chunk.ReplacementContent as string || "";
+                  existing = existing.replace(target, replacement);
+                }
+                taskContent = existing;
+              } else {
+                taskContent = (tc.args.content as string || tc.args.codeContent as string || tc.args.CodeContent as string || "").trim();
+              }
+
+              if (this.tier === "master") {
+                const hasSuperagentOrSpawnOrMerge = /superagent|spawn|merge|worktree/i.test(taskContent);
+                if (!hasSuperagentOrSpawnOrMerge) {
+                  const blocked: ToolResult = {
+                    toolCallId: tc.id,
+                    name: tc.name,
+                    result: `Error: The Task Tracking File is invalid or lacks multi-agent context. As the Master Agent, your task list MUST include items for spawning, monitoring, and merging Superagents (e.g., 'spawning superagent', 'merge superagents') instead of listing direct file modifications.`,
+                    isError: true,
+                  };
+                  toolResults.push(blocked);
+                  this.onEvent({ type: "tool_end", toolResult: blocked, description });
+                  continue;
+                }
+              }
+            }
+
+            if (!isPlanFile && this.planState === "PLANNING_PENDING") {
               const blocked: ToolResult = {
                 toolCallId: tc.id,
                 name: tc.name,
