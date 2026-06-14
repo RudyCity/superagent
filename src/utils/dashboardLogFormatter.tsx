@@ -11,6 +11,7 @@ interface LogGroup {
   isBold: boolean;
   dimColor: boolean;
   parseMarkdown: boolean;
+  noTruncate?: boolean;
   rawLines: string[];
 }
 
@@ -46,6 +47,7 @@ export function computeWrappedLogs(
     let isBold = false;
     let dimColor = false;
     let parseMarkdown = false;
+    let noTruncate = false;
 
     if (logStr.startsWith("[USER]")) {
       label = "👤 USER";
@@ -67,15 +69,18 @@ export function computeWrappedLogs(
       label = "🔧 TOOL START";
       content = logStr.replace("[TOOL START]", "").trim();
       color = "magenta";
+      noTruncate = true;
     } else if (logStr.startsWith("[TOOL END]")) {
       label = "✅ TOOL DONE";
       content = logStr.replace("[TOOL END]", "").trim();
       color = "gray";
+      noTruncate = true;
     } else if (logStr.startsWith("[ERROR]")) {
       label = "🚨 ERROR";
       content = logStr.replace("[ERROR]", "").trim();
       color = "red";
       isBold = true;
+      noTruncate = true;
     } else if (logStr.startsWith("[AUTO-APPROVE]")) {
       label = "⚙️ AUTO-APPROVE";
       content = logStr.replace("[AUTO-APPROVE]", "").trim();
@@ -95,16 +100,19 @@ export function computeWrappedLogs(
       label = "🔧 TOOL START";
       content = logStr.replace("[TOOL:START]", "").trim();
       color = "cyan";
+      noTruncate = true;
     } else if (logStr.startsWith("[TOOL:OK]")) {
       label = "✅ TOOL OK";
       content = logStr.replace("[TOOL:OK]", "").trim();
       color = "gray";
       dimColor = true;
+      noTruncate = true;
     } else if (logStr.startsWith("[TOOL:FAIL]")) {
       label = "🚨 TOOL FAIL";
       content = logStr.replace("[TOOL:FAIL]", "").trim();
       color = "red";
       isBold = true;
+      noTruncate = true;
     }
 
     const lastGroup = groups[groups.length - 1];
@@ -115,7 +123,8 @@ export function computeWrappedLogs(
       lastGroup.color === color &&
       lastGroup.isBold === isBold &&
       lastGroup.dimColor === dimColor &&
-      lastGroup.parseMarkdown === parseMarkdown
+      lastGroup.parseMarkdown === parseMarkdown &&
+      lastGroup.noTruncate === noTruncate
     ) {
       lastGroup.rawLines.push(content);
     } else {
@@ -126,6 +135,7 @@ export function computeWrappedLogs(
         isBold,
         dimColor,
         parseMarkdown,
+        noTruncate,
         rawLines: [content],
       });
     }
@@ -133,7 +143,7 @@ export function computeWrappedLogs(
 
   for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
     const group = groups[groupIdx];
-    const useTruncate = isHistoryTruncated && !group.parseMarkdown;
+    const useTruncate = isHistoryTruncated && !group.parseMarkdown && !group.noTruncate;
 
     if (group.isBox) {
       for (const logStr of group.rawLines) {
