@@ -166,4 +166,19 @@ describe("Model Presets", () => {
     const presetsAfter = getModelPresets();
     expect(presetsAfter.some(p => p.name === "my-delete-preset")).toBe(false);
   });
+
+  it("should save a custom model preset with explicit models argument", () => {
+    const customModels = {
+      MODEL: "openai:gpt-4-explicit",
+      MODEL_DEPTH_0: "openai:gpt-4-explicit-master",
+    };
+    saveModelPreset("explicit-preset", "Explicit description", customModels);
+    
+    const presets = getModelPresets();
+    const myPreset = presets.find(p => p.name === "explicit-preset");
+    expect(myPreset).toBeDefined();
+    expect(myPreset?.description).toBe("Explicit description");
+    expect(myPreset?.models.MODEL).toBe("openai:gpt-4-explicit");
+    expect(myPreset?.models.MODEL_DEPTH_0).toBe("openai:gpt-4-explicit-master");
+  });
 });

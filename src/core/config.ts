@@ -942,7 +942,7 @@ export function getModelPresets(): ModelPreset[] {
   return presets;
 }
 
-export function saveModelPreset(name: string, description: string): string {
+export function saveModelPreset(name: string, description: string, models?: Record<string, string>): string {
   const presetName = name.toLowerCase().trim();
   if (!presetName) {
     throw new Error("Preset name cannot be empty");
@@ -951,28 +951,29 @@ export function saveModelPreset(name: string, description: string): string {
     throw new Error(`Cannot overwrite built-in preset "${name}"`);
   }
 
-  // Gather all model variables currently set in process.env
-  const models: Record<string, string> = {};
-  
-  if (process.env.MODEL) models.MODEL = process.env.MODEL;
-  if (process.env.MODEL_DEPTH_0) models.MODEL_DEPTH_0 = process.env.MODEL_DEPTH_0;
-  if (process.env.MODEL_DEPT0) models.MODEL_DEPT0 = process.env.MODEL_DEPT0;
-  if (process.env.MODEL_DEPTH_1) models.MODEL_DEPTH_1 = process.env.MODEL_DEPTH_1;
-  if (process.env.MODEL_DEPT1) models.MODEL_DEPT1 = process.env.MODEL_DEPT1;
-  if (process.env.MODEL_DEPTH_2) models.MODEL_DEPTH_2 = process.env.MODEL_DEPTH_2;
-  if (process.env.MODEL_DEPT2) models.MODEL_DEPT2 = process.env.MODEL_DEPT2;
+  const modelsToSave: Record<string, string> = models || {};
 
-  for (const [k, v] of Object.entries(process.env)) {
-    if (v && k.startsWith("MODEL_SUBAGENT_")) {
-      models[k] = v;
-    } else if (v && k.startsWith("MODEL_") && k !== "MODEL" && k !== "MODEL_LIMITS") {
-      // e.g. MODEL_RESEARCHER, MODEL_CODER, MODEL_REVIEWER
-      models[k] = v;
+  if (!models) {
+    if (process.env.MODEL) modelsToSave.MODEL = process.env.MODEL;
+    if (process.env.MODEL_DEPTH_0) modelsToSave.MODEL_DEPTH_0 = process.env.MODEL_DEPTH_0;
+    if (process.env.MODEL_DEPT0) modelsToSave.MODEL_DEPT0 = process.env.MODEL_DEPT0;
+    if (process.env.MODEL_DEPTH_1) modelsToSave.MODEL_DEPTH_1 = process.env.MODEL_DEPTH_1;
+    if (process.env.MODEL_DEPT1) modelsToSave.MODEL_DEPT1 = process.env.MODEL_DEPT1;
+    if (process.env.MODEL_DEPTH_2) modelsToSave.MODEL_DEPTH_2 = process.env.MODEL_DEPTH_2;
+    if (process.env.MODEL_DEPT2) modelsToSave.MODEL_DEPT2 = process.env.MODEL_DEPT2;
+
+    for (const [k, v] of Object.entries(process.env)) {
+      if (v && k.startsWith("MODEL_SUBAGENT_")) {
+        modelsToSave[k] = v;
+      } else if (v && k.startsWith("MODEL_") && k !== "MODEL" && k !== "MODEL_LIMITS") {
+        // e.g. MODEL_RESEARCHER, MODEL_CODER, MODEL_REVIEWER
+        modelsToSave[k] = v;
+      }
     }
   }
 
-  if (Object.keys(models).length === 0) {
-    throw new Error("No model configuration settings found in environment to save.");
+  if (Object.keys(modelsToSave).length === 0) {
+    throw new Error("No model configuration settings found to save.");
   }
 
   const customPath = getCustomPresetsPath();
@@ -989,7 +990,7 @@ export function saveModelPreset(name: string, description: string): string {
   const newPreset: ModelPreset = {
     name: presetName,
     description: description || "Custom model preset.",
-    models
+    models: modelsToSave
   };
 
   const existingIdx = customPresets.findIndex(p => p.name === presetName);

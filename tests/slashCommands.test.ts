@@ -81,12 +81,12 @@ describe("Slash Command: /model", () => {
       step: 1,
       data: {},
     });
-    expect(wizardOptions).toContain("1. Master Agent (depth 0) (openai:gpt-4o-mini)");
-    expect(wizardOptions).toContain("2. Superagent (depth 1) (anthropic:claude-3-5-sonnet)");
-    expect(wizardOptions).toContain("3. Subagent (depth 2) (custom:local-llama)");
-    expect(wizardOptions).toContain("4. Subagent: researcher (openai:gpt-researcher)");
-    expect(wizardOptions).toContain("5. Subagent: coder ((use default: custom:local-llama))");
-    expect(wizardOptions).toContain("6. Subagent: reviewer ((use default: custom:local-llama))");
+    expect(wizardOptions).toContain("1. Load/Apply Model Preset");
+    expect(wizardOptions).toContain("2. List Model Presets");
+    expect(wizardOptions).toContain("3. Create Model Preset");
+    expect(wizardOptions).toContain("4. Edit Model Preset");
+    expect(wizardOptions).toContain("5. Delete Model Preset");
+    expect(wizardOptions).toContain("6. Configure Agent Tier Models");
   });
 
   it("should update standard MODEL when no tier prefix is supplied", () => {

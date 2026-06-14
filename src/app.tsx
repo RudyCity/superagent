@@ -1608,85 +1608,378 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setInput("");
       } else if (activeWizard.step === 21) {
         const desc = value.trim();
-        const name = activeWizard.data.presetName || "";
-        try {
-          const savedPath = saveModelPreset(name, desc);
+        setActiveWizard({
+          type: "model",
+          step: 22,
+          data: { ...activeWizard.data, presetDescription: desc, presetModels: JSON.stringify({}) },
+        });
+        const formatVal = (val?: string) => val ? val : "(not set)";
+        setWizardOptions([
+          `1. Master Agent (depth 0) (${formatVal(undefined)})`,
+          `2. Superagent (depth 1) (${formatVal(undefined)})`,
+          `3. Subagent (depth 2) (${formatVal(undefined)})`,
+          `4. Subagent: researcher (${formatVal(undefined)})`,
+          `5. Subagent: coder (${formatVal(undefined)})`,
+          `6. Subagent: reviewer (${formatVal(undefined)})`,
+          `7. Default Model (Only set default fallback) (${formatVal(undefined)})`,
+          "8. Save Preset & Exit",
+          "9. Cancel & Exit"
+        ]);
+        setWizardSelectedIndex(0);
+        setInput("");
+      } else if (activeWizard.step === 22 || activeWizard.step === 32) {
+        const models: Record<string, string> = activeWizard.data.presetModels ? JSON.parse(activeWizard.data.presetModels) : {};
+        if (value.includes("Save Preset")) {
+          const presetName = activeWizard.data.presetName || "";
+          const presetDescription = activeWizard.data.presetDescription || "";
+          try {
+            const savedPath = saveModelPreset(presetName, presetDescription, models);
+            addLine({
+              type: "system",
+              content: `Model preset "${presetName}" saved successfully!\nSaved to: ${savedPath}`,
+              timestamp: now,
+            });
+          } catch (err: any) {
+            addLine({
+              type: "error",
+              content: `Failed to save model preset: ${err.message}`,
+              timestamp: now,
+            });
+          }
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
+
+        if (value.includes("Cancel")) {
           addLine({
             type: "system",
-            content: `Model preset "${name}" created successfully!\nSaved to: ${savedPath}`,
+            content: `Preset configuration cancelled.`,
             timestamp: now,
           });
-        } catch (err: any) {
-          addLine({
-            type: "error",
-            content: `Failed to create model preset: ${err.message}`,
-            timestamp: now,
-          });
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
         }
-        setActiveWizard(null);
-        setWizardOptions([]);
+
+        let tier = "";
+        if (value.includes("Master Agent")) tier = "master";
+        else if (value.includes("Superagent")) tier = "superagent";
+        else if (value.includes("depth 2")) tier = "subagent";
+        else if (value.includes("researcher")) tier = "researcher";
+        else if (value.includes("coder")) tier = "coder";
+        else if (value.includes("reviewer")) tier = "reviewer";
+        else if (value.includes("Default Model")) tier = "default";
+
+        if (!tier) return;
+
+        const nextStep = activeWizard.step === 22 ? 23 : 33;
+        setActiveWizard({
+          type: "model",
+          step: nextStep,
+          data: { ...activeWizard.data, tier },
+        });
+
+        const list = getConfiguredProviders();
+        const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
+        const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+        setWizardOptions(providerOptions);
         setWizardSelectedIndex(0);
+        setInput("");
+      } else if (activeWizard.step === 23 || activeWizard.step === 33) {
+        if (value === "< Back") {
+          const nextStep = activeWizard.step === 23 ? 22 : 32;
+          setActiveWizard({
+            type: "model",
+            step: nextStep,
+            data: { ...activeWizard.data },
+          });
+          const models: Record<string, string> = activeWizard.data.presetModels ? JSON.parse(activeWizard.data.presetModels) : {};
+          const formatVal = (val?: string) => val ? val : "(not set)";
+          setWizardOptions([
+            `1. Master Agent (depth 0) (${formatVal(models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
+            `2. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
+            `3. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
+            `4. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
+            `5. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
+            `6. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+            `7. Default Model (Only set default fallback) (${formatVal(models.MODEL)})`,
+            "8. Save Preset & Exit",
+            "9. Cancel & Exit"
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        const list = getConfiguredProviders();
+        const cleanName = value.replace(/\s*\[Active\]\s*$/, "").split(" (")[0].trim();
+        const nameWithoutNumber = cleanName.replace(/^\d+\.\s*/, "").trim();
+        const found = list.find(p => p.name.toLowerCase() === nameWithoutNumber.toLowerCase());
+
+        let providerProfileName = "";
+        let providerType = "";
+        let resolvedApiKey = "";
+        let resolvedBaseUrl = "";
+
+        if (found) {
+          providerProfileName = found.name;
+          providerType = found.type;
+          resolvedBaseUrl = found.baseUrl || "";
+          
+          const prefix = `PROVIDER_${found.name.toUpperCase()}`;
+          resolvedApiKey = process.env[`${prefix}_API_KEY`] || "";
+          
+          if (!resolvedApiKey) {
+            if (found.name.toLowerCase() === "openai") {
+              resolvedApiKey = process.env.OPENAI_API_KEY || "";
+            } else if (found.name.toLowerCase() === "anthropic") {
+              resolvedApiKey = process.env.ANTHROPIC_API_KEY || "";
+            } else if (found.name.toLowerCase() === "openrouter") {
+              resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+            } else if (found.type === "custom") {
+              resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+            }
+          }
+          
+          if (found.name.toLowerCase() === "openrouter") {
+            providerType = "openrouter";
+          }
+        } else {
+          const lowerName = nameWithoutNumber.toLowerCase();
+          if (lowerName.includes("openrouter")) {
+            providerProfileName = "openrouter";
+            providerType = "openrouter";
+            resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+          } else if (lowerName.includes("openai")) {
+            providerProfileName = "openai";
+            providerType = "openai";
+            resolvedApiKey = process.env.OPENAI_API_KEY || "";
+          } else if (lowerName.includes("anthropic")) {
+            providerProfileName = "anthropic";
+            providerType = "anthropic";
+            resolvedApiKey = process.env.ANTHROPIC_API_KEY || "";
+          } else if (lowerName.includes("custom")) {
+            providerProfileName = "custom";
+            providerType = "custom";
+            resolvedBaseUrl = process.env.CUSTOM_BASE_URL || "";
+            resolvedApiKey = process.env.CUSTOM_API_KEY || "";
+          } else {
+            providerProfileName = "openrouter";
+            providerType = "openrouter";
+          }
+        }
+
+        const nextStep = activeWizard.step === 23 ? 24 : 34;
+        setActiveWizard({
+          type: "model",
+          step: nextStep,
+          data: { ...activeWizard.data, provider: providerProfileName },
+        });
+
+        let initialModels: string[] = [];
+        if (providerType === "openrouter") {
+          initialModels = [
+            "google/gemini-2.5-flash",
+            "meta-llama/llama-3.3-70b-instruct",
+            "deepseek/deepseek-chat",
+            "anthropic/claude-3.5-sonnet",
+          ];
+          setWizardIsLoadingModels(true);
+          const headers: Record<string, string> = {};
+          if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
+          fetch("https://openrouter.ai/api/v1/models", { headers })
+            .then(async (res) => {
+              if (res.ok) {
+                const data = await res.json() as any;
+                if (data && Array.isArray(data.data)) {
+                  const modelsList = data.data.map((m: any) => m.id);
+                  setWizardOptions([...modelsList, "< Back"]);
+                }
+              }
+            })
+            .catch(() => {})
+            .finally(() => setWizardIsLoadingModels(false));
+        } else if (providerType === "openai") {
+          initialModels = [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "o1",
+            "o1-mini",
+            "o1-preview",
+            "o3-mini",
+            "gpt-4-turbo",
+            "gpt-4",
+          ];
+          if (resolvedApiKey) {
+            setWizardIsLoadingModels(true);
+            fetch("https://api.openai.com/v1/models", {
+              headers: {
+                Authorization: `Bearer ${resolvedApiKey}`
+              }
+            })
+              .then(async (res) => {
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  if (data && Array.isArray(data.data)) {
+                    const modelsList = data.data.map((m: any) => m.id);
+                    setWizardOptions([...modelsList, "< Back"]);
+                  }
+                }
+              })
+              .catch(() => {})
+              .finally(() => setWizardIsLoadingModels(false));
+          }
+        } else if (providerType === "anthropic") {
+          initialModels = [
+            "claude-opus-4-5",
+            "claude-sonnet-4-5",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229",
+          ];
+        } else if (providerType === "custom") {
+          initialModels = [
+            "deepseek-chat",
+            "llama-3.3-70b-instruct",
+          ];
+          if (resolvedBaseUrl) {
+            setWizardIsLoadingModels(true);
+            const headers: Record<string, string> = {};
+            if (resolvedApiKey) {
+              headers["Authorization"] = `Bearer ${resolvedApiKey}`;
+            }
+            fetch(`${resolvedBaseUrl}/models`, { headers })
+              .then(async (res) => {
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  if (data && Array.isArray(data.data)) {
+                    const modelsList = data.data.map((m: any) => m.id);
+                    setWizardOptions([...modelsList, "< Back"]);
+                  }
+                }
+              })
+              .catch(() => {})
+              .finally(() => setWizardIsLoadingModels(false));
+          }
+        }
+
+        setWizardOptions([...initialModels, "< Back"]);
+        setWizardSelectedIndex(0);
+        setInput("");
+      } else if (activeWizard.step === 24 || activeWizard.step === 34) {
+        if (value === "< Back") {
+          const nextStep = activeWizard.step === 24 ? 23 : 33;
+          setActiveWizard({
+            type: "model",
+            step: nextStep,
+            data: { ...activeWizard.data },
+          });
+          const list = getConfiguredProviders();
+          const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
+          const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+          setWizardOptions(providerOptions);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        const modelName = value;
+        const profileName = activeWizard.data.provider || "";
+        const tier = activeWizard.data.tier || "";
+        
+        const activeProvider = process.env.ACTIVE_PROVIDER || "";
+        const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+          ? `${profileName.toLowerCase()}:${modelName}`
+          : modelName;
+
+        const presetModels: Record<string, string> = activeWizard.data.presetModels ? JSON.parse(activeWizard.data.presetModels) : {};
+
+        if (tier === "master") {
+          presetModels.MODEL_DEPTH_0 = finalModelName;
+          presetModels.MODEL_DEPT0 = finalModelName;
+        } else if (tier === "superagent") {
+          presetModels.MODEL_DEPTH_1 = finalModelName;
+          presetModels.MODEL_DEPT1 = finalModelName;
+        } else if (tier === "subagent") {
+          presetModels.MODEL_DEPTH_2 = finalModelName;
+          presetModels.MODEL_DEPT2 = finalModelName;
+        } else if (tier === "researcher") {
+          presetModels.MODEL_SUBAGENT_RESEARCHER = finalModelName;
+          presetModels.MODEL_RESEARCHER = finalModelName;
+        } else if (tier === "coder") {
+          presetModels.MODEL_SUBAGENT_CODER = finalModelName;
+          presetModels.MODEL_CODER = finalModelName;
+        } else if (tier === "reviewer") {
+          presetModels.MODEL_SUBAGENT_REVIEWER = finalModelName;
+          presetModels.MODEL_REVIEWER = finalModelName;
+        } else if (tier === "default") {
+          presetModels.MODEL = finalModelName;
+        }
+
+        const nextStep = activeWizard.step === 24 ? 22 : 32;
+        setActiveWizard({
+          type: "model",
+          step: nextStep,
+          data: { ...activeWizard.data, presetModels: JSON.stringify(presetModels) },
+        });
+
+        const formatVal = (val?: string) => val ? val : "(not set)";
+        setWizardOptions([
+          `1. Master Agent (depth 0) (${formatVal(presetModels.MODEL_DEPTH_0 || presetModels.MODEL_DEPT0)})`,
+          `2. Superagent (depth 1) (${formatVal(presetModels.MODEL_DEPTH_1 || presetModels.MODEL_DEPT1)})`,
+          `3. Subagent (depth 2) (${formatVal(presetModels.MODEL_DEPTH_2 || presetModels.MODEL_DEPT2)})`,
+          `4. Subagent: researcher (${formatVal(presetModels.MODEL_SUBAGENT_RESEARCHER || presetModels.MODEL_RESEARCHER)})`,
+          `5. Subagent: coder (${formatVal(presetModels.MODEL_SUBAGENT_CODER || presetModels.MODEL_CODER)})`,
+          `6. Subagent: reviewer (${formatVal(presetModels.MODEL_SUBAGENT_REVIEWER || presetModels.MODEL_REVIEWER)})`,
+          `7. Default Model (Only set default fallback) (${formatVal(presetModels.MODEL)})`,
+          "8. Save Preset & Exit",
+          "9. Cancel & Exit"
+        ]);
+        setWizardSelectedIndex(0);
+        setInput("");
       } else if (activeWizard.step === 30) {
         const choice = value;
         const name = choice.split(" - ")[0].trim();
+        const presets = getModelPresets();
+        const preset = presets.find(p => p.name.toLowerCase() === name.toLowerCase());
+        const models = preset ? preset.models : {};
+        const desc = preset ? preset.description : "";
         setActiveWizard({
           type: "model",
           step: 31,
-          data: { ...activeWizard.data, presetName: name },
+          data: { ...activeWizard.data, presetName: name, presetDescription: desc, presetModels: JSON.stringify(models) },
         });
         setWizardOptions([]);
         setWizardSelectedIndex(0);
         setInput("");
       } else if (activeWizard.step === 31) {
         const desc = value.trim();
+        const updatedDesc = desc || activeWizard.data.presetDescription || "";
+        const models: Record<string, string> = activeWizard.data.presetModels ? JSON.parse(activeWizard.data.presetModels) : {};
+        
         setActiveWizard({
           type: "model",
           step: 32,
-          data: { ...activeWizard.data, presetDescription: desc },
+          data: { ...activeWizard.data, presetDescription: updatedDesc }
         });
-        setWizardOptions(["1. No, keep existing models", "2. Yes, update models to current configuration"]);
+
+        const formatModel = (val: string) => val ? val : "(not set)";
+        setWizardOptions([
+          `1. Master Agent (depth 0) (${formatModel(models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
+          `2. Superagent (depth 1) (${formatModel(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
+          `3. Subagent (depth 2) (${formatModel(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
+          `4. Subagent: researcher (${formatModel(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
+          `5. Subagent: coder (${formatModel(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
+          `6. Subagent: reviewer (${formatModel(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+          `7. Default Model (Only set default fallback) (${formatModel(models.MODEL)})`,
+          "8. Save Preset & Exit",
+          "9. Cancel & Exit"
+        ]);
         setWizardSelectedIndex(0);
         setInput("");
-      } else if (activeWizard.step === 32) {
-        const choice = value;
-        const name = activeWizard.data.presetName || "";
-        const desc = activeWizard.data.presetDescription || "";
-        const updateModels = choice.includes("Yes") || choice.includes("update");
-        try {
-          let models: Record<string, string> | undefined = undefined;
-          if (updateModels) {
-            models = {};
-            if (process.env.MODEL) models.MODEL = process.env.MODEL;
-            if (process.env.MODEL_DEPTH_0) models.MODEL_DEPTH_0 = process.env.MODEL_DEPTH_0;
-            if (process.env.MODEL_DEPT0) models.MODEL_DEPT0 = process.env.MODEL_DEPT0;
-            if (process.env.MODEL_DEPTH_1) models.MODEL_DEPTH_1 = process.env.MODEL_DEPTH_1;
-            if (process.env.MODEL_DEPT1) models.MODEL_DEPT1 = process.env.MODEL_DEPT1;
-            if (process.env.MODEL_DEPTH_2) models.MODEL_DEPTH_2 = process.env.MODEL_DEPTH_2;
-            if (process.env.MODEL_DEPT2) models.MODEL_DEPT2 = process.env.MODEL_DEPT2;
-            for (const [k, v] of Object.entries(process.env)) {
-              if (v && k.startsWith("MODEL_SUBAGENT_")) {
-                models[k] = v;
-              } else if (v && k.startsWith("MODEL_") && k !== "MODEL" && k !== "MODEL_LIMITS") {
-                models[k] = v;
-              }
-            }
-          }
-          const savedPath = updateModelPreset(name, desc, models);
-          addLine({
-            type: "system",
-            content: `Model preset "${name}" updated successfully!\nSaved to: ${savedPath}`,
-            timestamp: now,
-          });
-        } catch (err: any) {
-          addLine({
-            type: "error",
-            content: `Failed to update model preset: ${err.message}`,
-            timestamp: now,
-          });
-        }
-        setActiveWizard(null);
-        setWizardOptions([]);
-        setWizardSelectedIndex(0);
       } else if (activeWizard.step === 40) {
         const choice = value;
         const name = choice.split(" - ")[0].trim();
@@ -1946,7 +2239,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         // we skip here to prevent double-firing.
         const isSelectionStep = 
           (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 5 || activeWizard.step === 10)) ||
-          (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 40 || activeWizard.step === 41)) ||
+          (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 24 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 34 || activeWizard.step === 40 || activeWizard.step === 41 || activeWizard.step === 50)) ||
           (activeWizard.type === "permission") ||
           (activeWizard.type === "question" && wizardOptions.length > 0);
 
@@ -2540,29 +2833,22 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
         if (key.return) {
-          const tiers = [
-            "master",       // 0
-            "superagent",   // 1
-            "subagent",     // 2
-            "researcher",   // 3
-            "coder",        // 4
-            "reviewer",     // 5
-            "preset_load",  // 6
-            "preset_list",  // 7
-            "preset_create",// 8
-            "preset_edit",  // 9
-            "preset_delete",// 10
-            "default",      // 11
-            "all"           // 12
+          const choices = [
+            "preset_load",    // 0
+            "preset_list",    // 1
+            "preset_create",  // 2
+            "preset_edit",    // 3
+            "preset_delete",  // 4
+            "configure_tiers" // 5
           ];
-          const tier = tiers[wizardSelectedIndex];
-          if (!tier) return;
+          const choice = choices[wizardSelectedIndex];
+          if (!choice) return;
 
-          if (tier === "preset_load") {
+          if (choice === "preset_load") {
             setActiveWizard({
               type: "model",
               step: 4,
-              data: { tier },
+              data: { tier: choice },
             });
             const presets = getModelPresets();
             const options = presets.map(p => `${p.name} - ${p.description}`);
@@ -2572,7 +2858,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             return;
           }
 
-          if (tier === "preset_list") {
+          if (choice === "preset_list") {
             const presets = getModelPresets();
             const listStr = presets.map(p => {
               const modelsStr = Object.entries(p.models).map(([k, v]) => `    - ${k}: ${v}`).join("\n");
@@ -2589,11 +2875,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             return;
           }
 
-          if (tier === "preset_create") {
+          if (choice === "preset_create") {
             setActiveWizard({
               type: "model",
               step: 20,
-              data: { tier },
+              data: { tier: choice },
             });
             setWizardOptions([]);
             setWizardSelectedIndex(0);
@@ -2601,7 +2887,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             return;
           }
 
-          if (tier === "preset_edit") {
+          if (choice === "preset_edit") {
             const presets = getModelPresets();
             const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
             if (customPresets.length === 0) {
@@ -2618,7 +2904,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             setActiveWizard({
               type: "model",
               step: 30,
-              data: { tier },
+              data: { tier: choice },
             });
             setWizardOptions(customPresets.map(p => `${p.name} - ${p.description}`));
             setWizardSelectedIndex(0);
@@ -2626,7 +2912,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             return;
           }
 
-          if (tier === "preset_delete") {
+          if (choice === "preset_delete") {
             const presets = getModelPresets();
             const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
             if (customPresets.length === 0) {
@@ -2643,7 +2929,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             setActiveWizard({
               type: "model",
               step: 40,
-              data: { tier },
+              data: { tier: choice },
             });
             setWizardOptions(customPresets.map(p => `${p.name} - ${p.description}`));
             setWizardSelectedIndex(0);
@@ -2651,10 +2937,67 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             return;
           }
 
+          if (choice === "configure_tiers") {
+            const currentModel = process.env.MODEL || getDefaultModel();
+            const getResolvedModelWithProvider = (rawVal: string, isDefault: boolean): string => {
+              const mStr = (rawVal || (isDefault ? (process.env.MODEL || getDefaultModel()) : "")).trim();
+              if (!mStr) return "(not set)";
+              if (mStr.includes(":")) return mStr;
+              const activeProvider = (process.env.ACTIVE_PROVIDER || (process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai")).trim();
+              return `${activeProvider}:${mStr}`;
+            };
+            const defaultResolved = getResolvedModelWithProvider("", true);
+            const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+            const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
+            const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+            const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
+            const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+            const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
+            const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
+            const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
+            const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
+            const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
+            const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
+            const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
+
+            setActiveWizard({
+              type: "model",
+              step: 50,
+              data: { ...activeWizard.data },
+            });
+            setWizardOptions([
+              `1. Master Agent (depth 0) (${masterModelFormatted})`,
+              `2. Superagent (depth 1) (${superagentModelFormatted})`,
+              `3. Subagent (depth 2) (${subagentModelFormatted})`,
+              `4. Subagent: researcher (${researcherModelFormatted})`,
+              `5. Subagent: coder (${coderModelFormatted})`,
+              `6. Subagent: reviewer (${reviewerModelFormatted})`,
+              `7. Default Model (Only set default fallback)`,
+              `8. All Tiers (Overwrite All)`
+            ]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          }
+        }
+      } else if (activeWizard.type === "model" && activeWizard.step === 50 && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+          return;
+        }
+        if (key.return) {
+          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "default", "all"];
+          const tier = tiers[wizardSelectedIndex];
+          if (!tier) return;
+
           setActiveWizard({
             type: "model",
             step: 2,
-            data: { tier },
+            data: { ...activeWizard.data, tier },
           });
 
           const list = getConfiguredProviders();
@@ -2666,7 +3009,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         }
       } else if (
         activeWizard.type === "model" && 
-        (activeWizard.step === 2 || activeWizard.step === 4 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 40 || activeWizard.step === 41) && 
+        (activeWizard.step === 2 || activeWizard.step === 4 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 40 || activeWizard.step === 41) && 
         wizardOptions.length > 0
       ) {
         if (key.upArrow) {
@@ -2684,7 +3027,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           }
           return;
         }
-      } else if (activeWizard.type === "model" && activeWizard.step === 3 && wizardOptions.length > 0) {
+      } else if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34) && wizardOptions.length > 0) {
         const modelSearchQuery = input.trim();
         const filteredModels = modelSearchQuery
           ? filterSuggestions(wizardOptions, modelSearchQuery)
@@ -3313,11 +3656,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       if (activeWizard.step === 2) return "Enter provider number or select using arrows...";
       if (activeWizard.step === 20) return "Type preset name and press Enter...";
       if (activeWizard.step === 21) return "Type preset description and press Enter...";
+      if (activeWizard.step === 22 || activeWizard.step === 32) return "Select tier option using arrows and Enter...";
+      if (activeWizard.step === 23 || activeWizard.step === 33) return "Select provider using arrows and Enter...";
+      if (activeWizard.step === 24 || activeWizard.step === 34) return "🔍 Search models (type to filter, arrows to navigate, Enter to select)...";
       if (activeWizard.step === 30) return "Select preset to edit using arrows and Enter...";
       if (activeWizard.step === 31) return "Type new description and press Enter...";
-      if (activeWizard.step === 32) return "Select option using arrows and Enter...";
       if (activeWizard.step === 40) return "Select preset to delete using arrows and Enter...";
       if (activeWizard.step === 41) return "Select confirmation using arrows and Enter...";
+      if (activeWizard.step === 50) return "Select agent tier using arrows and Enter...";
       return wizardOptions.length > 0
         ? "🔍 Search models (type to filter, arrows to navigate, Enter to select)..."
         : "Enter model name (e.g. google/gemini-2.5-flash)...";
@@ -4101,15 +4447,91 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               />
             )}
 
-            {activeWizard && activeWizard.type === "model" && activeWizard.step === 32 && wizardOptions.length > 0 && (
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 22 && wizardOptions.length > 0 && (
               <WizardDialog
-                title="📝 EDIT MODEL PRESET — Update Model Configuration?"
-                description="Do you want to update the models in this preset to match your current session's active models?"
+                title="📝 CREATE MODEL PRESET — Configure Tiers:"
+                description="Select agent tiers to configure provider and model, then choose 'Save Preset & Exit' when done."
                 borderColor="cyan"
                 options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
               />
             )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 23 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title={`📝 CREATE MODEL PRESET — Select Provider for ${activeWizard.data.tier?.toUpperCase() || "Tiers"}:`}
+                description="Choose a provider template (or select '< Back' to return):"
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 24 && wizardOptions.length > 0 && (() => {
+              const modelSearchQuery = input.trim();
+              const filteredModels = modelSearchQuery
+                ? filterSuggestions(wizardOptions, modelSearchQuery)
+                : wizardOptions;
+              const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
+              const tierStr = activeWizard.data.tier ? ` for ${activeWizard.data.tier.toUpperCase()}` : "";
+              const provStr = activeWizard.data.provider ? ` via ${activeWizard.data.provider.toUpperCase()}` : "";
+              const searchTitle = modelSearchQuery
+                ? `📝 CREATE MODEL PRESET — Select Model${tierStr}${provStr} — 🔍 "${input.trim()}" (${filteredModels.length}/${wizardOptions.length} results):`
+                : `📝 CREATE MODEL PRESET — Select Model${tierStr}${provStr} (${wizardOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
+              return (
+                <WizardDialog
+                  title={searchTitle}
+                  borderColor="cyan"
+                  options={filteredModels.length > 0 ? filteredModels : ["(no results)"]}
+                  selectedIndex={clampedIndex}
+                  maxVisible={10}
+                  isLoading={wizardIsLoadingModels}
+                />
+              );
+            })()}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 32 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="📝 EDIT MODEL PRESET — Configure Tiers:"
+                description="Select agent tiers to configure provider and model, then choose 'Save Preset & Exit' when done."
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 33 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title={`📝 EDIT MODEL PRESET — Select Provider for ${activeWizard.data.tier?.toUpperCase() || "Tiers"}:`}
+                description="Choose a provider template (or select '< Back' to return):"
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 34 && wizardOptions.length > 0 && (() => {
+              const modelSearchQuery = input.trim();
+              const filteredModels = modelSearchQuery
+                ? filterSuggestions(wizardOptions, modelSearchQuery)
+                : wizardOptions;
+              const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
+              const tierStr = activeWizard.data.tier ? ` for ${activeWizard.data.tier.toUpperCase()}` : "";
+              const provStr = activeWizard.data.provider ? ` via ${activeWizard.data.provider.toUpperCase()}` : "";
+              const searchTitle = modelSearchQuery
+                ? `📝 EDIT MODEL PRESET — Select Model${tierStr}${provStr} — 🔍 "${input.trim()}" (${filteredModels.length}/${wizardOptions.length} results):`
+                : `📝 EDIT MODEL PRESET — Select Model${tierStr}${provStr} (${wizardOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
+              return (
+                <WizardDialog
+                  title={searchTitle}
+                  borderColor="cyan"
+                  options={filteredModels.length > 0 ? filteredModels : ["(no results)"]}
+                  selectedIndex={clampedIndex}
+                  maxVisible={10}
+                  isLoading={wizardIsLoadingModels}
+                />
+              );
+            })()}
 
             {activeWizard && activeWizard.type === "model" && activeWizard.step === 40 && wizardOptions.length > 0 && (
               <WizardDialog
@@ -4126,6 +4548,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 title="❌ DELETE MODEL PRESET — Are you sure?"
                 description={`This will permanently delete custom preset "${activeWizard.data.presetName || ""}". This action cannot be undone.`}
                 borderColor="red"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 50 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="⚙️ CONFIGURE ACTIVE AGENT TIER MODELS (Use Arrow Keys Up/Down & Enter):"
+                borderColor="cyan"
                 options={wizardOptions}
                 selectedIndex={wizardSelectedIndex}
               />

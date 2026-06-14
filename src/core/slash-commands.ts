@@ -1135,19 +1135,12 @@ export function handleSlashCommand(
             data: {},
           });
           ctx.setWizardOptions?.([
-            `1. Master Agent (depth 0) (${masterModelFormatted})`,
-            `2. Superagent (depth 1) (${superagentModelFormatted})`,
-            `3. Subagent (depth 2) (${subagentModelFormatted})`,
-            `4. Subagent: researcher (${researcherModelFormatted})`,
-            `5. Subagent: coder (${coderModelFormatted})`,
-            `6. Subagent: reviewer (${reviewerModelFormatted})`,
-            `7. Load/Apply Model Preset (Gunakan Preset)`,
-            `8. List Model Presets (Daftar Preset)`,
-            `9. Create Model Preset (Buat Preset)`,
-            `10. Edit Model Preset (Edit Preset)`,
-            `11. Delete Model Preset (Hapus Preset)`,
-            `12. Default Model (Only set default fallback)`,
-            `13. All Tiers (Overwrite All)`
+            "1. Load/Apply Model Preset",
+            "2. List Model Presets",
+            "3. Create Model Preset",
+            "4. Edit Model Preset",
+            "5. Delete Model Preset",
+            "6. Configure Agent Tier Models"
           ]);
           ctx.setWizardSelectedIndex?.(0);
         }
