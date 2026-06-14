@@ -195,10 +195,29 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
             .map((i) => i.branch).length;
           const statusBarHeight = 5 + (activeWTsCount > 0 ? 1 : 0);
           const suggestions = getDashboardSuggestions(query);
-          const bottomPromptHeight = 1 + (ctx.focusArea === "input" && query.startsWith("/") && suggestions.length > 0 ? 2 : 0);
+          const isSuggestionsVisible = ctx.focusArea === "input" && query.startsWith("/") && suggestions.length > 0;
+          const bottomPromptHeight = 1 + (isSuggestionsVisible ? 2 : 0);
           const promptStartRow = terminalSize.height - statusBarHeight - bottomPromptHeight + 1;
 
           if (y >= promptStartRow) {
+            if (isSuggestionsVisible && y === promptStartRow) {
+              // Clicked on suggestions line
+              let col = 18; // 1-indexed column after "│   Suggestions: "
+              const sliced = suggestions.slice(0, 5);
+              let clickedSuggestion: string | null = null;
+              for (let i = 0; i < sliced.length; i++) {
+                const s = sliced[i];
+                const nextCol = col + s.length;
+                if (x >= col && x < nextCol) {
+                  clickedSuggestion = s;
+                  break;
+                }
+                col = nextCol + 2; // +2 for separator spaces
+              }
+              if (clickedSuggestion) {
+                setQuery(clickedSuggestion);
+              }
+            }
             setFocusArea("input");
           } else if (y >= workspaceStartRow && y < workspaceStartRow + workspaceHeight) {
             if (x <= leftLimit) {

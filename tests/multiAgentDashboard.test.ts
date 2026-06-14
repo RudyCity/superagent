@@ -271,4 +271,81 @@ describe("MultiAgentDashboard UI Component", () => {
     process.stdin.off = originalOff;
     process.stdout.write = originalWrite;
   });
+
+  it("should focus input area and select suggestion on click", async () => {
+    const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
+
+    const originalOn = process.stdin.on;
+    const originalOff = process.stdin.off;
+    const originalWrite = process.stdout.write;
+
+    let mouseHandler: any = null;
+    process.stdin.on = vi.fn((event, cb) => {
+      if (event === "data") mouseHandler = cb;
+      return process.stdin;
+    }) as any;
+    process.stdin.off = vi.fn() as any;
+    process.stdout.write = vi.fn() as any;
+
+    const mockSetFocusArea = vi.fn();
+    const mockSetQuery = vi.fn();
+
+    const TestComponent = () => {
+      useDashboardMouse({
+        wrappedLines: [],
+        logsCount: 10,
+        terminalSize: { width: 100, height: 40 },
+        activeWizard: null,
+        setActiveWizard: vi.fn(),
+        wizardOptions: [],
+        wizardSelectedIndex: 0,
+        setWizardSelectedIndex: vi.fn(),
+        wizardSelectedSet: new Set(),
+        setWizardSelectedSet: vi.fn(),
+        setWizardOptions: vi.fn(),
+        pendingQuestion: null,
+        handleWizardSubmit: vi.fn(),
+        query: "/he",
+        setQuery: mockSetQuery,
+        wizardAllOptions: [],
+        workspaceHeight: 15,
+        leftTopHeight: 10,
+        wizardIsLoadingModels: false,
+        agent: null,
+        focusArea: "input",
+        setFocusArea: mockSetFocusArea,
+        setLogScrollOffset: vi.fn(),
+      } as any);
+      return null;
+    };
+
+    const { unmount } = render(React.createElement(TestComponent));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(mouseHandler).toBeDefined();
+
+    // Click on suggestion:
+    // With query "/he", suggestions contains "/help".
+    // promptStartRow = height (40) - statusBarHeight (5) - bottomPromptHeight (3) + 1 = 33
+    // So the suggestions row is y = 33.
+    // "/help" starts at col 18, length is 5, so columns 18-22.
+    // Let's click at x = 19, y = 33
+    mouseHandler(Buffer.from("\x1b[<0;19;33M"));
+    expect(mockSetFocusArea).toHaveBeenCalledWith("input");
+    expect(mockSetQuery).toHaveBeenCalledWith("/help");
+
+    // Click on footer:
+    // footer starts at y = terminalSize.height - statusBarHeight + 1 = 36.
+    // Let's click at x = 10, y = 38 (footer area)
+    mockSetFocusArea.mockClear();
+    mouseHandler(Buffer.from("\x1b[<0;10;38M"));
+    expect(mockSetFocusArea).toHaveBeenCalledWith("input");
+
+    unmount();
+
+    process.stdin.on = originalOn;
+    process.stdin.off = originalOff;
+    process.stdout.write = originalWrite;
+  });
 });
+
