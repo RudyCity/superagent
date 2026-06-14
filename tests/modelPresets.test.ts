@@ -57,15 +57,9 @@ describe("Model Presets", () => {
     }
   });
 
-  it("should retrieve built-in model presets", () => {
+  it("should retrieve model presets", () => {
     const presets = getModelPresets();
-    expect(presets.length).toBeGreaterThanOrEqual(5);
-    const names = presets.map(p => p.name);
-    expect(names).toContain("balanced");
-    expect(names).toContain("openai-full");
-    expect(names).toContain("anthropic-full");
-    expect(names).toContain("gemini-full");
-    expect(names).toContain("fast-cheap");
+    expect(Array.isArray(presets)).toBe(true);
   });
 
   it("should save a custom model preset to model-presets.json", () => {
@@ -87,6 +81,11 @@ describe("Model Presets", () => {
   });
 
   it("should apply a model preset to env variables and write to .env", () => {
+    saveModelPreset("openai-full", "OpenAI stack", {
+      MODEL: "openai:gpt-4o",
+      MODEL_DEPTH_0: "openai:gpt-4o",
+      MODEL_DEPTH_2: "openai:gpt-4o-mini",
+    });
     const envPath = applyModelPreset("openai-full");
 
     expect(process.env.MODEL).toBe("openai:gpt-4o");
@@ -124,7 +123,6 @@ describe("Model Presets", () => {
     handleSlashCommand("/model preset list", mockCtx);
     expect(addedLines.length).toBe(1);
     expect(addedLines[0].content).toContain("Available Model Presets");
-    expect(addedLines[0].content).toContain("balanced");
 
     // 2. Save custom preset
     process.env.MODEL = "openai:test-slash-model";

@@ -1,6 +1,8 @@
 import React, { useEffect } from "react";
 import path from "path";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
+import { superagentInstances } from "../core/tools/state.js";
+import { getDashboardSuggestions } from "../utils/dashboardSuggestions.js";
 
 export interface DashboardMouseContext {
   wrappedLines: React.ReactNode[];
@@ -23,6 +25,7 @@ export interface DashboardMouseContext {
   leftTopHeight: number;
   wizardIsLoadingModels: boolean;
   agent: any;
+  focusArea: string;
   setFocusArea: React.Dispatch<React.SetStateAction<any>>;
   setLogScrollOffset: React.Dispatch<React.SetStateAction<number>>;
 }
@@ -49,6 +52,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     leftTopHeight,
     wizardIsLoadingModels,
     agent,
+    focusArea,
     setFocusArea,
     setLogScrollOffset,
   } = ctx;
@@ -81,114 +85,126 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
           const rightStart = Math.floor(terminalSize.width * 0.42);
           const workspaceStartRow = 4;
 
-          if (x <= leftLimit) {
-            if (activeWizard) {
-              setFocusArea("input");
+          // Check wizard options clicks first (which is full-width in multi-agent layout)
+          if (activeWizard) {
+            let options = wizardOptions;
+            let maxVisible = 10;
+            if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)) {
+              const lc = query.trim().toLowerCase();
+              options = lc
+                ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
+                : wizardAllOptions;
+              maxVisible = 8;
+            }
 
-              let options = wizardOptions;
-              let maxVisible = 10;
-              if (activeWizard.type === "model" && activeWizard.step === 3) {
-                const lc = query.trim().toLowerCase();
-                options = lc
-                  ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
-                  : wizardAllOptions;
-                maxVisible = 8;
+            const total = options.length;
+            if (total > 0) {
+              let start = 0;
+              if (total > maxVisible) {
+                start = Math.max(0, wizardSelectedIndex - Math.floor(maxVisible / 2));
+                const end = start + maxVisible;
+                if (end > total) {
+                  start = Math.max(0, total - maxVisible);
+                }
+              }
+              const visibleCount = Math.min(total, maxVisible);
+
+              let description = undefined;
+              if (activeWizard.type === "plan_approve") {
+                description = `Model AI telah merancang rencana di file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}`;
+              } else if (activeWizard.type === "question") {
+                description = pendingQuestion?.question || "";
+              } else if (activeWizard.type === "login" && activeWizard.step === 10) {
+                description = "Choose a template catalog stack or let AI dynamically design your project details:";
+              } else if (activeWizard.type === "login" && activeWizard.step === 11) {
+                description = "Specify the name for this workspace:";
+              } else if (activeWizard.type === "login" && activeWizard.step === 12) {
+                description = "Give a one-sentence overview description of this software:";
+              } else if (activeWizard.type === "login" && activeWizard.step === 13) {
+                description = "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:";
               }
 
-              const total = options.length;
-              if (total > 0) {
-                let start = 0;
-                if (total > maxVisible) {
-                  start = Math.max(0, wizardSelectedIndex - Math.floor(maxVisible / 2));
-                  const end = start + maxVisible;
-                  if (end > total) {
-                    start = Math.max(0, total - maxVisible);
-                  }
-                }
-                const visibleCount = Math.min(total, maxVisible);
+              let descLines = 0;
+              if (description) {
+                const descWidth = Math.max(10, terminalSize.width - 4);
+                descLines = wrapTextForDisplay(description, descWidth).length;
+              }
 
-                let description = undefined;
-                if (activeWizard.type === "plan_approve") {
-                  description = `Model AI telah merancang rencana di file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}`;
-                } else if (activeWizard.type === "question") {
-                  description = pendingQuestion?.question || "";
-                } else if (activeWizard.type === "login" && activeWizard.step === 10) {
-                  description = "Choose a template catalog stack or let AI dynamically design your project details:";
-                } else if (activeWizard.type === "login" && activeWizard.step === 11) {
-                  description = "Specify the name for this workspace:";
-                } else if (activeWizard.type === "login" && activeWizard.step === 12) {
-                  description = "Give a one-sentence overview description of this software:";
-                } else if (activeWizard.type === "login" && activeWizard.step === 13) {
-                  description = "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:";
-                }
+              const isLoading = (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)) && wizardIsLoadingModels;
 
-                let descLines = 0;
-                if (description) {
-                  const descWidth = Math.max(10, Math.floor(terminalSize.width * 0.40) - 4);
-                  descLines = wrapTextForDisplay(description, descWidth).length;
-                }
+              const y_options_start = 6
+                + workspaceHeight
+                + 1 // top spacer │
+                + 1 // title
+                + (description ? descLines + 1 : 0)
+                + (isLoading ? 2 : 0)
+                + (start > 0 ? 1 : 0);
 
-                const isLoading = (activeWizard.type === "model" && activeWizard.step === 3) && wizardIsLoadingModels;
+              const optStartRow = y_options_start;
+              const optEndRow = optStartRow + visibleCount - 1;
 
-                const y_options_start = workspaceStartRow
-                  + leftTopHeight
-                  + 1
-                  + 1
-                  + 1
-                  + (description ? descLines + 1 : 0)
-                  + (isLoading ? 2 : 0)
-                  + (start > 0 ? 1 : 0);
-
-                const optStartRow = y_options_start;
-                const optEndRow = optStartRow + visibleCount - 1;
-
-                if (y >= optStartRow && y <= optEndRow) {
-                  const idx = y - optStartRow;
-                  const targetIndex = start + idx;
-                  if (
-                    targetIndex >= 0 &&
-                    targetIndex < total &&
-                    options[targetIndex] !== "(no results — try different search)"
-                  ) {
-                    if (activeWizard.isMultiSelect) {
-                      setWizardSelectedSet((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(targetIndex)) {
-                          next.delete(targetIndex);
-                        } else {
-                          next.add(targetIndex);
-                        }
-                        return next;
-                      });
-                    } else {
-                      setWizardSelectedIndex(targetIndex);
-                      const selectedOption = options[targetIndex];
-                      if (selectedOption === "Custom...") {
-                        setActiveWizard({
-                          type: "question",
-                          step: 2,
-                          data: { question: pendingQuestion?.question || "" },
-                        });
-                        setWizardOptions([]);
-                        setWizardSelectedIndex(0);
-                        setQuery("");
+              if (y >= optStartRow && y <= optEndRow) {
+                setFocusArea("input");
+                const idx = y - optStartRow;
+                const targetIndex = start + idx;
+                if (
+                  targetIndex >= 0 &&
+                  targetIndex < total &&
+                  options[targetIndex] !== "(no results — try different search)"
+                ) {
+                  if (activeWizard.isMultiSelect) {
+                    setWizardSelectedSet((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(targetIndex)) {
+                        next.delete(targetIndex);
                       } else {
-                        handleWizardSubmit(selectedOption);
+                        next.add(targetIndex);
                       }
+                      return next;
+                    });
+                  } else {
+                    setWizardSelectedIndex(targetIndex);
+                    const selectedOption = options[targetIndex];
+                    if (selectedOption === "Custom...") {
+                      setActiveWizard({
+                        type: "question",
+                        step: 2,
+                        data: { question: pendingQuestion?.question || "" },
+                      });
+                      setWizardOptions([]);
+                      setWizardSelectedIndex(0);
+                      setQuery("");
+                    } else {
+                      handleWizardSubmit(selectedOption);
                     }
                   }
                 }
-              }
-            } else {
-              const promptStartRow = workspaceStartRow + leftTopHeight + 1;
-              if (y >= promptStartRow) {
-                setFocusArea("input");
-              } else {
-                setFocusArea("list");
+                return; // Handled wizard option click
               }
             }
-          } else if (x >= rightStart) {
-            setFocusArea("logs");
+          }
+
+          // If click wasn't in wizard options, handle regular panel focusing
+          const activeWTsCount = [...superagentInstances.values()]
+            .filter((i) => i.status === "running")
+            .map((i) => i.branch).length;
+          const statusBarHeight = 4 + (activeWTsCount > 0 ? 1 : 0);
+          const suggestions = getDashboardSuggestions(query);
+          const bottomPromptHeight = 1 + (ctx.focusArea === "input" && query.startsWith("/") && suggestions.length > 0 ? 2 : 0);
+          const promptStartRow = terminalSize.height - statusBarHeight - bottomPromptHeight + 1;
+
+          if (y >= promptStartRow) {
+            setFocusArea("input");
+          } else if (y >= workspaceStartRow && y < workspaceStartRow + workspaceHeight) {
+            if (x <= leftLimit) {
+              if (y < workspaceStartRow + leftTopHeight) {
+                setFocusArea("list");
+              } else {
+                setFocusArea("checklist");
+              }
+            } else if (x >= rightStart) {
+              setFocusArea("logs");
+            }
           }
         }
       }

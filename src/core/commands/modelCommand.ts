@@ -240,7 +240,8 @@ export const modelCommand: SlashCommand = {
           "3. Create Model Preset",
           "4. Edit Model Preset",
           "5. Delete Model Preset",
-          "6. Configure Agent Tier Models"
+          "6. Configure Agent Tier Models",
+          "< Back"
         ]);
         ctx.setWizardSelectedIndex?.(0);
       }

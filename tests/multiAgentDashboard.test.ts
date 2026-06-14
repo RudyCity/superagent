@@ -62,4 +62,33 @@ describe("MultiAgentDashboard UI Component", () => {
 
     unmount();
   });
+
+  it("should trigger handleQuerySubmit when Enter key is pressed while activeWizard is active", async () => {
+    // Import useDashboardKeyboard
+    const { useDashboardKeyboard } = await import("../src/hooks/useDashboardKeyboard.js");
+    const mockHandleQuerySubmit = vi.fn();
+    const TestComponent = () => {
+      useDashboardKeyboard({
+        activeWizard: { type: "model", step: 2, data: {} },
+        setActiveWizard: vi.fn(),
+        setWizardSelectedIndex: vi.fn(),
+        wizardOptions: ["Option 1", "Option 2"],
+        wizardSelectedIndex: 0,
+        handleQuerySubmit: mockHandleQuerySubmit,
+        query: "",
+      } as any);
+      return null;
+    };
+
+    const { unmount } = render(React.createElement(TestComponent));
+
+    expect(inputCallback).toBeDefined();
+    expect(typeof inputCallback).toBe("function");
+
+    // Trigger Enter (return) keypress
+    inputCallback("\r", { return: true });
+
+    expect(mockHandleQuerySubmit).toHaveBeenCalledWith("");
+    unmount();
+  });
 });

@@ -205,19 +205,39 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
 
     if (activeWizard) {
       if (key.upArrow) {
-        setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
-        return;
-      }
-      if (key.downArrow) {
-        if (activeWizard.type === "model" && activeWizard.step === 3) {
+        if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)) {
           const lc = query.trim();
           const len = lc
             ? filterSuggestions(wizardAllOptions, lc).length
             : wizardAllOptions.length;
-          setWizardSelectedIndex((prev) => Math.min(Math.max(0, len - 1), prev + 1));
+          setWizardSelectedIndex((prev) => {
+            const currentMax = Math.max(0, len - 1);
+            const clampedPrev = Math.min(prev, currentMax);
+            return Math.max(0, clampedPrev - 1);
+          });
         } else {
-          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
         }
+        return;
+      }
+      if (key.downArrow) {
+        if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)) {
+          const lc = query.trim();
+          const len = lc
+            ? filterSuggestions(wizardAllOptions, lc).length
+            : wizardAllOptions.length;
+          setWizardSelectedIndex((prev) => {
+            const currentMax = Math.max(0, len - 1);
+            const clampedPrev = Math.min(prev, currentMax);
+            return Math.min(currentMax, clampedPrev + 1);
+          });
+        } else {
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+        }
+        return;
+      }
+      if (key.return) {
+        handleQuerySubmit(query);
         return;
       }
       if (activeWizard.isMultiSelect && input === " ") {
@@ -233,6 +253,23 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         return;
       }
       if (key.escape) {
+        if (activeWizard && activeWizard.type === "model" && activeWizard.step !== 1) {
+          if (activeWizard.step === 50) {
+            handleQuerySubmit("back");
+          } else {
+            handleQuerySubmit("< Back");
+          }
+          return;
+        }
+        if (activeWizard && activeWizard.type === "skills" && activeWizard.step === 2) {
+          handleQuerySubmit("< Back");
+          return;
+        }
+        if (activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 2) {
+          handleQuerySubmit("< Back");
+          return;
+        }
+
         setActiveWizard(null);
         setWizardOptions([]);
         setWizardSelectedIndex(0);

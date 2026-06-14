@@ -48,6 +48,14 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
     if (step === 1) {
       const choice = value.toLowerCase();
+      if (choice.includes("back") || choice === "< back") {
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
       let tier = "";
       if (choice.includes("master") || choice.includes("depth 0")) {
         tier = "master";
@@ -77,7 +85,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       const list = getConfiguredProviders();
       const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-      setWizardOptions(options.length > 0 ? options : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+      const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+      setWizardOptions(providerOptions);
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 2) {
@@ -279,6 +288,25 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 4) {
+      if (value === "< Back") {
+        setActiveWizard({
+          type: "model",
+          step: 1,
+          data: {},
+        });
+        setWizardOptions([
+          "1. Load/Apply Model Preset",
+          "2. List Model Presets",
+          "3. Create Model Preset",
+          "4. Edit Model Preset",
+          "5. Delete Model Preset",
+          "6. Configure Agent Tier Models",
+          "< Back"
+        ]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
       const presetChoice = value;
       const presetName = presetChoice.split(" - ")[0].trim();
       try {
@@ -324,6 +352,25 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setWizardIsLoadingModels(false);
     } else if (step === 20) {
       const name = value.trim();
+      if (name.toLowerCase() === "< back" || name.toLowerCase() === "back") {
+        setActiveWizard({
+          type: "model",
+          step: 1,
+          data: {},
+        });
+        setWizardOptions([
+          "1. Load/Apply Model Preset",
+          "2. List Model Presets",
+          "3. Create Model Preset",
+          "4. Edit Model Preset",
+          "5. Delete Model Preset",
+          "6. Configure Agent Tier Models",
+          "< Back"
+        ]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
       if (!name) {
         addLine({
           type: "error",
@@ -350,6 +397,17 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setInput("");
     } else if (step === 21) {
       const desc = value.trim();
+      if (desc.toLowerCase() === "< back" || desc.toLowerCase() === "back") {
+        setActiveWizard({
+          type: "model",
+          step: 20,
+          data: { ...data },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
       setActiveWizard({
         type: "model",
         step: 22,
@@ -365,12 +423,25 @@ export function useModelWizard(ctx: ModelWizardContext) {
         `6. Subagent: reviewer (${formatVal(undefined)})`,
         `7. Default Model (Only set default fallback) (${formatVal(undefined)})`,
         "8. Save Preset & Exit",
-        "9. Cancel & Exit"
+        "9. Cancel & Exit",
+        "< Back"
       ]);
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 22 || step === 32) {
       const models: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
+      if (value === "< Back") {
+        const nextStep = step === 22 ? 21 : 31;
+        setActiveWizard({
+          type: "model",
+          step: nextStep,
+          data: { ...data },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput(step === 22 ? (data.presetDescription || "") : (data.presetDescription || ""));
+        return;
+      }
       if (value.includes("Save Preset")) {
         const presetName = data.presetName || "";
         const presetDescription = data.presetDescription || "";
@@ -449,7 +520,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `6. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
           `7. Default Model (Only set default fallback) (${formatVal(models.MODEL)})`,
           "8. Save Preset & Exit",
-          "9. Cancel & Exit"
+          "9. Cancel & Exit",
+          "< Back"
         ]);
         setWizardSelectedIndex(0);
         setInput("");
@@ -678,11 +750,31 @@ export function useModelWizard(ctx: ModelWizardContext) {
         `6. Subagent: reviewer (${formatVal(presetModels.MODEL_SUBAGENT_REVIEWER || presetModels.MODEL_REVIEWER)})`,
         `7. Default Model (Only set default fallback) (${formatVal(presetModels.MODEL)})`,
         "8. Save Preset & Exit",
-        "9. Cancel & Exit"
+        "9. Cancel & Exit",
+        "< Back"
       ]);
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 30) {
+      if (value === "< Back") {
+        setActiveWizard({
+          type: "model",
+          step: 1,
+          data: {},
+        });
+        setWizardOptions([
+          "1. Load/Apply Model Preset",
+          "2. List Model Presets",
+          "3. Create Model Preset",
+          "4. Edit Model Preset",
+          "5. Delete Model Preset",
+          "6. Configure Agent Tier Models",
+          "< Back"
+        ]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
       const choice = value;
       const name = choice.split(" - ")[0].trim();
       const presets = getModelPresets();
@@ -699,6 +791,19 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setInput("");
     } else if (step === 31) {
       const desc = value.trim();
+      if (desc.toLowerCase() === "< back" || desc.toLowerCase() === "back") {
+        setActiveWizard({
+          type: "model",
+          step: 30,
+          data: { ...data },
+        });
+        const presets = getModelPresets();
+        const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
+        setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
       const updatedDesc = desc || data.presetDescription || "";
       const models: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
       
@@ -718,11 +823,31 @@ export function useModelWizard(ctx: ModelWizardContext) {
         `6. Subagent: reviewer (${formatModel(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
         `7. Default Model (Only set default fallback) (${formatModel(models.MODEL)})`,
         "8. Save Preset & Exit",
-        "9. Cancel & Exit"
+        "9. Cancel & Exit",
+        "< Back"
       ]);
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 40) {
+      if (value === "< Back") {
+        setActiveWizard({
+          type: "model",
+          step: 1,
+          data: {},
+        });
+        setWizardOptions([
+          "1. Load/Apply Model Preset",
+          "2. List Model Presets",
+          "3. Create Model Preset",
+          "4. Edit Model Preset",
+          "5. Delete Model Preset",
+          "6. Configure Agent Tier Models",
+          "< Back"
+        ]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
       const choice = value;
       const name = choice.split(" - ")[0].trim();
       setActiveWizard({
@@ -734,6 +859,19 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 41) {
+      if (value === "< Back") {
+        setActiveWizard({
+          type: "model",
+          step: 40,
+          data: { ...data },
+        });
+        const presets = getModelPresets();
+        const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
+        setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
       const choice = value;
       const name = data.presetName || "";
       const doDelete = choice.includes("Yes") || choice.includes("delete");

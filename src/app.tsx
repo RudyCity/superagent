@@ -408,13 +408,13 @@ export function App({
     if (activeWizard.type === "model") {
       if (activeWizard.step === 1) return "Select option using arrows and Enter...";
       if (activeWizard.step === 2) return "Enter provider number or select using arrows...";
-      if (activeWizard.step === 20) return "Type preset name and press Enter...";
-      if (activeWizard.step === 21) return "Type preset description and press Enter...";
+      if (activeWizard.step === 20) return "Type preset name and press Enter (or type 'back' to go back)...";
+      if (activeWizard.step === 21) return "Type preset description and press Enter (or type 'back' to go back)...";
       if (activeWizard.step === 22 || activeWizard.step === 32) return "Select tier option using arrows and Enter...";
       if (activeWizard.step === 23 || activeWizard.step === 33) return "Select provider using arrows and Enter...";
-      if (activeWizard.step === 24 || activeWizard.step === 34) return "🔍 Search models (type to filter, arrows to navigate, Enter to select)...";
+      if (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34) return "🔍 Search models (type to filter, arrows to navigate, Enter to select)...";
       if (activeWizard.step === 30) return "Select preset to edit using arrows and Enter...";
-      if (activeWizard.step === 31) return "Type new description and press Enter...";
+      if (activeWizard.step === 31) return "Type new description and press Enter (or type 'back' to go back)...";
       if (activeWizard.step === 40) return "Select preset to delete using arrows and Enter...";
       if (activeWizard.step === 41) return "Select confirmation using arrows and Enter...";
       if (activeWizard.step === 50) return "Select agent tier using arrows and Enter...";

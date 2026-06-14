@@ -401,7 +401,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
           return;
         }
         if (key.return) {
@@ -513,10 +513,19 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             "preset_create",  // 2
             "preset_edit",    // 3
             "preset_delete",  // 4
-            "configure_tiers" // 5
+            "configure_tiers", // 5
+            "back"            // 6
           ];
           const choice = choices[wizardSelectedIndex];
           if (!choice) return;
+
+          if (choice === "back") {
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          }
 
           if (choice === "preset_load") {
             setActiveWizard({
@@ -526,7 +535,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             });
             const presets = getModelPresets();
             const options = presets.map(p => `${p.name} - ${p.description}`);
-            setWizardOptions(options);
+            setWizardOptions([...options, "< Back"]);
             setWizardSelectedIndex(0);
             setInput("");
             return;
@@ -580,7 +589,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               step: 30,
               data: { tier: choice },
             });
-            setWizardOptions(customPresets.map(p => `${p.name} - ${p.description}`));
+            setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
             setWizardSelectedIndex(0);
             setInput("");
             return;
@@ -605,7 +614,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               step: 40,
               data: { tier: choice },
             });
-            setWizardOptions(customPresets.map(p => `${p.name} - ${p.description}`));
+            setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
             setWizardSelectedIndex(0);
             setInput("");
             return;
@@ -727,11 +736,19 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           ? filterSuggestions(wizardOptions, modelSearchQuery)
           : wizardOptions;
         if (key.upArrow) {
-          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          setWizardSelectedIndex((prev) => {
+            const currentMax = Math.max(0, filteredModels.length - 1);
+            const clampedPrev = Math.min(prev, currentMax);
+            return Math.max(0, clampedPrev - 1);
+          });
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(Math.max(0, filteredModels.length - 1), prev + 1));
+          setWizardSelectedIndex((prev) => {
+            const currentMax = Math.max(0, filteredModels.length - 1);
+            const clampedPrev = Math.min(prev, currentMax);
+            return Math.min(currentMax, clampedPrev + 1);
+          });
           return;
         }
         if (key.return) {
@@ -747,7 +764,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
           return;
         }
         if (key.return) {
@@ -759,7 +776,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
           return;
         }
         if (key.return) {
@@ -785,7 +802,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
           return;
         }
         if (key.return) {
@@ -839,7 +856,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
           return;
         }
         if (key.return) {
@@ -889,7 +906,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
           return;
         }
         if (key.return) {
@@ -951,7 +968,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
           return;
         }
         if (key.return) {
@@ -1022,7 +1039,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(wizardOptions.length - 1, prev + 1));
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
           return;
         }
         if (key.return) {
@@ -1123,6 +1140,33 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       if (scrollOffset > 0) {
         setScrollOffset(0);
       } else if (activeWizard) {
+        if (activeWizard.type === "model" && activeWizard.step !== 1) {
+          if (activeWizard.step === 50) {
+            handleWizardSubmit("back");
+          } else {
+            handleWizardSubmit("< Back");
+          }
+          return;
+        } else if (activeWizard.type === "checkpoint" && activeWizard.step === 2) {
+          setActiveWizard({ type: "checkpoint", step: 1, data: {} });
+          const listOptions = checkpointsList.map((c: any) => `${c.name} (${new Date(c.timestamp).toLocaleString()}) - ${c.messages.length} messages`);
+          setWizardOptions(listOptions);
+          setWizardSelectedIndex(0);
+          return;
+        } else if (activeWizard.type === "skills" && activeWizard.step === 2) {
+          const skillsList = getInstalledSkills();
+          const options = skillsList.map((s) => `• ${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`);
+          const skillIndex = parseInt(activeWizard.data.skillIndex || "0", 10);
+          setActiveWizard({
+            type: "skills",
+            step: 1,
+            data: {},
+          });
+          setWizardOptions(options);
+          setWizardSelectedIndex(skillIndex);
+          return;
+        }
+
         if (pendingPermission) {
           pendingPermission.resolve(false);
           setPendingPermission(null);

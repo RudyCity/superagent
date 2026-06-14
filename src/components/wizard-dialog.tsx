@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
+import { wrapTextForDisplay } from "../utils/responseScroll.js";
 
 interface WizardDialogProps {
   title: string;
@@ -14,6 +15,7 @@ interface WizardDialogProps {
   isLoading?: boolean;
   searchQuery?: string;
   searchPlaceholder?: string;
+  terminalWidth?: number;
 }
 
 function WizardSpinner({ color }: { color: string }) {
@@ -32,13 +34,14 @@ export function WizardDialog({
   borderColor,
   options = [],
   selectedIndex = 0,
-  maxVisible,
+  maxVisible = 10,
   isMultiSelect = false,
   selectedSet,
   marginY = 1,
   isLoading = false,
   searchQuery,
   searchPlaceholder = "Type to filter...",
+  terminalWidth,
 }: WizardDialogProps) {
   const actualOptions = Array.isArray(options) ? options : [];
   const total = actualOptions.length;
@@ -46,8 +49,11 @@ export function WizardDialog({
   let start = 0;
   let end = total;
 
+  const rawSelectedIndex = typeof selectedIndex === "number" ? selectedIndex : Number(selectedIndex);
+  const numericSelectedIndex = total > 0 ? Math.min(Math.max(0, rawSelectedIndex), total - 1) : 0;
+
   if (maxVisible && total > maxVisible) {
-    start = Math.max(0, selectedIndex - Math.floor(maxVisible / 2));
+    start = Math.max(0, numericSelectedIndex - Math.floor(maxVisible / 2));
     end = start + maxVisible;
     if (end > total) {
       end = total;
@@ -59,41 +65,54 @@ export function WizardDialog({
   return (
     <Box flexDirection="column" marginY={marginY}>
       {/* Top border connecting to the timeline */}
-      <Text color={borderColor}>
-        ├───[ <Text bold color={borderColor}>{title}</Text> ]
-      </Text>
+      <Box flexDirection="row" width="100%">
+        <Text color={borderColor} wrap="truncate-end">
+          ├───[ <Text bold color={borderColor}>{title}</Text> ]
+        </Text>
+      </Box>
 
       {/* Description lines prefixed with timeline line */}
-      {description && (
-        <Box flexDirection="row">
-          <Text color={borderColor}>│ </Text>
-          <Text color="white">{description}</Text>
-        </Box>
-      )}
-
-      {/* Optional spacer if description is present */}
-      {description && (
-        <Box flexDirection="row">
-          <Text color={borderColor}>│ </Text>
-        </Box>
-      )}
+      {description && (() => {
+        const widthVal = terminalWidth || (process.stdout.columns || 110);
+        const maxTextWidth = Math.max(10, widthVal - 4);
+        const descLines = wrapTextForDisplay(description, maxTextWidth);
+        return (
+          <>
+            {descLines.map((line, idx) => (
+              <Box key={idx} flexDirection="row" width="100%">
+                <Text color={borderColor}>│ </Text>
+                <Text color="white">{line}</Text>
+              </Box>
+            ))}
+            <Box flexDirection="row">
+              <Text color={borderColor}>│ </Text>
+            </Box>
+          </>
+        );
+      })()}
 
       {/* Search bar — shown when searchQuery prop is provided */}
       {searchQuery !== undefined && (
-        <Box flexDirection="row">
+        <Box flexDirection="row" width="100%">
           <Text color={borderColor}>│ </Text>
           <Text color="cyan" bold>🔍 </Text>
-          <Text color="white">{searchQuery || <Text color="gray" dimColor>{searchPlaceholder}</Text>}</Text>
+          <Box flexShrink={1}>
+            <Text color="white" wrap="truncate-start">
+              {searchQuery || <Text color="gray" dimColor>{searchPlaceholder}</Text>}
+            </Text>
+          </Box>
           <Text color="cyan" bold>█</Text>
         </Box>
       )}
 
       {/* Loading indicator */}
       {isLoading && (
-        <Box flexDirection="row">
+        <Box flexDirection="row" width="100%">
           <Text color={borderColor}>│ </Text>
           <WizardSpinner color={borderColor} />
-          <Text color="yellow">  Fetching models from API...</Text>
+          <Box flexShrink={1}>
+            <Text color="yellow" wrap="truncate-end">  Fetching models from API...</Text>
+          </Box>
         </Box>
       )}
 
@@ -104,40 +123,48 @@ export function WizardDialog({
 
       {/* Options prefixed with timeline line */}
       {start > 0 && (
-        <Box flexDirection="row">
+        <Box flexDirection="row" width="100%">
           <Text color={borderColor}>│ </Text>
-          <Text color="yellow">   ▲ ... ({start} more options above) ...</Text>
+          <Box flexShrink={1}>
+            <Text color="yellow" wrap="truncate-end">   ▲ ... ({start} more options above) ...</Text>
+          </Box>
         </Box>
       )}
 
       {visibleOptions.map((opt, idx) => {
         const originalIndex = start + idx;
-        const isSelected = originalIndex === selectedIndex;
+        const isSelected = originalIndex === numericSelectedIndex;
         const isChecked = selectedSet?.has(originalIndex) ?? false;
         const optStr = typeof opt === "string" ? opt : JSON.stringify(opt);
         const checkPrefix = isMultiSelect ? (isChecked ? "[x] " : "[ ] ") : "";
         return (
-          <Box key={`${optStr}-${originalIndex}`} flexDirection="row">
+          <Box key={`${optStr}-${originalIndex}`} flexDirection="row" width="100%">
             <Text color={borderColor}>│ </Text>
-            <Text color={isSelected ? borderColor : "gray"} bold={isSelected}>
-              {isSelected ? "❯ " : "  "} {checkPrefix}{optStr}
-            </Text>
+            <Box flexDirection="row" flexShrink={1}>
+              <Text color={isSelected ? borderColor : "gray"} bold={isSelected} wrap="truncate-end">
+                {isSelected ? "❯ " : "  "} {checkPrefix}{optStr}
+              </Text>
+            </Box>
           </Box>
         );
       })}
 
       {/* Empty state when no options match */}
       {!isLoading && total === 0 && searchQuery !== undefined && (
-        <Box flexDirection="row">
+        <Box flexDirection="row" width="100%">
           <Text color={borderColor}>│ </Text>
-          <Text color="gray" dimColor>  No models match "{searchQuery || ""}". Try a different term.</Text>
+          <Box flexShrink={1}>
+            <Text color="gray" dimColor wrap="truncate-end">  No models match "{searchQuery || ""}". Try a different term.</Text>
+          </Box>
         </Box>
       )}
 
       {end < total && (
-        <Box flexDirection="row">
+        <Box flexDirection="row" width="100%">
           <Text color={borderColor}>│ </Text>
-          <Text color="yellow">   ▼ ... ({total - end} more options below) ...</Text>
+          <Box flexShrink={1}>
+            <Text color="yellow" wrap="truncate-end">   ▼ ... ({total - end} more options below) ...</Text>
+          </Box>
         </Box>
       )}
     </Box>

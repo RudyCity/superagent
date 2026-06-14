@@ -568,9 +568,12 @@ export function MultiAgentDashboard({
   const runningSubagentsCount = [...subagentInstances.values()]
     .filter((s) => s.status === "running").length;
 
+  const activeWTs = [...superagentInstances.values()]
+    .filter((i) => i.status === "running")
+    .map((i) => i.branch);
+
   let liveListHeight = 0;
   if (runningSubagentsCount > 0 || runningTasksCount > 0) {
-    liveListHeight += 1; // padding/margin
     if (runningSubagentsCount > 0) {
       liveListHeight += 1; // header
       const agentsCount = Math.min(runningSubagentsCount, maxAgentsVisible);
@@ -580,9 +583,6 @@ export function MultiAgentDashboard({
       liveListHeight += 1; // header
       const procsCount = Math.min(runningTasksCount, maxProcsVisible);
       liveListHeight += procsCount; // Each task is 1 line
-      if (runningSubagentsCount > 0) {
-        liveListHeight += 1; // marginTop
-      }
     }
   }
 
@@ -592,20 +592,31 @@ export function MultiAgentDashboard({
   }
   let wizardHeight = 0;
   if (activeWizard) {
-    const maxVis = activeWizard.type === "model" && activeWizard.step === 3 ? 8 : 10;
+    const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34);
+    const maxVis = isModelSelectStep ? 8 : 10;
+
+    const lc = query.trim();
+    const filteredModels = lc
+      ? filterSuggestions(wizardAllOptions, lc)
+      : wizardAllOptions;
+
+    const effectiveOptions = isModelSelectStep
+      ? (filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"])
+      : wizardOptions;
+
     let start = 0;
-    let end = wizardOptions.length;
-    if (wizardOptions.length > maxVis) {
+    let end = effectiveOptions.length;
+    if (effectiveOptions.length > maxVis) {
       start = Math.max(0, wizardSelectedIndex - Math.floor(maxVis / 2));
       end = start + maxVis;
-      if (end > wizardOptions.length) {
-        end = wizardOptions.length;
+      if (end > effectiveOptions.length) {
+        end = effectiveOptions.length;
         start = Math.max(0, end - maxVis);
       }
     }
     const optCount = end - start;
     const hasAbove = start > 0;
-    const hasBelow = end < wizardOptions.length;
+    const hasBelow = end < effectiveOptions.length;
 
     let wizardDescription = "";
     if (activeWizard.type === "plan_approve") {
@@ -626,7 +637,7 @@ export function MultiAgentDashboard({
       ? wrapTextForDisplay(wizardDescription, Math.max(10, terminalSize.width - 4)).length
       : 0;
 
-    const hasLoading = activeWizard.type === "model" && activeWizard.step === 3 && wizardIsLoadingModels;
+    const hasLoading = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34) && wizardIsLoadingModels;
 
     wizardHeight += 1; // Outer top border │
     wizardHeight += 1; // Title line
@@ -643,8 +654,12 @@ export function MultiAgentDashboard({
     if (hasBelow) {
       wizardHeight += 1;
     }
+    wizardHeight += 1; // Outer bottom border │
   }
-  const workspaceHeight = Math.max(10, terminalSize.height - 9 - bottomPromptHeight - liveListHeight - wizardHeight);
+  
+  const statusBarHeight = 4 + (activeWTs.length > 0 ? 1 : 0);
+  const fixedHeight = 5 + statusBarHeight; // 3 (header) + 2 (divider) + statusBarHeight
+  const workspaceHeight = Math.max(10, terminalSize.height - fixedHeight - bottomPromptHeight - liveListHeight - wizardHeight);
   let checklistHeight = 0;
   if (planState === "APPROVED" && checklistTasks.length > 0) {
     const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
@@ -812,6 +827,7 @@ export function MultiAgentDashboard({
     leftTopHeight,
     wizardIsLoadingModels,
     agent,
+    focusArea,
     setFocusArea,
     setLogScrollOffset,
   });
@@ -823,9 +839,7 @@ export function MultiAgentDashboard({
   }
   const visibleSessions = sessions.slice(startIdx, startIdx + maxVisibleSessions);
 
-  const activeWTs = [...superagentInstances.values()]
-    .filter((i) => i.status === "running")
-    .map((i) => i.branch);
+
 
   const activeContextUsage = lastMasterPromptTokens;
   const contextPercentage = contextLimit > 0 ? ((activeContextUsage / contextLimit) * 100).toFixed(2) : "0.00";
@@ -925,6 +939,7 @@ export function MultiAgentDashboard({
         wizardSelectedSet={wizardSelectedSet}
         pendingQuestion={pendingQuestion}
         agent={agent}
+        terminalWidth={terminalSize.width}
       />
 
       {/* Active Subagents & Tasks Live List (Full Width) */}
@@ -963,12 +978,22 @@ export function MultiAgentDashboard({
       <Box flexDirection="row" marginTop={0} paddingX={1} width="100%">
         <Box flexShrink={0}>
           <Text bold color={focusArea === "input" ? "green" : "cyan"}>
-            {activeWizard?.type === "model" && activeWizard.step === 3
+            {activeWizard?.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)
               ? "└──[ MODEL ] ❯ "
-              : activeWizard?.type === "model" && activeWizard.step === 2
+              : activeWizard?.type === "model" && (activeWizard.step === 2 || activeWizard.step === 23 || activeWizard.step === 33)
               ? "└──[ PROVIDER ] ❯ "
-              : activeWizard?.type === "model" && activeWizard.step === 1
+              : activeWizard?.type === "model" && (activeWizard.step === 1 || activeWizard.step === 22 || activeWizard.step === 32)
               ? "└──[ TIER ] ❯ "
+              : activeWizard?.type === "model" && (activeWizard.step === 4 || activeWizard.step === 30 || activeWizard.step === 40)
+              ? "└──[ PRESET ] ❯ "
+              : activeWizard?.type === "model" && activeWizard.step === 20
+              ? "└──[ PRESET_NAME ] ❯ "
+              : activeWizard?.type === "model" && (activeWizard.step === 21 || activeWizard.step === 31)
+              ? "└──[ PRESET_DESC ] ❯ "
+              : activeWizard?.type === "model" && activeWizard.step === 41
+              ? "└──[ CONFIRM ] ❯ "
+              : activeWizard?.type === "model" && activeWizard.step === 50
+              ? "└──[ CONFIGURE ] ❯ "
               : activeWizard?.type === "login"
               ? `└──[ LOGIN:${activeWizard.step} ] ❯ `
               : activeWizard?.type === "resume"
