@@ -74,3 +74,32 @@ export function filterSuggestions(possibilities: string[], input: string): strin
     .map((item) => item.text);
 }
 
+export function stripSgrMouseSequences(value: string): string {
+  return value.replace(/(?:\x1b)?\[<\d+;\d+;\d+[Mm]/g, "");
+}
+
+export function getInsertion(oldVal: string, newVal: string): { prefix: string; inserted: string; suffix: string } {
+  let start = 0;
+  while (start < oldVal.length && start < newVal.length && oldVal[start] === newVal[start]) {
+    start++;
+  }
+  let endOld = oldVal.length - 1;
+  let endNew = newVal.length - 1;
+  while (endOld >= start && endNew >= start && oldVal[endOld] === newVal[endNew]) {
+    endOld--;
+    endNew--;
+  }
+  const prefix = oldVal.slice(0, start);
+  const inserted = newVal.slice(start, endNew + 1);
+  const suffix = oldVal.slice(endOld + 1);
+  return { prefix, inserted, suffix };
+}
+
+export function getPasteSplit(currentInput: string, prefixLen: number, suffixLen: number) {
+  const prefix = currentInput.slice(0, Math.min(currentInput.length, prefixLen));
+  const suffix = suffixLen > 0 ? currentInput.slice(Math.max(prefix.length, currentInput.length - suffixLen)) : "";
+  const inserted = currentInput.slice(prefix.length, currentInput.length - suffix.length);
+  return { prefix, inserted, suffix };
+}
+
+
