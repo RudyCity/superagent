@@ -60,6 +60,9 @@ import { DashboardStatusBar } from "./dashboard/dashboard-status-bar.js";
 
 // Import hooks
 import { useDashboardWizard } from "../hooks/useDashboardWizard.js";
+import { computeWrappedLogs } from "../utils/dashboardLogFormatter.js";
+import { getDashboardSuggestions } from "../utils/dashboardSuggestions.js";
+import { useDashboardSessions } from "../hooks/useDashboardSessions.js";
 import { useDashboardMouse } from "../hooks/useDashboardMouse.js";
 import { useDashboardKeyboard } from "../hooks/useDashboardKeyboard.js";
 
@@ -91,7 +94,6 @@ export function MultiAgentDashboard({
   registerQuestionHandlerRef?: (setter: (q: string, opts: string[], isMultiSelect?: boolean) => Promise<string>) => void;
 }) {
   const { exit } = useApp();
-  const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [focusArea, setFocusArea] = useState<"list" | "logs" | "input" | "checklist" | "agents" | "procs">("input");
   const [query, setQuery] = useState("");
@@ -139,6 +141,7 @@ export function MultiAgentDashboard({
 
   const [currentTask, setCurrentTask] = useState("Idle - Ready for input");
   const [gitBranch, setGitBranch] = useState("main");
+  const sessions = useDashboardSessions(currentTask, masterLogs, gitBranch);
   const [isHistoryTruncated, setIsHistoryTruncated] = useState(true);
   const [cachedSessions, setCachedSessions] = useState<any[]>([]);
   const [activeWizard, setActiveWizard] = useState<{
@@ -300,54 +303,7 @@ export function MultiAgentDashboard({
     }
   }, [activeWizard]);
 
-  const getSuggestions = () => {
-    if (!query.startsWith("/")) return [];
-    const commands = [
-      "/model", "/login", "/resume", "/clear", "/new", "/exit", 
-      "/quit", "/checkpoint", "/install", "/skills", "/procs", 
-      "/processes", "/agents", "/worktree", "/worktrees", "/search-history", "/compact", 
-      "/init", "/terminal", "/help"
-    ];
-    const parts = query.split(/\s+/);
-    const mainCommand = parts[0].toLowerCase();
-    
-    if (parts.length === 1) {
-      return filterSuggestions(commands, query);
-    }
-    
-    if (mainCommand === "/model") {
-      const fallbackModels = [
-        "google/gemini-2.5-flash",
-        "google/gemini-2.5-pro",
-        "anthropic/claude-3-5-sonnet",
-        "openai/gpt-4o",
-        "openai/gpt-4o-mini"
-      ];
-      const cachedIds = getCachedModelIds();
-      const modelList = cachedIds.length > 0 ? cachedIds : fallbackModels;
-      const possibilities = modelList.map(m => `/model ${m}`);
-      const searchTerm = query.replace(/^\/model\s*/i, "").trim();
-      return searchTerm
-        ? filterSuggestions(possibilities, searchTerm)
-        : possibilities.slice(0, 10);
-    }
-    
-    if (mainCommand === "/login") {
-      const providers = ["openrouter", "openai", "anthropic"];
-      const possibilities = providers.map(p => `/login ${p}`);
-      return filterSuggestions(possibilities, query);
-    }
-    
-    if (mainCommand === "/resume") {
-      const sessionsList = listHistorySessions(true);
-      const possibilities = sessionsList.map((s, idx) => `/resume ${idx + 1}`);
-      return filterSuggestions(possibilities, query);
-    }
-    
-    return [];
-  };
-
-  const suggestions = getSuggestions();
+  const suggestions = getDashboardSuggestions(query);
 
   useEffect(() => {
     try {
@@ -581,109 +537,6 @@ export function MultiAgentDashboard({
     setCachedSessions,
   });
 
-  // Update sessions list from live state
-  useEffect(() => {
-    const update = () => {
-      const list: AgentSession[] = [];
-
-      // Group subagents by parentId
-      const subagentSessionsMap = new Map<string, AgentSession[]>();
-      for (const [id, instance] of subagentInstances.entries()) {
-        const parentId = (instance as any).parentId || "master";
-        if (!subagentSessionsMap.has(parentId)) {
-          subagentSessionsMap.set(parentId, []);
-        }
-        subagentSessionsMap.get(parentId)!.push({
-          id: `${instance.typeName}-${id}`,
-          type: "SUBAGENT",
-          task: `Role: ${instance.role}`,
-          status: instance.status === "running" ? "WORKING" : instance.status === "completed" ? "COMPLETED" : "IDLE",
-          tokens: (instance.tokenUsage?.prompt || 0) + (instance.tokenUsage?.completion || 0),
-          logs: instance.logs && instance.logs.length > 0 ? instance.logs : ["Awaiting output..."],
-          branch: "worktree",
-          speed: instance.speed,
-          parentId,
-        });
-      }
-
-      // Check for active agents or background tasks
-      const hasActiveAgentsOrTasks =
-        [...superagentInstances.values()].some((i) => i.status === "running") ||
-        [...subagentInstances.values()].some((s) => s.status === "running") ||
-        [...backgroundTasks.values()].some((t) => t.isDetachedWindow || !t.hasExited);
-
-      list.push({
-        id: "master-orchestrator",
-        type: "MASTER",
-        task: currentTask,
-        status: hasActiveAgentsOrTasks 
-          ? "WORKING"
-          : (currentTask.startsWith("Idle") ? "IDLE" : (currentTask.startsWith("Error") ? "ERROR" : "WORKING")),
-        tokens: masterPromptTokens + masterCompletionTokens,
-        logs: masterLogs,
-        branch: gitBranch,
-      });
-
-      // Push all subagent sessions belonging to "master"
-      const masterSubs = subagentSessionsMap.get("master") || [];
-      list.push(...masterSubs);
-
-      // Superagent instances
-      for (const [id, instance] of superagentInstances.entries()) {
-        list.push({
-          id: `sa-${instance.role}-${id}`,
-          type: "SUPERAGENT",
-          task: `[${instance.role}] ${instance.task}`,
-          status: instance.status === "running" ? "WORKING"
-                : instance.status === "completed" ? "COMPLETED"
-                : "ERROR",
-          tokens: (instance.tokenUsage?.prompt || 0) + (instance.tokenUsage?.completion || 0),
-          logs: instance.logs.length > 0 ? instance.logs : ["Superagent initialising..."],
-          branch: instance.branch,
-          worktreePath: instance.worktreePath,
-          speed: instance.speed,
-        });
-
-        // Push all subagent sessions belonging to this superagent
-        const saSubs = subagentSessionsMap.get(id) || [];
-        list.push(...saSubs);
-      }
-
-      // Fallback: Remaining Subagents
-      for (const [parentId, subs] of subagentSessionsMap.entries()) {
-        if (parentId !== "master" && !superagentInstances.has(parentId)) {
-          list.push(...subs);
-        }
-      }
-
-      // Active background tasks
-      for (const [id, task] of backgroundTasks.entries()) {
-        list.push({
-          id: `task-${id}`,
-          type: "TASK",
-          task: `Command: ${task.command}`,
-          status: task.hasExited ? (task.exitCode === 0 ? "COMPLETED" : "ERROR") : "WORKING",
-          tokens: 0,
-          logs: task.output && task.output.length > 0 ? task.output : ["Running task..."],
-          branch: "main",
-        });
-      }
-
-      setSessions(list);
-    };
-
-    update();
-
-    const unsubSubagents = subscribeToSubagents(update);
-    const unsubSuperagents = subscribeToSuperagents(update);
-    const unsubTasks = subscribeToTasks(update);
-
-    return () => {
-      unsubSubagents();
-      unsubSuperagents();
-      unsubTasks();
-    };
-  }, [masterLogs, currentTask, gitBranch]);
 
   const [logScrollOffset, setLogScrollOffset] = useState(0);
 
@@ -832,273 +685,7 @@ export function MultiAgentDashboard({
     logsCount = Math.max(1, logsCount - executingToolHeight);
   }
 
-  const wrappedLines: React.ReactNode[] = [];
-  const activeLogs = selectedSession.logs.map(l => l.trim()).filter(Boolean);
-
-  interface LogGroup {
-    isBox: boolean;
-    label: string;
-    color: string;
-    isBold: boolean;
-    dimColor: boolean;
-    parseMarkdown: boolean;
-    rawLines: string[];
-  }
-
-  const groups: LogGroup[] = [];
-  for (let logIdx = 0; logIdx < activeLogs.length; logIdx++) {
-    const logStr = activeLogs[logIdx];
-    const isBoxLine = /^[┌├│└─]/.test(logStr);
-
-    if (isBoxLine) {
-      groups.push({
-        isBox: true,
-        label: "",
-        color: selectedSession.type === "SUBAGENT" ? "green" : "gray",
-        isBold: false,
-        dimColor: false,
-        parseMarkdown: false,
-        rawLines: [logStr],
-      });
-      continue;
-    }
-
-    let label = "INFO";
-    let content = logStr;
-    let color = "green";
-    let isBold = false;
-    let dimColor = false;
-    let parseMarkdown = false;
-
-    if (logStr.startsWith("[USER]")) {
-      label = "👤 USER";
-      content = logStr.replace("[USER]", "").trim();
-      color = "cyan";
-      isBold = true;
-    } else if (logStr.startsWith("[MASTER]")) {
-      label = "🤖 SYSTEM";
-      content = logStr.replace("[MASTER]", "").trim();
-      color = "yellow";
-      dimColor = true;
-    } else if (logStr.startsWith("[AGENT]")) {
-      label = "🧠 AGENT";
-      content = logStr.replace("[AGENT]", "").trim();
-      color = "white";
-      isBold = false;
-      parseMarkdown = true;
-    } else if (logStr.startsWith("[TOOL START]")) {
-      label = "🔧 TOOL START";
-      content = logStr.replace("[TOOL START]", "").trim();
-      color = "magenta";
-    } else if (logStr.startsWith("[TOOL END]")) {
-      label = "✅ TOOL DONE";
-      content = logStr.replace("[TOOL END]", "").trim();
-      color = "gray";
-    } else if (logStr.startsWith("[ERROR]")) {
-      label = "🚨 ERROR";
-      content = logStr.replace("[ERROR]", "").trim();
-      color = "red";
-      isBold = true;
-    } else if (logStr.startsWith("[AUTO-APPROVE]")) {
-      label = "⚙️ AUTO-APPROVE";
-      content = logStr.replace("[AUTO-APPROVE]", "").trim();
-      color = "blue";
-      dimColor = true;
-    } else if (logStr.startsWith("[QUESTION]")) {
-      label = "❓ QUESTION";
-      content = logStr.replace("[QUESTION]", "").trim();
-      color = "magenta";
-    } else if (logStr.startsWith("[THINK]")) {
-      label = "🧠 THINK";
-      content = logStr.replace("[THINK]", "").trim();
-      color = "magenta";
-      dimColor = true;
-      parseMarkdown = true;
-    } else if (logStr.startsWith("[TOOL:START]")) {
-      label = "🔧 TOOL START";
-      content = logStr.replace("[TOOL:START]", "").trim();
-      color = "cyan";
-    } else if (logStr.startsWith("[TOOL:OK]")) {
-      label = "✅ TOOL OK";
-      content = logStr.replace("[TOOL:OK]", "").trim();
-      color = "gray";
-      dimColor = true;
-    } else if (logStr.startsWith("[TOOL:FAIL]")) {
-      label = "🚨 TOOL FAIL";
-      content = logStr.replace("[TOOL:FAIL]", "").trim();
-      color = "red";
-      isBold = true;
-    }
-
-    const lastGroup = groups[groups.length - 1];
-    if (
-      lastGroup &&
-      !lastGroup.isBox &&
-      lastGroup.label === label &&
-      lastGroup.color === color &&
-      lastGroup.isBold === isBold &&
-      lastGroup.dimColor === dimColor &&
-      lastGroup.parseMarkdown === parseMarkdown
-    ) {
-      lastGroup.rawLines.push(content);
-    } else {
-      groups.push({
-        isBox: false,
-        label,
-        color,
-        isBold,
-        dimColor,
-        parseMarkdown,
-        rawLines: [content],
-      });
-    }
-  }
-
-  for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
-    const group = groups[groupIdx];
-
-    if (group.isBox) {
-      for (const logStr of group.rawLines) {
-        const cleanedLogStr = logStr.replace(/\r\n/g, "\n").replace(/\r/g, "");
-        const subLines = isHistoryTruncated
-          ? cleanedLogStr.split("\n")
-          : wrapTextForDisplay(cleanedLogStr, feedWidth);
-        for (let i = 0; i < subLines.length; i++) {
-          const lineText = subLines[i];
-          wrappedLines.push(
-            <Box flexDirection="row" key={`log-line-${groupIdx}-${i}`} width={feedWidth}>
-              <Text color={group.color} wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText}</Text>
-            </Box>
-          );
-        }
-      }
-      continue;
-    }
-
-    const prefix = groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───");
-    const subLinePrefix = groupIdx === groups.length - 1 ? "    " : "│   ";
-
-    wrappedLines.push(
-      <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
-        <Text color={group.color === "gray" ? "gray" : group.color} bold wrap={isHistoryTruncated ? "truncate-end" : undefined}>
-          {prefix} <Text color="white" bold>[ </Text>
-          <Text color={group.color === "gray" ? "gray" : group.color} bold>{group.label}</Text>
-          <Text color="white" bold> ]</Text>
-        </Text>
-      </Box>
-    );
-
-    let inCode = false;
-    for (let rawLineIdx = 0; rawLineIdx < group.rawLines.length; rawLineIdx++) {
-      const content = group.rawLines[rawLineIdx];
-      const cleanedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
-      const subLines = isHistoryTruncated
-        ? cleanedContent.split("\n")
-        : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - 8));
-
-      for (let i = 0; i < subLines.length; i++) {
-        const lineText = subLines[i];
-        const trimmed = lineText.trim();
-
-        if (group.parseMarkdown) {
-          if (trimmed.startsWith("```")) {
-            inCode = !inCode;
-            const codeLang = trimmed.slice(3).trim() || "TEXT";
-            wrappedLines.push(
-              <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text color="gray" italic wrap={isHistoryTruncated ? "truncate-end" : undefined}>{inCode ? `┌─── [ CODE: ${codeLang} ]` : "└─── [ END CODE ]"}</Text>
-              </Box>
-            );
-            continue;
-          }
-
-          if (inCode) {
-            wrappedLines.push(
-              <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}│  </Text>
-                <Text color="green" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText}</Text>
-              </Box>
-            );
-            continue;
-          }
-
-          if (trimmed.startsWith("# ")) {
-            wrappedLines.push(
-              <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text bold color="yellow" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText.slice(2)}</Text>
-              </Box>
-            );
-            continue;
-          }
-          if (trimmed.startsWith("## ")) {
-            wrappedLines.push(
-              <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text bold color="cyan" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText.slice(3)}</Text>
-              </Box>
-            );
-            continue;
-          }
-          if (trimmed.startsWith("### ")) {
-            wrappedLines.push(
-              <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text bold color="blue" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText.slice(4)}</Text>
-              </Box>
-            );
-            continue;
-          }
-
-          let listPrefix = "";
-          let remainingLine = lineText;
-          if (trimmed.startsWith("- ")) {
-            const indent = lineText.indexOf("- ");
-            listPrefix = " ".repeat(indent) + "• ";
-            remainingLine = lineText.slice(indent + 2);
-          } else if (trimmed.startsWith("* ")) {
-            const indent = lineText.indexOf("* ");
-            listPrefix = " ".repeat(indent) + "• ";
-            remainingLine = lineText.slice(indent + 2);
-          } else if (/^\d+\.\s/.test(trimmed)) {
-            const match = lineText.match(/^(\s*)(\d+\.\s)(.*)/);
-            if (match) {
-              listPrefix = match[1] + match[2];
-              remainingLine = match[3];
-            }
-          }
-
-          wrappedLines.push(
-            <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-              <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-              {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
-              <Box flexShrink={1}>
-                <Text wrap={isHistoryTruncated ? "truncate-end" : undefined}>
-                  {renderLogInlineStyles(remainingLine, group.color === "gray" ? "gray" : group.color, group.isBold, group.dimColor)}
-                </Text>
-              </Box>
-            </Box>
-          );
-        } else {
-          wrappedLines.push(
-            <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-              <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-              <Text color={group.color === "gray" ? "gray" : group.color} bold={group.isBold} dimColor={group.dimColor} wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText}</Text>
-            </Box>
-          );
-        }
-      }
-    }
-
-    if (groupIdx < groups.length - 1) {
-      wrappedLines.push(
-        <Box flexDirection="row" key={`log-sep-${groupIdx}`}>
-          <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-        </Box>
-      );
-    }
-  }
+  const wrappedLines = computeWrappedLogs(selectedSession, feedWidth, isHistoryTruncated);
 
   const endIdxLogs = Math.max(0, wrappedLines.length - logScrollOffset);
   const startIdxLogs = Math.max(0, endIdxLogs - logsCount);
