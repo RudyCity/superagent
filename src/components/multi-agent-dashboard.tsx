@@ -662,7 +662,7 @@ export function MultiAgentDashboard({
     wizardHeight += 1; // Outer bottom border │
   }
   
-  const statusBarHeight = 4 + (activeWTs.length > 0 ? 1 : 0);
+  const statusBarHeight = 5 + (activeWTs.length > 0 ? 1 : 0);
   const fixedHeight = 5 + statusBarHeight; // 3 (header) + 2 (divider) + statusBarHeight
   const workspaceHeight = Math.max(10, terminalSize.height - fixedHeight - bottomPromptHeight - liveListHeight - wizardHeight);
   let checklistHeight = 0;

@@ -188,7 +188,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
           const activeWTsCount = [...superagentInstances.values()]
             .filter((i) => i.status === "running")
             .map((i) => i.branch).length;
-          const statusBarHeight = 4 + (activeWTsCount > 0 ? 1 : 0);
+          const statusBarHeight = 5 + (activeWTsCount > 0 ? 1 : 0);
           const suggestions = getDashboardSuggestions(query);
           const bottomPromptHeight = 1 + (ctx.focusArea === "input" && query.startsWith("/") && suggestions.length > 0 ? 2 : 0);
           const promptStartRow = terminalSize.height - statusBarHeight - bottomPromptHeight + 1;

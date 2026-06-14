@@ -64,7 +64,12 @@ export function DashboardStatusBar({
             )}
             <Text color="gray"> │ </Text>
             <Text color="magenta" bold>Master: {(masterPromptTokens + masterCompletionTokens).toLocaleString()}t</Text>
-            <Text color="gray"> │ </Text>
+          </Text>
+        </Box>
+      </Box>
+      <Box flexDirection="row" justifyContent="space-between" marginTop={0}>
+        <Box>
+          <Text>
             <Text color="cyan" bold>Superagents({activeSuperagentsCount} active): {(historicalSuperagentTokens || 0).toLocaleString()}t</Text>
             <Text color="gray"> │ </Text>
             <Text color="yellow" bold>Subagents: {subagentTokens.toLocaleString()}t</Text>
