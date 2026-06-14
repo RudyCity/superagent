@@ -1382,6 +1382,50 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setWizardSelectedIndex(0);
         setInput("");
       } else if (activeWizard.step === 2) {
+        if (value === "< Back") {
+          const currentModel = process.env.MODEL || getDefaultModel();
+          const getResolvedModelWithProvider = (rawVal: string, isDefault: boolean): string => {
+            const mStr = (rawVal || (isDefault ? (process.env.MODEL || getDefaultModel()) : "")).trim();
+            if (!mStr) return "(not set)";
+            if (mStr.includes(":")) return mStr;
+            const activeProvider = (process.env.ACTIVE_PROVIDER || (process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai")).trim();
+            return `${activeProvider}:${mStr}`;
+          };
+          const defaultResolved = getResolvedModelWithProvider("", true);
+          const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+          const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
+          const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+          const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
+          const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+          const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
+          const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
+          const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
+          const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
+          const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
+          const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
+          const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
+
+          setActiveWizard({
+            type: "model",
+            step: 50,
+            data: { ...activeWizard.data },
+          });
+          setWizardOptions([
+            `1. Master Agent (depth 0) (${masterModelFormatted})`,
+            `2. Superagent (depth 1) (${superagentModelFormatted})`,
+            `3. Subagent (depth 2) (${subagentModelFormatted})`,
+            `4. Subagent: researcher (${researcherModelFormatted})`,
+            `5. Subagent: coder (${coderModelFormatted})`,
+            `6. Subagent: reviewer (${reviewerModelFormatted})`,
+            `7. Default Model (Only set default fallback)`,
+            `8. All Tiers (Overwrite All)`,
+            `< Back`
+          ]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
         const list = getConfiguredProviders();
         const cleanName = value.replace(/\s*\[Active\]\s*$/, "").split(" (")[0].trim();
         const nameWithoutNumber = cleanName.replace(/^\d+\.\s*/, "").trim();
@@ -1463,7 +1507,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  setWizardOptions(modelsList);
+                  setWizardOptions([...modelsList, "< Back"]);
                 }
               }
             })
@@ -1492,7 +1536,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   const data = await res.json() as any;
                   if (data && Array.isArray(data.data)) {
                     const modelsList = data.data.map((m: any) => m.id);
-                    setWizardOptions(modelsList);
+                    setWizardOptions([...modelsList, "< Back"]);
                   }
                 }
               })
@@ -1524,7 +1568,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   const data = await res.json() as any;
                   if (data && Array.isArray(data.data)) {
                     const modelsList = data.data.map((m: any) => m.id);
-                    setWizardOptions(modelsList);
+                    setWizardOptions([...modelsList, "< Back"]);
                   }
                 }
               })
@@ -1533,7 +1577,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           }
         }
 
-        setWizardOptions(initialModels);
+        setWizardOptions([...initialModels, "< Back"]);
         setWizardSelectedIndex(0);
         setInput("");
       } else if (activeWizard.step === 4) {
@@ -2021,6 +2065,21 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setWizardOptions([]);
         setWizardSelectedIndex(0);
       } else {
+        if (value === "< Back") {
+          setActiveWizard({
+            type: "model",
+            step: 2,
+            data: { ...activeWizard.data },
+          });
+          const list = getConfiguredProviders();
+          const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
+          const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+          setWizardOptions(providerOptions);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
         const modelName = value;
         try {
           const profileName = activeWizard.data.provider;
@@ -2973,7 +3032,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               `5. Subagent: coder (${coderModelFormatted})`,
               `6. Subagent: reviewer (${reviewerModelFormatted})`,
               `7. Default Model (Only set default fallback)`,
-              `8. All Tiers (Overwrite All)`
+              `8. All Tiers (Overwrite All)`,
+              `< Back`
             ]);
             setWizardSelectedIndex(0);
             setInput("");
@@ -2990,9 +3050,28 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
         if (key.return) {
-          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "default", "all"];
+          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "default", "all", "back"];
           const tier = tiers[wizardSelectedIndex];
           if (!tier) return;
+
+          if (tier === "back") {
+            setActiveWizard({
+              type: "model",
+              step: 1,
+              data: {},
+            });
+            setWizardOptions([
+              "1. Load/Apply Model Preset",
+              "2. List Model Presets",
+              "3. Create Model Preset",
+              "4. Edit Model Preset",
+              "5. Delete Model Preset",
+              "6. Configure Agent Tier Models"
+            ]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          }
 
           setActiveWizard({
             type: "model",
@@ -3002,7 +3081,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
           const list = getConfiguredProviders();
           const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-          setWizardOptions(options.length > 0 ? options : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+          const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+          setWizardOptions(providerOptions);
           setWizardSelectedIndex(0);
           setInput("");
           return;
