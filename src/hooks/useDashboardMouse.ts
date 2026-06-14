@@ -164,9 +164,9 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
                       return next;
                     });
                   } else {
-                    setWizardSelectedIndex(targetIndex);
                     const selectedOption = options[targetIndex];
                     if (selectedOption === "Custom...") {
+                      setWizardSelectedIndex(targetIndex);
                       setActiveWizard({
                         type: "question",
                         step: 2,
@@ -176,7 +176,11 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
                       setWizardSelectedIndex(0);
                       setQuery("");
                     } else {
-                      handleWizardSubmit(selectedOption);
+                      if (wizardSelectedIndex === targetIndex) {
+                        handleWizardSubmit(selectedOption);
+                      } else {
+                        setWizardSelectedIndex(targetIndex);
+                      }
                     }
                   }
                 }

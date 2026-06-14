@@ -169,4 +169,106 @@ describe("MultiAgentDashboard UI Component", () => {
     subagentInstances.clear();
     backgroundTasks.clear();
   });
+
+  it("should select wizard option on first click and submit on second click", async () => {
+    const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
+
+    const originalOn = process.stdin.on;
+    const originalOff = process.stdin.off;
+    const originalWrite = process.stdout.write;
+
+    let mouseHandler: any = null;
+    process.stdin.on = vi.fn((event, cb) => {
+      if (event === "data") mouseHandler = cb;
+      return process.stdin;
+    }) as any;
+    process.stdin.off = vi.fn() as any;
+    process.stdout.write = vi.fn() as any;
+
+    const mockHandleWizardSubmit = vi.fn();
+    const mockSetWizardSelectedIndex = vi.fn();
+
+    // Context for first click (unselected option)
+    const TestComponentUnselected = () => {
+      useDashboardMouse({
+        wrappedLines: [],
+        logsCount: 10,
+        terminalSize: { width: 100, height: 40 },
+        activeWizard: { type: "login", step: 10, data: {} },
+        setActiveWizard: vi.fn(),
+        wizardOptions: ["Option 1", "Option 2"],
+        wizardSelectedIndex: 0, // Option 1 selected
+        setWizardSelectedIndex: mockSetWizardSelectedIndex,
+        wizardSelectedSet: new Set(),
+        setWizardSelectedSet: vi.fn(),
+        setWizardOptions: vi.fn(),
+        pendingQuestion: null,
+        handleWizardSubmit: mockHandleWizardSubmit,
+        query: "",
+        setQuery: vi.fn(),
+        wizardAllOptions: [],
+        workspaceHeight: 15,
+        leftTopHeight: 10,
+        wizardIsLoadingModels: false,
+        agent: null,
+        focusArea: "input",
+        setFocusArea: vi.fn(),
+        setLogScrollOffset: vi.fn(),
+      } as any);
+      return null;
+    };
+
+    const { unmount: unmount1 } = render(React.createElement(TestComponentUnselected));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Click on Option 2 (y = 26), which is currently unselected
+    mouseHandler(Buffer.from("\x1b[<0;10;26M"));
+    expect(mockSetWizardSelectedIndex).toHaveBeenCalledWith(1);
+    expect(mockHandleWizardSubmit).not.toHaveBeenCalled();
+
+    unmount1();
+
+    // Context for second click (already selected option)
+    const TestComponentSelected = () => {
+      useDashboardMouse({
+        wrappedLines: [],
+        logsCount: 10,
+        terminalSize: { width: 100, height: 40 },
+        activeWizard: { type: "login", step: 10, data: {} },
+        setActiveWizard: vi.fn(),
+        wizardOptions: ["Option 1", "Option 2"],
+        wizardSelectedIndex: 1, // Option 2 already selected
+        setWizardSelectedIndex: mockSetWizardSelectedIndex,
+        wizardSelectedSet: new Set(),
+        setWizardSelectedSet: vi.fn(),
+        setWizardOptions: vi.fn(),
+        pendingQuestion: null,
+        handleWizardSubmit: mockHandleWizardSubmit,
+        query: "",
+        setQuery: vi.fn(),
+        wizardAllOptions: [],
+        workspaceHeight: 15,
+        leftTopHeight: 10,
+        wizardIsLoadingModels: false,
+        agent: null,
+        focusArea: "input",
+        setFocusArea: vi.fn(),
+        setLogScrollOffset: vi.fn(),
+      } as any);
+      return null;
+    };
+
+    const { unmount: unmount2 } = render(React.createElement(TestComponentSelected));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Click on Option 2 (y = 26), which is already selected
+    mouseHandler(Buffer.from("\x1b[<0;10;26M"));
+    expect(mockHandleWizardSubmit).toHaveBeenCalledWith("Option 2");
+
+    unmount2();
+
+    process.stdin.on = originalOn;
+    process.stdin.off = originalOff;
+    process.stdout.write = originalWrite;
+  });
 });
