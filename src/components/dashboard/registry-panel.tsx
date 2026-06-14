@@ -106,8 +106,8 @@ export function RegistryPanel({
           
           const isFocused = focusArea === "list";
           const rowBg = isSelected && isFocused ? "green" : undefined;
-          const rowTextColor = isSelected && isFocused ? "black" : color;
-          const tokenColor = isSelected && isFocused ? "black" : "cyan";
+          const rowTextColor = isSelected && isFocused ? "white" : color;
+          const tokenColor = isSelected && isFocused ? "white" : "cyan";
           
           const depth = session.type === "MASTER" ? 0 
                       : session.type === "SUPERAGENT" ? 1 
@@ -156,7 +156,7 @@ export function RegistryPanel({
                   {isSelected ? "▶ " : (isSpinner ? <SessionSpinner /> : "  ")}
                 </Text>
                 <Text bold={isSelected} backgroundColor={rowBg} wrap="truncate-end">
-                  <Text color={isSelected && isFocused ? "black" : "gray"} dimColor={!isSelected || !isFocused}>
+                  <Text color={isSelected && isFocused ? "white" : "gray"} dimColor={!isSelected || !isFocused}>
                     [{String(globalIndex + 1).padStart(2, " ")}]{" "}
                   </Text>
                   <Text color={rowTextColor}>
@@ -168,11 +168,11 @@ export function RegistryPanel({
               <Box flexShrink={0}>
                 {renderStatusBadge(session.status)}
                 {session.speed !== undefined && session.speed > 0 && (
-                  <Text color={isSelected && isFocused ? "black" : "yellow"} backgroundColor={rowBg} bold> ⚡{session.speed.toFixed(1)}t/s</Text>
+                  <Text color={isSelected && isFocused ? "white" : "yellow"} backgroundColor={rowBg} bold> ⚡{session.speed.toFixed(1)}t/s</Text>
                 )}
                 {session.tokens > 0 
                   ? <Text color={tokenColor} backgroundColor={rowBg} dimColor={!isSelected || !isFocused}> {session.tokens.toLocaleString()}t</Text>
-                  : <Text color={isSelected && isFocused ? "black" : "gray"} backgroundColor={rowBg} dimColor> --</Text>
+                  : <Text color={isSelected && isFocused ? "white" : "gray"} backgroundColor={rowBg} dimColor> --</Text>
                 }
               </Box>
             </Box>
