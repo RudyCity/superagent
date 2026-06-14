@@ -567,11 +567,11 @@ export const replaceFileContentTool: Tool = {
     required: ["filePath", "targetContent", "replacementContent", "startLine", "endLine"],
   },
   async execute(args, cwd, signal) {
-    const filePath = path.resolve(cwd, args.filePath as string);
-    const targetContent = args.targetContent as string;
-    const replacementContent = args.replacementContent as string;
-    const startLine = args.startLine as number;
-    const endLine = args.endLine as number;
+    const filePath = path.resolve(cwd, (args.filePath || args.TargetFile) as string);
+    const targetContent = (args.targetContent ?? args.TargetContent ?? "") as string;
+    const replacementContent = (args.replacementContent ?? args.ReplacementContent ?? "") as string;
+    const startLine = Number(args.startLine ?? args.StartLine ?? 0);
+    const endLine = Number(args.endLine ?? args.EndLine ?? 0);
 
     try {
       const content = await fs.readFile(filePath, "utf-8");
@@ -687,16 +687,29 @@ export const multiReplaceFileContentTool: Tool = {
     required: ["filePath", "chunks"],
   },
   async execute(args, cwd, signal) {
-    const filePath = path.resolve(cwd, args.filePath as string);
+    const filePath = path.resolve(cwd, (args.filePath || args.TargetFile) as string);
     interface Chunk {
       targetContent: string;
       replacementContent: string;
       startLine: number;
       endLine: number;
     }
-    const chunks = args.chunks as Chunk[];
+    const rawChunks = args.chunks || args.ReplacementChunks || args.replacementChunks || [];
+    const rawChunksArray = Array.isArray(rawChunks)
+      ? rawChunks
+      : (rawChunks !== undefined && rawChunks !== null ? [rawChunks] : []);
 
-    if (!Array.isArray(chunks) || chunks.length === 0) {
+    const chunks: Chunk[] = rawChunksArray.map((c: any) => {
+      if (!c || typeof c !== "object") return c;
+      return {
+        targetContent: c.targetContent ?? c.TargetContent ?? "",
+        replacementContent: c.replacementContent ?? c.ReplacementContent ?? "",
+        startLine: Number(c.startLine ?? c.StartLine ?? 0),
+        endLine: Number(c.endLine ?? c.EndLine ?? 0),
+      };
+    });
+
+    if (chunks.length === 0) {
       return "Error: No chunks provided or invalid format.";
     }
 

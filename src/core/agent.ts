@@ -636,8 +636,31 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           this.onEvent({ type: "tool_start", toolCall: tc, description });
 
           if (tc.name === "ask_question") {
-            const question = tc.args.question as string || "";
-            const rawOptions = (tc.args.options as unknown[]) || [];
+            let question = tc.args.question as string || "";
+            let rawOptionsVal = tc.args.options;
+            let isMultiSelect = tc.args.isMultiSelect as boolean | undefined;
+
+            if (Array.isArray(tc.args.questions) && tc.args.questions.length > 0) {
+              const firstQ = tc.args.questions[0];
+              if (firstQ && typeof firstQ === "object") {
+                const firstQObj = firstQ as Record<string, unknown>;
+                if (typeof firstQObj.question === "string") {
+                  question = firstQObj.question;
+                }
+                if (firstQObj.options !== undefined) {
+                  rawOptionsVal = firstQObj.options;
+                }
+                if (typeof firstQObj.is_multi_select === "boolean") {
+                  isMultiSelect = firstQObj.is_multi_select;
+                } else if (typeof firstQObj.isMultiSelect === "boolean") {
+                  isMultiSelect = firstQObj.isMultiSelect;
+                }
+              }
+            }
+
+            const rawOptions = Array.isArray(rawOptionsVal)
+              ? rawOptionsVal
+              : (rawOptionsVal !== undefined && rawOptionsVal !== null ? [rawOptionsVal] : []);
             const options: string[] = rawOptions.map((o) => {
               if (typeof o === "string") return o;
               if (o && typeof o === "object") {
@@ -649,7 +672,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               return String(o);
             });
             try {
-              const selected = await this.onQuestion(question, options, tc.args.isMultiSelect as boolean | undefined);
+              const selected = await this.onQuestion(question, options, isMultiSelect);
               const toolResult: ToolResult = {
                 toolCallId: tc.id,
                 name: tc.name,
@@ -736,7 +759,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 planContent = existing.replace(target, replacement);
               } else if (tc.name === "multi_replace_file_content") {
                 let existing = fs.existsSync(planFilePath) ? fs.readFileSync(planFilePath, "utf8") : "";
-                const chunks = (tc.args.ReplacementChunks as any[]) || [];
+                const chunksVal = tc.args.ReplacementChunks;
+                const chunks = Array.isArray(chunksVal)
+                  ? chunksVal
+                  : (chunksVal !== undefined && chunksVal !== null ? [chunksVal] : []);
                 for (const chunk of chunks) {
                   const target = chunk.TargetContent as string || "";
                   const replacement = chunk.ReplacementContent as string || "";
@@ -798,7 +824,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 taskContent = existing.replace(target, replacement);
               } else if (tc.name === "multi_replace_file_content") {
                 let existing = fs.existsSync(taskFilePath) ? fs.readFileSync(taskFilePath, "utf8") : "";
-                const chunks = (tc.args.ReplacementChunks as any[]) || [];
+                const chunksVal = tc.args.ReplacementChunks;
+                const chunks = Array.isArray(chunksVal)
+                  ? chunksVal
+                  : (chunksVal !== undefined && chunksVal !== null ? [chunksVal] : []);
                 for (const chunk of chunks) {
                   const target = chunk.TargetContent as string || "";
                   const replacement = chunk.ReplacementContent as string || "";

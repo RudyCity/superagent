@@ -30,8 +30,31 @@ export const askQuestionTool: Tool = {
     required: ["question", "options"],
   },
   async execute(args, cwd, signal) {
-    const question = args.question as string;
-    const rawOptions = (args.options as unknown[]) || [];
+    let question = args.question as string || "";
+    let rawOptionsVal = args.options;
+    let isMultiSelect = args.isMultiSelect as boolean | undefined;
+
+    if (Array.isArray(args.questions) && args.questions.length > 0) {
+      const firstQ = args.questions[0];
+      if (firstQ && typeof firstQ === "object") {
+        const firstQObj = firstQ as Record<string, unknown>;
+        if (typeof firstQObj.question === "string") {
+          question = firstQObj.question;
+        }
+        if (firstQObj.options !== undefined) {
+          rawOptionsVal = firstQObj.options;
+        }
+        if (typeof firstQObj.is_multi_select === "boolean") {
+          isMultiSelect = firstQObj.is_multi_select;
+        } else if (typeof firstQObj.isMultiSelect === "boolean") {
+          isMultiSelect = firstQObj.isMultiSelect;
+        }
+      }
+    }
+
+    const rawOptions = Array.isArray(rawOptionsVal)
+      ? rawOptionsVal
+      : (rawOptionsVal !== undefined && rawOptionsVal !== null ? [rawOptionsVal] : []);
     const options: string[] = rawOptions.map(o => String(o));
 
     const handler = (await import("./state.js")).getActiveQuestionHandler();
@@ -40,7 +63,7 @@ export const askQuestionTool: Tool = {
     }
 
     try {
-      const selected = await handler(question, options, args.isMultiSelect as boolean | undefined);
+      const selected = await handler(question, options, isMultiSelect);
       return `User selected option: "${selected}"`;
     } catch (err: any) {
       return `Error getting user answer: ${err.message}`;
