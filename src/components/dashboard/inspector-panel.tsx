@@ -283,14 +283,14 @@ export function InspectorPanel({
           const isIdleTask = selectedSession.task.startsWith("Idle") || selectedSession.task.startsWith("Error");
           const spinnerType = (selectedSession.type === "MASTER" && !isIdleTask) ? "orchestrating" : "processing";
           return (
-            <Box flexDirection="row" marginTop={1}>
+            <Box flexDirection="row" marginTop={0}>
               <ThinkingSpinner type={spinnerType} />
               <BlinkingCursor />
             </Box>
           );
         })()}
         {selectedSession.type === "MASTER" && isExecutingTool && (
-          <Box flexDirection="column" marginTop={1}>
+          <Box flexDirection="column" marginTop={0}>
             <Text color="yellow">
               ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
             </Text>

@@ -57,6 +57,7 @@ import { DashboardWizard } from "./dashboard/dashboard-wizard.js";
 import { ActiveSubagentsPanel } from "./dashboard/active-subagents-panel.js";
 import { ActiveProcessesPanel } from "./dashboard/active-processes-panel.js";
 import { DashboardStatusBar } from "./dashboard/dashboard-status-bar.js";
+import { ProcessingIndicator } from "./common/LoadingIndicators.js";
 
 // Import hooks
 import { useDashboardWizard } from "../hooks/useDashboardWizard.js";
@@ -96,6 +97,7 @@ export function MultiAgentDashboard({
   const { exit } = useApp();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [focusArea, setFocusArea] = useState<"list" | "logs" | "input" | "checklist" | "agents" | "procs">("input");
+  const [isProcessing, setIsProcessing] = useState(false);
   const [query, setQuery] = useState("");
   const [masterLogs, setMasterLogs] = useState<string[]>(["[MASTER] System initialised. Ready for tasks."]);
   const [history, setHistory] = useState<string[]>([]);
@@ -486,6 +488,7 @@ export function MultiAgentDashboard({
           setToolTimeout(null);
           setToolStartTime(null);
           setTimeLeft(null);
+          setIsProcessing(false);
         }
       });
     }
@@ -535,6 +538,8 @@ export function MultiAgentDashboard({
     HISTORY_FILE,
     cachedSessions,
     setCachedSessions,
+    isProcessing,
+    setIsProcessing,
   });
 
 
@@ -684,10 +689,11 @@ export function MultiAgentDashboard({
   }
   const logBoxHeight = Math.max(5, workspaceHeight - 3 - (renderedTaskLinesCount || 1));
   const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
-  let executingToolHeight = 0;
+  const maxActiveLines = Math.max(0, Math.min(8, logBoxHeight - 4));
   const activeToolLines = (selectedSession.type === "MASTER" && isExecutingTool && activeToolOutput) 
-    ? activeToolOutput.trim().split("\n").slice(-8) 
+    ? activeToolOutput.trim().split("\n").slice(-maxActiveLines) 
     : [];
+  let executingToolHeight = 0;
   if (selectedSession.type === "MASTER" && isExecutingTool) {
     executingToolHeight += 2; // Header border + spinner line
     if (activeToolLines.length > 0) {
@@ -977,7 +983,7 @@ export function MultiAgentDashboard({
       )}
       <Box flexDirection="row" marginTop={0} paddingX={1} width="100%">
         <Box flexShrink={0}>
-          <Text bold color={focusArea === "input" ? "green" : "cyan"}>
+          <Text bold color={activeWizard ? "magenta" : isProcessing ? "gray" : (focusArea === "input" ? "green" : "cyan")}>
             {activeWizard?.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)
               ? "└──[ MODEL ] ❯ "
               : activeWizard?.type === "model" && (activeWizard.step === 2 || activeWizard.step === 23 || activeWizard.step === 33)
@@ -1004,11 +1010,15 @@ export function MultiAgentDashboard({
               ? `└──[ SKILLS:${activeWizard.step} ] ❯ `
               : activeWizard?.type === "checkpoint"
               ? "└──[ CHECKPOINT ] ❯ "
+              : isProcessing
+              ? "└───[ ⚡ PROCESSING ] ❯ "
               : "└───[ ⚡ PROMPT ] ❯ "}
           </Text>
         </Box>
         <Box flexGrow={1}>
-          {(() => {
+          {isProcessing && !activeWizard ? (
+            <ProcessingIndicator scrollOffset={logScrollOffset} />
+          ) : (() => {
             const { prefix, inserted, suffix } = getPasteSplit(query, pastePrefixLength, pasteSuffixLength);
             const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
             if (isPasteActive) {
@@ -1027,7 +1037,7 @@ export function MultiAgentDashboard({
                 value={query}
                 onChange={handleQueryChange}
                 onSubmit={handleQuerySubmit}
-                focus={focusArea === "input"}
+                focus={focusArea === "input" && !isProcessing}
               />
             );
           })()}

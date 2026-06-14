@@ -67,6 +67,8 @@ export interface DashboardWizardContext {
   HISTORY_FILE: string;
   cachedSessions: any[];
   setCachedSessions: React.Dispatch<React.SetStateAction<any[]>>;
+  isProcessing: boolean;
+  setIsProcessing: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export function useDashboardWizard(ctx: DashboardWizardContext) {
@@ -105,6 +107,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
     HISTORY_FILE,
     cachedSessions,
     setCachedSessions,
+    isProcessing,
+    setIsProcessing,
   } = ctx;
 
   const handleWizardSubmit = useCallback(async (value: string) => {
@@ -1711,9 +1715,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           // Use / Activate Skill
           const slug = chosen.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
           setMasterLogs((prev) => [...prev, `[USER] 🛠️ [SKILL USE] ${chosen.name} (${chosen.path})`, `[MASTER] Activating skill "${chosen.name}"...\nInstruction path: ${chosen.path}`].slice(-500));
+          setIsProcessing(true);
           agent.sendMessage(
             `I would like you to use the following skill: "${chosen.name}".\nPlease read its instruction file at "${chosen.path}" using a file read tool first, and then help me with my request based on its instructions.`
-          ).catch((err: any) => {
+          ).then(() => {
+            setIsProcessing(false);
+          }).catch((err: any) => {
+            setIsProcessing(false);
             setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message}`].slice(-500));
           });
           setActiveWizard(null);
@@ -1887,9 +1895,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         agent.approvePlan();
         setPlanState("APPROVED");
         setMasterLogs((prev) => [...prev, "✓ Implementation plan approved! Continuing with the approved plan now."].slice(-500));
-        agent.sendMessage("Implementation plan approved via interactive approval wizard. Continue with the approved plan now.").catch((err: any) => {
-          setMasterLogs((prev) => [...prev, `[ERROR] Plan approval resume error: ${err.message}`].slice(-500));
-        });
+        setIsProcessing(true);
+        agent.sendMessage("Implementation plan approved via interactive approval wizard. Continue with the approved plan now.")
+          .then(() => {
+            setIsProcessing(false);
+          })
+          .catch((err: any) => {
+            setIsProcessing(false);
+            setMasterLogs((prev) => [...prev, `[ERROR] Plan approval resume error: ${err.message}`].slice(-500));
+          });
       } else {
         agent.planState = "IDLE";
         setPlanState("IDLE");
@@ -1925,6 +1939,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     wizardIsLoadingModels,
     setWizardIsLoadingModels,
     cachedSessions,
+    setIsProcessing,
   ]);
 
   const handleQuerySubmit = useCallback((val: string) => {
@@ -2068,11 +2083,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     setQuery("");
     setCurrentTask(commandInput);
 
+    setIsProcessing(true);
     agent.sendMessage(commandInput)
       .then(() => {
+        setIsProcessing(false);
         setCurrentTask(`Idle - Completed: ${commandInput}`);
       })
       .catch((err) => {
+        setIsProcessing(false);
         setCurrentTask(`Error: ${err.message || err}`);
         setMasterLogs((prev) => [...prev, `[ERROR] ${err.message || err}`].slice(-500));
       });
@@ -2102,8 +2120,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     setCheckpointsList,
     setIsPasted,
     HISTORY_FILE,
-    setCachedSessions,
     handleWizardSubmit,
+    setIsProcessing,
   ]);
 
   return {

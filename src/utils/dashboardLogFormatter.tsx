@@ -133,18 +133,19 @@ export function computeWrappedLogs(
 
   for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
     const group = groups[groupIdx];
+    const useTruncate = isHistoryTruncated && !group.parseMarkdown;
 
     if (group.isBox) {
       for (const logStr of group.rawLines) {
         const cleanedLogStr = logStr.replace(/\r\n/g, "\n").replace(/\r/g, "");
-        const subLines = isHistoryTruncated
+        const subLines = useTruncate
           ? cleanedLogStr.split("\n")
           : wrapTextForDisplay(cleanedLogStr, feedWidth);
         for (let i = 0; i < subLines.length; i++) {
           const lineText = subLines[i];
           wrappedLines.push(
             <Box flexDirection="row" key={`log-line-${groupIdx}-${i}`} width={feedWidth}>
-              <Text color={group.color} wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText}</Text>
+              <Text color={group.color} wrap={useTruncate ? "truncate-end" : undefined}>{lineText}</Text>
             </Box>
           );
         }
@@ -157,7 +158,7 @@ export function computeWrappedLogs(
 
     wrappedLines.push(
       <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
-        <Text color={group.color === "gray" ? "gray" : group.color} bold wrap={isHistoryTruncated ? "truncate-end" : undefined}>
+        <Text color={group.color === "gray" ? "gray" : group.color} bold wrap={useTruncate ? "truncate-end" : undefined}>
           {prefix} <Text color="white" bold>[ </Text>
           <Text color={group.color === "gray" ? "gray" : group.color} bold>{group.label}</Text>
           <Text color="white" bold> ]</Text>
@@ -169,7 +170,7 @@ export function computeWrappedLogs(
     for (let rawLineIdx = 0; rawLineIdx < group.rawLines.length; rawLineIdx++) {
       const content = group.rawLines[rawLineIdx];
       const cleanedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
-      const subLines = isHistoryTruncated
+      const subLines = useTruncate
         ? cleanedContent.split("\n")
         : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - 8));
 
@@ -184,7 +185,7 @@ export function computeWrappedLogs(
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
                 <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text color="gray" italic wrap={isHistoryTruncated ? "truncate-end" : undefined}>{inCode ? `┌─── [ CODE: ${codeLang} ]` : "└─── [ END CODE ]"}</Text>
+                <Text color="gray" italic wrap={useTruncate ? "truncate-end" : undefined}>{inCode ? `┌─── [ CODE: ${codeLang} ]` : "└─── [ END CODE ]"}</Text>
               </Box>
             );
             continue;
@@ -194,7 +195,7 @@ export function computeWrappedLogs(
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
                 <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}│  </Text>
-                <Text color="green" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText}</Text>
+                <Text color="green" wrap={useTruncate ? "truncate-end" : undefined}>{lineText}</Text>
               </Box>
             );
             continue;
@@ -204,7 +205,7 @@ export function computeWrappedLogs(
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
                 <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text bold color="yellow" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText.slice(2)}</Text>
+                <Text bold color="yellow" wrap={useTruncate ? "truncate-end" : undefined}>{lineText.slice(2)}</Text>
               </Box>
             );
             continue;
@@ -213,7 +214,7 @@ export function computeWrappedLogs(
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
                 <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text bold color="cyan" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText.slice(3)}</Text>
+                <Text bold color="cyan" wrap={useTruncate ? "truncate-end" : undefined}>{lineText.slice(3)}</Text>
               </Box>
             );
             continue;
@@ -222,7 +223,7 @@ export function computeWrappedLogs(
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
                 <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-                <Text bold color="blue" wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText.slice(4)}</Text>
+                <Text bold color="blue" wrap={useTruncate ? "truncate-end" : undefined}>{lineText.slice(4)}</Text>
               </Box>
             );
             continue;
@@ -251,7 +252,7 @@ export function computeWrappedLogs(
               <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
               {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
               <Box flexShrink={1}>
-                <Text wrap={isHistoryTruncated ? "truncate-end" : undefined}>
+                <Text wrap={useTruncate ? "truncate-end" : undefined}>
                   {renderLogInlineStyles(remainingLine, group.color === "gray" ? "gray" : group.color, group.isBold, group.dimColor)}
                 </Text>
               </Box>
@@ -261,7 +262,7 @@ export function computeWrappedLogs(
           wrappedLines.push(
             <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
               <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-              <Text color={group.color === "gray" ? "gray" : group.color} bold={group.isBold} dimColor={group.dimColor} wrap={isHistoryTruncated ? "truncate-end" : undefined}>{lineText}</Text>
+              <Text color={group.color === "gray" ? "gray" : group.color} bold={group.isBold} dimColor={group.dimColor} wrap={useTruncate ? "truncate-end" : undefined}>{lineText}</Text>
             </Box>
           );
         }
