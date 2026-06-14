@@ -92,6 +92,40 @@ describe("MultiAgentDashboard UI Component", () => {
     unmount();
   });
 
+  it("should abort processing and stop running agents on Ctrl+C", async () => {
+    const { useDashboardKeyboard } = await import("../src/hooks/useDashboardKeyboard.js");
+    const mockStopAllRunningAgents = vi.fn().mockReturnValue(1);
+    const mockSetIsProcessing = vi.fn();
+    const mockSetCurrentTask = vi.fn();
+
+    const TestComponent = () => {
+      useDashboardKeyboard({
+        isProcessing: true,
+        setIsProcessing: mockSetIsProcessing,
+        stopAllRunningAgents: mockStopAllRunningAgents,
+        setCurrentTask: mockSetCurrentTask,
+        exit: vi.fn(),
+        query: "",
+        setQuery: vi.fn(),
+      } as any);
+      return null;
+    };
+
+    const { unmount } = render(React.createElement(TestComponent));
+
+    expect(inputCallback).toBeDefined();
+    expect(typeof inputCallback).toBe("function");
+
+    // Press Ctrl+C
+    inputCallback("c", { ctrl: true });
+
+    expect(mockStopAllRunningAgents).toHaveBeenCalled();
+    expect(mockSetIsProcessing).toHaveBeenCalledWith(false);
+    expect(mockSetCurrentTask).toHaveBeenCalledWith("Idle - Interrupted");
+
+    unmount();
+  });
+
   it("should focus agents or procs on mouse click", async () => {
     const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
 

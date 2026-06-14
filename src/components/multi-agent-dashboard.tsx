@@ -810,6 +810,8 @@ export function MultiAgentDashboard({
     maxAgentsVisible,
     setProcsScrollOffset,
     maxProcsVisible,
+    isProcessing,
+    setIsProcessing,
   });
 
   useDashboardMouse({

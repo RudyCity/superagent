@@ -52,6 +52,8 @@ export interface DashboardKeyboardContext {
   maxAgentsVisible: number;
   setProcsScrollOffset: React.Dispatch<React.SetStateAction<number>>;
   maxProcsVisible: number;
+  isProcessing?: boolean;
+  setIsProcessing?: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
@@ -104,11 +106,15 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     maxAgentsVisible,
     setProcsScrollOffset,
     maxProcsVisible,
+    isProcessing = false,
+    setIsProcessing = () => {},
   } = ctx;
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
-      if (stopAllRunningAgents() > 0) {
+      if (isProcessing) {
+        stopAllRunningAgents();
+        setIsProcessing(false);
         setCurrentTask("Idle - Interrupted");
         return;
       }
