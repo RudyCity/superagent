@@ -5,7 +5,7 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
 import { Banner } from "./components/banner.js";
-import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, listHistorySessions, fetchAndCacheModels, getModelPresets, applyModelPreset } from "./core/config.js";
+import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, listHistorySessions, fetchAndCacheModels, getModelPresets, applyModelPreset, deleteModelPreset, updateModelPreset, BUILT_IN_PRESETS, saveModelPreset } from "./core/config.js";
 import { getPresetLabel } from "./core/slash-commands.js";
 import { createCheckpoint, listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, type Checkpoint } from "./core/checkpoints.js";
 import { getGlobalConfigDir } from "./core/config.js";
@@ -1580,6 +1580,153 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setWizardOptions([]);
         setWizardSelectedIndex(0);
         setWizardIsLoadingModels(false);
+      } else if (activeWizard.step === 20) {
+        const name = value.trim();
+        if (!name) {
+          addLine({
+            type: "error",
+            content: "Preset name cannot be empty.",
+            timestamp: now,
+          });
+          return;
+        }
+        if (BUILT_IN_PRESETS.some(bp => bp.name === name.toLowerCase())) {
+          addLine({
+            type: "error",
+            content: `Cannot overwrite built-in preset "${name}".`,
+            timestamp: now,
+          });
+          return;
+        }
+        setActiveWizard({
+          type: "model",
+          step: 21,
+          data: { ...activeWizard.data, presetName: name },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+      } else if (activeWizard.step === 21) {
+        const desc = value.trim();
+        const name = activeWizard.data.presetName || "";
+        try {
+          const savedPath = saveModelPreset(name, desc);
+          addLine({
+            type: "system",
+            content: `Model preset "${name}" created successfully!\nSaved to: ${savedPath}`,
+            timestamp: now,
+          });
+        } catch (err: any) {
+          addLine({
+            type: "error",
+            content: `Failed to create model preset: ${err.message}`,
+            timestamp: now,
+          });
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+      } else if (activeWizard.step === 30) {
+        const choice = value;
+        const name = choice.split(" - ")[0].trim();
+        setActiveWizard({
+          type: "model",
+          step: 31,
+          data: { ...activeWizard.data, presetName: name },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+      } else if (activeWizard.step === 31) {
+        const desc = value.trim();
+        setActiveWizard({
+          type: "model",
+          step: 32,
+          data: { ...activeWizard.data, presetDescription: desc },
+        });
+        setWizardOptions(["1. No, keep existing models", "2. Yes, update models to current configuration"]);
+        setWizardSelectedIndex(0);
+        setInput("");
+      } else if (activeWizard.step === 32) {
+        const choice = value;
+        const name = activeWizard.data.presetName || "";
+        const desc = activeWizard.data.presetDescription || "";
+        const updateModels = choice.includes("Yes") || choice.includes("update");
+        try {
+          let models: Record<string, string> | undefined = undefined;
+          if (updateModels) {
+            models = {};
+            if (process.env.MODEL) models.MODEL = process.env.MODEL;
+            if (process.env.MODEL_DEPTH_0) models.MODEL_DEPTH_0 = process.env.MODEL_DEPTH_0;
+            if (process.env.MODEL_DEPT0) models.MODEL_DEPT0 = process.env.MODEL_DEPT0;
+            if (process.env.MODEL_DEPTH_1) models.MODEL_DEPTH_1 = process.env.MODEL_DEPTH_1;
+            if (process.env.MODEL_DEPT1) models.MODEL_DEPT1 = process.env.MODEL_DEPT1;
+            if (process.env.MODEL_DEPTH_2) models.MODEL_DEPTH_2 = process.env.MODEL_DEPTH_2;
+            if (process.env.MODEL_DEPT2) models.MODEL_DEPT2 = process.env.MODEL_DEPT2;
+            for (const [k, v] of Object.entries(process.env)) {
+              if (v && k.startsWith("MODEL_SUBAGENT_")) {
+                models[k] = v;
+              } else if (v && k.startsWith("MODEL_") && k !== "MODEL" && k !== "MODEL_LIMITS") {
+                models[k] = v;
+              }
+            }
+          }
+          const savedPath = updateModelPreset(name, desc, models);
+          addLine({
+            type: "system",
+            content: `Model preset "${name}" updated successfully!\nSaved to: ${savedPath}`,
+            timestamp: now,
+          });
+        } catch (err: any) {
+          addLine({
+            type: "error",
+            content: `Failed to update model preset: ${err.message}`,
+            timestamp: now,
+          });
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+      } else if (activeWizard.step === 40) {
+        const choice = value;
+        const name = choice.split(" - ")[0].trim();
+        setActiveWizard({
+          type: "model",
+          step: 41,
+          data: { ...activeWizard.data, presetName: name },
+        });
+        setWizardOptions(["1. Yes, delete it", "2. No, cancel"]);
+        setWizardSelectedIndex(0);
+        setInput("");
+      } else if (activeWizard.step === 41) {
+        const choice = value;
+        const name = activeWizard.data.presetName || "";
+        const doDelete = choice.includes("Yes") || choice.includes("delete");
+        if (doDelete) {
+          try {
+            const savedPath = deleteModelPreset(name);
+            addLine({
+              type: "system",
+              content: `Model preset "${name}" deleted successfully!\nSaved to: ${savedPath}`,
+              timestamp: now,
+            });
+          } catch (err: any) {
+            addLine({
+              type: "error",
+              content: `Failed to delete model preset: ${err.message}`,
+              timestamp: now,
+            });
+          }
+        } else {
+          addLine({
+            type: "system",
+            content: `Deletion of model preset "${name}" cancelled.`,
+            timestamp: now,
+          });
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
       } else {
         const modelName = value;
         try {
@@ -1799,7 +1946,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         // we skip here to prevent double-firing.
         const isSelectionStep = 
           (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 5 || activeWizard.step === 10)) ||
-          (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3)) ||
+          (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 40 || activeWizard.step === 41)) ||
           (activeWizard.type === "permission") ||
           (activeWizard.type === "question" && wizardOptions.length > 0);
 
@@ -2393,11 +2540,25 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
         if (key.return) {
-          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "preset", "default", "all"];
+          const tiers = [
+            "master",       // 0
+            "superagent",   // 1
+            "subagent",     // 2
+            "researcher",   // 3
+            "coder",        // 4
+            "reviewer",     // 5
+            "preset_load",  // 6
+            "preset_list",  // 7
+            "preset_create",// 8
+            "preset_edit",  // 9
+            "preset_delete",// 10
+            "default",      // 11
+            "all"           // 12
+          ];
           const tier = tiers[wizardSelectedIndex];
           if (!tier) return;
 
-          if (tier === "preset") {
+          if (tier === "preset_load") {
             setActiveWizard({
               type: "model",
               step: 4,
@@ -2406,6 +2567,85 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const presets = getModelPresets();
             const options = presets.map(p => `${p.name} - ${p.description}`);
             setWizardOptions(options);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          }
+
+          if (tier === "preset_list") {
+            const presets = getModelPresets();
+            const listStr = presets.map(p => {
+              const modelsStr = Object.entries(p.models).map(([k, v]) => `    - ${k}: ${v}`).join("\n");
+              return `- **${p.name}**: ${p.description}\n${modelsStr}`;
+            }).join("\n");
+            addLine({
+              type: "system",
+              content: `Available Model Presets:\n${listStr}`,
+              timestamp: Date.now(),
+            });
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            return;
+          }
+
+          if (tier === "preset_create") {
+            setActiveWizard({
+              type: "model",
+              step: 20,
+              data: { tier },
+            });
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          }
+
+          if (tier === "preset_edit") {
+            const presets = getModelPresets();
+            const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
+            if (customPresets.length === 0) {
+              addLine({
+                type: "error",
+                content: "No custom presets available to edit.",
+                timestamp: Date.now(),
+              });
+              setActiveWizard(null);
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+              return;
+            }
+            setActiveWizard({
+              type: "model",
+              step: 30,
+              data: { tier },
+            });
+            setWizardOptions(customPresets.map(p => `${p.name} - ${p.description}`));
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          }
+
+          if (tier === "preset_delete") {
+            const presets = getModelPresets();
+            const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
+            if (customPresets.length === 0) {
+              addLine({
+                type: "error",
+                content: "No custom presets available to delete.",
+                timestamp: Date.now(),
+              });
+              setActiveWizard(null);
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+              return;
+            }
+            setActiveWizard({
+              type: "model",
+              step: 40,
+              data: { tier },
+            });
+            setWizardOptions(customPresets.map(p => `${p.name} - ${p.description}`));
             setWizardSelectedIndex(0);
             setInput("");
             return;
@@ -2424,7 +2664,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           setInput("");
           return;
         }
-      } else if (activeWizard.type === "model" && activeWizard.step === 2 && wizardOptions.length > 0) {
+      } else if (
+        activeWizard.type === "model" && 
+        (activeWizard.step === 2 || activeWizard.step === 4 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 40 || activeWizard.step === 41) && 
+        wizardOptions.length > 0
+      ) {
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
@@ -2457,22 +2701,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const selectedModel = filteredModels[wizardSelectedIndex] ?? filteredModels[0];
           if (selectedModel) {
             handleWizardSubmit(selectedModel);
-          }
-          return;
-        }
-      } else if (activeWizard.type === "model" && activeWizard.step === 4 && wizardOptions.length > 0) {
-        if (key.upArrow) {
-          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
-          return;
-        }
-        if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
-          return;
-        }
-        if (key.return) {
-          const selectedVal = wizardOptions[wizardSelectedIndex];
-          if (selectedVal) {
-            handleWizardSubmit(selectedVal);
           }
           return;
         }
@@ -3081,8 +3309,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       if (activeWizard.step === 13) return "Describe the project (e.g. CLI tool in Rust)...";
     }
     if (activeWizard.type === "model") {
-      if (activeWizard.step === 1) return "Select agent tier (Use Arrow Keys Up/Down & Enter)...";
+      if (activeWizard.step === 1) return "Select option using arrows and Enter...";
       if (activeWizard.step === 2) return "Enter provider number or select using arrows...";
+      if (activeWizard.step === 20) return "Type preset name and press Enter...";
+      if (activeWizard.step === 21) return "Type preset description and press Enter...";
+      if (activeWizard.step === 30) return "Select preset to edit using arrows and Enter...";
+      if (activeWizard.step === 31) return "Type new description and press Enter...";
+      if (activeWizard.step === 32) return "Select option using arrows and Enter...";
+      if (activeWizard.step === 40) return "Select preset to delete using arrows and Enter...";
+      if (activeWizard.step === 41) return "Select confirmation using arrows and Enter...";
       return wizardOptions.length > 0
         ? "🔍 Search models (type to filter, arrows to navigate, Enter to select)..."
         : "Enter model name (e.g. google/gemini-2.5-flash)...";
@@ -3292,8 +3527,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       } else if (activeWizard.step === 11 || activeWizard.step === 12 || activeWizard.step === 13) {
         chromeHeight += 6;
       }
-    } else if (activeWizard.type === "model" && wizardOptions.length > 0) {
-      chromeHeight += 13; // +1 for search result count line
+    } else if (activeWizard.type === "model") {
+      if (wizardOptions.length > 0) {
+        chromeHeight += 13; // +1 for search result count line
+      } else {
+        chromeHeight += 6;
+      }
     } else if (activeWizard.type === "permission") {
       chromeHeight += 9;
     } else if (activeWizard.type === "question") {
@@ -3811,6 +4050,86 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 />
               );
             })()}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 4 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="⚙️ APPLY MODEL PRESET (Use Arrow Keys Up/Down & Enter):"
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+                maxVisible={10}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 20 && (
+              <WizardDialog
+                title="📝 CREATE MODEL PRESET — Enter Preset Name:"
+                description="Choose a unique name for this preset (built-in names cannot be overwritten)."
+                borderColor="cyan"
+                options={[]}
+                selectedIndex={0}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 21 && (
+              <WizardDialog
+                title="📝 CREATE MODEL PRESET — Enter Description:"
+                description="Provide a short description of this model configuration preset."
+                borderColor="cyan"
+                options={[]}
+                selectedIndex={0}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 30 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="📝 EDIT MODEL PRESET — Select Preset to Edit:"
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+                maxVisible={10}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 31 && (
+              <WizardDialog
+                title="📝 EDIT MODEL PRESET — Enter New Description:"
+                description="Enter a new description (or press Enter to keep current):"
+                borderColor="cyan"
+                options={[]}
+                selectedIndex={0}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 32 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="📝 EDIT MODEL PRESET — Update Model Configuration?"
+                description="Do you want to update the models in this preset to match your current session's active models?"
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 40 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="❌ DELETE MODEL PRESET — Select Preset to Delete:"
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+                maxVisible={10}
+              />
+            )}
+
+            {activeWizard && activeWizard.type === "model" && activeWizard.step === 41 && wizardOptions.length > 0 && (
+              <WizardDialog
+                title="❌ DELETE MODEL PRESET — Are you sure?"
+                description={`This will permanently delete custom preset "${activeWizard.data.presetName || ""}". This action cannot be undone.`}
+                borderColor="red"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+              />
+            )}
 
             {activeWizard && activeWizard.type === "resume" && wizardOptions.length > 0 && (
               <WizardDialog

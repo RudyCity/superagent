@@ -1141,9 +1141,13 @@ export function handleSlashCommand(
             `4. Subagent: researcher (${researcherModelFormatted})`,
             `5. Subagent: coder (${coderModelFormatted})`,
             `6. Subagent: reviewer (${reviewerModelFormatted})`,
-            `7. Load Model Preset`,
-            `8. Default Model (Only set default fallback)`,
-            `9. All Tiers (Overwrite All)`
+            `7. Load/Apply Model Preset (Gunakan Preset)`,
+            `8. List Model Presets (Daftar Preset)`,
+            `9. Create Model Preset (Buat Preset)`,
+            `10. Edit Model Preset (Edit Preset)`,
+            `11. Delete Model Preset (Hapus Preset)`,
+            `12. Default Model (Only set default fallback)`,
+            `13. All Tiers (Overwrite All)`
           ]);
           ctx.setWizardSelectedIndex?.(0);
         }

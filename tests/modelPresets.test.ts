@@ -6,6 +6,8 @@ import {
   getModelPresets, 
   saveModelPreset, 
   applyModelPreset, 
+  deleteModelPreset,
+  updateModelPreset,
   getCustomPresetsPath,
   getRootConfigDir,
   ensureGlobalConfigDir
@@ -135,5 +137,33 @@ describe("Model Presets", () => {
     expect(addedLines.length).toBe(3);
     expect(addedLines[2].content).toContain('Model preset "test-slash" applied successfully');
     expect(process.env.MODEL).toBe("openai:test-slash-model");
+  });
+
+  it("should update a custom model preset", () => {
+    process.env.MODEL = "openai:gpt-4-test";
+    saveModelPreset("my-update-preset", "Original description");
+
+    const path = updateModelPreset("my-update-preset", "Updated description", { MODEL: "openai:gpt-4-updated" });
+    expect(fs.existsSync(path)).toBe(true);
+
+    const presets = getModelPresets();
+    const myPreset = presets.find(p => p.name === "my-update-preset");
+    expect(myPreset).toBeDefined();
+    expect(myPreset?.description).toBe("Updated description");
+    expect(myPreset?.models.MODEL).toBe("openai:gpt-4-updated");
+  });
+
+  it("should delete a custom model preset", () => {
+    process.env.MODEL = "openai:gpt-4-test";
+    saveModelPreset("my-delete-preset", "Delete me");
+
+    const presetsBefore = getModelPresets();
+    expect(presetsBefore.some(p => p.name === "my-delete-preset")).toBe(true);
+
+    const path = deleteModelPreset("my-delete-preset");
+    expect(fs.existsSync(path)).toBe(true);
+
+    const presetsAfter = getModelPresets();
+    expect(presetsAfter.some(p => p.name === "my-delete-preset")).toBe(false);
   });
 });

@@ -1042,3 +1042,73 @@ export function applyModelPreset(name: string): string {
   return updateEnvFile(updates);
 }
 
+export function deleteModelPreset(name: string): string {
+  const presetName = name.toLowerCase().trim();
+  if (!presetName) {
+    throw new Error("Preset name cannot be empty");
+  }
+  if (BUILT_IN_PRESETS.some(bp => bp.name === presetName)) {
+    throw new Error(`Cannot delete built-in preset "${name}"`);
+  }
+
+  const customPath = getCustomPresetsPath();
+  if (!fs.existsSync(customPath)) {
+    throw new Error(`Model preset "${name}" not found.`);
+  }
+
+  let customPresets: ModelPreset[] = [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(customPath, "utf-8"));
+    if (Array.isArray(parsed)) {
+      customPresets = parsed;
+    }
+  } catch {}
+
+  const existingIdx = customPresets.findIndex(p => p.name === presetName);
+  if (existingIdx === -1) {
+    throw new Error(`Model preset "${name}" not found.`);
+  }
+
+  customPresets.splice(existingIdx, 1);
+  ensureGlobalConfigDir();
+  fs.writeFileSync(customPath, JSON.stringify(customPresets, null, 2), "utf-8");
+  return customPath;
+}
+
+export function updateModelPreset(name: string, description: string, models?: Record<string, string>): string {
+  const presetName = name.toLowerCase().trim();
+  if (!presetName) {
+    throw new Error("Preset name cannot be empty");
+  }
+  if (BUILT_IN_PRESETS.some(bp => bp.name === presetName)) {
+    throw new Error(`Cannot edit built-in preset "${name}"`);
+  }
+
+  const customPath = getCustomPresetsPath();
+  let customPresets: ModelPreset[] = [];
+  if (fs.existsSync(customPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(customPath, "utf-8"));
+      if (Array.isArray(parsed)) {
+        customPresets = parsed;
+      }
+    } catch {}
+  }
+
+  const existingIdx = customPresets.findIndex(p => p.name === presetName);
+  if (existingIdx === -1) {
+    throw new Error(`Model preset "${name}" not found.`);
+  }
+
+  customPresets[existingIdx] = {
+    name: presetName,
+    description: description || customPresets[existingIdx].description,
+    models: models || customPresets[existingIdx].models
+  };
+
+  ensureGlobalConfigDir();
+  fs.writeFileSync(customPath, JSON.stringify(customPresets, null, 2), "utf-8");
+  return customPath;
+}
+
+
