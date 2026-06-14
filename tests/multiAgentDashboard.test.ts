@@ -91,4 +91,82 @@ describe("MultiAgentDashboard UI Component", () => {
     expect(mockHandleQuerySubmit).toHaveBeenCalledWith("");
     unmount();
   });
+
+  it("should focus agents or procs on mouse click", async () => {
+    const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
+
+    const originalOn = process.stdin.on;
+    const originalOff = process.stdin.off;
+    const originalWrite = process.stdout.write;
+
+    let mouseHandler: any = null;
+    process.stdin.on = vi.fn((event, cb) => {
+      if (event === "data") mouseHandler = cb;
+      return process.stdin;
+    }) as any;
+    process.stdin.off = vi.fn() as any;
+    process.stdout.write = vi.fn() as any;
+
+    const mockSetFocusArea = vi.fn();
+
+    const { subagentInstances, backgroundTasks } = await import("../src/core/tools/state.js");
+    subagentInstances.clear();
+    backgroundTasks.clear();
+
+    subagentInstances.set("agent-1", { id: "agent-1", status: "running", role: "researcher", logs: [] });
+    backgroundTasks.set("task-1", { id: "task-1", hasExited: false, command: "sleep 10" });
+
+    const TestComponent = () => {
+      useDashboardMouse({
+        wrappedLines: [],
+        logsCount: 10,
+        terminalSize: { width: 100, height: 40 },
+        activeWizard: null,
+        setActiveWizard: vi.fn(),
+        wizardOptions: [],
+        wizardSelectedIndex: 0,
+        setWizardSelectedIndex: vi.fn(),
+        wizardSelectedSet: new Set(),
+        setWizardSelectedSet: vi.fn(),
+        setWizardOptions: vi.fn(),
+        pendingQuestion: null,
+        handleWizardSubmit: vi.fn(),
+        query: "",
+        setQuery: vi.fn(),
+        wizardAllOptions: [],
+        workspaceHeight: 15,
+        leftTopHeight: 10,
+        wizardIsLoadingModels: false,
+        agent: null,
+        focusArea: "input",
+        setFocusArea: mockSetFocusArea,
+        setLogScrollOffset: vi.fn(),
+      } as any);
+      return null;
+    };
+
+    const { unmount } = render(React.createElement(TestComponent));
+
+    // Wait for useEffect to register stdin listener
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(mouseHandler).toBeDefined();
+
+    // Click on agents (y = 22)
+    mouseHandler(Buffer.from("\x1b[<0;10;22M"));
+    expect(mockSetFocusArea).toHaveBeenCalledWith("agents");
+
+    // Click on procs (y = 24)
+    mouseHandler(Buffer.from("\x1b[<0;10;24M"));
+    expect(mockSetFocusArea).toHaveBeenCalledWith("procs");
+
+    unmount();
+
+    process.stdin.on = originalOn;
+    process.stdin.off = originalOff;
+    process.stdout.write = originalWrite;
+
+    subagentInstances.clear();
+    backgroundTasks.clear();
+  });
 });

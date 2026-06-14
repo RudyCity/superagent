@@ -1,8 +1,9 @@
 import React, { useEffect } from "react";
 import path from "path";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
-import { superagentInstances } from "../core/tools/state.js";
+import { superagentInstances, subagentInstances, backgroundTasks } from "../core/tools/state.js";
 import { getDashboardSuggestions } from "../utils/dashboardSuggestions.js";
+import { filterSuggestions } from "../utils/text.js";
 
 export interface DashboardMouseContext {
   wrappedLines: React.ReactNode[];
@@ -204,6 +205,96 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
               }
             } else if (x >= rightStart) {
               setFocusArea("logs");
+            }
+          } else if (y >= workspaceStartRow + workspaceHeight && y < promptStartRow) {
+            // Clicked in the area below main workspace but above prompt
+            const runningSubagentsCount = [...subagentInstances.values()]
+              .filter((s) => s.status === "running").length;
+            const runningTasksCount = [...backgroundTasks.values()]
+              .filter((t) => t.isDetachedWindow || !t.hasExited).length;
+            const maxAgentsVisible = 3;
+            const maxProcsVisible = 5;
+
+            let wizardHeight = 0;
+            if (activeWizard) {
+              const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34);
+              const maxVis = isModelSelectStep ? 8 : 10;
+
+              const lc = query.trim();
+              const filteredModels = lc
+                ? filterSuggestions(wizardAllOptions, lc)
+                : wizardAllOptions;
+
+              const effectiveOptions = isModelSelectStep
+                ? (filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"])
+                : wizardOptions;
+
+              let start = 0;
+              let end = effectiveOptions.length;
+              if (effectiveOptions.length > maxVis) {
+                start = Math.max(0, wizardSelectedIndex - Math.floor(maxVis / 2));
+                end = start + maxVis;
+                if (end > effectiveOptions.length) {
+                  end = effectiveOptions.length;
+                  start = Math.max(0, end - maxVis);
+                }
+              }
+              const optCount = end - start;
+              const hasAbove = start > 0;
+              const hasBelow = end < effectiveOptions.length;
+
+              let wizardDescription = "";
+              if (activeWizard.type === "plan_approve") {
+                const planPath = agent ? agent.getPlanFilePath() : "";
+                wizardDescription = `Model AI telah merancang rencana di file: file:///${planPath ? path.resolve(planPath).replace(/\\/g, "/") : ""}`;
+              } else if (activeWizard.type === "question") {
+                wizardDescription = pendingQuestion?.question || "";
+              } else if (activeWizard.type === "login" && activeWizard.step === 10) {
+                wizardDescription = "Choose a template catalog stack or let AI dynamically design your project details:";
+              } else if (activeWizard.type === "login" && activeWizard.step === 11) {
+                wizardDescription = "Specify the name for this workspace:";
+              } else if (activeWizard.type === "login" && activeWizard.step === 12) {
+                wizardDescription = "Give a one-sentence overview description of this software:";
+              } else if (activeWizard.type === "login" && activeWizard.step === 13) {
+                wizardDescription = "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:";
+              }
+
+              const descLines = wizardDescription
+                ? wrapTextForDisplay(wizardDescription, Math.max(10, terminalSize.width - 4)).length
+                : 0;
+
+              const hasLoading = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34) && wizardIsLoadingModels;
+
+              wizardHeight += 1; // Outer top border │
+              wizardHeight += 1; // Title line
+              if (descLines > 0) {
+                wizardHeight += descLines + 1; // Description lines + spacer │
+              }
+              if (hasLoading) {
+                wizardHeight += 2; // Loading spinner + spacer
+              }
+              if (hasAbove) {
+                wizardHeight += 1;
+              }
+              wizardHeight += optCount;
+              if (hasBelow) {
+                wizardHeight += 1;
+              }
+              wizardHeight += 1; // Outer bottom border │
+            }
+
+            const y_agents_start = workspaceStartRow + workspaceHeight + 2 + wizardHeight;
+            const agentsCount = Math.min(runningSubagentsCount, maxAgentsVisible);
+            const agentsHeight = runningSubagentsCount > 0 ? 1 + agentsCount : 0;
+
+            const y_procs_start = y_agents_start + agentsHeight;
+            const procsCount = Math.min(runningTasksCount, maxProcsVisible);
+            const procsHeight = runningTasksCount > 0 ? 1 + procsCount : 0;
+
+            if (runningSubagentsCount > 0 && y >= y_agents_start && y < y_agents_start + agentsHeight) {
+              setFocusArea("agents");
+            } else if (runningTasksCount > 0 && y >= y_procs_start && y < y_procs_start + procsHeight) {
+              setFocusArea("procs");
             }
           }
         }
