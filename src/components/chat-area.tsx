@@ -132,24 +132,15 @@ export function ChatArea(props: ChatAreaProps) {
             </Box>
           );
         })() : (() => {
+          const shouldRenderStream = scrollOffset === 0 && isProcessing && streamDisplay && streamDisplay.trim().length > 0;
           let startIndex = lines.length;
           let accumulatedHeight = 0;
           const endIndex = scrollOffset === 0 ? lines.length : Math.max(0, lines.length - scrollOffset);
 
           let effectiveChatHeightLimit = chatHeightLimit;
-          let streamVisibleLinesCount = 0;
-          const shouldRenderStream = scrollOffset === 0 && isProcessing && streamDisplay && streamDisplay.trim().length > 0;
-
           if (shouldRenderStream) {
             const totalStreamLines = estimateMarkdownLines(streamDisplay, chatWidth);
-            const maxStreamHeight = Math.max(3, chatHeightLimit - 2); // Keep at least 2 lines for history/headers
-            if (totalStreamLines > maxStreamHeight) {
-              streamVisibleLinesCount = maxStreamHeight;
-              effectiveChatHeightLimit = Math.max(0, chatHeightLimit - streamVisibleLinesCount);
-            } else {
-              streamVisibleLinesCount = totalStreamLines;
-              effectiveChatHeightLimit = chatHeightLimit - totalStreamLines;
-            }
+            effectiveChatHeightLimit = Math.max(0, chatHeightLimit - totalStreamLines);
           }
 
           for (let i = endIndex - 1; i >= 0; i--) {
@@ -189,7 +180,7 @@ export function ChatArea(props: ChatAreaProps) {
                     {visibleLines.length === 0 ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown + liveStreamTokens)})</Text> ]
                   </Text>
                   {renderMarkdown(
-                    truncateStreamDisplay(streamDisplay, streamVisibleLinesCount, chatWidth),
+                    streamDisplay,
                     "magenta",
                     true
                   )}
