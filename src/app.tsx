@@ -1137,7 +1137,7 @@ export function App({
       liveListHeight += 1 + Math.min(runningSuperagentsCount, maxSuperagentsVisible) * 3;
     }
     if (runningSubagentsCount > 0) {
-      liveListHeight += 1 + Math.min(runningSubagentsCount, maxSubagentsVisible) * 2;
+      liveListHeight += 1 + Math.min(runningSubagentsCount, maxSubagentsVisible);
       if (runningSuperagentsCount > 0) liveListHeight += 1;
     }
     if (runningTasksCount > 0) {

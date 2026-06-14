@@ -34,16 +34,16 @@ export function ActiveSubagentsPanel({
       <Text color={focusArea === "agents" ? "green" : "yellow"} bold>
         ┌───[ 🤖 ACTIVE SUBAGENTS ]{scrollIndicator}{helpText}
       </Text>
-      {visibleAgents.map((inst) => (
-        <Box key={inst.id} flexDirection="column">
-          <Text color="yellow">
-            ├─── [{inst.id}] Type: {inst.typeName} | Role: {inst.role} ({inst.status})
+      {visibleAgents.map((inst, index) => {
+        const isLast = index === visibleAgents.length - 1;
+        const branchChar = isLast ? "└──" : "├──";
+        const action = getLatestSubagentAction(inst.logs);
+        return (
+          <Text key={inst.id} color="yellow">
+            │  {branchChar} Action: {inst.id}: <Text italic color="white">{action}</Text> | Role: {inst.role} ({inst.status})
           </Text>
-          <Text color="yellow">
-            │    └─ Action: <Text italic color="white">{getLatestSubagentAction(inst.logs)}</Text>
-          </Text>
-        </Box>
-      ))}
+        );
+      })}
     </Box>
   );
 }

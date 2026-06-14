@@ -582,7 +582,7 @@ export function MultiAgentDashboard({
     if (runningSubagentsCount > 0) {
       liveListHeight += 1; // header
       const agentsCount = Math.min(runningSubagentsCount, maxAgentsVisible);
-      liveListHeight += agentsCount * 2; // Each subagent takes 2 lines
+      liveListHeight += agentsCount; // Each subagent takes 1 line
     }
     if (runningTasksCount > 0) {
       liveListHeight += 1; // header
