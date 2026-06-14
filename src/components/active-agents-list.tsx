@@ -5,7 +5,7 @@ import { superagentInstances, subagentInstances, backgroundTasks } from "../core
 function getLatestSubagentAction(logs: string[]): string {
   if (!logs || logs.length === 0) return "Initializing...";
   for (let i = logs.length - 1; i >= 0; i--) {
-    const raw = logs[i].trim();
+    const raw = logs[i].replace(/\r/g, "").trim();
     if (raw) {
       let clean = raw
         .replace(/^.*?───\[\s*/, "")
@@ -25,7 +25,7 @@ function getLatestSubagentAction(logs: string[]): string {
 function getLatestSuperagentAction(logs: string[]): string {
   if (!logs || logs.length === 0) return "Initializing...";
   for (let i = logs.length - 1; i >= 0; i--) {
-    const raw = logs[i].trim();
+    const raw = logs[i].replace(/\r/g, "").trim();
     if (raw) {
       let clean = raw
         .replace(/^\[THINK\]\s*/i, "")

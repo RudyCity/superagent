@@ -29,7 +29,7 @@ export function getPasteSplit(currentInput: string, prefixLen: number, suffixLen
 export function getLatestSubagentAction(logs: string[]): string {
   if (!logs || logs.length === 0) return "Initializing...";
   for (let i = logs.length - 1; i >= 0; i--) {
-    const raw = logs[i].trim();
+    const raw = logs[i].replace(/\r/g, "").trim();
     if (raw) {
       let clean = raw
         .replace(/^.*?───\[\s*/, "")
@@ -49,7 +49,7 @@ export function getLatestSubagentAction(logs: string[]): string {
 export function getLatestSuperagentAction(logs: string[]): string {
   if (!logs || logs.length === 0) return "Initializing...";
   for (let i = logs.length - 1; i >= 0; i--) {
-    const raw = logs[i].trim();
+    const raw = logs[i].replace(/\r/g, "").trim();
     if (raw) {
       let clean = raw
         .replace(/^\[THINK\]\s*/i, "")
