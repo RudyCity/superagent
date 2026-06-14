@@ -2,6 +2,10 @@ import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { AgentSession } from "../multi-agent-dashboard.js";
 
+function stripAnsi(str: string): string {
+  return str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
+}
+
 // Active status badge with blinking effect
 export function ActiveStatusBadge() {
   const [activeBlink, setActiveBlink] = useState(true);
@@ -134,6 +138,10 @@ export function RegistryPanel({
           } else {
             label = `${session.id.slice(0, 14)}`;
           }
+
+          if (isSelected && isFocused) {
+            label = stripAnsi(label);
+          }
           
           const isActive = session.status === "WORKING";
           const isSpinner = !isSelected && isActive;
@@ -144,15 +152,17 @@ export function RegistryPanel({
           return (
             <Box key={session.id} flexDirection="row" justifyContent="space-between" marginTop={0}>
               <Box flexDirection="row" flexShrink={1}>
-                <Text bold color={indicatorColor}>
+                <Text bold={isSelected} color={indicatorColor}>
                   {isSelected ? "▶ " : (isSpinner ? <SessionSpinner /> : "  ")}
                 </Text>
-                <Text bold={isSelected} color={rowTextColor} backgroundColor={rowBg} wrap="truncate-end">
+                <Text bold={isSelected} backgroundColor={rowBg} wrap="truncate-end">
                   <Text color={isSelected && isFocused ? "black" : "gray"} dimColor={!isSelected || !isFocused}>
                     [{String(globalIndex + 1).padStart(2, " ")}]{" "}
                   </Text>
-                  {prefix}
-                  {label}
+                  <Text color={rowTextColor}>
+                    {prefix}
+                    {label}
+                  </Text>
                 </Text>
               </Box>
               <Box flexShrink={0}>
