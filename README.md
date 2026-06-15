@@ -22,7 +22,8 @@ Unlike standard headless execution bots or basic shell wrappers, Superagent is d
 
 - **Real-Time Context Window Tracking & Compacting**: Traditional assistants run blind to token consumption. Superagent features a continuous visual dashboard tracking prompt tokens, completion costs, and remaining context windows. If the context grows too large, the `/compact` command generates an optimized context summary to save API costs.
 - **Granular Session Checkpoints**: Never lose progress. Superagent lets you snapshot your conversational and code states into checkpoints (via `/checkpoint`). If an experimental approach fails, you can revert back instantly to a previous checkpoint, restoring the entire session timeline.
-- **3-Tier Multi-Agent Orchestration**: Instead of doing all work sequentially under a single LLM thread, Superagent supports a full 3-tier agent hierarchy. A **Master Agent** orchestrates one or more **Superagents**, each isolated in their own git worktree for independent feature development. Superagents can further delegate atomic operations to ephemeral **Subagents**. Launch with `superagent --multi`.
+- **3-Tier Multi-Agent Orchestration**: Instead of doing all work sequentially under a single LLM thread, Superagent supports a full 3-tier agent hierarchy. A **Master Agent** orchestrates one or more **Superagents**, each isolated in their own git worktree for independent feature development. Superagents can further delegate atomic operations to ephemeral **Subagents**. It adopts explicit multi-stage planning, structured delegation with constraints and acceptance criteria, and automated self-verification. Launch with `superagent --multi`.
+- **Pre-Merge Auto-Debugging Loop**: Ensures code quality at merge boundaries. Before any Superagent task is merged, a verification script runs builds and tests. If a failure occurs, the Master Agent triggers an auto-debugging loop (up to 3 retries), prompting the Superagent to analyze the logs, implement a fix, and verify it dynamically.
 - **Visible, Non-Headless Interactive Terminals**: Most agents run shell commands in the background without visibility or interactivity. With `/terminal`, Superagent spawns a real, popped-up host emulator terminal window. This is perfect for running interactive servers, watch scripts, and commands that require manual inputs.
 - **Global Config & Repository Hygiene**: No messy `.env` or log files cluttering your project codebase. All API keys, environment settings, and session logs are kept safe and clean in your user's global directory (`~/.superagent-r/`).
 - **AI-Guided Preset Initialization**: Configure your workspace commands effortlessly. Superagent scans your codebase structure (such as dependencies, packages, and scripts) to automatically recommend, select, and construct terminal command presets with the `/terminal init` wizard.
@@ -103,6 +104,10 @@ superagent --multi
 - **Superagent**: Feature coordination and development in an isolated git worktree. Responsible for leading implementation and delegating atomic operations (research, coding, testing) to specialized Subagents.
 - **Subagent**: Atomic file/search operations delegated by a Superagent. Ephemeral — lives only for the duration of a single task.
 
+**Advanced Orchestration Features:**
+- **Pre-Merge Auto-Debugging Loop**: Before merging changes from any Superagent branch, a verification phase runs builds and test suites in the worktree. If errors are encountered, an automatic feedback loop triggers (up to 3 retries) that sends the failure output to the Superagent, instructing it to automatically debug, fix, and commit updates before completing the task.
+- **ASCII Dependency Graph**: The dashboard's active agents registry panel draws a real-time, hierarchical ASCII tree (using `├──` and `└──` connectors) mapping active relationships between the Master Agent, spawned Superagents, and running subagents/tasks.
+
 **Standard subagent roles (single-agent mode):**
 - **Researcher**: Explores the codebase and retrieves context (Read-Only).
 - **Coder**: Implements code modifications and refactoring.
@@ -113,7 +118,11 @@ superagent --multi
 Runs development servers, local builds, or test watchers in popped-up, visible OS terminal windows (Windows cmd, macOS Terminal, Linux x-terminal). It includes an AI-assisted preset initializer (`/terminal init`) to auto-configure workspace command presets.
 
 ### 5. Structured Planning & Approvals
-For complex changes, the Master Agent writes a detailed `implementation_plan.md` to the workspace root. It requires explicit user approval and validation of the plan before invoking, executing, or merging any Superagent operations, guaranteeing safety and control.
+For complex changes, the Master Agent enforces structured planning and execution boundaries:
+- **Explicit Multi-Stage Planning**: The implementation plan is structured into three mandatory stages: **Stage 1: Discovery & Dependency Mapping** (dependency tracing), **Stage 2: Interface & Contract Definition** (API/types specification), and **Stage 3: Spawning Roadmap** (Superagent spawning checklist and branch topology).
+- **Structured Delegation**: When invoking a Superagent, the Master Agent specifies explicit task `constraints` (files or logic NOT to modify) and `acceptanceCriteria` (a checklist of specific test cases to satisfy).
+- **Approval Checkpoint**: The plan is written to the workspace root as `implementation_plan.md` and requires explicit user review and approval before any execution begins, guaranteeing complete oversight.
+
 
 ### 6. Centralized Logging
 All agent operations, including single-agent and 3-tier multi-agent processes, are dynamically logged to a central log file in the user's home directory (`~/.superagent-r/superagent.log`). The log maintains tier-aware indentation to cleanly trace parallel execution branches.
@@ -132,12 +141,14 @@ Superagent proactively audits and prepares your local machine's developer enviro
 ### 2. 3-Tier Multi-Agent Architecture (`masterAgent.ts`, `superagentTools.ts`, `subagentTools.ts`)
 For parallel feature development, Superagent implements a 3-tier hierarchy:
 - **Tier Isolation**: Each Superagent runs in an isolated git worktree (`~/.superagent-r/worktrees/<name>`), preventing file conflicts between concurrent agents.
+- **Instant Dependency Linking**: To speed up execution, spawning a Superagent automatically links the root `node_modules` into the worktree using platform-specific symlinks (or directory junctions on Windows) instead of re-installing dependencies.
 - **Delegation Guardrails**: Delegation depth is enforced per-tier — Master can spawn Superagents, Superagents can spawn Subagents, Subagents cannot spawn further agents.
 - **Permission Scoping**: Each tier gets a strictly scoped toolset. Master agents get orchestration, definition, and messaging tools; Superagents get shell + file tools; Subagents get file tools only.
 - **Dynamic Custom Roles**: Master Agent can define customized Superagent types/roles dynamically using `define_superagent` with custom system prompts, enabling domain-specific behaviors.
-- **Interactive Messaging**: Master Agent can send follow-up instructions and questions to active Superagents via `send_message_to_superagent`, permitting real-time collaboration during execution.
+- **Interactive Messaging & Routing**: Master Agent can send follow-up instructions and questions to active Superagents via `send_message_to_superagent`, permitting real-time collaboration. Multi-agent sessions are fully serialized, allowing dynamic resumption and routing of paused instances.
 - **Robust Worktree Cleanup**: Terminating or killing Superagents (via `manage_superagents` with `kill` or `kill_all` actions) robustly cleans up and removes their corresponding Git worktrees, avoiding disk clutter.
 - **Structured Markdown Reporting**: Every Superagent completes its task by printing a standardized markdown report (goal, actions taken, key findings, outcome status) that the Master Agent can parse and merge.
+- **Concurrent Task Isolation**: Uses `agentLocalStorage` to track and isolate concurrent task logging paths, preventing environment variable clashes during parallel execution.
 - **Visual Log Streaming & Centralized Logging**: Agent actions, thoughts, tool calls, and execution errors are formatted and logged in a nested visual tree layout with tier-aware indentation. All logs are dynamically captured and written to the global directory at `~/.superagent-r/superagent.log`.
 
 ### 3. Execution Safety Guardrails (`permissions.ts`)
