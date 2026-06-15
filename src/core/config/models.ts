@@ -156,10 +156,12 @@ export function getModelInstanceForString(modelStr: string) {
   let modelName = modelStr;
   let apiKey = config.apiKey;
   let baseUrl = config.baseUrl;
+  let resolvedPrefix = "";
 
   const colonIndex = modelStr.indexOf(":");
   if (colonIndex > 0) {
     const prefix = modelStr.substring(0, colonIndex).toLowerCase();
+    resolvedPrefix = prefix;
     const rest = modelStr.substring(colonIndex + 1);
     if (prefix === "anthropic") {
       provider = "anthropic";
@@ -213,6 +215,21 @@ export function getModelInstanceForString(modelStr: string) {
         }
       }
     }
+  }
+
+  const isCloud = !baseUrl || baseUrl.includes("openrouter.ai") || baseUrl.includes("openai.com") || baseUrl.includes("anthropic.com");
+  const isMissingKey = !apiKey || apiKey.trim() === "" || apiKey === "dummy";
+  const isTest = (process.env.VITEST || process.env.NODE_ENV === "test") && !process.env.SUPERAGENT_FORCE_VAL_CHECK;
+  if (!isTest && isCloud && isMissingKey) {
+    let keyVar = "API_KEY";
+    if (baseUrl?.includes("openrouter.ai")) {
+      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase()}_API_KEY or OPENROUTER_API_KEY` : "OPENROUTER_API_KEY";
+    } else if (provider === "anthropic") {
+      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase()}_API_KEY or ANTHROPIC_API_KEY` : "ANTHROPIC_API_KEY";
+    } else if (provider === "openai") {
+      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase()}_API_KEY or OPENAI_API_KEY` : "OPENAI_API_KEY";
+    }
+    throw new Error(`API key is missing or not configured. Please set the ${keyVar} environment variable or add it to your global .env file.`);
   }
 
   if (provider === "anthropic" || (provider === "custom" && isAnthropicCompatible(baseUrl || "", modelName))) {

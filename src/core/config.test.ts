@@ -350,6 +350,29 @@ describe("config", () => {
       delete process.env.CUSTOM_API_KEY;
     });
 
+    it("should throw a descriptive error when API key is missing for a cloud provider", () => {
+      process.env.SUPERAGENT_FORCE_VAL_CHECK = "true";
+      // Clear out keys that could be fallback targets
+      const oldOpenRouterKey = process.env.PROVIDER_OPENROUTER_API_KEY;
+      const oldOpenRouterKey2 = process.env.OPENROUTER_API_KEY;
+      const oldCustomKey = process.env.CUSTOM_API_KEY;
+      delete process.env.PROVIDER_OPENROUTER_API_KEY;
+      delete process.env.OPENROUTER_API_KEY;
+      delete process.env.CUSTOM_API_KEY;
+
+      try {
+        expect(() => {
+          getModelInstanceForString("openroutereiyogen:nex-agi/nex-n2-pro:free");
+        }).toThrow(/API key is missing or not configured/);
+      } finally {
+        delete process.env.SUPERAGENT_FORCE_VAL_CHECK;
+        // Restore keys
+        if (oldOpenRouterKey !== undefined) process.env.PROVIDER_OPENROUTER_API_KEY = oldOpenRouterKey;
+        if (oldOpenRouterKey2 !== undefined) process.env.OPENROUTER_API_KEY = oldOpenRouterKey2;
+        if (oldCustomKey !== undefined) process.env.CUSTOM_API_KEY = oldCustomKey;
+      }
+    });
+
     it("should correctly identify Anthropic-compatible endpoints using isAnthropicCompatible", () => {
       expect(isAnthropicCompatible("https://api.anthropic.com", "claude-3-5-sonnet")).toBe(true);
       expect(isAnthropicCompatible("https://anthropic-proxy.corp.internal/v1", "claude-3-5-sonnet")).toBe(true);
