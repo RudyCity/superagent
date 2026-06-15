@@ -146,7 +146,41 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
               if (y >= optStartRow && y <= optEndRow) {
                 setFocusArea("input");
-                return; // Handled wizard option click (disabled selection/submission via mouse click)
+                const idx = y - optStartRow;
+                const targetIndex = start + idx;
+                if (
+                  targetIndex >= 0 &&
+                  targetIndex < total &&
+                  options[targetIndex] !== "(no results — try different search)"
+                ) {
+                  if (activeWizard.isMultiSelect) {
+                    setWizardSelectedSet((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(targetIndex)) {
+                        next.delete(targetIndex);
+                      } else {
+                        next.add(targetIndex);
+                      }
+                      return next;
+                    });
+                  } else {
+                    const selectedOption = options[targetIndex];
+                    if (selectedOption === "Custom...") {
+                      setWizardSelectedIndex(targetIndex);
+                      setActiveWizard({
+                        type: "question",
+                        step: 2,
+                        data: { question: pendingQuestion?.question || "" },
+                      });
+                      setWizardOptions([]);
+                      setWizardSelectedIndex(0);
+                      setQuery("");
+                    } else {
+                      setWizardSelectedIndex(targetIndex);
+                    }
+                  }
+                }
+                return; // Handled wizard option click (selection handled, submission requires Enter)
               }
             }
           }
@@ -275,6 +309,11 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
             const y_procs_start = y_agents_start + agentsHeight;
             const procsCount = Math.min(runningTasksCount, maxProcsVisible);
             const procsHeight = runningTasksCount > 0 ? 1 + procsCount : 0;
+
+            if (activeWizard && y >= workspaceStartRow + workspaceHeight && y < y_agents_start) {
+              setFocusArea("input");
+              return;
+            }
 
             if (runningSubagentsCount > 0 && y >= y_agents_start && y < y_agents_start + agentsHeight) {
               setFocusArea("agents");

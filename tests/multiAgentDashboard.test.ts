@@ -204,7 +204,7 @@ describe("MultiAgentDashboard UI Component", () => {
     backgroundTasks.clear();
   });
 
-  it("should not select or submit wizard option on click", async () => {
+  it("should select but not submit wizard option on click", async () => {
     const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
 
     const originalOn = process.stdin.on;
@@ -258,7 +258,7 @@ describe("MultiAgentDashboard UI Component", () => {
 
     // Click on Option 2 (y = 26)
     mouseHandler(Buffer.from("\x1b[<0;10;26M"));
-    expect(mockSetWizardSelectedIndex).not.toHaveBeenCalled();
+    expect(mockSetWizardSelectedIndex).toHaveBeenCalledWith(1);
     expect(mockHandleWizardSubmit).not.toHaveBeenCalled();
     expect(mockSetFocusArea).toHaveBeenCalledWith("input");
 
