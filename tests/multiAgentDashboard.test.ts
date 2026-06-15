@@ -204,7 +204,7 @@ describe("MultiAgentDashboard UI Component", () => {
     backgroundTasks.clear();
   });
 
-  it("should select wizard option on first click and submit on second click", async () => {
+  it("should not select or submit wizard option on click", async () => {
     const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
 
     const originalOn = process.stdin.on;
@@ -221,9 +221,10 @@ describe("MultiAgentDashboard UI Component", () => {
 
     const mockHandleWizardSubmit = vi.fn();
     const mockSetWizardSelectedIndex = vi.fn();
+    const mockSetFocusArea = vi.fn();
 
-    // Context for first click (unselected option)
-    const TestComponentUnselected = () => {
+    // Context for click
+    const TestComponent = () => {
       useDashboardMouse({
         wrappedLines: [],
         logsCount: 10,
@@ -246,60 +247,22 @@ describe("MultiAgentDashboard UI Component", () => {
         wizardIsLoadingModels: false,
         agent: null,
         focusArea: "input",
-        setFocusArea: vi.fn(),
+        setFocusArea: mockSetFocusArea,
         setLogScrollOffset: vi.fn(),
       } as any);
       return null;
     };
 
-    const { unmount: unmount1 } = render(React.createElement(TestComponentUnselected));
+    const { unmount } = render(React.createElement(TestComponent));
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    // Click on Option 2 (y = 26), which is currently unselected
+    // Click on Option 2 (y = 26)
     mouseHandler(Buffer.from("\x1b[<0;10;26M"));
-    expect(mockSetWizardSelectedIndex).toHaveBeenCalledWith(1);
+    expect(mockSetWizardSelectedIndex).not.toHaveBeenCalled();
     expect(mockHandleWizardSubmit).not.toHaveBeenCalled();
+    expect(mockSetFocusArea).toHaveBeenCalledWith("input");
 
-    unmount1();
-
-    // Context for second click (already selected option)
-    const TestComponentSelected = () => {
-      useDashboardMouse({
-        wrappedLines: [],
-        logsCount: 10,
-        terminalSize: { width: 100, height: 40 },
-        activeWizard: { type: "login", step: 10, data: {} },
-        setActiveWizard: vi.fn(),
-        wizardOptions: ["Option 1", "Option 2"],
-        wizardSelectedIndex: 1, // Option 2 already selected
-        setWizardSelectedIndex: mockSetWizardSelectedIndex,
-        wizardSelectedSet: new Set(),
-        setWizardSelectedSet: vi.fn(),
-        setWizardOptions: vi.fn(),
-        pendingQuestion: null,
-        handleWizardSubmit: mockHandleWizardSubmit,
-        query: "",
-        setQuery: vi.fn(),
-        wizardAllOptions: [],
-        workspaceHeight: 15,
-        leftTopHeight: 10,
-        wizardIsLoadingModels: false,
-        agent: null,
-        focusArea: "input",
-        setFocusArea: vi.fn(),
-        setLogScrollOffset: vi.fn(),
-      } as any);
-      return null;
-    };
-
-    const { unmount: unmount2 } = render(React.createElement(TestComponentSelected));
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    // Click on Option 2 (y = 26), which is already selected
-    mouseHandler(Buffer.from("\x1b[<0;10;26M"));
-    expect(mockHandleWizardSubmit).toHaveBeenCalledWith("Option 2");
-
-    unmount2();
+    unmount();
 
     process.stdin.on = originalOn;
     process.stdin.off = originalOff;
