@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { superagentInstances, subagentInstances } from "../src/core/tools/state.js";
-import { sendMessageToSuperagentTool } from "../src/core/tools/superagentTools.js";
+import { sendMessageToSuperagentTool, awaitSuperagentsTool } from "../src/core/tools/superagentTools.js";
 import { sendMessageTool } from "../src/core/tools/subagentTools.js";
 import { agentLocalStorage } from "../src/core/agent.js";
 
@@ -114,6 +114,25 @@ describe("Paused Resume Workflow", () => {
       expect(inst!.status).toBe("completed");
       expect(inst!.agent.loadHistoryFromPath).toHaveBeenCalledWith("/dummy/sub-history.json");
       expect(inst!.agent.sendMessage).toHaveBeenCalledWith("continue searching");
+    });
+  });
+
+  describe("awaitSuperagentsTool with paused state", () => {
+    it("should return a block notice and instructions if there are paused superagents and no running ones", async () => {
+      superagentInstances.set("dept1", {
+        id: "dept1",
+        role: "developer",
+        task: "implement feature",
+        branch: "feat/feature",
+        worktreePath: "/dummy/worktree",
+        agent: {},
+        status: "paused",
+        logs: [],
+      });
+
+      const result = await awaitSuperagentsTool.execute({}, process.cwd());
+      expect(result).toContain("Wait blocked: There are no running Superagents, but there are paused Superagents");
+      expect(result).toContain("You MUST resume them using \"send_message_to_superagent\"");
     });
   });
 });

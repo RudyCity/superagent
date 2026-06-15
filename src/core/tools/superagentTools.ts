@@ -326,7 +326,6 @@ export const awaitSuperagentsTool: Tool = {
     },
     required: [],
   },
-
   async execute(args, _cwd, signal) {
     const timeoutMs = ((args.timeoutSeconds as number) || 600) * 1000;
     const start = Date.now();
@@ -334,6 +333,16 @@ export const awaitSuperagentsTool: Tool = {
     const running = [...superagentInstances.values()].filter(
       (i) => i.status === "running"
     );
+    const paused = [...superagentInstances.values()].filter(
+      (i) => i.status === "paused"
+    );
+
+    if (running.length === 0 && paused.length > 0) {
+      const pausedList = paused.map(p => `"${p.role}" (ID: ${p.id}, Branch: ${p.branch})`).join(", ");
+      return `Wait blocked: There are no running Superagents, but there are paused Superagents: ${pausedList}.\n` +
+             `You MUST resume them using "send_message_to_superagent" to continue their work before you can await them.`;
+    }
+
     if (running.length === 0) {
       return "No running Superagents found. All may have already completed.";
     }
@@ -348,10 +357,23 @@ export const awaitSuperagentsTool: Tool = {
         return `Timeout after ${timeoutMs / 1000}s. Still running: ${stillRunning.join(", ")}`;
       }
 
-      const allDone = [...superagentInstances.values()].every(
-        (i) => i.status !== "running"
+      const hasRunning = [...superagentInstances.values()].some(
+        (i) => i.status === "running"
       );
-      if (allDone) break;
+      const hasPaused = [...superagentInstances.values()].some(
+        (i) => i.status === "paused"
+      );
+
+      if (!hasRunning) {
+        if (hasPaused) {
+          const pausedList = [...superagentInstances.values()]
+            .filter((i) => i.status === "paused")
+            .map(p => `"${p.role}" (ID: ${p.id}, Branch: ${p.branch})`).join(", ");
+          return `Wait blocked: All running Superagents finished, but there are paused Superagents: ${pausedList}.\n` +
+                 `You MUST resume them using "send_message_to_superagent" to continue their work before you can await them.`;
+        }
+        break;
+      }
 
       await new Promise((r) => setTimeout(r, 2000));
     }
