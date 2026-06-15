@@ -114,14 +114,6 @@ export function WizardPanels(props: WizardPanelsProps) {
           />
         )}
 
-        {activeWizard && activeWizard.type === "login" && activeWizard.step === 5 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title="🔑 SWITCH ACTIVE PROVIDER (Use Arrow Keys Up/Down & Enter):"
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-          />
-        )}
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 10 && wizardOptions.length > 0 && (
           <WizardDialog

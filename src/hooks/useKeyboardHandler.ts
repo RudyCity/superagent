@@ -397,7 +397,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (activeWizard) {
-      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 5 || activeWizard.step === 10)) {
+      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 10)) {
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
@@ -420,21 +420,11 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               });
               setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
               setWizardSelectedIndex(0);
-            } else if (selectedOption.includes("Switch Active")) {
-              const list = getConfiguredProviders();
-              const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-              setActiveWizard({
-                type: "login",
-                step: 5,
-                data: {},
-              });
-              setWizardOptions(options);
-              setWizardSelectedIndex(0);
             } else {
               const list = getConfiguredProviders();
               addLine({
                 type: "system",
-                content: `Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})${p.isActive ? " [Active]" : ""}`).join("\n"),
+                content: `Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})`).join("\n"),
                 timestamp: now,
               });
               setActiveWizard(null);
@@ -466,36 +456,6 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             setWizardOptions([]);
             setWizardSelectedIndex(0);
             setInput("");
-          } else if (activeWizard.step === 5) {
-            const list = getConfiguredProviders();
-            const chosen = list[wizardSelectedIndex];
-            if (chosen) {
-              try {
-                const envPath = switchActiveProvider(chosen.name);
-                addLine({
-                  type: "system",
-                  content: `Switched active provider to: ${chosen.name}\nSaved to: ${envPath}`,
-                  timestamp: now,
-                });
-                fetchAndCacheModels()
-                  .then(() => {
-                    const currentModel = process.env.MODEL || getDefaultModel();
-                    const limit = getContextWindowLimit(currentModel);
-                    setContextLimit(limit);
-                    setActiveModel(currentModel);
-                  })
-                  .catch(() => {});
-              } catch (err: any) {
-                addLine({
-                  type: "error",
-                  content: `Failed to switch provider: ${err.message}`,
-                  timestamp: now,
-                });
-              }
-            }
-            setActiveWizard(null);
-            setWizardOptions([]);
-            setWizardSelectedIndex(0);
           }
           return;
         }

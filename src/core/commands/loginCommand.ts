@@ -24,8 +24,7 @@ export const loginCommand: SlashCommand = {
           });
           ctx.setWizardOptions?.([
             "1. Add / Log in to a Provider",
-            "2. Switch Active Provider",
-            "3. List Configured Providers"
+            "2. List Configured Providers"
           ]);
         } else {
           ctx.setActiveWizard({
@@ -95,7 +94,7 @@ export const loginCommand: SlashCommand = {
     const profileName = provider;
     const prefix = `PROVIDER_${profileName.toUpperCase()}`;
     const updates: Record<string, string> = {
-      ACTIVE_PROVIDER: profileName,
+      ACTIVE_PROVIDER: "",
       [`${prefix}_TYPE`]: provider,
       [`${prefix}_API_KEY`]: apiKey,
     };
@@ -107,21 +106,26 @@ export const loginCommand: SlashCommand = {
     }
 
     try {
-      updateEnvFile(updates);
-      const envPath = switchActiveProvider(profileName);
+      const envPath = updateEnvFile(updates);
       ctx.addLine({
         type: "system",
         content: `Successfully logged in. Configured provider: ${profileName} (${provider}).\nSaved to: ${envPath}`,
         timestamp: now,
       });
 
-      if (provider === "openrouter" && !process.env.MODEL) {
-        updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
+      if (!process.env.MODEL) {
+        let defaultModel = "openai:gpt-4o";
+        if (provider === "openrouter") {
+          defaultModel = "openrouter:google/gemini-2.5-flash";
+        } else if (provider === "anthropic") {
+          defaultModel = "anthropic:claude-3-5-sonnet-20241022";
+        }
+        updateEnvFile({ MODEL: defaultModel });
         if (ctx.setActiveModel) {
           const isMulti = ctx.agent?.isMultiAgent ?? false;
           const nextActiveModel = isMulti
             ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
-            : "google/gemini-2.5-flash";
+            : defaultModel;
           ctx.setActiveModel(nextActiveModel);
         }
       }

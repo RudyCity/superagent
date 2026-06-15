@@ -126,21 +126,11 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           });
           setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
           setWizardSelectedIndex(0);
-        } else if (choice.includes("switch") || choice === "2") {
-          const list = getConfiguredProviders();
-          const options = list.map(p => `${p.name} (${p.type})${p.isActive ? " [Active]" : ""}`);
-          setActiveWizard({
-            type: "login",
-            step: 5,
-            data: {},
-          });
-          setWizardOptions(options);
-          setWizardSelectedIndex(0);
         } else {
           const list = getConfiguredProviders();
           setMasterLogs((prev) => [
             ...prev,
-            `[SYSTEM] Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})${p.isActive ? " [Active]" : ""}`).join("\n")
+            `[SYSTEM] Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})`).join("\n")
           ].slice(-500));
           setActiveWizard(null);
           setWizardOptions([]);
@@ -218,32 +208,6 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         });
         setWizardOptions([]);
         setWizardSelectedIndex(0);
-      } else if (activeWizard.step === 5) {
-        const list = getConfiguredProviders();
-        const cleanVal = value.replace(/^\d+\.\s*/, "").split(" (")[0].trim();
-        const chosen = list.find(p => p.name.toLowerCase() === cleanVal.toLowerCase());
-        if (chosen) {
-          try {
-            const envPath = switchActiveProvider(chosen.name);
-            setMasterLogs((prev) => [
-              ...prev,
-              `[SYSTEM] Switched active provider to: ${chosen.name}\nSaved to: ${envPath}`
-            ].slice(-500));
-            fetchAndCacheModels()
-              .then(() => {
-                const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
-                setActiveModel(effectiveMasterModel);
-              })
-              .catch(() => {});
-          } catch (err: any) {
-            setMasterLogs((prev) => [...prev, `[ERROR] Failed to switch provider: ${err.message}`].slice(-500));
-          }
-        } else {
-          setMasterLogs((prev) => [...prev, `[ERROR] Provider "${value}" not found in configured list.`].slice(-500));
-        }
-        setActiveWizard(null);
-        setWizardOptions([]);
-        setWizardSelectedIndex(0);
       } else if (activeWizard.step === 6) {
         const provider = activeWizard.data.provider;
         const profileName = activeWizard.data.name;
@@ -252,7 +216,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
 
         const prefix = `PROVIDER_${profileName.toUpperCase()}`;
         const updates: Record<string, string> = {
-          ACTIVE_PROVIDER: profileName,
+          ACTIVE_PROVIDER: "",
           [`${prefix}_TYPE`]: provider,
           [`${prefix}_API_KEY`]: apiKey,
         };
@@ -264,16 +228,21 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         }
 
         try {
-          updateEnvFile(updates);
-          const envPath = switchActiveProvider(profileName);
+          const envPath = updateEnvFile(updates);
 
           setMasterLogs((prev) => [
             ...prev,
-            `[SYSTEM] Successfully configured and activated provider profile: ${profileName} (${provider})!\nSaved to: ${envPath}`
+            `[SYSTEM] Successfully configured provider profile: ${profileName} (${provider})!\nSaved to: ${envPath}`
           ].slice(-500));
 
-          if (provider === "openrouter" && !process.env.MODEL) {
-            updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
+          if (!process.env.MODEL) {
+            let defaultModel = "openai:gpt-4o";
+            if (provider === "openrouter") {
+              defaultModel = "openrouter:google/gemini-2.5-flash";
+            } else if (provider === "anthropic") {
+              defaultModel = "anthropic:claude-3-5-sonnet-20241022";
+            }
+            updateEnvFile({ MODEL: defaultModel });
           }
 
           fetchAndCacheModels()
@@ -1565,19 +1534,22 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           let targetLabel = "";
 
           if (tier === "default") {
+            const activeProvider = process.env.ACTIVE_PROVIDER || "";
+            const finalModelName = provider.toLowerCase() !== activeProvider.toLowerCase()
+              ? `${provider.toLowerCase()}:${selectedModel}`
+              : selectedModel;
             updates = { 
-              MODEL: selectedModel,
+              MODEL: finalModelName,
               [`PROVIDER_${provider.toUpperCase()}_MODEL`]: selectedModel
             };
             targetLabel = "Default Model";
-            switchActiveProvider(provider);
           } else if (tier === "all") {
             const activeProvider = process.env.ACTIVE_PROVIDER || "";
             const finalModelName = provider.toLowerCase() !== activeProvider.toLowerCase()
               ? `${provider.toLowerCase()}:${selectedModel}`
               : selectedModel;
             updates = {
-              MODEL: selectedModel,
+              MODEL: finalModelName,
               MODEL_DEPTH_0: finalModelName,
               MODEL_DEPT0: finalModelName,
               MODEL_DEPTH_1: finalModelName,
@@ -1592,7 +1564,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               MODEL_REVIEWER: finalModelName
             };
             targetLabel = "All Tiers & Subagents";
-            switchActiveProvider(provider);
           } else {
             const activeProvider = process.env.ACTIVE_PROVIDER || "";
             const finalModelName = provider.toLowerCase() !== activeProvider.toLowerCase()

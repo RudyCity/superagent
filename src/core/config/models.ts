@@ -5,59 +5,72 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { getStaticModelLimit } from "../model_limits.js";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { getConfig } from "./base.js";
+import { getConfiguredProviders } from "./providers.js";
 
 export async function fetchAndCacheModels(): Promise<void> {
-  const config = getConfig();
-  let url = "";
-  const headers: Record<string, string> = {};
+  const providers = getConfiguredProviders();
+  const cache: Record<string, number> = {};
 
-  if (config.provider === "anthropic") {
-    // Anthropic doesn't have a public models list endpoint with context sizes
-    return;
-  }
+  const fetchPromises = providers.map(async (provider) => {
+    if (provider.type === "anthropic") return;
 
-  const activeProvider = process.env.ACTIVE_PROVIDER || "";
-  if (activeProvider.toLowerCase() === "openrouter") {
-    url = "https://openrouter.ai/api/v1/models";
-  } else if (config.provider === "openai") {
-    if (config.baseUrl) {
-      url = `${config.baseUrl.replace(/\/+$/, "")}/models`;
-    } else {
-      url = "https://api.openai.com/v1/models";
+    let url = "";
+    const headers: Record<string, string> = {};
+    const prefix = `PROVIDER_${provider.name.toUpperCase()}`;
+    let apiKey = process.env[`${prefix}_API_KEY`] || "";
+    let baseUrl = process.env[`${prefix}_BASE_URL`] || "";
+
+    if (!apiKey) {
+      if (provider.name.toLowerCase() === "openai") apiKey = process.env.OPENAI_API_KEY || "";
+      else if (provider.name.toLowerCase() === "anthropic") apiKey = process.env.ANTHROPIC_API_KEY || "";
+      else if (provider.name.toLowerCase() === "custom") apiKey = process.env.CUSTOM_API_KEY || "";
     }
-  } else if (config.provider === "custom") {
-    if (config.baseUrl) {
-      url = `${config.baseUrl.replace(/\/+$/, "")}/models`;
+    if (!baseUrl) {
+      if (provider.name.toLowerCase() === "custom") baseUrl = process.env.CUSTOM_BASE_URL || "";
     }
-  }
 
-  if (!url) return;
+    if (provider.name.toLowerCase() === "openrouter" || provider.type === "openrouter") {
+      url = "https://openrouter.ai/api/v1/models";
+    } else if (provider.type === "openai") {
+      url = baseUrl ? `${baseUrl.replace(/\/+$/, "")}/models` : "https://api.openai.com/v1/models";
+    } else if (provider.type === "custom" && baseUrl) {
+      url = `${baseUrl.replace(/\/+$/, "")}/models`;
+    }
 
-  if (config.apiKey) {
-    headers["Authorization"] = `Bearer ${config.apiKey}`;
-  }
+    if (!url) return;
+    if (apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
 
-  try {
-    const res = await fetch(url, { headers });
-    if (!res.ok) return;
-    const json = await res.json() as any;
-    if (json && Array.isArray(json.data)) {
-      const cache: Record<string, number> = {};
-      for (const m of json.data) {
-        if (!m || !m.id) continue;
-        const limit =
-          m.context_length ||
-          m.max_model_len ||
-          m.max_position_embeddings ||
-          (m.metadata &&
-            (m.metadata.context_length ||
-              m.metadata.max_model_len ||
-              m.metadata.max_position_embeddings));
-        if (limit && typeof limit === "number") {
-          cache[m.id] = limit;
+    try {
+      const res = await fetch(url, { headers });
+      if (!res.ok) return;
+      const json = await res.json() as any;
+      if (json && Array.isArray(json.data)) {
+        for (const m of json.data) {
+          if (!m || !m.id) continue;
+          const limit =
+            m.context_length ||
+            m.max_model_len ||
+            m.max_position_embeddings ||
+            (m.metadata &&
+              (m.metadata.context_length ||
+                m.metadata.max_model_len ||
+                m.metadata.max_position_embeddings));
+          if (limit && typeof limit === "number") {
+            cache[m.id] = limit;
+          }
         }
       }
+    } catch (err) {
+      // Ignore individual fetch errors
+    }
+  });
 
+  await Promise.allSettled(fetchPromises);
+
+  if (Object.keys(cache).length > 0) {
+    try {
       ensureGlobalConfigDir();
       const cachePath = path.join(getRootConfigDir(), "models_cache.json");
       let existingCache: Record<string, number> = {};
@@ -68,9 +81,9 @@ export async function fetchAndCacheModels(): Promise<void> {
       }
       const updatedCache = { ...existingCache, ...cache };
       fs.writeFileSync(cachePath, JSON.stringify(updatedCache, null, 2), "utf-8");
+    } catch (err) {
+      // Ignore write errors
     }
-  } catch (err) {
-    // Ignore fetching errors
   }
 }
 

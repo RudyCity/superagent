@@ -51,21 +51,11 @@ export function useLoginWizard(ctx: LoginWizardContext) {
         });
         setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
         setWizardSelectedIndex(0);
-      } else if (choice.includes("switch") || choice === "2") {
-        const list = getConfiguredProviders();
-        const options = list.map(p => `${p.name} (${p.type})${p.isActive ? " [Active]" : ""}`);
-        setActiveWizard({
-          type: "login",
-          step: 5,
-          data: {},
-        });
-        setWizardOptions(options);
-        setWizardSelectedIndex(0);
       } else {
         const list = getConfiguredProviders();
         addLine({
           type: "system",
-          content: `Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})${p.isActive ? " [Active]" : ""}`).join("\n"),
+          content: `Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})`).join("\n"),
           timestamp: now,
         });
         setActiveWizard(null);
@@ -152,42 +142,6 @@ export function useLoginWizard(ctx: LoginWizardContext) {
         data: { provider, name: profileName, baseUrl },
       });
       setInput("");
-    } else if (step === 5) {
-      const list = getConfiguredProviders();
-      const chosen = list.find(p => p.name.toLowerCase() === value.toLowerCase());
-      if (chosen) {
-        try {
-          const envPath = switchActiveProvider(chosen.name);
-          addLine({
-            type: "system",
-            content: `Switched active provider to: ${chosen.name}\nSaved to: ${envPath}`,
-            timestamp: now,
-          });
-          fetchAndCacheModels()
-            .then(() => {
-              const currentModel = process.env.MODEL || getDefaultModel();
-              const limit = getContextWindowLimit(currentModel);
-              setContextLimit(limit);
-              setActiveModel(currentModel);
-            })
-            .catch(() => {});
-        } catch (err: any) {
-          addLine({
-            type: "error",
-            content: `Failed to switch provider: ${err.message}`,
-            timestamp: now,
-          });
-        }
-      } else {
-        addLine({
-          type: "error",
-          content: `Provider "${value}" not found in configured list.`,
-          timestamp: now,
-        });
-      }
-      setActiveWizard(null);
-      setWizardOptions([]);
-      setWizardSelectedIndex(0);
     } else if (step === 6) {
       const provider = data.provider;
       const profileName = data.name;
@@ -196,7 +150,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
 
       const prefix = `PROVIDER_${profileName.toUpperCase()}`;
       const updates: Record<string, string> = {
-        ACTIVE_PROVIDER: profileName,
+        ACTIVE_PROVIDER: "",
         [`${prefix}_TYPE`]: provider,
         [`${prefix}_API_KEY`]: apiKey,
       };
@@ -208,17 +162,22 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       }
 
       try {
-        updateEnvFile(updates);
-        const envPath = switchActiveProvider(profileName);
+        const envPath = updateEnvFile(updates);
 
         addLine({
           type: "system",
-          content: `Successfully configured and activated provider profile: ${profileName} (${provider})!\nSaved to: ${envPath}`,
+          content: `Successfully configured provider profile: ${profileName} (${provider})!\nSaved to: ${envPath}`,
           timestamp: now,
         });
 
-        if (provider === "openrouter" && !process.env.MODEL) {
-          updateEnvFile({ MODEL: "google/gemini-2.5-flash" });
+        if (!process.env.MODEL) {
+          let defaultModel = "openai:gpt-4o";
+          if (provider === "openrouter") {
+            defaultModel = "openrouter:google/gemini-2.5-flash";
+          } else if (provider === "anthropic") {
+            defaultModel = "anthropic:claude-3-5-sonnet-20241022";
+          }
+          updateEnvFile({ MODEL: defaultModel });
         }
 
         fetchAndCacheModels()
