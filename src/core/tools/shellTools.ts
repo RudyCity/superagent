@@ -392,8 +392,19 @@ export const runBackgroundProcessTool: Tool = {
       }
     }
     const taskId = Math.random().toString(36).substring(2, 9);
-    const tasksLogDir = process.env.SUPERAGENT_SESSION_PATH
-      ? path.join(path.dirname(process.env.SUPERAGENT_SESSION_PATH), "tasks")
+    let sessionPath = process.env.SUPERAGENT_SESSION_PATH;
+    try {
+      const { agentLocalStorage } = await import("../agent.js");
+      const activeAgent = agentLocalStorage.getStore();
+      if (activeAgent) {
+        sessionPath = activeAgent.getCurrentHistoryFilePath() || sessionPath;
+      }
+    } catch {
+      // Ignored
+    }
+
+    const tasksLogDir = sessionPath
+      ? path.join(path.dirname(sessionPath), "tasks")
       : path.join(getGlobalConfigDir(), "tasks");
     if (!fs.existsSync(tasksLogDir)) {
       fs.mkdirSync(tasksLogDir, { recursive: true });
