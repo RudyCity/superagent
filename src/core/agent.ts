@@ -1211,7 +1211,28 @@ ${formatted}`;
         if (attempt > maxRetries) {
           throw err;
         }
-        await new Promise((resolve) => setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1)));
+        const summarySignal = this.abortController?.signal;
+        await new Promise<void>((resolve, reject) => {
+          if (summarySignal?.aborted) {
+            const err = new Error("The operation was aborted.");
+            err.name = "AbortError";
+            reject(err);
+            return;
+          }
+          const timeout = setTimeout(() => {
+            if (summarySignal) summarySignal.removeEventListener("abort", onAbort);
+            resolve();
+          }, baseDelay * Math.pow(2, attempt - 1));
+          const onAbort = () => {
+            clearTimeout(timeout);
+            const err = new Error("The operation was aborted.");
+            err.name = "AbortError";
+            reject(err);
+          };
+          if (summarySignal) {
+            summarySignal.addEventListener("abort", onAbort);
+          }
+        });
       } finally {
         if (concurrencyAcquired) {
           concurrencyLimiter.release();
@@ -1234,6 +1255,13 @@ ${formatted}`;
       this.onEvent({ type: "text", content: `\rRetrying in ${sec}s... ` });
       
       await new Promise<void>((resolve, reject) => {
+        if (signal?.aborted) {
+          const err = new Error("The operation was aborted.");
+          err.name = "AbortError";
+          reject(err);
+          return;
+        }
+        
         const timeout = setTimeout(() => {
           if (signal) {
             signal.removeEventListener("abort", onAbort);

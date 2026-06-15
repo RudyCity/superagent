@@ -99,4 +99,54 @@ describe("Agent - Abort and Instant Interruption", () => {
     );
     expect(textEvent).toBeDefined();
   });
+
+  it("should instantly interrupt and fire done event when abort() is called during retry delay", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.tier = "master";
+    agent.planState = "APPROVED";
+
+    let callCount = 0;
+
+    vi.mocked(streamText).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        throw new Error("Temporary network error");
+      }
+      return {
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Hello" };
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    const sendPromise = agent.sendMessage("test message");
+
+    // Let the event loop cycle so the agent starts running, fails streamText, and enters delayWithCountdown
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(agent.isAgentRunning()).toBe(true);
+
+    // Call abort during retry delay
+    agent.abort();
+
+    // The sendMessage promise should resolve/reject quickly
+    await expect(sendPromise).resolves.not.toThrow();
+
+    expect(agent.isAgentRunning()).toBe(false);
+
+    // Verify done event was fired
+    const doneEvent = onEvent.mock.calls.find((call) => call[0].type === "done");
+    expect(doneEvent).toBeDefined();
+
+    // Verify Interrupted text was printed
+    const textEvent = onEvent.mock.calls.find(
+      (call) => call[0].type === "text" && call[0].content.includes("[Interrupted]")
+    );
+    expect(textEvent).toBeDefined();
+  });
 });
