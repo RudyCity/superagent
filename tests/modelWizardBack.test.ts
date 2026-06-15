@@ -214,6 +214,26 @@ describe("Model Wizard Back Navigation", () => {
       data: { tier: "master", provider: "openai" },
     });
     expect(wizardOptions).toContain("< Back");
+  });
+
+  it("should go back from step 15 (model select) to step 3 (profile select)", async () => {
+    let capturedHandler: any = null;
+    const TestComponent = () => {
+      capturedHandler = useModelWizard(mockCtx as any);
+      return null;
+    };
+    const { unmount } = render(React.createElement(TestComponent));
+
+    // Simulate step 15 active
+    activeWizard = { type: "model", step: 15, data: { tier: "master", providerType: "openai" } };
+    await capturedHandler("< Back", 15, { tier: "master", providerType: "openai" });
+
+    expect(activeWizard).toEqual({
+      type: "model",
+      step: 3,
+      data: { tier: "master", providerType: "openai" },
+    });
+    expect(wizardOptions).toContain("< Back");
     unmount();
   });
 

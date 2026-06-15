@@ -237,7 +237,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
 
     if (activeWizard) {
       if (key.upArrow) {
-        if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)) {
+        if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
           const lc = query.trim();
           const len = lc
             ? filterSuggestions(wizardAllOptions, lc).length
@@ -253,7 +253,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         return;
       }
       if (key.downArrow) {
-        if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)) {
+        if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
           const lc = query.trim();
           const len = lc
             ? filterSuggestions(wizardAllOptions, lc).length

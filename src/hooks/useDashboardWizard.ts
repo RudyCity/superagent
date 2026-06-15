@@ -670,9 +670,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           data: { tier },
         });
 
-        const list = getConfiguredProviders();
-        const providerOptions = getProviderOptionsList(list);
-        setWizardOptions(providerOptions);
+        setWizardOptions([
+          "1. OpenRouter (Recommended)",
+          "2. OpenAI",
+          "3. Anthropic",
+          "4. Custom Endpoint",
+          "< Back"
+        ]);
         setWizardSelectedIndex(0);
         setQuery("");
       } else if (activeWizard.step === 2) {
@@ -719,97 +723,107 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
 
-        const list = getConfiguredProviders();
-        const cleanName = value.replace(/\s*\[Active\]\s*$/, "").split(" (")[0].trim();
-        const nameWithoutNumber = cleanName.replace(/^\d+\.\s*/, "").trim();
-        const found = list.find(p => p.name.toLowerCase() === nameWithoutNumber.toLowerCase());
-
-        let providerProfileName = "";
+        const choice = value.toLowerCase();
         let providerType = "";
-        let resolvedApiKey = "";
-        let resolvedBaseUrl = "";
-
-        if (found) {
-          providerProfileName = found.name;
-          providerType = found.type;
-          resolvedBaseUrl = found.baseUrl || "";
-          
-          const prefix = `PROVIDER_${found.name.toUpperCase()}`;
-          resolvedApiKey = process.env[`${prefix}_API_KEY`] || "";
-          
-          if (!resolvedApiKey) {
-            if (found.name.toLowerCase() === "openai") {
-              resolvedApiKey = process.env.OPENAI_API_KEY || "";
-            } else if (found.name.toLowerCase() === "anthropic") {
-              resolvedApiKey = process.env.ANTHROPIC_API_KEY || "";
-            } else if (found.name.toLowerCase() === "openrouter") {
-              resolvedApiKey = process.env.CUSTOM_API_KEY || "";
-            } else if (found.type === "custom") {
-              resolvedApiKey = process.env.CUSTOM_API_KEY || "";
-            }
-          }
-          
-          if (found.name.toLowerCase() === "openrouter") {
-            providerType = "openrouter";
-          }
+        if (choice.includes("openrouter") || choice === "1") {
+          providerType = "openrouter";
+        } else if (choice.includes("openai") || choice === "2") {
+          providerType = "openai";
+        } else if (choice.includes("anthropic") || choice === "3") {
+          providerType = "anthropic";
+        } else if (choice.includes("custom") || choice === "4") {
+          providerType = "custom";
         } else {
-          const lowerName = nameWithoutNumber.toLowerCase();
-          if (lowerName.includes("openrouter")) {
-            providerProfileName = "openrouter";
-            providerType = "openrouter";
-            resolvedApiKey = process.env.CUSTOM_API_KEY || "";
-          } else if (lowerName.includes("openai")) {
-            providerProfileName = "openai";
-            providerType = "openai";
-            resolvedApiKey = process.env.OPENAI_API_KEY || "";
-          } else if (lowerName.includes("anthropic")) {
-            providerProfileName = "anthropic";
-            providerType = "anthropic";
-            resolvedApiKey = process.env.ANTHROPIC_API_KEY || "";
-          } else if (lowerName.includes("custom")) {
-            providerProfileName = "custom";
-            providerType = "custom";
-            resolvedBaseUrl = process.env.CUSTOM_BASE_URL || "";
-            resolvedApiKey = process.env.CUSTOM_API_KEY || "";
-          } else {
-            providerProfileName = "openrouter";
-            providerType = "openrouter";
-          }
+          setMasterLogs((prev) => [...prev, `[ERROR] Invalid provider type choice.`].slice(-500));
+          return;
         }
 
         setActiveWizard({
           type: "model",
           step: 3,
-          data: { ...activeWizard.data, provider: providerProfileName },
+          data: { ...activeWizard.data, providerType },
         });
 
-        const initialModels: string[] =
-          providerType === "openrouter" ? [
+        const list = getConfiguredProviders();
+        const matchingProfiles = list.filter(p => p.type === providerType);
+        const profileOptions = matchingProfiles.map(p => {
+          const prefix = `PROVIDER_${p.name.toUpperCase()}`;
+          const apiKey = process.env[`${prefix}_API_KEY`] || "";
+          const maskedKey = apiKey
+            ? (apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "...")
+            : "(no key)";
+          return `${p.name} (key: ${maskedKey})`;
+        });
+
+        setWizardOptions([
+          ...profileOptions,
+          `+ Configure a new ${providerType} profile`,
+          "< Back"
+        ]);
+        setWizardSelectedIndex(0);
+        setQuery("");
+      } else if (activeWizard.step === 3) {
+        if (value === "< Back") {
+          setActiveWizard({
+            type: "model",
+            step: 2,
+            data: { ...activeWizard.data },
+          });
+          setWizardOptions([
+            "1. OpenRouter (Recommended)",
+            "2. OpenAI",
+            "3. Anthropic",
+            "4. Custom Endpoint",
+            "< Back"
+          ]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
+
+        const providerType = activeWizard.data.providerType;
+        if (value.startsWith("+ Configure a new")) {
+          setActiveWizard({
+            type: "model",
+            step: 16,
+            data: { ...activeWizard.data },
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          setMasterLogs((prev) => [
+            ...prev,
+            `[SYSTEM] Configure new profile. Please enter a profile name (alphanumeric, e.g. ${providerType}_dev):`
+          ].slice(-500));
+          return;
+        }
+
+        const profileName = value.split(" (key:")[0].trim();
+        const list = getConfiguredProviders();
+        const found = list.find(p => p.name.toLowerCase() === profileName.toLowerCase());
+        
+        let resolvedApiKey = "";
+        let resolvedBaseUrl = "";
+        if (found) {
+          resolvedBaseUrl = found.baseUrl || "";
+          const prefix = `PROVIDER_${found.name.toUpperCase()}`;
+          resolvedApiKey = process.env[`${prefix}_API_KEY`] || "";
+        }
+
+        setActiveWizard({
+          type: "model",
+          step: 15,
+          data: { ...activeWizard.data, provider: profileName },
+        });
+
+        let initialModels: string[] = [];
+        if (providerType === "openrouter") {
+          initialModels = [
             "google/gemini-2.5-flash",
             "meta-llama/llama-3.3-70b-instruct",
             "deepseek/deepseek-chat",
             "anthropic/claude-3.5-sonnet",
-          ] :
-          providerType === "openai" ? [
-            "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-preview", "o3-mini",
-          ] :
-          providerType === "anthropic" ? [
-            "claude-opus-4-5",
-            "claude-sonnet-4-5",
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229",
-          ] :
-          providerType === "custom" ? [
-            "deepseek-chat", "llama-3.3-70b-instruct",
-          ] : [];
-
-        setWizardAllOptions([...initialModels, "< Back"]);
-        setWizardOptions([]);
-        setWizardSelectedIndex(0);
-        setQuery("");
-
-        if (providerType === "openrouter") {
+          ];
           setWizardIsLoadingModels(true);
           const headers: Record<string, string> = {};
           if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
@@ -826,6 +840,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             .catch(() => {})
             .finally(() => setWizardIsLoadingModels(false));
         } else if (providerType === "openai") {
+          initialModels = [
+            "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-preview", "o3-mini",
+          ];
           if (resolvedApiKey) {
             setWizardIsLoadingModels(true);
             fetch("https://api.openai.com/v1/models", {
@@ -843,7 +860,18 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               .catch(() => {})
               .finally(() => setWizardIsLoadingModels(false));
           }
+        } else if (providerType === "anthropic") {
+          initialModels = [
+            "claude-opus-4-5",
+            "claude-sonnet-4-5",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229",
+          ];
         } else if (providerType === "custom") {
+          initialModels = [
+            "deepseek-chat", "llama-3.3-70b-instruct",
+          ];
           if (resolvedBaseUrl) {
             setWizardIsLoadingModels(true);
             const headers: Record<string, string> = {};
@@ -863,7 +891,374 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           }
         }
 
-        setMasterLogs((prev) => [...prev, `[MASTER] Provider profile "${providerProfileName}" selected. Choose a model below:`].slice(-500));
+        setWizardAllOptions([...initialModels, "< Back"]);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setQuery("");
+        setMasterLogs((prev) => [...prev, `[MASTER] Provider profile "${profileName}" selected. Choose a model below:`].slice(-500));
+      } else if (activeWizard.step === 16) {
+        if (value === "< Back") {
+          const providerType = activeWizard.data.providerType;
+          setActiveWizard({
+            type: "model",
+            step: 3,
+            data: { ...activeWizard.data },
+          });
+          const list = getConfiguredProviders();
+          const matchingProfiles = list.filter(p => p.type === providerType);
+          const profileOptions = matchingProfiles.map(p => {
+            const prefix = `PROVIDER_${p.name.toUpperCase()}`;
+            const apiKey = process.env[`${prefix}_API_KEY`] || "";
+            const maskedKey = apiKey
+              ? (apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "...")
+              : "(no key)";
+            return `${p.name} (key: ${maskedKey})`;
+          });
+          setWizardOptions([
+            ...profileOptions,
+            `+ Configure a new ${providerType} profile`,
+            "< Back"
+          ]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
+
+        const nameInput = value.trim().replace(/[^a-zA-Z0-9_-]/g, "");
+        const providerType = activeWizard.data.providerType;
+        const profileName = nameInput || providerType;
+
+        if (providerType === "custom") {
+          setActiveWizard({
+            type: "model",
+            step: 17,
+            data: { ...activeWizard.data, name: profileName },
+          });
+          setMasterLogs((prev) => [
+            ...prev,
+            `[SYSTEM] Profile name: ${profileName}. Please enter Base URL for Custom Endpoint (e.g. http://localhost:11434/v1):`
+          ].slice(-500));
+        } else {
+          setActiveWizard({
+            type: "model",
+            step: 18,
+            data: { ...activeWizard.data, name: profileName },
+          });
+          setMasterLogs((prev) => [
+            ...prev,
+            `[SYSTEM] Profile name: ${profileName}. Please enter API Key:`
+          ].slice(-500));
+        }
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setQuery("");
+      } else if (activeWizard.step === 17) {
+        if (value === "< Back") {
+          setActiveWizard({
+            type: "model",
+            step: 16,
+            data: { ...activeWizard.data },
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
+
+        const baseUrl = value.trim();
+        setActiveWizard({
+          type: "model",
+          step: 18,
+          data: { ...activeWizard.data, baseUrl },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setQuery("");
+        setMasterLogs((prev) => [
+          ...prev,
+          `[SYSTEM] Base URL: ${baseUrl}. Please enter API Key:`
+        ].slice(-500));
+      } else if (activeWizard.step === 18) {
+        if (value === "< Back") {
+          const providerType = activeWizard.data.providerType;
+          if (providerType === "custom") {
+            setActiveWizard({
+              type: "model",
+              step: 17,
+              data: { ...activeWizard.data },
+            });
+          } else {
+            setActiveWizard({
+              type: "model",
+              step: 16,
+              data: { ...activeWizard.data },
+            });
+          }
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
+
+        const apiKey = value.trim();
+        const providerType = activeWizard.data.providerType;
+        const profileName = activeWizard.data.name;
+        const baseUrl = activeWizard.data.baseUrl;
+
+        const prefix = `PROVIDER_${profileName.toUpperCase()}`;
+        const updates: Record<string, string> = {
+          [`${prefix}_TYPE`]: providerType,
+          [`${prefix}_API_KEY`]: apiKey,
+        };
+
+        if (baseUrl) {
+          updates[`${prefix}_BASE_URL`] = baseUrl;
+        } else if (providerType === "openrouter") {
+          updates[`${prefix}_BASE_URL`] = "https://openrouter.ai/api/v1";
+        }
+
+        try {
+          const envPath = updateEnvFile(updates);
+          setMasterLogs((prev) => [
+            ...prev,
+            `[SYSTEM] Successfully configured provider profile: ${profileName} (${providerType})!\nSaved to: ${envPath}`
+          ].slice(-500));
+          
+          const nextStep = activeWizard.data.isPreset === "true"
+            ? Number(activeWizard.data.returnStep)
+            : 15;
+
+          setActiveWizard({
+            type: "model",
+            step: nextStep,
+            data: { ...activeWizard.data, provider: profileName },
+          });
+
+          let initialModels: string[] = [];
+          if (providerType === "openrouter") {
+            initialModels = [
+              "google/gemini-2.5-flash",
+              "meta-llama/llama-3.3-70b-instruct",
+              "deepseek/deepseek-chat",
+              "anthropic/claude-3.5-sonnet",
+            ];
+            setWizardIsLoadingModels(true);
+            const headers: Record<string, string> = {};
+            if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+            fetch("https://openrouter.ai/api/v1/models", { headers })
+              .then(async (res) => {
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  if (data && Array.isArray(data.data)) {
+                    const modelsList = data.data.map((m: any) => m.id);
+                    setWizardAllOptions([...modelsList, "< Back"]);
+                  }
+                }
+              })
+              .catch(() => {})
+              .finally(() => setWizardIsLoadingModels(false));
+          } else if (providerType === "openai") {
+            initialModels = [
+              "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-preview", "o3-mini",
+            ];
+            if (apiKey) {
+              setWizardIsLoadingModels(true);
+              fetch("https://api.openai.com/v1/models", {
+                headers: { Authorization: `Bearer ${apiKey}` }
+              })
+                .then(async (res) => {
+                  if (res.ok) {
+                    const data = await res.json() as any;
+                    if (data && Array.isArray(data.data)) {
+                      const modelsList = data.data.map((m: any) => m.id);
+                      setWizardAllOptions([...modelsList, "< Back"]);
+                    }
+                  }
+                })
+                .catch(() => {})
+                .finally(() => setWizardIsLoadingModels(false));
+            }
+          } else if (providerType === "anthropic") {
+            initialModels = [
+              "claude-opus-4-5",
+              "claude-sonnet-4-5",
+              "claude-3-5-sonnet-20241022",
+              "claude-3-5-haiku-20241022",
+              "claude-3-opus-20240229",
+            ];
+          } else if (providerType === "custom") {
+            initialModels = [
+              "deepseek-chat", "llama-3.3-70b-instruct",
+            ];
+            if (baseUrl) {
+              setWizardIsLoadingModels(true);
+              const headers: Record<string, string> = {};
+              if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+              fetch(`${baseUrl}/models`, { headers })
+                .then(async (res) => {
+                  if (res.ok) {
+                    const data = await res.json() as any;
+                    if (data && Array.isArray(data.data)) {
+                      const modelsList = data.data.map((m: any) => m.id);
+                      setWizardAllOptions([...modelsList, "< Back"]);
+                    }
+                  }
+                })
+                .catch(() => {})
+                .finally(() => setWizardIsLoadingModels(false));
+            }
+          }
+
+          setWizardAllOptions([...initialModels, "< Back"]);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+        } catch (err: any) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to save credentials: ${err.message}`].slice(-500));
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+        }
+      } else if (activeWizard.step === 15) {
+        if (value === "< Back") {
+          const providerType = activeWizard.data.providerType;
+          setActiveWizard({
+            type: "model",
+            step: 3,
+            data: { ...activeWizard.data },
+          });
+          const list = getConfiguredProviders();
+          const matchingProfiles = list.filter(p => p.type === providerType);
+          const profileOptions = matchingProfiles.map(p => {
+            const prefix = `PROVIDER_${p.name.toUpperCase()}`;
+            const apiKey = process.env[`${prefix}_API_KEY`] || "";
+            const maskedKey = apiKey
+              ? (apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "...")
+              : "(no key)";
+            return `${p.name} (key: ${maskedKey})`;
+          });
+          setWizardOptions([
+            ...profileOptions,
+            `+ Configure a new ${providerType} profile`,
+            "< Back"
+          ]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
+
+        const modelName = value;
+        const profileName = activeWizard.data.provider || "";
+        const tier = activeWizard.data.tier || "";
+        
+        try {
+          let envPath = "";
+          let targetLabel = "";
+          if (tier === "default") {
+            envPath = switchActiveProvider(profileName);
+            updateEnvFile({ 
+              MODEL: modelName,
+              [`PROVIDER_${profileName.toUpperCase()}_MODEL`]: modelName
+            });
+            targetLabel = "Default Model";
+          } else if (tier === "all") {
+            const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
+            const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+              ? `${profileName.toLowerCase()}:${modelName}`
+              : modelName;
+            const updates = {
+              MODEL: modelName,
+              MODEL_DEPTH_0: finalModelName,
+              MODEL_DEPT0: finalModelName,
+              MODEL_DEPTH_1: finalModelName,
+              MODEL_DEPT1: finalModelName,
+              MODEL_DEPTH_2: finalModelName,
+              MODEL_DEPT2: finalModelName,
+              MODEL_SUBAGENT_RESEARCHER: finalModelName,
+              MODEL_RESEARCHER: finalModelName,
+              MODEL_SUBAGENT_CODER: finalModelName,
+              MODEL_CODER: finalModelName,
+              MODEL_SUBAGENT_REVIEWER: finalModelName,
+              MODEL_REVIEWER: finalModelName
+            };
+            targetLabel = "All Tiers & Subagents";
+            envPath = switchActiveProvider(profileName);
+            updateEnvFile(updates);
+          } else {
+            const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
+            const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+              ? `${profileName.toLowerCase()}:${modelName}`
+              : modelName;
+            
+            let updates: Record<string, string> = {};
+            if (tier === "master") {
+              updates = { MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName };
+              targetLabel = "Master Agent (depth 0) Model";
+            } else if (tier === "superagent") {
+              updates = { MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName };
+              targetLabel = "Superagent (depth 1) Model";
+            } else if (tier === "subagent") {
+              updates = { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName };
+              targetLabel = "Subagent (depth 2) Model";
+            } else {
+              const typeUpper = tier.toUpperCase();
+              updates = {
+                [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
+                [`MODEL_${typeUpper}`]: finalModelName
+              };
+              targetLabel = `Subagent "${tier}" Model`;
+            }
+            envPath = updateEnvFile(updates);
+          }
+
+          const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
+          const limit = getContextWindowLimit(cleanModelName);
+          
+          if (tier === "default" || tier === "all") {
+            setContextLimit(limit);
+          }
+          const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+          setActiveModel(effectiveMasterModel);
+          
+          const currentModel = process.env.MODEL || getDefaultModel();
+          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          
+          let updatedList = `\n\nUpdated Models:\n` +
+            `  Default Model: ${currentModel}\n` +
+            `  Master Agent (depth 0): ${masterModel}\n` +
+            `  Superagent (depth 1): ${superagentModel}\n` +
+            `  Subagent (depth 2): ${subagentModel}`;
+
+          for (const [key, val] of Object.entries(process.env)) {
+            if (val && key.startsWith("MODEL_SUBAGENT_")) {
+              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              updatedList += `\n  Subagent "${name}": ${val}`;
+            }
+          }
+
+          setMasterLogs((prev) => [
+            ...prev,
+            `[SYSTEM] ${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}${updatedList}`
+          ].slice(-500));
+          
+          if (tier === "default" || tier === "all") {
+            fetchAndCacheModels()
+              .then(() => {
+                const newLimit = getContextWindowLimit(cleanModelName);
+                setContextLimit(newLimit);
+              })
+              .catch(() => {});
+          }
+        } catch (err: any) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to set model: ${err.message}`].slice(-500));
+        }
+
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setWizardIsLoadingModels(false);
       } else if (activeWizard.step === 4) {
         if (value === "< Back") {
           setActiveWizard({
@@ -1055,9 +1450,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           data: { ...activeWizard.data, tier },
         });
 
-        const list = getConfiguredProviders();
-        const providerOptions = getProviderOptionsList(list);
-        setWizardOptions(providerOptions);
+        setWizardOptions([
+          "1. OpenRouter (Recommended)",
+          "2. OpenAI",
+          "3. Anthropic",
+          "4. Custom Endpoint",
+          "< Back"
+        ]);
         setWizardSelectedIndex(0);
         setQuery("");
       } else if (activeWizard.step === 23 || activeWizard.step === 33) {
@@ -1087,69 +1486,101 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           return;
         }
 
-        const list = getConfiguredProviders();
-        const cleanName = value.replace(/\s*\[Active\]\s*$/, "").split(" (")[0].trim();
-        const nameWithoutNumber = cleanName.replace(/^\d+\.\s*/, "").trim();
-        const found = list.find(p => p.name.toLowerCase() === nameWithoutNumber.toLowerCase());
-
-        let providerProfileName = "";
+        const choice = value.toLowerCase();
         let providerType = "";
-        let resolvedApiKey = "";
-        let resolvedBaseUrl = "";
-
-        if (found) {
-          providerProfileName = found.name;
-          providerType = found.type;
-          resolvedBaseUrl = found.baseUrl || "";
-          
-          const prefix = `PROVIDER_${found.name.toUpperCase()}`;
-          resolvedApiKey = process.env[`${prefix}_API_KEY`] || "";
-          
-          if (!resolvedApiKey) {
-            if (found.name.toLowerCase() === "openai") {
-              resolvedApiKey = process.env.OPENAI_API_KEY || "";
-            } else if (found.name.toLowerCase() === "anthropic") {
-              resolvedApiKey = process.env.ANTHROPIC_API_KEY || "";
-            } else if (found.name.toLowerCase() === "openrouter") {
-              resolvedApiKey = process.env.CUSTOM_API_KEY || "";
-            } else if (found.type === "custom") {
-              resolvedApiKey = process.env.CUSTOM_API_KEY || "";
-            }
-          }
-          
-          if (found.name.toLowerCase() === "openrouter") {
-            providerType = "openrouter";
-          }
+        if (choice.includes("openrouter") || choice === "1") {
+          providerType = "openrouter";
+        } else if (choice.includes("openai") || choice === "2") {
+          providerType = "openai";
+        } else if (choice.includes("anthropic") || choice === "3") {
+          providerType = "anthropic";
+        } else if (choice.includes("custom") || choice === "4") {
+          providerType = "custom";
         } else {
-          const lowerName = nameWithoutNumber.toLowerCase();
-          if (lowerName.includes("openrouter")) {
-            providerProfileName = "openrouter";
-            providerType = "openrouter";
-            resolvedApiKey = process.env.CUSTOM_API_KEY || "";
-          } else if (lowerName.includes("openai")) {
-            providerProfileName = "openai";
-            providerType = "openai";
-            resolvedApiKey = process.env.OPENAI_API_KEY || "";
-          } else if (lowerName.includes("anthropic")) {
-            providerProfileName = "anthropic";
-            providerType = "anthropic";
-            resolvedApiKey = process.env.ANTHROPIC_API_KEY || "";
-          } else if (lowerName.includes("custom")) {
-            providerProfileName = "custom";
-            providerType = "custom";
-            resolvedBaseUrl = process.env.CUSTOM_BASE_URL || "";
-            resolvedApiKey = process.env.CUSTOM_API_KEY || "";
-          } else {
-            providerProfileName = "openrouter";
-            providerType = "openrouter";
-          }
+          setMasterLogs((prev) => [...prev, `[ERROR] Invalid provider type choice.`].slice(-500));
+          return;
         }
 
-        const nextStep = activeWizard.step === 23 ? 24 : 34;
+        const nextStep = activeWizard.step === 23 ? 25 : 35;
         setActiveWizard({
           type: "model",
           step: nextStep,
-          data: { ...activeWizard.data, provider: providerProfileName },
+          data: { ...activeWizard.data, providerType },
+        });
+
+        const list = getConfiguredProviders();
+        const matchingProfiles = list.filter(p => p.type === providerType);
+        const profileOptions = matchingProfiles.map(p => {
+          const prefix = `PROVIDER_${p.name.toUpperCase()}`;
+          const apiKey = process.env[`${prefix}_API_KEY`] || "";
+          const maskedKey = apiKey
+            ? (apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "...")
+            : "(no key)";
+          return `${p.name} (key: ${maskedKey})`;
+        });
+
+        setWizardOptions([
+          ...profileOptions,
+          `+ Configure a new ${providerType} profile`,
+          "< Back"
+        ]);
+        setWizardSelectedIndex(0);
+        setQuery("");
+      } else if (activeWizard.step === 25 || activeWizard.step === 35) {
+        if (value === "< Back") {
+          const nextStep = activeWizard.step === 25 ? 23 : 33;
+          setActiveWizard({
+            type: "model",
+            step: nextStep,
+            data: { ...activeWizard.data },
+          });
+          setWizardOptions([
+            "1. OpenRouter (Recommended)",
+            "2. OpenAI",
+            "3. Anthropic",
+            "4. Custom Endpoint",
+            "< Back"
+          ]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
+
+        const providerType = activeWizard.data.providerType;
+        if (value.startsWith("+ Configure a new")) {
+          const nextModelStep = activeWizard.step === 25 ? 24 : 34;
+          setActiveWizard({
+            type: "model",
+            step: 16,
+            data: { ...activeWizard.data, isPreset: "true", returnStep: String(nextModelStep) },
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          setMasterLogs((prev) => [
+            ...prev,
+            `[SYSTEM] Configure new profile for Preset. Please enter a profile name (alphanumeric, e.g. ${providerType}_preset):`
+          ].slice(-500));
+          return;
+        }
+
+        const profileName = value.split(" (key:")[0].trim();
+        const list = getConfiguredProviders();
+        const found = list.find(p => p.name.toLowerCase() === profileName.toLowerCase());
+        
+        let resolvedApiKey = "";
+        let resolvedBaseUrl = "";
+        if (found) {
+          resolvedBaseUrl = found.baseUrl || "";
+          const prefix = `PROVIDER_${found.name.toUpperCase()}`;
+          resolvedApiKey = process.env[`${prefix}_API_KEY`] || "";
+        }
+
+        const nextStep = activeWizard.step === 25 ? 24 : 34;
+        setActiveWizard({
+          type: "model",
+          step: nextStep,
+          data: { ...activeWizard.data, provider: profileName },
         });
 
         let initialModels: string[] = [];
@@ -1177,21 +1608,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             .finally(() => setWizardIsLoadingModels(false));
         } else if (providerType === "openai") {
           initialModels = [
-            "gpt-4o",
-            "gpt-4o-mini",
-            "o1",
-            "o1-mini",
-            "o1-preview",
-            "o3-mini",
-            "gpt-4-turbo",
-            "gpt-4",
+            "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-preview", "o3-mini",
           ];
           if (resolvedApiKey) {
             setWizardIsLoadingModels(true);
             fetch("https://api.openai.com/v1/models", {
-              headers: {
-                Authorization: `Bearer ${resolvedApiKey}`
-              }
+              headers: { Authorization: `Bearer ${resolvedApiKey}` }
             })
               .then(async (res) => {
                 if (res.ok) {
@@ -1215,15 +1637,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           ];
         } else if (providerType === "custom") {
           initialModels = [
-            "deepseek-chat",
-            "llama-3.3-70b-instruct",
+            "deepseek-chat", "llama-3.3-70b-instruct",
           ];
           if (resolvedBaseUrl) {
             setWizardIsLoadingModels(true);
             const headers: Record<string, string> = {};
-            if (resolvedApiKey) {
-              headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-            }
+            if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
             fetch(`${resolvedBaseUrl}/models`, { headers })
               .then(async (res) => {
                 if (res.ok) {
@@ -1245,15 +1664,28 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setQuery("");
       } else if (activeWizard.step === 24 || activeWizard.step === 34) {
         if (value === "< Back") {
-          const nextStep = activeWizard.step === 24 ? 23 : 33;
+          const nextStep = activeWizard.step === 24 ? 25 : 35;
           setActiveWizard({
             type: "model",
             step: nextStep,
             data: { ...activeWizard.data },
           });
+          const providerType = activeWizard.data.providerType;
           const list = getConfiguredProviders();
-          const providerOptions = getProviderOptionsList(list);
-          setWizardOptions(providerOptions);
+          const matchingProfiles = list.filter(p => p.type === providerType);
+          const profileOptions = matchingProfiles.map(p => {
+            const prefix = `PROVIDER_${p.name.toUpperCase()}`;
+            const apiKey = process.env[`${prefix}_API_KEY`] || "";
+            const maskedKey = apiKey
+              ? (apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "...")
+              : "(no key)";
+            return `${p.name} (key: ${maskedKey})`;
+          });
+          setWizardOptions([
+            ...profileOptions,
+            `+ Configure a new ${providerType} profile`,
+            "< Back"
+          ]);
           setWizardSelectedIndex(0);
           setQuery("");
           return;
@@ -1951,7 +2383,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       let finalValue: string;
       if (cleanVal === "< Back" || cleanVal === "back") {
         finalValue = cleanVal;
-      } else if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)) {
+      } else if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
         const lc = query.trim();
         const filteredModels = lc
           ? filterSuggestions(wizardAllOptions, lc)

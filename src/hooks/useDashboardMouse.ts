@@ -90,7 +90,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
           if (activeWizard) {
             let options = wizardOptions;
             let maxVisible = 10;
-            if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)) {
+            if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
               const lc = query.trim().toLowerCase();
               options = lc
                 ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
@@ -131,7 +131,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
                 descLines = wrapTextForDisplay(description, descWidth).length;
               }
 
-              const isLoading = (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)) && wizardIsLoadingModels;
+              const isLoading = (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) && wizardIsLoadingModels;
 
               const y_options_start = 6
                 + workspaceHeight
@@ -236,7 +236,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
             let wizardHeight = 0;
             if (activeWizard) {
-              const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34);
+              const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
               const maxVis = isModelSelectStep ? 8 : 10;
 
               const lc = query.trim();
@@ -282,7 +282,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
                 ? wrapTextForDisplay(wizardDescription, Math.max(10, terminalSize.width - 4)).length
                 : 0;
 
-              const hasLoading = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34) && wizardIsLoadingModels;
+              const hasLoading = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) && wizardIsLoadingModels;
 
               wizardHeight += 1; // Outer top border │
               wizardHeight += 1; // Title line
