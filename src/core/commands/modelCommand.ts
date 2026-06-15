@@ -59,7 +59,10 @@ export const modelCommand: SlashCommand = {
           } else {
             const presetName = parts.slice(1).join(" ");
             const envPath = applyModelPreset(presetName);
-            const nextActiveModel = process.env.MODEL || getDefaultModel();
+            const isMulti = ctx.agent?.isMultiAgent ?? false;
+            const nextActiveModel = isMulti
+              ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
+              : (process.env.MODEL || getDefaultModel());
             const limit = getContextWindowLimit(nextActiveModel);
             
             if (ctx.setContextLimit) {

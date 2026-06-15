@@ -231,8 +231,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             ].slice(-500));
             fetchAndCacheModels()
               .then(() => {
-                const currentModel = process.env.MODEL || getDefaultModel();
-                setActiveModel(currentModel);
+                const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+                setActiveModel(effectiveMasterModel);
               })
               .catch(() => {});
           } catch (err: any) {
@@ -278,8 +278,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
 
           fetchAndCacheModels()
             .then(() => {
-              const currentModel = process.env.MODEL || getDefaultModel();
-              setActiveModel(currentModel);
+              const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+              setActiveModel(effectiveMasterModel);
             })
             .catch(() => {});
         } catch (err: any) {
@@ -920,10 +920,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const presetName = presetChoice.split(" - ")[0].trim();
         try {
           const envPath = applyModelPreset(presetName);
-          const nextActiveModel = process.env.MODEL || getDefaultModel();
-          const limit = getContextWindowLimit(nextActiveModel);
+          const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+          const limit = getContextWindowLimit(effectiveMasterModel);
           setContextLimit(limit);
-          setActiveModel(nextActiveModel);
+          setActiveModel(effectiveMasterModel);
 
           const currentModel = process.env.MODEL || getDefaultModel();
           const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";

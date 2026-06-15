@@ -26,6 +26,7 @@ interface ModelWizardContext {
   wizardSelectedIndex: number;
   wizardOptions: string[];
   wizardIsLoadingModels: boolean;
+  agentRef?: React.MutableRefObject<any>;
 }
 
 export function useModelWizard(ctx: ModelWizardContext) {
@@ -41,6 +42,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
     wizardSelectedIndex,
     wizardOptions,
     wizardIsLoadingModels,
+    agentRef,
   } = ctx;
 
   const handleModelWizard = useCallback(async (value: string, step: number, data: Record<string, string>) => {
@@ -311,7 +313,10 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const presetName = presetChoice.split(" - ")[0].trim();
       try {
         const envPath = applyModelPreset(presetName);
-        const nextActiveModel = process.env.MODEL || getDefaultModel();
+        const isSingle = agentRef?.current?.tier === "single";
+        const nextActiveModel = isSingle
+          ? (process.env.MODEL || getDefaultModel())
+          : (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
         const limit = getContextWindowLimit(nextActiveModel);
         setContextLimit(limit);
         setActiveModel(nextActiveModel);
@@ -983,11 +988,14 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
         const limit = getContextWindowLimit(cleanModelName);
         
-        const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
-        const cleanMasterModel = effectiveMasterModel.includes(":") ? effectiveMasterModel.substring(effectiveMasterModel.indexOf(":") + 1) : effectiveMasterModel;
-        const newLimit = getContextWindowLimit(cleanMasterModel);
+        const isSingle = agentRef?.current?.tier === "single";
+        const effectiveModel = isSingle
+          ? (process.env.MODEL || getDefaultModel())
+          : (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
+        const cleanModel = effectiveModel.includes(":") ? effectiveModel.substring(effectiveModel.indexOf(":") + 1) : effectiveModel;
+        const newLimit = getContextWindowLimit(cleanModel);
         setContextLimit(newLimit);
-        setActiveModel(effectiveMasterModel);
+        setActiveModel(effectiveModel);
         
         const currentModel = process.env.MODEL || getDefaultModel();
         const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";

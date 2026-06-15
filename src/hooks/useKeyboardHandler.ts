@@ -1116,6 +1116,25 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (key.ctrl && inputChar === "c") {
+      if (activeWizard) {
+        if (pendingPermission) {
+          pendingPermission.resolve(false);
+          setPendingPermission(null);
+        }
+        if (pendingQuestion) {
+          pendingQuestion.resolve("");
+          setPendingQuestion(null);
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        addLine({
+          type: "system",
+          content: "Wizard cancelled.",
+          timestamp: Date.now(),
+        });
+        return;
+      }
       if (stopRunningSubagents() > 0) {
         agentRef.current?.abort();
         setIsProcessing(false);

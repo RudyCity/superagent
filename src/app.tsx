@@ -783,6 +783,7 @@ export function App({
   useEffect(() => {
     registerQuestionHandler(questionHandler);
     const agent = new Agent(handleEvent, permissionHandler, questionHandler);
+    agent.tier = "single";
     agentRef.current = agent;
 
     const handleSigint = () => {

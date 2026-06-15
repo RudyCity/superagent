@@ -1,4 +1,4 @@
-export type AgentTier = "master" | "superagent" | "subagent";
+export type AgentTier = "master" | "superagent" | "subagent" | "single";
 
 export interface Tool {
   name: string;

@@ -54,6 +54,7 @@ export interface DashboardKeyboardContext {
   maxProcsVisible: number;
   isProcessing?: boolean;
   setIsProcessing?: React.Dispatch<React.SetStateAction<boolean>>;
+  setMasterLogs?: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
 export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
@@ -108,10 +109,28 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     maxProcsVisible,
     isProcessing = false,
     setIsProcessing = () => {},
+    setMasterLogs,
   } = ctx;
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
+      if (activeWizard) {
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setWizardSelectedSet(new Set());
+        setWizardAllOptions([]);
+        setWizardIsLoadingModels(false);
+        setQuery("");
+        if (pendingQuestion) {
+          pendingQuestion.resolve("");
+          setPendingQuestion(null);
+        }
+        if (setMasterLogs) {
+          setMasterLogs((prev) => [...prev, "[SYSTEM] Wizard cancelled."].slice(-500));
+        }
+        return;
+      }
       if (isProcessing) {
         stopAllRunningAgents();
         setIsProcessing(false);

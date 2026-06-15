@@ -98,6 +98,7 @@ export function MultiAgentDashboard({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [focusArea, setFocusArea] = useState<"list" | "logs" | "input" | "checklist" | "agents" | "procs">("input");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [tick, setTick] = useState(0);
   const [query, setQuery] = useState("");
   const [masterLogs, setMasterLogs] = useState<string[]>(["[MASTER] System initialised. Ready for tasks."]);
   const [history, setHistory] = useState<string[]>([]);
@@ -397,6 +398,18 @@ export function MultiAgentDashboard({
     process.stdout.on("resize", handleResize);
     return () => {
       process.stdout.off("resize", handleResize);
+    };
+  }, []);
+
+  // Subscribe to tasks, subagents, and superagents changes to trigger updates/renders
+  useEffect(() => {
+    const unsubTasks = subscribeToTasks(() => setTick((t) => t + 1));
+    const unsubSubagents = subscribeToSubagents(() => setTick((t) => t + 1));
+    const unsubSuperagents = subscribeToSuperagents(() => setTick((t) => t + 1));
+    return () => {
+      unsubTasks();
+      unsubSubagents();
+      unsubSuperagents();
     };
   }, []);
 
@@ -818,6 +831,7 @@ export function MultiAgentDashboard({
     maxProcsVisible,
     isProcessing,
     setIsProcessing,
+    setMasterLogs,
   });
 
   useDashboardMouse({
