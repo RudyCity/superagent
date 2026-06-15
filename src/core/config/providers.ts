@@ -116,3 +116,18 @@ export function switchActiveProvider(name: string): string {
 
   return updateEnvFile(updates);
 }
+
+export function getProviderOptionsList(list: ConfiguredProvider[]): string[] {
+  const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
+  const defaultTemplates = ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"];
+  const templatesToShow = defaultTemplates.filter(t => {
+    const lowerT = t.toLowerCase();
+    let nameToMatch = "";
+    if (lowerT.includes("openrouter")) nameToMatch = "openrouter";
+    else if (lowerT.includes("openai")) nameToMatch = "openai";
+    else if (lowerT.includes("anthropic")) nameToMatch = "anthropic";
+    else if (lowerT.includes("custom")) nameToMatch = "custom";
+    return !list.some(p => p.name.toLowerCase() === nameToMatch);
+  });
+  return [...options, ...templatesToShow, "< Back"];
+}

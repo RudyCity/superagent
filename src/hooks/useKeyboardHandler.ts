@@ -2,7 +2,7 @@ import { useInput } from "ink";
 import path from "path";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getPasteSplit, filterSuggestions, getInsertion } from "../utils/text.js";
-import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills } from "../core/config.js";
+import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList } from "../core/config.js";
 import { getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, type Checkpoint } from "../core/checkpoints.js";
 import { getToolDescription } from "../core/permissions.js";
@@ -665,8 +665,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           });
 
           const list = getConfiguredProviders();
-          const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-          const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+          const providerOptions = getProviderOptionsList(list);
           setWizardOptions(providerOptions);
           setWizardSelectedIndex(0);
           setInput("");

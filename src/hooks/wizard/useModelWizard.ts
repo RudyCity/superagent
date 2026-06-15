@@ -9,7 +9,8 @@ import {
   applyModelPreset,
   saveModelPreset,
   deleteModelPreset,
-  BUILT_IN_PRESETS
+  BUILT_IN_PRESETS,
+  getProviderOptionsList
 } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import type { ChatLine } from "../../core/slash-commands.js";
@@ -86,8 +87,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       });
 
       const list = getConfiguredProviders();
-      const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-      const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+      const providerOptions = getProviderOptionsList(list);
       setWizardOptions(providerOptions);
       setWizardSelectedIndex(0);
       setInput("");
@@ -501,8 +501,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       });
 
       const list = getConfiguredProviders();
-      const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-      const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+      const providerOptions = getProviderOptionsList(list);
       setWizardOptions(providerOptions);
       setWizardSelectedIndex(0);
       setInput("");
@@ -697,8 +696,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           data: { ...data },
         });
         const list = getConfiguredProviders();
-        const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-        const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+        const providerOptions = getProviderOptionsList(list);
         setWizardOptions(providerOptions);
         setWizardSelectedIndex(0);
         setInput("");
@@ -913,8 +911,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           data: { ...data },
         });
         const list = getConfiguredProviders();
-        const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-        const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+        const providerOptions = getProviderOptionsList(list);
         setWizardOptions(providerOptions);
         setWizardSelectedIndex(0);
         setInput("");

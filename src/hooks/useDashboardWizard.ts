@@ -15,7 +15,8 @@ import {
   applyModelPreset,
   saveModelPreset,
   deleteModelPreset,
-  BUILT_IN_PRESETS
+  BUILT_IN_PRESETS,
+  getProviderOptionsList
 } from "../core/config.js";
 import { filterSuggestions } from "../utils/text.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
@@ -670,8 +671,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         });
 
         const list = getConfiguredProviders();
-        const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-        const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+        const providerOptions = getProviderOptionsList(list);
         setWizardOptions(providerOptions);
         setWizardSelectedIndex(0);
         setQuery("");
@@ -1056,8 +1056,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         });
 
         const list = getConfiguredProviders();
-        const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-        const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+        const providerOptions = getProviderOptionsList(list);
         setWizardOptions(providerOptions);
         setWizardSelectedIndex(0);
         setQuery("");
@@ -1253,8 +1252,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             data: { ...activeWizard.data },
           });
           const list = getConfiguredProviders();
-          const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-          const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+          const providerOptions = getProviderOptionsList(list);
           setWizardOptions(providerOptions);
           setWizardSelectedIndex(0);
           setQuery("");
@@ -1504,8 +1502,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         });
 
         const list = getConfiguredProviders();
-        const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-        const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+        const providerOptions = getProviderOptionsList(list);
         setWizardOptions(providerOptions);
         setWizardSelectedIndex(0);
         setQuery("");
@@ -1517,8 +1514,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             data: { ...activeWizard.data },
           });
           const list = getConfiguredProviders();
-          const options = list.map(p => `${p.name} (${p.type}${p.baseUrl ? ` - ${p.baseUrl}` : ""})${p.isActive ? " [Active]" : ""}`);
-          const providerOptions = options.length > 0 ? [...options, "< Back"] : ["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint", "< Back"];
+          const providerOptions = getProviderOptionsList(list);
           setWizardOptions(providerOptions);
           setWizardSelectedIndex(0);
           setQuery("");
