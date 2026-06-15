@@ -743,3 +743,234 @@ export const listPeerSuperagentsTool: Tool = {
   }
 };
 
+export const managePlanTool: Tool = {
+  name: "manage_plan",
+  description: "Create, update, or sync the implementation plan (_implementation_plan.md) and automatically connect/synchronize it with the task checklist (_task.md).",
+  parameters: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        enum: ["create", "sync", "get"],
+        description: "The action to perform: 'create' (create/overwrite the plan and sync tasks), 'sync' (parse the existing plan and sync tasks to _task.md), or 'get' (retrieve current plan and task status)",
+      },
+      planContent: {
+        type: "string",
+        description: "The markdown content of the implementation plan (required for action 'create')",
+      },
+      sessionId: {
+        type: "string",
+        description: "Optional session ID of another agent to manage implementation plan for (multi-agent mode)",
+      },
+    },
+    required: ["action"],
+  },
+  async execute(args, cwd, signal) {
+    const action = args.action as string;
+    const planContentInput = args.planContent as string | undefined;
+    const sessionId = args.sessionId as string | undefined;
+
+    const { agentLocalStorage } = await import("../agent.js");
+    const currentAgent = agentLocalStorage.getStore();
+
+    let planPath: string;
+    let taskPath: string;
+
+    if (sessionId) {
+      const { getRootConfigDir } = await import("../config.js");
+      const sessionDir = path.join(getRootConfigDir(), "history", "multi", sessionId);
+      planPath = path.join(sessionDir, `${sessionId}_implementation_plan.md`);
+      taskPath = path.join(sessionDir, `${sessionId}_task.md`);
+    } else {
+      planPath = currentAgent ? currentAgent.getPlanFilePath() : path.resolve(cwd, "implementation_plan.md");
+      taskPath = currentAgent ? currentAgent.getTaskFilePath() : path.resolve(cwd, "task.md");
+    }
+
+    const tier = currentAgent ? currentAgent.tier : "superagent";
+
+    // Validation function
+    const validatePlan = (content: string): string[] => {
+      const hasTitle = /^#\s+.+/m.test(content);
+      const hasProposedChanges = /##\s+(proposed\s+changes|rencana\s+perubahan)/i.test(content);
+      const hasVerificationPlan = /##\s+(verification\s+plan|rencana\s+verifikasi)/i.test(content);
+      const hasAutomatedTests = /###\s+(automated\s+tests|test\s+otomatis)/i.test(content);
+      const hasManualVerification = /###\s+(manual\s+verification|verifikasi\s+manual|manual\s+testing)/i.test(content);
+
+      const missing: string[] = [];
+      if (!hasTitle) missing.push("Main Title (e.g., '# Goal Description')");
+      if (!hasProposedChanges) missing.push("Proposed Changes section ('## Proposed Changes')");
+      if (!hasVerificationPlan) missing.push("Verification Plan section ('## Verification Plan')");
+      if (!hasAutomatedTests) missing.push("Automated Tests sub-section ('### Automated Tests')");
+      if (!hasManualVerification) missing.push("Manual Verification sub-section ('### Manual Verification')");
+
+      if (tier === "master") {
+        const hasSuperagentOrDelegate = /superagent|spawning|delegate|worktree/i.test(content);
+        if (!hasSuperagentOrDelegate) {
+          missing.push("References to Superagent spawning or task delegation (the Master Agent cannot edit codebase files directly, so the 'Proposed Changes' section MUST detail the Superagents to be spawned, their roles, and branch names)");
+        }
+      }
+      return missing;
+    };
+
+    // Task parsing function
+    const parseTasksFromContent = (content: string): string[] => {
+      const lines = content.split(/\r?\n/);
+      const tasks: string[] = [];
+      for (const line of lines) {
+        const match = line.match(/^\s*-\s*`?\[([xX/ ])\]`?\s*(.*)$/);
+        if (match) {
+          tasks.push(match[2].trim());
+        }
+      }
+      return tasks;
+    };
+
+    // Task merging and writing function
+    const syncTasks = async (planText: string): Promise<string> => {
+      const newTasks = parseTasksFromContent(planText);
+      if (newTasks.length === 0) {
+        return "No checklist tasks found in the implementation plan. Tasks should be formatted as '- [ ] task description'.";
+      }
+
+      // If Master Agent, validate tasks
+      if (tier === "master") {
+        const combinedTasksText = newTasks.join("\n");
+        const hasSuperagentOrSpawnOrMerge = /superagent|spawn|merge|worktree/i.test(combinedTasksText);
+        if (!hasSuperagentOrSpawnOrMerge) {
+          throw new Error("The Task Tracking File is invalid or lacks multi-agent context. As the Master Agent, your task list MUST include items for spawning, monitoring, and merging Superagents (e.g., 'spawning superagent', 'merge superagents') instead of listing direct file modifications.");
+        }
+      }
+
+      // Read existing tasks if any
+      let existingTasks: { text: string; status: string }[] = [];
+      try {
+        const existingContent = await fs.readFile(taskPath, "utf-8");
+        const lines = existingContent.split(/\r?\n/);
+        for (const line of lines) {
+          const match = line.match(/^\s*-\s*`?\[([xX/ ])\]`?\s*(.*)$/);
+          if (match) {
+            existingTasks.push({
+              status: match[1].toLowerCase(),
+              text: match[2].trim(),
+            });
+          }
+        }
+      } catch (err: any) {
+        if (err.code !== "ENOENT") {
+          throw err;
+        }
+      }
+
+      // Merge: keep status of existing tasks if they match
+      const mergedTasks = newTasks.map(t => {
+        const existing = existingTasks.find(et => et.text === t);
+        return {
+          text: t,
+          status: existing ? existing.status : " ",
+        };
+      });
+
+      // Write task file
+      const taskLines = mergedTasks.map(t => `- [${t.status}] ${t.text}`).join("\n") + "\n";
+      await fs.mkdir(path.dirname(taskPath), { recursive: true });
+      await fs.writeFile(taskPath, taskLines, "utf-8");
+
+      return `Successfully synchronized ${mergedTasks.length} tasks to ${taskPath}.`;
+    };
+
+    try {
+      if (action === "create") {
+        if (!planContentInput || planContentInput.trim() === "") {
+          return "Error: The 'planContent' parameter is required for the 'create' action.";
+        }
+
+        const missingHeaders = validatePlan(planContentInput);
+        if (missingHeaders.length > 0) {
+          return `Error: The implementation plan is invalid or lacks deep structure. A valid global plan must include:\n${missingHeaders.map(m => `- ${m}`).join("\n")}\n\nPlease rewrite the plan with all required sections and headers included.`;
+        }
+
+        // Write implementation plan
+        await fs.mkdir(path.dirname(planPath), { recursive: true });
+        await fs.writeFile(planPath, planContentInput, "utf-8");
+
+        // Sync tasks
+        let syncStatus = "";
+        try {
+          syncStatus = await syncTasks(planContentInput);
+        } catch (syncErr: any) {
+          return `Error: Plan was written to ${planPath}, but task synchronization failed: ${syncErr.message}`;
+        }
+
+        // Update planState if currentAgent context is available
+        if (currentAgent) {
+          if (currentAgent.goalMode) {
+            currentAgent.planState = "APPROVED";
+          } else {
+            currentAgent.planState = "PLANNING_PENDING";
+          }
+        }
+
+        return `Successfully created implementation plan at ${planPath}.\n${syncStatus}\nPlan state updated to: ${currentAgent ? currentAgent.planState : "PLANNING_PENDING"}`;
+      }
+
+      if (action === "sync") {
+        let planContentText = "";
+        try {
+          planContentText = await fs.readFile(planPath, "utf-8");
+        } catch (err: any) {
+          if (err.code === "ENOENT") {
+            return `Error: Implementation plan file does not exist at: ${planPath}. Use action 'create' first.`;
+          }
+          throw err;
+        }
+
+        const syncStatus = await syncTasks(planContentText);
+        return `Successfully synchronized tasks from existing plan.\n${syncStatus}`;
+      }
+
+      if (action === "get") {
+        let planExists = false;
+        let planContentText = "";
+        try {
+          planContentText = await fs.readFile(planPath, "utf-8");
+          planExists = true;
+        } catch {}
+
+        let tasksListText = "";
+        let tasksCount = 0;
+        try {
+          const taskContent = await fs.readFile(taskPath, "utf-8");
+          const lines = taskContent.split(/\r?\n/);
+          const list: string[] = [];
+          for (const line of lines) {
+            const match = line.match(/^\s*-\s*`?\[([xX/ ])\]`?\s*(.*)$/);
+            if (match) {
+              list.push(`${list.length + 1}. [${match[1]}] ${match[2].trim()}`);
+            }
+          }
+          tasksCount = list.length;
+          tasksListText = list.join("\n");
+        } catch {}
+
+        let statusText = `### Implementation Plan Status:\n`;
+        statusText += `- **Plan File**: ${planPath} (${planExists ? "Exists" : "Does not exist"})\n`;
+        statusText += `- **Task File**: ${taskPath} (${tasksCount > 0 ? `${tasksCount} tasks` : "Empty or does not exist"})\n`;
+        statusText += `- **Current Agent Plan State**: ${currentAgent ? currentAgent.planState : "N/A"}\n\n`;
+
+        if (planExists) {
+          statusText += `#### Implementation Plan (Preview first 500 chars):\n\`\`\`markdown\n${planContentText.substring(0, 500)}${planContentText.length > 500 ? "..." : ""}\n\`\`\`\n\n`;
+        }
+        if (tasksCount > 0) {
+          statusText += `#### Synchronized Tasks:\n${tasksListText}\n`;
+        }
+
+        return statusText.trim();
+      }
+
+      return `Error: Unknown action "${action}"`;
+    } catch (err: any) {
+      return `Error managing implementation plan: ${err.message}`;
+    }
+  }
+};
+

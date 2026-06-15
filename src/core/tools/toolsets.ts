@@ -41,6 +41,7 @@ import {
   gitWorktreeTool,
   manageTasksTool,
   listPeerSuperagentsTool,
+  managePlanTool,
 } from "./otherTools.js";
 
 import {
@@ -71,6 +72,7 @@ export const masterToolset: Tool[] = [
   grepTool,
   gitWorktreeTool,
   manageTasksTool,
+  managePlanTool,
   writeToFileTool,       // for planning files
   replaceFileContentTool,// for planning files
   multiReplaceFileContentTool, // for planning files
@@ -99,6 +101,7 @@ export const superagentToolset: Tool[] = [
   gitActionTool,         // commit to own branch
   gitWorktreeTool,
   manageTasksTool,
+  managePlanTool,
   listPeerSuperagentsTool,
   defineSubagentTool,    // define specialized subagents
   invokeSubagentTool,    // spawn subagents (depth 2)

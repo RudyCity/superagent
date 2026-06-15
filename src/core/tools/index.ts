@@ -51,7 +51,8 @@ import {
   searchHistoryTool,
   manageTasksTool,
   gitWorktreeTool,
-  listPeerSuperagentsTool
+  listPeerSuperagentsTool,
+  managePlanTool
 } from "./otherTools.js";
 
 export const allTools: Tool[] = [
@@ -89,6 +90,7 @@ export const allTools: Tool[] = [
   searchHistoryTool,
   manageTasksTool,
   listPeerSuperagentsTool,
+  managePlanTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {
