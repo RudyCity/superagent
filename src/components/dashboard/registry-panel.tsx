@@ -110,18 +110,50 @@ export function RegistryPanel({
           const rowTextColor = isSelected && isFocused ? "white" : color;
           const tokenColor = isSelected && isFocused ? "white" : "cyan";
           
-          const depth = session.type === "MASTER" ? 0 
-                      : session.type === "SUPERAGENT" ? 1 
-                      : session.type === "TASK" ? 1
-                      : (session.parentId === "master" ? 1 : 2);
+          const getDepth = (s: AgentSession) => {
+            return s.type === "MASTER" ? 0 
+                 : s.type === "SUPERAGENT" ? 1 
+                 : s.type === "TASK" ? 1
+                 : (s.parentId === "master" ? 1 : 2);
+          };
 
+          const hasMoreSiblings = (idx: number, d: number): boolean => {
+            for (let i = idx + 1; i < sessions.length; i++) {
+              const s = sessions[i];
+              const sDepth = getDepth(s);
+              if (sDepth < d) {
+                break;
+              }
+              if (sDepth === d) {
+                return true;
+              }
+            }
+            return false;
+          };
+
+          const depth = getDepth(session);
           let prefix = "";
           if (depth === 0) {
             prefix = `${tierIcon[session.type]} `;
           } else if (depth === 1) {
-            prefix = `  └─ ${tierIcon[session.type]} `;
+            const hasMore = hasMoreSiblings(globalIndex, 1);
+            prefix = (hasMore ? "├── " : "└── ") + `${tierIcon[session.type]} `;
           } else if (depth === 2) {
-            prefix = `    └─ ${tierIcon[session.type]} `;
+            let parentIndex = -1;
+            const parentId = session.parentId;
+            for (let i = globalIndex - 1; i >= 0; i--) {
+              const s = sessions[i];
+              if (s.type === "SUPERAGENT" && s.id.endsWith(parentId || "")) {
+                parentIndex = i;
+                break;
+              }
+            }
+
+            const parentHasMore = parentIndex !== -1 && hasMoreSiblings(parentIndex, 1);
+            const level1 = parentHasMore ? "│   " : "    ";
+            const hasMore = hasMoreSiblings(globalIndex, 2);
+            const level2 = hasMore ? "├── " : "└── ";
+            prefix = level1 + level2 + `${tierIcon[session.type]} `;
           }
 
           let label = "";

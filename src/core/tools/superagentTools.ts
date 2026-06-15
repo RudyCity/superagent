@@ -302,24 +302,44 @@ export const invokeSuperagentTool: Tool = {
         const lastMsg = [...msgs].reverse().find((m) => m.role === "assistant");
         const result = lastMsg?.content ?? "(no report)";
 
-        // Run pre-merge verification in worktree directory
-        appendMasterLog(`[INFO] Running pre-merge verification in worktree: ${worktreePath}...`);
-        const pkgPath = path.join(worktreePath, "package.json");
-        if (fs.existsSync(pkgPath)) {
-          try {
-            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-            if (pkg.scripts) {
-              if (pkg.scripts.build) {
-                appendMasterLog(`[INFO] Executing "npm run build" in worktree...`);
-                await execa("npm", ["run", "build"], { cwd: worktreePath });
+        // Run pre-merge verification in worktree directory with Auto-Debugging retries
+        let retries = 3;
+        while (retries > 0) {
+          appendMasterLog(`[INFO] Running pre-merge verification in worktree: ${worktreePath}...`);
+          const pkgPath = path.join(worktreePath, "package.json");
+          let verificationPassed = true;
+          let verificationError = null;
+
+          if (fs.existsSync(pkgPath)) {
+            try {
+              const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+              if (pkg.scripts) {
+                if (pkg.scripts.build) {
+                  appendMasterLog(`[INFO] Executing "npm run build" in worktree...`);
+                  await execa("npm", ["run", "build"], { cwd: worktreePath });
+                }
+                if (pkg.scripts.test) {
+                  appendMasterLog(`[INFO] Executing "npm test" in worktree...`);
+                  await execa("npm", ["test"], { cwd: worktreePath });
+                }
               }
-              if (pkg.scripts.test) {
-                appendMasterLog(`[INFO] Executing "npm test" in worktree...`);
-                await execa("npm", ["test"], { cwd: worktreePath });
-              }
+            } catch (testErr: any) {
+              verificationPassed = false;
+              verificationError = testErr;
             }
-          } catch (testErr: any) {
-            throw new Error(`Pre-merge verification failed: ${testErr.message || testErr}`);
+          }
+
+          if (verificationPassed) {
+            break; // All checks passed! Exit retry loop.
+          } else {
+            retries--;
+            if (retries > 0) {
+              appendMasterLog(`[INFO] Pre-merge verification failed. Auto-debugging retry ${3 - retries}/3...`);
+              const debugMessage = `Pre-merge verification failed with the following error:\n\n${verificationError?.message || verificationError}\n\nPlease analyze this failure, fix the issue by editing the code, verify the syntax is correct, commit your changes using git, and report back when finished.`;
+              await agentInstance.sendMessage(debugMessage);
+            } else {
+              throw new Error(`Pre-merge verification failed after 3 retries: ${verificationError?.message || verificationError}`);
+            }
           }
         }
 
@@ -916,24 +936,44 @@ export const sendMessageToSuperagentTool: Tool = {
           result = "(no report)";
         }
 
-        // Run pre-merge verification in worktree directory
-        appendMasterLog(`[INFO] Running pre-merge verification in worktree: ${inst.worktreePath}...`);
-        const pkgPath = path.join(inst.worktreePath, "package.json");
-        if (fs.existsSync(pkgPath)) {
-          try {
-            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-            if (pkg.scripts) {
-              if (pkg.scripts.build) {
-                appendMasterLog(`[INFO] Executing "npm run build" in worktree...`);
-                await execa("npm", ["run", "build"], { cwd: inst.worktreePath });
+        // Run pre-merge verification in worktree directory with Auto-Debugging retries
+        let retries = 3;
+        while (retries > 0) {
+          appendMasterLog(`[INFO] Running pre-merge verification in worktree: ${inst.worktreePath}...`);
+          const pkgPath = path.join(inst.worktreePath, "package.json");
+          let verificationPassed = true;
+          let verificationError = null;
+
+          if (fs.existsSync(pkgPath)) {
+            try {
+              const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+              if (pkg.scripts) {
+                if (pkg.scripts.build) {
+                  appendMasterLog(`[INFO] Executing "npm run build" in worktree...`);
+                  await execa("npm", ["run", "build"], { cwd: inst.worktreePath });
+                }
+                if (pkg.scripts.test) {
+                  appendMasterLog(`[INFO] Executing "npm test" in worktree...`);
+                  await execa("npm", ["test"], { cwd: inst.worktreePath });
+                }
               }
-              if (pkg.scripts.test) {
-                appendMasterLog(`[INFO] Executing "npm test" in worktree...`);
-                await execa("npm", ["test"], { cwd: inst.worktreePath });
-              }
+            } catch (testErr: any) {
+              verificationPassed = false;
+              verificationError = testErr;
             }
-          } catch (testErr: any) {
-            throw new Error(`Pre-merge verification failed: ${testErr.message || testErr}`);
+          }
+
+          if (verificationPassed) {
+            break; // All checks passed! Exit retry loop.
+          } else {
+            retries--;
+            if (retries > 0) {
+              appendMasterLog(`[INFO] Pre-merge verification failed. Auto-debugging retry ${3 - retries}/3...`);
+              const debugMessage = `Pre-merge verification failed with the following error:\n\n${verificationError?.message || verificationError}\n\nPlease analyze this failure, fix the issue by editing the code, verify the syntax is correct, commit your changes using git, and report back when finished.`;
+              await agentInstance.sendMessage(debugMessage);
+            } else {
+              throw new Error(`Pre-merge verification failed after 3 retries: ${verificationError?.message || verificationError}`);
+            }
           }
         }
 

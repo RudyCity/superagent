@@ -646,4 +646,45 @@ describe("superagentTools", () => {
       expect(execa).toHaveBeenCalledWith("git", ["worktree", "prune"], expect.any(Object));
     });
   });
+
+  describe("pre-merge verification and auto-debugging loop", () => {
+    it("should trigger auto-debugging loop and retry on verification failure, succeeding if retry passes", async () => {
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
+
+      vi.spyOn(fs, "existsSync").mockImplementation((filePath) => {
+        if (filePath.toString().endsWith("package.json")) return true;
+        return false;
+      });
+      vi.spyOn(fs, "readFileSync").mockImplementation((filePath) => {
+        if (filePath.toString().endsWith("package.json")) {
+          return JSON.stringify({ scripts: { test: "vitest" } });
+        }
+        return "";
+      });
+
+      let testCalls = 0;
+      vi.mocked(execa).mockImplementation((cmd, args) => {
+        if (cmd === "npm" && args && args[0] === "test") {
+          testCalls++;
+          if (testCalls === 1) {
+            return Promise.reject(new Error("Compilation failed!"));
+          }
+        }
+        return Promise.resolve({ stdout: "" } as any);
+      });
+
+      const result = await agentLocalStorage.run(parentAgent, () => {
+        return invokeSuperagentTool.execute(
+          { role: "debug-developer", task: "code", branch: "feat/debug-retry", wait: true },
+          process.cwd()
+        );
+      });
+
+      expect(result).toContain("completed");
+      expect(testCalls).toBe(2);
+      
+      const instance = Array.from(superagentInstances.values()).find(i => i.role === "debug-developer");
+      expect(instance?.status).toBe("completed");
+    });
+  });
 });
