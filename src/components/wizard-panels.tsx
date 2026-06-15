@@ -114,6 +114,36 @@ export function WizardPanels(props: WizardPanelsProps) {
           />
         )}
 
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 3 && (
+          <WizardDialog
+            title="🔑 CONFIGURE PROVIDER — PROFILE NAME (Type & Enter):"
+            description={`Enter config profile name (e.g. ${activeWizard.data.provider || "provider name"}, deepseek, or press Enter for default):`}
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 4 && (
+          <WizardDialog
+            title="🔑 CONFIGURE PROVIDER — BASE URL (Type & Enter):"
+            description="Please enter your Base URL (e.g. http://localhost:11434/v1):"
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 6 && (
+          <WizardDialog
+            title="🔑 CONFIGURE PROVIDER — API KEY (Type & Enter):"
+            description="Please enter your API Key:"
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 10 && wizardOptions.length > 0 && (
           <WizardDialog

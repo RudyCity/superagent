@@ -444,7 +444,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
 
             addLine({
               type: "system",
-              content: `Selected provider type: ${provider}\nStep 3: Enter config profile name (e.g. ${provider}, deepseek, or press Enter for default):`,
+              content: `Selected provider type: ${provider}`,
               timestamp: now,
             });
 

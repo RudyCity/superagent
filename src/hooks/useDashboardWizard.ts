@@ -154,7 +154,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
 
         setMasterLogs((prev) => [
           ...prev,
-          `[MASTER] Selected provider type: ${provider}\nStep 3: Enter config profile name (e.g. ${provider}, deepseek, or press Enter for default):`
+          `[MASTER] Selected provider type: ${provider}`
         ].slice(-500));
 
         setActiveWizard({
@@ -172,7 +172,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         if (provider === "custom") {
           setMasterLogs((prev) => [
             ...prev,
-            `[MASTER] Config Name: ${profileName}\nStep 4: Please enter your Base URL (e.g. http://localhost:11434/v1):`
+            `[MASTER] Config Name: ${profileName}`
           ].slice(-500));
           setActiveWizard({
             type: "login",
@@ -182,7 +182,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         } else {
           setMasterLogs((prev) => [
             ...prev,
-            `[MASTER] Config Name: ${profileName}\nStep 6: Please enter your API Key:`
+            `[MASTER] Config Name: ${profileName}`
           ].slice(-500));
           setActiveWizard({
             type: "login",
@@ -199,7 +199,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
 
         setMasterLogs((prev) => [
           ...prev,
-          `[MASTER] Entered Base URL: ${baseUrl}\nStep 6: Please enter your API Key:`
+          `[MASTER] Entered Base URL: ${baseUrl}`
         ].slice(-500));
         setActiveWizard({
           type: "login",

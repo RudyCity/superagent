@@ -1143,7 +1143,14 @@ export function App({
     if (activeWizard.type === "login") {
       if (activeWizard.step === 1 || activeWizard.step === 2) chromeHeight += 8;
       else if (activeWizard.step === 10) chromeHeight += 8 + Math.min(6, wizardOptions.length);
-      else if (activeWizard.step === 11 || activeWizard.step === 12 || activeWizard.step === 13) chromeHeight += 6;
+      else if (
+        activeWizard.step === 3 ||
+        activeWizard.step === 4 ||
+        activeWizard.step === 6 ||
+        activeWizard.step === 11 ||
+        activeWizard.step === 12 ||
+        activeWizard.step === 13
+      ) chromeHeight += 6;
     } else if (activeWizard.type === "model") {
       chromeHeight += wizardOptions.length > 0 ? 13 : 6;
     } else if (activeWizard.type === "permission") {
@@ -1213,7 +1220,7 @@ export function App({
           />
 
           {/* Active Agents, Tasks checklists & Wizard dialogs */}
-          <Box flexDirection="column" paddingX={1} marginTop={1}>
+          <Box flexDirection="column" paddingX={1} marginTop={1} flexShrink={0}>
             <ActiveAgentsList
               focusMode={focusMode}
               runningSuperagentsCount={runningSuperagentsCount}

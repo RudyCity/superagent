@@ -84,7 +84,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
 
       addLine({
         type: "system",
-        content: `Selected provider type: ${provider}\nStep 3: Enter config profile name (e.g. ${provider}, deepseek, or press Enter for default):`,
+        content: `Selected provider type: ${provider}`,
         timestamp: now,
       });
 
@@ -104,7 +104,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       if (provider === "custom") {
         addLine({
           type: "system",
-          content: `Config Name: ${profileName}\nStep 4: Please enter your Base URL (e.g. http://localhost:11434/v1):`,
+          content: `Config Name: ${profileName}`,
           timestamp: now,
         });
         setActiveWizard({
@@ -116,7 +116,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       } else {
         addLine({
           type: "system",
-          content: `Config Name: ${profileName}\nStep 6: Please enter your API Key:`,
+          content: `Config Name: ${profileName}`,
           timestamp: now,
         });
         setActiveWizard({
@@ -133,7 +133,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
 
       addLine({
         type: "system",
-        content: `Entered Base URL: ${baseUrl}\nStep 6: Please enter your API Key:`,
+        content: `Entered Base URL: ${baseUrl}`,
         timestamp: now,
       });
       setActiveWizard({
