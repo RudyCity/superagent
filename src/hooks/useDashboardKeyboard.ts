@@ -55,6 +55,8 @@ export interface DashboardKeyboardContext {
   isProcessing?: boolean;
   setIsProcessing?: React.Dispatch<React.SetStateAction<boolean>>;
   setMasterLogs?: React.Dispatch<React.SetStateAction<string[]>>;
+  lastTabPrefix?: string | null;
+  setLastTabPrefix?: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
@@ -110,6 +112,8 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     isProcessing = false,
     setIsProcessing = () => {},
     setMasterLogs,
+    lastTabPrefix = null,
+    setLastTabPrefix,
   } = ctx;
 
   useInput((input, key) => {
@@ -165,6 +169,9 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     }
 
     if (key.return) {
+      if (setLastTabPrefix) {
+        setLastTabPrefix(null);
+      }
       if (isPasteActive) {
         handleQuerySubmit(query);
         return;
@@ -313,6 +320,9 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     if (key.tab) {
       if (focusArea === "input" && query.startsWith("/")) {
         if (suggestions.length > 0) {
+          if (setLastTabPrefix && !lastTabPrefix) {
+            setLastTabPrefix(query);
+          }
           const currentMatchIndex = suggestions.indexOf(query);
           let nextIndex = 0;
           if (currentMatchIndex !== -1) {

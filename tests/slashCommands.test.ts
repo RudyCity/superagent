@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { Agent } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
+import { execa } from "execa";
+
+vi.mock("execa", () => ({
+  execa: vi.fn().mockResolvedValue({ stdout: "" }),
+}));
 
 vi.mock("../src/core/config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof configModule>();
@@ -305,6 +310,51 @@ describe("Slash Commands: /settings & /setting-*", () => {
     handleSlashCommand("/setting-capacity 15", mockCtx as any);
     expect(process.env.SUPERAGENT_RATE_LIMIT_CAPACITY).toBe("15");
     expect(addedLines[addedLines.length - 1].content).toContain("Rate limit capacity set to: 15");
+  });
+});
+
+describe("Slash Command: /worktree", () => {
+  let addedLines: ChatLine[] = [];
+  const mockCtx = {
+    addLine: (line: ChatLine) => {
+      addedLines.push(line);
+    },
+    exit: () => {},
+    agent: null,
+    setIsProcessing: () => {},
+  };
+
+  beforeEach(() => {
+    addedLines = [];
+    vi.mocked(execa).mockReset();
+    vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
+  });
+
+  it("should execute list action by default", async () => {
+    vi.mocked(execa).mockResolvedValueOnce({ stdout: "/path/to/wt feat/branch" } as any);
+    await handleSlashCommand("/worktree", mockCtx as any);
+    expect(execa).toHaveBeenCalledWith("git", ["worktree", "list"]);
+    expect(addedLines[addedLines.length - 2].content).toContain("Retrieving git worktrees...");
+    expect(addedLines[addedLines.length - 1].content).toContain("feat/branch");
+  });
+
+  it("should execute prune action", async () => {
+    await handleSlashCommand("/worktree prune", mockCtx as any);
+    expect(execa).toHaveBeenCalledWith("git", ["worktree", "prune"]);
+    expect(addedLines[addedLines.length - 1].content).toContain("Stale git worktrees pruned");
+  });
+
+  it("should execute remove action", async () => {
+    await handleSlashCommand("/worktree remove my-wt-path", mockCtx as any);
+    expect(execa).toHaveBeenCalledWith("git", ["worktree", "remove", "my-wt-path"]);
+    expect(execa).toHaveBeenCalledWith("git", ["worktree", "prune"]);
+    expect(addedLines[addedLines.length - 1].content).toContain("removed successfully");
+  });
+
+  it("should execute remove action with force flag", async () => {
+    await handleSlashCommand("/worktree remove my-wt-path --force", mockCtx as any);
+    expect(execa).toHaveBeenCalledWith("git", ["worktree", "remove", "--force", "my-wt-path"]);
+    expect(addedLines[addedLines.length - 1].content).toContain("removed successfully");
   });
 });
 

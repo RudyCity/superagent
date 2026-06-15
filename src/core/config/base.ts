@@ -92,8 +92,11 @@ export function getConfig(): Config {
 export function getSystemPrompt(): string {
   let shellPrompt = "";
   if (process.platform === "win32") {
-    shellPrompt = `\n- ACTIVE TERMINAL SHELL: Windows PowerShell-compatible command execution.\n- On Windows, use ';' to separate commands. Do not use '&&' in generated shell commands.\n- Use \`run_command\` for validation commands and pass the 'timeout' parameter when a custom timeout is needed.\n- Use 'run_background_process' for long-running servers, watchers, or interactive processes.\n- Use 'git_worktree' for worktree list/add/remove/prune operations instead of hand-written cleanup chains.`;
+    shellPrompt = `\n- ACTIVE TERMINAL SHELL: Windows PowerShell-compatible command execution.\n- On Windows, use ';' to separate commands. Do not use '&&' in generated shell commands.\n- Use \`run_command\` for validation commands and pass the 'timeout' parameter when a custom timeout is needed.\n- Use 'run_background_process' for long-running servers, watchers, or interactive processes.`;
+  } else {
+    shellPrompt = `\n- Use \`run_command\` for validation commands and pass the 'timeout' parameter when a custom timeout is needed.\n- Use 'run_background_process' for long-running servers, watchers, or interactive processes.`;
   }
+  shellPrompt += `\n- Use 'git_worktree' for worktree list/add/remove/prune operations instead of hand-written cleanup chains.`;
 
   const basePrompt = `You are SuperAgent, an interactive CLI coding assistant. You help users with software engineering tasks.
 ${shellPrompt}
@@ -169,7 +172,8 @@ AVAILABLE TOOLS:
 - define_subagent: Register a new specialized subagent type.
 - invoke_subagent: Start a subagent in the background.
 - send_message: Send a message to an active subagent.
-- manage_subagents: List or terminate active subagents.`;
+- manage_subagents: List or terminate active subagents.
+- git_worktree: Manage Git worktrees (list, add, remove, prune) to inspect or clean up isolated workspaces.`;
   
   const skillsPrompt = loadAgentSkills();
   return basePrompt + skillsPrompt;

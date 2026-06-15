@@ -101,6 +101,7 @@ export interface KeyboardHandlerContext {
   lastTabPrefix: string | null;
   setLastTabPrefix: React.Dispatch<React.SetStateAction<string | null>>;
   commands: string[];
+  suggestions?: string[];
 }
 
 export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
@@ -172,6 +173,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     lastTabPrefix,
     setLastTabPrefix,
     commands,
+    suggestions = [],
   } = ctx;
 
   const maxChecklistVisible = 5;
@@ -180,10 +182,10 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
   const maxProcsVisible = 5;
 
   useInput((inputChar, key) => {
-    if (focusedResponseIndex !== null) {
+    if (focusedResponseIndex !== null && focusedResponseIndex !== undefined) {
       const width = Math.max(20, terminalWidth - 6);
       const maxLines = Math.max(8, Math.min(18, Math.floor(terminalHeight * 0.45)));
-      const truncatedIndexes = getTruncatedAssistantIndexes(lines, maxLines, width);
+      const truncatedIndexes = getTruncatedAssistantIndexes(lines || [], maxLines, width);
       const currentPosition = truncatedIndexes.indexOf(focusedResponseIndex);
       const focusedLine = lines[focusedResponseIndex];
       const responseLines = focusedLine?.type === "assistant" ? wrapTextForDisplay(focusedLine.content, Math.max(20, width - 6)) : [];
@@ -1284,6 +1286,22 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
 
     if (key.tab && !isProcessing) {
       if (input.startsWith("/")) {
+        if (suggestions && suggestions.length > 0) {
+          if (!lastTabPrefix) {
+            setLastTabPrefix(input);
+          }
+          const currentMatchIndex = suggestions.indexOf(input);
+          let nextIndex = 0;
+          if (currentMatchIndex !== -1) {
+            nextIndex = (currentMatchIndex + 1) % suggestions.length;
+          }
+          setInput(suggestions[nextIndex]);
+          if (setIsPasted) {
+            setIsPasted(false);
+          }
+          return;
+        }
+
         const query = input;
         const matching = commands.filter((c) => c.startsWith(query));
         if (matching.length === 1 && matching[0]) {

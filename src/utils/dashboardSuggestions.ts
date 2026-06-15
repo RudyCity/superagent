@@ -44,6 +44,15 @@ export function getDashboardSuggestions(query: string): string[] {
     const possibilities = sessionsList.map((s, idx) => `/resume ${idx + 1}`);
     return filterSuggestions(possibilities, query);
   }
+
+  if (mainCommand === "/worktree" || mainCommand === "/worktrees") {
+    const possibilities = [
+      `${parts[0]} list`,
+      `${parts[0]} prune`,
+      `${parts[0]} remove`
+    ];
+    return filterSuggestions(possibilities, query);
+  }
   
   return [];
 }

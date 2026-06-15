@@ -335,30 +335,6 @@ export function App({
     [isProcessing, activeWizard, handleWizardSubmit, addLine, exit, wizardSelectedIndex, wizardOptions]
   );
 
-  const handleInputChange = useCallback((val: string) => {
-    const sanitizedVal = stripSgrMouseSequences(val);
-
-    const lengthDiff = sanitizedVal.length - input.length;
-    const containsNewline = sanitizedVal.includes("\n");
-    if (lengthDiff < 0) {
-      setIsPasted(false);
-    } else if (lengthDiff > 15 || containsNewline) {
-      setIsPasted(true);
-      const { prefix, suffix } = getInsertion(input, sanitizedVal);
-      setPastePrefixLength(prefix.length);
-      setPasteSuffixLength(suffix.length);
-    } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
-      setIsPasted(false);
-    }
-    setInput(sanitizedVal);
-    if (lastTabPrefix && !sanitizedVal.startsWith(lastTabPrefix)) {
-      setLastTabPrefix(null);
-    }
-    if (activeWizard?.type === "model" && wizardOptions.length > 0) {
-      setWizardSelectedIndex(0);
-    }
-  }, [input, lastTabPrefix, activeWizard, wizardOptions]);
-
   const installedSkills = getInstalledSkills();
   const skillCommands = installedSkills.map(s => {
     const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -390,6 +366,66 @@ export function App({
     "/terminal",
     ...skillCommands
   ];
+
+  const getSuggestions = (currentInput = input) => {
+    if (!currentInput.startsWith("/")) return [];
+    const trimmed = currentInput.trim();
+    const parts = trimmed.split(/\s+/);
+    const mainCommand = parts[0];
+
+    if (!currentInput.includes(" ")) {
+      return filterSuggestions(commands, currentInput);
+    }
+
+    if (mainCommand === "/processes" || mainCommand === "/procs") {
+      if (currentInput.startsWith(`${mainCommand} stop`)) {
+        const stopSuggestions = [`${mainCommand} stop all`];
+        for (const [id] of backgroundTasks.entries()) {
+          stopSuggestions.push(`${mainCommand} stop ${id}`);
+        }
+        return stopSuggestions.filter(p => p.startsWith(currentInput));
+      }
+      return [`${mainCommand} stop`, `${mainCommand} stop all`].filter(p => p.startsWith(currentInput));
+    }
+
+    if (mainCommand === "/worktree" || mainCommand === "/worktrees") {
+      const worktreeSuggestions = [
+        `${mainCommand} list`,
+        `${mainCommand} prune`,
+        `${mainCommand} remove`
+      ];
+      return filterSuggestions(worktreeSuggestions, currentInput);
+    }
+
+    return [];
+  };
+
+  const handleInputChange = useCallback((val: string) => {
+    const sanitizedVal = stripSgrMouseSequences(val);
+
+    const lengthDiff = sanitizedVal.length - input.length;
+    const containsNewline = sanitizedVal.includes("\n");
+    if (lengthDiff < 0) {
+      setIsPasted(false);
+    } else if (lengthDiff > 15 || containsNewline) {
+      setIsPasted(true);
+      const { prefix, suffix } = getInsertion(input, sanitizedVal);
+      setPastePrefixLength(prefix.length);
+      setPasteSuffixLength(suffix.length);
+    } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
+      setIsPasted(false);
+    }
+    setInput(sanitizedVal);
+    if (lastTabPrefix) {
+      const suggs = getSuggestions(lastTabPrefix);
+      if (!suggs.includes(sanitizedVal) && sanitizedVal !== lastTabPrefix) {
+        setLastTabPrefix(null);
+      }
+    }
+    if (activeWizard?.type === "model" && wizardOptions.length > 0) {
+      setWizardSelectedIndex(0);
+    }
+  }, [input, lastTabPrefix, activeWizard, wizardOptions]);
 
   const getWizardPlaceholder = () => {
     if (!activeWizard) return "Type a message or /help...";
@@ -429,31 +465,7 @@ export function App({
     return "Enter value...";
   };
 
-  const getSuggestions = (currentInput = input) => {
-    if (!currentInput.startsWith("/")) return [];
-    const trimmed = currentInput.trim();
-    const parts = trimmed.split(/\s+/);
-    const mainCommand = parts[0];
-
-    if (!currentInput.includes(" ")) {
-      return filterSuggestions(commands, currentInput);
-    }
-
-    if (mainCommand === "/processes" || mainCommand === "/procs") {
-      if (currentInput.startsWith(`${mainCommand} stop`)) {
-        const stopSuggestions = [`${mainCommand} stop all`];
-        for (const [id] of backgroundTasks.entries()) {
-          stopSuggestions.push(`${mainCommand} stop ${id}`);
-        }
-        return stopSuggestions.filter(p => p.startsWith(currentInput));
-      }
-      return [`${mainCommand} stop`, `${mainCommand} stop all`].filter(p => p.startsWith(currentInput));
-    }
-
-    return [];
-  };
-
-  const suggestions = getSuggestions();
+  const suggestions = getSuggestions(lastTabPrefix || input);
 
   // Bind Keyboard Handler Hook
   useKeyboardHandler({
@@ -524,6 +536,7 @@ export function App({
     lastTabPrefix,
     setLastTabPrefix,
     commands,
+    suggestions,
   });
 
   // Handle active outputs and task checklist updates

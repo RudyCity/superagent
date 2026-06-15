@@ -59,42 +59,122 @@ export const agentsCommand: SlashCommand = {
 export const worktreeCommand: SlashCommand = {
   name: "worktree",
   aliases: ["worktrees"],
-  description: "List all registered Git worktrees",
+  description: "Manage Git worktrees (list, prune, remove)",
   async execute(args, ctx) {
-    ctx.addLine({
-      type: "system",
-      content: "Retrieving git worktrees...",
-      timestamp: Date.now(),
-    });
-    ctx.setIsProcessing?.(true);
-    try {
-      const result = await execa("git", ["worktree", "list"]);
-      const lines = result.stdout.trim().split("\n").filter(Boolean);
-      const formatted = [
-        "┌───[ 📁 GIT WORKTREES ]",
-        "│",
-        ...lines.map((line, index) => {
-          const isLast = index === lines.length - 1;
-          const branchChar = isLast ? "└─" : "├─";
-          return `│  ${branchChar} ${line}`;
-        }),
-        "└──────────────────────────────────────────────"
-      ].join("\n");
+    const cleanArgs = args.trim();
+    const parts = cleanArgs.split(/\s+/).filter(Boolean);
+    const action = parts[0]?.toLowerCase() || "list";
+
+    if (action === "list") {
       ctx.addLine({
         type: "system",
-        content: formatted,
+        content: "Retrieving git worktrees...",
         timestamp: Date.now(),
       });
-    } catch (err: any) {
-      const isNotGit = err.stderr && err.stderr.toLowerCase().includes("not a git repository");
-      const errorMsg = isNotGit ? "Not a Git repository." : err.message;
+      ctx.setIsProcessing?.(true);
+      try {
+        const result = await execa("git", ["worktree", "list"]);
+        const lines = result.stdout.trim().split("\n").filter(Boolean);
+        const formatted = [
+          "┌───[ 📁 GIT WORKTREES ]",
+          "│",
+          ...lines.map((line, index) => {
+            const isLast = index === lines.length - 1;
+            const branchChar = isLast ? "└─" : "├─";
+            return `│  ${branchChar} ${line}`;
+          }),
+          "└──────────────────────────────────────────────"
+        ].join("\n");
+        ctx.addLine({
+          type: "system",
+          content: formatted,
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        const isNotGit = err.stderr && err.stderr.toLowerCase().includes("not a git repository");
+        const errorMsg = isNotGit ? "Not a Git repository." : err.message;
+        ctx.addLine({
+          type: "error",
+          content: `Failed to retrieve worktrees: ${errorMsg}`,
+          timestamp: Date.now(),
+        });
+      } finally {
+        ctx.setIsProcessing?.(false);
+      }
+    } else if (action === "prune") {
+      ctx.addLine({
+        type: "system",
+        content: "Pruning stale git worktrees...",
+        timestamp: Date.now(),
+      });
+      ctx.setIsProcessing?.(true);
+      try {
+        await execa("git", ["worktree", "prune"]);
+        ctx.addLine({
+          type: "system",
+          content: "Stale git worktrees pruned successfully.",
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to prune worktrees: ${err.message}`,
+          timestamp: Date.now(),
+        });
+      } finally {
+        ctx.setIsProcessing?.(false);
+      }
+    } else if (action === "remove" || action === "delete") {
+      const target = parts.slice(1).join(" ").trim();
+      if (!target) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /worktrees remove <path-or-branch> [--force]",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+      ctx.addLine({
+        type: "system",
+        content: `Removing git worktree "${target}"...`,
+        timestamp: Date.now(),
+      });
+      ctx.setIsProcessing?.(true);
+      try {
+        const removeArgs = ["worktree", "remove"];
+        if (target.includes("--force") || target.includes("-f")) {
+          removeArgs.push("--force");
+        }
+        const cleanedTarget = target.replace("--force", "").replace("-f", "").trim();
+        removeArgs.push(cleanedTarget);
+        
+        await execa("git", removeArgs);
+        
+        // Prune after removal
+        try {
+          await execa("git", ["worktree", "prune"]);
+        } catch {}
+
+        ctx.addLine({
+          type: "system",
+          content: `Git worktree "${cleanedTarget}" removed successfully.`,
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to remove worktree: ${err.message}`,
+          timestamp: Date.now(),
+        });
+      } finally {
+        ctx.setIsProcessing?.(false);
+      }
+    } else {
       ctx.addLine({
         type: "error",
-        content: `Failed to retrieve worktrees: ${errorMsg}`,
+        content: `Unknown worktree action: "${action}". Available actions: list, prune, remove`,
         timestamp: Date.now(),
       });
-    } finally {
-      ctx.setIsProcessing?.(false);
     }
   }
 };

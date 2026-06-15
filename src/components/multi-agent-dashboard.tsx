@@ -100,6 +100,7 @@ export function MultiAgentDashboard({
   const [isProcessing, setIsProcessing] = useState(false);
   const [tick, setTick] = useState(0);
   const [query, setQuery] = useState("");
+  const [lastTabPrefix, setLastTabPrefix] = useState<string | null>(null);
   const [masterLogs, setMasterLogs] = useState<string[]>(["[MASTER] System initialised. Ready for tasks."]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -172,10 +173,16 @@ export function MultiAgentDashboard({
       setIsPasted(false);
     }
     setQuery(sanitizedVal);
+    if (lastTabPrefix) {
+      const suggs = getDashboardSuggestions(lastTabPrefix);
+      if (!suggs.includes(sanitizedVal) && sanitizedVal !== lastTabPrefix) {
+        setLastTabPrefix(null);
+      }
+    }
     if (activeWizard?.type === "model" && wizardOptions.length > 0) {
       setWizardSelectedIndex(0);
     }
-  }, [query, activeWizard, wizardOptions]);
+  }, [query, activeWizard, wizardOptions, lastTabPrefix]);
 
   const [wizardAllOptions, setWizardAllOptions] = useState<string[]>([]);
   const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
@@ -306,7 +313,7 @@ export function MultiAgentDashboard({
     }
   }, [activeWizard]);
 
-  const suggestions = getDashboardSuggestions(query);
+  const suggestions = getDashboardSuggestions(lastTabPrefix || query);
 
   useEffect(() => {
     try {
@@ -832,6 +839,8 @@ export function MultiAgentDashboard({
     isProcessing,
     setIsProcessing,
     setMasterLogs,
+    lastTabPrefix,
+    setLastTabPrefix,
   });
 
   useDashboardMouse({

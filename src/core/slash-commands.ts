@@ -68,7 +68,7 @@ export function handleSlashCommand(
     try {
       const res = command.execute(args, ctx);
       if (res instanceof Promise) {
-        res.catch((err: any) => {
+        return res.catch((err: any) => {
           ctx.addLine({
             type: "error",
             content: `Command execution failed: ${err.message}`,
