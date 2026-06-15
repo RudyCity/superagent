@@ -56,6 +56,7 @@ export class Agent {
   public lastSpeed: number | null = null;
   public goalMode: string | null = null;
   public goalMaxIterations: number = 200;
+  public wasRunningBeforeAbort = false;
   private conversation: Conversation;
   private customSystemPrompt?: string;
   /** Custom tool list for this agent (tier-specific). Undefined = use allTools. */
@@ -1244,6 +1245,12 @@ ${formatted}`;
   }
 
   abort(): void {
+    if (this.isRunning) {
+      this.wasRunningBeforeAbort = true;
+      setTimeout(() => {
+        this.wasRunningBeforeAbort = false;
+      }, 200);
+    }
     this.abortController?.abort();
   }
 

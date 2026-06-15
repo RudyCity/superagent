@@ -795,7 +795,7 @@ export function App({
         setTimeLeft(null);
         return;
       }
-      if (agent.isAgentRunning()) {
+      if (agent.isAgentRunning() || agent.wasRunningBeforeAbort) {
         agent.abort();
         setIsProcessing(false);
         setIsExecutingTool(false);

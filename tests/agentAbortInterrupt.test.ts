@@ -77,12 +77,17 @@ describe("Agent - Abort and Instant Interruption", () => {
 
     // Call abort
     agent.abort();
+    expect(agent.wasRunningBeforeAbort).toBe(true);
 
     // The sendMessage promise should resolve/reject quickly
     await expect(sendPromise).resolves.not.toThrow();
 
     expect(agent.isAgentRunning()).toBe(false);
     expect(abortSignalPassed?.aborted).toBe(true);
+
+    // After a short timeout, wasRunningBeforeAbort should be cleared
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(agent.wasRunningBeforeAbort).toBe(false);
 
     // Verify done event was fired
     const doneEvent = onEvent.mock.calls.find((call) => call[0].type === "done");
