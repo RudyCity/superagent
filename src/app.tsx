@@ -28,6 +28,29 @@ import { useKeyboardHandler } from "./hooks/useKeyboardHandler.js";
 
 export { stripSgrMouseSequences } from "./utils/text.js";
 
+function getWizardBorderColor(activeWizard: any): "yellow" | "cyan" | "magenta" | "green" | "red" {
+  if (!activeWizard) return "cyan";
+  switch (activeWizard.type) {
+    case "permission":
+    case "plan_approve":
+    case "goal":
+      return "yellow";
+    case "question":
+    case "skills":
+      return "cyan";
+    case "resume":
+      return "magenta";
+    case "checkpoint":
+      return activeWizard.step === 2 ? "yellow" : "green";
+    case "login":
+      return activeWizard.step === 13 ? "magenta" : "cyan";
+    case "model":
+      return activeWizard.step === 41 ? "red" : "cyan";
+    default:
+      return "cyan";
+  }
+}
+
 export function App({
   autoResume = false,
   onHistoryChange,
@@ -1261,8 +1284,8 @@ export function App({
 
             {/* CommandLine Input */}
             <Box flexDirection="column">
-              <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>
-                └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>
+              <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "green"}>
+                └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "green"}>
                   {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : "⌨️ COMM_LINK: ACTIVE"}
                 </Text> ]
                 {isProcessing && displayPrompt && (
@@ -1270,7 +1293,7 @@ export function App({
                 )}
               </Text>
               <Box flexDirection="row">
-                <Text color={activeWizard ? "magenta" : isProcessing ? "gray" : "green"}>│ ❯ </Text>
+                <Text color={activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "green"}>│ ❯ </Text>
                 {isProcessing && !activeWizard ? (
                   <ProcessingIndicator scrollOffset={scrollOffset} />
                 ) : (() => {

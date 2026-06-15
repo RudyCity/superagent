@@ -12,6 +12,8 @@ interface WizardDialogProps {
   isMultiSelect?: boolean;
   selectedSet?: Set<number>;
   marginY?: number;
+  marginTop?: number;
+  marginBottom?: number;
   isLoading?: boolean;
   searchQuery?: string;
   searchPlaceholder?: string;
@@ -37,12 +39,16 @@ export function WizardDialog({
   maxVisible = 10,
   isMultiSelect = false,
   selectedSet,
-  marginY = 1,
+  marginY,
+  marginTop,
+  marginBottom,
   isLoading = false,
   searchQuery,
   searchPlaceholder = "Type to filter...",
   terminalWidth,
 }: WizardDialogProps) {
+  const finalMarginTop = marginTop !== undefined ? marginTop : (marginY !== undefined ? marginY : 1);
+  const finalMarginBottom = marginBottom !== undefined ? marginBottom : (marginY !== undefined ? marginY : 0);
   const actualOptions = Array.isArray(options) ? options : [];
   const total = actualOptions.length;
   let visibleOptions = actualOptions;
@@ -63,7 +69,7 @@ export function WizardDialog({
   }
 
   return (
-    <Box flexDirection="column" marginY={marginY}>
+    <Box flexDirection="column" marginTop={finalMarginTop} marginBottom={finalMarginBottom}>
       {/* Top border connecting to the timeline */}
       <Box flexDirection="row" width="100%">
         <Text color={borderColor} wrap="truncate-end">
