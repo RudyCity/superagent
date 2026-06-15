@@ -74,6 +74,8 @@ export interface SuperagentInstance {
   historyFilePath?: string;
   speed?: number;
   customTypeName?: string;
+  constraints?: string;
+  acceptanceCriteria?: string[];
 }
 
 export type QuestionHandler = (question: string, options: string[], isMultiSelect?: boolean) => Promise<string>;

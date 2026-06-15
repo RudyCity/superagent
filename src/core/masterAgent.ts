@@ -112,46 +112,91 @@ export class MasterAgent {
 
   public async mergeBranch(branchName: string, targetFiles: string[]): Promise<boolean> {
     try {
-      // Run git merge
-      await execa("git", ["merge", branchName], { cwd: process.cwd() });
-      return true;
-    } catch (err: any) {
-      // Git merge failed due to conflicts
-      let hasUnresolved = false;
-      try {
-        for (const file of targetFiles) {
-          const fullPath = path.resolve(process.cwd(), file);
-          if (fs.existsSync(fullPath)) {
-            const resolved = await resolveFileConflicts(fullPath, this.model);
-            if (!resolved) hasUnresolved = true;
+      // Run git merge without committing
+      await execa("git", ["merge", "--no-commit", branchName], { cwd: process.cwd() });
+
+      // Run post-merge self-verification
+      const pkgPath = path.join(process.cwd(), "package.json");
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        if (pkg.scripts) {
+          if (pkg.scripts.build) {
+            await execa("npm", ["run", "build"], { cwd: process.cwd() });
+          }
+          if (pkg.scripts.test) {
+            await execa("npm", ["test"], { cwd: process.cwd() });
           }
         }
-      } catch (resolutionError: any) {
-        // Conflict resolution failed (e.g. LLM API call error)
-        // Abort the git merge to restore the working directory state
-        try {
-          await execa("git", ["merge", "--abort"], { cwd: process.cwd() });
-        } catch (abortErr) {
-          // Ignore failures to abort
-        }
-        return false;
       }
 
-      if (hasUnresolved) {
-        try {
-          await execa("git", ["merge", "--abort"], { cwd: process.cwd() });
-        } catch (abortErr) {}
-        return false;
-      }
-
-      // Add files and finish merge commit
+      // If validation passed, commit the merge
+      await execa("git", ["commit", "-m", `Merge branch '${branchName}' via Master Agent`], { cwd: process.cwd() });
+      return true;
+    } catch (err: any) {
+      // Check if git is in a merge conflict state
+      let isConflict = false;
       try {
-        await execa("git", ["add", "-A"], { cwd: process.cwd() });
-        await execa("git", ["commit", "-m", `Merge branch '${branchName}' and resolved conflicts via Master Agent`], {
-          cwd: process.cwd(),
-        });
-        return true;
-      } catch (commitErr) {
+        const { stdout } = await execa("git", ["diff", "--name-only", "--diff-filter=U"], { cwd: process.cwd() });
+        if (stdout.trim().length > 0) {
+          isConflict = true;
+        }
+      } catch (diffErr) {
+        // diff failed
+      }
+
+      if (isConflict) {
+        let hasUnresolved = false;
+        try {
+          for (const file of targetFiles) {
+            const fullPath = path.resolve(process.cwd(), file);
+            if (fs.existsSync(fullPath)) {
+              const resolved = await resolveFileConflicts(fullPath, this.model);
+              if (!resolved) hasUnresolved = true;
+            }
+          }
+        } catch (resolutionError: any) {
+          try {
+            await execa("git", ["merge", "--abort"], { cwd: process.cwd() });
+          } catch (abortErr) {}
+          return false;
+        }
+
+        if (hasUnresolved) {
+          try {
+            await execa("git", ["merge", "--abort"], { cwd: process.cwd() });
+          } catch (abortErr) {}
+          return false;
+        }
+
+        // Conflicts resolved! Now run post-merge self-verification:
+        try {
+          const pkgPath = path.join(process.cwd(), "package.json");
+          if (fs.existsSync(pkgPath)) {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+            if (pkg.scripts) {
+              if (pkg.scripts.build) {
+                await execa("npm", ["run", "build"], { cwd: process.cwd() });
+              }
+              if (pkg.scripts.test) {
+                await execa("npm", ["test"], { cwd: process.cwd() });
+              }
+            }
+          }
+
+          // Add files and finish merge commit
+          await execa("git", ["add", "-A"], { cwd: process.cwd() });
+          await execa("git", ["commit", "-m", `Merge branch '${branchName}' and resolved conflicts via Master Agent`], {
+            cwd: process.cwd(),
+          });
+          return true;
+        } catch (postConflictErr) {
+          try {
+            await execa("git", ["merge", "--abort"], { cwd: process.cwd() });
+          } catch (abortErr) {}
+          return false;
+        }
+      } else {
+        // Not a conflict, or conflict checks failed, or validation failed in the try block
         try {
           await execa("git", ["merge", "--abort"], { cwd: process.cwd() });
         } catch (abortErr) {}

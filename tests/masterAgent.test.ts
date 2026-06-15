@@ -78,20 +78,24 @@ const a = 2;
   });
 
   describe("mergeBranch", () => {
-    it("should merge cleanly if no conflicts occur", async () => {
+    it("should merge cleanly if no conflicts occur and validation passes", async () => {
       vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
       const master = new MasterAgent({} as any);
 
       const success = await master.mergeBranch("feature-1", ["src/app.tsx"]);
       expect(success).toBe(true);
-      expect(execa).toHaveBeenCalledWith("git", ["merge", "feature-1"], expect.any(Object));
+      expect(execa).toHaveBeenCalledWith("git", ["merge", "--no-commit", "feature-1"], expect.any(Object));
+      expect(execa).toHaveBeenCalledWith("git", ["commit", "-m", "Merge branch 'feature-1' via Master Agent"], expect.any(Object));
     });
 
-    it("should resolve conflicts and complete merge if conflict occurs", async () => {
-      // Mock git merge failing (conflict) and git add/commit succeeding
+    it("should resolve conflicts, run validation, and complete merge if conflict occurs", async () => {
+      // Mock git merge failing (conflict) and git diff showing conflicts
       vi.mocked(execa).mockImplementation((cmd, args) => {
-        if (args && args[0] === "merge") {
+        if (cmd === "git" && args && args[0] === "merge" && args[1] === "--no-commit") {
           throw new Error("Conflict!");
+        }
+        if (cmd === "git" && args && args[0] === "diff" && args[2] === "--diff-filter=U") {
+          return Promise.resolve({ stdout: "src/app.tsx" } as any);
         }
         return Promise.resolve({ stdout: "" } as any);
       });
@@ -104,7 +108,12 @@ const b = 2;
 >>>>>>> feature-2
 `;
       const spyExists = vi.spyOn(fs, "existsSync").mockReturnValue(true);
-      const spyRead = vi.spyOn(fs, "readFileSync").mockReturnValue(conflictFile);
+      const spyRead = vi.spyOn(fs, "readFileSync").mockImplementation((filePath) => {
+        if (filePath.toString().endsWith("package.json")) {
+          return JSON.stringify({ scripts: { build: "tsc", test: "vitest" } });
+        }
+        return conflictFile;
+      });
       const spyWrite = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
 
       const master = new MasterAgent({} as any);
@@ -116,10 +125,13 @@ const b = 2;
     });
 
     it("should abort merge and return false if conflict resolution throws error", async () => {
-      // Mock git merge failing (conflict) and git merge --abort succeeding
+      // Mock git merge failing (conflict) and diff showing conflicts
       vi.mocked(execa).mockImplementation((cmd, args) => {
-        if (args && args[0] === "merge" && args[1] !== "--abort") {
+        if (cmd === "git" && args && args[0] === "merge" && args[1] === "--no-commit") {
           throw new Error("Conflict!");
+        }
+        if (cmd === "git" && args && args[0] === "diff" && args[2] === "--diff-filter=U") {
+          return Promise.resolve({ stdout: "src/app.tsx" } as any);
         }
         return Promise.resolve({ stdout: "" } as any);
       });
@@ -131,6 +143,22 @@ const b = 2;
 
       const master = new MasterAgent({} as any);
       const success = await master.mergeBranch("feature-error", ["src/app.tsx"]);
+
+      expect(success).toBe(false);
+      expect(execa).toHaveBeenCalledWith("git", ["merge", "--abort"], expect.any(Object));
+    });
+
+    it("should abort merge and return false if post-merge validation fails", async () => {
+      // Mock git merge succeeding, but npm test failing
+      vi.mocked(execa).mockImplementation((cmd, args) => {
+        if (cmd === "npm" && args && args[0] === "test") {
+          throw new Error("Tests failed!");
+        }
+        return Promise.resolve({ stdout: "" } as any);
+      });
+
+      const master = new MasterAgent({} as any);
+      const success = await master.mergeBranch("feature-failing-tests", ["src/app.tsx"]);
 
       expect(success).toBe(false);
       expect(execa).toHaveBeenCalledWith("git", ["merge", "--abort"], expect.any(Object));

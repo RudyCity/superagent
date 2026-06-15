@@ -68,6 +68,15 @@ export const invokeSuperagentTool: Tool = {
         type: "string",
         description: "The name of the defined Superagent type to invoke (optional).",
       },
+      constraints: {
+        type: "string",
+        description: "Explicit constraints (what NOT to modify) for this task (optional).",
+      },
+      acceptanceCriteria: {
+        type: "array",
+        items: { type: "string" },
+        description: "Explicit list of acceptance criteria or test cases to pass (optional).",
+      },
     },
     required: ["role", "task", "branch"],
   },
@@ -78,6 +87,8 @@ export const invokeSuperagentTool: Tool = {
     const branch = args.branch as string;
     const typeName = args.typeName as string | undefined;
     const wait = args.wait === true;
+    const constraints = args.constraints as string | undefined;
+    const acceptanceCriteria = args.acceptanceCriteria as string[] | undefined;
 
     // Only depth-0 (Master Agent) may invoke Superagents
     const parentAgent = agentLocalStorage.getStore();
@@ -129,6 +140,18 @@ export const invokeSuperagentTool: Tool = {
       }
     }
 
+    // Link node_modules to make setup instant and allow test execution
+    const rootNodeModules = path.join(cwd, "node_modules");
+    const targetNodeModules = path.join(worktreePath, "node_modules");
+    if (fs.existsSync(rootNodeModules) && !fs.existsSync(targetNodeModules)) {
+      const type = process.platform === "win32" ? "junction" : "dir";
+      try {
+        await fs.promises.symlink(rootNodeModules, targetNodeModules, type);
+      } catch (symlinkErr) {
+        // Ignore if symlink already exists or fails
+      }
+    }
+
     const superagentId = Math.random().toString(36).substring(2, 9);
     const logs: string[] = [];
     let lastTextIdx = -1;
@@ -163,6 +186,14 @@ export const invokeSuperagentTool: Tool = {
       if (customType) {
         basePrompt += "\n\n### CUSTOM ROLE SPECIFIC RULES:\n" + customType.systemPrompt;
       }
+    }
+
+    if (constraints) {
+      basePrompt += `\n\n### TASK CONSTRAINTS:\nYou MUST adhere to the following constraints during feature implementation:\n- ${constraints}`;
+    }
+
+    if (acceptanceCriteria && acceptanceCriteria.length > 0) {
+      basePrompt += `\n\n### ACCEPTANCE CRITERIA:\nYou MUST verify that your implementation satisfies all of the following criteria:\n${acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
     }
 
     // Inject active peer Superagents context to prevent overlap
@@ -254,6 +285,8 @@ export const invokeSuperagentTool: Tool = {
       tokenUsage: { prompt: 0, completion: 0 },
       historyFilePath: agentInstance.getCurrentHistoryFilePath(),
       customTypeName: typeName,
+      constraints,
+      acceptanceCriteria,
     };
     superagentInstances.set(superagentId, instance);
     notifySuperagentsChanged();
@@ -268,6 +301,27 @@ export const invokeSuperagentTool: Tool = {
         const msgs = agentInstance.getHistory().getMessages();
         const lastMsg = [...msgs].reverse().find((m) => m.role === "assistant");
         const result = lastMsg?.content ?? "(no report)";
+
+        // Run pre-merge verification in worktree directory
+        appendMasterLog(`[INFO] Running pre-merge verification in worktree: ${worktreePath}...`);
+        const pkgPath = path.join(worktreePath, "package.json");
+        if (fs.existsSync(pkgPath)) {
+          try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+            if (pkg.scripts) {
+              if (pkg.scripts.build) {
+                appendMasterLog(`[INFO] Executing "npm run build" in worktree...`);
+                await execa("npm", ["run", "build"], { cwd: worktreePath });
+              }
+              if (pkg.scripts.test) {
+                appendMasterLog(`[INFO] Executing "npm test" in worktree...`);
+                await execa("npm", ["test"], { cwd: worktreePath });
+              }
+            }
+          } catch (testErr: any) {
+            throw new Error(`Pre-merge verification failed: ${testErr.message || testErr}`);
+          }
+        }
 
         superagentInstances.set(superagentId, {
           ...superagentInstances.get(superagentId)!,
@@ -716,7 +770,7 @@ export const sendMessageToSuperagentTool: Tool = {
     let agentInstance = inst.agent;
 
     if (isPaused) {
-      const { role, branch, worktreePath, logs, task, customTypeName } = inst;
+      const { role, branch, worktreePath, logs, task, customTypeName, constraints, acceptanceCriteria } = inst;
       const logsList = logs || [];
       let lastTextIdx = -1;
 
@@ -750,6 +804,14 @@ export const sendMessageToSuperagentTool: Tool = {
         if (customType) {
           basePrompt += "\n\n### CUSTOM ROLE SPECIFIC RULES:\n" + customType.systemPrompt;
         }
+      }
+
+      if (constraints) {
+        basePrompt += `\n\n### TASK CONSTRAINTS:\nYou MUST adhere to the following constraints during feature implementation:\n- ${constraints}`;
+      }
+
+      if (acceptanceCriteria && acceptanceCriteria.length > 0) {
+        basePrompt += `\n\n### ACCEPTANCE CRITERIA:\nYou MUST verify that your implementation satisfies all of the following criteria:\n${acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
       }
 
       // Inject active peer Superagents context to prevent overlap
@@ -852,6 +914,27 @@ export const sendMessageToSuperagentTool: Tool = {
         }
         if (!result) {
           result = "(no report)";
+        }
+
+        // Run pre-merge verification in worktree directory
+        appendMasterLog(`[INFO] Running pre-merge verification in worktree: ${inst.worktreePath}...`);
+        const pkgPath = path.join(inst.worktreePath, "package.json");
+        if (fs.existsSync(pkgPath)) {
+          try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+            if (pkg.scripts) {
+              if (pkg.scripts.build) {
+                appendMasterLog(`[INFO] Executing "npm run build" in worktree...`);
+                await execa("npm", ["run", "build"], { cwd: inst.worktreePath });
+              }
+              if (pkg.scripts.test) {
+                appendMasterLog(`[INFO] Executing "npm test" in worktree...`);
+                await execa("npm", ["test"], { cwd: inst.worktreePath });
+              }
+            }
+          } catch (testErr: any) {
+            throw new Error(`Pre-merge verification failed: ${testErr.message || testErr}`);
+          }
         }
 
         superagentInstances.set(superagentId, {
