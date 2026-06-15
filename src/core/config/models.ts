@@ -220,10 +220,7 @@ export function getModelInstanceForString(modelStr: string) {
     }
   }
 
-  if (apiKey && apiKey.startsWith("sk-orbit-") && (!baseUrl || baseUrl.includes("openrouter.ai") || baseUrl.includes("openai.com") || baseUrl.includes("anthropic.com"))) {
-    provider = "custom";
-    baseUrl = "https://api.orbit-provider.com/v1";
-  }
+
 
   if (provider === "anthropic" || (provider === "custom" && isAnthropicCompatible(baseUrl || "", modelName))) {
     const anthropic = createAnthropic({

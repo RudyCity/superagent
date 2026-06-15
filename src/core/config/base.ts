@@ -82,7 +82,7 @@ export function getConfig(): Config {
     } else if (process.env.ORBIT_API_KEY) {
       provider = "custom";
       apiKey = process.env.ORBIT_API_KEY;
-      baseUrl = "https://api.orbit-provider.com/v1";
+      baseUrl = "https://openrouter.ai/api/v1";
     } else {
       provider = "openai";
       apiKey = openaiKey;
@@ -91,11 +91,6 @@ export function getConfig(): Config {
 
   if (!apiKey) {
     apiKey = process.env.ORBIT_API_KEY || "";
-  }
-
-  if (apiKey && apiKey.startsWith("sk-orbit-") && (!baseUrl || baseUrl.includes("openrouter.ai") || baseUrl.includes("openai.com") || baseUrl.includes("anthropic.com"))) {
-    provider = "custom";
-    baseUrl = "https://api.orbit-provider.com/v1";
   }
 
   const model =

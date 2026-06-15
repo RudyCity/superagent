@@ -357,7 +357,7 @@ describe("config", () => {
       delete process.env.CUSTOM_API_KEY;
     });
 
-    it("should override base URL to Orbit endpoint when API key starts with sk-orbit-", () => {
+    it("should fallback to ORBIT_API_KEY when no other API key is configured", () => {
       process.env.ORBIT_API_KEY = "sk-orbit-testkey123";
       const model: any = getModelInstanceForString("openroutereiyogen:some-model");
       expect(model.modelId).toBe("some-model");
