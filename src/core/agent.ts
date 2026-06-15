@@ -41,6 +41,33 @@ export type QuestionHandler = (
   isMultiSelect?: boolean
 ) => Promise<string>;
 
+function isRetryableError(err: unknown): boolean {
+  if (!err) return false;
+  if (err instanceof Error) {
+    if (err.name === "AbortError") return false;
+    const msg = err.message.toLowerCase();
+    
+    const statusCode = (err as any).statusCode || (err as any).status;
+    if (statusCode === 401 || statusCode === 403 || statusCode === 400) {
+      return false;
+    }
+
+    if (
+      msg.includes("api key") ||
+      msg.includes("apikey") ||
+      msg.includes("unauthorized") ||
+      msg.includes("forbidden") ||
+      msg.includes("authentication") ||
+      msg.includes("authorization") ||
+      msg.includes("credentials") ||
+      msg.includes("missing authentication header")
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export class Agent {
   public delegationDepth = 0;
   /** Agent tier in the 3-tier hierarchy: master | superagent | subagent */
@@ -539,13 +566,15 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               if (err instanceof Error && err.name === "AbortError") {
                 throw err;
               }
+              const isRetryable = isRetryableError(err);
               attempt++;
-              if (attempt > maxRetries) {
+              if (attempt > maxRetries || !isRetryable) {
                 const rawMsg = err instanceof Error ? err.message : String(err);
                 const msg = rawMsg === "Empty response from model"
                   ? "Empty response from model. Check your endpoint/model config."
                   : rawMsg;
-                const errMsg = `Generate text failed after ${maxRetries} retries: ${msg}`;
+                const prefixMsg = !isRetryable ? "Fatal error" : `Generate text failed after ${maxRetries} retries`;
+                const errMsg = `${prefixMsg}: ${msg}`;
                 this.onEvent({ type: "error", message: errMsg });
                 this.conversation.addMessage({
                   role: "system",
@@ -648,13 +677,15 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               if (err instanceof Error && err.name === "AbortError") {
                 throw err;
               }
+              const isRetryable = isRetryableError(err);
               attempt++;
-              if (attempt > maxRetries) {
+              if (attempt > maxRetries || !isRetryable) {
                 const rawMsg = err instanceof Error ? err.message : String(err);
                 const msg = rawMsg === "Empty response from model"
                   ? "Empty response from model. Check your endpoint/model config."
                   : rawMsg;
-                const errMsg = `Stream error after ${maxRetries} retries: ${msg}`;
+                const prefixMsg = !isRetryable ? "Fatal error" : `Stream error after ${maxRetries} retries`;
+                const errMsg = `${prefixMsg}: ${msg}`;
                 this.onEvent({ type: "error", message: errMsg });
                 this.conversation.addMessage({
                   role: "system",

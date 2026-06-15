@@ -350,20 +350,6 @@ describe("config", () => {
       delete process.env.CUSTOM_API_KEY;
     });
 
-    it("should fallback resolve custom provider prefixes starting with orbit", () => {
-      process.env.CUSTOM_API_KEY = "fallback-orbit-key";
-      const model: any = getModelInstanceForString("orbiteiyogen:some-model");
-      expect(model.modelId).toBe("some-model");
-      delete process.env.CUSTOM_API_KEY;
-    });
-
-    it("should fallback to ORBIT_API_KEY when no other API key is configured", () => {
-      process.env.ORBIT_API_KEY = "sk-orbit-testkey123";
-      const model: any = getModelInstanceForString("openroutereiyogen:some-model");
-      expect(model.modelId).toBe("some-model");
-      delete process.env.ORBIT_API_KEY;
-    });
-
     it("should correctly identify Anthropic-compatible endpoints using isAnthropicCompatible", () => {
       expect(isAnthropicCompatible("https://api.anthropic.com", "claude-3-5-sonnet")).toBe(true);
       expect(isAnthropicCompatible("https://anthropic-proxy.corp.internal/v1", "claude-3-5-sonnet")).toBe(true);

@@ -45,10 +45,6 @@ export function getConfig(): Config {
         provider = "custom";
         apiKey = process.env.PROVIDER_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || customApiKey;
         baseUrl = "https://openrouter.ai/api/v1";
-      } else if (activeProvider.toLowerCase().startsWith("orbit")) {
-        provider = "custom";
-        apiKey = process.env.PROVIDER_ORBIT_API_KEY || process.env.ORBIT_API_KEY || customApiKey;
-        baseUrl = "https://api.orbit-provider.com/v1";
       } else if (activeProvider.toLowerCase().startsWith("anthropic")) {
         provider = "anthropic";
         apiKey = process.env.PROVIDER_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || anthropicKey;
@@ -59,7 +55,7 @@ export function getConfig(): Config {
     } else {
       if (type === "anthropic" || activeProvider.toLowerCase() === "anthropic" || activeProvider.toLowerCase().startsWith("anthropic")) {
         provider = "anthropic";
-      } else if (type === "custom" || type === "openrouter" || type === "orbit" || activeProvider.toLowerCase().startsWith("openrouter") || activeProvider.toLowerCase().startsWith("orbit") || baseUrl) {
+      } else if (type === "custom" || type === "openrouter" || activeProvider.toLowerCase().startsWith("openrouter") || baseUrl) {
         provider = "custom";
       } else {
         provider = "openai";
@@ -79,18 +75,10 @@ export function getConfig(): Config {
     } else if (anthropicKey) {
       provider = "anthropic";
       apiKey = anthropicKey;
-    } else if (process.env.ORBIT_API_KEY) {
-      provider = "custom";
-      apiKey = process.env.ORBIT_API_KEY;
-      baseUrl = "https://openrouter.ai/api/v1";
     } else {
       provider = "openai";
       apiKey = openaiKey;
     }
-  }
-
-  if (!apiKey) {
-    apiKey = process.env.ORBIT_API_KEY || "";
   }
 
   const model =

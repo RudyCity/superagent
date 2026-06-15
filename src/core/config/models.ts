@@ -200,11 +200,6 @@ export function getModelInstanceForString(modelStr: string) {
           baseUrl = "https://openrouter.ai/api/v1";
           apiKey = process.env.PROVIDER_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || process.env.CUSTOM_API_KEY || config.apiKey;
           modelName = rest;
-        } else if (prefix.startsWith("orbit")) {
-          provider = "custom";
-          baseUrl = "https://api.orbit-provider.com/v1";
-          apiKey = process.env.PROVIDER_ORBIT_API_KEY || process.env.ORBIT_API_KEY || process.env.CUSTOM_API_KEY || config.apiKey;
-          modelName = rest;
         } else if (prefix.startsWith("anthropic")) {
           provider = "anthropic";
           baseUrl = undefined;
@@ -219,8 +214,6 @@ export function getModelInstanceForString(modelStr: string) {
       }
     }
   }
-
-
 
   if (provider === "anthropic" || (provider === "custom" && isAnthropicCompatible(baseUrl || "", modelName))) {
     const anthropic = createAnthropic({

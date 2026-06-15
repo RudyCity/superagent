@@ -116,6 +116,31 @@ describe("Agent - Empty Response Retry", () => {
       expect(errorEvent).toBeDefined();
       expect(errorEvent[0].message).toContain("Stream error after 10 retries: Empty response from model. Check your endpoint/model config.");
     });
+
+    it("should fail immediately without retries when encountering a non-retryable authentication error", async () => {
+      const onEvent = vi.fn();
+      const onPermission = vi.fn().mockResolvedValue(true);
+      const onQuestion = vi.fn();
+
+      const agent = new Agent(onEvent, onPermission, onQuestion);
+      agent.tier = "master";
+      agent.planState = "APPROVED";
+
+      vi.mocked(streamText).mockImplementation(() => {
+        throw new Error("Communication error: Missing Authentication header");
+      });
+
+      await agent.sendMessage("test message");
+
+      // Verify that streamText was called only once (0 retries)
+      expect(streamText).toHaveBeenCalledTimes(1);
+      expect(delaySpy).toHaveBeenCalledTimes(0);
+
+      // Verify error event is sent with fatal error formatted message
+      const errorEvent = onEvent.mock.calls.find((call) => call[0].type === "error");
+      expect(errorEvent).toBeDefined();
+      expect(errorEvent[0].message).toContain("Fatal error: Communication error: Missing Authentication header");
+    });
   });
 
   describe("Non-Streaming Mode (disableStreaming: true)", () => {
@@ -203,6 +228,31 @@ describe("Agent - Empty Response Retry", () => {
       const errorEvent = onEvent.mock.calls.find((call) => call[0].type === "error");
       expect(errorEvent).toBeDefined();
       expect(errorEvent[0].message).toContain("Generate text failed after 10 retries: Empty response from model. Check your endpoint/model config.");
+    });
+
+    it("should fail immediately without retries when encountering a non-retryable authentication error", async () => {
+      const onEvent = vi.fn();
+      const onPermission = vi.fn().mockResolvedValue(true);
+      const onQuestion = vi.fn();
+
+      const agent = new Agent(onEvent, onPermission, onQuestion);
+      agent.tier = "master";
+      agent.planState = "APPROVED";
+
+      vi.mocked(generateText).mockImplementation(async () => {
+        throw new Error("Communication error: Missing Authentication header");
+      });
+
+      await agent.sendMessage("test message");
+
+      // Verify that generateText was called only once (0 retries)
+      expect(generateText).toHaveBeenCalledTimes(1);
+      expect(delaySpy).toHaveBeenCalledTimes(0);
+
+      // Verify error event is sent with fatal error formatted message
+      const errorEvent = onEvent.mock.calls.find((call) => call[0].type === "error");
+      expect(errorEvent).toBeDefined();
+      expect(errorEvent[0].message).toContain("Fatal error: Communication error: Missing Authentication header");
     });
   });
 });
