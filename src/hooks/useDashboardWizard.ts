@@ -1682,6 +1682,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             if (m.content) {
               loadedLogs.push(`[AGENT] ${m.content}`);
             }
+          } else if (m.role === "system") {
+            if (m.content && m.content.startsWith("[ERROR]")) {
+              loadedLogs.push(m.content);
+            } else if (m.content) {
+              loadedLogs.push(`[MASTER] ${m.content}`);
+            }
           }
         }
         setMasterLogs(loadedLogs.slice(-500));
@@ -1779,6 +1785,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 }
               } else if (m.role === "assistant" && m.content) {
                 loadedLogs.push(`[AGENT] ${m.content}`);
+              } else if (m.role === "system") {
+                if (m.content && m.content.startsWith("[ERROR]")) {
+                  loadedLogs.push(m.content);
+                } else if (m.content) {
+                  loadedLogs.push(`[MASTER] ${m.content}`);
+                }
               }
             }
             setMasterLogs(loadedLogs.slice(-500));
@@ -1843,6 +1855,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 }
               } else if (m.role === "assistant" && m.content) {
                 loadedLogs.push(`[AGENT] ${m.content}`);
+              } else if (m.role === "system") {
+                if (m.content && m.content.startsWith("[ERROR]")) {
+                  loadedLogs.push(m.content);
+                } else if (m.content) {
+                  loadedLogs.push(`[MASTER] ${m.content}`);
+                }
               }
             }
             setMasterLogs(loadedLogs.slice(-500));
@@ -2065,6 +2083,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               } else if (m.role === "assistant") {
                 if (m.content) {
                   loadedLogs.push(`[AGENT] ${m.content}`);
+                }
+              } else if (m.role === "system") {
+                if (m.content && m.content.startsWith("[ERROR]")) {
+                  loadedLogs.push(m.content);
+                } else if (m.content) {
+                  loadedLogs.push(`[MASTER] ${m.content}`);
                 }
               }
             }

@@ -356,6 +356,12 @@ export function MultiAgentDashboard({
             if (m.content) {
               loadedLogs.push(`[AGENT] ${m.content}`);
             }
+          } else if (m.role === "system") {
+            if (m.content && m.content.startsWith("[ERROR]")) {
+              loadedLogs.push(m.content);
+            } else if (m.content) {
+              loadedLogs.push(`[MASTER] ${m.content}`);
+            }
           }
         }
         if (userInputs.length > 0) {

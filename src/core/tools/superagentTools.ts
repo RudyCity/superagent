@@ -355,8 +355,12 @@ export const invokeSuperagentTool: Tool = {
         return `Superagent "${role}" (branch: ${branch}) completed.\n\nReport:\n${result}`;
       } catch (err: any) {
         closeThinkingNode();
+        const inst = superagentInstances.get(superagentId);
+        if (inst) {
+          inst.logs.push(`[ERROR] Superagent failed: ${err.message}\n`);
+        }
         superagentInstances.set(superagentId, {
-          ...superagentInstances.get(superagentId)!,
+          ...inst!,
           status: "error",
           completedAt: Date.now(),
         });
@@ -988,8 +992,12 @@ export const sendMessageToSuperagentTool: Tool = {
 
         return `Superagent "${inst.role}" (branch: ${inst.branch}) completed.\n\nReport:\n${result}`;
       } catch (err: any) {
+        const superagentInst = superagentInstances.get(superagentId);
+        if (superagentInst) {
+          superagentInst.logs.push(`[ERROR] Superagent failed: ${err.message}\n`);
+        }
         superagentInstances.set(superagentId, {
-          ...superagentInstances.get(superagentId)!,
+          ...superagentInst!,
           status: "error",
           completedAt: Date.now(),
         });

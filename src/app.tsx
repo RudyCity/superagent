@@ -839,6 +839,20 @@ export function App({
                 });
               }
             }
+          } else if (m.role === "system") {
+            if (m.content && m.content.startsWith("[ERROR]")) {
+              loadedLines.push({
+                type: "error",
+                content: m.content.replace("[ERROR]", "").trim(),
+                timestamp: m.timestamp,
+              });
+            } else if (m.content) {
+              loadedLines.push({
+                type: "system",
+                content: m.content,
+                timestamp: m.timestamp,
+              });
+            }
           }
         }
         setLines(loadedLines);

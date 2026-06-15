@@ -279,6 +279,7 @@ export const invokeSubagentTool: Tool = {
         return `Subagent "${typeName}" (Role: ${role}) finished. Report:\n\n${instance.result || "(no report)"}`;
       } catch (err: any) {
         closeThinkingNode();
+        logs.push(`[ERROR] Subagent failed: ${err.message}\n`);
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();
@@ -301,6 +302,7 @@ export const invokeSubagentTool: Tool = {
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
       }).catch((err: any) => {
         closeThinkingNode();
+        logs.push(`[ERROR] Subagent failed: ${err.message || err}\n`);
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();

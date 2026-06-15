@@ -287,6 +287,12 @@ export class Agent {
       } else {
         const message = err instanceof Error ? err.message : String(err);
         this.onEvent({ type: "error", message });
+        this.conversation.addMessage({
+          role: "system",
+          content: `[ERROR] ${message}`,
+          timestamp: Date.now(),
+        });
+        await this.saveHistory();
       }
     } finally {
       this.flushTextLogBuffer();
@@ -500,7 +506,14 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 const msg = rawMsg === "Empty response from model"
                   ? "Empty response from model. Check your endpoint/model config."
                   : rawMsg;
-                this.onEvent({ type: "error", message: `Generate text failed after ${maxRetries} retries: ${msg}` });
+                const errMsg = `Generate text failed after ${maxRetries} retries: ${msg}`;
+                this.onEvent({ type: "error", message: errMsg });
+                this.conversation.addMessage({
+                  role: "system",
+                  content: `[ERROR] ${errMsg}`,
+                  timestamp: Date.now(),
+                });
+                await this.saveHistory();
                 return;
               }
               const msg = err instanceof Error ? err.message : String(err);
@@ -602,7 +615,14 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 const msg = rawMsg === "Empty response from model"
                   ? "Empty response from model. Check your endpoint/model config."
                   : rawMsg;
-                this.onEvent({ type: "error", message: `Stream error after ${maxRetries} retries: ${msg}` });
+                const errMsg = `Stream error after ${maxRetries} retries: ${msg}`;
+                this.onEvent({ type: "error", message: errMsg });
+                this.conversation.addMessage({
+                  role: "system",
+                  content: `[ERROR] ${errMsg}`,
+                  timestamp: Date.now(),
+                });
+                await this.saveHistory();
                 return;
               }
               const msg = err instanceof Error ? err.message : String(err);
@@ -618,10 +638,17 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
 
         if (toolCalls.length === 0) {
           if (!textContent.trim()) {
+            const errMsg = "Empty response from model. Check your endpoint/model config.";
             this.onEvent({
               type: "error",
-              message: "Empty response from model. Check your endpoint/model config.",
+              message: errMsg,
             });
+            this.conversation.addMessage({
+              role: "system",
+              content: `[ERROR] ${errMsg}`,
+              timestamp: Date.now(),
+            });
+            await this.saveHistory();
           } else {
             this.conversation.addAssistantMessage(textContent);
             await this.saveHistory();
