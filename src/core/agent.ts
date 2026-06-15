@@ -404,9 +404,21 @@ CRITICAL GOAL MODE RULES:
         }
         await this.compactHistoryIfNeeded();
         const messages = this.buildMessages();
-        // Use tier-specific toolset if provided, otherwise use all tools
-        const toolDefs = this.customTools
-          ? this.customTools.map((t) => ({
+        // Use tier-specific toolset if provided, otherwise use the appropriate tier-default toolset dynamically
+        let toolsToUse = this.customTools;
+        if (!toolsToUse) {
+          const { masterToolset, superagentToolset, subagentToolsets, defaultSubagentToolset } = await import("./tools/toolsets.js");
+          if (this.tier === "master") {
+            toolsToUse = masterToolset;
+          } else if (this.tier === "superagent" || this.tier === "single") {
+            toolsToUse = superagentToolset;
+          } else if (this.tier === "subagent") {
+            toolsToUse = (this.subagentType && subagentToolsets[this.subagentType]) || defaultSubagentToolset;
+          }
+        }
+
+        const toolDefs = toolsToUse
+          ? toolsToUse.map((t) => ({
               name: t.name,
               description: t.description,
               input_schema: t.parameters,

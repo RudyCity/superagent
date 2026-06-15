@@ -284,6 +284,7 @@ if (process.stdin.isTTY) {
       return options[0];
     }
   );
+  agent.tier = "single";
 
   const rl = readline.createInterface({
     input: process.stdin,
