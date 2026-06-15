@@ -106,10 +106,9 @@ export class Conversation {
             let completedAt = s.completedAt;
 
             if (status === "running") {
-              status = "error";
-              result = "[Interrupted by session exit]";
-              completedAt = completedAt || Date.now();
-              logs.push("\n[SYSTEM: Resumed session, marked as interrupted]\n");
+              status = "paused";
+              result = "[Paused by session exit]";
+              logs.push("\n[SYSTEM: Resumed session, marked as paused]\n");
             }
 
             superagentInstances.set(s.id, {
@@ -144,10 +143,9 @@ export class Conversation {
             let completedAt = s.completedAt;
 
             if (status === "running" || status === "idle") {
-              status = "completed";
-              result = "[Interrupted by session exit]";
-              completedAt = completedAt || Date.now();
-              logs.push("\n[SYSTEM: Resumed session, marked as interrupted]\n");
+              status = "paused";
+              result = "[Paused by session exit]";
+              logs.push("\n[SYSTEM: Resumed session, marked as paused]\n");
             }
 
             subagentInstances.set(s.id, {

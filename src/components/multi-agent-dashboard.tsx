@@ -72,7 +72,7 @@ export interface AgentSession {
   id: string;
   type: "MASTER" | "SUPERAGENT" | "SUBAGENT" | "TASK";
   task: string;
-  status: "WORKING" | "COMPLETED" | "IDLE" | "ERROR";
+  status: "WORKING" | "COMPLETED" | "IDLE" | "ERROR" | "PAUSED";
   tokens: number;
   logs: string[];
   branch?: string;

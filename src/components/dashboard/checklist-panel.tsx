@@ -61,6 +61,8 @@ export function ChecklistPanel({
               if (!isMergeOrCleanup) {
                 if (inst.status === "running") {
                   status = "/";
+                } else if (inst.status === "paused") {
+                  status = "paused";
                 } else if (inst.status === "completed") {
                   status = "x";
                 } else if (inst.status === "error") {
@@ -83,6 +85,10 @@ export function ChecklistPanel({
           statusChar = "[/]";
           taskColor = "yellow";
           displayStatusText = " (in progress)";
+        } else if (status === "paused") {
+          statusChar = "[⏸]";
+          taskColor = "magenta";
+          displayStatusText = " (paused)";
         } else if (status === "error") {
           statusChar = "[✗]";
           taskColor = "red";
@@ -91,7 +97,7 @@ export function ChecklistPanel({
 
         return (
           <Box key={idx} flexDirection="row">
-            <Text color={status === "x" ? "green" : status === "/" ? "yellow" : status === "error" ? "red" : "cyan"}>
+            <Text color={status === "x" ? "green" : status === "/" ? "yellow" : status === "paused" ? "magenta" : status === "error" ? "red" : "cyan"}>
               {statusChar}{" "}
             </Text>
             <Text color={taskColor} strikethrough={status === "x"}>

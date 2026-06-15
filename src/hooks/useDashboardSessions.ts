@@ -33,7 +33,7 @@ export function useDashboardSessions(
           id: `${instance.typeName}-${id}`,
           type: "SUBAGENT",
           task: `Role: ${instance.role}`,
-          status: instance.status === "running" ? "WORKING" : instance.status === "completed" ? "COMPLETED" : "IDLE",
+          status: instance.status === "running" ? "WORKING" : instance.status === "paused" ? "PAUSED" : instance.status === "completed" ? "COMPLETED" : "IDLE",
           tokens: (instance.tokenUsage?.prompt || 0) + (instance.tokenUsage?.completion || 0),
           logs: instance.logs && instance.logs.length > 0 ? instance.logs : ["Awaiting output..."],
           branch: "worktree",
@@ -71,6 +71,7 @@ export function useDashboardSessions(
           type: "SUPERAGENT",
           task: `[${instance.role}] ${instance.task}`,
           status: instance.status === "running" ? "WORKING"
+                : instance.status === "paused" ? "PAUSED"
                 : instance.status === "completed" ? "COMPLETED"
                 : "ERROR",
           tokens: (instance.tokenUsage?.prompt || 0) + (instance.tokenUsage?.completion || 0),

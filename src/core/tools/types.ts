@@ -49,7 +49,7 @@ export interface SubagentInstance {
   typeName: string;
   role: string;
   agent: any;
-  status: "idle" | "running" | "completed";
+  status: "idle" | "running" | "completed" | "paused";
   logs: string[];
   result?: string;
   completedAt?: number;
@@ -66,13 +66,14 @@ export interface SuperagentInstance {
   branch: string;
   worktreePath: string;
   agent: any;
-  status: "running" | "completed" | "error";
+  status: "running" | "completed" | "error" | "paused";
   logs: string[];
   result?: string;
   completedAt?: number;
   tokenUsage?: { prompt: number; completion: number };
   historyFilePath?: string;
   speed?: number;
+  customTypeName?: string;
 }
 
 export type QuestionHandler = (question: string, options: string[], isMultiSelect?: boolean) => Promise<string>;

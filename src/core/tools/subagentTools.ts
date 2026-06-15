@@ -344,33 +344,194 @@ export const sendMessageTool: Tool = {
       return `Error: Subagent instance "${recipientId}" not found.`;
     }
 
-    instance.status = "running";
-    notifySubagentsChanged();
+    if (instance.status !== "running" && instance.status !== "paused" && instance.status !== "idle") {
+      return `Error: Subagent "${recipientId}" is not active or paused (status: ${instance.status}).`;
+    }
+
+    const isPaused = instance.status === "paused";
+    let agentInstance = instance.agent;
+
+    if (isPaused) {
+      const { typeName, role, logs, historyFilePath } = instance;
+      const logsList = logs || [];
+      let lastTextIdx = -1;
+      let isFirstNode = logsList.length === 0;
+
+      const appendToThinkingNode = (text: string) => {
+        if (lastTextIdx === -1) {
+          logsList.push(`${isFirstNode ? "┌" : "├"}───[ ✦ COGNITIVE THINKING ]\n`);
+          isFirstNode = false;
+          logsList.push(`│   `);
+          lastTextIdx = logsList.length - 1;
+        }
+
+        const parts = text.split("\n");
+        if (parts.length === 1) {
+          logsList[lastTextIdx] += parts[0];
+        } else {
+          logsList[lastTextIdx] += parts[0] + "\n";
+          for (let i = 1; i < parts.length - 1; i++) {
+            logsList.push(`│   ${parts[i]}\n`);
+          }
+          logsList.push(`│   `);
+          lastTextIdx = logsList.length - 1;
+          logsList[lastTextIdx] += parts[parts.length - 1];
+        }
+      };
+
+      const closeThinkingNode = () => {
+        if (lastTextIdx >= 0) {
+          if (logsList[lastTextIdx] === "│   ") {
+            logsList.pop();
+            const lastIndex = logsList.length - 1;
+            if (lastIndex >= 0 && logsList[lastIndex].includes("[ ✦ COGNITIVE THINKING ]")) {
+              logsList.pop();
+            } else {
+              logsList.push(`│\n`);
+            }
+          } else {
+            if (!logsList[lastTextIdx].endsWith("\n")) {
+              logsList[lastTextIdx] += "\n";
+            }
+            logsList.push(`│\n`);
+          }
+          lastTextIdx = -1;
+        }
+      };
+
+      // Import prompt & toolset
+      const { subagentToolsets, defaultSubagentToolset } = await import("./toolsets.js");
+      const { getSubagentSystemPrompt } = await import("../prompts.js");
+      const subType = subagentTypes.get(typeName);
+      const systemPrompt = `${getSubagentSystemPrompt(typeName, subType?.systemPrompt || "")}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
+      const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
+
+      const { Agent } = await import("../agent.js");
+      agentInstance = new Agent(
+        (event) => {
+          if (event.type === "text") {
+            appendToThinkingNode(event.content);
+            notifySubagentsChanged();
+          } else if (event.type === "error") {
+            closeThinkingNode();
+            logsList.push(`${isFirstNode ? "┌" : "├"}───[ 🚨 ERROR ]\n`);
+            isFirstNode = false;
+            const lines = event.message.split("\n");
+            for (const line of lines) {
+              logsList.push(`│   ${line}\n`);
+            }
+            logsList.push(`│\n`);
+            notifySubagentsChanged();
+          } else if (event.type === "tool_start") {
+            closeThinkingNode();
+            logsList.push(`${isFirstNode ? "┌" : "├"}───[ ⚙️ TOOL CALL: ${event.toolCall.name} ]\n`);
+            isFirstNode = false;
+            logsList.push(`│   Description: ${event.description}\n`);
+            // Format args
+            const entries = Object.entries(event.toolCall.args);
+            const formatted = entries.map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ");
+            logsList.push(`│   Args: { ${formatted} }\n`);
+            logsList.push(`│\n`);
+            notifySubagentsChanged();
+          } else if (event.type === "tool_end") {
+            closeThinkingNode();
+            const r = event.toolResult;
+            const status = r.isError ? "🔴 FAILED" : "🟢 SUCCESS";
+            logsList.push(`│   └───[ ${status} ]\n`);
+            const resultStr = typeof r.result === "string" ? r.result : JSON.stringify(r.result);
+            const truncated = resultStr.slice(0, 200) + (resultStr.length > 200 ? "..." : "");
+            const resultLines = truncated.split("\n");
+            for (const line of resultLines) {
+              logsList.push(`│       ${line}\n`);
+            }
+            logsList.push(`│\n`);
+            notifySubagentsChanged();
+          } else if (event.type === "token_usage") {
+            const inst = subagentInstances.get(recipientId);
+            if (inst) {
+              inst.tokenUsage = {
+                prompt: (inst.tokenUsage?.prompt || 0) + (event.promptTokens || 0),
+                completion: (inst.tokenUsage?.completion || 0) + (event.completionTokens || 0),
+              };
+              if (event.durationMs && event.durationMs > 0 && event.completionTokens > 0) {
+                inst.speed = event.completionTokens / (event.durationMs / 1000);
+              }
+            }
+            notifySubagentsChanged();
+          }
+        },
+        async (toolCall, _desc) => {
+          const cmd = (toolCall.args.command as string || "").trim();
+          const isDestructive = /(rm\s+-rf\s+[\/~]|git\s+reset\s+--hard|git\s+clean\s+-fd|mkfs|dd\s+if=)/i.test(cmd);
+          return !isDestructive;
+        },
+        async (question, options) => {
+          if (activeQuestionHandler) {
+            return activeQuestionHandler(`[Subagent ${recipientId} (${role})]: ${question}`, options);
+          }
+          return options[0] || "";
+        },
+        systemPrompt,
+        toolset,
+        cwd
+      );
+
+      // Re-setup delegation properties
+      const parentAgent = agentLocalStorage.getStore();
+      const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;
+      agentInstance.delegationDepth = parentDepth + 1;
+      agentInstance.tier = "subagent";
+      agentInstance.subagentType = typeName;
+      if (parentAgent) {
+        agentInstance.isMultiAgent = parentAgent.isMultiAgent;
+      }
+
+      // Load history
+      if (historyFilePath) {
+        await agentInstance.loadHistoryFromPath(historyFilePath);
+      }
+
+      instance.agent = agentInstance;
+      instance.status = "running";
+      notifySubagentsChanged();
+      appendMasterLog(`[INFO] Resuming Subagent "${role}" from pause...`);
+    } else {
+      instance.status = "running";
+      notifySubagentsChanged();
+    }
 
     if (wait) {
       try {
-        await instance.agent.sendMessage(message);
+        await agentInstance.sendMessage(message);
         instance.status = "completed";
-        const msgs = instance.agent.getHistory().getMessages();
-        const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
-        if (lastAssistantMsg) {
-          instance.result = lastAssistantMsg.content;
+        let result = instance.result;
+        if (agentInstance && typeof agentInstance.getHistory === "function") {
+          const msgs = agentInstance.getHistory().getMessages();
+          const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
+          if (lastAssistantMsg) {
+            result = lastAssistantMsg.content;
+          }
         }
+        instance.result = result;
         notifySubagentsChanged();
-        return `Subagent "${recipientId}" finished. Report:\n\n${instance.result || "(no report)"}`;
+        return `Subagent "${recipientId}" finished. Report:\n\n${result || "(no report)"}`;
       } catch (err: any) {
         instance.status = "completed";
         notifySubagentsChanged();
         return `Subagent failed: ${err.message}`;
       }
     } else {
-      instance.agent.sendMessage(message).then(() => {
+      agentInstance.sendMessage(message).then(() => {
         instance.status = "completed";
-        const msgs = instance.agent.getHistory().getMessages();
-        const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
-        if (lastAssistantMsg) {
-          instance.result = lastAssistantMsg.content;
+        let result = instance.result;
+        if (agentInstance && typeof agentInstance.getHistory === "function") {
+          const msgs = agentInstance.getHistory().getMessages();
+          const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
+          if (lastAssistantMsg) {
+            result = lastAssistantMsg.content;
+          }
         }
+        instance.result = result;
         notifySubagentsChanged();
       }).catch(() => {
         instance.status = "completed";

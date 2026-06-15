@@ -253,6 +253,7 @@ export const invokeSuperagentTool: Tool = {
       logs,
       tokenUsage: { prompt: 0, completion: 0 },
       historyFilePath: agentInstance.getCurrentHistoryFilePath(),
+      customTypeName: typeName,
     };
     superagentInstances.set(superagentId, instance);
     notifySuperagentsChanged();
@@ -685,27 +686,180 @@ export const sendMessageToSuperagentTool: Tool = {
       return `Error: Superagent instance "${superagentId}" not found.`;
     }
 
-    if (inst.status !== "running") {
-      return `Error: Superagent "${superagentId}" is not running (status: ${inst.status}).`;
+    if (inst.status !== "running" && inst.status !== "paused") {
+      return `Error: Superagent "${superagentId}" is not running or paused (status: ${inst.status}).`;
+    }
+
+    const isPaused = inst.status === "paused";
+    let agentInstance = inst.agent;
+
+    if (isPaused) {
+      const { role, branch, worktreePath, logs, task, customTypeName } = inst;
+      const logsList = logs || [];
+      let lastTextIdx = -1;
+
+      const appendToThinkingNode = (text: string) => {
+        if (lastTextIdx === -1) {
+          logsList.push(`[THINK] `);
+          lastTextIdx = logsList.length - 1;
+        }
+        logsList[lastTextIdx] += text;
+      };
+
+      const closeThinkingNode = () => {
+        if (lastTextIdx >= 0) {
+          const trimmed = logsList[lastTextIdx].replace("[THINK]", "").trim();
+          if (!trimmed) {
+            logsList.pop();
+          } else {
+            logsList[lastTextIdx] = logsList[lastTextIdx].trimEnd() + "\n";
+          }
+          lastTextIdx = -1;
+        }
+      };
+
+      // Reconstruct system prompt
+      const { SUPERAGENT_SYSTEM_PROMPT } = await import("../prompts.js");
+      let basePrompt = SUPERAGENT_SYSTEM_PROMPT(role, branch, worktreePath);
+
+      if (customTypeName) {
+        const { superagentTypes } = await import("./state.js");
+        const customType = superagentTypes.get(customTypeName);
+        if (customType) {
+          basePrompt += "\n\n### CUSTOM ROLE SPECIFIC RULES:\n" + customType.systemPrompt;
+        }
+      }
+
+      // Inject active peer Superagents context to prevent overlap
+      const activePeers = [...superagentInstances.entries()]
+        .filter(([id, other]) => id !== superagentId && other.status === "running")
+        .map(([id, other]) => `- **Session ID**: ${id}\n  - **Role**: ${other.role}\n  - **Branch**: ${other.branch}\n  - **Task**: "${other.task}"`)
+        .join("\n");
+
+      if (activePeers) {
+        basePrompt += "\n\n### ACTIVE PEER SUPERAGENTS:\n" +
+          "The following other Superagents are currently running in parallel. Coordinate with them to avoid overlapping work or conflicts:\n" +
+          activePeers;
+      }
+
+      const systemPrompt = basePrompt + "\n\n" + SUPERAGENT_REPORT_INSTRUCTION;
+
+      const { Agent } = await import("../agent.js");
+      const { superagentToolset } = await import("./toolsets.js");
+
+      agentInstance = new Agent(
+        (event) => {
+          if (event.type === "text") {
+            appendToThinkingNode(event.content);
+            notifySuperagentsChanged();
+          } else if (event.type === "error") {
+            closeThinkingNode();
+            logsList.push(`[ERROR] ${event.message}\n`);
+            notifySuperagentsChanged();
+          } else if (event.type === "tool_start") {
+            closeThinkingNode();
+            logsList.push(`[TOOL:START] ${event.toolCall.name} — ${event.description}\n`);
+            notifySuperagentsChanged();
+          } else if (event.type === "tool_end") {
+            closeThinkingNode();
+            const status = event.toolResult.isError ? "FAIL" : "OK";
+            const resultSnippet = event.toolResult.result.slice(0, 120).replace(/\n/g, " ");
+            logsList.push(`[TOOL:${status}] ${event.toolResult.name} → ${resultSnippet}\n`);
+            notifySuperagentsChanged();
+          } else if (event.type === "token_usage") {
+            const currentInst = superagentInstances.get(superagentId);
+            if (currentInst) {
+              currentInst.tokenUsage = {
+                prompt: (currentInst.tokenUsage?.prompt || 0) + (event.promptTokens || 0),
+                completion: (currentInst.tokenUsage?.completion || 0) + (event.completionTokens || 0),
+              };
+              if (event.durationMs && event.durationMs > 0 && event.completionTokens > 0) {
+                currentInst.speed = event.completionTokens / (event.durationMs / 1000);
+              }
+            }
+            addHistoricalSuperagentTokens((event.promptTokens || 0) + (event.completionTokens || 0));
+            notifySuperagentsChanged();
+          }
+        },
+        async (_toolCall, _desc) => {
+          const cmd = (_toolCall.args.command as string || "").trim();
+          const isDestructive = /(rm\s+-rf\s+[/~]|git\s+reset\s+--hard|git\s+clean\s+-fd|mkfs|dd\s+if=)/i.test(cmd);
+          return !isDestructive;
+        },
+        async (question, options) => {
+          if (activeQuestionHandler) {
+            return activeQuestionHandler(`[Superagent "${role}"]: ${question}`, options);
+          }
+          return options[0] ?? "";
+        },
+        systemPrompt,
+        superagentToolset,
+        worktreePath
+      );
+
+      agentInstance.delegationDepth = 1;
+      agentInstance.tier = "superagent";
+      agentInstance.worktreePath = worktreePath;
+      agentInstance.isMultiAgent = true;
+
+      // Load history
+      if (inst.historyFilePath) {
+        await agentInstance.loadHistoryFromPath(inst.historyFilePath);
+      }
+
+      inst.agent = agentInstance;
+      inst.status = "running";
+      notifySuperagentsChanged();
+      appendMasterLog(`[INFO] Resuming Superagent "${role}" (branch: ${branch}) from pause...`);
     }
 
     inst.logs.push(`[MESSAGE RECEIVED] ${message}\n`);
 
-    if (wait) {
+    const run = async (): Promise<string> => {
       try {
-        await inst.agent.sendMessage(message);
+        await agentInstance.sendMessage(message);
+
+        // Capture final report from last assistant message
+        let result = inst.result;
+        if (agentInstance && typeof agentInstance.getHistory === "function") {
+          const msgs = agentInstance.getHistory().getMessages();
+          const lastMsg = [...msgs].reverse().find((m) => m.role === "assistant");
+          if (lastMsg?.content) {
+            result = lastMsg.content;
+          }
+        }
+        if (!result) {
+          result = "(no report)";
+        }
+
+        superagentInstances.set(superagentId, {
+          ...superagentInstances.get(superagentId)!,
+          status: "completed",
+          result,
+          completedAt: Date.now(),
+        });
+        notifySuperagentsChanged();
+        appendMasterLog(`[INFO] Superagent "${inst.role}" (branch: ${inst.branch}) completed successfully.`);
+
+        return `Superagent "${inst.role}" (branch: ${inst.branch}) completed.\n\nReport:\n${result}`;
       } catch (err: any) {
-        inst.status = "error";
+        superagentInstances.set(superagentId, {
+          ...superagentInstances.get(superagentId)!,
+          status: "error",
+          completedAt: Date.now(),
+        });
         notifySuperagentsChanged();
-        return `Error while waiting for Superagent: ${err.message}`;
+        appendMasterLog(`[ERROR] Superagent "${inst.role}" (branch: ${inst.branch}) failed: ${err.message}`);
+        return `Superagent "${inst.role}" failed: ${err.message}`;
       }
-      return `Superagent "${superagentId}" finished execution. Report:\n${inst.result || "No report generated."}`;
+    };
+
+    if (wait) {
+      return await run();
     } else {
-      inst.agent.sendMessage(message).catch((err: any) => {
-        inst.status = "error";
-        notifySuperagentsChanged();
-      });
-      return `Message sent to Superagent "${superagentId}". It is processing in the background.`;
+      // Fire and forget
+      run().catch(() => {});
+      return `Message sent to Superagent "${superagentId}". It is resuming and processing in the background.`;
     }
   },
 };

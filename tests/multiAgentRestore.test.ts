@@ -159,9 +159,9 @@ describe("Multi-Agent Restore & Resume Serialization", () => {
     expect(superagentInstances.size).toBe(2);
     
     const saRunning = superagentInstances.get("sa-running")!;
-    expect(saRunning.status).toBe("error"); // running converted to error
-    expect(saRunning.result).toBe("[Interrupted by session exit]");
-    expect(saRunning.logs[saRunning.logs.length - 1]).toContain("Resumed session, marked as interrupted");
+    expect(saRunning.status).toBe("paused"); // running converted to paused
+    expect(saRunning.result).toBe("[Paused by session exit]");
+    expect(saRunning.logs[saRunning.logs.length - 1]).toContain("Resumed session, marked as paused");
     expect(saRunning.agent).toBeDefined();
     expect(typeof saRunning.agent.abort).toBe("function");
     expect(saRunning.agent.abort()).toBeUndefined(); // Should not throw
@@ -174,8 +174,8 @@ describe("Multi-Agent Restore & Resume Serialization", () => {
     expect(subagentInstances.size).toBe(1);
     
     const subRunning = subagentInstances.get("sub-running")!;
-    expect(subRunning.status).toBe("completed"); // running converted to completed
-    expect(subRunning.result).toBe("[Interrupted by session exit]");
+    expect(subRunning.status).toBe("paused"); // running converted to paused
+    expect(subRunning.result).toBe("[Paused by session exit]");
     expect(subRunning.agent).toBeDefined();
     expect(typeof subRunning.agent.abort).toBe("function");
     expect(subRunning.agent.abort()).toBeUndefined();
