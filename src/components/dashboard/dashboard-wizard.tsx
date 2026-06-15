@@ -99,6 +99,9 @@ export function DashboardWizard({
             ) :
             activeWizard.type === "login" && activeWizard.step === 1 ? "🔑 PROVIDER MANAGER (Use Arrow Keys Up/Down & Enter):" :
             activeWizard.type === "login" && activeWizard.step === 2 ? "🔑 SELECT PROVIDER TEMPLATE (Use Arrow Keys Up/Down & Enter):" :
+            activeWizard.type === "login" && activeWizard.step === 3 ? "🔑 CONFIGURE PROVIDER — PROFILE NAME (Type & Enter):" :
+            activeWizard.type === "login" && activeWizard.step === 4 ? "🔑 CONFIGURE PROVIDER — BASE URL (Type & Enter):" :
+            activeWizard.type === "login" && activeWizard.step === 6 ? "🔑 CONFIGURE PROVIDER — API KEY (Type & Enter):" :
             activeWizard.type === "login" && activeWizard.step === 10 ? "🛠️ PROJECT INITIALIZATION — Select Technology Stack (Arrows & Enter):" :
             activeWizard.type === "login" && activeWizard.step === 11 ? "🛠️ PROJECT INITIALIZATION — Enter Project Name (Type & Enter):" :
             activeWizard.type === "login" && activeWizard.step === 12 ? "🛠️ PROJECT INITIALIZATION — Enter Project Description (Type & Enter):" :
@@ -112,6 +115,9 @@ export function DashboardWizard({
             activeWizard.type === "model" && activeWizard.step === 21 ? "Enter a helpful description for what this preset is designed for (type description and press Enter, or type 'back' to go back):" :
             activeWizard.type === "model" && activeWizard.step === 31 ? "Update the description for this custom preset (type description and press Enter, or type 'back' to go back):" :
             activeWizard.type === "model" && (activeWizard.step === 22 || activeWizard.step === 32) ? "Configure the models for each agent tier, then select Save Preset when finished:" :
+            activeWizard.type === "login" && activeWizard.step === 3 ? `Enter config profile name (e.g. ${activeWizard.data.provider || "provider name"}, deepseek, or press Enter for default):` :
+            activeWizard.type === "login" && activeWizard.step === 4 ? "Please enter your Base URL (e.g. http://localhost:11434/v1):" :
+            activeWizard.type === "login" && activeWizard.step === 6 ? "Please enter your API Key:" :
             activeWizard.type === "login" && activeWizard.step === 10 ? "Choose a template catalog stack or let AI dynamically design your project details:" :
             activeWizard.type === "login" && activeWizard.step === 11 ? "Specify the name for this workspace:" :
             activeWizard.type === "login" && activeWizard.step === 12 ? "Give a one-sentence overview description of this software:" :
