@@ -797,6 +797,11 @@ export function App({
       }
       if (agent.isAgentRunning()) {
         agent.abort();
+        setIsProcessing(false);
+        setIsExecutingTool(false);
+        setToolTimeout(null);
+        setToolStartTime(null);
+        setTimeLeft(null);
       } else {
         exit();
       }

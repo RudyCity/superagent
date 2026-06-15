@@ -1123,6 +1123,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       }
       if (isProcessing) {
         agentRef.current?.abort();
+        setIsProcessing(false);
       } else {
         exit();
       }
@@ -1191,6 +1192,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         agentRef.current?.abort();
+        setIsProcessing(false);
       } else {
         setInput("");
         setIsPasted(false);

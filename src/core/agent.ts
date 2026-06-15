@@ -279,8 +279,26 @@ export class Agent {
     await this.compactHistoryIfNeeded();
     await this.saveHistory();
 
+    const signal = this.abortController?.signal;
+    let onAbort: (() => void) | undefined;
+    const abortPromise = new Promise<never>((_, reject) => {
+      onAbort = () => {
+        const err = new Error("AbortError");
+        err.name = "AbortError";
+        reject(err);
+      };
+      if (signal?.aborted) {
+        onAbort();
+      } else {
+        signal?.addEventListener("abort", onAbort);
+      }
+    });
+
     try {
-      await agentLocalStorage.run(this, () => this.runAgentLoop());
+      await Promise.race([
+        agentLocalStorage.run(this, () => this.runAgentLoop()),
+        abortPromise
+      ]);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         this.onEvent({ type: "text", content: "\n\n[Interrupted]" });
@@ -295,6 +313,9 @@ export class Agent {
         await this.saveHistory();
       }
     } finally {
+      if (signal && onAbort) {
+        signal.removeEventListener("abort", onAbort);
+      }
       this.flushTextLogBuffer();
       this.isRunning = false;
       this.abortController = null;
@@ -375,6 +396,11 @@ CRITICAL GOAL MODE RULES:
 
     try {
       for (let i = 0; i < maxIterations; i++) {
+        if (this.abortController?.signal.aborted) {
+          const err = new Error("AbortError");
+          err.name = "AbortError";
+          throw err;
+        }
         await this.compactHistoryIfNeeded();
         const messages = this.buildMessages();
         // Use tier-specific toolset if provided, otherwise use all tools
@@ -659,6 +685,11 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
         const toolResults: ToolResult[] = [];
 
         for (const tc of toolCalls) {
+          if (this.abortController?.signal.aborted) {
+            const err = new Error("AbortError");
+            err.name = "AbortError";
+            throw err;
+          }
           const description = getToolDescription(tc);
           this.onEvent({ type: "tool_start", toolCall: tc, description });
 
@@ -954,6 +985,11 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
             effectiveCwd,
             this.abortController?.signal
           );
+          if (this.abortController?.signal.aborted) {
+            const err = new Error("AbortError");
+            err.name = "AbortError";
+            throw err;
+          }
           toolResults.push(toolResult);
           this.onEvent({ type: "tool_end", toolResult, description });
         }
