@@ -343,6 +343,13 @@ describe("config", () => {
       expect(model.modelId).toBe("some-cool-model");
     });
 
+    it("should fallback resolve custom provider prefixes starting with openrouter/anthropic/openai", () => {
+      process.env.CUSTOM_API_KEY = "fallback-key";
+      const model: any = getModelInstanceForString("openroutereiyogen:nex-agi/nex-n2-pro:free");
+      expect(model.modelId).toBe("nex-agi/nex-n2-pro:free");
+      delete process.env.CUSTOM_API_KEY;
+    });
+
     it("should correctly identify Anthropic-compatible endpoints using isAnthropicCompatible", () => {
       expect(isAnthropicCompatible("https://api.anthropic.com", "claude-3-5-sonnet")).toBe(true);
       expect(isAnthropicCompatible("https://anthropic-proxy.corp.internal/v1", "claude-3-5-sonnet")).toBe(true);

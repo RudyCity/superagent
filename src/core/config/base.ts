@@ -41,11 +41,21 @@ export function getConfig(): Config {
       } else if (activeProvider.toLowerCase() === "openai" && openaiKey) {
         provider = "openai";
         apiKey = openaiKey;
+      } else if (activeProvider.toLowerCase().startsWith("openrouter")) {
+        provider = "custom";
+        apiKey = process.env.PROVIDER_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || customApiKey;
+        baseUrl = "https://openrouter.ai/api/v1";
+      } else if (activeProvider.toLowerCase().startsWith("anthropic")) {
+        provider = "anthropic";
+        apiKey = process.env.PROVIDER_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || anthropicKey;
+      } else if (activeProvider.toLowerCase().startsWith("openai")) {
+        provider = "openai";
+        apiKey = process.env.PROVIDER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || openaiKey;
       }
     } else {
-      if (type === "anthropic" || activeProvider.toLowerCase() === "anthropic") {
+      if (type === "anthropic" || activeProvider.toLowerCase() === "anthropic" || activeProvider.toLowerCase().startsWith("anthropic")) {
         provider = "anthropic";
-      } else if (type === "custom" || baseUrl) {
+      } else if (type === "custom" || type === "openrouter" || activeProvider.toLowerCase().startsWith("openrouter") || baseUrl) {
         provider = "custom";
       } else {
         provider = "openai";

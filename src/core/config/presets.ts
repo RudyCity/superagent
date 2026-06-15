@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { updateEnvFile } from "./env.js";
+import { switchActiveProvider } from "./providers.js";
 
 export interface ModelPreset {
   name: string;
@@ -116,9 +117,21 @@ export function applyModelPreset(name: string): string {
     throw new Error(`Model preset "${name}" not found.`);
   }
 
+  // 1. Determine new active provider if specified in the preset's default MODEL
+  const presetModel = preset.models.MODEL || preset.models.MODEL_DEPTH_0 || preset.models.MODEL_DEPT0 || "";
+  let activeProvider = "";
+  if (presetModel && presetModel.includes(":")) {
+    activeProvider = presetModel.split(":")[0].toLowerCase();
+  }
+
+  // 2. Switch active provider first so credentials and default settings are updated
+  if (activeProvider) {
+    switchActiveProvider(activeProvider);
+  }
+
   const updates: Record<string, string> = {};
 
-  // 1. Reset all current model keys to avoid leaking old configuration
+  // 3. Reset all current model keys to avoid leaking old configuration
   for (const key of Object.keys(process.env)) {
     if (key.startsWith("MODEL_DEPTH_") || key.startsWith("MODEL_DEPT") || 
         (key.startsWith("MODEL_") && key !== "MODEL" && key !== "MODEL_LIMITS")) {
@@ -127,21 +140,18 @@ export function applyModelPreset(name: string): string {
     }
   }
 
-  // 2. Set all model keys from the preset
+  // 4. Set all model keys from the preset
   for (const [key, val] of Object.entries(preset.models)) {
     updates[key] = val;
   }
 
-  // 3. Set standard MODEL if not specified in the preset
+  // 5. Set standard MODEL if not specified in the preset
   if (!preset.models.MODEL) {
     updates.MODEL = preset.models.MODEL_DEPTH_0 || preset.models.MODEL_DEPT0 || "gpt-4o";
   }
 
-  // 4. Update the active provider if the default model has a provider prefix
-  const defaultModel = updates.MODEL;
-  if (defaultModel && defaultModel.includes(":")) {
-    const providerPart = defaultModel.split(":")[0].toLowerCase();
-    updates.ACTIVE_PROVIDER = providerPart;
+  if (activeProvider) {
+    updates.ACTIVE_PROVIDER = activeProvider;
   }
 
   return updateEnvFile(updates);

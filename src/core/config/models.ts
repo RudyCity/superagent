@@ -194,6 +194,23 @@ export function getModelInstanceForString(modelStr: string) {
         } else {
           provider = "openai";
         }
+      } else {
+        if (prefix.startsWith("openrouter")) {
+          provider = "custom";
+          baseUrl = "https://openrouter.ai/api/v1";
+          apiKey = process.env.PROVIDER_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || process.env.CUSTOM_API_KEY || config.apiKey;
+          modelName = rest;
+        } else if (prefix.startsWith("anthropic")) {
+          provider = "anthropic";
+          baseUrl = undefined;
+          apiKey = process.env.PROVIDER_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || config.apiKey;
+          modelName = rest;
+        } else if (prefix.startsWith("openai")) {
+          provider = "openai";
+          baseUrl = undefined;
+          apiKey = process.env.PROVIDER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || config.apiKey;
+          modelName = rest;
+        }
       }
     }
   }
