@@ -1258,8 +1258,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           let envPath = "";
           let targetLabel = "";
           if (tier === "default") {
-            envPath = switchActiveProvider(profileName);
-            updateEnvFile({ 
+            switchActiveProvider(profileName);
+            envPath = updateEnvFile({ 
               MODEL: modelName,
               [`PROVIDER_${profileName.toUpperCase()}_MODEL`]: modelName
             });
@@ -1285,8 +1285,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               MODEL_REVIEWER: finalModelName
             };
             targetLabel = "All Tiers & Subagents";
-            envPath = switchActiveProvider(profileName);
-            updateEnvFile(updates);
+            switchActiveProvider(profileName);
+            envPath = updateEnvFile(updates);
           } else {
             const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
             const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()

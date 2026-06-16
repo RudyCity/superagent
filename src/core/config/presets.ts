@@ -3,6 +3,7 @@ import path from "path";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { updateEnvFile } from "./env.js";
 import { switchActiveProvider } from "./providers.js";
+import { loadModelConfig } from "./jsonConfig.js";
 
 export interface ModelPreset {
   name: string;
@@ -121,10 +122,6 @@ export function applyModelPreset(name: string): string {
     activeProvider = presetModel.split(":")[0].toLowerCase();
   }
 
-  if (activeProvider) {
-    switchActiveProvider(activeProvider);
-  }
-
   const updates: Record<string, string> = {};
 
   for (const key of Object.keys(process.env)) {
@@ -144,7 +141,27 @@ export function applyModelPreset(name: string): string {
   }
 
   if (activeProvider) {
+    switchActiveProvider(activeProvider);
     updates.ACTIVE_PROVIDER = activeProvider;
+
+    const config = loadModelConfig();
+    const providers = config.providers || [];
+    const matchedProfile = providers.find(
+      (p) => p.id?.toLowerCase() === activeProvider || p.name?.toLowerCase() === activeProvider
+    );
+    const fallbackProfile = matchedProfile && matchedProfile.apiKey
+      ? matchedProfile
+      : providers.find(
+          (p) => (p.provider || "").toLowerCase() === activeProvider && p.apiKey && p.apiKey.trim() !== ""
+        );
+    if (fallbackProfile && fallbackProfile.apiKey && fallbackProfile.apiKey.trim() !== "") {
+      const prefix = `PROVIDER_${activeProvider.toUpperCase()}`;
+      updates[`${prefix}_API_KEY`] = fallbackProfile.apiKey;
+      if (fallbackProfile.baseUrl && fallbackProfile.baseUrl.trim() !== "") {
+        updates[`${prefix}_BASE_URL`] = fallbackProfile.baseUrl;
+      }
+      updates[`${prefix}_TYPE`] = fallbackProfile.provider || activeProvider;
+    }
   }
 
   return updateEnvFile(updates);

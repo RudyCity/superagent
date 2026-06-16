@@ -197,7 +197,8 @@ export function getModelInstanceForString(modelStr: string) {
       const customKey = process.env[`PROVIDER_${providerUpper}_API_KEY`];
       const customBase = process.env[`PROVIDER_${providerUpper}_BASE_URL`];
       const customType = process.env[`PROVIDER_${providerUpper}_TYPE`];
-      if (customKey !== undefined || customBase !== undefined || customType !== undefined) {
+      const hasNonEmptyEnv = (customKey && customKey.trim() !== "") || (customBase && customBase.trim() !== "") || (customType && customType.trim() !== "");
+      if (hasNonEmptyEnv) {
         apiKey = customKey || "";
         baseUrl = customBase || undefined;
         modelName = rest;
@@ -210,6 +211,18 @@ export function getModelInstanceForString(modelStr: string) {
         } else {
           provider = "openai";
         }
+
+        // Fallback: if env key is empty, scan jsonConfig for same-type profile with a key
+        if (!apiKey || apiKey.trim() === "") {
+          const modelConfig = loadModelConfig();
+          const fallbackProfile = modelConfig.providers.find(
+            (p) => (p.provider || "").toLowerCase() === typeLower && p.apiKey && p.apiKey.trim() !== ""
+          );
+          if (fallbackProfile) {
+            apiKey = fallbackProfile.apiKey;
+            baseUrl = fallbackProfile.baseUrl || baseUrl;
+          }
+        }
       } else {
         const modelConfig = loadModelConfig();
         const matchedProvider = modelConfig.providers?.find(
@@ -220,6 +233,18 @@ export function getModelInstanceForString(modelStr: string) {
           baseUrl = matchedProvider.baseUrl || undefined;
           modelName = rest;
           const typeLower = (matchedProvider.provider || "").toLowerCase();
+
+          // Fallback: if matched profile has empty apiKey, scan for other profiles of same provider type
+          if (!apiKey || apiKey.trim() === "") {
+            const fallbackProfile = modelConfig.providers.find(
+              (p) => p.id !== matchedProvider.id && (p.provider || "").toLowerCase() === typeLower && p.apiKey && p.apiKey.trim() !== ""
+            );
+            if (fallbackProfile) {
+              apiKey = fallbackProfile.apiKey;
+              baseUrl = fallbackProfile.baseUrl || baseUrl;
+            }
+          }
+
           if (typeLower === "openrouter") {
             provider = "custom";
             if (!baseUrl) {

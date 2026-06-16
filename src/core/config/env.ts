@@ -7,20 +7,26 @@ import path from "path";
 try {
   const config = loadModelConfig();
   const providers = config.providers;
+  const setKey = (envName: string, value: string | undefined) => {
+    if (value && value.trim() !== "") {
+      process.env[envName] = value;
+    }
+  };
   for (const provider of providers) {
     const prefix = provider.provider.toUpperCase();
-    if (provider.apiKey) {
-      process.env[`PROVIDER_${prefix}_API_KEY`] = provider.apiKey;
+    const hasKey = !!(provider.apiKey && provider.apiKey.trim() !== "");
+    if (hasKey) {
+      setKey(`PROVIDER_${prefix}_API_KEY`, provider.apiKey);
       if (provider.provider === "openai") {
-        process.env.OPENAI_API_KEY = provider.apiKey;
+        setKey("OPENAI_API_KEY", provider.apiKey);
       } else if (provider.provider === "anthropic") {
-        process.env.ANTHROPIC_API_KEY = provider.apiKey;
+        setKey("ANTHROPIC_API_KEY", provider.apiKey);
       }
     }
-    if (provider.baseUrl) {
-      process.env[`PROVIDER_${prefix}_BASE_URL`] = provider.baseUrl;
+    if (provider.baseUrl && provider.baseUrl.trim() !== "") {
+      setKey(`PROVIDER_${prefix}_BASE_URL`, provider.baseUrl);
       if (provider.provider === "custom") {
-        process.env.CUSTOM_BASE_URL = provider.baseUrl;
+        setKey("CUSTOM_BASE_URL", provider.baseUrl);
       }
     }
   }
@@ -56,6 +62,39 @@ export function updateEnvFile(updates: Record<string, string>): string {
       delete process.env[key];
     } else {
       process.env[key] = val;
+    }
+  }
+
+  // Safety net: when ACTIVE_PROVIDER is set, ensure matching credentials are in updates
+  if (updates.ACTIVE_PROVIDER) {
+    const activeProvider = updates.ACTIVE_PROVIDER.toLowerCase();
+    const prefix = `PROVIDER_${activeProvider.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}`;
+    if (!updates[`${prefix}_API_KEY`]) {
+      try {
+        const config = loadModelConfig();
+        const providers = config.providers || [];
+        const matchedProfile = providers.find(
+          (p) => p.id?.toLowerCase() === activeProvider || p.name?.toLowerCase() === activeProvider
+        );
+        const fallbackProviderType = matchedProfile?.provider?.toLowerCase() || activeProvider;
+        const fallbackProfile = matchedProfile && matchedProfile.apiKey && matchedProfile.apiKey.trim() !== ""
+          ? matchedProfile
+          : providers.find(
+              (p) => (p.provider || "").toLowerCase() === fallbackProviderType && p.apiKey && p.apiKey.trim() !== ""
+            );
+        if (fallbackProfile && fallbackProfile.apiKey && fallbackProfile.apiKey.trim() !== "") {
+          updates[`${prefix}_API_KEY`] = fallbackProfile.apiKey;
+          process.env[`${prefix}_API_KEY`] = fallbackProfile.apiKey;
+          if (fallbackProfile.baseUrl && fallbackProfile.baseUrl.trim() !== "") {
+            updates[`${prefix}_BASE_URL`] = fallbackProfile.baseUrl;
+            process.env[`${prefix}_BASE_URL`] = fallbackProfile.baseUrl;
+          }
+          updates[`${prefix}_TYPE`] = fallbackProfile.provider || activeProvider;
+          process.env[`${prefix}_TYPE`] = fallbackProfile.provider || activeProvider;
+        }
+      } catch (err) {
+        // Ignore errors
+      }
     }
   }
 

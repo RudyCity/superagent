@@ -970,8 +970,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         let envPath = "";
         let targetLabel = "";
         if (tier === "default") {
-          envPath = switchActiveProvider(profileName);
-          updateEnvFile({ 
+          switchActiveProvider(profileName);
+          envPath = updateEnvFile({ 
             MODEL: modelName,
             [`PROVIDER_${profileName.toUpperCase()}_MODEL`]: modelName
           });
@@ -1012,8 +1012,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 MODEL_SINGLE_REVIEWER: finalModelName
               };
           targetLabel = "All Subagent Models";
-          envPath = switchActiveProvider(profileName);
-          updateEnvFile(updates);
+          switchActiveProvider(profileName);
+          envPath = updateEnvFile(updates);
         } else if (tier === "all") {
           const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
           const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
@@ -1050,8 +1050,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
             MODEL_REVIEWER: finalModelName
           };
           targetLabel = "All Tiers & Subagents";
-          envPath = switchActiveProvider(profileName);
-          updateEnvFile(updates);
+          switchActiveProvider(profileName);
+          envPath = updateEnvFile(updates);
         } else {
           const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
           const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
@@ -1915,8 +1915,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         let envPath = "";
         let targetLabel = "";
         if (tier === "default") {
-          envPath = switchActiveProvider(profileName);
-          updateEnvFile({ 
+          switchActiveProvider(profileName);
+          envPath = updateEnvFile({ 
             MODEL: modelName,
             [`PROVIDER_${profileName.toUpperCase()}_MODEL`]: modelName
           });
@@ -1957,8 +1957,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
             MODEL_REVIEWER: finalModelName
           };
           targetLabel = "All Tiers & Subagents";
-          envPath = switchActiveProvider(profileName);
-          updateEnvFile(updates);
+          switchActiveProvider(profileName);
+          envPath = updateEnvFile(updates);
         } else {
           const activeProvider = process.env.ACTIVE_PROVIDER || "";
           const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()

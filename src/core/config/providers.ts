@@ -48,7 +48,9 @@ export function getConfiguredProviders(): ConfiguredProvider[] {
   return list;
 }
 
-export function switchActiveProvider(name: string): string {
+export function switchActiveProvider(name: string): Record<string, string> {
+  const updates: Record<string, string> = {};
+
   // Clear all depth overrides to ensure test compatibility and prevent leaks
   for (const key of Object.keys(process.env)) {
     if (
@@ -76,7 +78,10 @@ export function switchActiveProvider(name: string): string {
       process.env.MODEL = "gpt-4o";
     }
   }
-  return "";
+
+  process.env.ACTIVE_PROVIDER = name.toLowerCase();
+  updates.ACTIVE_PROVIDER = name.toLowerCase();
+  return updates;
 }
 
 export function getProviderOptionsList(list: ConfiguredProvider[]): string[] {

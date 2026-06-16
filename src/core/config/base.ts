@@ -103,6 +103,25 @@ export function getConfig(): Config {
   
   const disableStreaming = process.env.DISABLE_STREAMING === "true";
 
+  // Fallback: if matched profile has empty apiKey, scan for other profiles of same provider type
+  if (!apiKey && providerProfile) {
+    const fallbackProfile = config.providers.find(
+      (p) => p.id !== providerProfile.id && (p.provider || "").toLowerCase() === provider && p.apiKey && p.apiKey.trim() !== ""
+    );
+    if (fallbackProfile) {
+      return {
+        apiKey: fallbackProfile.apiKey,
+        provider,
+        model,
+        baseUrl: fallbackProfile.baseUrl || baseUrl,
+        maxTokens: 16384,
+        systemPrompt: getSystemPrompt(),
+        workingDirectory: process.cwd(),
+        disableStreaming,
+      };
+    }
+  }
+
   return {
     apiKey,
     provider,
