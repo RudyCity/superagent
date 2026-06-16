@@ -283,16 +283,16 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
     }
   } else {
     if (tier === "master") {
-      modelStr = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+      modelStr = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
     } else if (tier === "superagent") {
-      modelStr = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+      modelStr = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
     } else if (tier === "subagent") {
       if (subagentType) {
         const typeUpper = subagentType.toUpperCase();
-        modelStr = process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
+        modelStr = process.env[`MODEL_MULTI_SUBAGENT_${typeUpper}`] || process.env[`MODEL_MULTI_${typeUpper}`] || process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
       }
       if (!modelStr) {
-        modelStr = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+        modelStr = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
       }
     }
   }
@@ -300,16 +300,16 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
   // Fallback to depth check if tier is not recognized or not specified
   if (!modelStr && !checkSingle) {
     if (depth === 0) {
-      modelStr = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+      modelStr = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
     } else if (depth === 1) {
-      modelStr = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+      modelStr = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
     } else if (depth >= 2) {
       if (subagentType) {
         const typeUpper = subagentType.toUpperCase();
-        modelStr = process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
+        modelStr = process.env[`MODEL_MULTI_SUBAGENT_${typeUpper}`] || process.env[`MODEL_MULTI_${typeUpper}`] || process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
       }
       if (!modelStr) {
-        modelStr = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+        modelStr = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
       }
     }
   }

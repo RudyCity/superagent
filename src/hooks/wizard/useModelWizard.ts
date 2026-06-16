@@ -77,12 +77,12 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const formatVal = (val?: string) => val ? val : "(not set)";
       if (isMulti) {
         return [
-          `1. Master Agent (depth 0) (${formatVal(models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
-          `2. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
-          `3. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
-          `4. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
-          `5. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
-          `6. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+          `1. Master Agent (depth 0) (${formatVal(models.MODEL_MULTI_DEPTH_0 || models.MODEL_MULTI_DEPT0 || models.MODEL_MULTI_MASTER || models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
+          `2. Superagent (depth 1) (${formatVal(models.MODEL_MULTI_DEPTH_1 || models.MODEL_MULTI_DEPT1 || models.MODEL_MULTI_SUPERAGENT || models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
+          `3. Subagent (depth 2) (${formatVal(models.MODEL_MULTI_DEPTH_2 || models.MODEL_MULTI_DEPT2 || models.MODEL_MULTI_SUBAGENT || models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
+          `4. Subagent: researcher (${formatVal(models.MODEL_MULTI_SUBAGENT_RESEARCHER || models.MODEL_MULTI_RESEARCHER || models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
+          `5. Subagent: coder (${formatVal(models.MODEL_MULTI_SUBAGENT_CODER || models.MODEL_MULTI_CODER || models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
+          `6. Subagent: reviewer (${formatVal(models.MODEL_MULTI_SUBAGENT_REVIEWER || models.MODEL_MULTI_REVIEWER || models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
           "7. Save Preset & Exit",
           "8. Cancel & Exit",
           "< Back"
@@ -207,17 +207,17 @@ export function useModelWizard(ctx: ModelWizardContext) {
             return `${activeProvider}:${mStr}`;
           };
           const defaultResolved = getResolvedModelWithProvider("", true);
-          const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+          const rawMaster = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
           const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
-          const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+          const rawSuperagent = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
           const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
-          const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+          const rawSubagent = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
           const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
-          const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
+          const rawResearcher = process.env.MODEL_MULTI_SUBAGENT_RESEARCHER || process.env.MODEL_MULTI_RESEARCHER || process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
           const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
-          const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
+          const rawCoder = process.env.MODEL_MULTI_SUBAGENT_CODER || process.env.MODEL_MULTI_CODER || process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
           const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
-          const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
+          const rawReviewer = process.env.MODEL_MULTI_SUBAGENT_REVIEWER || process.env.MODEL_MULTI_REVIEWER || process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
           const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
 
           setActiveWizard({
@@ -264,13 +264,13 @@ export function useModelWizard(ctx: ModelWizardContext) {
           return `${activeProvider}:${mStr}`;
         };
         const defaultResolved = getResolvedModelWithProvider("", true);
-        const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+        const rawSubagent = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
         const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
-        const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
+        const rawResearcher = process.env.MODEL_SINGLE_SUBAGENT_RESEARCHER || process.env.MODEL_SINGLE_RESEARCHER || process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
         const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
-        const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
+        const rawCoder = process.env.MODEL_SINGLE_SUBAGENT_CODER || process.env.MODEL_SINGLE_CODER || process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
         const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
-        const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
+        const rawReviewer = process.env.MODEL_SINGLE_SUBAGENT_REVIEWER || process.env.MODEL_SINGLE_REVIEWER || process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
         const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
 
         setActiveWizard({
@@ -373,17 +373,25 @@ export function useModelWizard(ctx: ModelWizardContext) {
           return `${activeProvider}:${mStr}`;
         };
         const defaultResolved = getResolvedModelWithProvider("", true);
-        const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+        const rawMaster = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
         const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
-        const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+        const rawSuperagent = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
         const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
-        const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+        const rawSubagent = isMulti
+          ? (process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "")
+          : (process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "");
         const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
-        const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
+        const rawResearcher = isMulti
+          ? (process.env.MODEL_MULTI_SUBAGENT_RESEARCHER || process.env.MODEL_MULTI_RESEARCHER || process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "")
+          : (process.env.MODEL_SINGLE_SUBAGENT_RESEARCHER || process.env.MODEL_SINGLE_RESEARCHER || process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "");
         const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
-        const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
+        const rawCoder = isMulti
+          ? (process.env.MODEL_MULTI_SUBAGENT_CODER || process.env.MODEL_MULTI_CODER || process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "")
+          : (process.env.MODEL_SINGLE_SUBAGENT_CODER || process.env.MODEL_SINGLE_CODER || process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "");
         const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
-        const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
+        const rawReviewer = isMulti
+          ? (process.env.MODEL_MULTI_SUBAGENT_REVIEWER || process.env.MODEL_MULTI_REVIEWER || process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "")
+          : (process.env.MODEL_SINGLE_SUBAGENT_REVIEWER || process.env.MODEL_SINGLE_REVIEWER || process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_RESEARCHER || "");
         const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
 
         if (isMulti || (data.tier && data.tier !== "single")) {
@@ -440,34 +448,38 @@ export function useModelWizard(ctx: ModelWizardContext) {
         let clearUpdates: Record<string, string> = {};
         let targetLabel = "";
         if (tier === "master") {
-          clearUpdates = { MODEL_DEPTH_0: "", MODEL_DEPT0: "" };
+          clearUpdates = { MODEL_MULTI_DEPTH_0: "", MODEL_MULTI_DEPT0: "", MODEL_MULTI_MASTER: "", MODEL_DEPTH_0: "", MODEL_DEPT0: "" };
           targetLabel = "Master Agent (depth 0)";
         } else if (tier === "superagent") {
-          clearUpdates = { MODEL_DEPTH_1: "", MODEL_DEPT1: "" };
+          clearUpdates = { MODEL_MULTI_DEPTH_1: "", MODEL_MULTI_DEPT1: "", MODEL_MULTI_SUPERAGENT: "", MODEL_DEPTH_1: "", MODEL_DEPT1: "" };
           targetLabel = "Superagent (depth 1)";
         } else if (tier === "subagent") {
           clearUpdates = isMulti
-            ? { MODEL_DEPTH_2: "", MODEL_DEPT2: "" }
+            ? { MODEL_MULTI_DEPTH_2: "", MODEL_MULTI_DEPT2: "", MODEL_MULTI_SUBAGENT: "", MODEL_DEPTH_2: "", MODEL_DEPT2: "" }
             : { MODEL_SINGLE_SUBAGENT: "", MODEL_SINGLE_DEPTH_2: "" };
           targetLabel = "Subagent (depth 2)";
         } else if (tier === "researcher") {
           clearUpdates = isMulti
-            ? { MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "" }
+            ? { MODEL_MULTI_SUBAGENT_RESEARCHER: "", MODEL_MULTI_RESEARCHER: "", MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "" }
             : { MODEL_SINGLE_SUBAGENT_RESEARCHER: "", MODEL_SINGLE_RESEARCHER: "" };
           targetLabel = `Subagent "researcher"`;
         } else if (tier === "coder") {
           clearUpdates = isMulti
-            ? { MODEL_SUBAGENT_CODER: "", MODEL_CODER: "" }
+            ? { MODEL_MULTI_SUBAGENT_CODER: "", MODEL_MULTI_CODER: "", MODEL_SUBAGENT_CODER: "", MODEL_CODER: "" }
             : { MODEL_SINGLE_SUBAGENT_CODER: "", MODEL_SINGLE_CODER: "" };
           targetLabel = `Subagent "coder"`;
         } else if (tier === "reviewer") {
           clearUpdates = isMulti
-            ? { MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "" }
+            ? { MODEL_MULTI_SUBAGENT_REVIEWER: "", MODEL_MULTI_REVIEWER: "", MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "" }
             : { MODEL_SINGLE_SUBAGENT_REVIEWER: "", MODEL_SINGLE_REVIEWER: "" };
           targetLabel = `Subagent "reviewer"`;
         } else if (tier === "all_subagents") {
           clearUpdates = isMulti
             ? {
+                MODEL_MULTI_DEPTH_2: "", MODEL_MULTI_DEPT2: "", MODEL_MULTI_SUBAGENT: "",
+                MODEL_MULTI_SUBAGENT_RESEARCHER: "", MODEL_MULTI_RESEARCHER: "",
+                MODEL_MULTI_SUBAGENT_CODER: "", MODEL_MULTI_CODER: "",
+                MODEL_MULTI_SUBAGENT_REVIEWER: "", MODEL_MULTI_REVIEWER: "",
                 MODEL_DEPTH_2: "", MODEL_DEPT2: "",
                 MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "",
                 MODEL_SUBAGENT_CODER: "", MODEL_CODER: "",
@@ -482,6 +494,12 @@ export function useModelWizard(ctx: ModelWizardContext) {
           targetLabel = "All Subagents";
         } else if (tier === "all") {
           clearUpdates = {
+            MODEL_MULTI_DEPTH_0: "", MODEL_MULTI_DEPT0: "", MODEL_MULTI_MASTER: "",
+            MODEL_MULTI_DEPTH_1: "", MODEL_MULTI_DEPT1: "", MODEL_MULTI_SUPERAGENT: "",
+            MODEL_MULTI_DEPTH_2: "", MODEL_MULTI_DEPT2: "", MODEL_MULTI_SUBAGENT: "",
+            MODEL_MULTI_SUBAGENT_RESEARCHER: "", MODEL_MULTI_RESEARCHER: "",
+            MODEL_MULTI_SUBAGENT_CODER: "", MODEL_MULTI_CODER: "",
+            MODEL_MULTI_SUBAGENT_REVIEWER: "", MODEL_MULTI_REVIEWER: "",
             MODEL_DEPTH_0: "", MODEL_DEPT0: "",
             MODEL_DEPTH_1: "", MODEL_DEPT1: "",
             MODEL_DEPTH_2: "", MODEL_DEPT2: "",
@@ -497,7 +515,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         if (Object.keys(clearUpdates).length > 0) {
           updateEnvFile(clearUpdates);
           const effectiveMasterModel = isMulti
-            ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
+            ? (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
             : (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel());
           setActiveModel(effectiveMasterModel);
           addLine({
@@ -975,6 +993,15 @@ export function useModelWizard(ctx: ModelWizardContext) {
             : modelName;
           updates = isMulti
             ? {
+                MODEL_MULTI_DEPTH_2: finalModelName,
+                MODEL_MULTI_DEPT2: finalModelName,
+                MODEL_MULTI_SUBAGENT: finalModelName,
+                MODEL_MULTI_SUBAGENT_RESEARCHER: finalModelName,
+                MODEL_MULTI_RESEARCHER: finalModelName,
+                MODEL_MULTI_SUBAGENT_CODER: finalModelName,
+                MODEL_MULTI_CODER: finalModelName,
+                MODEL_MULTI_SUBAGENT_REVIEWER: finalModelName,
+                MODEL_MULTI_REVIEWER: finalModelName,
                 MODEL_DEPTH_2: finalModelName,
                 MODEL_DEPT2: finalModelName,
                 MODEL_SUBAGENT_RESEARCHER: finalModelName,
@@ -1004,6 +1031,21 @@ export function useModelWizard(ctx: ModelWizardContext) {
             : modelName;
           updates = {
             MODEL: modelName,
+            MODEL_MULTI_DEPTH_0: finalModelName,
+            MODEL_MULTI_DEPT0: finalModelName,
+            MODEL_MULTI_MASTER: finalModelName,
+            MODEL_MULTI_DEPTH_1: finalModelName,
+            MODEL_MULTI_DEPT1: finalModelName,
+            MODEL_MULTI_SUPERAGENT: finalModelName,
+            MODEL_MULTI_DEPTH_2: finalModelName,
+            MODEL_MULTI_DEPT2: finalModelName,
+            MODEL_MULTI_SUBAGENT: finalModelName,
+            MODEL_MULTI_SUBAGENT_RESEARCHER: finalModelName,
+            MODEL_MULTI_RESEARCHER: finalModelName,
+            MODEL_MULTI_SUBAGENT_CODER: finalModelName,
+            MODEL_MULTI_CODER: finalModelName,
+            MODEL_MULTI_SUBAGENT_REVIEWER: finalModelName,
+            MODEL_MULTI_REVIEWER: finalModelName,
             MODEL_DEPTH_0: finalModelName,
             MODEL_DEPT0: finalModelName,
             MODEL_DEPTH_1: finalModelName,
@@ -1027,14 +1069,18 @@ export function useModelWizard(ctx: ModelWizardContext) {
             : modelName;
           
           if (tier === "master") {
-            updates = { MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName };
+            updates = isMulti
+              ? { MODEL_MULTI_DEPTH_0: finalModelName, MODEL_MULTI_DEPT0: finalModelName, MODEL_MULTI_MASTER: finalModelName, MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName }
+              : { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
             targetLabel = "Master Agent (depth 0) Model";
           } else if (tier === "superagent") {
-            updates = { MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName };
+            updates = isMulti
+              ? { MODEL_MULTI_DEPTH_1: finalModelName, MODEL_MULTI_DEPT1: finalModelName, MODEL_MULTI_SUPERAGENT: finalModelName, MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName }
+              : { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
             targetLabel = "Superagent (depth 1) Model";
           } else if (tier === "subagent") {
             updates = isMulti
-              ? { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName }
+              ? { MODEL_MULTI_DEPTH_2: finalModelName, MODEL_MULTI_DEPT2: finalModelName, MODEL_MULTI_SUBAGENT: finalModelName, MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName }
               : { MODEL_SINGLE_SUBAGENT: finalModelName, MODEL_SINGLE_DEPTH_2: finalModelName };
             targetLabel = "Subagent (depth 2) Model";
           } else if (tier === "single") {
@@ -1044,6 +1090,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
             const typeUpper = tier.toUpperCase();
             updates = isMulti
               ? {
+                  [`MODEL_MULTI_SUBAGENT_${typeUpper}`]: finalModelName,
+                  [`MODEL_MULTI_${typeUpper}`]: finalModelName,
                   [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
                   [`MODEL_${typeUpper}`]: finalModelName
                 }
@@ -1062,7 +1110,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const isSingle = agentRef?.current?.tier === "single";
         const effectiveModel = isSingle
           ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
-          : (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
+          : (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
         const cleanModel = effectiveModel.includes(":") ? effectiveModel.substring(effectiveModel.indexOf(":") + 1) : effectiveModel;
         const newLimit = getContextWindowLimit(cleanModel);
         setContextLimit(newLimit);
@@ -1070,17 +1118,21 @@ export function useModelWizard(ctx: ModelWizardContext) {
         
         let updatedList = `\n\nUpdated Models:\n`;
         if (isMulti) {
-          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+          const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+          const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
           updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
             `  Superagent (depth 1): ${superagentModel}\n` +
             `  Subagent (depth 2): ${subagentModel}`;
 
           for (const [key, value] of Object.entries(process.env)) {
-            if (value && key.startsWith("MODEL_SUBAGENT_")) {
-              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
-              updatedList += `\n  Subagent "${name}": ${value}`;
+            if (value && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
+              const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+                ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+                : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              if (!updatedList.includes(`Subagent "${name}":`)) {
+                updatedList += `\n  Subagent "${name}": ${value}`;
+              }
             }
           }
         } else {
@@ -1149,16 +1201,16 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const envPath = applyModelPreset(presetName);
         const isSingle = agentRef?.current?.tier === "single";
         const nextActiveModel = isSingle
-          ? (process.env.MODEL || getDefaultModel())
-          : (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
+          ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
+          : (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
         const limit = getContextWindowLimit(nextActiveModel);
         setContextLimit(limit);
         setActiveModel(nextActiveModel);
 
         const currentModel = process.env.MODEL || getDefaultModel();
-        const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-        const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-        const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+        const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+        const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+        const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
         
         let updatedList = `\n\nUpdated Models:\n` +
           `  Master Agent (depth 0): ${masterModel}\n` +
@@ -1166,9 +1218,13 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `  Subagent (depth 2): ${subagentModel}`;
 
         for (const [key, val] of Object.entries(process.env)) {
-          if (val && key.startsWith("MODEL_SUBAGENT_")) {
-            const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
-            updatedList += `\n  Subagent "${name}": ${val}`;
+          if (val && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
+            const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+              ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+              : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+            if (!updatedList.includes(`Subagent "${name}":`)) {
+              updatedList += `\n  Subagent "${name}": ${val}`;
+            }
           }
         }
 
@@ -1356,13 +1412,22 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const tier = data.tier || "";
         const presetModels: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
         if (tier === "master") {
+          delete presetModels.MODEL_MULTI_DEPTH_0;
+          delete presetModels.MODEL_MULTI_DEPT0;
+          delete presetModels.MODEL_MULTI_MASTER;
           delete presetModels.MODEL_DEPTH_0;
           delete presetModels.MODEL_DEPT0;
         } else if (tier === "superagent") {
+          delete presetModels.MODEL_MULTI_DEPTH_1;
+          delete presetModels.MODEL_MULTI_DEPT1;
+          delete presetModels.MODEL_MULTI_SUPERAGENT;
           delete presetModels.MODEL_DEPTH_1;
           delete presetModels.MODEL_DEPT1;
         } else if (tier === "subagent") {
           if (isMulti) {
+            delete presetModels.MODEL_MULTI_DEPTH_2;
+            delete presetModels.MODEL_MULTI_DEPT2;
+            delete presetModels.MODEL_MULTI_SUBAGENT;
             delete presetModels.MODEL_DEPTH_2;
             delete presetModels.MODEL_DEPT2;
           } else {
@@ -1371,6 +1436,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           }
         } else if (tier === "researcher") {
           if (isMulti) {
+            delete presetModels.MODEL_MULTI_SUBAGENT_RESEARCHER;
+            delete presetModels.MODEL_MULTI_RESEARCHER;
             delete presetModels.MODEL_SUBAGENT_RESEARCHER;
             delete presetModels.MODEL_RESEARCHER;
           } else {
@@ -1379,6 +1446,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           }
         } else if (tier === "coder") {
           if (isMulti) {
+            delete presetModels.MODEL_MULTI_SUBAGENT_CODER;
+            delete presetModels.MODEL_MULTI_CODER;
             delete presetModels.MODEL_SUBAGENT_CODER;
             delete presetModels.MODEL_CODER;
           } else {
@@ -1387,6 +1456,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           }
         } else if (tier === "reviewer") {
           if (isMulti) {
+            delete presetModels.MODEL_MULTI_SUBAGENT_REVIEWER;
+            delete presetModels.MODEL_MULTI_REVIEWER;
             delete presetModels.MODEL_SUBAGENT_REVIEWER;
             delete presetModels.MODEL_REVIEWER;
           } else {
@@ -1633,13 +1704,22 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const presetModels: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
 
       if (tier === "master") {
+        presetModels.MODEL_MULTI_DEPTH_0 = finalModelName;
+        presetModels.MODEL_MULTI_DEPT0 = finalModelName;
+        presetModels.MODEL_MULTI_MASTER = finalModelName;
         presetModels.MODEL_DEPTH_0 = finalModelName;
         presetModels.MODEL_DEPT0 = finalModelName;
       } else if (tier === "superagent") {
+        presetModels.MODEL_MULTI_DEPTH_1 = finalModelName;
+        presetModels.MODEL_MULTI_DEPT1 = finalModelName;
+        presetModels.MODEL_MULTI_SUPERAGENT = finalModelName;
         presetModels.MODEL_DEPTH_1 = finalModelName;
         presetModels.MODEL_DEPT1 = finalModelName;
       } else if (tier === "subagent") {
         if (isMulti) {
+          presetModels.MODEL_MULTI_DEPTH_2 = finalModelName;
+          presetModels.MODEL_MULTI_DEPT2 = finalModelName;
+          presetModels.MODEL_MULTI_SUBAGENT = finalModelName;
           presetModels.MODEL_DEPTH_2 = finalModelName;
           presetModels.MODEL_DEPT2 = finalModelName;
         } else {
@@ -1648,6 +1728,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
       } else if (tier === "researcher") {
         if (isMulti) {
+          presetModels.MODEL_MULTI_SUBAGENT_RESEARCHER = finalModelName;
+          presetModels.MODEL_MULTI_RESEARCHER = finalModelName;
           presetModels.MODEL_SUBAGENT_RESEARCHER = finalModelName;
           presetModels.MODEL_RESEARCHER = finalModelName;
         } else {
@@ -1656,6 +1738,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
       } else if (tier === "coder") {
         if (isMulti) {
+          presetModels.MODEL_MULTI_SUBAGENT_CODER = finalModelName;
+          presetModels.MODEL_MULTI_CODER = finalModelName;
           presetModels.MODEL_SUBAGENT_CODER = finalModelName;
           presetModels.MODEL_CODER = finalModelName;
         } else {
@@ -1664,6 +1748,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
       } else if (tier === "reviewer") {
         if (isMulti) {
+          presetModels.MODEL_MULTI_SUBAGENT_REVIEWER = finalModelName;
+          presetModels.MODEL_MULTI_REVIEWER = finalModelName;
           presetModels.MODEL_SUBAGENT_REVIEWER = finalModelName;
           presetModels.MODEL_REVIEWER = finalModelName;
         } else {
@@ -1857,6 +1943,21 @@ export function useModelWizard(ctx: ModelWizardContext) {
             : modelName;
           updates = {
             MODEL: modelName,
+            MODEL_MULTI_DEPTH_0: finalModelName,
+            MODEL_MULTI_DEPT0: finalModelName,
+            MODEL_MULTI_MASTER: finalModelName,
+            MODEL_MULTI_DEPTH_1: finalModelName,
+            MODEL_MULTI_DEPT1: finalModelName,
+            MODEL_MULTI_SUPERAGENT: finalModelName,
+            MODEL_MULTI_DEPTH_2: finalModelName,
+            MODEL_MULTI_DEPT2: finalModelName,
+            MODEL_MULTI_SUBAGENT: finalModelName,
+            MODEL_MULTI_SUBAGENT_RESEARCHER: finalModelName,
+            MODEL_MULTI_RESEARCHER: finalModelName,
+            MODEL_MULTI_SUBAGENT_CODER: finalModelName,
+            MODEL_MULTI_CODER: finalModelName,
+            MODEL_MULTI_SUBAGENT_REVIEWER: finalModelName,
+            MODEL_MULTI_REVIEWER: finalModelName,
             MODEL_DEPTH_0: finalModelName,
             MODEL_DEPT0: finalModelName,
             MODEL_DEPTH_1: finalModelName,
@@ -1880,20 +1981,33 @@ export function useModelWizard(ctx: ModelWizardContext) {
             : modelName;
           
           if (tier === "master") {
-            updates = { MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName };
+            updates = isMulti
+              ? { MODEL_MULTI_DEPTH_0: finalModelName, MODEL_MULTI_DEPT0: finalModelName, MODEL_MULTI_MASTER: finalModelName, MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName }
+              : { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
             targetLabel = "Master Agent (depth 0) Model";
           } else if (tier === "superagent") {
-            updates = { MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName };
+            updates = isMulti
+              ? { MODEL_MULTI_DEPTH_1: finalModelName, MODEL_MULTI_DEPT1: finalModelName, MODEL_MULTI_SUPERAGENT: finalModelName, MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName }
+              : { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
             targetLabel = "Superagent (depth 1) Model";
           } else if (tier === "subagent") {
-            updates = { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName };
+            updates = isMulti
+              ? { MODEL_MULTI_DEPTH_2: finalModelName, MODEL_MULTI_DEPT2: finalModelName, MODEL_MULTI_SUBAGENT: finalModelName, MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName }
+              : { MODEL_SINGLE_SUBAGENT: finalModelName, MODEL_SINGLE_DEPTH_2: finalModelName };
             targetLabel = "Subagent (depth 2) Model";
           } else {
             const typeUpper = tier.toUpperCase();
-            updates = {
-              [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
-              [`MODEL_${typeUpper}`]: finalModelName
-            };
+            updates = isMulti
+              ? {
+                  [`MODEL_MULTI_SUBAGENT_${typeUpper}`]: finalModelName,
+                  [`MODEL_MULTI_${typeUpper}`]: finalModelName,
+                  [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
+                  [`MODEL_${typeUpper}`]: finalModelName
+                }
+              : {
+                  [`MODEL_SINGLE_SUBAGENT_${typeUpper}`]: finalModelName,
+                  [`MODEL_SINGLE_${typeUpper}`]: finalModelName
+                };
             targetLabel = `Subagent "${tier}" Model`;
           }
           envPath = updateEnvFile(updates);
@@ -1904,17 +2018,17 @@ export function useModelWizard(ctx: ModelWizardContext) {
         
         const isSingle = agentRef?.current?.tier === "single";
         const effectiveModel = isSingle
-          ? (process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || process.env.MODEL || getDefaultModel())
-          : (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
+          ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
+          : (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
         const cleanModel = effectiveModel.includes(":") ? effectiveModel.substring(effectiveModel.indexOf(":") + 1) : effectiveModel;
         const newLimit = getContextWindowLimit(cleanModel);
         setContextLimit(newLimit);
         setActiveModel(effectiveModel);
         
         const currentModel = process.env.MODEL || getDefaultModel();
-        const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-        const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-        const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+        const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+        const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+        const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
         
         let updatedList = `\n\nUpdated Models:\n` +
           `  Master Agent (depth 0): ${masterModel}\n` +
@@ -1922,9 +2036,13 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `  Subagent (depth 2): ${subagentModel}`;
 
         for (const [key, value] of Object.entries(process.env)) {
-          if (value && key.startsWith("MODEL_SUBAGENT_")) {
-            const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
-            updatedList += `\n  Subagent "${name}": ${value}`;
+          if (value && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
+            const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+              ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+              : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+            if (!updatedList.includes(`Subagent "${name}":`)) {
+              updatedList += `\n  Subagent "${name}": ${value}`;
+            }
           }
         }
 

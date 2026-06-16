@@ -61,7 +61,7 @@ export const modelCommand: SlashCommand = {
             const envPath = applyModelPreset(presetName);
             const isMulti = ctx.agent?.isMultiAgent ?? false;
             const nextActiveModel = isMulti
-              ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
+              ? (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
               : (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel());
             const limit = getContextWindowLimit(nextActiveModel);
             
@@ -105,6 +105,21 @@ export const modelCommand: SlashCommand = {
           if (isMulti) {
             updates = {
               MODEL: modelName,
+              MODEL_MULTI_DEPTH_0: modelName,
+              MODEL_MULTI_DEPT0: modelName,
+              MODEL_MULTI_MASTER: modelName,
+              MODEL_MULTI_DEPTH_1: modelName,
+              MODEL_MULTI_DEPT1: modelName,
+              MODEL_MULTI_SUPERAGENT: modelName,
+              MODEL_MULTI_DEPTH_2: modelName,
+              MODEL_MULTI_DEPT2: modelName,
+              MODEL_MULTI_SUBAGENT: modelName,
+              MODEL_MULTI_SUBAGENT_RESEARCHER: modelName,
+              MODEL_MULTI_RESEARCHER: modelName,
+              MODEL_MULTI_SUBAGENT_CODER: modelName,
+              MODEL_MULTI_CODER: modelName,
+              MODEL_MULTI_SUBAGENT_REVIEWER: modelName,
+              MODEL_MULTI_REVIEWER: modelName,
               MODEL_DEPTH_0: modelName,
               MODEL_DEPT0: modelName,
               MODEL_DEPTH_1: modelName,
@@ -134,14 +149,18 @@ export const modelCommand: SlashCommand = {
           const key = tierArg.toLowerCase();
           const isMulti = ctx.agent?.isMultiAgent ?? false;
           if (key === "master" || key === "depth0" || key === "dept0") {
-            updates = { MODEL_DEPTH_0: modelName, MODEL_DEPT0: modelName };
+            updates = isMulti
+              ? { MODEL_MULTI_DEPTH_0: modelName, MODEL_MULTI_DEPT0: modelName, MODEL_MULTI_MASTER: modelName, MODEL_DEPTH_0: modelName, MODEL_DEPT0: modelName }
+              : { MODEL_SINGLE: modelName, MODEL: modelName };
             targetLabel = "Master Agent (depth 0) Model";
           } else if (key === "superagent" || key === "depth1" || key === "dept1") {
-            updates = { MODEL_DEPTH_1: modelName, MODEL_DEPT1: modelName };
+            updates = isMulti
+              ? { MODEL_MULTI_DEPTH_1: modelName, MODEL_MULTI_DEPT1: modelName, MODEL_MULTI_SUPERAGENT: modelName, MODEL_DEPTH_1: modelName, MODEL_DEPT1: modelName }
+              : { MODEL_SINGLE: modelName, MODEL: modelName };
             targetLabel = "Superagent (depth 1) Model";
           } else if (key === "subagent" || key === "depth2" || key === "dept2") {
             updates = isMulti
-              ? { MODEL_DEPTH_2: modelName, MODEL_DEPT2: modelName }
+              ? { MODEL_MULTI_DEPTH_2: modelName, MODEL_MULTI_DEPT2: modelName, MODEL_MULTI_SUBAGENT: modelName, MODEL_DEPTH_2: modelName, MODEL_DEPT2: modelName }
               : { MODEL_SINGLE_SUBAGENT: modelName, MODEL_SINGLE_DEPTH_2: modelName };
             targetLabel = "Subagent (depth 2) Model";
           } else {
@@ -149,6 +168,8 @@ export const modelCommand: SlashCommand = {
             const typeUpper = type.toUpperCase();
             updates = isMulti
               ? {
+                  [`MODEL_MULTI_SUBAGENT_${typeUpper}`]: modelName,
+                  [`MODEL_MULTI_${typeUpper}`]: modelName,
                   [`MODEL_SUBAGENT_${typeUpper}`]: modelName,
                   [`MODEL_${typeUpper}`]: modelName
                 }
@@ -172,24 +193,28 @@ export const modelCommand: SlashCommand = {
         const isMulti = ctx.agent?.isMultiAgent ?? false;
         if (ctx.setActiveModel) {
           const nextActiveModel = isMulti
-            ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
+            ? (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
             : (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel());
           ctx.setActiveModel(nextActiveModel);
         }
         
         let updatedList = `\n\nUpdated Models:\n`;
         if (isMulti) {
-          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+          const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+          const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
           updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
             `  Superagent (depth 1): ${superagentModel}\n` +
             `  Subagent (depth 2): ${subagentModel}`;
 
           for (const [key, value] of Object.entries(process.env)) {
-            if (value && key.startsWith("MODEL_SUBAGENT_")) {
-              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
-              updatedList += `\n  Subagent "${name}": ${value}`;
+            if (value && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
+              const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+                ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+                : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              if (!updatedList.includes(`Subagent "${name}":`)) {
+                updatedList += `\n  Subagent "${name}": ${value}`;
+              }
             }
           }
         } else {
@@ -234,18 +259,23 @@ export const modelCommand: SlashCommand = {
       const isMulti = ctx.agent?.isMultiAgent ?? false;
       let content = `Current Models:\n`;
       if (isMulti) {
-        const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-        const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-        const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+        const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+        const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+        const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
         content += `  Master Agent (depth 0): ${masterModel}\n` +
           `  Superagent (depth 1): ${superagentModel}\n` +
           `  Subagent (depth 2): ${subagentModel}`;
         
         const subagentSpecificOverrides: string[] = [];
         for (const [key, value] of Object.entries(process.env)) {
-          if (value && key.startsWith("MODEL_SUBAGENT_")) {
-            const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
-            subagentSpecificOverrides.push(`  Subagent "${name}": ${value}`);
+          if (value && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
+            const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+              ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+              : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+            const entry = `  Subagent "${name}": ${value}`;
+            if (!subagentSpecificOverrides.includes(entry) && !content.includes(entry)) {
+              subagentSpecificOverrides.push(entry);
+            }
           }
         }
         if (subagentSpecificOverrides.length > 0) {
