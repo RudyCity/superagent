@@ -179,4 +179,49 @@ describe("Model Presets", () => {
     expect(myPreset?.models.MODEL).toBe("openai:gpt-4-explicit");
     expect(myPreset?.models.MODEL_DEPTH_0).toBe("openai:gpt-4-explicit-master");
   });
+
+  it("should retrieve custom provider profile credentials from model-config.json when resolving model instance", async () => {
+    const { loadModelConfig, saveModelConfig } = await import("../src/core/config/jsonConfig.js");
+    const { getModelInstanceForString } = await import("../src/core/config/models.js");
+    const originalConfig = loadModelConfig();
+
+    const testConfig = {
+      ...originalConfig,
+      providers: [
+        ...originalConfig.providers,
+        {
+          id: "uuuu",
+          name: "uuuu",
+          provider: "openrouter",
+          apiKey: "test-api-key-value-from-json",
+          baseUrl: "https://openrouter.ai/api/v1",
+        }
+      ]
+    };
+
+    saveModelConfig(testConfig);
+
+    // Call getModelInstanceForString with a model that uses the "uuuu" prefix
+    // In a test environment, vitest mock/CI might run check. So we set process.env.VITEST to override checking or use SUPERAGENT_FORCE_VAL_CHECK
+    // Let's call getModelInstanceForString directly and mock createOpenAI/createAnthropic if needed, or check if it throws/returns.
+    // Actually, getModelInstanceForString parses/creates a provider client. If we pass "uuuu:google/gemini-2.5-flash", it will create the OpenAI/OpenRouter client.
+    // Let's spy on or verify it configures the right key. Since createOpenAI is imported, we can just verify that it doesn't throw "API key is missing".
+    // Wait, the API key verification checks if apiKey is missing or "dummy". If it finds "test-api-key-value-from-json", it will proceed to createOpenAI.
+    // Let's call it and verify it doesn't throw API key missing. (It might throw a fetch/network error or succeed, but not throw API key missing).
+    
+    let error: any = null;
+    try {
+      getModelInstanceForString("uuuu:google/gemini-2.5-flash");
+    } catch (e: any) {
+      error = e;
+    }
+
+    // It should NOT throw "API key is missing or not configured."
+    if (error) {
+      expect(error.message).not.toContain("API key is missing or not configured");
+    }
+
+    // Clean up
+    saveModelConfig(originalConfig);
+  });
 });

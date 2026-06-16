@@ -6,6 +6,7 @@ import { getStaticModelLimit } from "../model_limits.js";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { getConfig } from "./base.js";
 import { getConfiguredProviders } from "./providers.js";
+import { loadModelConfig, getActivePreset, TierModelConfig } from "./jsonConfig.js";
 
 export async function fetchAndCacheModels(): Promise<void> {
   const providers = getConfiguredProviders();
@@ -210,7 +211,29 @@ export function getModelInstanceForString(modelStr: string) {
           provider = "openai";
         }
       } else {
-        if (prefix.startsWith("openrouter")) {
+        const modelConfig = loadModelConfig();
+        const matchedProvider = modelConfig.providers?.find(
+          p => p.id?.toLowerCase() === prefix || p.name?.toLowerCase() === prefix
+        );
+        if (matchedProvider) {
+          apiKey = matchedProvider.apiKey || "";
+          baseUrl = matchedProvider.baseUrl || undefined;
+          modelName = rest;
+          const typeLower = (matchedProvider.provider || "").toLowerCase();
+          if (typeLower === "openrouter") {
+            provider = "custom";
+            if (!baseUrl) {
+              baseUrl = "https://openrouter.ai/api/v1";
+            }
+          } else if (typeLower === "anthropic") {
+            provider = "anthropic";
+            baseUrl = undefined;
+          } else if (typeLower === "custom" || baseUrl) {
+            provider = "custom";
+          } else {
+            provider = "openai";
+          }
+        } else if (prefix.startsWith("openrouter")) {
           provider = "custom";
           baseUrl = "https://openrouter.ai/api/v1";
           const canFallback = config.provider === "custom" || config.provider === "openai";
@@ -258,8 +281,6 @@ export function getModelInstanceForString(modelStr: string) {
   });
   return openai(modelName);
 }
-
-import { loadModelConfig, getActivePreset, TierModelConfig } from "./jsonConfig.js";
 
 export function getModelInstanceForTier(tier: string, depth: number, subagentType?: string, isSingleMode?: boolean) {
   const isMulti = !isSingleMode && !process.env.SINGLE_AGENT_MODE && (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true");
