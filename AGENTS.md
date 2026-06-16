@@ -44,6 +44,8 @@ Master Agent  (orchestrator)
 - **Master Agent Planning**: The Master Agent is restricted from directly modifying codebase files and MUST delegate all feature implementation to Superagents. Therefore, the Master Agent's Implementation Plan and Task Tracking files MUST explicitly focus on spawning, monitoring, and merging Superagents (specifying their roles, git branches, and feature tasks) rather than detailing direct file edits as if it were performing them itself.
 - **Commit Final Changes**: Every final change or completed task/feature must be staged and committed to the git repository.
 - **Code Limits & Architecture**: Keep all code files under 1200 lines to ensure readability. Always design with a single source of truth, focus on modularity, maintainability, scalability, and adhere to industry best practices.
+- **Exploration & Research**: When performing codebase exploration, investigation, or research, always spawn a subagent to handle the task.
+
 
 
 
