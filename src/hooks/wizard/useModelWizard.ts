@@ -66,13 +66,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
         ];
       } else {
         return [
-          `1. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
-          `2. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
-          `3. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
-          `4. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
-          `5. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
-          "6. Save Preset & Exit",
-          "7. Cancel & Exit",
+          `1. Single Agent Model (${formatVal(models.MODEL_SINGLE || models.MODEL)})`,
+          "2. Save Preset & Exit",
+          "3. Cancel & Exit",
           "< Back"
         ];
       }
@@ -174,35 +170,34 @@ export function useModelWizard(ctx: ModelWizardContext) {
         return;
       }
 
-      if (choice.includes("configure") || choice === "6. configure agent tier models") {
-        const getResolvedModelWithProvider = (rawVal: string, isDefault: boolean): string => {
-          const mStr = (rawVal || (isDefault ? (process.env.MODEL || getDefaultModel()) : "")).trim();
-          if (!mStr) return "(not set)";
-          if (mStr.includes(":")) return mStr;
-          const activeProvider = (process.env.ACTIVE_PROVIDER || (process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai")).trim();
-          return `${activeProvider}:${mStr}`;
-        };
-        const defaultResolved = getResolvedModelWithProvider("", true);
-        const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
-        const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
-        const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
-        const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
-        const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
-        const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
-        const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
-        const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
-        const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
-        const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
-        const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
-        const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
-
-        setActiveWizard({
-          type: "model",
-          step: 50,
-          data: {},
-        });
-        const isMulti = agentRef?.current?.isMultiAgent ?? false;
+      if (choice.includes("configure") || choice === "6. configure agent tier models" || choice === "6. configure single agent model") {
         if (isMulti) {
+          const getResolvedModelWithProvider = (rawVal: string, isDefault: boolean): string => {
+            const mStr = (rawVal || (isDefault ? (process.env.MODEL || getDefaultModel()) : "")).trim();
+            if (!mStr) return "(not set)";
+            if (mStr.includes(":")) return mStr;
+            const activeProvider = (process.env.ACTIVE_PROVIDER || (process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai")).trim();
+            return `${activeProvider}:${mStr}`;
+          };
+          const defaultResolved = getResolvedModelWithProvider("", true);
+          const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+          const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
+          const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+          const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
+          const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+          const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
+          const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
+          const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
+          const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
+          const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
+          const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
+          const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
+
+          setActiveWizard({
+            type: "model",
+            step: 50,
+            data: {},
+          });
           setWizardOptions([
             `1. Master Agent (depth 0) (${masterModelFormatted})`,
             `2. Superagent (depth 1) (${superagentModelFormatted})`,
@@ -214,14 +209,18 @@ export function useModelWizard(ctx: ModelWizardContext) {
             `< Back`
           ]);
         } else {
+          setActiveWizard({
+            type: "model",
+            step: 2,
+            data: { tier: "single" },
+          });
           setWizardOptions([
-            `1. Superagent (depth 1) (${superagentModelFormatted})`,
-            `2. Subagent (depth 2) (${subagentModelFormatted})`,
-            `3. Subagent: researcher (${researcherModelFormatted})`,
-            `4. Subagent: coder (${coderModelFormatted})`,
-            `5. Subagent: reviewer (${reviewerModelFormatted})`,
-            `6. All Tiers (Overwrite All)`,
-            `< Back`
+            "1. OpenRouter (Recommended)",
+            "2. OpenAI",
+            "3. Anthropic",
+            "4. Custom Endpoint",
+            "5. Not Set (Clear Override)",
+            "< Back"
           ]);
         }
         setWizardSelectedIndex(0);
@@ -253,7 +252,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           "3. Create Model Preset",
           "4. Edit Model Preset",
           "5. Delete Model Preset",
-          "6. Configure Agent Tier Models",
+          isMulti ? "6. Configure Agent Tier Models" : "6. Configure Single Agent Model",
           "< Back"
         ]);
         setWizardSelectedIndex(0);
@@ -263,7 +262,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       let tier = "";
       const choice = value.toLowerCase();
-      const isMulti = agentRef?.current?.isMultiAgent ?? false;
       if (choice.includes("master") || choice.includes("depth 0")) {
         tier = "master";
       } else if (choice.includes("superagent") || choice.includes("depth 1")) {
@@ -331,32 +329,48 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
         const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
 
-        setActiveWizard({
-          type: "model",
-          step: 50,
-          data: { ...data },
-        });
-        const isMulti = agentRef?.current?.isMultiAgent ?? false;
-        if (isMulti) {
-          setWizardOptions([
-            `1. Master Agent (depth 0) (${masterModelFormatted})`,
-            `2. Superagent (depth 1) (${superagentModelFormatted})`,
-            `3. Subagent (depth 2) (${subagentModelFormatted})`,
-            `4. Subagent: researcher (${researcherModelFormatted})`,
-            `5. Subagent: coder (${coderModelFormatted})`,
-            `6. Subagent: reviewer (${reviewerModelFormatted})`,
-            `7. All Tiers (Overwrite All)`,
-            `< Back`
-          ]);
+        if (isMulti || (data.tier && data.tier !== "single")) {
+          setActiveWizard({
+            type: "model",
+            step: 50,
+            data: { ...data },
+          });
+          if (isMulti) {
+            setWizardOptions([
+              `1. Master Agent (depth 0) (${masterModelFormatted})`,
+              `2. Superagent (depth 1) (${superagentModelFormatted})`,
+              `3. Subagent (depth 2) (${subagentModelFormatted})`,
+              `4. Subagent: researcher (${researcherModelFormatted})`,
+              `5. Subagent: coder (${coderModelFormatted})`,
+              `6. Subagent: reviewer (${reviewerModelFormatted})`,
+              `7. All Tiers (Overwrite All)`,
+              `< Back`
+            ]);
+          } else {
+            setWizardOptions([
+              `1. Superagent (depth 1) (${superagentModelFormatted})`,
+              `2. Subagent (depth 2) (${subagentModelFormatted})`,
+              `3. Subagent: researcher (${researcherModelFormatted})`,
+              `4. Subagent: coder (${coderModelFormatted})`,
+              `5. Subagent: reviewer (${reviewerModelFormatted})`,
+              `6. All Tiers (Overwrite All)`,
+              `< Back`
+            ]);
+          }
         } else {
+          setActiveWizard({
+            type: "model",
+            step: 1,
+            data: {},
+          });
           setWizardOptions([
-            `1. Superagent (depth 1) (${superagentModelFormatted})`,
-            `2. Subagent (depth 2) (${subagentModelFormatted})`,
-            `3. Subagent: researcher (${researcherModelFormatted})`,
-            `4. Subagent: coder (${coderModelFormatted})`,
-            `5. Subagent: reviewer (${reviewerModelFormatted})`,
-            `6. All Tiers (Overwrite All)`,
-            `< Back`
+            "1. Load/Apply Model Preset",
+            "2. List Model Presets",
+            "3. Create Model Preset",
+            "4. Edit Model Preset",
+            "5. Delete Model Preset",
+            "6. Configure Single Agent Model",
+            "< Back"
           ]);
         }
         setWizardSelectedIndex(0);
@@ -396,10 +410,15 @@ export function useModelWizard(ctx: ModelWizardContext) {
             MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "",
           };
           targetLabel = "All Tiers";
+        } else if (tier === "single") {
+          clearUpdates = { MODEL_SINGLE: "", MODEL: "" };
+          targetLabel = "Single Agent";
         }
         if (Object.keys(clearUpdates).length > 0) {
           updateEnvFile(clearUpdates);
-          const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+          const effectiveMasterModel = isMulti
+            ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
+            : (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel());
           setActiveModel(effectiveMasterModel);
           addLine({
             type: "system",
@@ -907,6 +926,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
           } else if (tier === "subagent") {
             updates = { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName };
             targetLabel = "Subagent (depth 2) Model";
+          } else if (tier === "single") {
+            updates = { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
+            targetLabel = "Single Agent Model";
           } else {
             const typeUpper = tier.toUpperCase();
             updates = {
@@ -923,28 +945,31 @@ export function useModelWizard(ctx: ModelWizardContext) {
         
         const isSingle = agentRef?.current?.tier === "single";
         const effectiveModel = isSingle
-          ? (process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || process.env.MODEL || getDefaultModel())
+          ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
           : (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
         const cleanModel = effectiveModel.includes(":") ? effectiveModel.substring(effectiveModel.indexOf(":") + 1) : effectiveModel;
         const newLimit = getContextWindowLimit(cleanModel);
         setContextLimit(newLimit);
         setActiveModel(effectiveModel);
         
-        const currentModel = process.env.MODEL || getDefaultModel();
-        const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-        const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-        const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
-        
-        let updatedList = `\n\nUpdated Models:\n` +
-          `  Master Agent (depth 0): ${masterModel}\n` +
-          `  Superagent (depth 1): ${superagentModel}\n` +
-          `  Subagent (depth 2): ${subagentModel}`;
+        let updatedList = `\n\nUpdated Models:\n`;
+        if (isMulti) {
+          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
+            `  Superagent (depth 1): ${superagentModel}\n` +
+            `  Subagent (depth 2): ${subagentModel}`;
 
-        for (const [key, value] of Object.entries(process.env)) {
-          if (value && key.startsWith("MODEL_SUBAGENT_")) {
-            const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
-            updatedList += `\n  Subagent "${name}": ${value}`;
+          for (const [key, value] of Object.entries(process.env)) {
+            if (value && key.startsWith("MODEL_SUBAGENT_")) {
+              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              updatedList += `\n  Subagent "${name}": ${value}`;
+            }
           }
+        } else {
+          const singleModel = process.env.MODEL_SINGLE || "(use default)";
+          updatedList += `  Single Agent: ${singleModel}`;
         }
 
         addLine({
@@ -985,7 +1010,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           "3. Create Model Preset",
           "4. Edit Model Preset",
           "5. Delete Model Preset",
-          "6. Configure Agent Tier Models",
+          isMulti ? "6. Configure Agent Tier Models" : "6. Configure Single Agent Model",
           "< Back"
         ]);
         setWizardSelectedIndex(0);
@@ -1051,7 +1076,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           "3. Create Model Preset",
           "4. Edit Model Preset",
           "5. Delete Model Preset",
-          "6. Configure Agent Tier Models",
+          isMulti ? "6. Configure Agent Tier Models" : "6. Configure Single Agent Model",
           "< Back"
         ]);
         setWizardSelectedIndex(0);
@@ -1165,6 +1190,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       else if (value.includes("coder")) tier = "coder";
       else if (value.includes("reviewer")) tier = "reviewer";
       else if (value.includes("Default Model")) tier = "default";
+      else if (value.includes("Single Agent")) tier = "single";
 
       if (!tier) return;
 
@@ -1221,6 +1247,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
         } else if (tier === "reviewer") {
           delete presetModels.MODEL_SUBAGENT_REVIEWER;
           delete presetModels.MODEL_REVIEWER;
+        } else if (tier === "single") {
+          delete presetModels.MODEL_SINGLE;
+          delete presetModels.MODEL;
         }
 
         const nextStep = step === 23 ? 22 : 32;
@@ -1477,6 +1506,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
         presetModels.MODEL_REVIEWER = finalModelName;
       } else if (tier === "default") {
         presetModels.MODEL = finalModelName;
+      } else if (tier === "single") {
+        presetModels.MODEL_SINGLE = finalModelName;
+        presetModels.MODEL = finalModelName;
       }
 
       const nextStep = step === 24 ? 22 : 32;
@@ -1502,7 +1534,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           "3. Create Model Preset",
           "4. Edit Model Preset",
           "5. Delete Model Preset",
-          "6. Configure Agent Tier Models",
+          isMulti ? "6. Configure Agent Tier Models" : "6. Configure Single Agent Model",
           "< Back"
         ]);
         setWizardSelectedIndex(0);
@@ -1563,7 +1595,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           "3. Create Model Preset",
           "4. Edit Model Preset",
           "5. Delete Model Preset",
-          "6. Configure Agent Tier Models",
+          isMulti ? "6. Configure Agent Tier Models" : "6. Configure Single Agent Model",
           "< Back"
         ]);
         setWizardSelectedIndex(0);

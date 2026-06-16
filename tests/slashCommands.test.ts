@@ -65,6 +65,7 @@ describe("Slash Command: /model", () => {
   });
 
   it("should show current configurations when run without arguments", () => {
+    mockCtx.agent = { isMultiAgent: true } as any;
     process.env.MODEL = "openai:gpt-4o";
     process.env.MODEL_DEPTH_0 = "openai:gpt-4o-mini";
     process.env.MODEL_DEPTH_1 = "anthropic:claude-3-5-sonnet";
@@ -93,12 +94,23 @@ describe("Slash Command: /model", () => {
     expect(wizardOptions).toContain("6. Configure Agent Tier Models");
   });
 
-  it("should update standard MODEL when no tier prefix is supplied", () => {
+  it("should update standard MODEL when no tier prefix is supplied in multi-agent mode", () => {
+    mockCtx.agent = { isMultiAgent: true } as any;
     handleSlashCommand("/model anthropic:claude-3-5-haiku", mockCtx);
 
     expect(process.env.MODEL).toBe("anthropic:claude-3-5-haiku");
     expect(addedLines.length).toBe(1);
     expect(addedLines[0].content).toContain("All Tiers (Overwrite All) changed to: anthropic:claude-3-5-haiku");
+  });
+
+  it("should update standard MODEL and MODEL_SINGLE when no tier prefix is supplied in single-agent mode", () => {
+    mockCtx.agent = { isMultiAgent: false } as any;
+    handleSlashCommand("/model anthropic:claude-3-5-haiku", mockCtx);
+
+    expect(process.env.MODEL_SINGLE).toBe("anthropic:claude-3-5-haiku");
+    expect(process.env.MODEL).toBe("anthropic:claude-3-5-haiku");
+    expect(addedLines.length).toBe(1);
+    expect(addedLines[0].content).toContain("Single Agent Model changed to: anthropic:claude-3-5-haiku");
   });
 
   it("should update MODEL_DEPTH_0 when master/depth0/dept0 prefix is supplied", () => {
