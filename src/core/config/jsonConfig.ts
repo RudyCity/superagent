@@ -1,5 +1,5 @@
 import fs from "fs";
-import { getModelConfigPath } from "./paths";
+import { getModelConfigPath } from "./paths.js";
 
 export interface ProviderProfile {
   id: string;
