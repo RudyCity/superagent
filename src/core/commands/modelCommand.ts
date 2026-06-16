@@ -187,6 +187,16 @@ export const modelCommand: SlashCommand = {
         } else {
           const singleModel = process.env.MODEL_SINGLE || "(use default)";
           updatedList += `  Single Agent: ${singleModel}`;
+          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+          if (subagentModel) {
+            updatedList += `\n  Subagent (depth 2): ${subagentModel}`;
+          }
+          for (const [key, value] of Object.entries(process.env)) {
+            if (value && key.startsWith("MODEL_SUBAGENT_")) {
+              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              updatedList += `\n  Subagent "${name}": ${value}`;
+            }
+          }
         }
 
         ctx.addLine({
@@ -236,6 +246,16 @@ export const modelCommand: SlashCommand = {
       } else {
         const singleModel = process.env.MODEL_SINGLE || "(use default)";
         content += `  Single Agent: ${singleModel}`;
+        const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+        if (subagentModel) {
+          content += `\n  Subagent (depth 2): ${subagentModel}`;
+        }
+        for (const [key, value] of Object.entries(process.env)) {
+          if (value && key.startsWith("MODEL_SUBAGENT_")) {
+            const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+            content += `\n  Subagent "${name}": ${value}`;
+          }
+        }
       }
 
       ctx.addLine({
