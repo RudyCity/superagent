@@ -398,3 +398,206 @@ describe("Slash Command: /worktree", () => {
   });
 });
 
+describe("Slash Command: /login", () => {
+  let addedLines: ChatLine[] = [];
+  let activeWizard: any = null;
+  let wizardOptions: string[] = [];
+
+  const mockCtx = {
+    addLine: (line: ChatLine) => {
+      addedLines.push(line);
+    },
+    exit: () => {},
+    agent: null,
+    setActiveWizard: (w: any) => {
+      activeWizard = w;
+    },
+    setWizardOptions: (opts: string[]) => {
+      wizardOptions = opts;
+    },
+    setWizardSelectedIndex: () => {},
+  };
+
+  beforeEach(() => {
+    process.env.MODEL = "openai:gpt-4o";
+    addedLines = [];
+    activeWizard = null;
+    wizardOptions = [];
+    vi.restoreAllMocks();
+  });
+
+  it("should show usage instructions if run without arguments and setActiveWizard is not present", async () => {
+    const ctxNoWizard = {
+      addLine: (line: ChatLine) => {
+        addedLines.push(line);
+      },
+      exit: () => {},
+      agent: null,
+    };
+    await handleSlashCommand("/login", ctxNoWizard as any);
+    expect(addedLines.length).toBe(1);
+    expect(addedLines[0].content).toContain("Usage:");
+    expect(addedLines[0].content).toContain("/login add");
+    expect(addedLines[0].content).toContain("/login list");
+    expect(addedLines[0].content).toContain("/login remove");
+  });
+
+  it("should launch wizard if run without arguments and setActiveWizard is present", async () => {
+    vi.spyOn(configModule, "getConfiguredProviders").mockReturnValue([]);
+    await handleSlashCommand("/login", mockCtx as any);
+    expect(activeWizard).toEqual({
+      type: "login",
+      step: 2,
+      data: {},
+    });
+    expect(wizardOptions[0]).toContain("OpenRouter");
+  });
+
+  it("should list configured providers on /login list", async () => {
+    vi.spyOn(configModule, "getProviders").mockReturnValue([
+      {
+        id: "openrouter",
+        name: "openrouter",
+        provider: "openrouter",
+        apiKey: "sk-or-test-key-1234",
+      },
+      {
+        id: "custom-p",
+        name: "custom-p",
+        provider: "custom",
+        apiKey: "custom-key",
+        baseUrl: "https://custom.api/v1",
+      }
+    ]);
+
+    await handleSlashCommand("/login list", mockCtx as any);
+    expect(addedLines.length).toBe(1);
+    expect(addedLines[0].content).toContain("Configured Providers:");
+    expect(addedLines[0].content).toContain("- openrouter [openrouter] (API Key: sk-o...1234)");
+    expect(addedLines[0].content).toContain("- custom-p [custom] (API Key: cust...-key) (Base URL: https://custom.api/v1)");
+  });
+
+  it("should output message if no providers configured on /login list", async () => {
+    vi.spyOn(configModule, "getProviders").mockReturnValue([]);
+    await handleSlashCommand("/login list", mockCtx as any);
+    expect(addedLines.length).toBe(1);
+    expect(addedLines[0].content).toContain("No providers configured yet.");
+  });
+
+  it("should remove provider and clear env on /login remove <id>", async () => {
+    vi.spyOn(configModule, "getProviders").mockReturnValue([
+      {
+        id: "openrouter",
+        name: "openrouter",
+        provider: "openrouter",
+        apiKey: "sk-or-test-key-1234",
+      }
+    ]);
+    const removeProviderSpy = vi.spyOn(configModule, "removeProvider").mockImplementation(() => {});
+    const updateEnvFileSpy = vi.spyOn(configModule, "updateEnvFile").mockImplementation(() => "");
+
+    await handleSlashCommand("/login remove openrouter", mockCtx as any);
+
+    expect(removeProviderSpy).toHaveBeenCalledWith("openrouter");
+    expect(updateEnvFileSpy).toHaveBeenCalledWith({
+      PROVIDER_OPENROUTER_TYPE: "",
+      PROVIDER_OPENROUTER_API_KEY: "",
+      PROVIDER_OPENROUTER_BASE_URL: "",
+    });
+    expect(addedLines[0].content).toContain("Successfully removed provider: openrouter");
+  });
+
+  it("should fail to remove non-existent provider on /login remove <id>", async () => {
+    vi.spyOn(configModule, "getProviders").mockReturnValue([]);
+    await handleSlashCommand("/login remove non-existent", mockCtx as any);
+    expect(addedLines.length).toBe(1);
+    expect(addedLines[0].type).toBe("error");
+    expect(addedLines[0].content).toContain('Provider with ID "non-existent" not found');
+  });
+
+  it("should add provider on /login add <provider> <api_key>", async () => {
+    const addProviderSpy = vi.spyOn(configModule, "addProvider").mockImplementation(() => {});
+    const updateEnvFileSpy = vi.spyOn(configModule, "updateEnvFile").mockImplementation(() => "");
+    vi.spyOn(configModule, "fetchAndCacheModels").mockResolvedValue(undefined as any);
+
+    await handleSlashCommand("/login add openrouter sk-or-test-key-5678", mockCtx as any);
+
+    expect(addProviderSpy).toHaveBeenCalledWith({
+      id: "openrouter",
+      name: "openrouter",
+      provider: "openrouter",
+      apiKey: "sk-or-test-key-5678",
+      baseUrl: "https://openrouter.ai/api/v1",
+    });
+    expect(updateEnvFileSpy).toHaveBeenCalledWith({
+      ACTIVE_PROVIDER: "",
+      PROVIDER_OPENROUTER_TYPE: "openrouter",
+      PROVIDER_OPENROUTER_API_KEY: "sk-or-test-key-5678",
+      PROVIDER_OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
+    });
+    expect(addedLines[0].content).toContain("Successfully logged in. Configured provider: openrouter (openrouter)");
+  });
+
+  it("should add custom provider on /login add custom <base_url> <api_key>", async () => {
+    const addProviderSpy = vi.spyOn(configModule, "addProvider").mockImplementation(() => {});
+    const updateEnvFileSpy = vi.spyOn(configModule, "updateEnvFile").mockImplementation(() => "");
+    vi.spyOn(configModule, "fetchAndCacheModels").mockResolvedValue(undefined as any);
+
+    await handleSlashCommand("/login add custom https://custom.api/v1 custom-key-123", mockCtx as any);
+
+    expect(addProviderSpy).toHaveBeenCalledWith({
+      id: "custom",
+      name: "custom",
+      provider: "custom",
+      apiKey: "custom-key-123",
+      baseUrl: "https://custom.api/v1",
+    });
+    expect(updateEnvFileSpy).toHaveBeenCalledWith({
+      ACTIVE_PROVIDER: "",
+      PROVIDER_CUSTOM_TYPE: "custom",
+      PROVIDER_CUSTOM_API_KEY: "custom-key-123",
+      PROVIDER_CUSTOM_BASE_URL: "https://custom.api/v1",
+    });
+    expect(addedLines[0].content).toContain("Successfully logged in. Configured provider: custom (custom)");
+  });
+
+  it("should support auto-detection on /login add <api_key>", async () => {
+    const addProviderSpy = vi.spyOn(configModule, "addProvider").mockImplementation(() => {});
+    const updateEnvFileSpy = vi.spyOn(configModule, "updateEnvFile").mockImplementation(() => "");
+    vi.spyOn(configModule, "fetchAndCacheModels").mockResolvedValue(undefined as any);
+
+    await handleSlashCommand("/login add sk-ant-test-key-777", mockCtx as any);
+
+    expect(addProviderSpy).toHaveBeenCalledWith({
+      id: "anthropic",
+      name: "anthropic",
+      provider: "anthropic",
+      apiKey: "sk-ant-test-key-777",
+      baseUrl: undefined,
+    });
+    expect(updateEnvFileSpy).toHaveBeenCalledWith({
+      ACTIVE_PROVIDER: "",
+      PROVIDER_ANTHROPIC_TYPE: "anthropic",
+      PROVIDER_ANTHROPIC_API_KEY: "sk-ant-test-key-777",
+    });
+  });
+
+  it("should fallback to legacy usage with warning", async () => {
+    const addProviderSpy = vi.spyOn(configModule, "addProvider").mockImplementation(() => {});
+    const updateEnvFileSpy = vi.spyOn(configModule, "updateEnvFile").mockImplementation(() => "");
+    vi.spyOn(configModule, "fetchAndCacheModels").mockResolvedValue(undefined as any);
+
+    await handleSlashCommand("/login openrouter sk-or-legacy", mockCtx as any);
+
+    expect(addedLines[0].content).toContain("Warning: Direct use of /login is deprecated. Please use: /login add");
+    expect(addProviderSpy).toHaveBeenCalledWith({
+      id: "openrouter",
+      name: "openrouter",
+      provider: "openrouter",
+      apiKey: "sk-or-legacy",
+      baseUrl: "https://openrouter.ai/api/v1",
+    });
+  });
+});
+
+
