@@ -203,7 +203,16 @@ export function WizardPanels(props: WizardPanelsProps) {
           />
         )}
 
-        {activeWizard && activeWizard.type === "model" && activeWizard.step === 3 && wizardOptions.length > 0 && (() => {
+        {activeWizard && activeWizard.type === "model" && activeWizard.step === 3 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title={`⚙️ SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"} (Use Arrow Keys Up/Down & Enter):`}
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "model" && activeWizard.step === 15 && wizardOptions.length > 0 && (() => {
           const modelSearchQuery = input.trim();
           const filteredModels = modelSearchQuery
             ? filterSuggestions(wizardOptions, modelSearchQuery)
@@ -296,6 +305,16 @@ export function WizardPanels(props: WizardPanelsProps) {
           />
         )}
 
+        {activeWizard && activeWizard.type === "model" && activeWizard.step === 25 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title={`📝 CREATE MODEL PRESET — Select Profile for ${activeWizard.data.tier?.toUpperCase() || "Tiers"}:`}
+            description="Choose a credential profile (or select '< Back' to return):"
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
         {activeWizard && activeWizard.type === "model" && activeWizard.step === 24 && wizardOptions.length > 0 && (() => {
           const modelSearchQuery = input.trim();
           const filteredModels = modelSearchQuery
@@ -333,6 +352,16 @@ export function WizardPanels(props: WizardPanelsProps) {
           <WizardDialog
             title={`📝 EDIT MODEL PRESET — Select Provider for ${activeWizard.data.tier?.toUpperCase() || "Tiers"}:`}
             description="Choose a provider template (or select '< Back' to return):"
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "model" && activeWizard.step === 35 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title={`📝 EDIT MODEL PRESET — Select Profile for ${activeWizard.data.tier?.toUpperCase() || "Tiers"}:`}
+            description="Choose a credential profile (or select '< Back' to return):"
             borderColor="cyan"
             options={wizardOptions}
             selectedIndex={wizardSelectedIndex}

@@ -623,7 +623,7 @@ export function MultiAgentDashboard({
   }
   let wizardHeight = 0;
   if (activeWizard) {
-    const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34);
+    const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
     const maxVis = isModelSelectStep ? 8 : 10;
 
     const lc = query.trim();
@@ -668,7 +668,7 @@ export function MultiAgentDashboard({
       ? wrapTextForDisplay(wizardDescription, Math.max(10, terminalSize.width - 4)).length
       : 0;
 
-    const hasLoading = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34) && wizardIsLoadingModels;
+    const hasLoading = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) && wizardIsLoadingModels;
 
     wizardHeight += 1; // Outer top border │
     wizardHeight += 1; // Title line
@@ -1015,8 +1015,10 @@ export function MultiAgentDashboard({
       <Box flexDirection="row" marginTop={0} paddingX={1} width="100%">
         <Box flexShrink={0}>
           <Text bold color={activeWizard ? "magenta" : isProcessing ? "gray" : (focusArea === "input" ? "green" : "cyan")}>
-            {activeWizard?.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34)
+            {activeWizard?.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)
               ? "└──[ MODEL ] ❯ "
+              : activeWizard?.type === "model" && (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35)
+              ? "└──[ PROFILE ] ❯ "
               : activeWizard?.type === "model" && (activeWizard.step === 2 || activeWizard.step === 23 || activeWizard.step === 33)
               ? "└──[ PROVIDER ] ❯ "
               : activeWizard?.type === "model" && (activeWizard.step === 1 || activeWizard.step === 22 || activeWizard.step === 32)

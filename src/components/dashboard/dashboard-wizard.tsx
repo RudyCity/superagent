@@ -41,7 +41,7 @@ export function DashboardWizard({
         <Text color={wizardBorderColor}>│</Text>
       </Box>
       {/* Model step 3, 24, 34: split out to handle query-based filtering like single agent */}
-      {activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34) && (() => {
+      {activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) && (() => {
         const lc = query.trim();
         const filteredModels = lc
           ? filterSuggestions(wizardAllOptions, lc)
@@ -69,20 +69,23 @@ export function DashboardWizard({
       })()}
 
       {/* All other wizard types */}
-      {(activeWizard.type !== "model" || (activeWizard.step !== 3 && activeWizard.step !== 24 && activeWizard.step !== 34)) && (
+      {(activeWizard.type !== "model" || (activeWizard.step !== 15 && activeWizard.step !== 24 && activeWizard.step !== 34)) && (
         <WizardDialog
           title={
             activeWizard.type === "model" && activeWizard.step === 1 ? `⚙️ SELECT AGENT TIER TO CONFIGURE:` :
             activeWizard.type === "model" && activeWizard.step === 2 ? `⚙️ SELECT MODEL PROVIDER FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"}:` :
+            activeWizard.type === "model" && activeWizard.step === 3 ? `⚙️ SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"}:` :
             activeWizard.type === "model" && activeWizard.step === 4 ? `⚙️ LOAD/APPLY MODEL PRESET:` :
             activeWizard.type === "model" && activeWizard.step === 20 ? `⚙️ CREATE MODEL PRESET — ENTER PRESET NAME:` :
             activeWizard.type === "model" && activeWizard.step === 21 ? `⚙️ CREATE MODEL PRESET — ENTER DESCRIPTION:` :
             activeWizard.type === "model" && activeWizard.step === 22 ? `⚙️ CREATE MODEL PRESET — SELECT AGENT TIER TO CONFIGURE:` :
             activeWizard.type === "model" && activeWizard.step === 23 ? `⚙️ CREATE MODEL PRESET — SELECT MODEL PROVIDER FOR ${activeWizard.data.tier?.toUpperCase()}:` :
+            activeWizard.type === "model" && activeWizard.step === 25 ? `⚙️ CREATE MODEL PRESET — SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase()}:` :
             activeWizard.type === "model" && activeWizard.step === 30 ? `⚙️ EDIT MODEL PRESET — SELECT PRESET TO EDIT:` :
             activeWizard.type === "model" && activeWizard.step === 31 ? `⚙️ EDIT MODEL PRESET — ENTER NEW DESCRIPTION:` :
             activeWizard.type === "model" && activeWizard.step === 32 ? `⚙️ EDIT MODEL PRESET — SELECT AGENT TIER TO CONFIGURE:` :
             activeWizard.type === "model" && activeWizard.step === 33 ? `⚙️ EDIT MODEL PRESET — SELECT MODEL PROVIDER FOR ${activeWizard.data.tier?.toUpperCase()}:` :
+            activeWizard.type === "model" && activeWizard.step === 35 ? `⚙️ EDIT MODEL PRESET — SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase()}:` :
             activeWizard.type === "model" && activeWizard.step === 40 ? `⚙️ DELETE MODEL PRESET — SELECT PRESET TO DELETE:` :
             activeWizard.type === "model" && activeWizard.step === 41 ? `⚙️ DELETE MODEL PRESET — CONFIRM DELETION:` :
             activeWizard.type === "model" && activeWizard.step === 50 ? `⚙️ CONFIGURE AGENT TIERS — SELECT TIER TO CONFIGURE:` :

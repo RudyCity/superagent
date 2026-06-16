@@ -273,7 +273,7 @@ export function App({
 
         const isSelectionStep = 
           (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 10)) ||
-          (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 24 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 34 || activeWizard.step === 40 || activeWizard.step === 41 || activeWizard.step === 50)) ||
+          (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40 || activeWizard.step === 41 || activeWizard.step === 50)) ||
           (activeWizard.type === "permission") ||
           (activeWizard.type === "question" && wizardOptions.length > 0);
 
@@ -470,7 +470,8 @@ export function App({
       if (activeWizard.step === 21) return "Type preset description and press Enter (or type 'back' to go back)...";
       if (activeWizard.step === 22 || activeWizard.step === 32) return "Select tier option using arrows and Enter...";
       if (activeWizard.step === 23 || activeWizard.step === 33) return "Select provider using arrows and Enter...";
-      if (activeWizard.step === 3 || activeWizard.step === 24 || activeWizard.step === 34) return "🔍 Search models (type to filter, arrows to navigate, Enter to select)...";
+      if (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35) return "Select profile using arrows and Enter...";
+      if (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) return "🔍 Search models (type to filter, arrows to navigate, Enter to select)...";
       if (activeWizard.step === 30) return "Select preset to edit using arrows and Enter...";
       if (activeWizard.step === 31) return "Type new description and press Enter (or type 'back' to go back)...";
       if (activeWizard.step === 40) return "Select preset to delete using arrows and Enter...";
