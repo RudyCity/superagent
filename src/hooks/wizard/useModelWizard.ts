@@ -254,6 +254,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         "2. OpenAI",
         "3. Anthropic",
         "4. Custom Endpoint",
+        "5. Not Set (Clear Override)",
         "< Back"
       ]);
       setWizardSelectedIndex(0);
@@ -296,6 +297,56 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `7. All Tiers (Overwrite All)`,
           `< Back`
         ]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      if (value.toLowerCase().includes("not set") || value === "5") {
+        const tier = data.tier || "";
+        let clearUpdates: Record<string, string> = {};
+        let targetLabel = "";
+        if (tier === "master") {
+          clearUpdates = { MODEL_DEPTH_0: "", MODEL_DEPT0: "" };
+          targetLabel = "Master Agent (depth 0)";
+        } else if (tier === "superagent") {
+          clearUpdates = { MODEL_DEPTH_1: "", MODEL_DEPT1: "" };
+          targetLabel = "Superagent (depth 1)";
+        } else if (tier === "subagent") {
+          clearUpdates = { MODEL_DEPTH_2: "", MODEL_DEPT2: "" };
+          targetLabel = "Subagent (depth 2)";
+        } else if (tier === "researcher") {
+          clearUpdates = { MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "" };
+          targetLabel = `Subagent "researcher"`;
+        } else if (tier === "coder") {
+          clearUpdates = { MODEL_SUBAGENT_CODER: "", MODEL_CODER: "" };
+          targetLabel = `Subagent "coder"`;
+        } else if (tier === "reviewer") {
+          clearUpdates = { MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "" };
+          targetLabel = `Subagent "reviewer"`;
+        } else if (tier === "all") {
+          clearUpdates = {
+            MODEL_DEPTH_0: "", MODEL_DEPT0: "",
+            MODEL_DEPTH_1: "", MODEL_DEPT1: "",
+            MODEL_DEPTH_2: "", MODEL_DEPT2: "",
+            MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "",
+            MODEL_SUBAGENT_CODER: "", MODEL_CODER: "",
+            MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "",
+          };
+          targetLabel = "All Tiers";
+        }
+        if (Object.keys(clearUpdates).length > 0) {
+          updateEnvFile(clearUpdates);
+          const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+          setActiveModel(effectiveMasterModel);
+          addLine({
+            type: "system",
+            content: `${targetLabel} model override cleared (not set).`,
+            timestamp: now,
+          });
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -356,6 +407,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           "2. OpenAI",
           "3. Anthropic",
           "4. Custom Endpoint",
+          "5. Not Set (Clear Override)",
           "< Back"
         ]);
         setWizardSelectedIndex(0);
@@ -1072,6 +1124,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         "2. OpenAI",
         "3. Anthropic",
         "4. Custom Endpoint",
+        "5. Not Set (Clear Override)",
         "< Back"
       ]);
       setWizardSelectedIndex(0);
@@ -1093,6 +1146,53 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `4. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
           `5. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
           `6. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+          "7. Save Preset & Exit",
+          "8. Cancel & Exit",
+          "< Back"
+        ]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      if (value.toLowerCase().includes("not set") || value === "5") {
+        const tier = data.tier || "";
+        const presetModels: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
+        if (tier === "master") {
+          delete presetModels.MODEL_DEPTH_0;
+          delete presetModels.MODEL_DEPT0;
+        } else if (tier === "superagent") {
+          delete presetModels.MODEL_DEPTH_1;
+          delete presetModels.MODEL_DEPT1;
+        } else if (tier === "subagent") {
+          delete presetModels.MODEL_DEPTH_2;
+          delete presetModels.MODEL_DEPT2;
+        } else if (tier === "researcher") {
+          delete presetModels.MODEL_SUBAGENT_RESEARCHER;
+          delete presetModels.MODEL_RESEARCHER;
+        } else if (tier === "coder") {
+          delete presetModels.MODEL_SUBAGENT_CODER;
+          delete presetModels.MODEL_CODER;
+        } else if (tier === "reviewer") {
+          delete presetModels.MODEL_SUBAGENT_REVIEWER;
+          delete presetModels.MODEL_REVIEWER;
+        }
+
+        const nextStep = step === 23 ? 22 : 32;
+        setActiveWizard({
+          type: "model",
+          step: nextStep,
+          data: { ...data, presetModels: JSON.stringify(presetModels) },
+        });
+
+        const formatVal = (val?: string) => val ? val : "(not set)";
+        setWizardOptions([
+          `1. Master Agent (depth 0) (${formatVal(presetModels.MODEL_DEPTH_0 || presetModels.MODEL_DEPT0)})`,
+          `2. Superagent (depth 1) (${formatVal(presetModels.MODEL_DEPTH_1 || presetModels.MODEL_DEPT1)})`,
+          `3. Subagent (depth 2) (${formatVal(presetModels.MODEL_DEPTH_2 || presetModels.MODEL_DEPT2)})`,
+          `4. Subagent: researcher (${formatVal(presetModels.MODEL_SUBAGENT_RESEARCHER || presetModels.MODEL_RESEARCHER)})`,
+          `5. Subagent: coder (${formatVal(presetModels.MODEL_SUBAGENT_CODER || presetModels.MODEL_CODER)})`,
+          `6. Subagent: reviewer (${formatVal(presetModels.MODEL_SUBAGENT_REVIEWER || presetModels.MODEL_REVIEWER)})`,
           "7. Save Preset & Exit",
           "8. Cancel & Exit",
           "< Back"
@@ -1159,6 +1259,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           "2. OpenAI",
           "3. Anthropic",
           "4. Custom Endpoint",
+          "5. Not Set (Clear Override)",
           "< Back"
         ]);
         setWizardSelectedIndex(0);

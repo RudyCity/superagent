@@ -349,4 +349,138 @@ describe("Model Wizard Back Navigation", () => {
     expect(activeWizard).toBeNull();
     unmount();
   });
+
+  it("should clear master agent env vars when 'Not Set' is selected on step 2", async () => {
+    // Set up env vars that should be cleared
+    process.env.MODEL_DEPTH_0 = "openrouter:google/gemini-2.5-flash";
+    process.env.MODEL_DEPT0 = "openrouter:google/gemini-2.5-flash";
+    process.env.MODEL = "test-model";
+
+    let capturedHandler: any = null;
+    const TestComponent = () => {
+      capturedHandler = useModelWizard(mockCtx as any);
+      return null;
+    };
+    const { unmount } = render(React.createElement(TestComponent));
+
+    // Simulate step 2 active with tier=master
+    activeWizard = { type: "model", step: 2, data: { tier: "master" } };
+    await capturedHandler("5. Not Set (Clear Override)", 2, { tier: "master" });
+
+    // Should close wizard
+    expect(activeWizard).toBeNull();
+    expect(wizardOptions).toEqual([]);
+
+    // Should have cleared the env vars
+    expect(process.env.MODEL_DEPTH_0).toBeUndefined();
+    expect(process.env.MODEL_DEPT0).toBeUndefined();
+
+    // Should have logged a system message
+    expect(addedLines.some(l => l.content.includes("Master Agent (depth 0) model override cleared"))).toBe(true);
+
+    unmount();
+  });
+
+  it("should clear all tier env vars when 'Not Set' is selected with tier=all on step 2", async () => {
+    process.env.MODEL_DEPTH_0 = "m0";
+    process.env.MODEL_DEPT0 = "m0";
+    process.env.MODEL_DEPTH_1 = "m1";
+    process.env.MODEL_DEPT1 = "m1";
+    process.env.MODEL_DEPTH_2 = "m2";
+    process.env.MODEL_DEPT2 = "m2";
+    process.env.MODEL_SUBAGENT_RESEARCHER = "mr";
+    process.env.MODEL_RESEARCHER = "mr";
+    process.env.MODEL_SUBAGENT_CODER = "mc";
+    process.env.MODEL_CODER = "mc";
+    process.env.MODEL_SUBAGENT_REVIEWER = "mv";
+    process.env.MODEL_REVIEWER = "mv";
+    process.env.MODEL = "fallback-model";
+
+    let capturedHandler: any = null;
+    const TestComponent = () => {
+      capturedHandler = useModelWizard(mockCtx as any);
+      return null;
+    };
+    const { unmount } = render(React.createElement(TestComponent));
+
+    activeWizard = { type: "model", step: 2, data: { tier: "all" } };
+    await capturedHandler("5. Not Set (Clear Override)", 2, { tier: "all" });
+
+    expect(activeWizard).toBeNull();
+    expect(process.env.MODEL_DEPTH_0).toBeUndefined();
+    expect(process.env.MODEL_DEPT0).toBeUndefined();
+    expect(process.env.MODEL_DEPTH_1).toBeUndefined();
+    expect(process.env.MODEL_DEPT1).toBeUndefined();
+    expect(process.env.MODEL_DEPTH_2).toBeUndefined();
+    expect(process.env.MODEL_DEPT2).toBeUndefined();
+    expect(process.env.MODEL_SUBAGENT_RESEARCHER).toBeUndefined();
+    expect(process.env.MODEL_SUBAGENT_CODER).toBeUndefined();
+    expect(process.env.MODEL_SUBAGENT_REVIEWER).toBeUndefined();
+    expect(addedLines.some(l => l.content.includes("All Tiers model override cleared"))).toBe(true);
+
+    unmount();
+  });
+
+  it("should delete preset model keys when 'Not Set' is selected on step 23 (preset)", async () => {
+    const presetModels = {
+      MODEL_DEPTH_0: "openrouter:google/gemini-2.5-flash",
+      MODEL_DEPT0: "openrouter:google/gemini-2.5-flash",
+      MODEL_DEPTH_1: "openrouter:meta/llama-3",
+      MODEL_DEPT1: "openrouter:meta/llama-3",
+    };
+
+    let capturedHandler: any = null;
+    const TestComponent = () => {
+      capturedHandler = useModelWizard(mockCtx as any);
+      return null;
+    };
+    const { unmount } = render(React.createElement(TestComponent));
+
+    activeWizard = {
+      type: "model",
+      step: 23,
+      data: { tier: "master", presetModels: JSON.stringify(presetModels), presetName: "test" },
+    };
+    await capturedHandler("5. Not Set (Clear Override)", 23, activeWizard.data);
+
+    // Should navigate back to step 22 (tier selection for preset)
+    expect(activeWizard).not.toBeNull();
+    expect(activeWizard.step).toBe(22);
+
+    // The master tier keys should be deleted from presetModels
+    const updatedModels = JSON.parse(activeWizard.data.presetModels);
+    expect(updatedModels.MODEL_DEPTH_0).toBeUndefined();
+    expect(updatedModels.MODEL_DEPT0).toBeUndefined();
+
+    // Superagent keys should be preserved
+    expect(updatedModels.MODEL_DEPTH_1).toBe("openrouter:meta/llama-3");
+    expect(updatedModels.MODEL_DEPT1).toBe("openrouter:meta/llama-3");
+
+    // Options should show (not set) for master but still show model for superagent
+    expect(wizardOptions.some(o => o.includes("Master Agent") && o.includes("(not set)"))).toBe(true);
+    expect(wizardOptions.some(o => o.includes("Superagent") && o.includes("openrouter:meta/llama-3"))).toBe(true);
+
+    unmount();
+  });
+
+  it("should include 'Not Set (Clear Override)' in step 2 options", async () => {
+    let capturedHandler: any = null;
+    const TestComponent = () => {
+      capturedHandler = useModelWizard(mockCtx as any);
+      return null;
+    };
+    const { unmount } = render(React.createElement(TestComponent));
+
+    // Simulate selecting a tier (master) on step 50, which transitions to step 2
+    activeWizard = { type: "model", step: 50, data: {} };
+    await capturedHandler("1. Master Agent (depth 0) ((not set))", 50, {});
+
+    // Step 2 should now be active
+    expect(activeWizard.step).toBe(2);
+    expect(wizardOptions).toContain("5. Not Set (Clear Override)");
+    expect(wizardOptions).toContain("< Back");
+
+    unmount();
+  });
 });
+
