@@ -65,7 +65,7 @@ export function WizardPanels(props: WizardPanelsProps) {
         />
       )}
 
-      <Box flexDirection="column" paddingX={1} marginTop={1}>
+      <Box flexDirection="column" marginTop={1}>
         {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (
           <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
             <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
