@@ -1246,6 +1246,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       setHistoryIndex(newIndex);
       setInput(history[newIndex]);
       setIsPasted(false);
+      return;
     }
 
     if (key.downArrow && !isProcessing) {
@@ -1261,6 +1262,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           setIsPasted(false);
         }
       }
+      return;
     }
 
     if (key.tab && !isProcessing) {

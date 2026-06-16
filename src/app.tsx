@@ -293,6 +293,13 @@ export function App({
 
       if (!trimmed) return;
 
+      setHistory((prev) => {
+        if (prev.length > 0 && prev[prev.length - 1] === trimmed) {
+          return prev;
+        }
+        return [...prev, trimmed].slice(-200);
+      });
+
       setInput("");
       setIsPasted(false);
       setLastTabPrefix(null);
