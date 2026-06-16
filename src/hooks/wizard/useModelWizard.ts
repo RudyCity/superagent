@@ -923,7 +923,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         
         const isSingle = agentRef?.current?.tier === "single";
         const effectiveModel = isSingle
-          ? (process.env.MODEL || getDefaultModel())
+          ? (process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || process.env.MODEL || getDefaultModel())
           : (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
         const cleanModel = effectiveModel.includes(":") ? effectiveModel.substring(effectiveModel.indexOf(":") + 1) : effectiveModel;
         const newLimit = getContextWindowLimit(cleanModel);
@@ -1706,7 +1706,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         
         const isSingle = agentRef?.current?.tier === "single";
         const effectiveModel = isSingle
-          ? (process.env.MODEL || getDefaultModel())
+          ? (process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || process.env.MODEL || getDefaultModel())
           : (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
         const cleanModel = effectiveModel.includes(":") ? effectiveModel.substring(effectiveModel.indexOf(":") + 1) : effectiveModel;
         const newLimit = getContextWindowLimit(cleanModel);

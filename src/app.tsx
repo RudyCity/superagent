@@ -126,7 +126,7 @@ export function App({
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
   const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
-  const [activeModel, setActiveModel] = useState(() => process.env.MODEL || getDefaultModel());
+  const [activeModel, setActiveModel] = useState(() => process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || process.env.MODEL || getDefaultModel());
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
   const [focusMode, setFocusMode] = useState<"input" | "history" | "checklist" | "superagents" | "subagents" | "procs" | "chat">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);

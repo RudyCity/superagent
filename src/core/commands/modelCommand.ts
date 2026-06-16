@@ -156,7 +156,7 @@ export const modelCommand: SlashCommand = {
           const isMulti = ctx.agent?.isMultiAgent ?? false;
           const nextActiveModel = isMulti
             ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
-            : (process.env.MODEL || getDefaultModel());
+            : (process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || process.env.MODEL || getDefaultModel());
           ctx.setActiveModel(nextActiveModel);
         }
         
