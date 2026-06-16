@@ -46,9 +46,9 @@ try {
 }
 
 function parseTierConfig(val: string) {
-  const parts = (val || "").split(":");
-  if (parts.length >= 2) {
-    return { providerProfileId: parts[0], model: parts[1] };
+  const colonIndex = (val || "").indexOf(":");
+  if (colonIndex > 0) {
+    return { providerProfileId: val.substring(0, colonIndex), model: val.substring(colonIndex + 1) };
   }
   return { providerProfileId: "default-openai", model: val || "gpt-4o" };
 }

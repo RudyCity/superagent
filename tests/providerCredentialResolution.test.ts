@@ -198,6 +198,32 @@ describe("Provider Credential Resolution Fixes", () => {
   });
 
   describe("Fix #1: applyModelPreset carries credentials", () => {
+    it("should preserve model suffix with colons (e.g., :free) when syncing to model-config.json", async () => {
+      addProvider({
+        id: "openrouter",
+        name: "openrouter",
+        provider: "openrouter",
+        apiKey: "sk-or-test-key",
+        baseUrl: "https://openrouter.ai/api/v1",
+      });
+
+      clearModelConfigCache();
+
+      saveModelPreset("free-preset", "Free model preset", {
+        MODEL: "openrouter:nex-agi/nex-n2-pro:free",
+      });
+
+      applyModelPreset("free-preset");
+
+      expect(process.env.MODEL).toBe("openrouter:nex-agi/nex-n2-pro:free");
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const config = loadModelConfig();
+      const singlePreset = config.presets.single[0];
+      expect(singlePreset.models.superagent.model).toBe("nex-agi/nex-n2-pro:free");
+    });
+
     it("should write active provider credentials to .env when applying preset", () => {
       addProvider({
         id: "openrouter",
