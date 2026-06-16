@@ -508,5 +508,28 @@ describe("Model Wizard Back Navigation", () => {
 
     unmount();
   });
+
+  it("should show option 7. Configure Subagent Models in step 1 and allow configuring them in single-agent mode", async () => {
+    mockCtx.agentRef.current.isMultiAgent = false;
+    let capturedHandler: any = null;
+    const TestComponent = () => {
+      capturedHandler = useModelWizard(mockCtx as any);
+      return null;
+    };
+    const { unmount } = render(React.createElement(TestComponent));
+
+    // Start wizard at step 1
+    activeWizard = { type: "model", step: 1, data: {} };
+    // Simulate option 7 select
+    await capturedHandler("7. configure subagent models", 1, {});
+
+    expect(activeWizard.step).toBe(50);
+    expect(wizardOptions.some(opt => opt.includes("Subagent (depth 2)"))).toBe(true);
+    expect(wizardOptions.some(opt => opt.includes("researcher"))).toBe(true);
+    expect(wizardOptions.some(opt => opt.includes("Master Agent"))).toBe(false);
+    expect(wizardOptions.some(opt => opt.includes("Superagent"))).toBe(false);
+
+    unmount();
+  });
 });
 

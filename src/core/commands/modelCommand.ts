@@ -250,15 +250,28 @@ export const modelCommand: SlashCommand = {
           step: 1,
           data: {},
         });
-        ctx.setWizardOptions?.([
-          "1. Load/Apply Model Preset",
-          "2. List Model Presets",
-          "3. Create Model Preset",
-          "4. Edit Model Preset",
-          "5. Delete Model Preset",
-          isMulti ? "6. Configure Agent Tier Models" : "6. Configure Single Agent Model",
-          "< Back"
-        ]);
+        ctx.setWizardOptions?.(
+          isMulti
+            ? [
+                "1. Load/Apply Model Preset",
+                "2. List Model Presets",
+                "3. Create Model Preset",
+                "4. Edit Model Preset",
+                "5. Delete Model Preset",
+                "6. Configure Agent Tier Models",
+                "< Back"
+              ]
+            : [
+                "1. Load/Apply Model Preset",
+                "2. List Model Presets",
+                "3. Create Model Preset",
+                "4. Edit Model Preset",
+                "5. Delete Model Preset",
+                "6. Configure Single Agent Model",
+                "7. Configure Subagent Models",
+                "< Back"
+              ]
+        );
         ctx.setWizardSelectedIndex?.(0);
       }
     }
