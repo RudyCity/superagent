@@ -9,14 +9,43 @@ export interface ConfiguredProvider {
 
 export function getConfiguredProviders(): ConfiguredProvider[] {
   const providers = getProviders();
-  return providers
-    .filter((p) => p.apiKey && p.apiKey.trim() !== "")
+  const list = providers
+    .filter((p) => {
+      if (p.apiKey && p.apiKey.trim() !== "") return true;
+      const prefix = `PROVIDER_${p.name.toUpperCase()}`;
+      if (process.env[`${prefix}_API_KEY`]) return true;
+      if (p.name.toLowerCase() === "openai" && process.env.OPENAI_API_KEY) return true;
+      if (p.name.toLowerCase() === "anthropic" && process.env.ANTHROPIC_API_KEY) return true;
+      if (p.name.toLowerCase() === "custom" && process.env.CUSTOM_API_KEY) return true;
+      return false;
+    })
     .map((p) => ({
       name: p.name,
       type: p.provider,
       baseUrl: p.baseUrl,
       isActive: false,
     }));
+
+  const activeProv = process.env.ACTIVE_PROVIDER;
+  if (activeProv && !list.some((p) => p.name.toLowerCase() === activeProv.toLowerCase())) {
+    const hasKey =
+      process.env[`PROVIDER_${activeProv.toUpperCase()}_API_KEY`] ||
+      (activeProv.toLowerCase() === "openai" && process.env.OPENAI_API_KEY) ||
+      (activeProv.toLowerCase() === "anthropic" && process.env.ANTHROPIC_API_KEY) ||
+      (activeProv.toLowerCase() === "custom" && process.env.CUSTOM_API_KEY);
+    if (hasKey) {
+      list.push({
+        name: activeProv,
+        type: activeProv,
+        baseUrl:
+          process.env[`PROVIDER_${activeProv.toUpperCase()}_BASE_URL`] ||
+          (activeProv.toLowerCase() === "custom" ? process.env.CUSTOM_BASE_URL : undefined),
+        isActive: true,
+      });
+    }
+  }
+
+  return list;
 }
 
 export function switchActiveProvider(name: string): string {

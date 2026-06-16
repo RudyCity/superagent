@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import fs from "fs";
 import { getModelConfigPath } from "../src/core/config/paths";
 import { 
@@ -7,14 +7,36 @@ import {
   getProviders, 
   getActivePreset, 
   savePreset,
-  setActivePresetId
+  setActivePresetId,
+  clearModelConfigCache
 } from "../src/core/config/jsonConfig";
 import { getModelInstanceForTier } from "../src/core/config/models";
 
 describe("JSON-based model-config.json storage", () => {
+  let originalConfigContent: string | null = null;
+  const path = getModelConfigPath();
+
+  beforeAll(() => {
+    if (fs.existsSync(path)) {
+      originalConfigContent = fs.readFileSync(path, "utf-8");
+    }
+  });
+
+  afterAll(() => {
+    if (originalConfigContent !== null) {
+      fs.writeFileSync(path, originalConfigContent, "utf-8");
+    } else {
+      if (fs.existsSync(path)) {
+        try {
+          fs.unlinkSync(path);
+        } catch (e) {}
+      }
+    }
+  });
+
   beforeEach(() => {
-    // Delete config file if it exists to ensure a clean state
-    const path = getModelConfigPath();
+    clearModelConfigCache();
+    // Delete config file if it exists to ensure a clean state for the test
     if (fs.existsSync(path)) {
       try {
         fs.unlinkSync(path);

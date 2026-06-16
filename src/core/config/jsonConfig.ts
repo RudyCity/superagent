@@ -125,6 +125,10 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
 
 let cachedConfig: GlobalModelConfig | null = null;
 
+export function clearModelConfigCache(): void {
+  cachedConfig = null;
+}
+
 export function loadModelConfig(): GlobalModelConfig {
   if (cachedConfig) {
     return cachedConfig;
