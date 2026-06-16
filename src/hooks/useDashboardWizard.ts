@@ -16,7 +16,8 @@ import {
   saveModelPreset,
   deleteModelPreset,
   BUILT_IN_PRESETS,
-  getProviderOptionsList
+  getProviderOptionsList,
+  getActiveConfigAudit
 } from "../core/config.js";
 import { filterSuggestions } from "../utils/text.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
@@ -412,9 +413,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             ...(activeWizard.data.gitSha ? [`│ 📌 HEAD           : ${activeWizard.data.gitSha}`] : []),
             "│ ",
             "│ [COGNITIVE CORE]",
-            `│ ✦ Provider        : ${process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai"}`,
-            `│ ✦ Active Model    : ${modelName}`,
-            `│ ✦ Context Limit   : ${limit.toLocaleString()} tokens`,
+            getActiveConfigAudit(),
             `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
             "│ ",
             "│ [PROJECT METADATA]",
@@ -518,9 +517,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               ...(activeWizard.data.gitSha ? [`│ 📌 HEAD           : ${activeWizard.data.gitSha}`] : []),
               "│ ",
               "│ [COGNITIVE CORE]",
-              `│ ✦ Provider        : ${process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai"}`,
-              `│ ✦ Active Model    : ${modelName}`,
-              `│ ✦ Context Limit   : ${limit.toLocaleString()} tokens`,
+              getActiveConfigAudit(),
               `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
               "│ ",
               "│ [PROJECT METADATA]",

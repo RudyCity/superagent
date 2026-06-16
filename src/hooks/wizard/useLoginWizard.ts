@@ -7,7 +7,8 @@ import {
   fetchAndCacheModels, 
   getContextWindowLimit, 
   updateEnvFile,
-  addProvider
+  addProvider,
+  getActiveConfigAudit
 } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
@@ -301,9 +302,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           ...(data.gitSha ? [`│ 📌 HEAD           : ${data.gitSha}`] : []),
           "│ ",
           "│ [COGNITIVE CORE]",
-          `│ ✦ Provider        : ${process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai"}`,
-          `│ ✦ Active Model    : ${modelName}`,
-          `│ ✦ Context Limit   : ${limit.toLocaleString()} tokens`,
+          getActiveConfigAudit(),
           `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
           "│ ",
           "│ [PROJECT METADATA]",
@@ -410,9 +409,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           ...(data.gitSha ? [`│ 📌 HEAD           : ${data.gitSha}`] : []),
           "│ ",
           "│ [COGNITIVE CORE]",
-          `│ ✦ Provider        : ${process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai"}`,
-          `│ ✦ Active Model    : ${modelName}`,
-          `│ ✦ Context Limit   : ${limit.toLocaleString()} tokens`,
+          getActiveConfigAudit(),
           `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
           "│ ",
           "│ [PROJECT METADATA]",

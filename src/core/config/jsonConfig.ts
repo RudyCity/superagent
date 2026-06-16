@@ -214,3 +214,35 @@ export function getActivePreset<T>(mode: "multi" | "single"): JSONModelPreset<T>
   }
   return DEFAULT_CONFIG.presets[mode][0] as any;
 }
+
+export function getActiveConfigAudit(overrideMode?: "multi" | "single"): string {
+  const mode = overrideMode || (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true" ? "multi" : "single");
+  const preset = getActivePreset<any>(mode);
+  
+  let lines = [
+    `│ ✦ Active Preset   : ${preset.name} (${mode}-agent mode)`
+  ];
+
+  if (mode === "multi") {
+    const m = preset.models;
+    lines.push(`│ ✦ Master Agent    : ${m.master?.providerProfileId || "(default)"} ➔ ${m.master?.model || "(not set)"}`);
+    lines.push(`│ ✦ Superagent      : ${m.superagent?.providerProfileId || "(default)"} ➔ ${m.superagent?.model || "(not set)"}`);
+    lines.push(`│ ✦ Subagent Default: ${m.subagentDefault?.providerProfileId || "(default)"} ➔ ${m.subagentDefault?.model || "(not set)"}`);
+    if (m.subagentDetails && Object.keys(m.subagentDetails).length > 0) {
+      for (const [t, cfg] of Object.entries(m.subagentDetails)) {
+        lines.push(`│ ✦ Subagent (${t}): ${(cfg as any).providerProfileId} ➔ ${(cfg as any).model}`);
+      }
+    }
+  } else {
+    const m = preset.models;
+    lines.push(`│ ✦ Superagent      : ${m.superagent?.providerProfileId || "(default)"} ➔ ${m.superagent?.model || "(not set)"}`);
+    lines.push(`│ ✦ Subagent Default: ${m.subagentDefault?.providerProfileId || "(default)"} ➔ ${m.subagentDefault?.model || "(not set)"}`);
+    if (m.subagentDetails && Object.keys(m.subagentDetails).length > 0) {
+      for (const [t, cfg] of Object.entries(m.subagentDetails)) {
+        lines.push(`│ ✦ Subagent (${t}): ${(cfg as any).providerProfileId} ➔ ${(cfg as any).model}`);
+      }
+    }
+  }
+  return lines.join("\n");
+}
+

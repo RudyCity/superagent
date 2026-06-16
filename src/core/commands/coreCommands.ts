@@ -293,9 +293,11 @@ export const initCommand: SlashCommand = {
 
     const modelName = process.env.MODEL || getDefaultModel();
     let limit = 256000;
+    let configAudit = "";
     try {
-      const { getContextWindowLimit } = await import("../config.js");
+      const { getContextWindowLimit, getActiveConfigAudit } = await import("../config.js");
       limit = getContextWindowLimit(modelName);
+      configAudit = getActiveConfigAudit();
     } catch {}
 
     if (process.env.CONTEXT_WINDOW_LIMIT) {
@@ -319,9 +321,7 @@ export const initCommand: SlashCommand = {
       ...(gitSha ? [`│ 📌 HEAD           : ${gitSha}`] : []),
       "│ ",
       "│ [COGNITIVE CORE]",
-      `│ ✦ Provider        : ${getProviderLabel()}`,
-      `│ ✦ Active Model    : ${modelName}`,
-      `│ ✦ Context Limit   : ${limit.toLocaleString()} tokens`,
+      configAudit,
       `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
       "│ ",
       "│ [PROJECT METADATA]",
