@@ -192,10 +192,17 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           setWizardSelectedIndex(0);
         } else {
           const list = getConfiguredProviders();
-          setMasterLogs((prev) => [
-            ...prev,
-            `[SYSTEM] Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})`).join("\n")
-          ].slice(-500));
+          if (list.length > 0) {
+            setMasterLogs((prev) => [
+              ...prev,
+              `[SYSTEM] Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})`).join("\n")
+            ].slice(-500));
+          } else {
+            setMasterLogs((prev) => [
+              ...prev,
+              `[SYSTEM] No providers configured yet.`
+            ].slice(-500));
+          }
           setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);

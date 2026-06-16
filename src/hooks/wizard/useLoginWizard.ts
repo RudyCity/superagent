@@ -55,11 +55,19 @@ export function useLoginWizard(ctx: LoginWizardContext) {
         setWizardSelectedIndex(0);
       } else {
         const list = getConfiguredProviders();
-        addLine({
-          type: "system",
-          content: `Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})`).join("\n"),
-          timestamp: now,
-        });
+        if (list.length > 0) {
+          addLine({
+            type: "system",
+            content: `Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})`).join("\n"),
+            timestamp: now,
+          });
+        } else {
+          addLine({
+            type: "system",
+            content: `No providers configured yet.`,
+            timestamp: now,
+          });
+        }
         setActiveWizard(null);
         setWizardOptions([]);
         setWizardSelectedIndex(0);

@@ -9,12 +9,14 @@ export interface ConfiguredProvider {
 
 export function getConfiguredProviders(): ConfiguredProvider[] {
   const providers = getProviders();
-  return providers.map((p) => ({
-    name: p.name,
-    type: p.provider,
-    baseUrl: p.baseUrl,
-    isActive: false,
-  }));
+  return providers
+    .filter((p) => p.apiKey && p.apiKey.trim() !== "")
+    .map((p) => ({
+      name: p.name,
+      type: p.provider,
+      baseUrl: p.baseUrl,
+      isActive: false,
+    }));
 }
 
 export function switchActiveProvider(name: string): string {
