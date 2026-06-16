@@ -1111,6 +1111,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       if (isProcessing) {
         agentRef.current?.abort();
         setIsProcessing(false);
+        return;
       } else {
         exit();
       }

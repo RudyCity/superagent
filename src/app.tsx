@@ -826,6 +826,8 @@ export function App({
   pendingPermissionRef.current = pendingPermission;
   const pendingQuestionRef = useRef(pendingQuestion);
   pendingQuestionRef.current = pendingQuestion;
+  const isProcessingRef = useRef(isProcessing);
+  isProcessingRef.current = isProcessing;
 
   useEffect(() => {
     registerQuestionHandler(questionHandler);
@@ -846,7 +848,7 @@ export function App({
       if (activeWizardRef.current || pendingPermissionRef.current || pendingQuestionRef.current) {
         return;
       }
-      if (agent.isAgentRunning() || agent.wasRunningBeforeAbort) {
+      if (agent.isAgentRunning() || agent.wasRunningBeforeAbort || isProcessingRef.current) {
         agent.abort();
         setIsProcessing(false);
         setIsExecutingTool(false);
