@@ -237,15 +237,7 @@ export function getModelInstanceForString(modelStr: string) {
   const isMissingKey = !apiKey || apiKey.trim() === "" || apiKey === "dummy";
   const isTest = (process.env.VITEST || process.env.NODE_ENV === "test") && !process.env.SUPERAGENT_FORCE_VAL_CHECK;
   if (!isTest && isCloud && isMissingKey) {
-    let keyVar = "API_KEY";
-    if (baseUrl?.includes("openrouter.ai")) {
-      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}_API_KEY or OPENROUTER_API_KEY` : "OPENROUTER_API_KEY";
-    } else if (provider === "anthropic") {
-      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}_API_KEY or ANTHROPIC_API_KEY` : "ANTHROPIC_API_KEY";
-    } else if (provider === "openai") {
-      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}_API_KEY or OPENAI_API_KEY` : "OPENAI_API_KEY";
-    }
-    throw new Error(`API key is missing or not configured. Please set the ${keyVar} environment variable or configure it via /login.`);
+    throw new Error(`API key is missing or not configured. Please configure it using the /login command.`);
   }
 
   if (provider === "anthropic" || (provider === "custom" && isAnthropicCompatible(baseUrl || "", modelName))) {
