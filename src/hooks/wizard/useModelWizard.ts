@@ -52,26 +52,14 @@ export function useModelWizard(ctx: ModelWizardContext) {
     const isMulti = agentRef?.current?.isMultiAgent ?? false;
 
     const getStep1Options = (): string[] => {
-      return isMulti
-        ? [
-            "1. Load/Apply Model Preset",
-            "2. List Model Presets",
-            "3. Create Model Preset",
-            "4. Edit Model Preset",
-            "5. Delete Model Preset",
-            "6. Configure Agent Tier Models",
-            "< Back"
-          ]
-        : [
-            "1. Load/Apply Model Preset",
-            "2. List Model Presets",
-            "3. Create Model Preset",
-            "4. Edit Model Preset",
-            "5. Delete Model Preset",
-            "6. Configure Single Agent Model",
-            "7. Configure Subagent Models",
-            "< Back"
-          ];
+      return [
+        "1. Load/Apply Model Preset",
+        "2. List Model Presets",
+        "3. Create Model Preset",
+        "4. Edit Model Preset",
+        "5. Delete Model Preset",
+        "< Back"
+      ];
     };
 
     const getPresetOptionsList = (models: Record<string, string>): string[] => {
@@ -429,15 +417,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
             step: 1,
             data: {},
           });
-          setWizardOptions([
-            "1. Load/Apply Model Preset",
-            "2. List Model Presets",
-            "3. Create Model Preset",
-            "4. Edit Model Preset",
-            "5. Delete Model Preset",
-            "6. Configure Single Agent Model",
-            "< Back"
-          ]);
+          setWizardOptions(getStep1Options());
         }
         setWizardSelectedIndex(0);
         setInput("");
@@ -1192,15 +1172,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           step: 1,
           data: {},
         });
-        setWizardOptions([
-          "1. Load/Apply Model Preset",
-          "2. List Model Presets",
-          "3. Create Model Preset",
-          "4. Edit Model Preset",
-          "5. Delete Model Preset",
-          isMulti ? "6. Configure Agent Tier Models" : "6. Configure Single Agent Model",
-          "< Back"
-        ]);
+        setWizardOptions(getStep1Options());
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -1262,15 +1234,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           step: 1,
           data: {},
         });
-        setWizardOptions([
-          "1. Load/Apply Model Preset",
-          "2. List Model Presets",
-          "3. Create Model Preset",
-          "4. Edit Model Preset",
-          "5. Delete Model Preset",
-          isMulti ? "6. Configure Agent Tier Models" : "6. Configure Single Agent Model",
-          "< Back"
-        ]);
+        setWizardOptions(getStep1Options());
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -1851,15 +1815,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           step: 1,
           data: {},
         });
-        setWizardOptions([
-          "1. Load/Apply Model Preset",
-          "2. List Model Presets",
-          "3. Create Model Preset",
-          "4. Edit Model Preset",
-          "5. Delete Model Preset",
-          isMulti ? "6. Configure Agent Tier Models" : "6. Configure Single Agent Model",
-          "< Back"
-        ]);
+        setWizardOptions(getStep1Options());
         setWizardSelectedIndex(0);
         setInput("");
         return;

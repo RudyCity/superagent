@@ -91,7 +91,7 @@ describe("Slash Command: /model", () => {
     expect(wizardOptions).toContain("3. Create Model Preset");
     expect(wizardOptions).toContain("4. Edit Model Preset");
     expect(wizardOptions).toContain("5. Delete Model Preset");
-    expect(wizardOptions).toContain("6. Configure Agent Tier Models");
+    expect(wizardOptions).toContain("< Back");
   });
 
   it("should update standard MODEL when no tier prefix is supplied in multi-agent mode", () => {
