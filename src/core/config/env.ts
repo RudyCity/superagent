@@ -155,6 +155,10 @@ export function updateEnvFile(updates: Record<string, string>): string {
       const parts = line.split("=");
       if (parts.length >= 2) {
         const key = parts[0].trim();
+        if (key.startsWith("MODEL") || key === "ACTIVE_PROVIDER") {
+          lines[i] = "";
+          continue;
+        }
         if (updates.hasOwnProperty(key)) {
           lines[i] = `${key}=${updates[key]}`;
           updatedKeys.add(key);
@@ -164,11 +168,13 @@ export function updateEnvFile(updates: Record<string, string>): string {
   }
 
   for (const [key, val] of Object.entries(updates)) {
-    if (!updatedKeys.has(key)) {
+    if (!key.startsWith("MODEL") && key !== "ACTIVE_PROVIDER" && !updatedKeys.has(key)) {
       lines.push(`${key}=${val}`);
     }
   }
 
-  fs.writeFileSync(envPath, lines.join("\n"), "utf-8");
+  const cleanLines = lines.filter(line => line.trim() !== "");
+
+  fs.writeFileSync(envPath, cleanLines.join("\n"), "utf-8");
   return envPath;
 }

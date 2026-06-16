@@ -94,10 +94,10 @@ describe("Model Presets", () => {
     expect(process.env.ACTIVE_PROVIDER).toBe("openai");
 
     const content = fs.readFileSync(envPath, "utf-8");
-    expect(content).toContain("MODEL=openai:gpt-4o");
-    expect(content).toContain("MODEL_DEPTH_0=openai:gpt-4o");
-    expect(content).toContain("MODEL_DEPTH_2=openai:gpt-4o-mini");
-    expect(content).toContain("ACTIVE_PROVIDER=openai");
+    expect(content).not.toContain("MODEL=openai:gpt-4o");
+    expect(content).not.toContain("MODEL_DEPTH_0=openai:gpt-4o");
+    expect(content).not.toContain("MODEL_DEPTH_2=openai:gpt-4o-mini");
+    expect(content).not.toContain("ACTIVE_PROVIDER=openai");
   });
 
   it("should execute slash commands for listing, saving and loading presets", () => {
