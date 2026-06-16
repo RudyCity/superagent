@@ -820,6 +820,13 @@ export function App({
     []
   );
 
+  const activeWizardRef = useRef(activeWizard);
+  activeWizardRef.current = activeWizard;
+  const pendingPermissionRef = useRef(pendingPermission);
+  pendingPermissionRef.current = pendingPermission;
+  const pendingQuestionRef = useRef(pendingQuestion);
+  pendingQuestionRef.current = pendingQuestion;
+
   useEffect(() => {
     registerQuestionHandler(questionHandler);
     const agent = new Agent(handleEvent, permissionHandler, questionHandler);
@@ -834,6 +841,9 @@ export function App({
         setToolTimeout(null);
         setToolStartTime(null);
         setTimeLeft(null);
+        return;
+      }
+      if (activeWizardRef.current || pendingPermissionRef.current || pendingQuestionRef.current) {
         return;
       }
       if (agent.isAgentRunning() || agent.wasRunningBeforeAbort) {
