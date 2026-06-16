@@ -1147,6 +1147,18 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
 
+        if (activeWizard.step !== 1) {
+          const backOption = wizardOptions.find(opt => {
+            const trimmed = opt.trim();
+            const clean = trimmed.startsWith("•") ? trimmed.slice(1).trim() : trimmed;
+            return clean === "< Back" || clean === "Back" || clean.toLowerCase() === "< back" || clean.toLowerCase() === "back";
+          });
+          if (backOption) {
+            handleWizardSubmit(backOption);
+            return;
+          }
+        }
+
         if (pendingPermission) {
           pendingPermission.resolve(false);
           setPendingPermission(null);

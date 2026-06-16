@@ -301,6 +301,17 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
           handleQuerySubmit("< Back");
           return;
         }
+        if (activeWizard && activeWizard.step !== 1) {
+          const backOption = wizardOptions.find(opt => {
+            const trimmed = opt.trim();
+            const clean = trimmed.startsWith("•") ? trimmed.slice(1).trim() : trimmed;
+            return clean === "< Back" || clean === "Back" || clean.toLowerCase() === "< back" || clean.toLowerCase() === "back";
+          });
+          if (backOption) {
+            handleQuerySubmit(backOption);
+            return;
+          }
+        }
 
         setActiveWizard(null);
         setWizardOptions([]);
