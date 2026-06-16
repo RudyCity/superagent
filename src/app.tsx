@@ -478,6 +478,9 @@ export function App({
       if (activeWizard.step === 40) return "Select preset to delete using arrows and Enter...";
       if (activeWizard.step === 41) return "Select confirmation using arrows and Enter...";
       if (activeWizard.step === 50) return "Select agent tier using arrows and Enter...";
+      if (activeWizard.step === 16) return "Enter config profile name (or press Enter for default)...";
+      if (activeWizard.step === 17) return "Enter Custom Base URL...";
+      if (activeWizard.step === 18) return "Paste API key...";
       return wizardOptions.length > 0
         ? "🔍 Search models (type to filter, arrows to navigate, Enter to select)..."
         : "Enter model name (e.g. google/gemini-2.5-flash)...";

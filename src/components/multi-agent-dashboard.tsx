@@ -1033,6 +1033,12 @@ export function MultiAgentDashboard({
               ? "└──[ CONFIRM ] ❯ "
               : activeWizard?.type === "model" && activeWizard.step === 50
               ? "└──[ CONFIGURE ] ❯ "
+              : activeWizard?.type === "model" && activeWizard.step === 16
+              ? "└──[ PROFILE_NAME ] ❯ "
+              : activeWizard?.type === "model" && activeWizard.step === 17
+              ? "└──[ BASE_URL ] ❯ "
+              : activeWizard?.type === "model" && activeWizard.step === 18
+              ? "└──[ API_KEY ] ❯ "
               : activeWizard?.type === "login"
               ? `└──[ LOGIN:${activeWizard.step} ] ❯ `
               : activeWizard?.type === "resume"

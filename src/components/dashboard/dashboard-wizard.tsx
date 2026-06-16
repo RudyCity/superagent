@@ -89,6 +89,9 @@ export function DashboardWizard({
             activeWizard.type === "model" && activeWizard.step === 40 ? `⚙️ DELETE MODEL PRESET — SELECT PRESET TO DELETE:` :
             activeWizard.type === "model" && activeWizard.step === 41 ? `⚙️ DELETE MODEL PRESET — CONFIRM DELETION:` :
             activeWizard.type === "model" && activeWizard.step === 50 ? `⚙️ CONFIGURE AGENT TIERS — SELECT TIER TO CONFIGURE:` :
+            activeWizard.type === "model" && activeWizard.step === 16 ? `⚙️ CONFIGURE PROVIDER — PROFILE NAME (Type & Enter):` :
+            activeWizard.type === "model" && activeWizard.step === 17 ? `⚙️ CONFIGURE PROVIDER — BASE URL (Type & Enter):` :
+            activeWizard.type === "model" && activeWizard.step === 18 ? `⚙️ CONFIGURE PROVIDER — API KEY (Type & Enter):` :
             activeWizard.type === "resume" ? `📁 SELECT SESSION TO RESUME:` :
             activeWizard.type === "skills" ? `🛠️ SKILLS MANAGER (Step ${activeWizard.step}):` :
             activeWizard.type === "checkpoint" ? `📋 CHECKPOINT MANAGER (Step ${activeWizard.step}):` :
@@ -118,6 +121,9 @@ export function DashboardWizard({
             activeWizard.type === "model" && activeWizard.step === 21 ? "Enter a helpful description for what this preset is designed for (type description and press Enter, or type 'back' to go back):" :
             activeWizard.type === "model" && activeWizard.step === 31 ? "Update the description for this custom preset (type description and press Enter, or type 'back' to go back):" :
             activeWizard.type === "model" && (activeWizard.step === 22 || activeWizard.step === 32) ? "Configure the models for each agent tier, then select Save Preset when finished:" :
+            activeWizard.type === "model" && activeWizard.step === 16 ? `Enter config profile name (e.g. ${activeWizard.data.providerType || "provider name"}, deepseek, or press Enter for default):` :
+            activeWizard.type === "model" && activeWizard.step === 17 ? "Please enter your Base URL (e.g. http://localhost:11434/v1):" :
+            activeWizard.type === "model" && activeWizard.step === 18 ? "Please enter your API Key:" :
             activeWizard.type === "login" && activeWizard.step === 3 ? `Enter config profile name (e.g. ${activeWizard.data.provider || "provider name"}, deepseek, or press Enter for default):` :
             activeWizard.type === "login" && activeWizard.step === 4 ? "Please enter your Base URL (e.g. http://localhost:11434/v1):" :
             activeWizard.type === "login" && activeWizard.step === 6 ? "Please enter your API Key:" :
