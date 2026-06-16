@@ -71,6 +71,11 @@ describe("Model Wizard Back Navigation", () => {
     wizardSelectedIndex: 0,
     wizardOptions: [] as string[],
     wizardIsLoadingModels: false,
+    agentRef: {
+      current: {
+        isMultiAgent: true,
+      }
+    }
   };
 
   beforeEach(() => {
@@ -84,6 +89,7 @@ describe("Model Wizard Back Navigation", () => {
     activeModel = "";
     isLoadingModels = false;
     inputCallbacks = [];
+    mockCtx.agentRef.current.isMultiAgent = true;
   });
 
   afterEach(() => {
@@ -479,6 +485,26 @@ describe("Model Wizard Back Navigation", () => {
     expect(activeWizard.step).toBe(2);
     expect(wizardOptions).toContain("5. Not Set (Clear Override)");
     expect(wizardOptions).toContain("< Back");
+
+    unmount();
+  });
+
+  it("should exclude 'Master Agent' from step 50 options in single-agent mode", async () => {
+    mockCtx.agentRef.current.isMultiAgent = false;
+    let capturedHandler: any = null;
+    const TestComponent = () => {
+      capturedHandler = useModelWizard(mockCtx as any);
+      return null;
+    };
+    const { unmount } = render(React.createElement(TestComponent));
+
+    // Simulate going back to step 50 from step 2
+    activeWizard = { type: "model", step: 2, data: { tier: "superagent" } };
+    await capturedHandler("< Back", 2, { tier: "superagent" });
+
+    expect(activeWizard.step).toBe(50);
+    expect(wizardOptions.some(opt => opt.includes("Master Agent"))).toBe(false);
+    expect(wizardOptions.some(opt => opt.includes("Superagent"))).toBe(true);
 
     unmount();
   });

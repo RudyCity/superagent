@@ -48,6 +48,35 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
   const handleModelWizard = useCallback(async (value: string, step: number, data: Record<string, string>) => {
     const now = Date.now();
+    const isMulti = agentRef?.current?.isMultiAgent ?? false;
+
+    const getPresetOptionsList = (models: Record<string, string>): string[] => {
+      const formatVal = (val?: string) => val ? val : "(not set)";
+      if (isMulti) {
+        return [
+          `1. Master Agent (depth 0) (${formatVal(models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
+          `2. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
+          `3. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
+          `4. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
+          `5. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
+          `6. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+          "7. Save Preset & Exit",
+          "8. Cancel & Exit",
+          "< Back"
+        ];
+      } else {
+        return [
+          `1. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
+          `2. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
+          `3. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
+          `4. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
+          `5. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+          "6. Save Preset & Exit",
+          "7. Cancel & Exit",
+          "< Back"
+        ];
+      }
+    };
 
     if (step === 1) {
       const choice = value.toLowerCase();
@@ -172,16 +201,29 @@ export function useModelWizard(ctx: ModelWizardContext) {
           step: 50,
           data: {},
         });
-        setWizardOptions([
-          `1. Master Agent (depth 0) (${masterModelFormatted})`,
-          `2. Superagent (depth 1) (${superagentModelFormatted})`,
-          `3. Subagent (depth 2) (${subagentModelFormatted})`,
-          `4. Subagent: researcher (${researcherModelFormatted})`,
-          `5. Subagent: coder (${coderModelFormatted})`,
-          `6. Subagent: reviewer (${reviewerModelFormatted})`,
-          `7. All Tiers (Overwrite All)`,
-          `< Back`
-        ]);
+        const isMulti = agentRef?.current?.isMultiAgent ?? false;
+        if (isMulti) {
+          setWizardOptions([
+            `1. Master Agent (depth 0) (${masterModelFormatted})`,
+            `2. Superagent (depth 1) (${superagentModelFormatted})`,
+            `3. Subagent (depth 2) (${subagentModelFormatted})`,
+            `4. Subagent: researcher (${researcherModelFormatted})`,
+            `5. Subagent: coder (${coderModelFormatted})`,
+            `6. Subagent: reviewer (${reviewerModelFormatted})`,
+            `7. All Tiers (Overwrite All)`,
+            `< Back`
+          ]);
+        } else {
+          setWizardOptions([
+            `1. Superagent (depth 1) (${superagentModelFormatted})`,
+            `2. Subagent (depth 2) (${subagentModelFormatted})`,
+            `3. Subagent: researcher (${researcherModelFormatted})`,
+            `4. Subagent: coder (${coderModelFormatted})`,
+            `5. Subagent: reviewer (${reviewerModelFormatted})`,
+            `6. All Tiers (Overwrite All)`,
+            `< Back`
+          ]);
+        }
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -221,6 +263,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       let tier = "";
       const choice = value.toLowerCase();
+      const isMulti = agentRef?.current?.isMultiAgent ?? false;
       if (choice.includes("master") || choice.includes("depth 0")) {
         tier = "master";
       } else if (choice.includes("superagent") || choice.includes("depth 1")) {
@@ -238,9 +281,15 @@ export function useModelWizard(ctx: ModelWizardContext) {
       } else if (choice.includes("all tiers")) {
         tier = "all";
       } else {
-        const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
-        const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
-        tier = tiers[idx] || "master";
+        if (isMulti) {
+          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
+          const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
+          tier = tiers[idx] || "master";
+        } else {
+          const tiers = ["superagent", "subagent", "researcher", "coder", "reviewer", "all"];
+          const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
+          tier = tiers[idx] || "superagent";
+        }
       }
 
       setActiveWizard({
@@ -271,7 +320,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const defaultResolved = getResolvedModelWithProvider("", true);
         const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
         const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
-        const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPTH_1 || "";
+        const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
         const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
         const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
         const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
@@ -279,7 +328,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
         const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
         const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
-        const rawReviewer = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_REVIEWER || "";
+        const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
         const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
 
         setActiveWizard({
@@ -287,16 +336,29 @@ export function useModelWizard(ctx: ModelWizardContext) {
           step: 50,
           data: { ...data },
         });
-        setWizardOptions([
-          `1. Master Agent (depth 0) (${masterModelFormatted})`,
-          `2. Superagent (depth 1) (${superagentModelFormatted})`,
-          `3. Subagent (depth 2) (${subagentModelFormatted})`,
-          `4. Subagent: researcher (${researcherModelFormatted})`,
-          `5. Subagent: coder (${coderModelFormatted})`,
-          `6. Subagent: reviewer (${reviewerModelFormatted})`,
-          `7. All Tiers (Overwrite All)`,
-          `< Back`
-        ]);
+        const isMulti = agentRef?.current?.isMultiAgent ?? false;
+        if (isMulti) {
+          setWizardOptions([
+            `1. Master Agent (depth 0) (${masterModelFormatted})`,
+            `2. Superagent (depth 1) (${superagentModelFormatted})`,
+            `3. Subagent (depth 2) (${subagentModelFormatted})`,
+            `4. Subagent: researcher (${researcherModelFormatted})`,
+            `5. Subagent: coder (${coderModelFormatted})`,
+            `6. Subagent: reviewer (${reviewerModelFormatted})`,
+            `7. All Tiers (Overwrite All)`,
+            `< Back`
+          ]);
+        } else {
+          setWizardOptions([
+            `1. Superagent (depth 1) (${superagentModelFormatted})`,
+            `2. Subagent (depth 2) (${subagentModelFormatted})`,
+            `3. Subagent: researcher (${researcherModelFormatted})`,
+            `4. Subagent: coder (${coderModelFormatted})`,
+            `5. Subagent: reviewer (${reviewerModelFormatted})`,
+            `6. All Tiers (Overwrite All)`,
+            `< Back`
+          ]);
+        }
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -1038,18 +1100,12 @@ export function useModelWizard(ctx: ModelWizardContext) {
         step: 22,
         data: { ...data, presetDescription: desc, presetModels: JSON.stringify({}) },
       });
-      const formatVal = (val?: string) => val ? val : "(not set)";
-      setWizardOptions([
-        `1. Master Agent (depth 0) (${formatVal(undefined)})`,
-        `2. Superagent (depth 1) (${formatVal(undefined)})`,
-        `3. Subagent (depth 2) (${formatVal(undefined)})`,
-        `4. Subagent: researcher (${formatVal(undefined)})`,
-        `5. Subagent: coder (${formatVal(undefined)})`,
-        `6. Subagent: reviewer (${formatVal(undefined)})`,
-        "7. Save Preset & Exit",
-        "8. Cancel & Exit",
-        "< Back"
-      ]);
+      setActiveWizard({
+        type: "model",
+        step: 22,
+        data: { ...data, presetDescription: desc, presetModels: JSON.stringify({}) },
+      });
+      setWizardOptions(getPresetOptionsList({}));
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 22 || step === 32) {
@@ -1138,18 +1194,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           data: { ...data },
         });
         const models: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
-        const formatVal = (val?: string) => val ? val : "(not set)";
-        setWizardOptions([
-          `1. Master Agent (depth 0) (${formatVal(models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
-          `2. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
-          `3. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
-          `4. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
-          `5. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
-          `6. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
-          "7. Save Preset & Exit",
-          "8. Cancel & Exit",
-          "< Back"
-        ]);
+        setWizardOptions(getPresetOptionsList(models));
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -1185,18 +1230,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           data: { ...data, presetModels: JSON.stringify(presetModels) },
         });
 
-        const formatVal = (val?: string) => val ? val : "(not set)";
-        setWizardOptions([
-          `1. Master Agent (depth 0) (${formatVal(presetModels.MODEL_DEPTH_0 || presetModels.MODEL_DEPT0)})`,
-          `2. Superagent (depth 1) (${formatVal(presetModels.MODEL_DEPTH_1 || presetModels.MODEL_DEPT1)})`,
-          `3. Subagent (depth 2) (${formatVal(presetModels.MODEL_DEPTH_2 || presetModels.MODEL_DEPT2)})`,
-          `4. Subagent: researcher (${formatVal(presetModels.MODEL_SUBAGENT_RESEARCHER || presetModels.MODEL_RESEARCHER)})`,
-          `5. Subagent: coder (${formatVal(presetModels.MODEL_SUBAGENT_CODER || presetModels.MODEL_CODER)})`,
-          `6. Subagent: reviewer (${formatVal(presetModels.MODEL_SUBAGENT_REVIEWER || presetModels.MODEL_REVIEWER)})`,
-          "7. Save Preset & Exit",
-          "8. Cancel & Exit",
-          "< Back"
-        ]);
+        setWizardOptions(getPresetOptionsList(presetModels));
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -1452,18 +1486,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         data: { ...data, presetModels: JSON.stringify(presetModels) },
       });
 
-      const formatVal = (val?: string) => val ? val : "(not set)";
-      setWizardOptions([
-        `1. Master Agent (depth 0) (${formatVal(presetModels.MODEL_DEPTH_0 || presetModels.MODEL_DEPT0)})`,
-        `2. Superagent (depth 1) (${formatVal(presetModels.MODEL_DEPTH_1 || presetModels.MODEL_DEPT1)})`,
-        `3. Subagent (depth 2) (${formatVal(presetModels.MODEL_DEPTH_2 || presetModels.MODEL_DEPT2)})`,
-        `4. Subagent: researcher (${formatVal(presetModels.MODEL_SUBAGENT_RESEARCHER || presetModels.MODEL_RESEARCHER)})`,
-        `5. Subagent: coder (${formatVal(presetModels.MODEL_SUBAGENT_CODER || presetModels.MODEL_CODER)})`,
-        `6. Subagent: reviewer (${formatVal(presetModels.MODEL_SUBAGENT_REVIEWER || presetModels.MODEL_REVIEWER)})`,
-        "7. Save Preset & Exit",
-        "8. Cancel & Exit",
-        "< Back"
-      ]);
+      setWizardOptions(getPresetOptionsList(presetModels));
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 30) {
@@ -1524,18 +1547,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         data: { ...data, presetDescription: updatedDesc }
       });
 
-      const formatModel = (val: string) => val ? val : "(not set)";
-      setWizardOptions([
-        `1. Master Agent (depth 0) (${formatModel(models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
-        `2. Superagent (depth 1) (${formatModel(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
-        `3. Subagent (depth 2) (${formatModel(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
-        `4. Subagent: researcher (${formatModel(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
-        `5. Subagent: coder (${formatModel(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
-        `6. Subagent: reviewer (${formatModel(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
-        "7. Save Preset & Exit",
-        "8. Cancel & Exit",
-        "< Back"
-      ]);
+      setWizardOptions(getPresetOptionsList(models));
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 40) {

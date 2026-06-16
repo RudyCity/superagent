@@ -112,6 +112,68 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
     setIsProcessing,
   } = ctx;
 
+  const isMulti = agent.isMultiAgent;
+
+  const getTierOptionsList = (
+    masterModelFormatted: string,
+    superagentModelFormatted: string,
+    subagentModelFormatted: string,
+    researcherModelFormatted: string,
+    coderModelFormatted: string,
+    reviewerModelFormatted: string
+  ): string[] => {
+    if (isMulti) {
+      return [
+        `1. Master Agent (depth 0) (${masterModelFormatted})`,
+        `2. Superagent (depth 1) (${superagentModelFormatted})`,
+        `3. Subagent (depth 2) (${subagentModelFormatted})`,
+        `4. Subagent: researcher (${researcherModelFormatted})`,
+        `5. Subagent: coder (${coderModelFormatted})`,
+        `6. Subagent: reviewer (${reviewerModelFormatted})`,
+        `7. All Tiers (Overwrite All)`,
+        `< Back`
+      ];
+    } else {
+      return [
+        `1. Superagent (depth 1) (${superagentModelFormatted})`,
+        `2. Subagent (depth 2) (${subagentModelFormatted})`,
+        `3. Subagent: researcher (${researcherModelFormatted})`,
+        `4. Subagent: coder (${coderModelFormatted})`,
+        `5. Subagent: reviewer (${reviewerModelFormatted})`,
+        `6. All Tiers (Overwrite All)`,
+        `< Back`
+      ];
+    }
+  };
+
+  const getPresetOptionsList = (models: Record<string, string>): string[] => {
+    const formatVal = (val?: string) => val ? val : "(not set)";
+    if (isMulti) {
+      return [
+        `1. Master Agent (depth 0) (${formatVal(models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
+        `2. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
+        `3. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
+        `4. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
+        `5. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
+        `6. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+        "7. Save Preset & Exit",
+        "8. Cancel & Exit",
+        "< Back"
+      ];
+    } else {
+      return [
+        `1. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
+        `2. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
+        `3. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
+        `4. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
+        `5. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+        "6. Save Preset & Exit",
+        "7. Cancel & Exit",
+        "< Back"
+      ];
+    }
+  };
+
   const handleWizardSubmit = useCallback(async (value: string) => {
     if (!activeWizard) return;
     const now = Date.now();
@@ -616,16 +678,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             step: 50,
             data: {},
           });
-          setWizardOptions([
-            `1. Master Agent (depth 0) (${masterModelFormatted})`,
-            `2. Superagent (depth 1) (${superagentModelFormatted})`,
-            `3. Subagent (depth 2) (${subagentModelFormatted})`,
-            `4. Subagent: researcher (${researcherModelFormatted})`,
-            `5. Subagent: coder (${coderModelFormatted})`,
-            `6. Subagent: reviewer (${reviewerModelFormatted})`,
-            `7. All Tiers (Overwrite All)`,
-            `< Back`
-          ]);
+          setWizardOptions(getTierOptionsList(masterModelFormatted, superagentModelFormatted, subagentModelFormatted, researcherModelFormatted, coderModelFormatted, reviewerModelFormatted));
           setWizardSelectedIndex(0);
           setQuery("");
           return;
@@ -658,9 +711,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         } else if (choice.includes("all")) {
           tier = "all";
         } else {
-          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
-          const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
-          tier = tiers[idx] || "master";
+          if (isMulti) {
+            const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
+            const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
+            tier = tiers[idx] || "master";
+          } else {
+            const tiers = ["superagent", "subagent", "researcher", "coder", "reviewer", "all"];
+            const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
+            tier = tiers[idx] || "superagent";
+          }
         }
 
         setActiveWizard({
@@ -707,16 +766,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             step: 50,
             data: { ...activeWizard.data },
           });
-          setWizardOptions([
-            `1. Master Agent (depth 0) (${masterModelFormatted})`,
-            `2. Superagent (depth 1) (${superagentModelFormatted})`,
-            `3. Subagent (depth 2) (${subagentModelFormatted})`,
-            `4. Subagent: researcher (${researcherModelFormatted})`,
-            `5. Subagent: coder (${coderModelFormatted})`,
-            `6. Subagent: reviewer (${reviewerModelFormatted})`,
-            `7. All Tiers (Overwrite All)`,
-            `< Back`
-          ]);
+          setWizardOptions(getTierOptionsList(masterModelFormatted, superagentModelFormatted, subagentModelFormatted, researcherModelFormatted, coderModelFormatted, reviewerModelFormatted));
           setWizardSelectedIndex(0);
           setQuery("");
           return;
@@ -1427,18 +1477,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           step: 22,
           data: { ...activeWizard.data, presetDescription: desc, presetModels: JSON.stringify({}) },
         });
-        const formatVal = (val?: string) => val ? val : "(not set)";
-        setWizardOptions([
-          `1. Master Agent (depth 0) (${formatVal(undefined)})`,
-          `2. Superagent (depth 1) (${formatVal(undefined)})`,
-          `3. Subagent (depth 2) (${formatVal(undefined)})`,
-          `4. Subagent: researcher (${formatVal(undefined)})`,
-          `5. Subagent: coder (${formatVal(undefined)})`,
-          `6. Subagent: reviewer (${formatVal(undefined)})`,
-          "7. Save Preset & Exit",
-          "8. Cancel & Exit",
-          "< Back"
-        ]);
+        setWizardOptions(getPresetOptionsList({}));
         setWizardSelectedIndex(0);
         setQuery("");
       } else if (activeWizard.step === 22 || activeWizard.step === 32) {
@@ -1515,18 +1554,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             data: { ...activeWizard.data },
           });
           const models: Record<string, string> = activeWizard.data.presetModels ? JSON.parse(activeWizard.data.presetModels) : {};
-          const formatVal = (val?: string) => val ? val : "(not set)";
-          setWizardOptions([
-            `1. Master Agent (depth 0) (${formatVal(models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
-            `2. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
-            `3. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
-            `4. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
-            `5. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
-            `6. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
-            "7. Save Preset & Exit",
-            "8. Cancel & Exit",
-            "< Back"
-          ]);
+          setWizardOptions(getPresetOptionsList(models));
           setWizardSelectedIndex(0);
           setQuery("");
           return;
@@ -1562,18 +1590,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             data: { ...activeWizard.data, presetModels: JSON.stringify(presetModels) },
           });
 
-          const formatVal = (val?: string) => val ? val : "(not set)";
-          setWizardOptions([
-            `1. Master Agent (depth 0) (${formatVal(presetModels.MODEL_DEPTH_0 || presetModels.MODEL_DEPT0)})`,
-            `2. Superagent (depth 1) (${formatVal(presetModels.MODEL_DEPTH_1 || presetModels.MODEL_DEPT1)})`,
-            `3. Subagent (depth 2) (${formatVal(presetModels.MODEL_DEPTH_2 || presetModels.MODEL_DEPT2)})`,
-            `4. Subagent: researcher (${formatVal(presetModels.MODEL_SUBAGENT_RESEARCHER || presetModels.MODEL_RESEARCHER)})`,
-            `5. Subagent: coder (${formatVal(presetModels.MODEL_SUBAGENT_CODER || presetModels.MODEL_CODER)})`,
-            `6. Subagent: reviewer (${formatVal(presetModels.MODEL_SUBAGENT_REVIEWER || presetModels.MODEL_REVIEWER)})`,
-            "7. Save Preset & Exit",
-            "8. Cancel & Exit",
-            "< Back"
-          ]);
+          setWizardOptions(getPresetOptionsList(presetModels));
           setWizardSelectedIndex(0);
           setQuery("");
           return;
@@ -1825,18 +1842,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           data: { ...activeWizard.data, presetModels: JSON.stringify(presetModels) },
         });
 
-        const formatVal = (val?: string) => val ? val : "(not set)";
-        setWizardOptions([
-          `1. Master Agent (depth 0) (${formatVal(presetModels.MODEL_DEPTH_0 || presetModels.MODEL_DEPT0)})`,
-          `2. Superagent (depth 1) (${formatVal(presetModels.MODEL_DEPTH_1 || presetModels.MODEL_DEPT1)})`,
-          `3. Subagent (depth 2) (${formatVal(presetModels.MODEL_DEPTH_2 || presetModels.MODEL_DEPT2)})`,
-          `4. Subagent: researcher (${formatVal(presetModels.MODEL_SUBAGENT_RESEARCHER || presetModels.MODEL_RESEARCHER)})`,
-          `5. Subagent: coder (${formatVal(presetModels.MODEL_SUBAGENT_CODER || presetModels.MODEL_CODER)})`,
-          `6. Subagent: reviewer (${formatVal(presetModels.MODEL_SUBAGENT_REVIEWER || presetModels.MODEL_REVIEWER)})`,
-          "7. Save Preset & Exit",
-          "8. Cancel & Exit",
-          "< Back"
-        ]);
+        setWizardOptions(getPresetOptionsList(presetModels));
         setWizardSelectedIndex(0);
         setQuery("");
       } else if (activeWizard.step === 30) {
@@ -1899,18 +1905,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           data: { ...activeWizard.data, presetDescription: updatedDesc }
         });
 
-        const formatModel = (val: string) => val ? val : "(not set)";
-        setWizardOptions([
-          `1. Master Agent (depth 0) (${formatModel(models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
-          `2. Superagent (depth 1) (${formatModel(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
-          `3. Subagent (depth 2) (${formatModel(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
-          `4. Subagent: researcher (${formatModel(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
-          `5. Subagent: coder (${formatModel(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
-          `6. Subagent: reviewer (${formatModel(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
-          "7. Save Preset & Exit",
-          "8. Cancel & Exit",
-          "< Back"
-        ]);
+        setWizardOptions(getPresetOptionsList(models));
         setWizardSelectedIndex(0);
         setQuery("");
       } else if (activeWizard.step === 40) {

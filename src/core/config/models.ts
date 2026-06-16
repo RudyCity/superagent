@@ -268,7 +268,7 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
   let modelStr = "";
 
   if (tier === "single") {
-    modelStr = process.env.MODEL || "";
+    modelStr = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || process.env.MODEL || "";
   } else if (tier === "master") {
     modelStr = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
   } else if (tier === "superagent") {
