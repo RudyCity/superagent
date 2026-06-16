@@ -13,6 +13,7 @@ export interface StatusBarProps {
   runningTasksCount: number;
   runningSubagentsCount: number;
   gitBranch: string;
+  worktreeCount: number;
   lastSpeed: number | null;
   formatCompactNumber: (val: number) => string;
 }
@@ -30,6 +31,7 @@ export function StatusBar(props: StatusBarProps) {
     runningTasksCount,
     runningSubagentsCount,
     gitBranch,
+    worktreeCount,
     lastSpeed,
     formatCompactNumber,
   } = props;
@@ -72,6 +74,12 @@ export function StatusBar(props: StatusBarProps) {
                 <Text color="gray"> │ </Text>
                 <Text color="gray">Branch: </Text>
                 <Text color="green" bold>🌿 {gitBranch}</Text>
+              </>
+            )}
+            {worktreeCount > 0 && (
+              <>
+                <Text color="gray"> │ </Text>
+                <Text color="blue" bold>Worktrees: {worktreeCount}</Text>
               </>
             )}
           </Text>

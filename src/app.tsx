@@ -144,6 +144,7 @@ export function App({
   const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
   const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
   const [gitBranch, setGitBranch] = useState<string>("");
+  const [worktreeCount, setWorktreeCount] = useState<number>(0);
 
   const addLine = useCallback((line: ChatLine) => {
     setLines((prev) => [...prev, line]);
@@ -958,16 +959,27 @@ export function App({
   }, []);
 
   useEffect(() => {
-    const fetchBranch = async () => {
+    const fetchGitData = async () => {
       try {
         const { stdout } = await execa("git", ["branch", "--show-current"], { cwd: process.cwd(), reject: false });
         setGitBranch(stdout?.trim() || "");
       } catch {
         // ignore
       }
+      try {
+        const { stdout } = await execa("git", ["worktree", "list"], { cwd: process.cwd(), reject: false });
+        if (stdout) {
+          const lines = stdout.split("\n").filter(Boolean);
+          setWorktreeCount(lines.length);
+        } else {
+          setWorktreeCount(0);
+        }
+      } catch {
+        setWorktreeCount(0);
+      }
     };
-    fetchBranch();
-    const interval = setInterval(fetchBranch, 5000);
+    fetchGitData();
+    const interval = setInterval(fetchGitData, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -1341,6 +1353,7 @@ export function App({
         runningTasksCount={runningTasksCount}
         runningSubagentsCount={runningSubagentsCount}
         gitBranch={gitBranch}
+        worktreeCount={worktreeCount}
         lastSpeed={lastSpeed}
         formatCompactNumber={formatCompactNumber}
       />
