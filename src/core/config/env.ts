@@ -140,40 +140,35 @@ export function updateEnvFile(updates: Record<string, string>): string {
     }
   }
 
-  const isTest = process.env.VITEST || process.env.NODE_ENV === "test";
   const envPath = path.join(getRootConfigDir(), ".env");
-  if (isTest) {
-    let content = "";
-    if (fs.existsSync(envPath)) {
-      content = fs.readFileSync(envPath, "utf-8");
-    }
+  let content = "";
+  if (fs.existsSync(envPath)) {
+    content = fs.readFileSync(envPath, "utf-8");
+  }
 
-    const lines = content.split(/\r?\n/);
-    const updatedKeys = new Set<string>();
+  const lines = content.split(/\r?\n/);
+  const updatedKeys = new Set<string>();
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (line && !line.startsWith("#")) {
-        const parts = line.split("=");
-        if (parts.length >= 2) {
-          const key = parts[0].trim();
-          if (updates.hasOwnProperty(key)) {
-            lines[i] = `${key}=${updates[key]}`;
-            updatedKeys.add(key);
-          }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line && !line.startsWith("#")) {
+      const parts = line.split("=");
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        if (updates.hasOwnProperty(key)) {
+          lines[i] = `${key}=${updates[key]}`;
+          updatedKeys.add(key);
         }
       }
     }
-
-    for (const [key, val] of Object.entries(updates)) {
-      if (!updatedKeys.has(key)) {
-        lines.push(`${key}=${val}`);
-      }
-    }
-
-    fs.writeFileSync(envPath, lines.join("\n"), "utf-8");
-    return envPath;
   }
 
-  return "";
+  for (const [key, val] of Object.entries(updates)) {
+    if (!updatedKeys.has(key)) {
+      lines.push(`${key}=${val}`);
+    }
+  }
+
+  fs.writeFileSync(envPath, lines.join("\n"), "utf-8");
+  return envPath;
 }
