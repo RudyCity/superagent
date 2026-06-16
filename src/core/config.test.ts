@@ -1,14 +1,37 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId } from "./config.js";
+import { getModelConfigPath } from "./config/paths.js";
+import { clearModelConfigCache } from "./config/jsonConfig.js";
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
+  let originalConfigContent: string | null = null;
+  const configPath = getModelConfigPath();
+
+  beforeAll(() => {
+    if (fs.existsSync(configPath)) {
+      originalConfigContent = fs.readFileSync(configPath, "utf-8");
+    }
+  });
+
+  afterAll(() => {
+    if (originalConfigContent !== null) {
+      fs.writeFileSync(configPath, originalConfigContent, "utf-8");
+    } else {
+      if (fs.existsSync(configPath)) {
+        try {
+          fs.unlinkSync(configPath);
+        } catch (e) {}
+      }
+    }
+  });
 
   beforeEach(() => {
     // Back up process.env to avoid side effects
     originalEnv = { ...process.env };
+    clearModelConfigCache();
   });
 
   afterEach(() => {
