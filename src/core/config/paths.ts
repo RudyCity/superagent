@@ -40,3 +40,7 @@ export function ensureGlobalConfigDir(): void {
     fs.mkdirSync(checkpointsDir, { recursive: true });
   }
 }
+
+export function getModelConfigPath(): string {
+  return path.join(getRootConfigDir(), "model-config.json");
+}

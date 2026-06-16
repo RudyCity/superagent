@@ -213,17 +213,20 @@ export function getModelInstanceForString(modelStr: string) {
         if (prefix.startsWith("openrouter")) {
           provider = "custom";
           baseUrl = "https://openrouter.ai/api/v1";
-          apiKey = process.env.PROVIDER_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || process.env.CUSTOM_API_KEY || config.apiKey;
+          const canFallback = config.provider === "custom" || config.provider === "openai";
+          apiKey = process.env.PROVIDER_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || process.env.CUSTOM_API_KEY || (canFallback ? config.apiKey : "");
           modelName = rest;
         } else if (prefix.startsWith("anthropic")) {
           provider = "anthropic";
           baseUrl = undefined;
-          apiKey = process.env.PROVIDER_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || config.apiKey;
+          const canFallback = config.provider === "anthropic";
+          apiKey = process.env.PROVIDER_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || (canFallback ? config.apiKey : "");
           modelName = rest;
         } else if (prefix.startsWith("openai")) {
           provider = "openai";
           baseUrl = undefined;
-          apiKey = process.env.PROVIDER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || config.apiKey;
+          const canFallback = config.provider === "openai";
+          apiKey = process.env.PROVIDER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || (canFallback ? config.apiKey : "");
           modelName = rest;
         }
       }
@@ -264,59 +267,124 @@ export function getModelInstanceForString(modelStr: string) {
   return openai(modelName);
 }
 
-export function getModelInstanceForTier(tier: string, depth: number, subagentType?: string, isSingleMode?: boolean) {
-  let modelStr = "";
+import { loadModelConfig, getActivePreset, TierModelConfig } from "./jsonConfig.js";
 
-  const checkSingle = tier === "single" || isSingleMode;
+export function getModelInstanceForTier(tier: string, depth: number, subagentType?: string, isSingleMode?: boolean) {
+  let envModelStr = "";
+  const checkSingle = tier === "single" || isSingleMode || process.env.SINGLE_AGENT_MODE === "true";
 
   if (checkSingle) {
     if (tier === "subagent" || depth >= 2) {
       if (subagentType) {
         const typeUpper = subagentType.toUpperCase();
-        modelStr = process.env[`MODEL_SINGLE_SUBAGENT_${typeUpper}`] || process.env[`MODEL_SINGLE_${typeUpper}`] || "";
+        envModelStr = process.env[`MODEL_SINGLE_SUBAGENT_${typeUpper}`] || process.env[`MODEL_SINGLE_${typeUpper}`] || "";
       }
-      if (!modelStr) {
-        modelStr = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || process.env.MODEL_SINGLE || "";
+      if (!envModelStr) {
+        envModelStr = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || process.env.MODEL_SINGLE || "";
       }
     } else {
-      modelStr = process.env.MODEL_SINGLE || process.env.MODEL || "";
+      envModelStr = process.env.MODEL_SINGLE || process.env.MODEL || "";
     }
   } else {
     if (tier === "master") {
-      modelStr = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+      envModelStr = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
     } else if (tier === "superagent") {
-      modelStr = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+      envModelStr = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
     } else if (tier === "subagent") {
       if (subagentType) {
         const typeUpper = subagentType.toUpperCase();
-        modelStr = process.env[`MODEL_MULTI_SUBAGENT_${typeUpper}`] || process.env[`MODEL_MULTI_${typeUpper}`] || process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
+        envModelStr = process.env[`MODEL_MULTI_SUBAGENT_${typeUpper}`] || process.env[`MODEL_MULTI_${typeUpper}`] || process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
       }
-      if (!modelStr) {
-        modelStr = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+      if (!envModelStr) {
+        envModelStr = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
       }
     }
   }
 
   // Fallback to depth check if tier is not recognized or not specified
-  if (!modelStr && !checkSingle) {
+  if (!envModelStr && (!checkSingle || depth >= 0)) {
     if (depth === 0) {
-      modelStr = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+      envModelStr = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
     } else if (depth === 1) {
-      modelStr = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+      envModelStr = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
     } else if (depth >= 2) {
       if (subagentType) {
         const typeUpper = subagentType.toUpperCase();
-        modelStr = process.env[`MODEL_MULTI_SUBAGENT_${typeUpper}`] || process.env[`MODEL_MULTI_${typeUpper}`] || process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
+        envModelStr = process.env[`MODEL_MULTI_SUBAGENT_${typeUpper}`] || process.env[`MODEL_MULTI_${typeUpper}`] || process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
       }
-      if (!modelStr) {
-        modelStr = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+      if (!envModelStr) {
+        envModelStr = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
       }
     }
   }
 
-  if (!modelStr) {
-    modelStr = process.env.MODEL || "";
+  if (!envModelStr && process.env.MODEL) {
+    envModelStr = process.env.MODEL;
   }
 
-  return getModelInstanceForString(modelStr);
+  if (envModelStr) {
+    return getModelInstanceForString(envModelStr);
+  }
+
+  const isMulti = !isSingleMode && !process.env.SINGLE_AGENT_MODE && (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true");
+  const mode = isMulti ? "multi" : "single";
+
+  const config = loadModelConfig();
+  const activePreset = getActivePreset<any>(mode);
+
+  let tierConfig: TierModelConfig | undefined;
+
+  if (mode === "multi") {
+    if (tier === "master" || depth === 0) {
+      tierConfig = activePreset.models.master;
+    } else if (tier === "superagent" || depth === 1) {
+      tierConfig = activePreset.models.superagent;
+    } else {
+      // Subagent
+      if (subagentType && activePreset.models.subagentDetails?.[subagentType]) {
+        tierConfig = activePreset.models.subagentDetails[subagentType];
+      }
+      if (!tierConfig) {
+        tierConfig = activePreset.models.subagentDefault;
+      }
+    }
+  } else {
+    // Single
+    if (tier === "superagent" || depth <= 1) {
+      tierConfig = activePreset.models.superagent;
+    } else {
+      // Subagent
+      if (subagentType && activePreset.models.subagentDetails?.[subagentType]) {
+        tierConfig = activePreset.models.subagentDetails[subagentType];
+      }
+      if (!tierConfig) {
+        tierConfig = activePreset.models.subagentDefault;
+      }
+    }
+  }
+
+  // Fallback to active preset superagent if tierConfig is missing
+  if (!tierConfig) {
+    tierConfig = activePreset.models.superagent || (activePreset.models as any).master;
+  }
+
+  // Find the provider profile
+  const providerProfile = config.providers.find((p) => p.id === tierConfig?.providerProfileId) || config.providers[0];
+
+  const apiKey = providerProfile?.apiKey || "";
+  const baseUrl = providerProfile?.baseUrl || undefined;
+  const provider = providerProfile?.provider || "openai";
+  const modelName = tierConfig?.model || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
+
+  // Construct a prefix that maps back to the profile credentials
+  const profileId = providerProfile?.id || provider;
+  const prefix = profileId.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+  process.env[`PROVIDER_${prefix}_API_KEY`] = apiKey;
+  if (baseUrl) {
+    process.env[`PROVIDER_${prefix}_BASE_URL`] = baseUrl;
+  }
+  process.env[`PROVIDER_${prefix}_TYPE`] = provider;
+
+  return getModelInstanceForString(`${profileId}:${modelName}`);
 }
+

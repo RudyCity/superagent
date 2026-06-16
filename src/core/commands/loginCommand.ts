@@ -6,6 +6,7 @@ import {
   fetchAndCacheModels,
   updateEnvFile,
   getContextWindowLimit,
+  addProvider
 } from "../config.js";
 
 export const loginCommand: SlashCommand = {
@@ -106,10 +107,18 @@ export const loginCommand: SlashCommand = {
     }
 
     try {
-      const envPath = updateEnvFile(updates);
+      addProvider({
+        id: profileName.toLowerCase().replace(/[^a-z0-9_-]/g, ""),
+        name: profileName,
+        provider: provider,
+        apiKey: apiKey,
+        baseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
+      });
+
+      updateEnvFile(updates);
       ctx.addLine({
         type: "system",
-        content: `Successfully logged in. Configured provider: ${profileName} (${provider}).\nSaved to: ${envPath}`,
+        content: `Successfully logged in. Configured provider: ${profileName} (${provider}).\nSaved to global model-config.json`,
         timestamp: now,
       });
 

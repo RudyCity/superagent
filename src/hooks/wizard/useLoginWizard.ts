@@ -6,7 +6,8 @@ import {
   switchActiveProvider, 
   fetchAndCacheModels, 
   getContextWindowLimit, 
-  updateEnvFile 
+  updateEnvFile,
+  addProvider
 } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
@@ -162,11 +163,19 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       }
 
       try {
-        const envPath = updateEnvFile(updates);
+        addProvider({
+          id: profileName.toLowerCase().replace(/[^a-z0-9_-]/g, ""),
+          name: profileName,
+          provider: provider,
+          apiKey: apiKey,
+          baseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
+        });
+
+        updateEnvFile(updates);
 
         addLine({
           type: "system",
-          content: `Successfully configured provider profile: ${profileName} (${provider})!\nSaved to: ${envPath}`,
+          content: `Successfully configured provider profile: ${profileName} (${provider})!\nSaved to global model-config.json`,
           timestamp: now,
         });
 

@@ -10,7 +10,8 @@ import {
   saveModelPreset,
   deleteModelPreset,
   BUILT_IN_PRESETS,
-  getProviderOptionsList
+  getProviderOptionsList,
+  addProvider
 } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import type { ChatLine } from "../../core/slash-commands.js";
@@ -838,10 +839,19 @@ export function useModelWizard(ctx: ModelWizardContext) {
       }
 
       try {
-        const envPath = updateEnvFile(updates);
+        addProvider({
+          id: profileName.toLowerCase().replace(/[^a-z0-9_-]/g, ""),
+          name: profileName,
+          provider: providerType,
+          apiKey: apiKey,
+          baseUrl: baseUrl || (providerType === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
+        });
+
+        updateEnvFile(updates);
+
         addLine({
           type: "system",
-          content: `Successfully configured provider profile: ${profileName} (${providerType})!\nSaved to: ${envPath}`,
+          content: `Successfully configured provider profile: ${profileName} (${providerType})!\nSaved to global model-config.json`,
           timestamp: now,
         });
         

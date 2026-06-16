@@ -25,7 +25,6 @@ export function getModelPresets(): ModelPreset[] {
       if (Array.isArray(data)) {
         for (const p of data) {
           if (p && typeof p === "object" && typeof p.name === "string" && p.models && typeof p.models === "object") {
-            // Check if name conflicts with built-in
             const idx = presets.findIndex(bp => bp.name.toLowerCase() === p.name.toLowerCase());
             const cleanPreset = {
               name: p.name.toLowerCase(),
@@ -71,7 +70,6 @@ export function saveModelPreset(name: string, description: string, models?: Reco
       if (v && k.startsWith("MODEL_SUBAGENT_")) {
         modelsToSave[k] = v;
       } else if (v && k.startsWith("MODEL_") && k !== "MODEL" && k !== "MODEL_LIMITS") {
-        // e.g. MODEL_RESEARCHER, MODEL_CODER, MODEL_REVIEWER
         modelsToSave[k] = v;
       }
     }
@@ -117,21 +115,18 @@ export function applyModelPreset(name: string): string {
     throw new Error(`Model preset "${name}" not found.`);
   }
 
-  // 1. Determine new active provider if specified in the preset's default MODEL
   const presetModel = preset.models.MODEL || preset.models.MODEL_DEPTH_0 || preset.models.MODEL_DEPT0 || "";
   let activeProvider = "";
   if (presetModel && presetModel.includes(":")) {
     activeProvider = presetModel.split(":")[0].toLowerCase();
   }
 
-  // 2. Switch active provider first so credentials and default settings are updated
   if (activeProvider) {
     switchActiveProvider(activeProvider);
   }
 
   const updates: Record<string, string> = {};
 
-  // 3. Reset all current model keys to avoid leaking old configuration
   for (const key of Object.keys(process.env)) {
     if (key.startsWith("MODEL_DEPTH_") || key.startsWith("MODEL_DEPT") || 
         (key.startsWith("MODEL_") && key !== "MODEL" && key !== "MODEL_LIMITS")) {
@@ -140,12 +135,10 @@ export function applyModelPreset(name: string): string {
     }
   }
 
-  // 4. Set all model keys from the preset
   for (const [key, val] of Object.entries(preset.models)) {
     updates[key] = val;
   }
 
-  // 5. Set standard MODEL if not specified in the preset
   if (!preset.models.MODEL) {
     updates.MODEL = preset.models.MODEL_DEPTH_0 || preset.models.MODEL_DEPT0 || "gpt-4o";
   }

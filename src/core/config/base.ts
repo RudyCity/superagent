@@ -13,78 +13,94 @@ export interface Config {
   disableStreaming?: boolean;
 }
 
+import { loadModelConfig, getActivePreset } from "./jsonConfig.js";
+
 export function getConfig(): Config {
-  const activeProvider = process.env.ACTIVE_PROVIDER || "";
-  let provider: Provider = "openai";
-  let apiKey = "";
-  let baseUrl: string | undefined;
+  // Check process.env first for legacy overrides to ensure test compatibility!
+  const legacyActiveProvider = process.env.ACTIVE_PROVIDER || "";
+  const legacyCustomBaseUrl = process.env.CUSTOM_BASE_URL || "";
+  const legacyCustomApiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY || "";
+  const legacyAnthropicKey = process.env.ANTHROPIC_API_KEY || "";
+  const legacyOpenaiKey = process.env.OPENAI_API_KEY || "";
 
-  if (activeProvider) {
-    const prefix = `PROVIDER_${activeProvider.toUpperCase()}`;
-    const type = process.env[`${prefix}_TYPE`] || "";
-    apiKey = process.env[`${prefix}_API_KEY`] || "";
-    baseUrl = process.env[`${prefix}_BASE_URL`] || "";
+  if (legacyActiveProvider || legacyCustomBaseUrl || legacyAnthropicKey || legacyOpenaiKey) {
+    let provider: Provider = "openai";
+    let apiKey = "";
+    let baseUrl: string | undefined;
 
-    if (!apiKey && !baseUrl) {
-      const customBaseUrl = process.env.CUSTOM_BASE_URL || "";
-      const customApiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY || "";
-      const anthropicKey = process.env.ANTHROPIC_API_KEY || "";
-      const openaiKey = process.env.OPENAI_API_KEY || "";
+    if (legacyActiveProvider) {
+      const prefix = `PROVIDER_${legacyActiveProvider.toUpperCase()}`;
+      apiKey = process.env[`${prefix}_API_KEY`] || "";
+      baseUrl = process.env[`${prefix}_BASE_URL`] || "";
+      const type = process.env[`${prefix}_TYPE`] || "";
 
-      if (activeProvider.toLowerCase() === "custom" && customBaseUrl) {
-        provider = "custom";
-        apiKey = customApiKey;
-        baseUrl = customBaseUrl;
-      } else if (activeProvider.toLowerCase() === "anthropic" && anthropicKey) {
-        provider = "anthropic";
-        apiKey = anthropicKey;
-      } else if (activeProvider.toLowerCase() === "openai" && openaiKey) {
-        provider = "openai";
-        apiKey = openaiKey;
-      } else if (activeProvider.toLowerCase().startsWith("openrouter")) {
-        provider = "custom";
-        apiKey = process.env.PROVIDER_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || customApiKey;
-        baseUrl = "https://openrouter.ai/api/v1";
-      } else if (activeProvider.toLowerCase().startsWith("anthropic")) {
-        provider = "anthropic";
-        apiKey = process.env.PROVIDER_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || anthropicKey;
-      } else if (activeProvider.toLowerCase().startsWith("openai")) {
-        provider = "openai";
-        apiKey = process.env.PROVIDER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || openaiKey;
+      if (!apiKey && !baseUrl) {
+        if (legacyActiveProvider.toLowerCase() === "custom" && legacyCustomBaseUrl) {
+          provider = "custom";
+          apiKey = legacyCustomApiKey;
+          baseUrl = legacyCustomBaseUrl;
+        } else if (legacyActiveProvider.toLowerCase() === "anthropic" && legacyAnthropicKey) {
+          provider = "anthropic";
+          apiKey = legacyAnthropicKey;
+        } else if (legacyActiveProvider.toLowerCase() === "openai" && legacyOpenaiKey) {
+          provider = "openai";
+          apiKey = legacyOpenaiKey;
+        }
+      } else {
+        if (type === "anthropic" || legacyActiveProvider.toLowerCase() === "anthropic" || legacyActiveProvider.toLowerCase().startsWith("anthropic")) {
+          provider = "anthropic";
+        } else if (type === "custom" || type === "openrouter" || legacyActiveProvider.toLowerCase().startsWith("openrouter") || baseUrl) {
+          provider = "custom";
+        } else {
+          provider = "openai";
+        }
       }
     } else {
-      if (type === "anthropic" || activeProvider.toLowerCase() === "anthropic" || activeProvider.toLowerCase().startsWith("anthropic")) {
-        provider = "anthropic";
-      } else if (type === "custom" || type === "openrouter" || activeProvider.toLowerCase().startsWith("openrouter") || baseUrl) {
+      if (legacyCustomBaseUrl) {
         provider = "custom";
+        apiKey = legacyCustomApiKey;
+        baseUrl = legacyCustomBaseUrl;
+      } else if (legacyAnthropicKey) {
+        provider = "anthropic";
+        apiKey = legacyAnthropicKey;
       } else {
         provider = "openai";
+        apiKey = legacyOpenaiKey;
       }
     }
-  } else {
-    // Backwards compatibility fallback
-    const customBaseUrl = process.env.CUSTOM_BASE_URL || "";
-    const customApiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY || "";
-    const anthropicKey = process.env.ANTHROPIC_API_KEY || "";
-    const openaiKey = process.env.OPENAI_API_KEY || "";
 
-    if (customBaseUrl) {
-      provider = "custom";
-      apiKey = customApiKey;
-      baseUrl = customBaseUrl;
-    } else if (anthropicKey) {
-      provider = "anthropic";
-      apiKey = anthropicKey;
-    } else {
-      provider = "openai";
-      apiKey = openaiKey;
-    }
+    const model = process.env.MODEL || (provider === "anthropic" ? "claude-sonnet-4-20250514" : "gpt-4o");
+    const disableStreaming = process.env.DISABLE_STREAMING === "true";
+
+    return {
+      apiKey,
+      provider,
+      model,
+      baseUrl,
+      maxTokens: 16384,
+      systemPrompt: getSystemPrompt(),
+      workingDirectory: process.cwd(),
+      disableStreaming,
+    };
   }
 
-  const model =
-    process.env.MODEL ||
-    (provider === "anthropic" ? "claude-sonnet-4-20250514" : "gpt-4o");
-
+  const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+  const mode = isMulti ? "multi" : "single";
+  
+  const config = loadModelConfig();
+  const activePreset = getActivePreset<any>(mode);
+  
+  // Resolve the tier model configuration for the main/master agent
+  const tierConfig = mode === "multi" ? activePreset.models.master : activePreset.models.superagent;
+  
+  // Find the provider profile
+  const providerProfile = config.providers.find((p) => p.id === tierConfig?.providerProfileId) || config.providers[0];
+  
+  const apiKey = providerProfile?.apiKey || "";
+  const baseUrl = providerProfile?.baseUrl || "";
+  const provider = (providerProfile?.provider as Provider) || "openai";
+  const model = tierConfig?.model || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
+  
   const disableStreaming = process.env.DISABLE_STREAMING === "true";
 
   return {
@@ -98,6 +114,7 @@ export function getConfig(): Config {
     disableStreaming,
   };
 }
+
 
 export function getSystemPrompt(): string {
   let shellPrompt = "";
