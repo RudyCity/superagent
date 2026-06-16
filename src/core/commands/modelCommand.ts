@@ -166,7 +166,6 @@ export const modelCommand: SlashCommand = {
         const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
         
         let updatedList = `\n\nUpdated Models:\n` +
-          `  Default Model: ${currentModel}\n` +
           `  Master Agent (depth 0): ${masterModel}\n` +
           `  Superagent (depth 1): ${superagentModel}\n` +
           `  Subagent (depth 2): ${subagentModel}`;
@@ -216,7 +215,6 @@ export const modelCommand: SlashCommand = {
       }
 
       let content = `Current Models:\n` +
-        `  Default Model: ${currentModel}\n` +
         `  Master Agent (depth 0): ${masterModel}\n` +
         `  Superagent (depth 1): ${superagentModel}\n` +
         `  Subagent (depth 2): ${subagentModel}`;

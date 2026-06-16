@@ -179,8 +179,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `4. Subagent: researcher (${researcherModelFormatted})`,
           `5. Subagent: coder (${coderModelFormatted})`,
           `6. Subagent: reviewer (${reviewerModelFormatted})`,
-          `7. Default Model (Only set default fallback)`,
-          `8. All Tiers (Overwrite All)`,
+          `7. All Tiers (Overwrite All)`,
           `< Back`
         ]);
         setWizardSelectedIndex(0);
@@ -239,7 +238,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       } else if (choice.includes("all tiers")) {
         tier = "all";
       } else {
-        const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "default", "all"];
+        const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "all"];
         const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
         tier = tiers[idx] || "master";
       }
@@ -294,8 +293,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `4. Subagent: researcher (${researcherModelFormatted})`,
           `5. Subagent: coder (${coderModelFormatted})`,
           `6. Subagent: reviewer (${reviewerModelFormatted})`,
-          `7. Default Model (Only set default fallback)`,
-          `8. All Tiers (Overwrite All)`,
+          `7. All Tiers (Overwrite All)`,
           `< Back`
         ]);
         setWizardSelectedIndex(0);
@@ -824,7 +822,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
         
         let updatedList = `\n\nUpdated Models:\n` +
-          `  Default Model: ${currentModel}\n` +
           `  Master Agent (depth 0): ${masterModel}\n` +
           `  Superagent (depth 1): ${superagentModel}\n` +
           `  Subagent (depth 2): ${subagentModel}`;
@@ -899,7 +896,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
         
         let updatedList = `\n\nUpdated Models:\n` +
-          `  Default Model: ${currentModel}\n` +
           `  Master Agent (depth 0): ${masterModel}\n` +
           `  Superagent (depth 1): ${superagentModel}\n` +
           `  Subagent (depth 2): ${subagentModel}`;
@@ -998,9 +994,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         `4. Subagent: researcher (${formatVal(undefined)})`,
         `5. Subagent: coder (${formatVal(undefined)})`,
         `6. Subagent: reviewer (${formatVal(undefined)})`,
-        `7. Default Model (Only set default fallback) (${formatVal(undefined)})`,
-        "8. Save Preset & Exit",
-        "9. Cancel & Exit",
+        "7. Save Preset & Exit",
+        "8. Cancel & Exit",
         "< Back"
       ]);
       setWizardSelectedIndex(0);
@@ -1098,9 +1093,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `4. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
           `5. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
           `6. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
-          `7. Default Model (Only set default fallback) (${formatVal(models.MODEL)})`,
-          "8. Save Preset & Exit",
-          "9. Cancel & Exit",
+          "7. Save Preset & Exit",
+          "8. Cancel & Exit",
           "< Back"
         ]);
         setWizardSelectedIndex(0);
@@ -1365,9 +1359,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         `4. Subagent: researcher (${formatVal(presetModels.MODEL_SUBAGENT_RESEARCHER || presetModels.MODEL_RESEARCHER)})`,
         `5. Subagent: coder (${formatVal(presetModels.MODEL_SUBAGENT_CODER || presetModels.MODEL_CODER)})`,
         `6. Subagent: reviewer (${formatVal(presetModels.MODEL_SUBAGENT_REVIEWER || presetModels.MODEL_REVIEWER)})`,
-        `7. Default Model (Only set default fallback) (${formatVal(presetModels.MODEL)})`,
-        "8. Save Preset & Exit",
-        "9. Cancel & Exit",
+        "7. Save Preset & Exit",
+        "8. Cancel & Exit",
         "< Back"
       ]);
       setWizardSelectedIndex(0);
@@ -1438,9 +1431,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         `4. Subagent: researcher (${formatModel(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
         `5. Subagent: coder (${formatModel(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
         `6. Subagent: reviewer (${formatModel(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
-        `7. Default Model (Only set default fallback) (${formatModel(models.MODEL)})`,
-        "8. Save Preset & Exit",
-        "9. Cancel & Exit",
+        "7. Save Preset & Exit",
+        "8. Cancel & Exit",
         "< Back"
       ]);
       setWizardSelectedIndex(0);
@@ -1614,7 +1606,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
         
         let updatedList = `\n\nUpdated Models:\n` +
-          `  Default Model: ${currentModel}\n` +
           `  Master Agent (depth 0): ${masterModel}\n` +
           `  Superagent (depth 1): ${superagentModel}\n` +
           `  Subagent (depth 2): ${subagentModel}`;

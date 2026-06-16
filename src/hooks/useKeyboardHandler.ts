@@ -616,8 +616,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               `4. Subagent: researcher (${researcherModelFormatted})`,
               `5. Subagent: coder (${coderModelFormatted})`,
               `6. Subagent: reviewer (${reviewerModelFormatted})`,
-              `7. Default Model (Only set default fallback)`,
-              `8. All Tiers (Overwrite All)`,
+              `7. All Tiers (Overwrite All)`,
               `< Back`
             ]);
             setWizardSelectedIndex(0);
@@ -635,7 +634,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.return) {
-          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "default", "all", "back"];
+          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "all", "back"];
           const tier = tiers[wizardSelectedIndex];
           if (!tier) return;
 

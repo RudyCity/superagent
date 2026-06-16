@@ -75,7 +75,6 @@ describe("Slash Command: /model", () => {
 
     expect(addedLines.length).toBe(1);
     const content = addedLines[0].content;
-    expect(content).toContain("Default Model: openai:gpt-4o");
     expect(content).toContain("Master Agent (depth 0): openai:gpt-4o-mini");
     expect(content).toContain("Superagent (depth 1): anthropic:claude-3-5-sonnet");
     expect(content).toContain("Subagent (depth 2): custom:local-llama");
