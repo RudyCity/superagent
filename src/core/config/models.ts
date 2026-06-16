@@ -192,7 +192,7 @@ export function getModelInstanceForString(modelStr: string) {
       apiKey = process.env.PROVIDER_CUSTOM_API_KEY || process.env.CUSTOM_API_KEY || config.apiKey;
       baseUrl = process.env.PROVIDER_CUSTOM_BASE_URL || process.env.CUSTOM_BASE_URL || config.baseUrl;
     } else {
-      const providerUpper = prefix.toUpperCase();
+      const providerUpper = prefix.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
       const customKey = process.env[`PROVIDER_${providerUpper}_API_KEY`];
       const customBase = process.env[`PROVIDER_${providerUpper}_BASE_URL`];
       const customType = process.env[`PROVIDER_${providerUpper}_TYPE`];
@@ -239,13 +239,13 @@ export function getModelInstanceForString(modelStr: string) {
   if (!isTest && isCloud && isMissingKey) {
     let keyVar = "API_KEY";
     if (baseUrl?.includes("openrouter.ai")) {
-      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase()}_API_KEY or OPENROUTER_API_KEY` : "OPENROUTER_API_KEY";
+      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}_API_KEY or OPENROUTER_API_KEY` : "OPENROUTER_API_KEY";
     } else if (provider === "anthropic") {
-      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase()}_API_KEY or ANTHROPIC_API_KEY` : "ANTHROPIC_API_KEY";
+      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}_API_KEY or ANTHROPIC_API_KEY` : "ANTHROPIC_API_KEY";
     } else if (provider === "openai") {
-      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase()}_API_KEY or OPENAI_API_KEY` : "OPENAI_API_KEY";
+      keyVar = resolvedPrefix ? `PROVIDER_${resolvedPrefix.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}_API_KEY or OPENAI_API_KEY` : "OPENAI_API_KEY";
     }
-    throw new Error(`API key is missing or not configured. Please set the ${keyVar} environment variable or add it to your global .env file.`);
+    throw new Error(`API key is missing or not configured. Please set the ${keyVar} environment variable or configure it via /login.`);
   }
 
   if (provider === "anthropic" || (provider === "custom" && isAnthropicCompatible(baseUrl || "", modelName))) {
