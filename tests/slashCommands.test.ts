@@ -129,16 +129,32 @@ describe("Slash Command: /model", () => {
     expect(process.env.MODEL_DEPT1).toBe("openai:gpt-4");
   });
 
-  it("should update MODEL_DEPTH_2 when subagent prefix is supplied", () => {
+  it("should update MODEL_DEPTH_2 when subagent prefix is supplied in multi-agent mode", () => {
+    mockCtx.agent = { isMultiAgent: true } as any;
     handleSlashCommand("/model subagent openai:gpt-4", mockCtx);
     expect(process.env.MODEL_DEPTH_2).toBe("openai:gpt-4");
     expect(process.env.MODEL_DEPT2).toBe("openai:gpt-4");
   });
 
-  it("should update specific subagent model when subagent type is supplied", () => {
+  it("should update MODEL_SINGLE_SUBAGENT when subagent prefix is supplied in single-agent mode", () => {
+    mockCtx.agent = { isMultiAgent: false } as any;
+    handleSlashCommand("/model subagent openai:gpt-4", mockCtx);
+    expect(process.env.MODEL_SINGLE_SUBAGENT).toBe("openai:gpt-4");
+    expect(process.env.MODEL_SINGLE_DEPTH_2).toBe("openai:gpt-4");
+  });
+
+  it("should update specific subagent model when subagent type is supplied in multi-agent mode", () => {
+    mockCtx.agent = { isMultiAgent: true } as any;
     handleSlashCommand("/model researcher openai:gpt-researcher", mockCtx);
     expect(process.env.MODEL_SUBAGENT_RESEARCHER).toBe("openai:gpt-researcher");
     expect(process.env.MODEL_RESEARCHER).toBe("openai:gpt-researcher");
+  });
+
+  it("should update specific single subagent model when subagent type is supplied in single-agent mode", () => {
+    mockCtx.agent = { isMultiAgent: false } as any;
+    handleSlashCommand("/model researcher openai:gpt-researcher", mockCtx);
+    expect(process.env.MODEL_SINGLE_SUBAGENT_RESEARCHER).toBe("openai:gpt-researcher");
+    expect(process.env.MODEL_SINGLE_RESEARCHER).toBe("openai:gpt-researcher");
   });
 });
 

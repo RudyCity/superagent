@@ -292,7 +292,7 @@ export class Agent {
   }
 
   private getModel() {
-    return getModelInstanceForTier(this.tier, this.delegationDepth, this.subagentType);
+    return getModelInstanceForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
   }
 
   async sendMessage(userInput: string): Promise<void> {

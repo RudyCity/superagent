@@ -90,10 +90,10 @@ export function useModelWizard(ctx: ModelWizardContext) {
       } else {
         return [
           `1. Single Agent Model (${formatVal(models.MODEL_SINGLE || models.MODEL)})`,
-          `2. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
-          `3. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
-          `4. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
-          `5. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+          `2. Subagent (depth 2) (${formatVal(models.MODEL_SINGLE_SUBAGENT || models.MODEL_SINGLE_DEPTH_2)})`,
+          `3. Subagent: researcher (${formatVal(models.MODEL_SINGLE_SUBAGENT_RESEARCHER || models.MODEL_SINGLE_RESEARCHER)})`,
+          `4. Subagent: coder (${formatVal(models.MODEL_SINGLE_SUBAGENT_CODER || models.MODEL_SINGLE_CODER)})`,
+          `5. Subagent: reviewer (${formatVal(models.MODEL_SINGLE_SUBAGENT_REVIEWER || models.MODEL_SINGLE_REVIEWER)})`,
           "6. Save Preset & Exit",
           "7. Cancel & Exit",
           "< Back"
@@ -446,24 +446,39 @@ export function useModelWizard(ctx: ModelWizardContext) {
           clearUpdates = { MODEL_DEPTH_1: "", MODEL_DEPT1: "" };
           targetLabel = "Superagent (depth 1)";
         } else if (tier === "subagent") {
-          clearUpdates = { MODEL_DEPTH_2: "", MODEL_DEPT2: "" };
+          clearUpdates = isMulti
+            ? { MODEL_DEPTH_2: "", MODEL_DEPT2: "" }
+            : { MODEL_SINGLE_SUBAGENT: "", MODEL_SINGLE_DEPTH_2: "" };
           targetLabel = "Subagent (depth 2)";
         } else if (tier === "researcher") {
-          clearUpdates = { MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "" };
+          clearUpdates = isMulti
+            ? { MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "" }
+            : { MODEL_SINGLE_SUBAGENT_RESEARCHER: "", MODEL_SINGLE_RESEARCHER: "" };
           targetLabel = `Subagent "researcher"`;
         } else if (tier === "coder") {
-          clearUpdates = { MODEL_SUBAGENT_CODER: "", MODEL_CODER: "" };
+          clearUpdates = isMulti
+            ? { MODEL_SUBAGENT_CODER: "", MODEL_CODER: "" }
+            : { MODEL_SINGLE_SUBAGENT_CODER: "", MODEL_SINGLE_CODER: "" };
           targetLabel = `Subagent "coder"`;
         } else if (tier === "reviewer") {
-          clearUpdates = { MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "" };
+          clearUpdates = isMulti
+            ? { MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "" }
+            : { MODEL_SINGLE_SUBAGENT_REVIEWER: "", MODEL_SINGLE_REVIEWER: "" };
           targetLabel = `Subagent "reviewer"`;
         } else if (tier === "all_subagents") {
-          clearUpdates = {
-            MODEL_DEPTH_2: "", MODEL_DEPT2: "",
-            MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "",
-            MODEL_SUBAGENT_CODER: "", MODEL_CODER: "",
-            MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "",
-          };
+          clearUpdates = isMulti
+            ? {
+                MODEL_DEPTH_2: "", MODEL_DEPT2: "",
+                MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "",
+                MODEL_SUBAGENT_CODER: "", MODEL_CODER: "",
+                MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "",
+              }
+            : {
+                MODEL_SINGLE_SUBAGENT: "", MODEL_SINGLE_DEPTH_2: "",
+                MODEL_SINGLE_SUBAGENT_RESEARCHER: "", MODEL_SINGLE_RESEARCHER: "",
+                MODEL_SINGLE_SUBAGENT_CODER: "", MODEL_SINGLE_CODER: "",
+                MODEL_SINGLE_SUBAGENT_REVIEWER: "", MODEL_SINGLE_REVIEWER: "",
+              };
           targetLabel = "All Subagents";
         } else if (tier === "all") {
           clearUpdates = {
@@ -958,16 +973,27 @@ export function useModelWizard(ctx: ModelWizardContext) {
           const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
             ? `${profileName.toLowerCase()}:${modelName}`
             : modelName;
-          updates = {
-            MODEL_DEPTH_2: finalModelName,
-            MODEL_DEPT2: finalModelName,
-            MODEL_SUBAGENT_RESEARCHER: finalModelName,
-            MODEL_RESEARCHER: finalModelName,
-            MODEL_SUBAGENT_CODER: finalModelName,
-            MODEL_CODER: finalModelName,
-            MODEL_SUBAGENT_REVIEWER: finalModelName,
-            MODEL_REVIEWER: finalModelName
-          };
+          updates = isMulti
+            ? {
+                MODEL_DEPTH_2: finalModelName,
+                MODEL_DEPT2: finalModelName,
+                MODEL_SUBAGENT_RESEARCHER: finalModelName,
+                MODEL_RESEARCHER: finalModelName,
+                MODEL_SUBAGENT_CODER: finalModelName,
+                MODEL_CODER: finalModelName,
+                MODEL_SUBAGENT_REVIEWER: finalModelName,
+                MODEL_REVIEWER: finalModelName
+              }
+            : {
+                MODEL_SINGLE_SUBAGENT: finalModelName,
+                MODEL_SINGLE_DEPTH_2: finalModelName,
+                MODEL_SINGLE_SUBAGENT_RESEARCHER: finalModelName,
+                MODEL_SINGLE_RESEARCHER: finalModelName,
+                MODEL_SINGLE_SUBAGENT_CODER: finalModelName,
+                MODEL_SINGLE_CODER: finalModelName,
+                MODEL_SINGLE_SUBAGENT_REVIEWER: finalModelName,
+                MODEL_SINGLE_REVIEWER: finalModelName
+              };
           targetLabel = "All Subagent Models";
           envPath = switchActiveProvider(profileName);
           updateEnvFile(updates);
@@ -1007,17 +1033,24 @@ export function useModelWizard(ctx: ModelWizardContext) {
             updates = { MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName };
             targetLabel = "Superagent (depth 1) Model";
           } else if (tier === "subagent") {
-            updates = { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName };
+            updates = isMulti
+              ? { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName }
+              : { MODEL_SINGLE_SUBAGENT: finalModelName, MODEL_SINGLE_DEPTH_2: finalModelName };
             targetLabel = "Subagent (depth 2) Model";
           } else if (tier === "single") {
             updates = { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
             targetLabel = "Single Agent Model";
           } else {
             const typeUpper = tier.toUpperCase();
-            updates = {
-              [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
-              [`MODEL_${typeUpper}`]: finalModelName
-            };
+            updates = isMulti
+              ? {
+                  [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
+                  [`MODEL_${typeUpper}`]: finalModelName
+                }
+              : {
+                  [`MODEL_SINGLE_SUBAGENT_${typeUpper}`]: finalModelName,
+                  [`MODEL_SINGLE_${typeUpper}`]: finalModelName
+                };
             targetLabel = `Subagent "${tier}" Model`;
           }
           envPath = updateEnvFile(updates);
@@ -1053,13 +1086,13 @@ export function useModelWizard(ctx: ModelWizardContext) {
         } else {
           const singleModel = process.env.MODEL_SINGLE || "(use default)";
           updatedList += `  Single Agent: ${singleModel}`;
-          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+          const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || "";
           if (subagentModel) {
             updatedList += `\n  Subagent (depth 2): ${subagentModel}`;
           }
           for (const [key, value] of Object.entries(process.env)) {
-            if (value && key.startsWith("MODEL_SUBAGENT_")) {
-              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+            if (value && key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
+              const name = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
               updatedList += `\n  Subagent "${name}": ${value}`;
             }
           }
@@ -1329,17 +1362,37 @@ export function useModelWizard(ctx: ModelWizardContext) {
           delete presetModels.MODEL_DEPTH_1;
           delete presetModels.MODEL_DEPT1;
         } else if (tier === "subagent") {
-          delete presetModels.MODEL_DEPTH_2;
-          delete presetModels.MODEL_DEPT2;
+          if (isMulti) {
+            delete presetModels.MODEL_DEPTH_2;
+            delete presetModels.MODEL_DEPT2;
+          } else {
+            delete presetModels.MODEL_SINGLE_SUBAGENT;
+            delete presetModels.MODEL_SINGLE_DEPTH_2;
+          }
         } else if (tier === "researcher") {
-          delete presetModels.MODEL_SUBAGENT_RESEARCHER;
-          delete presetModels.MODEL_RESEARCHER;
+          if (isMulti) {
+            delete presetModels.MODEL_SUBAGENT_RESEARCHER;
+            delete presetModels.MODEL_RESEARCHER;
+          } else {
+            delete presetModels.MODEL_SINGLE_SUBAGENT_RESEARCHER;
+            delete presetModels.MODEL_SINGLE_RESEARCHER;
+          }
         } else if (tier === "coder") {
-          delete presetModels.MODEL_SUBAGENT_CODER;
-          delete presetModels.MODEL_CODER;
+          if (isMulti) {
+            delete presetModels.MODEL_SUBAGENT_CODER;
+            delete presetModels.MODEL_CODER;
+          } else {
+            delete presetModels.MODEL_SINGLE_SUBAGENT_CODER;
+            delete presetModels.MODEL_SINGLE_CODER;
+          }
         } else if (tier === "reviewer") {
-          delete presetModels.MODEL_SUBAGENT_REVIEWER;
-          delete presetModels.MODEL_REVIEWER;
+          if (isMulti) {
+            delete presetModels.MODEL_SUBAGENT_REVIEWER;
+            delete presetModels.MODEL_REVIEWER;
+          } else {
+            delete presetModels.MODEL_SINGLE_SUBAGENT_REVIEWER;
+            delete presetModels.MODEL_SINGLE_REVIEWER;
+          }
         } else if (tier === "single") {
           delete presetModels.MODEL_SINGLE;
           delete presetModels.MODEL;
@@ -1586,17 +1639,37 @@ export function useModelWizard(ctx: ModelWizardContext) {
         presetModels.MODEL_DEPTH_1 = finalModelName;
         presetModels.MODEL_DEPT1 = finalModelName;
       } else if (tier === "subagent") {
-        presetModels.MODEL_DEPTH_2 = finalModelName;
-        presetModels.MODEL_DEPT2 = finalModelName;
+        if (isMulti) {
+          presetModels.MODEL_DEPTH_2 = finalModelName;
+          presetModels.MODEL_DEPT2 = finalModelName;
+        } else {
+          presetModels.MODEL_SINGLE_SUBAGENT = finalModelName;
+          presetModels.MODEL_SINGLE_DEPTH_2 = finalModelName;
+        }
       } else if (tier === "researcher") {
-        presetModels.MODEL_SUBAGENT_RESEARCHER = finalModelName;
-        presetModels.MODEL_RESEARCHER = finalModelName;
+        if (isMulti) {
+          presetModels.MODEL_SUBAGENT_RESEARCHER = finalModelName;
+          presetModels.MODEL_RESEARCHER = finalModelName;
+        } else {
+          presetModels.MODEL_SINGLE_SUBAGENT_RESEARCHER = finalModelName;
+          presetModels.MODEL_SINGLE_RESEARCHER = finalModelName;
+        }
       } else if (tier === "coder") {
-        presetModels.MODEL_SUBAGENT_CODER = finalModelName;
-        presetModels.MODEL_CODER = finalModelName;
+        if (isMulti) {
+          presetModels.MODEL_SUBAGENT_CODER = finalModelName;
+          presetModels.MODEL_CODER = finalModelName;
+        } else {
+          presetModels.MODEL_SINGLE_SUBAGENT_CODER = finalModelName;
+          presetModels.MODEL_SINGLE_CODER = finalModelName;
+        }
       } else if (tier === "reviewer") {
-        presetModels.MODEL_SUBAGENT_REVIEWER = finalModelName;
-        presetModels.MODEL_REVIEWER = finalModelName;
+        if (isMulti) {
+          presetModels.MODEL_SUBAGENT_REVIEWER = finalModelName;
+          presetModels.MODEL_REVIEWER = finalModelName;
+        } else {
+          presetModels.MODEL_SINGLE_SUBAGENT_REVIEWER = finalModelName;
+          presetModels.MODEL_SINGLE_REVIEWER = finalModelName;
+        }
       } else if (tier === "default") {
         presetModels.MODEL = finalModelName;
       } else if (tier === "single") {

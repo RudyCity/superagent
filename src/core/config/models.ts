@@ -264,27 +264,41 @@ export function getModelInstanceForString(modelStr: string) {
   return openai(modelName);
 }
 
-export function getModelInstanceForTier(tier: string, depth: number, subagentType?: string) {
+export function getModelInstanceForTier(tier: string, depth: number, subagentType?: string, isSingleMode?: boolean) {
   let modelStr = "";
 
-  if (tier === "single") {
-    modelStr = process.env.MODEL_SINGLE || process.env.MODEL || "";
-  } else if (tier === "master") {
-    modelStr = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
-  } else if (tier === "superagent") {
-    modelStr = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
-  } else if (tier === "subagent") {
-    if (subagentType) {
-      const typeUpper = subagentType.toUpperCase();
-      modelStr = process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
+  const checkSingle = tier === "single" || isSingleMode;
+
+  if (checkSingle) {
+    if (tier === "subagent" || depth >= 2) {
+      if (subagentType) {
+        const typeUpper = subagentType.toUpperCase();
+        modelStr = process.env[`MODEL_SINGLE_SUBAGENT_${typeUpper}`] || process.env[`MODEL_SINGLE_${typeUpper}`] || "";
+      }
+      if (!modelStr) {
+        modelStr = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || process.env.MODEL_SINGLE || "";
+      }
+    } else {
+      modelStr = process.env.MODEL_SINGLE || process.env.MODEL || "";
     }
-    if (!modelStr) {
-      modelStr = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+  } else {
+    if (tier === "master") {
+      modelStr = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+    } else if (tier === "superagent") {
+      modelStr = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+    } else if (tier === "subagent") {
+      if (subagentType) {
+        const typeUpper = subagentType.toUpperCase();
+        modelStr = process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
+      }
+      if (!modelStr) {
+        modelStr = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+      }
     }
   }
 
   // Fallback to depth check if tier is not recognized or not specified
-  if (!modelStr && tier !== "single") {
+  if (!modelStr && !checkSingle) {
     if (depth === 0) {
       modelStr = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
     } else if (depth === 1) {

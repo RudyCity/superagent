@@ -317,14 +317,14 @@ describe("Agent – tier-specific model resolution", () => {
     const originalActiveProvider = process.env.ACTIVE_PROVIDER;
     delete process.env.ACTIVE_PROVIDER;
     process.env.MODEL = "openai:my-cool-custom-model";
-    process.env.MODEL_DEPTH_0 = "openai:gpt-4-master";
+    process.env.MODEL_SINGLE = "openai:gpt-4-single";
 
     const { onEvent, onPermission, onQuestion } = makeHandlers();
 
     const singleAgent = new Agent(onEvent, onPermission, onQuestion);
     // isMultiAgent remains false (default)
     const model: any = (singleAgent as any).getModel();
-    expect(model.modelId).toBe("gpt-4-master");
+    expect(model.modelId).toBe("gpt-4-single");
     process.env.ACTIVE_PROVIDER = originalActiveProvider;
   });
 
