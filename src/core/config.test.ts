@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider } from "./config.js";
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId } from "./config.js";
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -265,10 +265,21 @@ describe("config", () => {
       process.env.CUSTOM_BASE_URL = "http://localhost:11434/v1";
     });
 
-    it("should resolve specific model per agent tier using MODEL_DEPTH_x or MODEL_DEPTx", () => {
-      process.env.MODEL_DEPTH_0 = "openai:gpt-4o-mini";
-      process.env.MODEL_DEPT1 = "anthropic:claude-3-5-sonnet";
-      process.env.MODEL_DEPTH_2 = "custom:local-llama";
+    it("should resolve specific model per agent tier from the active preset", () => {
+      const testPreset = {
+        id: "test-tier-preset",
+        name: "Test Tier Preset",
+        description: "Test",
+        models: {
+          master: { providerProfileId: "default-openai", model: "gpt-4o-mini" },
+          superagent: { providerProfileId: "default-anthropic", model: "claude-3-5-sonnet" },
+          subagentDefault: { providerProfileId: "default-openai", model: "local-llama" },
+          subagentDetails: {}
+        }
+      };
+      savePreset("multi", testPreset);
+      setActivePresetId("multi", "test-tier-preset");
+      process.env.SUPERAGENT_MULTI = "true";
 
       const masterModel: any = getModelInstanceForTier("master", 0);
       expect(masterModel.modelId).toBe("gpt-4o-mini");
@@ -280,10 +291,24 @@ describe("config", () => {
       expect(subagentModel.modelId).toBe("local-llama");
     });
 
-    it("should resolve subagent-specific model override (MODEL_SUBAGENT_<TYPE> or MODEL_<TYPE>)", () => {
-      process.env.MODEL_DEPTH_2 = "custom:general-subagent-model";
-      process.env.MODEL_SUBAGENT_RESEARCHER = "openai:gpt-4-turbo";
-      process.env.MODEL_CODER = "anthropic:claude-3-5-haiku";
+    it("should resolve subagent-specific model overrides from active preset", () => {
+      const testPreset = {
+        id: "test-subagent-preset",
+        name: "Test Subagent Preset",
+        description: "Test",
+        models: {
+          master: { providerProfileId: "default-openai", model: "gpt-4" },
+          superagent: { providerProfileId: "default-openai", model: "gpt-4" },
+          subagentDefault: { providerProfileId: "default-openai", model: "general-subagent-model" },
+          subagentDetails: {
+            researcher: { providerProfileId: "default-openai", model: "gpt-4-turbo" },
+            coder: { providerProfileId: "default-anthropic", model: "claude-3-5-haiku" }
+          }
+        }
+      };
+      savePreset("multi", testPreset);
+      setActivePresetId("multi", "test-subagent-preset");
+      process.env.SUPERAGENT_MULTI = "true";
 
       const researcherModel: any = getModelInstanceForTier("subagent", 2, "researcher");
       expect(researcherModel.modelId).toBe("gpt-4-turbo");
@@ -295,18 +320,42 @@ describe("config", () => {
       expect(reviewerModel.modelId).toBe("general-subagent-model");
     });
 
-    it("should fallback to default config model if tier-specific environments are not set", () => {
-      delete process.env.MODEL_DEPTH_0;
-      delete process.env.MODEL_DEPT0;
+    it("should fallback to process.env.MODEL if preset models are missing or global override is set", () => {
       process.env.MODEL = "openai:gpt-4o";
+      const testPreset = {
+        id: "test-fallback-preset",
+        name: "Test Fallback Preset",
+        description: "Test",
+        models: {
+          master: null,
+          superagent: null,
+          subagentDefault: null,
+          subagentDetails: {}
+        }
+      } as any;
+      savePreset("multi", testPreset);
+      setActivePresetId("multi", "test-fallback-preset");
+      process.env.SUPERAGENT_MULTI = "true";
 
       const masterModel: any = getModelInstanceForTier("master", 0);
       expect(masterModel.modelId).toBe("gpt-4o");
     });
 
     it("should prioritize tier parameter over depth parameter in getModelInstanceForTier", () => {
-      process.env.MODEL_DEPTH_1 = "openai:gpt-superagent";
-      process.env.MODEL_DEPTH_2 = "custom:local-llama";
+      const testPreset = {
+        id: "test-priority-preset",
+        name: "Test Priority Preset",
+        description: "Test",
+        models: {
+          master: { providerProfileId: "default-openai", model: "gpt-master" },
+          superagent: { providerProfileId: "default-openai", model: "gpt-superagent" },
+          subagentDefault: { providerProfileId: "default-openai", model: "local-llama" },
+          subagentDetails: {}
+        }
+      };
+      savePreset("multi", testPreset);
+      setActivePresetId("multi", "test-priority-preset");
+      process.env.SUPERAGENT_MULTI = "true";
 
       // Even if depth is 1 (which matches superagent), if tier is subagent, it must resolve using subagent model
       const subagentModel: any = getModelInstanceForTier("subagent", 1);

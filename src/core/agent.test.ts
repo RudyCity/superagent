@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { Agent } from "./agent.js";
 import type { AgentEvent } from "./agent.js";
+import { savePreset, setActivePresetId } from "./config/jsonConfig.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -270,10 +271,22 @@ describe("Agent – tier-specific model resolution", () => {
   });
 
   it("should use correct model based on agent tier and subagentType when isMultiAgent is true", () => {
-    process.env.MODEL_DEPTH_0 = "openai:gpt-4-master";
-    process.env.MODEL_DEPTH_1 = "anthropic:claude-superagent";
-    process.env.MODEL_DEPTH_2 = "openai:gpt-subagent";
-    process.env.MODEL_SUBAGENT_RESEARCHER = "openai:gpt-researcher";
+    const testPreset = {
+      id: "test-agent-multi-preset",
+      name: "Test Agent Multi Preset",
+      description: "Test",
+      models: {
+        master: { providerProfileId: "default-openai", model: "gpt-4-master" },
+        superagent: { providerProfileId: "default-anthropic", model: "claude-superagent" },
+        subagentDefault: { providerProfileId: "default-openai", model: "gpt-subagent" },
+        subagentDetails: {
+          researcher: { providerProfileId: "default-openai", model: "gpt-researcher" }
+        }
+      }
+    };
+    savePreset("multi", testPreset);
+    setActivePresetId("multi", "test-agent-multi-preset");
+    process.env.SUPERAGENT_MULTI = "true";
 
     const { onEvent, onPermission, onQuestion } = makeHandlers();
 
@@ -313,11 +326,22 @@ describe("Agent – tier-specific model resolution", () => {
   });
 
   it("should use tier-specific MODEL in single-agent mode if tier-specific keys are defined", () => {
+    const testPreset = {
+      id: "test-agent-single-preset",
+      name: "Test Agent Single Preset",
+      description: "Test",
+      models: {
+        superagent: { providerProfileId: "default-openai", model: "gpt-4-single" },
+        subagentDefault: { providerProfileId: "default-openai", model: "gpt-subagent" },
+        subagentDetails: {}
+      }
+    };
+    savePreset("single", testPreset);
+    setActivePresetId("single", "test-agent-single-preset");
+
     // Clear out active provider env vars to avoid overrides
     const originalActiveProvider = process.env.ACTIVE_PROVIDER;
     delete process.env.ACTIVE_PROVIDER;
-    process.env.MODEL = "openai:my-cool-custom-model";
-    process.env.MODEL_SINGLE = "openai:gpt-4-single";
 
     const { onEvent, onPermission, onQuestion } = makeHandlers();
 

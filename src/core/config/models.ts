@@ -262,62 +262,6 @@ export function getModelInstanceForString(modelStr: string) {
 import { loadModelConfig, getActivePreset, TierModelConfig } from "./jsonConfig.js";
 
 export function getModelInstanceForTier(tier: string, depth: number, subagentType?: string, isSingleMode?: boolean) {
-  let envModelStr = "";
-  const checkSingle = tier === "single" || isSingleMode || process.env.SINGLE_AGENT_MODE === "true";
-
-  if (checkSingle) {
-    if (tier === "subagent" || depth >= 2) {
-      if (subagentType) {
-        const typeUpper = subagentType.toUpperCase();
-        envModelStr = process.env[`MODEL_SINGLE_SUBAGENT_${typeUpper}`] || process.env[`MODEL_SINGLE_${typeUpper}`] || "";
-      }
-      if (!envModelStr) {
-        envModelStr = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || process.env.MODEL_SINGLE || "";
-      }
-    } else {
-      envModelStr = process.env.MODEL_SINGLE || process.env.MODEL || "";
-    }
-  } else {
-    if (tier === "master") {
-      envModelStr = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
-    } else if (tier === "superagent") {
-      envModelStr = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
-    } else if (tier === "subagent") {
-      if (subagentType) {
-        const typeUpper = subagentType.toUpperCase();
-        envModelStr = process.env[`MODEL_MULTI_SUBAGENT_${typeUpper}`] || process.env[`MODEL_MULTI_${typeUpper}`] || process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
-      }
-      if (!envModelStr) {
-        envModelStr = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
-      }
-    }
-  }
-
-  // Fallback to depth check if tier is not recognized or not specified
-  if (!envModelStr && (!checkSingle || depth >= 0)) {
-    if (depth === 0) {
-      envModelStr = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
-    } else if (depth === 1) {
-      envModelStr = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
-    } else if (depth >= 2) {
-      if (subagentType) {
-        const typeUpper = subagentType.toUpperCase();
-        envModelStr = process.env[`MODEL_MULTI_SUBAGENT_${typeUpper}`] || process.env[`MODEL_MULTI_${typeUpper}`] || process.env[`MODEL_SUBAGENT_${typeUpper}`] || process.env[`MODEL_${typeUpper}`] || "";
-      }
-      if (!envModelStr) {
-        envModelStr = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
-      }
-    }
-  }
-
-  if (!envModelStr && process.env.MODEL) {
-    envModelStr = process.env.MODEL;
-  }
-
-  if (envModelStr) {
-    return getModelInstanceForString(envModelStr);
-  }
-
   const isMulti = !isSingleMode && !process.env.SINGLE_AGENT_MODE && (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true");
   const mode = isMulti ? "multi" : "single";
 
@@ -327,12 +271,24 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
   let tierConfig: TierModelConfig | undefined;
 
   if (mode === "multi") {
-    if (tier === "master" || depth === 0) {
+    // Prioritize explicit tier checks over depth fallback
+    if (tier === "master") {
       tierConfig = activePreset.models.master;
-    } else if (tier === "superagent" || depth === 1) {
+    } else if (tier === "superagent") {
+      tierConfig = activePreset.models.superagent;
+    } else if (tier === "subagent") {
+      if (subagentType && activePreset.models.subagentDetails?.[subagentType]) {
+        tierConfig = activePreset.models.subagentDetails[subagentType];
+      }
+      if (!tierConfig) {
+        tierConfig = activePreset.models.subagentDefault;
+      }
+    } else if (depth === 0) {
+      tierConfig = activePreset.models.master;
+    } else if (depth === 1) {
       tierConfig = activePreset.models.superagent;
     } else {
-      // Subagent
+      // Subagent depth fallback
       if (subagentType && activePreset.models.subagentDetails?.[subagentType]) {
         tierConfig = activePreset.models.subagentDetails[subagentType];
       }
@@ -341,11 +297,20 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
       }
     }
   } else {
-    // Single
-    if (tier === "superagent" || depth <= 1) {
+    // Single mode logic
+    if (tier === "superagent") {
+      tierConfig = activePreset.models.superagent;
+    } else if (tier === "subagent") {
+      if (subagentType && activePreset.models.subagentDetails?.[subagentType]) {
+        tierConfig = activePreset.models.subagentDetails[subagentType];
+      }
+      if (!tierConfig) {
+        tierConfig = activePreset.models.subagentDefault;
+      }
+    } else if (depth <= 1) {
       tierConfig = activePreset.models.superagent;
     } else {
-      // Subagent
+      // Subagent depth fallback
       if (subagentType && activePreset.models.subagentDetails?.[subagentType]) {
         tierConfig = activePreset.models.subagentDetails[subagentType];
       }
@@ -366,7 +331,7 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
   const apiKey = providerProfile?.apiKey || "";
   const baseUrl = providerProfile?.baseUrl || undefined;
   const provider = providerProfile?.provider || "openai";
-  const modelName = tierConfig?.model || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
+  const modelName = tierConfig?.model || process.env.MODEL || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
 
   // Construct a prefix that maps back to the profile credentials
   const profileId = providerProfile?.id || provider;
@@ -376,6 +341,11 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
     process.env[`PROVIDER_${prefix}_BASE_URL`] = baseUrl;
   }
   process.env[`PROVIDER_${prefix}_TYPE`] = provider;
+
+  // If modelName already contains a provider prefix (e.g. 'openai:gpt-4o'), do not double-prepend the profileId
+  if (modelName.includes(":")) {
+    return getModelInstanceForString(modelName);
+  }
 
   return getModelInstanceForString(`${profileId}:${modelName}`);
 }
