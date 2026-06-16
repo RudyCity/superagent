@@ -1,11 +1,12 @@
 import { ensureGlobalConfigDir, getRootConfigDir } from "./paths.js";
-import { getProviders } from "./jsonConfig.js";
+import { loadModelConfig } from "./jsonConfig.js";
 import fs from "fs";
 import path from "path";
 
-// Populate process.env with credentials from model-config.json on startup
+// Populate process.env with credentials and settings from model-config.json on startup
 try {
-  const providers = getProviders();
+  const config = loadModelConfig();
+  const providers = config.providers;
   for (const provider of providers) {
     const prefix = provider.provider.toUpperCase();
     if (provider.apiKey) {
@@ -21,6 +22,17 @@ try {
       if (provider.provider === "custom") {
         process.env.CUSTOM_BASE_URL = provider.baseUrl;
       }
+    }
+  }
+  if (config.settings) {
+    if (config.settings.concurrencyLimit !== undefined) {
+      process.env.SUPERAGENT_MAX_CONCURRENCY = String(config.settings.concurrencyLimit);
+    }
+    if (config.settings.rateLimitRpm !== undefined) {
+      process.env.SUPERAGENT_RATE_LIMIT_RPM = String(config.settings.rateLimitRpm);
+    }
+    if (config.settings.rateLimitCapacity !== undefined) {
+      process.env.SUPERAGENT_RATE_LIMIT_CAPACITY = String(config.settings.rateLimitCapacity);
     }
   }
 } catch (error) {
@@ -91,6 +103,37 @@ export function updateEnvFile(updates: Record<string, string>): string {
           }
         }
         savePreset(mode, preset);
+      }).catch(() => {});
+    } catch (err) {
+      // Ignore sync errors
+    }
+  }
+
+  // Synchronize settings updates back to model-config.json
+  const settingKeys = Object.keys(updates).filter(k => 
+    k === "SUPERAGENT_MAX_CONCURRENCY" || 
+    k === "SUPERAGENT_RATE_LIMIT_RPM" || 
+    k === "SUPERAGENT_RATE_LIMIT_CAPACITY"
+  );
+  if (settingKeys.length > 0) {
+    try {
+      // Use dynamic import to prevent circular dependency
+      import("./jsonConfig.js").then(({ loadModelConfig, saveModelConfig }) => {
+        const config = loadModelConfig();
+        if (!config.settings) {
+          config.settings = { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 };
+        }
+        for (const key of settingKeys) {
+          const val = updates[key];
+          if (key === "SUPERAGENT_MAX_CONCURRENCY") {
+            config.settings.concurrencyLimit = parseInt(val, 10) || 0;
+          } else if (key === "SUPERAGENT_RATE_LIMIT_RPM") {
+            config.settings.rateLimitRpm = parseInt(val, 10) || 0;
+          } else if (key === "SUPERAGENT_RATE_LIMIT_CAPACITY") {
+            config.settings.rateLimitCapacity = parseInt(val, 10) || 0;
+          }
+        }
+        saveModelConfig(config);
       }).catch(() => {});
     } catch (err) {
       // Ignore sync errors

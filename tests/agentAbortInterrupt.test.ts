@@ -16,6 +16,7 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
       workingDirectory: process.cwd(),
       systemPrompt: "Base Master Agent Prompt Content",
     }),
+    getModelInstanceForTier: vi.fn().mockReturnValue({}),
   };
 });
 

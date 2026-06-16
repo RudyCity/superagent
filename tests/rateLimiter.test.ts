@@ -9,6 +9,8 @@ describe("SharedRateLimiter", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     process.env = { ...originalEnv };
+    delete process.env.SUPERAGENT_RATE_LIMIT_RPM;
+    delete process.env.SUPERAGENT_RATE_LIMIT_CAPACITY;
     process.env.SUPERAGENT_TEST_LIMITS = "true";
     limiter = new SharedRateLimiter();
   });

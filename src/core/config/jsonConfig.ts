@@ -34,6 +34,12 @@ export interface JSONModelPreset<T> {
   models: T;
 }
 
+export interface SystemSettings {
+  concurrencyLimit: number;
+  rateLimitRpm: number;
+  rateLimitCapacity: number;
+}
+
 export interface GlobalModelConfig {
   providers: ProviderProfile[];
   presets: {
@@ -44,9 +50,15 @@ export interface GlobalModelConfig {
     multi: string;
     single: string;
   };
+  settings?: SystemSettings;
 }
 
 const DEFAULT_CONFIG: GlobalModelConfig = {
+  settings: {
+    concurrencyLimit: 0,
+    rateLimitRpm: 60,
+    rateLimitCapacity: 60,
+  },
   providers: [
     {
       id: "default-anthropic",

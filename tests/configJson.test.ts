@@ -125,4 +125,21 @@ describe("JSON-based model-config.json storage", () => {
     expect(superagentInstance).toBeDefined();
     expect(process.env.PROVIDER_OPENAI_WORK_API_KEY).toBe("sk-proj-work-abc");
   });
+
+  it("should synchronize and persist system settings to model-config.json", async () => {
+    const { updateEnvFile } = await import("../src/core/config/env");
+    updateEnvFile({
+      SUPERAGENT_MAX_CONCURRENCY: "1",
+      SUPERAGENT_RATE_LIMIT_RPM: "100",
+      SUPERAGENT_RATE_LIMIT_CAPACITY: "150",
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const config = loadModelConfig();
+    expect(config.settings).toBeDefined();
+    expect(config.settings?.concurrencyLimit).toBe(1);
+    expect(config.settings?.rateLimitRpm).toBe(100);
+    expect(config.settings?.rateLimitCapacity).toBe(150);
+  });
 });
