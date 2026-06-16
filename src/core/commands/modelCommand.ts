@@ -60,9 +60,10 @@ export const modelCommand: SlashCommand = {
             const presetName = parts.slice(1).join(" ");
             const envPath = applyModelPreset(presetName);
             const isMulti = ctx.agent?.isMultiAgent ?? false;
-            const nextActiveModel = isMulti
-              ? (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
-              : (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel());
+            const isSingle = !isMulti;
+            const nextActiveModel = isSingle
+              ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
+              : (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
             const limit = getContextWindowLimit(nextActiveModel);
             
             if (ctx.setContextLimit) {
@@ -72,9 +73,49 @@ export const modelCommand: SlashCommand = {
               ctx.setActiveModel(nextActiveModel);
             }
 
+            let updatedList = `\n\nUpdated Models:\n`;
+            if (isSingle) {
+              const singleModel = process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel();
+              const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || "(use default)";
+              updatedList += `  Single Agent Model: ${singleModel}\n` +
+                `  Subagent (depth 2): ${subagentModel}`;
+
+              for (const [key, val] of Object.entries(process.env)) {
+                if (val && key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
+                  const name = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
+                  if (!updatedList.includes(`Subagent "${name}":`)) {
+                    updatedList += `\n  Subagent "${name}": ${val}`;
+                  }
+                } else if (val && key.startsWith("MODEL_SINGLE_") && key !== "MODEL_SINGLE" && key !== "MODEL_SINGLE_SUBAGENT" && key !== "MODEL_SINGLE_DEPTH_2") {
+                  const name = key.replace("MODEL_SINGLE_", "").toLowerCase();
+                  if (!updatedList.includes(`Subagent "${name}":`)) {
+                    updatedList += `\n  Subagent "${name}": ${val}`;
+                  }
+                }
+              }
+            } else {
+              const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+              const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+              const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+              updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
+                `  Superagent (depth 1): ${superagentModel}\n` +
+                `  Subagent (depth 2): ${subagentModel}`;
+
+              for (const [key, val] of Object.entries(process.env)) {
+                if (val && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
+                  const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+                    ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+                    : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+                  if (!updatedList.includes(`Subagent "${name}":`)) {
+                    updatedList += `\n  Subagent "${name}": ${val}`;
+                  }
+                }
+              }
+            }
+
             ctx.addLine({
               type: "system",
-              content: `Model preset "${presetName}" applied successfully!\nSaved to: ${envPath}`,
+              content: `Model preset "${presetName}" applied successfully!\nSaved to: ${envPath}${updatedList}`,
               timestamp: now,
             });
             return;

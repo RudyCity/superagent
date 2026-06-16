@@ -1379,27 +1379,59 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const presetName = presetChoice.split(" - ")[0].trim();
         try {
           const envPath = applyModelPreset(presetName);
-          const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+          const isSingle = !isMulti;
+          const effectiveMasterModel = isSingle
+            ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
+            : (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
           const limit = getContextWindowLimit(effectiveMasterModel);
           setContextLimit(limit);
           setActiveModel(effectiveMasterModel);
 
-          const currentModel = process.env.MODEL || getDefaultModel();
-          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
-          
           const updatedLogs = [
             `[MASTER] Updated Models:`,
-            `[MASTER]   Master Agent (depth 0): ${masterModel}`,
-            `[MASTER]   Superagent (depth 1): ${superagentModel}`,
-            `[MASTER]   Subagent (depth 2): ${subagentModel}`,
           ];
 
-          for (const [key, val] of Object.entries(process.env)) {
-            if (val && key.startsWith("MODEL_SUBAGENT_")) {
-              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
-              updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
+          if (isSingle) {
+            const singleModel = process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel();
+            const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || "(use default)";
+            updatedLogs.push(
+              `[MASTER]   Single Agent Model: ${singleModel}`,
+              `[MASTER]   Subagent (depth 2): ${subagentModel}`
+            );
+
+            for (const [key, val] of Object.entries(process.env)) {
+              if (val && key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
+                const name = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
+                if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
+                  updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
+                }
+              } else if (val && key.startsWith("MODEL_SINGLE_") && key !== "MODEL_SINGLE" && key !== "MODEL_SINGLE_SUBAGENT" && key !== "MODEL_SINGLE_DEPTH_2") {
+                const name = key.replace("MODEL_SINGLE_", "").toLowerCase();
+                if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
+                  updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
+                }
+              }
+            }
+          } else {
+            const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+            const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+            const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+            
+            updatedLogs.push(
+              `[MASTER]   Master Agent (depth 0): ${masterModel}`,
+              `[MASTER]   Superagent (depth 1): ${superagentModel}`,
+              `[MASTER]   Subagent (depth 2): ${subagentModel}`
+            );
+
+            for (const [key, val] of Object.entries(process.env)) {
+              if (val && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
+                const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+                  ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+                  : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+                if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
+                  updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
+                }
+              }
             }
           }
 
