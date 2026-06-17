@@ -99,49 +99,74 @@ export function updateEnvFile(updates: Record<string, string>): string {
   }
 
   // Synchronize model updates back to the active preset in model-config.json
-  const modelKeys = Object.keys(updates).filter(k => k.startsWith("MODEL") && k !== "MODEL_LIMITS");
-  if (modelKeys.length > 0) {
+  // Only canonical MODEL_MULTI_* and MODEL_SINGLE_* keys are synced
+  const multiKeys = Object.keys(updates).filter(k => k.startsWith("MODEL_MULTI_"));
+  const singleKeys = Object.keys(updates).filter(k => k.startsWith("MODEL_SINGLE_"));
+  if (multiKeys.length > 0 || singleKeys.length > 0) {
     try {
-      const isMulti = Object.keys(updates).some(
-        (k) => k.includes("MULTI") || k.includes("DEPTH_0") || k.includes("DEPTH_1") || k.includes("MASTER")
-      ) || process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
-      const mode = isMulti ? "multi" : "single";
+      // Determine which modes to sync based on which canonical keys are present
+      const modesToSync: ("multi" | "single")[] = [];
+      if (multiKeys.length > 0) modesToSync.push("multi");
+      if (singleKeys.length > 0) modesToSync.push("single");
+      // Fallback: if no mode-specific keys matched, check argv/env
+      if (modesToSync.length === 0) {
+        if (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true") {
+          modesToSync.push("multi");
+        } else {
+          modesToSync.push("single");
+        }
+      }
 
       // Use dynamic import to prevent circular dependency
       import("./jsonConfig.js").then(({ getActivePreset, savePreset }) => {
-        const preset = getActivePreset<any>(mode);
+        for (const mode of modesToSync) {
+          const keysForMode = mode === "multi" ? multiKeys : singleKeys;
+          if (keysForMode.length === 0) continue;
 
-        for (const key of modelKeys) {
-          const val = updates[key];
-          if (!val) continue;
-          const parsed = parseTierConfig(val);
+          const preset = getActivePreset<any>(mode);
 
-          if (mode === "multi") {
-            if (key === "MODEL_MULTI_DEPTH_0" || key === "MODEL_MULTI_DEPT0" || key === "MODEL_MULTI_MASTER" || key === "MODEL_DEPTH_0" || key === "MODEL_DEPT0") {
-              preset.models.master = parsed;
-            } else if (key === "MODEL_MULTI_DEPTH_1" || key === "MODEL_MULTI_DEPT1" || key === "MODEL_MULTI_SUPERAGENT" || key === "MODEL_DEPTH_1" || key === "MODEL_DEPT1") {
-              preset.models.superagent = parsed;
-            } else if (key === "MODEL_MULTI_DEPTH_2" || key === "MODEL_MULTI_DEPT2" || key === "MODEL_MULTI_SUBAGENT" || key === "MODEL_DEPTH_2" || key === "MODEL_DEPT2") {
-              preset.models.subagentDefault = parsed;
-            } else if (key.startsWith("MODEL_MULTI_SUBAGENT_")) {
-              const type = key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase();
-              preset.models.subagentDetails[type] = parsed;
-            } else if (key.startsWith("MODEL_SUBAGENT_")) {
-              const type = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
-              preset.models.subagentDetails[type] = parsed;
-            }
-          } else {
-            if (key === "MODEL_SINGLE" || key === "MODEL") {
-              preset.models.superagent = parsed;
-            } else if (key === "MODEL_SINGLE_SUBAGENT" || key === "MODEL_SINGLE_DEPTH_2") {
-              preset.models.subagentDefault = parsed;
-            } else if (key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
-              const type = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
-              preset.models.subagentDetails[type] = parsed;
+          // Ensure subagentDetails exists
+          if (!preset.models.subagentDetails) {
+            preset.models.subagentDetails = {};
+          }
+
+          for (const key of keysForMode) {
+            const val = updates[key];
+            const isClear = !val || val.trim() === "";
+
+            if (mode === "multi") {
+              if (key === "MODEL_MULTI_MASTER") {
+                if (!isClear) preset.models.master = parseTierConfig(val);
+              } else if (key === "MODEL_MULTI_SUPERAGENT") {
+                if (!isClear) preset.models.superagent = parseTierConfig(val);
+              } else if (key === "MODEL_MULTI_SUBAGENT") {
+                if (!isClear) preset.models.subagentDefault = parseTierConfig(val);
+              } else if (key.startsWith("MODEL_MULTI_SUBAGENT_")) {
+                const type = key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase();
+                if (isClear) {
+                  delete preset.models.subagentDetails[type];
+                } else {
+                  preset.models.subagentDetails[type] = parseTierConfig(val);
+                }
+              }
+            } else {
+              // Single mode
+              if (key === "MODEL_SINGLE_SUPERAGENT") {
+                if (!isClear) preset.models.superagent = parseTierConfig(val);
+              } else if (key === "MODEL_SINGLE_SUBAGENT") {
+                if (!isClear) preset.models.subagentDefault = parseTierConfig(val);
+              } else if (key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
+                const type = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
+                if (isClear) {
+                  delete preset.models.subagentDetails[type];
+                } else {
+                  preset.models.subagentDetails[type] = parseTierConfig(val);
+                }
+              }
             }
           }
+          savePreset(mode, preset);
         }
-        savePreset(mode, preset);
       }).catch(() => {});
     } catch (err) {
       // Ignore sync errors

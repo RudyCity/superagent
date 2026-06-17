@@ -600,17 +600,17 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               return `${activeProvider}:${mStr}`;
             };
             const defaultResolved = getResolvedModelWithProvider("", true);
-            const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+            const rawMaster = process.env.MODEL_MULTI_MASTER || "";
             const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
-            const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+            const rawSuperagent = process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_SINGLE_SUPERAGENT || "";
             const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
-            const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+            const rawSubagent = process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_SINGLE_SUBAGENT || "";
             const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
-            const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
+            const rawResearcher = process.env.MODEL_MULTI_SUBAGENT_RESEARCHER || process.env.MODEL_SINGLE_SUBAGENT_RESEARCHER || "";
             const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
-            const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
+            const rawCoder = process.env.MODEL_MULTI_SUBAGENT_CODER || process.env.MODEL_SINGLE_SUBAGENT_CODER || "";
             const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
-            const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
+            const rawReviewer = process.env.MODEL_MULTI_SUBAGENT_REVIEWER || process.env.MODEL_SINGLE_SUBAGENT_REVIEWER || "";
             const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
 
             setActiveWizard({

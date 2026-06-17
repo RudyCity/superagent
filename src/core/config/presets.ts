@@ -135,18 +135,8 @@ export function saveModelPreset(name: string, description: string, models?: Reco
   const modelsToSave: Record<string, string> = models || {};
 
   if (!models) {
-    if (process.env.MODEL) modelsToSave.MODEL = process.env.MODEL;
-    if (process.env.MODEL_DEPTH_0) modelsToSave.MODEL_DEPTH_0 = process.env.MODEL_DEPTH_0;
-    if (process.env.MODEL_DEPT0) modelsToSave.MODEL_DEPT0 = process.env.MODEL_DEPT0;
-    if (process.env.MODEL_DEPTH_1) modelsToSave.MODEL_DEPTH_1 = process.env.MODEL_DEPTH_1;
-    if (process.env.MODEL_DEPT1) modelsToSave.MODEL_DEPT1 = process.env.MODEL_DEPT1;
-    if (process.env.MODEL_DEPTH_2) modelsToSave.MODEL_DEPTH_2 = process.env.MODEL_DEPTH_2;
-    if (process.env.MODEL_DEPT2) modelsToSave.MODEL_DEPT2 = process.env.MODEL_DEPT2;
-
     for (const [k, v] of Object.entries(process.env)) {
-      if (v && k.startsWith("MODEL_SUBAGENT_")) {
-        modelsToSave[k] = v;
-      } else if (v && k.startsWith("MODEL_") && k !== "MODEL" && k !== "MODEL_LIMITS") {
+      if (v && (k.startsWith("MODEL_MULTI_") || k.startsWith("MODEL_SINGLE_"))) {
         modelsToSave[k] = v;
       }
     }
@@ -191,7 +181,7 @@ export function applyModelPreset(name: string, mode?: PresetMode): string {
     throw new Error(`Model preset "${name}" not found in ${targetMode}-agent presets.`);
   }
 
-  const presetModel = preset.models.MODEL || preset.models.MODEL_DEPTH_0 || preset.models.MODEL_DEPT0 || "";
+  const presetModel = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "";
   let activeProvider = "";
   if (presetModel && presetModel.includes(":")) {
     activeProvider = presetModel.split(":")[0].toLowerCase();
@@ -200,8 +190,7 @@ export function applyModelPreset(name: string, mode?: PresetMode): string {
   const updates: Record<string, string> = {};
 
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith("MODEL_DEPTH_") || key.startsWith("MODEL_DEPT") || 
-        (key.startsWith("MODEL_") && key !== "MODEL" && key !== "MODEL_LIMITS")) {
+    if (key.startsWith("MODEL_") && key !== "MODEL" && key !== "MODEL_LIMITS") {
       updates[key] = "";
       delete process.env[key];
     }
@@ -212,7 +201,7 @@ export function applyModelPreset(name: string, mode?: PresetMode): string {
   }
 
   if (!preset.models.MODEL) {
-    updates.MODEL = preset.models.MODEL_DEPTH_0 || preset.models.MODEL_DEPT0 || "gpt-4o";
+    updates.MODEL = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "gpt-4o";
   }
 
   if (activeProvider) {

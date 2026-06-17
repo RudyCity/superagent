@@ -266,7 +266,7 @@ export const loginCommand: SlashCommand = {
           if (ctx.setActiveModel) {
             const isMulti = ctx.agent?.isMultiAgent ?? false;
             const nextActiveModel = isMulti
-              ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
+              ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel())
               : defaultModel;
             ctx.setActiveModel(nextActiveModel);
           }
@@ -282,7 +282,7 @@ export const loginCommand: SlashCommand = {
             if (ctx.setActiveModel) {
               const isMulti = ctx.agent?.isMultiAgent ?? false;
               const nextActiveModel = isMulti
-                ? (process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel())
+                ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel())
                 : currentModel;
               ctx.setActiveModel(nextActiveModel);
             }

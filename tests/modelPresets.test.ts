@@ -64,8 +64,8 @@ describe("Model Presets", () => {
 
   it("should save a custom model preset to model-presets.json", () => {
     process.env.MODEL = "openai:gpt-4-test";
-    process.env.MODEL_DEPTH_0 = "openai:gpt-4-test-master";
-    process.env.MODEL_DEPTH_1 = "openai:gpt-4-test-super";
+    process.env.MODEL_MULTI_MASTER = "openai:gpt-4-test-master";
+    process.env.MODEL_MULTI_SUPERAGENT = "openai:gpt-4-test-super";
 
     const savedPath = saveModelPreset("my-cool-preset", "A custom testing preset");
     expect(savedPath).toBe(customPresetsPath);
@@ -75,28 +75,27 @@ describe("Model Presets", () => {
     const myPreset = presets.find(p => p.name === "my-cool-preset");
     expect(myPreset).toBeDefined();
     expect(myPreset?.description).toBe("A custom testing preset");
-    expect(myPreset?.models.MODEL).toBe("openai:gpt-4-test");
-    expect(myPreset?.models.MODEL_DEPTH_0).toBe("openai:gpt-4-test-master");
-    expect(myPreset?.models.MODEL_DEPTH_1).toBe("openai:gpt-4-test-super");
+    expect(myPreset?.models.MODEL_MULTI_MASTER).toBe("openai:gpt-4-test-master");
+    expect(myPreset?.models.MODEL_MULTI_SUPERAGENT).toBe("openai:gpt-4-test-super");
   });
 
   it("should apply a model preset to env variables and write to .env", () => {
     saveModelPreset("openai-full", "OpenAI stack", {
       MODEL: "openai:gpt-4o",
-      MODEL_DEPTH_0: "openai:gpt-4o",
-      MODEL_DEPTH_2: "openai:gpt-4o-mini",
+      MODEL_MULTI_MASTER: "openai:gpt-4o",
+      MODEL_MULTI_SUBAGENT: "openai:gpt-4o-mini",
     });
     const envPath = applyModelPreset("openai-full");
 
     expect(process.env.MODEL).toBe("openai:gpt-4o");
-    expect(process.env.MODEL_DEPTH_0).toBe("openai:gpt-4o");
-    expect(process.env.MODEL_DEPTH_2).toBe("openai:gpt-4o-mini");
+    expect(process.env.MODEL_MULTI_MASTER).toBe("openai:gpt-4o");
+    expect(process.env.MODEL_MULTI_SUBAGENT).toBe("openai:gpt-4o-mini");
     expect(process.env.ACTIVE_PROVIDER).toBe("openai");
 
     const content = fs.readFileSync(envPath, "utf-8");
     expect(content).not.toContain("MODEL=openai:gpt-4o");
-    expect(content).not.toContain("MODEL_DEPTH_0=openai:gpt-4o");
-    expect(content).not.toContain("MODEL_DEPTH_2=openai:gpt-4o-mini");
+    expect(content).not.toContain("MODEL_MULTI_MASTER=openai:gpt-4o");
+    expect(content).not.toContain("MODEL_MULTI_SUBAGENT=openai:gpt-4o-mini");
     expect(content).not.toContain("ACTIVE_PROVIDER=openai");
   });
 
@@ -126,6 +125,7 @@ describe("Model Presets", () => {
 
     // 2. Save custom preset (now also auto-applies)
     process.env.MODEL = "openai:test-slash-model";
+    process.env.MODEL_MULTI_MASTER = "openai:test-slash-model";
     handleSlashCommand("/model preset save test-slash A preset from slash command", mockCtx);
     expect(addedLines.length).toBe(2);
     expect(addedLines[1].content).toContain('saved & applied successfully');
@@ -139,6 +139,7 @@ describe("Model Presets", () => {
 
   it("should update a custom model preset", () => {
     process.env.MODEL = "openai:gpt-4-test";
+    process.env.MODEL_MULTI_MASTER = "openai:gpt-4-test";
     saveModelPreset("my-update-preset", "Original description");
 
     const path = updateModelPreset("my-update-preset", "Updated description", { MODEL: "openai:gpt-4-updated" });
@@ -153,6 +154,7 @@ describe("Model Presets", () => {
 
   it("should delete a custom model preset", () => {
     process.env.MODEL = "openai:gpt-4-test";
+    process.env.MODEL_MULTI_MASTER = "openai:gpt-4-test";
     saveModelPreset("my-delete-preset", "Delete me");
 
     const presetsBefore = getModelPresets();
@@ -168,7 +170,7 @@ describe("Model Presets", () => {
   it("should save a custom model preset with explicit models argument", () => {
     const customModels = {
       MODEL: "openai:gpt-4-explicit",
-      MODEL_DEPTH_0: "openai:gpt-4-explicit-master",
+      MODEL_MULTI_MASTER: "openai:gpt-4-explicit-master",
     };
     saveModelPreset("explicit-preset", "Explicit description", customModels);
     
@@ -177,7 +179,7 @@ describe("Model Presets", () => {
     expect(myPreset).toBeDefined();
     expect(myPreset?.description).toBe("Explicit description");
     expect(myPreset?.models.MODEL).toBe("openai:gpt-4-explicit");
-    expect(myPreset?.models.MODEL_DEPTH_0).toBe("openai:gpt-4-explicit-master");
+    expect(myPreset?.models.MODEL_MULTI_MASTER).toBe("openai:gpt-4-explicit-master");
   });
 
   it("should retrieve custom provider profile credentials from model-config.json when resolving model instance", async () => {

@@ -154,23 +154,23 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
     const formatVal = (val?: string) => val ? val : "(not set)";
     if (isMulti) {
       return [
-        `1. Master Agent (depth 0) (${formatVal(models.MODEL_DEPTH_0 || models.MODEL_DEPT0)})`,
-        `2. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
-        `3. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
-        `4. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
-        `5. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
-        `6. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+        `1. Master Agent (depth 0) (${formatVal(models.MODEL_MULTI_MASTER)})`,
+        `2. Superagent (depth 1) (${formatVal(models.MODEL_MULTI_SUPERAGENT)})`,
+        `3. Subagent (depth 2) (${formatVal(models.MODEL_MULTI_SUBAGENT)})`,
+        `4. Subagent: researcher (${formatVal(models.MODEL_MULTI_SUBAGENT_RESEARCHER)})`,
+        `5. Subagent: coder (${formatVal(models.MODEL_MULTI_SUBAGENT_CODER)})`,
+        `6. Subagent: reviewer (${formatVal(models.MODEL_MULTI_SUBAGENT_REVIEWER)})`,
         "7. Save Preset & Exit",
         "8. Cancel & Exit",
         "< Back"
       ];
     } else {
       return [
-        `1. Superagent (depth 1) (${formatVal(models.MODEL_DEPTH_1 || models.MODEL_DEPT1)})`,
-        `2. Subagent (depth 2) (${formatVal(models.MODEL_DEPTH_2 || models.MODEL_DEPT2)})`,
-        `3. Subagent: researcher (${formatVal(models.MODEL_SUBAGENT_RESEARCHER || models.MODEL_RESEARCHER)})`,
-        `4. Subagent: coder (${formatVal(models.MODEL_SUBAGENT_CODER || models.MODEL_CODER)})`,
-        `5. Subagent: reviewer (${formatVal(models.MODEL_SUBAGENT_REVIEWER || models.MODEL_REVIEWER)})`,
+        `1. Superagent (depth 1) (${formatVal(models.MODEL_SINGLE_SUPERAGENT)})`,
+        `2. Subagent (depth 2) (${formatVal(models.MODEL_SINGLE_SUBAGENT)})`,
+        `3. Subagent: researcher (${formatVal(models.MODEL_SINGLE_SUBAGENT_RESEARCHER)})`,
+        `4. Subagent: coder (${formatVal(models.MODEL_SINGLE_SUBAGENT_CODER)})`,
+        `5. Subagent: reviewer (${formatVal(models.MODEL_SINGLE_SUBAGENT_REVIEWER)})`,
         "6. Save Preset & Exit",
         "7. Cancel & Exit",
         "< Back"
@@ -321,7 +321,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
 
           fetchAndCacheModels()
             .then(() => {
-              const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+              const effectiveMasterModel = isMulti ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel()) : (process.env.MODEL || getDefaultModel());
               setActiveModel(effectiveMasterModel);
             })
             .catch(() => {});
@@ -668,17 +668,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             return `${activeProvider}:${mStr}`;
           };
           const defaultResolved = getResolvedModelWithProvider("", true);
-          const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+          const rawMaster = isMulti ? (process.env.MODEL_MULTI_MASTER || "") : "";
           const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
-          const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+          const rawSuperagent = isMulti ? (process.env.MODEL_MULTI_SUPERAGENT || "") : (process.env.MODEL_SINGLE_SUPERAGENT || "");
           const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
-          const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+          const rawSubagent = isMulti ? (process.env.MODEL_MULTI_SUBAGENT || "") : (process.env.MODEL_SINGLE_SUBAGENT || "");
           const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
-          const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
+          const rawResearcher = isMulti ? (process.env.MODEL_MULTI_SUBAGENT_RESEARCHER || "") : (process.env.MODEL_SINGLE_SUBAGENT_RESEARCHER || "");
           const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
-          const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
+          const rawCoder = isMulti ? (process.env.MODEL_MULTI_SUBAGENT_CODER || "") : (process.env.MODEL_SINGLE_SUBAGENT_CODER || "");
           const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
-          const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
+          const rawReviewer = isMulti ? (process.env.MODEL_MULTI_SUBAGENT_REVIEWER || "") : (process.env.MODEL_SINGLE_SUBAGENT_REVIEWER || "");
           const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
 
           setActiveWizard({
@@ -756,17 +756,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             return `${activeProvider}:${mStr}`;
           };
           const defaultResolved = getResolvedModelWithProvider("", true);
-          const rawMaster = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "";
+          const rawMaster = isMulti ? (process.env.MODEL_MULTI_MASTER || "") : "";
           const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
-          const rawSuperagent = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "";
+          const rawSuperagent = isMulti ? (process.env.MODEL_MULTI_SUPERAGENT || "") : (process.env.MODEL_SINGLE_SUPERAGENT || "");
           const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
-          const rawSubagent = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "";
+          const rawSubagent = isMulti ? (process.env.MODEL_MULTI_SUBAGENT || "") : (process.env.MODEL_SINGLE_SUBAGENT || "");
           const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
-          const rawResearcher = process.env.MODEL_SUBAGENT_RESEARCHER || process.env.MODEL_RESEARCHER || "";
+          const rawResearcher = isMulti ? (process.env.MODEL_MULTI_SUBAGENT_RESEARCHER || "") : (process.env.MODEL_SINGLE_SUBAGENT_RESEARCHER || "");
           const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
-          const rawCoder = process.env.MODEL_SUBAGENT_CODER || process.env.MODEL_CODER || "";
+          const rawCoder = isMulti ? (process.env.MODEL_MULTI_SUBAGENT_CODER || "") : (process.env.MODEL_SINGLE_SUBAGENT_CODER || "");
           const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
-          const rawReviewer = process.env.MODEL_SUBAGENT_REVIEWER || process.env.MODEL_REVIEWER || "";
+          const rawReviewer = isMulti ? (process.env.MODEL_MULTI_SUBAGENT_REVIEWER || "") : (process.env.MODEL_SINGLE_SUBAGENT_REVIEWER || "");
           const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
 
           setActiveWizard({
@@ -785,37 +785,70 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           let clearUpdates: Record<string, string> = {};
           let targetLabel = "";
           if (tier === "master") {
-            clearUpdates = { MODEL_DEPTH_0: "", MODEL_DEPT0: "" };
+            if (isMulti) {
+              clearUpdates = { MODEL_MULTI_MASTER: "" };
+            }
             targetLabel = "Master Agent (depth 0)";
           } else if (tier === "superagent") {
-            clearUpdates = { MODEL_DEPTH_1: "", MODEL_DEPT1: "" };
+            if (isMulti) {
+              clearUpdates = { MODEL_MULTI_SUPERAGENT: "" };
+            } else {
+              clearUpdates = { MODEL_SINGLE_SUPERAGENT: "" };
+            }
             targetLabel = "Superagent (depth 1)";
           } else if (tier === "subagent") {
-            clearUpdates = { MODEL_DEPTH_2: "", MODEL_DEPT2: "" };
+            if (isMulti) {
+              clearUpdates = { MODEL_MULTI_SUBAGENT: "" };
+            } else {
+              clearUpdates = { MODEL_SINGLE_SUBAGENT: "" };
+            }
             targetLabel = "Subagent (depth 2)";
           } else if (tier === "researcher") {
-            clearUpdates = { MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "" };
+            if (isMulti) {
+              clearUpdates = { MODEL_MULTI_SUBAGENT_RESEARCHER: "" };
+            } else {
+              clearUpdates = { MODEL_SINGLE_SUBAGENT_RESEARCHER: "" };
+            }
             targetLabel = `Subagent "researcher"`;
           } else if (tier === "coder") {
-            clearUpdates = { MODEL_SUBAGENT_CODER: "", MODEL_CODER: "" };
+            if (isMulti) {
+              clearUpdates = { MODEL_MULTI_SUBAGENT_CODER: "" };
+            } else {
+              clearUpdates = { MODEL_SINGLE_SUBAGENT_CODER: "" };
+            }
             targetLabel = `Subagent "coder"`;
           } else if (tier === "reviewer") {
-            clearUpdates = { MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "" };
+            if (isMulti) {
+              clearUpdates = { MODEL_MULTI_SUBAGENT_REVIEWER: "" };
+            } else {
+              clearUpdates = { MODEL_SINGLE_SUBAGENT_REVIEWER: "" };
+            }
             targetLabel = `Subagent "reviewer"`;
           } else if (tier === "all") {
-            clearUpdates = {
-              MODEL_DEPTH_0: "", MODEL_DEPT0: "",
-              MODEL_DEPTH_1: "", MODEL_DEPT1: "",
-              MODEL_DEPTH_2: "", MODEL_DEPT2: "",
-              MODEL_SUBAGENT_RESEARCHER: "", MODEL_RESEARCHER: "",
-              MODEL_SUBAGENT_CODER: "", MODEL_CODER: "",
-              MODEL_SUBAGENT_REVIEWER: "", MODEL_REVIEWER: "",
-            };
+            if (isMulti) {
+              clearUpdates = {
+                MODEL_MULTI_MASTER: "",
+                MODEL_MULTI_SUPERAGENT: "",
+                MODEL_MULTI_SUBAGENT: "",
+                MODEL_MULTI_SUBAGENT_RESEARCHER: "",
+                MODEL_MULTI_SUBAGENT_CODER: "",
+                MODEL_MULTI_SUBAGENT_REVIEWER: "",
+              };
+            } else {
+              clearUpdates = {
+                MODEL_SINGLE: "",
+                MODEL_SINGLE_SUPERAGENT: "",
+                MODEL_SINGLE_SUBAGENT: "",
+                MODEL_SINGLE_SUBAGENT_RESEARCHER: "",
+                MODEL_SINGLE_SUBAGENT_CODER: "",
+                MODEL_SINGLE_SUBAGENT_REVIEWER: "",
+              };
+            }
             targetLabel = "All Tiers";
           }
           if (Object.keys(clearUpdates).length > 0) {
             updateEnvFile(clearUpdates);
-            const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+            const effectiveMasterModel = isMulti ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel()) : (process.env.MODEL || getDefaultModel());
             setActiveModel(effectiveMasterModel);
             setMasterLogs((prev) => [
               ...prev,
@@ -1273,21 +1306,22 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
               ? `${profileName.toLowerCase()}:${modelName}`
               : modelName;
-            const updates = {
-              MODEL: modelName,
-              MODEL_DEPTH_0: finalModelName,
-              MODEL_DEPT0: finalModelName,
-              MODEL_DEPTH_1: finalModelName,
-              MODEL_DEPT1: finalModelName,
-              MODEL_DEPTH_2: finalModelName,
-              MODEL_DEPT2: finalModelName,
-              MODEL_SUBAGENT_RESEARCHER: finalModelName,
-              MODEL_RESEARCHER: finalModelName,
-              MODEL_SUBAGENT_CODER: finalModelName,
-              MODEL_CODER: finalModelName,
-              MODEL_SUBAGENT_REVIEWER: finalModelName,
-              MODEL_REVIEWER: finalModelName
-            };
+            const updates: Record<string, string> = { MODEL: modelName };
+            if (isMulti) {
+              updates.MODEL_MULTI_MASTER = finalModelName;
+              updates.MODEL_MULTI_SUPERAGENT = finalModelName;
+              updates.MODEL_MULTI_SUBAGENT = finalModelName;
+              updates.MODEL_MULTI_SUBAGENT_RESEARCHER = finalModelName;
+              updates.MODEL_MULTI_SUBAGENT_CODER = finalModelName;
+              updates.MODEL_MULTI_SUBAGENT_REVIEWER = finalModelName;
+            } else {
+              updates.MODEL_SINGLE = modelName;
+              updates.MODEL_SINGLE_SUPERAGENT = finalModelName;
+              updates.MODEL_SINGLE_SUBAGENT = finalModelName;
+              updates.MODEL_SINGLE_SUBAGENT_RESEARCHER = finalModelName;
+              updates.MODEL_SINGLE_SUBAGENT_CODER = finalModelName;
+              updates.MODEL_SINGLE_SUBAGENT_REVIEWER = finalModelName;
+            }
             targetLabel = "All Tiers & Subagents";
             switchActiveProvider(profileName);
             envPath = updateEnvFile(updates);
@@ -1299,20 +1333,31 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             
             let updates: Record<string, string> = {};
             if (tier === "master") {
-              updates = { MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName };
+              if (isMulti) {
+                updates = { MODEL_MULTI_MASTER: finalModelName };
+              }
               targetLabel = "Master Agent (depth 0) Model";
             } else if (tier === "superagent") {
-              updates = { MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName };
+              if (isMulti) {
+                updates = { MODEL_MULTI_SUPERAGENT: finalModelName };
+              } else {
+                updates = { MODEL_SINGLE_SUPERAGENT: finalModelName };
+              }
               targetLabel = "Superagent (depth 1) Model";
             } else if (tier === "subagent") {
-              updates = { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName };
+              if (isMulti) {
+                updates = { MODEL_MULTI_SUBAGENT: finalModelName };
+              } else {
+                updates = { MODEL_SINGLE_SUBAGENT: finalModelName };
+              }
               targetLabel = "Subagent (depth 2) Model";
             } else {
               const typeUpper = tier.toUpperCase();
-              updates = {
-                [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
-                [`MODEL_${typeUpper}`]: finalModelName
-              };
+              if (isMulti) {
+                updates = { [`MODEL_MULTI_SUBAGENT_${typeUpper}`]: finalModelName };
+              } else {
+                updates = { [`MODEL_SINGLE_SUBAGENT_${typeUpper}`]: finalModelName };
+              }
               targetLabel = `Subagent "${tier}" Model`;
             }
             envPath = updateEnvFile(updates);
@@ -1324,13 +1369,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           if (tier === "default" || tier === "all") {
             setContextLimit(limit);
           }
-          const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+          const effectiveMasterModel = isMulti ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel()) : (process.env.MODEL || getDefaultModel());
           setActiveModel(effectiveMasterModel);
           
           const currentModel = process.env.MODEL || getDefaultModel();
-          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          const masterModel = isMulti ? (process.env.MODEL_MULTI_MASTER || "(use default)") : "(N/A)";
+          const superagentModel = isMulti ? (process.env.MODEL_MULTI_SUPERAGENT || "(use default)") : (process.env.MODEL_SINGLE_SUPERAGENT || "(use default)");
+          const subagentModel = isMulti ? (process.env.MODEL_MULTI_SUBAGENT || "(use default)") : (process.env.MODEL_SINGLE_SUBAGENT || "(use default)");
           
           let updatedList = `\n\nUpdated Models:\n` +
             `  Master Agent (depth 0): ${masterModel}\n` +
@@ -1338,8 +1383,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             `  Subagent (depth 2): ${subagentModel}`;
 
           for (const [key, val] of Object.entries(process.env)) {
-            if (val && key.startsWith("MODEL_SUBAGENT_")) {
-              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+            if (val && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SINGLE_SUBAGENT_"))) {
+              const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+                ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+                : key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
               updatedList += `\n  Subagent "${name}": ${val}`;
             }
           }
@@ -1393,7 +1440,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const isSingle = !isMulti;
           const effectiveMasterModel = isSingle
             ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
-            : (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
+            : (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel());
           const limit = getContextWindowLimit(effectiveMasterModel);
           setContextLimit(limit);
           setActiveModel(effectiveMasterModel);
@@ -1404,7 +1451,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
           if (isSingle) {
             const singleModel = process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel();
-            const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || "(use default)";
+            const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || "(use default)";
             updatedLogs.push(
               `[MASTER]   Single Agent Model: ${singleModel}`,
               `[MASTER]   Subagent (depth 2): ${subagentModel}`
@@ -1416,17 +1463,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
                   updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
                 }
-              } else if (val && key.startsWith("MODEL_SINGLE_") && key !== "MODEL_SINGLE" && key !== "MODEL_SINGLE_SUBAGENT" && key !== "MODEL_SINGLE_DEPTH_2") {
-                const name = key.replace("MODEL_SINGLE_", "").toLowerCase();
-                if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
-                  updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
-                }
               }
             }
           } else {
-            const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-            const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-            const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+            const masterModel = process.env.MODEL_MULTI_MASTER || "(use default)";
+            const superagentModel = process.env.MODEL_MULTI_SUPERAGENT || "(use default)";
+            const subagentModel = process.env.MODEL_MULTI_SUBAGENT || "(use default)";
             
             updatedLogs.push(
               `[MASTER]   Master Agent (depth 0): ${masterModel}`,
@@ -1435,10 +1477,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             );
 
             for (const [key, val] of Object.entries(process.env)) {
-              if (val && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
-                const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
-                  ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
-                  : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+              if (val && key.startsWith("MODEL_MULTI_SUBAGENT_")) {
+                const name = key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase();
                 if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
                   updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
                 }
@@ -1545,7 +1585,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const isSingle = !isMulti;
             const effectiveMasterModel = isSingle
               ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
-              : (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
+              : (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel());
             const limit = getContextWindowLimit(effectiveMasterModel);
             setContextLimit(limit);
             setActiveModel(effectiveMasterModel);
@@ -1556,7 +1596,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
             if (isSingle) {
               const singleModel = process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel();
-              const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || "(use default)";
+              const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || "(use default)";
               updatedLogs.push(
                 `[MASTER]   Single Agent Model: ${singleModel}`,
                 `[MASTER]   Subagent (depth 2): ${subagentModel}`
@@ -1568,17 +1608,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                   if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
                     updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
                   }
-                } else if (val && key.startsWith("MODEL_SINGLE_") && key !== "MODEL_SINGLE" && key !== "MODEL_SINGLE_SUBAGENT" && key !== "MODEL_SINGLE_DEPTH_2") {
-                  const name = key.replace("MODEL_SINGLE_", "").toLowerCase();
-                  if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
-                    updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
-                  }
                 }
               }
             } else {
-              const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-              const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-              const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+              const masterModel = process.env.MODEL_MULTI_MASTER || "(use default)";
+              const superagentModel = process.env.MODEL_MULTI_SUPERAGENT || "(use default)";
+              const subagentModel = process.env.MODEL_MULTI_SUBAGENT || "(use default)";
               
               updatedLogs.push(
                 `[MASTER]   Master Agent (depth 0): ${masterModel}`,
@@ -1587,10 +1622,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               );
 
               for (const [key, val] of Object.entries(process.env)) {
-                if (val && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
-                  const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
-                    ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
-                    : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+                if (val && key.startsWith("MODEL_MULTI_SUBAGENT_")) {
+                  const name = key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase();
                   if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
                     updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
                   }
@@ -1670,23 +1703,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const tier = activeWizard.data.tier || "";
           const presetModels: Record<string, string> = activeWizard.data.presetModels ? JSON.parse(activeWizard.data.presetModels) : {};
           if (tier === "master") {
-            delete presetModels.MODEL_DEPTH_0;
-            delete presetModels.MODEL_DEPT0;
+            delete presetModels.MODEL_MULTI_MASTER;
           } else if (tier === "superagent") {
-            delete presetModels.MODEL_DEPTH_1;
-            delete presetModels.MODEL_DEPT1;
+            if (isMulti) { delete presetModels.MODEL_MULTI_SUPERAGENT; } else { delete presetModels.MODEL_SINGLE_SUPERAGENT; }
           } else if (tier === "subagent") {
-            delete presetModels.MODEL_DEPTH_2;
-            delete presetModels.MODEL_DEPT2;
+            if (isMulti) { delete presetModels.MODEL_MULTI_SUBAGENT; } else { delete presetModels.MODEL_SINGLE_SUBAGENT; }
           } else if (tier === "researcher") {
-            delete presetModels.MODEL_SUBAGENT_RESEARCHER;
-            delete presetModels.MODEL_RESEARCHER;
+            if (isMulti) { delete presetModels.MODEL_MULTI_SUBAGENT_RESEARCHER; } else { delete presetModels.MODEL_SINGLE_SUBAGENT_RESEARCHER; }
           } else if (tier === "coder") {
-            delete presetModels.MODEL_SUBAGENT_CODER;
-            delete presetModels.MODEL_CODER;
+            if (isMulti) { delete presetModels.MODEL_MULTI_SUBAGENT_CODER; } else { delete presetModels.MODEL_SINGLE_SUBAGENT_CODER; }
           } else if (tier === "reviewer") {
-            delete presetModels.MODEL_SUBAGENT_REVIEWER;
-            delete presetModels.MODEL_REVIEWER;
+            if (isMulti) { delete presetModels.MODEL_MULTI_SUBAGENT_REVIEWER; } else { delete presetModels.MODEL_SINGLE_SUBAGENT_REVIEWER; }
           }
 
           const nextStep = activeWizard.step === 23 ? 22 : 32;
@@ -1920,23 +1947,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const presetModels: Record<string, string> = activeWizard.data.presetModels ? JSON.parse(activeWizard.data.presetModels) : {};
 
         if (tier === "master") {
-          presetModels.MODEL_DEPTH_0 = finalModelName;
-          presetModels.MODEL_DEPT0 = finalModelName;
+          presetModels.MODEL_MULTI_MASTER = finalModelName;
         } else if (tier === "superagent") {
-          presetModels.MODEL_DEPTH_1 = finalModelName;
-          presetModels.MODEL_DEPT1 = finalModelName;
+          if (isMulti) { presetModels.MODEL_MULTI_SUPERAGENT = finalModelName; } else { presetModels.MODEL_SINGLE_SUPERAGENT = finalModelName; }
         } else if (tier === "subagent") {
-          presetModels.MODEL_DEPTH_2 = finalModelName;
-          presetModels.MODEL_DEPT2 = finalModelName;
+          if (isMulti) { presetModels.MODEL_MULTI_SUBAGENT = finalModelName; } else { presetModels.MODEL_SINGLE_SUBAGENT = finalModelName; }
         } else if (tier === "researcher") {
-          presetModels.MODEL_SUBAGENT_RESEARCHER = finalModelName;
-          presetModels.MODEL_RESEARCHER = finalModelName;
+          if (isMulti) { presetModels.MODEL_MULTI_SUBAGENT_RESEARCHER = finalModelName; } else { presetModels.MODEL_SINGLE_SUBAGENT_RESEARCHER = finalModelName; }
         } else if (tier === "coder") {
-          presetModels.MODEL_SUBAGENT_CODER = finalModelName;
-          presetModels.MODEL_CODER = finalModelName;
+          if (isMulti) { presetModels.MODEL_MULTI_SUBAGENT_CODER = finalModelName; } else { presetModels.MODEL_SINGLE_SUBAGENT_CODER = finalModelName; }
         } else if (tier === "reviewer") {
-          presetModels.MODEL_SUBAGENT_REVIEWER = finalModelName;
-          presetModels.MODEL_REVIEWER = finalModelName;
+          if (isMulti) { presetModels.MODEL_MULTI_SUBAGENT_REVIEWER = finalModelName; } else { presetModels.MODEL_SINGLE_SUBAGENT_REVIEWER = finalModelName; }
         } else if (tier === "default") {
           presetModels.MODEL = finalModelName;
         }
@@ -2169,21 +2190,22 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const finalModelName = provider.toLowerCase() !== activeProvider.toLowerCase()
               ? `${provider.toLowerCase()}:${selectedModel}`
               : selectedModel;
-            updates = {
-              MODEL: finalModelName,
-              MODEL_DEPTH_0: finalModelName,
-              MODEL_DEPT0: finalModelName,
-              MODEL_DEPTH_1: finalModelName,
-              MODEL_DEPT1: finalModelName,
-              MODEL_DEPTH_2: finalModelName,
-              MODEL_DEPT2: finalModelName,
-              MODEL_SUBAGENT_RESEARCHER: finalModelName,
-              MODEL_RESEARCHER: finalModelName,
-              MODEL_SUBAGENT_CODER: finalModelName,
-              MODEL_CODER: finalModelName,
-              MODEL_SUBAGENT_REVIEWER: finalModelName,
-              MODEL_REVIEWER: finalModelName
-            };
+            updates = { MODEL: finalModelName };
+            if (isMulti) {
+              updates.MODEL_MULTI_MASTER = finalModelName;
+              updates.MODEL_MULTI_SUPERAGENT = finalModelName;
+              updates.MODEL_MULTI_SUBAGENT = finalModelName;
+              updates.MODEL_MULTI_SUBAGENT_RESEARCHER = finalModelName;
+              updates.MODEL_MULTI_SUBAGENT_CODER = finalModelName;
+              updates.MODEL_MULTI_SUBAGENT_REVIEWER = finalModelName;
+            } else {
+              updates.MODEL_SINGLE = finalModelName;
+              updates.MODEL_SINGLE_SUPERAGENT = finalModelName;
+              updates.MODEL_SINGLE_SUBAGENT = finalModelName;
+              updates.MODEL_SINGLE_SUBAGENT_RESEARCHER = finalModelName;
+              updates.MODEL_SINGLE_SUBAGENT_CODER = finalModelName;
+              updates.MODEL_SINGLE_SUBAGENT_REVIEWER = finalModelName;
+            }
             targetLabel = "All Tiers & Subagents";
           } else {
             const activeProvider = process.env.ACTIVE_PROVIDER || "";
@@ -2192,32 +2214,43 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               : selectedModel;
 
             if (tier === "master") {
-              updates = { MODEL_DEPTH_0: finalModelName, MODEL_DEPT0: finalModelName };
+              if (isMulti) {
+                updates = { MODEL_MULTI_MASTER: finalModelName };
+              }
               targetLabel = "Master Agent (depth 0) Model";
             } else if (tier === "superagent") {
-              updates = { MODEL_DEPTH_1: finalModelName, MODEL_DEPT1: finalModelName };
+              if (isMulti) {
+                updates = { MODEL_MULTI_SUPERAGENT: finalModelName };
+              } else {
+                updates = { MODEL_SINGLE_SUPERAGENT: finalModelName };
+              }
               targetLabel = "Superagent (depth 1) Model";
             } else if (tier === "subagent") {
-              updates = { MODEL_DEPTH_2: finalModelName, MODEL_DEPT2: finalModelName };
+              if (isMulti) {
+                updates = { MODEL_MULTI_SUBAGENT: finalModelName };
+              } else {
+                updates = { MODEL_SINGLE_SUBAGENT: finalModelName };
+              }
               targetLabel = "Subagent (depth 2) Model";
             } else {
               const typeUpper = tier.toUpperCase();
-              updates = {
-                [`MODEL_SUBAGENT_${typeUpper}`]: finalModelName,
-                [`MODEL_${typeUpper}`]: finalModelName
-              };
+              if (isMulti) {
+                updates = { [`MODEL_MULTI_SUBAGENT_${typeUpper}`]: finalModelName };
+              } else {
+                updates = { [`MODEL_SINGLE_SUBAGENT_${typeUpper}`]: finalModelName };
+              }
               targetLabel = `Subagent "${tier}" Model`;
             }
           }
 
           const envPath = updateEnvFile(updates);
-          const effectiveMasterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+          const effectiveMasterModel = isMulti ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel()) : (process.env.MODEL || getDefaultModel());
           setActiveModel(effectiveMasterModel);
           const limit = getContextWindowLimit(selectedModel);
           const currentModel = process.env.MODEL || getDefaultModel();
-          const masterModel = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
-          const superagentModel = process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
-          const subagentModel = process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+          const masterModel = isMulti ? (process.env.MODEL_MULTI_MASTER || "(use default)") : "(N/A)";
+          const superagentModel = isMulti ? (process.env.MODEL_MULTI_SUPERAGENT || "(use default)") : (process.env.MODEL_SINGLE_SUPERAGENT || "(use default)");
+          const subagentModel = isMulti ? (process.env.MODEL_MULTI_SUBAGENT || "(use default)") : (process.env.MODEL_SINGLE_SUBAGENT || "(use default)");
           
           const updatedLogs = [
             `[MASTER] Updated Models:`,
@@ -2227,8 +2260,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           ];
 
           for (const [key, val] of Object.entries(process.env)) {
-            if (val && key.startsWith("MODEL_SUBAGENT_")) {
-              const name = key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+            if (val && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SINGLE_SUBAGENT_"))) {
+              const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+                ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+                : key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
               updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
             }
           }

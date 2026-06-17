@@ -359,8 +359,7 @@ describe("Model Wizard Back Navigation", () => {
 
   it("should clear master agent env vars when 'Not Set' is selected on step 2", async () => {
     // Set up env vars that should be cleared
-    process.env.MODEL_DEPTH_0 = "openrouter:google/gemini-2.5-flash";
-    process.env.MODEL_DEPT0 = "openrouter:google/gemini-2.5-flash";
+    process.env.MODEL_MULTI_MASTER = "openrouter:google/gemini-2.5-flash";
     process.env.MODEL = "test-model";
 
     let capturedHandler: any = null;
@@ -379,8 +378,7 @@ describe("Model Wizard Back Navigation", () => {
     expect(wizardOptions).toEqual([]);
 
     // Should have cleared the env vars
-    expect(process.env.MODEL_DEPTH_0).toBeUndefined();
-    expect(process.env.MODEL_DEPT0).toBeUndefined();
+    expect(process.env.MODEL_MULTI_MASTER).toBeUndefined();
 
     // Should have logged a system message
     expect(addedLines.some(l => l.content.includes("Master Agent (depth 0) model override cleared"))).toBe(true);
@@ -389,18 +387,12 @@ describe("Model Wizard Back Navigation", () => {
   });
 
   it("should clear all tier env vars when 'Not Set' is selected with tier=all on step 2", async () => {
-    process.env.MODEL_DEPTH_0 = "m0";
-    process.env.MODEL_DEPT0 = "m0";
-    process.env.MODEL_DEPTH_1 = "m1";
-    process.env.MODEL_DEPT1 = "m1";
-    process.env.MODEL_DEPTH_2 = "m2";
-    process.env.MODEL_DEPT2 = "m2";
-    process.env.MODEL_SUBAGENT_RESEARCHER = "mr";
-    process.env.MODEL_RESEARCHER = "mr";
-    process.env.MODEL_SUBAGENT_CODER = "mc";
-    process.env.MODEL_CODER = "mc";
-    process.env.MODEL_SUBAGENT_REVIEWER = "mv";
-    process.env.MODEL_REVIEWER = "mv";
+    process.env.MODEL_MULTI_MASTER = "m0";
+    process.env.MODEL_MULTI_SUPERAGENT = "m1";
+    process.env.MODEL_MULTI_SUBAGENT = "m2";
+    process.env.MODEL_MULTI_SUBAGENT_RESEARCHER = "mr";
+    process.env.MODEL_MULTI_SUBAGENT_CODER = "mc";
+    process.env.MODEL_MULTI_SUBAGENT_REVIEWER = "mv";
     process.env.MODEL = "fallback-model";
 
     let capturedHandler: any = null;
@@ -414,15 +406,12 @@ describe("Model Wizard Back Navigation", () => {
     await capturedHandler("5. Not Set (Clear Override)", 2, { tier: "all" });
 
     expect(activeWizard).toBeNull();
-    expect(process.env.MODEL_DEPTH_0).toBeUndefined();
-    expect(process.env.MODEL_DEPT0).toBeUndefined();
-    expect(process.env.MODEL_DEPTH_1).toBeUndefined();
-    expect(process.env.MODEL_DEPT1).toBeUndefined();
-    expect(process.env.MODEL_DEPTH_2).toBeUndefined();
-    expect(process.env.MODEL_DEPT2).toBeUndefined();
-    expect(process.env.MODEL_SUBAGENT_RESEARCHER).toBeUndefined();
-    expect(process.env.MODEL_SUBAGENT_CODER).toBeUndefined();
-    expect(process.env.MODEL_SUBAGENT_REVIEWER).toBeUndefined();
+    expect(process.env.MODEL_MULTI_MASTER).toBeUndefined();
+    expect(process.env.MODEL_MULTI_SUPERAGENT).toBeUndefined();
+    expect(process.env.MODEL_MULTI_SUBAGENT).toBeUndefined();
+    expect(process.env.MODEL_MULTI_SUBAGENT_RESEARCHER).toBeUndefined();
+    expect(process.env.MODEL_MULTI_SUBAGENT_CODER).toBeUndefined();
+    expect(process.env.MODEL_MULTI_SUBAGENT_REVIEWER).toBeUndefined();
     expect(addedLines.some(l => l.content.includes("All Tiers model override cleared"))).toBe(true);
 
     unmount();
@@ -430,10 +419,8 @@ describe("Model Wizard Back Navigation", () => {
 
   it("should delete preset model keys when 'Not Set' is selected on step 23 (preset)", async () => {
     const presetModels = {
-      MODEL_DEPTH_0: "openrouter:google/gemini-2.5-flash",
-      MODEL_DEPT0: "openrouter:google/gemini-2.5-flash",
-      MODEL_DEPTH_1: "openrouter:meta/llama-3",
-      MODEL_DEPT1: "openrouter:meta/llama-3",
+      MODEL_MULTI_MASTER: "openrouter:google/gemini-2.5-flash",
+      MODEL_MULTI_SUPERAGENT: "openrouter:meta/llama-3",
     };
 
     let capturedHandler: any = null;
@@ -456,12 +443,10 @@ describe("Model Wizard Back Navigation", () => {
 
     // The master tier keys should be deleted from presetModels
     const updatedModels = JSON.parse(activeWizard.data.presetModels);
-    expect(updatedModels.MODEL_DEPTH_0).toBeUndefined();
-    expect(updatedModels.MODEL_DEPT0).toBeUndefined();
+    expect(updatedModels.MODEL_MULTI_MASTER).toBeUndefined();
 
     // Superagent keys should be preserved
-    expect(updatedModels.MODEL_DEPTH_1).toBe("openrouter:meta/llama-3");
-    expect(updatedModels.MODEL_DEPT1).toBe("openrouter:meta/llama-3");
+    expect(updatedModels.MODEL_MULTI_SUPERAGENT).toBe("openrouter:meta/llama-3");
 
     // Options should show (not set) for master but still show model for superagent
     expect(wizardOptions.some(o => o.includes("Master Agent") && o.includes("(not set)"))).toBe(true);

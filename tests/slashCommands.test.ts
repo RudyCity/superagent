@@ -67,10 +67,10 @@ describe("Slash Command: /model", () => {
   it("should show current configurations when run without arguments", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
     process.env.MODEL = "openai:gpt-4o";
-    process.env.MODEL_DEPTH_0 = "openai:gpt-4o-mini";
-    process.env.MODEL_DEPTH_1 = "anthropic:claude-3-5-sonnet";
-    process.env.MODEL_DEPTH_2 = "custom:local-llama";
-    process.env.MODEL_SUBAGENT_RESEARCHER = "openai:gpt-researcher";
+    process.env.MODEL_MULTI_MASTER = "openai:gpt-4o-mini";
+    process.env.MODEL_MULTI_SUPERAGENT = "anthropic:claude-3-5-sonnet";
+    process.env.MODEL_MULTI_SUBAGENT = "custom:local-llama";
+    process.env.MODEL_MULTI_SUBAGENT_RESEARCHER = "openai:gpt-researcher";
 
     handleSlashCommand("/model", mockCtx);
 
@@ -113,61 +113,43 @@ describe("Slash Command: /model", () => {
     expect(addedLines[0].content).toContain("Single Agent Model changed to: anthropic:claude-3-5-haiku");
   });
 
-  it("should update MODEL_DEPTH_0 when master/depth0/dept0 prefix is supplied", () => {
+  it("should update MODEL_MULTI_MASTER when master/depth0/dept0 prefix is supplied", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
     handleSlashCommand("/model master openai:gpt-4", mockCtx);
-    expect(process.env.MODEL_MULTI_DEPTH_0).toBe("openai:gpt-4");
-    expect(process.env.MODEL_MULTI_DEPT0).toBe("openai:gpt-4");
-    expect(process.env.MODEL_DEPTH_0).toBe("openai:gpt-4");
-    expect(process.env.MODEL_DEPT0).toBe("openai:gpt-4");
+    expect(process.env.MODEL_MULTI_MASTER).toBe("openai:gpt-4");
 
     handleSlashCommand("/model dept0 anthropic:claude-3", mockCtx);
-    expect(process.env.MODEL_MULTI_DEPTH_0).toBe("anthropic:claude-3");
-    expect(process.env.MODEL_MULTI_DEPT0).toBe("anthropic:claude-3");
-    expect(process.env.MODEL_DEPTH_0).toBe("anthropic:claude-3");
-    expect(process.env.MODEL_DEPT0).toBe("anthropic:claude-3");
+    expect(process.env.MODEL_MULTI_MASTER).toBe("anthropic:claude-3");
   });
 
-  it("should update MODEL_DEPTH_1 when superagent prefix is supplied", () => {
+  it("should update MODEL_MULTI_SUPERAGENT when superagent prefix is supplied", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
     handleSlashCommand("/model superagent openai:gpt-4", mockCtx);
-    expect(process.env.MODEL_MULTI_DEPTH_1).toBe("openai:gpt-4");
-    expect(process.env.MODEL_MULTI_DEPT1).toBe("openai:gpt-4");
-    expect(process.env.MODEL_DEPTH_1).toBe("openai:gpt-4");
-    expect(process.env.MODEL_DEPT1).toBe("openai:gpt-4");
+    expect(process.env.MODEL_MULTI_SUPERAGENT).toBe("openai:gpt-4");
   });
 
-  it("should update MODEL_DEPTH_2 when subagent prefix is supplied in multi-agent mode", () => {
+  it("should update MODEL_MULTI_SUBAGENT when subagent prefix is supplied in multi-agent mode", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
     handleSlashCommand("/model subagent openai:gpt-4", mockCtx);
-    expect(process.env.MODEL_MULTI_DEPTH_2).toBe("openai:gpt-4");
-    expect(process.env.MODEL_MULTI_DEPT2).toBe("openai:gpt-4");
     expect(process.env.MODEL_MULTI_SUBAGENT).toBe("openai:gpt-4");
-    expect(process.env.MODEL_DEPTH_2).toBe("openai:gpt-4");
-    expect(process.env.MODEL_DEPT2).toBe("openai:gpt-4");
   });
 
   it("should update MODEL_SINGLE_SUBAGENT when subagent prefix is supplied in single-agent mode", () => {
     mockCtx.agent = { isMultiAgent: false } as any;
     handleSlashCommand("/model subagent openai:gpt-4", mockCtx);
     expect(process.env.MODEL_SINGLE_SUBAGENT).toBe("openai:gpt-4");
-    expect(process.env.MODEL_SINGLE_DEPTH_2).toBe("openai:gpt-4");
   });
 
   it("should update specific subagent model when subagent type is supplied in multi-agent mode", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
     handleSlashCommand("/model researcher openai:gpt-researcher", mockCtx);
     expect(process.env.MODEL_MULTI_SUBAGENT_RESEARCHER).toBe("openai:gpt-researcher");
-    expect(process.env.MODEL_MULTI_RESEARCHER).toBe("openai:gpt-researcher");
-    expect(process.env.MODEL_SUBAGENT_RESEARCHER).toBe("openai:gpt-researcher");
-    expect(process.env.MODEL_RESEARCHER).toBe("openai:gpt-researcher");
   });
 
   it("should update specific single subagent model when subagent type is supplied in single-agent mode", () => {
     mockCtx.agent = { isMultiAgent: false } as any;
     handleSlashCommand("/model researcher openai:gpt-researcher", mockCtx);
     expect(process.env.MODEL_SINGLE_SUBAGENT_RESEARCHER).toBe("openai:gpt-researcher");
-    expect(process.env.MODEL_SINGLE_RESEARCHER).toBe("openai:gpt-researcher");
   });
 });
 

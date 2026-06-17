@@ -309,12 +309,61 @@ export function getModelInstanceForString(modelStr: string) {
   return openai(modelName);
 }
 
+/**
+ * Validates whether a TierModelConfig entry is usable (has a model and a resolvable provider).
+ * If the entry is stale/empty/broken, we should fall back to the default instead.
+ * Note: We intentionally do NOT check apiKey here — that is handled later by
+ * getModelInstanceForString() which has its own isTest bypass and fallback chains.
+ */
+function isValidTierConfig(tierConfig: TierModelConfig | undefined, providers: any[]): boolean {
+  if (!tierConfig) return false;
+  if (!tierConfig.model || tierConfig.model.trim() === "") return false;
+  // A tierConfig is valid if it has a model string (even without a providerProfileId,
+  // since getModelInstanceForString can handle bare model names).
+  // If providerProfileId is set, verify it resolves to an existing provider profile.
+  if (tierConfig.providerProfileId && tierConfig.providerProfileId.trim() !== "") {
+    const resolvedProvider = providers.find((p: any) => p.id === tierConfig.providerProfileId);
+    if (!resolvedProvider) return false;
+  }
+  return true;
+}
+
+/**
+ * Resolves the best tierConfig for a subagent, checking subagentDetails first
+ * then falling back to subagentDefault. Validates entries before using them
+ * to prevent stale/broken entries from causing API key errors.
+ */
+function resolveSubagentTierConfig(
+  subagentType: string | undefined,
+  subagentDetails: Record<string, TierModelConfig> | undefined,
+  subagentDefault: TierModelConfig | undefined,
+  providers: any[]
+): TierModelConfig | undefined {
+  // 1. Try type-specific entry (e.g. "coder", "researcher")
+  if (subagentType && subagentDetails?.[subagentType]) {
+    const typeConfig = subagentDetails[subagentType];
+    if (isValidTierConfig(typeConfig, providers)) {
+      return typeConfig;
+    }
+    // Entry exists but is invalid/stale — fall through to subagentDefault
+  }
+
+  // 2. Fall back to subagentDefault
+  if (isValidTierConfig(subagentDefault, providers)) {
+    return subagentDefault;
+  }
+
+  // 3. Return whatever we have (will be caught by later fallbacks)
+  return subagentDefault || (subagentType ? subagentDetails?.[subagentType] : undefined);
+}
+
 export function getModelInstanceForTier(tier: string, depth: number, subagentType?: string, isSingleMode?: boolean) {
   const isMulti = !isSingleMode && !process.env.SINGLE_AGENT_MODE && (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true");
   const mode = isMulti ? "multi" : "single";
 
   const config = loadModelConfig();
   const activePreset = getActivePreset<any>(mode);
+  const providers = config.providers || [];
 
   let tierConfig: TierModelConfig | undefined;
 
@@ -325,46 +374,26 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
     } else if (tier === "superagent") {
       tierConfig = activePreset.models.superagent;
     } else if (tier === "subagent") {
-      if (subagentType && activePreset.models.subagentDetails?.[subagentType]) {
-        tierConfig = activePreset.models.subagentDetails[subagentType];
-      }
-      if (!tierConfig) {
-        tierConfig = activePreset.models.subagentDefault;
-      }
+      tierConfig = resolveSubagentTierConfig(subagentType, activePreset.models.subagentDetails, activePreset.models.subagentDefault, providers);
     } else if (depth === 0) {
       tierConfig = activePreset.models.master;
     } else if (depth === 1) {
       tierConfig = activePreset.models.superagent;
     } else {
       // Subagent depth fallback
-      if (subagentType && activePreset.models.subagentDetails?.[subagentType]) {
-        tierConfig = activePreset.models.subagentDetails[subagentType];
-      }
-      if (!tierConfig) {
-        tierConfig = activePreset.models.subagentDefault;
-      }
+      tierConfig = resolveSubagentTierConfig(subagentType, activePreset.models.subagentDetails, activePreset.models.subagentDefault, providers);
     }
   } else {
     // Single mode logic
     if (tier === "superagent") {
       tierConfig = activePreset.models.superagent;
     } else if (tier === "subagent") {
-      if (subagentType && activePreset.models.subagentDetails?.[subagentType]) {
-        tierConfig = activePreset.models.subagentDetails[subagentType];
-      }
-      if (!tierConfig) {
-        tierConfig = activePreset.models.subagentDefault;
-      }
+      tierConfig = resolveSubagentTierConfig(subagentType, activePreset.models.subagentDetails, activePreset.models.subagentDefault, providers);
     } else if (depth <= 1) {
       tierConfig = activePreset.models.superagent;
     } else {
       // Subagent depth fallback
-      if (subagentType && activePreset.models.subagentDetails?.[subagentType]) {
-        tierConfig = activePreset.models.subagentDetails[subagentType];
-      }
-      if (!tierConfig) {
-        tierConfig = activePreset.models.subagentDefault;
-      }
+      tierConfig = resolveSubagentTierConfig(subagentType, activePreset.models.subagentDetails, activePreset.models.subagentDefault, providers);
     }
   }
 

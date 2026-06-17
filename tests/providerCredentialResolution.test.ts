@@ -211,6 +211,7 @@ describe("Provider Credential Resolution Fixes", () => {
 
       saveModelPreset("free-preset", "Free model preset", {
         MODEL: "openrouter:nex-agi/nex-n2-pro:free",
+        MODEL_MULTI_MASTER: "openrouter:nex-agi/nex-n2-pro:free",
       });
 
       applyModelPreset("free-preset");
@@ -220,8 +221,8 @@ describe("Provider Credential Resolution Fixes", () => {
       await new Promise(resolve => setTimeout(resolve, 100));
 
       const config = loadModelConfig();
-      const singlePreset = config.presets.single[0];
-      expect(singlePreset.models.superagent.model).toBe("nex-agi/nex-n2-pro:free");
+      const multiPreset = config.presets.multi[0];
+      expect(multiPreset.models.master.model).toBe("nex-agi/nex-n2-pro:free");
     });
 
     it("should write active provider credentials to .env when applying preset", () => {
@@ -237,6 +238,7 @@ describe("Provider Credential Resolution Fixes", () => {
 
       saveModelPreset("test-preset", "Test preset", {
         MODEL: "openrouter:test-model",
+        MODEL_MULTI_MASTER: "openrouter:test-model",
       });
 
       applyModelPreset("test-preset");
@@ -270,6 +272,7 @@ describe("Provider Credential Resolution Fixes", () => {
 
       saveModelPreset("fallback-preset", "Fallback test", {
         MODEL: "openrouter:fallback-model",
+        MODEL_MULTI_MASTER: "openrouter:fallback-model",
       });
 
       applyModelPreset("fallback-preset");

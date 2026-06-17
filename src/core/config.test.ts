@@ -386,15 +386,15 @@ describe("config", () => {
     });
 
     it("should clear all tier and subagent-specific overrides when switchActiveProvider is called", () => {
-      process.env.MODEL_DEPTH_0 = "openai:gpt-4o-mini";
-      process.env.MODEL_SUBAGENT_RESEARCHER = "openai:gpt-4-turbo";
+      process.env.MODEL_MULTI_MASTER = "openai:gpt-4o-mini";
+      process.env.MODEL_MULTI_SUBAGENT_RESEARCHER = "openai:gpt-4-turbo";
       process.env.PROVIDER_ANTHROPIC_TYPE = "anthropic";
       process.env.PROVIDER_ANTHROPIC_API_KEY = "dummy";
 
       switchActiveProvider("anthropic");
 
-      expect(process.env.MODEL_DEPTH_0).toBeUndefined();
-      expect(process.env.MODEL_SUBAGENT_RESEARCHER).toBeUndefined();
+      expect(process.env.MODEL_MULTI_MASTER).toBeUndefined();
+      expect(process.env.MODEL_MULTI_SUBAGENT_RESEARCHER).toBeUndefined();
       expect(process.env.MODEL).toBe("claude-3-5-sonnet-20241022");
     });
   });
