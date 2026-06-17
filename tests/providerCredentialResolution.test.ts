@@ -388,5 +388,57 @@ describe("Provider Credential Resolution Fixes", () => {
         globalThis.fetch = originalFetch;
       }
     });
+
+    it("should not treat colon in namespaced model as provider separator", () => {
+      addProvider({
+        id: "openrouter",
+        name: "openrouter",
+        provider: "openrouter",
+        apiKey: "sk-or-namespace-test",
+        baseUrl: "https://openrouter.ai/api/v1",
+      });
+
+      const preset = {
+        id: "namespace-test-preset",
+        name: "Namespace Test",
+        description: "Test",
+        models: {
+          superagent: {
+            providerProfileId: "openrouter",
+            model: "nex-agi/nex-n2-pro:free",
+          },
+          subagentDefault: {
+            providerProfileId: "openrouter",
+            model: "nex-agi/nex-n2-pro:free",
+          },
+          subagentDetails: {},
+        },
+      };
+
+      savePreset("single", preset);
+      setActivePresetId("single", "namespace-test-preset");
+      clearModelConfigCache();
+
+      delete process.env.ACTIVE_PROVIDER;
+      delete process.env.CUSTOM_BASE_URL;
+      delete process.env.CUSTOM_API_KEY;
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.ANTHROPIC_API_KEY;
+
+      const config = getConfig();
+      expect(config.apiKey).toBe("sk-or-namespace-test");
+      expect(config.model).toBe("nex-agi/nex-n2-pro:free");
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = () => Promise.resolve(new Response(JSON.stringify({ error: "mock" })));
+
+      try {
+        expect(() => {
+          getModelInstanceForString("nex-agi/nex-n2-pro:free");
+        }).not.toThrow(/API key is missing/);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 });

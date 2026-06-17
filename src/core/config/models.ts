@@ -173,8 +173,10 @@ export function getModelInstanceForString(modelStr: string) {
   let resolvedPrefix = "";
 
   const colonIndex = modelStr.indexOf(":");
-  if (colonIndex > 0) {
-    const prefix = modelStr.substring(0, colonIndex).toLowerCase();
+  const prefixBeforeColon = colonIndex > 0 ? modelStr.substring(0, colonIndex).toLowerCase() : "";
+  const isProviderPrefix = colonIndex > 0 && !prefixBeforeColon.includes("/");
+  if (isProviderPrefix) {
+    const prefix = prefixBeforeColon;
     resolvedPrefix = prefix;
     const rest = modelStr.substring(colonIndex + 1);
     if (prefix === "anthropic") {
