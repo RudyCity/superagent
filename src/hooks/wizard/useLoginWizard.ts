@@ -8,7 +8,9 @@ import {
   getContextWindowLimit, 
   updateEnvFile,
   addProvider,
-  getActiveConfigAudit
+  getActiveConfigAudit,
+  getProviders,
+  getCachedModelIds
 } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
@@ -25,6 +27,7 @@ interface LoginWizardContext {
   setContextLimit: React.Dispatch<React.SetStateAction<number>>;
   setActiveModel: React.Dispatch<React.SetStateAction<string>>;
   agentRef: React.MutableRefObject<Agent | null>;
+  setWizardIsLoadingModels: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export function useLoginWizard(ctx: LoginWizardContext) {
@@ -38,6 +41,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
     setContextLimit,
     setActiveModel,
     agentRef,
+    setWizardIsLoadingModels,
   } = ctx;
 
   const handleLoginWizard = useCallback(async (value: string, step: number, data: Record<string, string>) => {
@@ -458,6 +462,204 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setActiveWizard(null);
       setWizardOptions([]);
       setWizardSelectedIndex(0);
+    } else if (step === 100) {
+      // Step 100: User pilih salah satu provider dari daftar
+      const providers = getProviders().filter(p => p.apiKey && p.apiKey.trim() !== "");
+      const idx = parseInt(value, 10) - 1;
+      const selectedProvider = providers[idx];
+      if (!selectedProvider) {
+        addLine({ type: "error", content: "Invalid provider selection.", timestamp: now });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        return;
+      }
+      addLine({
+        type: "system",
+        content: `Provider dipilih: ${selectedProvider.name} [${selectedProvider.provider}]`,
+        timestamp: now,
+      });
+      setActiveWizard({
+        type: "login",
+        step: 101,
+        data: {
+          providerId: selectedProvider.id,
+          providerName: selectedProvider.name,
+          providerType: selectedProvider.provider,
+          providerApiKey: selectedProvider.apiKey,
+          providerBaseUrl: selectedProvider.baseUrl || "",
+        },
+      });
+      setWizardOptions(["Ya, Test Koneksi", "Tidak"]);
+      setWizardSelectedIndex(0);
+    } else if (step === 101) {
+      // Step 101: Konfirmasi test koneksi
+      const choice = value.toLowerCase();
+      const skipTest = choice.includes("tidak") || choice === "2" || choice === "no";
+      if (skipTest) {
+        addLine({ type: "system", content: "Test koneksi dilewati.", timestamp: now });
+        // Lanjut ke step 102: pilih model
+        const cachedModels = getCachedModelIds();
+        const providerType = data.providerType || "";
+        const baseUrl = data.providerBaseUrl || "";
+        // Filter model list berdasarkan provider type jika memungkinkan
+        let models = cachedModels.length > 0 ? cachedModels : ["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"];
+        if (providerType === "anthropic") {
+          const anthropicModels = models.filter(m => m.includes("claude"));
+          if (anthropicModels.length > 0) models = anthropicModels;
+          else models = ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"];
+        } else if (providerType === "openai") {
+          const openaiModels = models.filter(m => m.startsWith("gpt-") || m.startsWith("o1") || m.startsWith("o3"));
+          if (openaiModels.length > 0) models = openaiModels;
+          else models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
+        }
+        setActiveWizard({ type: "login", step: 102, data });
+        setWizardOptions(models.slice(0, 50));
+        setWizardSelectedIndex(0);
+        return;
+      }
+      // Lakukan test koneksi
+      addLine({ type: "system", content: `🔄 Menguji koneksi ke ${data.providerName}...`, timestamp: now });
+      setWizardIsLoadingModels(true);
+      try {
+        const { generateText } = await import("ai");
+        const { createOpenAI } = await import("@ai-sdk/openai");
+        const { createAnthropic } = await import("@ai-sdk/anthropic");
+        const providerType = data.providerType || "";
+        const apiKey = data.providerApiKey || "";
+        const baseUrl = data.providerBaseUrl || "";
+        let testModel: any;
+        let testModelName = "";
+        if (providerType === "anthropic") {
+          const anthropic = createAnthropic({ apiKey });
+          testModelName = "claude-3-haiku-20240307";
+          testModel = anthropic(testModelName);
+        } else {
+          const openaiOpts: any = { apiKey };
+          if (baseUrl) openaiOpts.baseURL = baseUrl;
+          openaiOpts.headers = {
+            "HTTP-Referer": "https://github.com/RudyCity/superagent",
+            "X-Title": "SuperAgent CLI",
+          };
+          const openai = createOpenAI(openaiOpts);
+          if (providerType === "openrouter" || (baseUrl && baseUrl.includes("openrouter.ai"))) {
+            testModelName = "openai/gpt-4o-mini";
+          } else {
+            testModelName = "gpt-4o-mini";
+          }
+          testModel = openai(testModelName);
+        }
+        const result = await generateText({
+          model: testModel,
+          prompt: 'Reply with exactly one word: "OK"',
+          maxTokens: 10,
+        });
+        addLine({
+          type: "system",
+          content: `✅ Koneksi berhasil! Response: "${result.text.trim()}"`,
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        addLine({
+          type: "error",
+          content: `❌ Koneksi gagal: ${err.message || String(err)}`,
+          timestamp: Date.now(),
+        });
+      } finally {
+        setWizardIsLoadingModels(false);
+      }
+      // Fetch model list dan lanjut ke step 102
+      try {
+        await fetchAndCacheModels();
+      } catch {}
+      const cachedModels = getCachedModelIds();
+      const pType = data.providerType || "";
+      let models = cachedModels.length > 0 ? cachedModels : ["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022"];
+      if (pType === "anthropic") {
+        const filtered = models.filter(m => m.includes("claude"));
+        if (filtered.length > 0) models = filtered;
+        else models = ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"];
+      } else if (pType === "openai") {
+        const filtered = models.filter(m => m.startsWith("gpt-") || m.startsWith("o1") || m.startsWith("o3"));
+        if (filtered.length > 0) models = filtered;
+        else models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
+      }
+      setActiveWizard({ type: "login", step: 102, data });
+      setWizardOptions(models.slice(0, 50));
+      setWizardSelectedIndex(0);
+    } else if (step === 102) {
+      // Step 102: User pilih model
+      const selectedModel = value;
+      addLine({
+        type: "system",
+        content: `Model dipilih: ${selectedModel}`,
+        timestamp: now,
+      });
+      setActiveWizard({
+        type: "login",
+        step: 103,
+        data: { ...data, selectedModel },
+      });
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
+      setInput("");
+    } else if (step === 103) {
+      // Step 103: Kirim pesan test ke model yang dipilih
+      const message = value.trim();
+      if (!message) {
+        addLine({ type: "error", content: "Pesan tidak boleh kosong.", timestamp: now });
+        return;
+      }
+      const selectedModel = data.selectedModel || "";
+      const providerType = data.providerType || "";
+      const apiKey = data.providerApiKey || "";
+      const baseUrl = data.providerBaseUrl || "";
+      addLine({
+        type: "user",
+        content: `❯ [Test ke ${selectedModel}]: ${message}`,
+        timestamp: now,
+      });
+      setIsProcessing(true);
+      try {
+        const { generateText } = await import("ai");
+        const { createOpenAI } = await import("@ai-sdk/openai");
+        const { createAnthropic } = await import("@ai-sdk/anthropic");
+        let testModel: any;
+        if (providerType === "anthropic") {
+          const anthropic = createAnthropic({ apiKey });
+          testModel = anthropic(selectedModel);
+        } else {
+          const openaiOpts: any = { apiKey };
+          if (baseUrl) openaiOpts.baseURL = baseUrl;
+          openaiOpts.headers = {
+            "HTTP-Referer": "https://github.com/RudyCity/superagent",
+            "X-Title": "SuperAgent CLI",
+          };
+          const openai = createOpenAI(openaiOpts);
+          testModel = openai(selectedModel);
+        }
+        const result = await generateText({
+          model: testModel,
+          prompt: message,
+          maxTokens: 512,
+        });
+        addLine({
+          type: "assistant",
+          content: result.text,
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        addLine({
+          type: "error",
+          content: `❌ Gagal mengirim pesan: ${err.message || String(err)}`,
+          timestamp: Date.now(),
+        });
+      } finally {
+        setIsProcessing(false);
+      }
+      setActiveWizard(null);
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
     }
   }, [
     setActiveWizard,
@@ -468,7 +670,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     setIsProcessing,
     setContextLimit,
     setActiveModel,
-    agentRef
+    agentRef,
+    setWizardIsLoadingModels,
   ]);
 
   return handleLoginWizard;

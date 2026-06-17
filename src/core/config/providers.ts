@@ -1,4 +1,4 @@
-import { getProviders } from "./jsonConfig.js";
+import { getProviders, loadModelConfig, getActivePreset, savePreset } from "./jsonConfig.js";
 
 export interface ConfiguredProvider {
   name: string;
@@ -9,75 +9,55 @@ export interface ConfiguredProvider {
 
 export function getConfiguredProviders(): ConfiguredProvider[] {
   const providers = getProviders();
+  const config = loadModelConfig();
+
+  // Determine active provider profile ID from current preset
+  const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+  const mode = isMulti ? "multi" : "single";
+  const activePreset = getActivePreset<any>(mode);
+  const tierConfig = mode === "multi" ? activePreset.models.master : activePreset.models.superagent;
+  const activeProfileId = tierConfig?.providerProfileId || "";
+
   const list = providers
-    .filter((p) => {
-      if (p.apiKey && p.apiKey.trim() !== "") return true;
-      const prefix = `PROVIDER_${p.name.toUpperCase()}`;
-      if (process.env[`${prefix}_API_KEY`]) return true;
-      if (p.name.toLowerCase() === "openai" && process.env.OPENAI_API_KEY) return true;
-      if (p.name.toLowerCase() === "anthropic" && process.env.ANTHROPIC_API_KEY) return true;
-      if (p.name.toLowerCase() === "custom" && process.env.CUSTOM_API_KEY) return true;
-      return false;
-    })
+    .filter((p) => p.apiKey && p.apiKey.trim() !== "")
     .map((p) => ({
       name: p.name,
       type: p.provider,
       baseUrl: p.baseUrl,
-      isActive: false,
+      isActive: p.id === activeProfileId,
     }));
-
-  const activeProv = process.env.ACTIVE_PROVIDER;
-  if (activeProv && !list.some((p) => p.name.toLowerCase() === activeProv.toLowerCase())) {
-    const hasKey =
-      process.env[`PROVIDER_${activeProv.toUpperCase()}_API_KEY`] ||
-      (activeProv.toLowerCase() === "openai" && process.env.OPENAI_API_KEY) ||
-      (activeProv.toLowerCase() === "anthropic" && process.env.ANTHROPIC_API_KEY) ||
-      (activeProv.toLowerCase() === "custom" && process.env.CUSTOM_API_KEY);
-    if (hasKey) {
-      list.push({
-        name: activeProv,
-        type: activeProv,
-        baseUrl:
-          process.env[`PROVIDER_${activeProv.toUpperCase()}_BASE_URL`] ||
-          (activeProv.toLowerCase() === "custom" ? process.env.CUSTOM_BASE_URL : undefined),
-        isActive: true,
-      });
-    }
-  }
 
   return list;
 }
 
-export function switchActiveProvider(name: string): Record<string, string> {
-  const updates: Record<string, string> = {};
+export function switchActiveProvider(name: string): void {
+  const config = loadModelConfig();
+  const provider = config.providers.find(
+    (p) => p.id === name || p.name.toLowerCase() === name.toLowerCase()
+  );
+  if (!provider) return;
 
-  // Clear all model tier overrides to ensure clean state
-  for (const key of Object.keys(process.env)) {
-    if (key.startsWith("MODEL_") && key !== "MODEL" && key !== "MODEL_LIMITS") {
-      delete process.env[key];
-    }
+  // Determine default model based on provider type
+  let defaultModel = "gpt-4o";
+  const type = provider.provider.toLowerCase();
+  if (type === "openrouter") {
+    defaultModel = "google/gemini-2.5-flash";
+  } else if (type === "anthropic") {
+    defaultModel = "claude-3-5-sonnet-20241022";
   }
 
-  // Set default model based on provider type
-  const prefix = `PROVIDER_${name.toUpperCase()}`;
-  const type = process.env[`${prefix}_TYPE`] || "";
-  const savedModel = process.env[`${prefix}_MODEL`];
-  if (savedModel) {
-    process.env.MODEL = savedModel;
-  } else {
-    const nameLower = name.toLowerCase();
-    if (type === "openrouter" || nameLower === "openrouter") {
-      process.env.MODEL = "google/gemini-2.5-flash";
-    } else if (type === "anthropic" || nameLower === "anthropic") {
-      process.env.MODEL = "claude-3-5-sonnet-20241022";
-    } else {
-      process.env.MODEL = "gpt-4o";
-    }
-  }
+  // Update active preset tiers to use this provider
+  const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+  const mode = isMulti ? "multi" : "single";
+  const activePreset = getActivePreset<any>(mode);
 
-  process.env.ACTIVE_PROVIDER = name.toLowerCase();
-  updates.ACTIVE_PROVIDER = name.toLowerCase();
-  return updates;
+  const tierUpdate = { providerProfileId: provider.id, model: defaultModel };
+  if (mode === "multi") {
+    activePreset.models.master = { ...activePreset.models.master, ...tierUpdate };
+  }
+  activePreset.models.superagent = { ...activePreset.models.superagent, ...tierUpdate };
+
+  savePreset(mode, activePreset);
 }
 
 export function getProviderOptionsList(list: ConfiguredProvider[]): string[] {

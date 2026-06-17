@@ -789,7 +789,7 @@ export const managePlanTool: Tool = {
     const tier = currentAgent ? currentAgent.tier : "superagent";
 
     // Validation function
-    const validatePlan = (content: string): string[] => {
+    const validatePlan = (content: string): { missing: string[]; content: string } => {
       const hasTitle = /^#\s+.+/m.test(content);
       const hasProposedChanges = /##\s+(proposed\s+changes|rencana\s+perubahan)/i.test(content);
       const hasVerificationPlan = /##\s+(verification\s+plan|rencana\s+verifikasi)/i.test(content);
@@ -806,10 +806,13 @@ export const managePlanTool: Tool = {
       if (tier === "master") {
         const hasSuperagentOrDelegate = /superagent|spawning|delegate|worktree/i.test(content);
         if (!hasSuperagentOrDelegate) {
-          missing.push("References to Superagent spawning or task delegation (the Master Agent cannot edit codebase files directly, so the 'Proposed Changes' section MUST detail the Superagents to be spawned, their roles, and branch names)");
+          // Auto-inject delegation context instead of rejecting
+          const delegationNote = "\n\n> **Note**: This plan will be executed by spawning Superagents in isolated git worktrees for parallel feature development.";
+          content = content + delegationNote;
+          console.log("[INFO] Auto-injected delegation context into implementation plan");
         }
       }
-      return missing;
+      return { missing, content };
     };
 
     // Task parsing function
@@ -825,19 +828,43 @@ export const managePlanTool: Tool = {
       return tasks;
     };
 
+    // Auto-inject missing Master Agent tasks
+    const injectMasterAgentTasks = (tasks: string[]): string[] => {
+      const combinedText = tasks.join("\n").toLowerCase();
+      const hasSpawn = /spawn|invoke|create.*superagent|start.*superagent/i.test(combinedText);
+      const hasMonitor = /monitor|await|wait|track|check.*status/i.test(combinedText);
+      const hasMerge = /merge|combine|integrate.*superagent/i.test(combinedText);
+
+      const injected: string[] = [...tasks];
+
+      if (!hasSpawn) {
+        injected.unshift("Spawn Superagents for parallel task execution");
+      }
+      if (!hasMonitor) {
+        injected.push("Monitor Superagent progress and await completion");
+      }
+      if (!hasMerge) {
+        injected.push("Merge Superagent branches into main codebase");
+      }
+
+      return injected;
+    };
+
     // Task merging and writing function
     const syncTasks = async (planText: string): Promise<string> => {
-      const newTasks = parseTasksFromContent(planText);
+      let newTasks = parseTasksFromContent(planText);
       if (newTasks.length === 0) {
         return "No checklist tasks found in the implementation plan. Tasks should be formatted as '- [ ] task description'.";
       }
 
-      // If Master Agent, validate tasks
+      // If Master Agent, auto-inject missing orchestration tasks
+      let injectedCount = 0;
       if (tier === "master") {
-        const combinedTasksText = newTasks.join("\n");
-        const hasSuperagentOrSpawnOrMerge = /superagent|spawn|merge|worktree/i.test(combinedTasksText);
-        if (!hasSuperagentOrSpawnOrMerge) {
-          throw new Error("The Task Tracking File is invalid or lacks multi-agent context. As the Master Agent, your task list MUST include items for spawning, monitoring, and merging Superagents (e.g., 'spawning superagent', 'merge superagents') instead of listing direct file modifications.");
+        const originalCount = newTasks.length;
+        newTasks = injectMasterAgentTasks(newTasks);
+        injectedCount = newTasks.length - originalCount;
+        if (injectedCount > 0) {
+          console.log(`[INFO] Auto-injected ${injectedCount} missing Master Agent task(s): spawn, monitor, merge`);
         }
       }
 
@@ -875,6 +902,9 @@ export const managePlanTool: Tool = {
       await fs.mkdir(path.dirname(taskPath), { recursive: true });
       await fs.writeFile(taskPath, taskLines, "utf-8");
 
+      if (injectedCount > 0) {
+        return `Successfully synchronized ${mergedTasks.length} tasks to ${taskPath}. Auto-injected ${injectedCount} missing Master Agent task(s).`;
+      }
       return `Successfully synchronized ${mergedTasks.length} tasks to ${taskPath}.`;
     };
 
@@ -884,19 +914,19 @@ export const managePlanTool: Tool = {
           return "Error: The 'planContent' parameter is required for the 'create' action.";
         }
 
-        const missingHeaders = validatePlan(planContentInput);
+        const { missing: missingHeaders, content: enhancedPlanContent } = validatePlan(planContentInput);
         if (missingHeaders.length > 0) {
           return `Error: The implementation plan is invalid or lacks deep structure. A valid global plan must include:\n${missingHeaders.map(m => `- ${m}`).join("\n")}\n\nPlease rewrite the plan with all required sections and headers included.`;
         }
 
-        // Write implementation plan
+        // Write implementation plan (may have been enhanced with delegation note)
         await fs.mkdir(path.dirname(planPath), { recursive: true });
-        await fs.writeFile(planPath, planContentInput, "utf-8");
+        await fs.writeFile(planPath, enhancedPlanContent, "utf-8");
 
         // Sync tasks
         let syncStatus = "";
         try {
-          syncStatus = await syncTasks(planContentInput);
+          syncStatus = await syncTasks(enhancedPlanContent);
         } catch (syncErr: any) {
           return `Error: Plan was written to ${planPath}, but task synchronization failed: ${syncErr.message}`;
         }
@@ -905,7 +935,7 @@ export const managePlanTool: Tool = {
         if (currentAgent) {
           if (currentAgent.goalMode) {
             currentAgent.planState = "APPROVED";
-          } else {
+          } else if (currentAgent.planState !== "APPROVED") {
             currentAgent.planState = "PLANNING_PENDING";
           }
         }

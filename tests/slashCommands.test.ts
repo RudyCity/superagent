@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import fs from "fs";
+import path from "path";
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { Agent } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
+import { getModelConfigPath } from "../src/core/config/paths.js";
+import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 import { execa } from "execa";
+
+const configPath = getModelConfigPath();
 
 vi.mock("execa", () => ({
   execa: vi.fn().mockResolvedValue({ stdout: "" }),
@@ -66,11 +72,35 @@ describe("Slash Command: /model", () => {
 
   it("should show current configurations when run without arguments", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
-    process.env.MODEL = "openai:gpt-4o";
-    process.env.MODEL_MULTI_MASTER = "openai:gpt-4o-mini";
-    process.env.MODEL_MULTI_SUPERAGENT = "anthropic:claude-3-5-sonnet";
-    process.env.MODEL_MULTI_SUBAGENT = "custom:local-llama";
-    process.env.MODEL_MULTI_SUBAGENT_RESEARCHER = "openai:gpt-researcher";
+
+    // Write test config with models
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" },
+        { id: "anthropic", name: "Anthropic", provider: "anthropic", apiKey: "sk-ant-test", baseUrl: "" },
+        { id: "custom", name: "Custom", provider: "custom", apiKey: "custom-key", baseUrl: "http://localhost:8080/v1" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "openai", model: "gpt-4o-mini" },
+            superagent: { providerProfileId: "anthropic", model: "claude-3-5-sonnet" },
+            subagentDefault: { providerProfileId: "custom", model: "local-llama" },
+            subagentDetails: {
+              researcher: { providerProfileId: "openai", model: "gpt-researcher" }
+            }
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
 
     handleSlashCommand("/model", mockCtx);
 
@@ -94,62 +124,270 @@ describe("Slash Command: /model", () => {
     expect(wizardOptions).toContain("< Back");
   });
 
-  it("should update standard MODEL when no tier prefix is supplied in multi-agent mode", () => {
+  it("should update model config when no tier prefix is supplied in multi-agent mode", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
+
+    // Write test config
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "anthropic", name: "Anthropic", provider: "anthropic", apiKey: "sk-ant-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "anthropic", model: "claude-3-5-sonnet" },
+            superagent: { providerProfileId: "anthropic", model: "claude-3-5-sonnet" },
+            subagentDefault: { providerProfileId: "anthropic", model: "claude-3-5-sonnet" },
+            subagentDetails: {}
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
     handleSlashCommand("/model anthropic:claude-3-5-haiku", mockCtx);
 
-    expect(process.env.MODEL).toBe("anthropic:claude-3-5-haiku");
     expect(addedLines.length).toBe(1);
     expect(addedLines[0].content).toContain("All Tiers (Overwrite All) changed to: anthropic:claude-3-5-haiku");
   });
 
-  it("should update standard MODEL and MODEL_SINGLE when no tier prefix is supplied in single-agent mode", () => {
+  it("should update model config when no tier prefix is supplied in single-agent mode", () => {
     mockCtx.agent = { isMultiAgent: false } as any;
+
+    // Write test config
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "anthropic", name: "Anthropic", provider: "anthropic", apiKey: "sk-ant-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [],
+        single: [{
+          id: "test-single",
+          name: "Test Single",
+          description: "Test",
+          models: {
+            superagent: { providerProfileId: "anthropic", model: "claude-3-5-sonnet" },
+            subagentDefault: { providerProfileId: "anthropic", model: "claude-3-5-sonnet" },
+            subagentDetails: {}
+          }
+        }]
+      },
+      activePresetId: { multi: "", single: "test-single" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
     handleSlashCommand("/model anthropic:claude-3-5-haiku", mockCtx);
 
-    expect(process.env.MODEL_SINGLE).toBe("anthropic:claude-3-5-haiku");
-    expect(process.env.MODEL).toBe("anthropic:claude-3-5-haiku");
     expect(addedLines.length).toBe(1);
     expect(addedLines[0].content).toContain("Single Agent Model changed to: anthropic:claude-3-5-haiku");
   });
 
-  it("should update MODEL_MULTI_MASTER when master/depth0/dept0 prefix is supplied", () => {
+  it("should update master model when master/depth0/dept0 prefix is supplied", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
+
+    // Write test config
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" },
+        { id: "anthropic", name: "Anthropic", provider: "anthropic", apiKey: "sk-ant-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "openai", model: "gpt-4o" },
+            superagent: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
     handleSlashCommand("/model master openai:gpt-4", mockCtx);
-    expect(process.env.MODEL_MULTI_MASTER).toBe("openai:gpt-4");
+    expect(addedLines[0].content).toContain("Master Agent (depth 0) Model changed to: openai:gpt-4");
+
+    // Reset for next command
+    addedLines = [];
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
 
     handleSlashCommand("/model dept0 anthropic:claude-3", mockCtx);
-    expect(process.env.MODEL_MULTI_MASTER).toBe("anthropic:claude-3");
+    expect(addedLines[0].content).toContain("Master Agent (depth 0) Model changed to: anthropic:claude-3");
   });
 
-  it("should update MODEL_MULTI_SUPERAGENT when superagent prefix is supplied", () => {
+  it("should update superagent model when superagent prefix is supplied", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
+
+    // Write test config
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "openai", model: "gpt-4o" },
+            superagent: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
     handleSlashCommand("/model superagent openai:gpt-4", mockCtx);
-    expect(process.env.MODEL_MULTI_SUPERAGENT).toBe("openai:gpt-4");
+    expect(addedLines[0].content).toContain("Superagent (depth 1) Model changed to: openai:gpt-4");
   });
 
-  it("should update MODEL_MULTI_SUBAGENT when subagent prefix is supplied in multi-agent mode", () => {
+  it("should update subagent model when subagent prefix is supplied in multi-agent mode", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
+
+    // Write test config
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "openai", model: "gpt-4o" },
+            superagent: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
     handleSlashCommand("/model subagent openai:gpt-4", mockCtx);
-    expect(process.env.MODEL_MULTI_SUBAGENT).toBe("openai:gpt-4");
+    expect(addedLines[0].content).toContain("Subagent (depth 2) Model changed to: openai:gpt-4");
   });
 
-  it("should update MODEL_SINGLE_SUBAGENT when subagent prefix is supplied in single-agent mode", () => {
+  it("should update subagent model when subagent prefix is supplied in single-agent mode", () => {
     mockCtx.agent = { isMultiAgent: false } as any;
+
+    // Write test config
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [],
+        single: [{
+          id: "test-single",
+          name: "Test Single",
+          description: "Test",
+          models: {
+            superagent: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }]
+      },
+      activePresetId: { multi: "", single: "test-single" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
     handleSlashCommand("/model subagent openai:gpt-4", mockCtx);
-    expect(process.env.MODEL_SINGLE_SUBAGENT).toBe("openai:gpt-4");
+    expect(addedLines[0].content).toContain("Subagent (depth 2) Model changed to: openai:gpt-4");
   });
 
   it("should update specific subagent model when subagent type is supplied in multi-agent mode", () => {
     mockCtx.agent = { isMultiAgent: true } as any;
+
+    // Write test config
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "openai", model: "gpt-4o" },
+            superagent: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
     handleSlashCommand("/model researcher openai:gpt-researcher", mockCtx);
-    expect(process.env.MODEL_MULTI_SUBAGENT_RESEARCHER).toBe("openai:gpt-researcher");
+    expect(addedLines[0].content).toContain('Subagent "researcher" Model changed to: openai:gpt-researcher');
   });
 
   it("should update specific single subagent model when subagent type is supplied in single-agent mode", () => {
     mockCtx.agent = { isMultiAgent: false } as any;
+
+    // Write test config
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [],
+        single: [{
+          id: "test-single",
+          name: "Test Single",
+          description: "Test",
+          models: {
+            superagent: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }]
+      },
+      activePresetId: { multi: "", single: "test-single" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
     handleSlashCommand("/model researcher openai:gpt-researcher", mockCtx);
-    expect(process.env.MODEL_SINGLE_SUBAGENT_RESEARCHER).toBe("openai:gpt-researcher");
+    expect(addedLines[0].content).toContain('Subagent "researcher" Model changed to: openai:gpt-researcher');
   });
 });
 
@@ -466,7 +704,7 @@ describe("Slash Command: /login", () => {
     expect(addedLines[0].content).toContain("No providers configured yet.");
   });
 
-  it("should remove provider and clear env on /login remove <id>", async () => {
+  it("should remove provider on /login remove <id>", async () => {
     vi.spyOn(configModule, "getProviders").mockReturnValue([
       {
         id: "openrouter",
@@ -476,16 +714,10 @@ describe("Slash Command: /login", () => {
       }
     ]);
     const removeProviderSpy = vi.spyOn(configModule, "removeProvider").mockImplementation(() => {});
-    const updateEnvFileSpy = vi.spyOn(configModule, "updateEnvFile").mockImplementation(() => "");
 
     await handleSlashCommand("/login remove openrouter", mockCtx as any);
 
     expect(removeProviderSpy).toHaveBeenCalledWith("openrouter");
-    expect(updateEnvFileSpy).toHaveBeenCalledWith({
-      PROVIDER_OPENROUTER_TYPE: "",
-      PROVIDER_OPENROUTER_API_KEY: "",
-      PROVIDER_OPENROUTER_BASE_URL: "",
-    });
     expect(addedLines[0].content).toContain("Successfully removed provider: openrouter");
   });
 
@@ -499,7 +731,7 @@ describe("Slash Command: /login", () => {
 
   it("should add provider on /login add <provider> <api_key>", async () => {
     const addProviderSpy = vi.spyOn(configModule, "addProvider").mockImplementation(() => {});
-    const updateEnvFileSpy = vi.spyOn(configModule, "updateEnvFile").mockImplementation(() => "");
+    const switchActiveProviderSpy = vi.spyOn(configModule, "switchActiveProvider").mockImplementation(() => {});
     vi.spyOn(configModule, "fetchAndCacheModels").mockResolvedValue(undefined as any);
 
     await handleSlashCommand("/login add openrouter sk-or-test-key-5678", mockCtx as any);
@@ -511,18 +743,13 @@ describe("Slash Command: /login", () => {
       apiKey: "sk-or-test-key-5678",
       baseUrl: "https://openrouter.ai/api/v1",
     });
-    expect(updateEnvFileSpy).toHaveBeenCalledWith({
-      ACTIVE_PROVIDER: "",
-      PROVIDER_OPENROUTER_TYPE: "openrouter",
-      PROVIDER_OPENROUTER_API_KEY: "sk-or-test-key-5678",
-      PROVIDER_OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
-    });
-    expect(addedLines[0].content).toContain("Successfully logged in. Configured provider: openrouter (openrouter)");
+    expect(switchActiveProviderSpy).toHaveBeenCalledWith("openrouter");
+    expect(addedLines[0].content).toContain("Successfully logged in. Configured provider: openrouter");
   });
 
   it("should add custom provider on /login add custom <base_url> <api_key>", async () => {
     const addProviderSpy = vi.spyOn(configModule, "addProvider").mockImplementation(() => {});
-    const updateEnvFileSpy = vi.spyOn(configModule, "updateEnvFile").mockImplementation(() => "");
+    const switchActiveProviderSpy = vi.spyOn(configModule, "switchActiveProvider").mockImplementation(() => {});
     vi.spyOn(configModule, "fetchAndCacheModels").mockResolvedValue(undefined as any);
 
     await handleSlashCommand("/login add custom https://custom.api/v1 custom-key-123", mockCtx as any);
@@ -534,18 +761,13 @@ describe("Slash Command: /login", () => {
       apiKey: "custom-key-123",
       baseUrl: "https://custom.api/v1",
     });
-    expect(updateEnvFileSpy).toHaveBeenCalledWith({
-      ACTIVE_PROVIDER: "",
-      PROVIDER_CUSTOM_TYPE: "custom",
-      PROVIDER_CUSTOM_API_KEY: "custom-key-123",
-      PROVIDER_CUSTOM_BASE_URL: "https://custom.api/v1",
-    });
-    expect(addedLines[0].content).toContain("Successfully logged in. Configured provider: custom (custom)");
+    expect(switchActiveProviderSpy).toHaveBeenCalledWith("custom");
+    expect(addedLines[0].content).toContain("Successfully logged in. Configured provider: custom");
   });
 
   it("should support auto-detection on /login add <api_key>", async () => {
     const addProviderSpy = vi.spyOn(configModule, "addProvider").mockImplementation(() => {});
-    const updateEnvFileSpy = vi.spyOn(configModule, "updateEnvFile").mockImplementation(() => "");
+    const switchActiveProviderSpy = vi.spyOn(configModule, "switchActiveProvider").mockImplementation(() => {});
     vi.spyOn(configModule, "fetchAndCacheModels").mockResolvedValue(undefined as any);
 
     await handleSlashCommand("/login add sk-ant-test-key-777", mockCtx as any);
@@ -557,16 +779,12 @@ describe("Slash Command: /login", () => {
       apiKey: "sk-ant-test-key-777",
       baseUrl: undefined,
     });
-    expect(updateEnvFileSpy).toHaveBeenCalledWith({
-      ACTIVE_PROVIDER: "",
-      PROVIDER_ANTHROPIC_TYPE: "anthropic",
-      PROVIDER_ANTHROPIC_API_KEY: "sk-ant-test-key-777",
-    });
+    expect(switchActiveProviderSpy).toHaveBeenCalledWith("anthropic");
   });
 
   it("should fallback to legacy usage with warning", async () => {
     const addProviderSpy = vi.spyOn(configModule, "addProvider").mockImplementation(() => {});
-    const updateEnvFileSpy = vi.spyOn(configModule, "updateEnvFile").mockImplementation(() => "");
+    const switchActiveProviderSpy = vi.spyOn(configModule, "switchActiveProvider").mockImplementation(() => {});
     vi.spyOn(configModule, "fetchAndCacheModels").mockResolvedValue(undefined as any);
 
     await handleSlashCommand("/login openrouter sk-or-legacy", mockCtx as any);

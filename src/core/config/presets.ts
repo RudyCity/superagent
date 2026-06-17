@@ -1,9 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
-import { updateEnvFile } from "./env.js";
 import { switchActiveProvider } from "./providers.js";
-import { loadModelConfig } from "./jsonConfig.js";
+import { loadModelConfig, getActivePreset, savePreset } from "./jsonConfig.js";
 
 export type PresetMode = "multi" | "single";
 
@@ -195,12 +194,36 @@ export function saveModelPreset(name: string, description: string, models?: Reco
 
   const targetMode: PresetMode = mode || "multi";
 
-  const modelsToSave: Record<string, string> = models || {};
+  let modelsToSave: Record<string, string> = models || {};
 
   if (!models) {
-    for (const [k, v] of Object.entries(process.env)) {
-      if (v && (k.startsWith("MODEL_MULTI_") || k.startsWith("MODEL_SINGLE_"))) {
-        modelsToSave[k] = v;
+    // Read from active preset in JSON config instead of env vars
+    const activePreset = getActivePreset<any>(targetMode);
+    if (activePreset?.models) {
+      const m = activePreset.models;
+      if (targetMode === "multi") {
+        if (m.master?.model) modelsToSave.MODEL_MULTI_MASTER = `${m.master.providerProfileId}:${m.master.model}`;
+        if (m.superagent?.model) modelsToSave.MODEL_MULTI_SUPERAGENT = `${m.superagent.providerProfileId}:${m.superagent.model}`;
+        if (m.subagentDefault?.model) modelsToSave.MODEL_MULTI_SUBAGENT = `${m.subagentDefault.providerProfileId}:${m.subagentDefault.model}`;
+        if (m.subagentDetails) {
+          for (const [type, cfg] of Object.entries(m.subagentDetails)) {
+            if (cfg && typeof cfg === "object" && "model" in cfg) {
+              const c = cfg as any;
+              modelsToSave[`MODEL_MULTI_SUBAGENT_${type.toUpperCase()}`] = `${c.providerProfileId}:${c.model}`;
+            }
+          }
+        }
+      } else {
+        if (m.superagent?.model) modelsToSave.MODEL_SINGLE_SUPERAGENT = `${m.superagent.providerProfileId}:${m.superagent.model}`;
+        if (m.subagentDefault?.model) modelsToSave.MODEL_SINGLE_SUBAGENT = `${m.subagentDefault.providerProfileId}:${m.subagentDefault.model}`;
+        if (m.subagentDetails) {
+          for (const [type, cfg] of Object.entries(m.subagentDetails)) {
+            if (cfg && typeof cfg === "object" && "model" in cfg) {
+              const c = cfg as any;
+              modelsToSave[`MODEL_SINGLE_SUBAGENT_${type.toUpperCase()}`] = `${c.providerProfileId}:${c.model}`;
+            }
+          }
+        }
       }
     }
   }
@@ -234,7 +257,7 @@ export function saveModelPreset(name: string, description: string, models?: Reco
  * - mode is REQUIRED to know which section to search.
  *   Defaults to "multi" if not provided.
  */
-export function applyModelPreset(name: string, mode?: PresetMode): string {
+export function applyModelPreset(name: string, mode?: PresetMode): void {
   const targetMode: PresetMode = mode || "multi";
   const fileData = readPresetsFile();
   const targetName = name.toLowerCase().trim();
@@ -244,54 +267,44 @@ export function applyModelPreset(name: string, mode?: PresetMode): string {
     throw new Error(`Model preset "${name}" not found in ${targetMode}-agent presets.`);
   }
 
-  const presetModel = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "";
-  let activeProvider = "";
-  if (presetModel && presetModel.includes(":")) {
-    activeProvider = presetModel.split(":")[0].toLowerCase();
-  }
-
-  const updates: Record<string, string> = {};
-
-  for (const key of Object.keys(process.env)) {
-    if (key.startsWith("MODEL_") && key !== "MODEL" && key !== "MODEL_LIMITS") {
-      updates[key] = "";
-      delete process.env[key];
+  // Parse preset models into tier config format
+  const parseModel = (val: string) => {
+    if (!val) return undefined;
+    const colonIndex = val.indexOf(":");
+    if (colonIndex > 0) {
+      return { providerProfileId: val.substring(0, colonIndex), model: val.substring(colonIndex + 1) };
     }
+    return { providerProfileId: "", model: val };
+  };
+
+  // Build new preset models from the legacy MODEL_* format
+  const newPreset: any = {
+    superagent: parseModel(preset.models.MODEL_SINGLE_SUPERAGENT || preset.models.MODEL_MULTI_SUPERAGENT || ""),
+    subagentDefault: parseModel(preset.models.MODEL_SINGLE_SUBAGENT || preset.models.MODEL_MULTI_SUBAGENT || ""),
+    subagentDetails: {},
+  };
+
+  if (targetMode === "multi") {
+    newPreset.master = parseModel(preset.models.MODEL_MULTI_MASTER || "");
   }
 
+  // Parse subagent-specific overrides
   for (const [key, val] of Object.entries(preset.models)) {
-    updates[key] = val;
-  }
-
-  if (!preset.models.MODEL) {
-    updates.MODEL = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "gpt-4o";
-  }
-
-  if (activeProvider) {
-    switchActiveProvider(activeProvider);
-    updates.ACTIVE_PROVIDER = activeProvider;
-
-    const config = loadModelConfig();
-    const providers = config.providers || [];
-    const matchedProfile = providers.find(
-      (p) => p.id?.toLowerCase() === activeProvider || p.name?.toLowerCase() === activeProvider
-    );
-    const fallbackProfile = matchedProfile && matchedProfile.apiKey
-      ? matchedProfile
-      : providers.find(
-          (p) => (p.provider || "").toLowerCase() === activeProvider && p.apiKey && p.apiKey.trim() !== ""
-        );
-    if (fallbackProfile && fallbackProfile.apiKey && fallbackProfile.apiKey.trim() !== "") {
-      const prefix = `PROVIDER_${activeProvider.toUpperCase()}`;
-      updates[`${prefix}_API_KEY`] = fallbackProfile.apiKey;
-      if (fallbackProfile.baseUrl && fallbackProfile.baseUrl.trim() !== "") {
-        updates[`${prefix}_BASE_URL`] = fallbackProfile.baseUrl;
-      }
-      updates[`${prefix}_TYPE`] = fallbackProfile.provider || activeProvider;
+    if (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
+      const type = key.replace(/^MODEL_(MULTI|SINGLE)_SUBAGENT_/, "").toLowerCase();
+      newPreset.subagentDetails[type] = parseModel(val);
     }
   }
 
-  return updateEnvFile(updates);
+  // Apply to active preset in JSON config
+  savePreset(targetMode, newPreset);
+
+  // Switch active provider if model has a provider prefix
+  const mainModel = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "";
+  if (mainModel && mainModel.includes(":")) {
+    const providerId = mainModel.split(":")[0].toLowerCase();
+    switchActiveProvider(providerId);
+  }
 }
 
 /**

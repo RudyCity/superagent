@@ -110,8 +110,27 @@ export class MasterAgent {
     this.model = model;
   }
 
-  public async mergeBranch(branchName: string, targetFiles: string[]): Promise<boolean> {
+  /**
+   * Merges a feature branch into the current branch.
+   * Returns:
+   *   - "merged"           if the branch was successfully merged
+   *   - "already-merged"   if the branch is already an ancestor of HEAD (nothing to do)
+   *   - false              if the merge failed
+   */
+  public async mergeBranch(branchName: string, targetFiles: string[]): Promise<"merged" | "already-merged" | false> {
     try {
+      // Pre-check: is the branch already an ancestor of HEAD?
+      try {
+        await execa("git", ["merge-base", "--is-ancestor", branchName, "HEAD"], { cwd: process.cwd() });
+        // Exit code 0 → branch is already merged into HEAD
+        return "already-merged";
+      } catch (ancestorErr: any) {
+        // Exit code 1 → branch is NOT an ancestor, proceed with merge
+        if (ancestorErr.exitCode !== 1) {
+          // Some other git error (e.g. branch doesn't exist), let it propagate to merge below
+        }
+      }
+
       // Run git merge without committing
       await execa("git", ["merge", "--no-commit", branchName], { cwd: process.cwd() });
 
@@ -131,7 +150,7 @@ export class MasterAgent {
 
       // If validation passed, commit the merge
       await execa("git", ["commit", "-m", `Merge branch '${branchName}' via Master Agent`], { cwd: process.cwd() });
-      return true;
+      return "merged";
     } catch (err: any) {
       // Check if git is in a merge conflict state
       let isConflict = false;
@@ -188,7 +207,7 @@ export class MasterAgent {
           await execa("git", ["commit", "-m", `Merge branch '${branchName}' and resolved conflicts via Master Agent`], {
             cwd: process.cwd(),
           });
-          return true;
+          return "merged";
         } catch (postConflictErr) {
           try {
             await execa("git", ["merge", "--abort"], { cwd: process.cwd() });

@@ -18,7 +18,7 @@ describe("prompt and command guidance", () => {
     const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
     const combined = `${config}\n${configBase}\n${prompts}`;
 
-    expect(combined).toContain("On Windows, use ';' to separate commands");
+    expect(combined).toContain("PowerShell on Windows");
     expect(combined).toContain("Use \\`run_command\\` for validation commands");
   });
 });

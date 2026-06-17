@@ -262,3 +262,52 @@ export function getActiveConfigAudit(overrideMode?: "multi" | "single"): string 
   return lines.join("\n");
 }
 
+/**
+ * Get model info for display purposes from JSON config.
+ * Returns formatted model strings for each tier.
+ */
+export function getModelInfoForDisplay(isMulti: boolean): {
+  activeProvider: string;
+  master: string;
+  superagent: string;
+  subagentDefault: string;
+  subagentDetails: Record<string, string>;
+} {
+  const mode = isMulti ? "multi" : "single";
+  const preset = getActivePreset<any>(mode);
+  const config = loadModelConfig();
+  const models = preset.models || {};
+
+  // Get active provider from the main tier config
+  const mainTier = isMulti ? models.master : models.superagent;
+  const activeProvider = mainTier?.providerProfileId || "";
+
+  const formatModel = (tier: any): string => {
+    if (!tier?.model) return "(use default)";
+    if (tier.providerProfileId) {
+      const profile = config.providers.find(p => p.id === tier.providerProfileId);
+      if (profile) {
+        return `${profile.provider}:${tier.model}`;
+      }
+    }
+    return tier.model;
+  };
+
+  const subagentDetails: Record<string, string> = {};
+  if (models.subagentDetails) {
+    for (const [type, cfg] of Object.entries(models.subagentDetails)) {
+      if (cfg && typeof cfg === "object" && "model" in cfg) {
+        subagentDetails[type] = formatModel(cfg);
+      }
+    }
+  }
+
+  return {
+    activeProvider,
+    master: formatModel(models.master),
+    superagent: formatModel(models.superagent),
+    subagentDefault: formatModel(models.subagentDefault),
+    subagentDetails,
+  };
+}
+

@@ -330,7 +330,7 @@ describe("Master Agent Workflow & Guardrails", () => {
     expect(toolEndEvent[0].toolResult.result).toContain("Task Tracking File is missing");
   });
 
-  it("should block Master Agent from writing an implementation plan that lacks superagent/spawning references", async () => {
+  it("should auto-inject delegation context when Master Agent writes a plan that lacks superagent/spawning references", async () => {
     const onEvent = vi.fn();
     const onPermission = vi.fn().mockResolvedValue(true);
     const onQuestion = vi.fn();
@@ -397,11 +397,19 @@ describe("Master Agent Workflow & Guardrails", () => {
 
     const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
     expect(toolEndEvent).toBeDefined();
-    expect(toolEndEvent[0].toolResult.isError).toBe(true);
-    expect(toolEndEvent[0].toolResult.result).toContain("References to Superagent spawning or task delegation");
+    // Should NOT be an error - delegation context is auto-injected now
+    expect(toolEndEvent[0].toolResult.isError).not.toBe(true);
+    // Verify the content was enhanced with delegation context
+    expect(fsPromises.writeFile).toHaveBeenCalled();
+    const writeFileCalls = vi.mocked(fsPromises.writeFile).mock.calls;
+    const planFileCall = writeFileCalls.find(call => typeof call[1] === "string" && call[1].includes("# My Plan"));
+    expect(planFileCall).toBeDefined();
+    const writtenContent = planFileCall![1] as string;
+    expect(writtenContent).toContain("Superagents");
+    expect(writtenContent).toContain("worktrees");
   });
 
-  it("should block Master Agent from writing a task list that lacks superagent/spawning/merge references", async () => {
+  it("should auto-inject missing superagent tasks when Master Agent writes a task list without superagent/spawning/merge references", async () => {
     const onEvent = vi.fn();
     const onPermission = vi.fn().mockResolvedValue(true);
     const onQuestion = vi.fn();
@@ -468,8 +476,18 @@ describe("Master Agent Workflow & Guardrails", () => {
 
     const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
     expect(toolEndEvent).toBeDefined();
-    expect(toolEndEvent[0].toolResult.isError).toBe(true);
-    expect(toolEndEvent[0].toolResult.result).toContain("Task Tracking File is invalid or lacks multi-agent context");
+    // Should NOT be an error - tasks are auto-injected now
+    expect(toolEndEvent[0].toolResult.isError).not.toBe(true);
+    // Verify the content was modified with injected tasks (the tool should have succeeded)
+    expect(fsPromises.writeFile).toHaveBeenCalled();
+    // Find the call that writes the task file (contains the checklist items)
+    const writeFileCalls = vi.mocked(fsPromises.writeFile).mock.calls;
+    const taskFileCall = writeFileCalls.find(call => typeof call[1] === "string" && call[1].includes("[ ]"));
+    expect(taskFileCall).toBeDefined();
+    const writtenContent = taskFileCall![1] as string;
+    expect(writtenContent).toContain("Spawn Superagents");
+    expect(writtenContent).toContain("Monitor");
+    expect(writtenContent).toContain("Merge");
   });
 
   it("should allow Master Agent to write a task list with superagent/spawning/merge references", async () => {

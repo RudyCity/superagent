@@ -57,7 +57,7 @@ vi.mock("../src/core/workspaceIsolation.js", () => ({
 vi.mock("../src/core/masterAgent.js", () => {
   return {
     MasterAgent: class MockMasterAgent {
-      mergeBranch = vi.fn().mockResolvedValue(true);
+      mergeBranch = vi.fn().mockResolvedValue("merged");
     }
   };
 });

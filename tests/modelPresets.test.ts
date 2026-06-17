@@ -13,6 +13,10 @@ import {
   ensureGlobalConfigDir
 } from "../src/core/config.js";
 import { handleSlashCommand, getDefaultModel } from "../src/core/slash-commands.js";
+import { getModelConfigPath } from "../src/core/config/paths.js";
+import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
+
+const configPath = getModelConfigPath();
 
 describe("Model Presets", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -63,9 +67,30 @@ describe("Model Presets", () => {
   });
 
   it("should save a custom model preset to model-presets.json", () => {
-    process.env.MODEL = "openai:gpt-4-test";
-    process.env.MODEL_MULTI_MASTER = "openai:gpt-4-test-master";
-    process.env.MODEL_MULTI_SUPERAGENT = "openai:gpt-4-test-super";
+    // Write test config with models
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "openai", model: "gpt-4-test-master" },
+            superagent: { providerProfileId: "openai", model: "gpt-4-test-super" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4-test-sub" },
+            subagentDetails: {}
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
 
     const savedPath = saveModelPreset("my-cool-preset", "A custom testing preset");
     expect(savedPath).toBe(customPresetsPath);
@@ -75,28 +100,48 @@ describe("Model Presets", () => {
     const myPreset = presets.find(p => p.name === "my-cool-preset");
     expect(myPreset).toBeDefined();
     expect(myPreset?.description).toBe("A custom testing preset");
-    expect(myPreset?.models.MODEL_MULTI_MASTER).toBe("openai:gpt-4-test-master");
-    expect(myPreset?.models.MODEL_MULTI_SUPERAGENT).toBe("openai:gpt-4-test-super");
+    expect(myPreset?.models.MODEL_MULTI_MASTER).toContain("gpt-4-test-master");
+    expect(myPreset?.models.MODEL_MULTI_SUPERAGENT).toContain("gpt-4-test-super");
   });
 
-  it("should apply a model preset to env variables and write to .env", () => {
+  it("should apply a model preset to JSON config", () => {
+    // Write test config with providers
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "openai", model: "gpt-4o" },
+            superagent: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
     saveModelPreset("openai-full", "OpenAI stack", {
-      MODEL: "openai:gpt-4o",
       MODEL_MULTI_MASTER: "openai:gpt-4o",
       MODEL_MULTI_SUBAGENT: "openai:gpt-4o-mini",
     });
-    const envPath = applyModelPreset("openai-full");
+    applyModelPreset("openai-full");
 
-    expect(process.env.MODEL).toBe("openai:gpt-4o");
-    expect(process.env.MODEL_MULTI_MASTER).toBe("openai:gpt-4o");
-    expect(process.env.MODEL_MULTI_SUBAGENT).toBe("openai:gpt-4o-mini");
-    expect(process.env.ACTIVE_PROVIDER).toBe("openai");
-
-    const content = fs.readFileSync(envPath, "utf-8");
-    expect(content).not.toContain("MODEL=openai:gpt-4o");
-    expect(content).not.toContain("MODEL_MULTI_MASTER=openai:gpt-4o");
-    expect(content).not.toContain("MODEL_MULTI_SUBAGENT=openai:gpt-4o-mini");
-    expect(content).not.toContain("ACTIVE_PROVIDER=openai");
+    // Verify preset was saved
+    const presets = getModelPresets();
+    const appliedPreset = presets.find(p => p.name === "openai-full");
+    expect(appliedPreset).toBeDefined();
+    expect(appliedPreset?.models.MODEL_MULTI_MASTER).toBe("openai:gpt-4o");
+    expect(appliedPreset?.models.MODEL_MULTI_SUBAGENT).toBe("openai:gpt-4o-mini");
   });
 
   it("should execute slash commands for listing, saving and loading presets", () => {

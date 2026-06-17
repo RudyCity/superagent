@@ -85,7 +85,7 @@ We must spawn a Superagent.
       });
     });
 
-    it("should fail for master agent if plan has no superagent/worktree context", async () => {
+    it("should auto-inject delegation context for master agent if plan has no superagent/worktree context", async () => {
       const mockAgent = {
         tier: "master",
         getPlanFilePath: () => customPlanPath,
@@ -107,11 +107,12 @@ We must spawn a Superagent.
 - Manual verification
 `;
         const result = await managePlanTool.execute({ action: "create", planContent: invalidMasterPlan }, tempDir);
-        expect(result).toContain("References to Superagent spawning or task delegation");
+        // Should succeed and auto-inject delegation context
+        expect(result).toContain("Successfully");
       });
     });
 
-    it("should fail for master agent if task checklist has no superagent context", async () => {
+    it("should auto-inject missing superagent tasks for master agent when task checklist has no superagent context", async () => {
       const mockAgent = {
         tier: "master",
         getPlanFilePath: () => customPlanPath,
@@ -135,7 +136,9 @@ We will delegate features to sub-worktrees.
 - Manual verification
 `;
         const result = await managePlanTool.execute({ action: "create", planContent: planWithDirectTasksOnly }, tempDir);
-        expect(result).toContain("lacks multi-agent context");
+        // Should succeed and auto-inject missing tasks instead of failing
+        expect(result).toContain("Successfully");
+        expect(result).toContain("Auto-injected");
       });
     });
   });
@@ -185,6 +188,25 @@ We will delegate features to sub-worktrees.
           { action: "create", planContent: validSuperagentPlan },
           tempDir
         );
+        expect(mockAgent.planState).toBe("APPROVED");
+      });
+    });
+
+    it("should not reset planState from APPROVED to PLANNING_PENDING", async () => {
+      const mockAgent = {
+        tier: "superagent",
+        getPlanFilePath: () => customPlanPath,
+        getTaskFilePath: () => customTaskPath,
+        planState: "APPROVED",
+      } as any;
+
+      await agentLocalStorage.run(mockAgent, async () => {
+        const result = await managePlanTool.execute(
+          { action: "create", planContent: validSuperagentPlan },
+          tempDir
+        );
+
+        expect(result).toContain("Successfully created implementation plan");
         expect(mockAgent.planState).toBe("APPROVED");
       });
     });

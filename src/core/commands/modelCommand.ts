@@ -4,11 +4,64 @@ import {
   getModelPresets,
   saveModelPreset,
   applyModelPreset,
-  updateEnvFile,
   getContextWindowLimit,
   fetchAndCacheModels,
 } from "../config.js";
 import type { PresetMode } from "../config.js";
+import { loadModelConfig, getActivePreset, savePreset } from "../config/jsonConfig.js";
+
+function formatModelWithProvider(tier: any, config: any): string {
+  if (!tier?.model) return "(use default)";
+  if (tier.providerProfileId) {
+    const profile = config.providers.find((p: any) => p.id === tier.providerProfileId);
+    if (profile) {
+      return `${profile.provider}:${tier.model}`;
+    }
+  }
+  return tier.model;
+}
+
+function getActiveModelInfo(isMulti: boolean) {
+  const mode = isMulti ? "multi" : "single";
+  const preset = getActivePreset<any>(mode);
+  const config = loadModelConfig();
+  const models = preset.models;
+
+  if (isMulti) {
+    return {
+      master: formatModelWithProvider(models.master, config),
+      superagent: formatModelWithProvider(models.superagent, config),
+      subagentDefault: formatModelWithProvider(models.subagentDefault, config),
+      subagentDetails: models.subagentDetails || {},
+    };
+  } else {
+    return {
+      superagent: formatModelWithProvider(models.superagent, config),
+      subagentDefault: formatModelWithProvider(models.subagentDefault, config),
+      subagentDetails: models.subagentDetails || {},
+    };
+  }
+}
+
+function formatModelList(info: ReturnType<typeof getActiveModelInfo>, isMulti: boolean): string {
+  let list = "";
+  if (isMulti) {
+    list += `  Master Agent (depth 0): ${info.master}\n`;
+    list += `  Superagent (depth 1): ${info.superagent}\n`;
+    list += `  Subagent (depth 2): ${info.subagentDefault}`;
+  } else {
+    list += `  Single Agent: ${info.superagent}`;
+    if (info.subagentDefault !== "(use default)") {
+      list += `\n  Subagent (depth 2): ${info.subagentDefault}`;
+    }
+  }
+  for (const [name, cfg] of Object.entries(info.subagentDetails)) {
+    if (cfg && typeof cfg === "object" && "model" in cfg) {
+      list += `\n  Subagent "${name}": ${formatModelWithProvider(cfg, loadModelConfig())}`;
+    }
+  }
+  return list;
+}
 
 export const modelCommand: SlashCommand = {
   name: "model",
@@ -57,81 +110,36 @@ export const modelCommand: SlashCommand = {
             }
             const presetName = parts[2];
             const desc = parts.slice(3).join(" ");
-            const savedPath = saveModelPreset(presetName, desc, undefined, presetMode);
+            saveModelPreset(presetName, desc, undefined, presetMode);
 
             // Auto-apply after save
-            const envPath = applyModelPreset(presetName, presetMode);
-            const isSingle = !isMulti;
-            const nextActiveModel = isSingle
-              ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
-              : (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel());
-            const limit = getContextWindowLimit(nextActiveModel);
+            applyModelPreset(presetName, presetMode);
+            const info = getActiveModelInfo(isMulti);
+            const nextModel = (isMulti ? info.master : info.superagent) || "gpt-4o";
+            const limit = getContextWindowLimit(nextModel);
 
-            if (ctx.setContextLimit) {
-              ctx.setContextLimit(limit);
-            }
-            if (ctx.setActiveModel) {
-              ctx.setActiveModel(nextActiveModel);
-            }
+            if (ctx.setContextLimit) ctx.setContextLimit(limit);
+            if (ctx.setActiveModel) ctx.setActiveModel(nextModel);
 
             ctx.addLine({
               type: "system",
-              content: `Model preset "${presetName}" saved & applied successfully! [${modeLabel}]\nSaved to: ${savedPath}\nApplied to: ${envPath}`,
+              content: `Model preset "${presetName}" saved & applied successfully! [${modeLabel}]\nUpdated Models:\n${formatModelList(info, isMulti)}`,
               timestamp: now,
             });
             return;
           } else {
             const presetName = parts.slice(1).join(" ");
-            const envPath = applyModelPreset(presetName, presetMode);
-            const isSingle = !isMulti;
-            const nextActiveModel = isSingle
-              ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
-              : (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel());
-            const limit = getContextWindowLimit(nextActiveModel);
+            applyModelPreset(presetName, presetMode);
+            const info = getActiveModelInfo(isMulti);
+            const nextModel = (isMulti ? info.master : info.superagent) || "gpt-4o";
+            const limit = getContextWindowLimit(nextModel);
             
-            if (ctx.setContextLimit) {
-              ctx.setContextLimit(limit);
-            }
-            if (ctx.setActiveModel) {
-              ctx.setActiveModel(nextActiveModel);
-            }
-
-            let updatedList = `\n\nUpdated Models:\n`;
-            if (isSingle) {
-              const singleModel = process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel();
-              const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || "(use default)";
-              updatedList += `  Single Agent Model: ${singleModel}\n` +
-                `  Subagent (depth 2): ${subagentModel}`;
-
-              for (const [key, val] of Object.entries(process.env)) {
-                if (val && key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
-                  const name = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
-                  if (!updatedList.includes(`Subagent "${name}":`)) {
-                    updatedList += `\n  Subagent "${name}": ${val}`;
-                  }
-                }
-              }
-            } else {
-              const masterModel = process.env.MODEL_MULTI_MASTER || "(use default)";
-              const superagentModel = process.env.MODEL_MULTI_SUPERAGENT || "(use default)";
-              const subagentModel = process.env.MODEL_MULTI_SUBAGENT || "(use default)";
-              updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
-                `  Superagent (depth 1): ${superagentModel}\n` +
-                `  Subagent (depth 2): ${subagentModel}`;
-
-              for (const [key, val] of Object.entries(process.env)) {
-                if (val && key.startsWith("MODEL_MULTI_SUBAGENT_")) {
-                  const name = key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase();
-                  if (!updatedList.includes(`Subagent "${name}":`)) {
-                    updatedList += `\n  Subagent "${name}": ${val}`;
-                  }
-                }
-              }
-            }
+            if (ctx.setContextLimit) ctx.setContextLimit(limit);
+            if (ctx.setActiveModel) ctx.setActiveModel(nextModel);
 
             ctx.addLine({
               type: "system",
-              content: `Model preset "${presetName}" applied successfully!\nSaved to: ${envPath}${updatedList}`,
+              content: `Model preset "${presetName}" applied successfully!\nUpdated Models:\n${formatModelList(info, isMulti)}`,
               timestamp: now,
             });
             return;
@@ -154,117 +162,65 @@ export const modelCommand: SlashCommand = {
           modelName = args;
         }
 
-        let updates: Record<string, string> = {};
+        const isMulti = ctx.agent?.isMultiAgent ?? false;
+        const mode = isMulti ? "multi" : "single";
+        const preset = getActivePreset<any>(mode);
         let targetLabel = "";
         
         if (!tierArg) {
-          const isMulti = ctx.agent?.isMultiAgent ?? false;
           if (isMulti) {
-            updates = {
-              MODEL: modelName,
-              MODEL_MULTI_MASTER: modelName,
-              MODEL_MULTI_SUPERAGENT: modelName,
-              MODEL_MULTI_SUBAGENT: modelName,
-              MODEL_MULTI_SUBAGENT_RESEARCHER: modelName,
-              MODEL_MULTI_SUBAGENT_CODER: modelName,
-              MODEL_MULTI_SUBAGENT_REVIEWER: modelName,
-            };
+            preset.models.master = { ...preset.models.master, model: modelName };
+            preset.models.superagent = { ...preset.models.superagent, model: modelName };
+            preset.models.subagentDefault = { ...preset.models.subagentDefault, model: modelName };
+            if (!preset.models.subagentDetails) preset.models.subagentDetails = {};
+            for (const key of Object.keys(preset.models.subagentDetails)) {
+              preset.models.subagentDetails[key] = { ...preset.models.subagentDetails[key], model: modelName };
+            }
             targetLabel = "All Tiers (Overwrite All)";
           } else {
-            updates = {
-              MODEL_SINGLE: modelName,
-              MODEL: modelName
-            };
+            preset.models.superagent = { ...preset.models.superagent, model: modelName };
             targetLabel = "Single Agent Model";
-          }
-          const activeProvider = process.env.ACTIVE_PROVIDER || "";
-          if (activeProvider) {
-            updates[`PROVIDER_${activeProvider.toUpperCase()}_MODEL`] = modelName;
           }
         } else {
           const key = tierArg.toLowerCase();
-          const isMulti = ctx.agent?.isMultiAgent ?? false;
           if (key === "master" || key === "depth0" || key === "dept0") {
-            updates = isMulti
-              ? { MODEL_MULTI_MASTER: modelName }
-              : { MODEL_SINGLE: modelName, MODEL: modelName };
+            if (isMulti) {
+              preset.models.master = { ...preset.models.master, model: modelName };
+            } else {
+              preset.models.superagent = { ...preset.models.superagent, model: modelName };
+            }
             targetLabel = "Master Agent (depth 0) Model";
           } else if (key === "superagent" || key === "depth1" || key === "dept1") {
-            updates = isMulti
-              ? { MODEL_MULTI_SUPERAGENT: modelName }
-              : { MODEL_SINGLE: modelName, MODEL: modelName };
+            preset.models.superagent = { ...preset.models.superagent, model: modelName };
             targetLabel = "Superagent (depth 1) Model";
           } else if (key === "subagent" || key === "depth2" || key === "dept2") {
-            updates = isMulti
-              ? { MODEL_MULTI_SUBAGENT: modelName }
-              : { MODEL_SINGLE_SUBAGENT: modelName };
+            preset.models.subagentDefault = { ...preset.models.subagentDefault, model: modelName };
             targetLabel = "Subagent (depth 2) Model";
           } else {
             const type = key.replace(/^subagent-/, "");
-            const typeUpper = type.toUpperCase();
-            updates = isMulti
-              ? {
-                  [`MODEL_MULTI_SUBAGENT_${typeUpper}`]: modelName,
-                }
-              : {
-                  [`MODEL_SINGLE_SUBAGENT_${typeUpper}`]: modelName,
-                };
+            if (!preset.models.subagentDetails) preset.models.subagentDetails = {};
+            preset.models.subagentDetails[type] = { ...preset.models.subagentDetails[type], model: modelName };
             targetLabel = `Subagent "${type}" Model`;
           }
         }
 
-        const envPath = updateEnvFile(updates);
+        savePreset(mode, preset);
         const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
         const limit = getContextWindowLimit(cleanModelName);
         
-        if (!tierArg) {
-          if (ctx.setContextLimit) {
-            ctx.setContextLimit(limit);
-          }
+        if (!tierArg && ctx.setContextLimit) {
+          ctx.setContextLimit(limit);
         }
-        const isMulti = ctx.agent?.isMultiAgent ?? false;
         if (ctx.setActiveModel) {
-          const nextActiveModel = isMulti
-            ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel())
-            : (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel());
-          ctx.setActiveModel(nextActiveModel);
-        }
-        
-        let updatedList = `\n\nUpdated Models:\n`;
-        if (isMulti) {
-          const masterModel = process.env.MODEL_MULTI_MASTER || "(use default)";
-          const superagentModel = process.env.MODEL_MULTI_SUPERAGENT || "(use default)";
-          const subagentModel = process.env.MODEL_MULTI_SUBAGENT || "(use default)";
-          updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
-            `  Superagent (depth 1): ${superagentModel}\n` +
-            `  Subagent (depth 2): ${subagentModel}`;
-
-          for (const [key, value] of Object.entries(process.env)) {
-            if (value && key.startsWith("MODEL_MULTI_SUBAGENT_")) {
-              const name = key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase();
-              if (!updatedList.includes(`Subagent "${name}":`)) {
-                updatedList += `\n  Subagent "${name}": ${value}`;
-              }
-            }
-          }
-        } else {
-          const singleModel = process.env.MODEL_SINGLE || "(use default)";
-          updatedList += `  Single Agent: ${singleModel}`;
-          const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || "";
-          if (subagentModel) {
-            updatedList += `\n  Subagent (depth 2): ${subagentModel}`;
-          }
-          for (const [key, value] of Object.entries(process.env)) {
-            if (value && key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
-              const name = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
-              updatedList += `\n  Subagent "${name}": ${value}`;
-            }
-          }
+          const info = getActiveModelInfo(isMulti);
+          const nextModel = (isMulti ? info.master : info.superagent) || "gpt-4o";
+          ctx.setActiveModel(nextModel);
         }
 
+        const info = getActiveModelInfo(isMulti);
         ctx.addLine({
           type: "system",
-          content: `${targetLabel} changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}${updatedList}`,
+          content: `${targetLabel} changed to: ${modelName}\nContext limit: ${limit.toLocaleString()} tokens\n\nUpdated Models:\n${formatModelList(info, isMulti)}`,
           timestamp: now,
         });
 
@@ -272,9 +228,7 @@ export const modelCommand: SlashCommand = {
           fetchAndCacheModels()
             .then(() => {
               const newLimit = getContextWindowLimit(cleanModelName);
-              if (ctx.setContextLimit) {
-                ctx.setContextLimit(newLimit);
-              }
+              if (ctx.setContextLimit) ctx.setContextLimit(newLimit);
             })
             .catch(() => {});
         }
@@ -287,32 +241,8 @@ export const modelCommand: SlashCommand = {
       }
     } else {
       const isMulti = ctx.agent?.isMultiAgent ?? false;
-      let content = `Current Models:\n`;
-      if (isMulti) {
-        const masterModel = process.env.MODEL_MULTI_MASTER || "(use default)";
-        const superagentModel = process.env.MODEL_MULTI_SUPERAGENT || "(use default)";
-        const subagentModel = process.env.MODEL_MULTI_SUBAGENT || "(use default)";
-        content += `  Master Agent (depth 0): ${masterModel}\n` +
-          `  Superagent (depth 1): ${superagentModel}\n` +
-          `  Subagent (depth 2): ${subagentModel}`;
-        
-        const subagentSpecificOverrides: string[] = [];
-        for (const [key, value] of Object.entries(process.env)) {
-          if (value && key.startsWith("MODEL_MULTI_SUBAGENT_")) {
-            const name = key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase();
-            const entry = `  Subagent "${name}": ${value}`;
-            if (!subagentSpecificOverrides.includes(entry) && !content.includes(entry)) {
-              subagentSpecificOverrides.push(entry);
-            }
-          }
-        }
-        if (subagentSpecificOverrides.length > 0) {
-          content += `\n` + subagentSpecificOverrides.join("\n");
-        }
-      } else {
-        const singleModel = process.env.MODEL_SINGLE || "(use default)";
-        content += `  Single Agent: ${singleModel}`;
-      }
+      const info = getActiveModelInfo(isMulti);
+      let content = `Current Models:\n${formatModelList(info, isMulti)}`;
 
       ctx.addLine({
         type: "system",
@@ -321,8 +251,7 @@ export const modelCommand: SlashCommand = {
       });
 
       if (ctx.setActiveWizard) {
-        const isMultiMenu = ctx.agent?.isMultiAgent ?? false;
-        const modeLabelMenu = isMultiMenu ? "Multi-Agent" : "Single-Agent";
+        const modeLabelMenu = isMulti ? "Multi-Agent" : "Single-Agent";
         ctx.setActiveWizard({
           type: "model",
           step: 1,

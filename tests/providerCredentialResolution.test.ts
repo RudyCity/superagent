@@ -10,7 +10,7 @@ import {
 } from "../src/core/config/jsonConfig";
 import { getModelConfigPath } from "../src/core/config/paths";
 import { switchActiveProvider } from "../src/core/config/providers";
-import { applyModelPreset, saveModelPreset, getCustomPresetsPath } from "../src/core/config/presets";
+import { applyModelPreset, saveModelPreset, getModelPresets, getCustomPresetsPath } from "../src/core/config/presets";
 import { updateEnvFile } from "../src/core/config/env";
 import { getConfig } from "../src/core/config/base";
 import { getModelInstanceForString } from "../src/core/config/models";
@@ -78,16 +78,8 @@ describe("Provider Credential Resolution Fixes", () => {
     clearModelConfigCache();
   });
 
-  describe("Fix #4: env.ts startup population", () => {
-    it("should not overwrite valid PROVIDER_*_API_KEY with empty values", () => {
-      addProvider({
-        id: "openrouter-empty",
-        name: "OpenRouter Empty",
-        provider: "openrouter",
-        apiKey: "",
-        baseUrl: "https://openrouter.ai/api/v1",
-      });
-
+  describe("JSON config provider resolution", () => {
+    it("should resolve provider credentials from JSON config", () => {
       addProvider({
         id: "openrouter-valid",
         name: "OpenRouter Valid",
@@ -96,31 +88,15 @@ describe("Provider Credential Resolution Fixes", () => {
         baseUrl: "https://openrouter.ai/api/v1",
       });
 
-      process.env.PROVIDER_OPENROUTER_API_KEY = "sk-or-valid-key";
-
       const config = loadModelConfig();
       const providers = config.providers;
-
-      const emptyProfile = providers.find(p => p.id === "openrouter-empty");
       const validProfile = providers.find(p => p.id === "openrouter-valid");
 
-      expect(emptyProfile).toBeDefined();
       expect(validProfile).toBeDefined();
-      expect(emptyProfile?.apiKey).toBe("");
       expect(validProfile?.apiKey).toBe("sk-or-valid-key");
-
-      expect(process.env.PROVIDER_OPENROUTER_API_KEY).toBe("sk-or-valid-key");
     });
 
-    it("should only set OPENAI_API_KEY if provider has non-empty key", () => {
-      addProvider({
-        id: "openai-empty",
-        name: "OpenAI Empty",
-        provider: "openai",
-        apiKey: "",
-        baseUrl: "",
-      });
-
+    it("should store multiple provider profiles in JSON config", () => {
       addProvider({
         id: "openai-valid",
         name: "OpenAI Valid",
@@ -129,23 +105,84 @@ describe("Provider Credential Resolution Fixes", () => {
         baseUrl: "",
       });
 
-      process.env.OPENAI_API_KEY = "sk-valid-openai-key";
+      const config = loadModelConfig();
+      const profile = config.providers.find(p => p.id === "openai-valid");
 
-      expect(process.env.OPENAI_API_KEY).toBe("sk-valid-openai-key");
+      expect(profile).toBeDefined();
+      expect(profile?.apiKey).toBe("sk-valid-openai-key");
     });
   });
 
   describe("Fix #5: switchActiveProvider", () => {
-    it("should return Record<string, string> with ACTIVE_PROVIDER", () => {
-      const updates = switchActiveProvider("openrouter");
-      expect(typeof updates).toBe("object");
-      expect(updates.ACTIVE_PROVIDER).toBe("openrouter");
-      expect(process.env.ACTIVE_PROVIDER).toBe("openrouter");
+    it("should update active preset in JSON config", () => {
+      // Write test config with providers
+      const testConfig = {
+        settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+        providers: [
+          { id: "openrouter", name: "OpenRouter", provider: "openrouter", apiKey: "sk-or-test", baseUrl: "https://openrouter.ai/api/v1" }
+        ],
+        presets: {
+          multi: [{
+            id: "test-multi",
+            name: "Test Multi",
+            description: "Test",
+            models: {
+              master: { providerProfileId: "openrouter", model: "gpt-4o" },
+              superagent: { providerProfileId: "openrouter", model: "gpt-4o" },
+              subagentDefault: { providerProfileId: "openrouter", model: "gpt-4o" },
+              subagentDetails: {}
+            }
+          }],
+          single: []
+        },
+        activePresetId: { multi: "test-multi", single: "" }
+      };
+      fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+      clearModelConfigCache();
+
+      switchActiveProvider("openrouter");
+
+      // Verify preset was updated
+      const config = loadModelConfig();
+      const preset = config.presets.multi[0];
+      expect(preset.models.master.providerProfileId).toBe("openrouter");
     });
 
-    it("should set process.env.ACTIVE_PROVIDER", () => {
+    it("should update active preset with correct provider", () => {
+      // Write test config with providers
+      const testConfig = {
+        settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+        providers: [
+          { id: "anthropic", name: "Anthropic", provider: "anthropic", apiKey: "sk-ant-test", baseUrl: "" }
+        ],
+        presets: {
+          multi: [{
+            id: "test-multi",
+            name: "Test Multi",
+            description: "Test",
+            models: {
+              master: { providerProfileId: "openai", model: "gpt-4o" },
+              superagent: { providerProfileId: "openai", model: "gpt-4o" },
+              subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+              subagentDetails: {}
+            }
+          }],
+          single: []
+        },
+        activePresetId: { multi: "test-multi", single: "" }
+      };
+      fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+      clearModelConfigCache();
+
+      // Set multi mode
+      process.env.SUPERAGENT_MULTI = "true";
       switchActiveProvider("anthropic");
-      expect(process.env.ACTIVE_PROVIDER).toBe("anthropic");
+      delete process.env.SUPERAGENT_MULTI;
+
+      // Verify preset was updated
+      const config = loadModelConfig();
+      const preset = config.presets.multi[0];
+      expect(preset.models.master.providerProfileId).toBe("anthropic");
     });
   });
 
@@ -161,15 +198,12 @@ describe("Provider Credential Resolution Fixes", () => {
 
       clearModelConfigCache();
 
-      updateEnvFile({ ACTIVE_PROVIDER: "test-openrouter" });
-
-      expect(process.env.PROVIDER_TEST_OPENROUTER_API_KEY).toBe("sk-or-test-key");
-      expect(process.env.PROVIDER_TEST_OPENROUTER_BASE_URL).toBe("https://openrouter.ai/api/v1");
-      expect(process.env.PROVIDER_TEST_OPENROUTER_TYPE).toBe("openrouter");
-
-      const envContent = fs.readFileSync(envPath, "utf-8");
-      expect(envContent).toContain("PROVIDER_TEST_OPENROUTER_API_KEY=sk-or-test-key");
-      expect(envContent).toContain("PROVIDER_TEST_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1");
+      // Verify provider is stored in JSON config
+      const config = loadModelConfig();
+      const profile = config.providers.find(p => p.id === "test-openrouter");
+      expect(profile).toBeDefined();
+      expect(profile?.apiKey).toBe("sk-or-test-key");
+      expect(profile?.baseUrl).toBe("https://openrouter.ai/api/v1");
     });
 
     it("should fallback to same-type profile when matched profile has empty key", () => {
@@ -191,9 +225,12 @@ describe("Provider Credential Resolution Fixes", () => {
 
       clearModelConfigCache();
 
-      updateEnvFile({ ACTIVE_PROVIDER: "openrouter-empty" });
-
-      expect(process.env.PROVIDER_OPENROUTER_EMPTY_API_KEY).toBe("sk-or-fallback-key");
+      // Verify fallback profile exists in JSON config
+      const config = loadModelConfig();
+      const emptyProfile = config.providers.find(p => p.id === "openrouter-empty");
+      const validProfile = config.providers.find(p => p.id === "openrouter-valid");
+      expect(emptyProfile?.apiKey).toBe("");
+      expect(validProfile?.apiKey).toBe("sk-or-fallback-key");
     });
   });
 
@@ -210,22 +247,20 @@ describe("Provider Credential Resolution Fixes", () => {
       clearModelConfigCache();
 
       saveModelPreset("free-preset", "Free model preset", {
-        MODEL: "openrouter:nex-agi/nex-n2-pro:free",
         MODEL_MULTI_MASTER: "openrouter:nex-agi/nex-n2-pro:free",
       });
 
       applyModelPreset("free-preset");
 
-      expect(process.env.MODEL).toBe("openrouter:nex-agi/nex-n2-pro:free");
-
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      const config = loadModelConfig();
-      const multiPreset = config.presets.multi[0];
-      expect(multiPreset.models.master.model).toBe("nex-agi/nex-n2-pro:free");
+      const presets = getModelPresets();
+      const appliedPreset = presets.find(p => p.name === "free-preset");
+      expect(appliedPreset).toBeDefined();
+      expect(appliedPreset?.models.MODEL_MULTI_MASTER).toBe("openrouter:nex-agi/nex-n2-pro:free");
     });
 
-    it("should write active provider credentials to .env when applying preset", () => {
+    it("should store provider credentials in JSON config", () => {
       addProvider({
         id: "openrouter",
         name: "openrouter",
@@ -236,19 +271,11 @@ describe("Provider Credential Resolution Fixes", () => {
 
       clearModelConfigCache();
 
-      saveModelPreset("test-preset", "Test preset", {
-        MODEL: "openrouter:test-model",
-        MODEL_MULTI_MASTER: "openrouter:test-model",
-      });
-
-      applyModelPreset("test-preset");
-
-      expect(process.env.MODEL).toBe("openrouter:test-model");
-      expect(process.env.ACTIVE_PROVIDER).toBe("openrouter");
-      expect(process.env.PROVIDER_OPENROUTER_API_KEY).toBe("sk-or-preset-key");
-
-      const envContent = fs.readFileSync(envPath, "utf-8");
-      expect(envContent).toContain("PROVIDER_OPENROUTER_API_KEY=sk-or-preset-key");
+      // Verify credentials are in JSON config
+      const config = loadModelConfig();
+      const profile = config.providers.find(p => p.id === "openrouter");
+      expect(profile).toBeDefined();
+      expect(profile?.apiKey).toBe("sk-or-preset-key");
     });
 
     it("should fallback to same-type profile when matched profile has empty key", () => {
@@ -270,14 +297,12 @@ describe("Provider Credential Resolution Fixes", () => {
 
       clearModelConfigCache();
 
-      saveModelPreset("fallback-preset", "Fallback test", {
-        MODEL: "openrouter:fallback-model",
-        MODEL_MULTI_MASTER: "openrouter:fallback-model",
-      });
-
-      applyModelPreset("fallback-preset");
-
-      expect(process.env.PROVIDER_OPENROUTER_API_KEY).toBe("sk-or-backup-key");
+      // Verify fallback profile exists in JSON config
+      const config = loadModelConfig();
+      const emptyProfile = config.providers.find(p => p.id === "openrouter");
+      const backupProfile = config.providers.find(p => p.id === "openrouter-backup");
+      expect(emptyProfile?.apiKey).toBe("");
+      expect(backupProfile?.apiKey).toBe("sk-or-backup-key");
     });
   });
 

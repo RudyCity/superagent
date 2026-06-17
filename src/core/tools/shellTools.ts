@@ -234,7 +234,7 @@ export const bashTool: Tool = {
 
 export const runCommandTool: Tool = {
   name: "run_command",
-  description: "Run a terminal command (PowerShell on Windows, default shell on other OS).",
+  description: "Run a terminal command (Git Bash or PowerShell on Windows, default shell on other OS).",
   parameters: {
     type: "object",
     properties: {

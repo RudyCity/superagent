@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId } from "./config.js";
 import { getModelConfigPath } from "./config/paths.js";
-import { clearModelConfigCache } from "./config/jsonConfig.js";
+import { clearModelConfigCache, loadModelConfig } from "./config/jsonConfig.js";
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -37,6 +37,11 @@ describe("config", () => {
   afterEach(() => {
     // Restore process.env
     process.env = originalEnv;
+    // Restore config file from original
+    if (originalConfigContent !== null) {
+      fs.writeFileSync(configPath, originalConfigContent, "utf-8");
+    }
+    clearModelConfigCache();
   });
 
   it("should get global config directory containing expected name", () => {
@@ -135,21 +140,42 @@ describe("config", () => {
     }
   });
 
-  it("should resolve config using active provider env overrides", () => {
-    process.env.ACTIVE_PROVIDER = "anthropic";
-    process.env.PROVIDER_ANTHROPIC_API_KEY = "sk-ant-test";
-    process.env.MODEL = "claude-3-5-sonnet";
+  it("should resolve config using JSON preset", () => {
+    // Write a test config with anthropic provider
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "test-anthropic", name: "Test Anthropic", provider: "anthropic", apiKey: "sk-ant-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{ id: "test-multi", name: "Test Multi", description: "", models: { master: { providerProfileId: "test-anthropic", model: "claude-3-5-sonnet" }, superagent: { providerProfileId: "test-anthropic", model: "claude-3-5-sonnet" }, subagentDefault: { providerProfileId: "test-anthropic", model: "claude-3-5-sonnet" }, subagentDetails: {} } }],
+        single: [{ id: "test-single", name: "Test Single", description: "", models: { superagent: { providerProfileId: "test-anthropic", model: "claude-3-5-sonnet" }, subagentDefault: { providerProfileId: "test-anthropic", model: "claude-3-5-sonnet" }, subagentDetails: {} } }]
+      },
+      activePresetId: { multi: "test-multi", single: "test-single" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
 
     const config = getConfig();
     expect(config.provider).toBe("anthropic");
+    expect(config.apiKey).toBe("sk-ant-test");
   });
 
   it("should fallback config provider appropriately", () => {
-    // Clean up env keys
-    delete process.env.ACTIVE_PROVIDER;
-    delete process.env.CUSTOM_BASE_URL;
-    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
-    process.env.MODEL = "my-custom-model";
+    // Write a test config with anthropic provider and custom model
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "test-anthropic", name: "Test Anthropic", provider: "anthropic", apiKey: "sk-ant-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{ id: "test-multi", name: "Test Multi", description: "", models: { master: { providerProfileId: "test-anthropic", model: "my-custom-model" }, superagent: { providerProfileId: "test-anthropic", model: "my-custom-model" }, subagentDefault: { providerProfileId: "test-anthropic", model: "my-custom-model" }, subagentDetails: {} } }],
+        single: [{ id: "test-single", name: "Test Single", description: "", models: { superagent: { providerProfileId: "test-anthropic", model: "my-custom-model" }, subagentDefault: { providerProfileId: "test-anthropic", model: "my-custom-model" }, subagentDetails: {} } }]
+      },
+      activePresetId: { multi: "test-multi", single: "test-single" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
 
     const config = getConfig();
     expect(config.provider).toBe("anthropic");
@@ -315,22 +341,34 @@ describe("config", () => {
     });
 
     it("should resolve subagent-specific model overrides from active preset", () => {
-      const testPreset = {
-        id: "test-subagent-preset",
-        name: "Test Subagent Preset",
-        description: "Test",
-        models: {
-          master: { providerProfileId: "default-openai", model: "gpt-4" },
-          superagent: { providerProfileId: "default-openai", model: "gpt-4" },
-          subagentDefault: { providerProfileId: "default-openai", model: "general-subagent-model" },
-          subagentDetails: {
-            researcher: { providerProfileId: "default-openai", model: "gpt-4-turbo" },
-            coder: { providerProfileId: "default-anthropic", model: "claude-3-5-haiku" }
-          }
-        }
+      // Write config with required provider profiles
+      const testConfig = {
+        settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+        providers: [
+          { id: "default-openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" },
+          { id: "default-anthropic", name: "Anthropic", provider: "anthropic", apiKey: "sk-ant-test", baseUrl: "" }
+        ],
+        presets: {
+          multi: [{
+            id: "test-subagent-preset",
+            name: "Test Subagent Preset",
+            description: "Test",
+            models: {
+              master: { providerProfileId: "default-openai", model: "gpt-4" },
+              superagent: { providerProfileId: "default-openai", model: "gpt-4" },
+              subagentDefault: { providerProfileId: "default-openai", model: "general-subagent-model" },
+              subagentDetails: {
+                researcher: { providerProfileId: "default-openai", model: "gpt-4-turbo" },
+                coder: { providerProfileId: "default-anthropic", model: "claude-3-5-haiku" }
+              }
+            }
+          }],
+          single: []
+        },
+        activePresetId: { multi: "test-subagent-preset", single: "" }
       };
-      savePreset("multi", testPreset);
-      setActivePresetId("multi", "test-subagent-preset");
+      fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+      clearModelConfigCache();
       process.env.SUPERAGENT_MULTI = "true";
 
       const researcherModel: any = getModelInstanceForTier("subagent", 2, "researcher");
@@ -386,62 +424,110 @@ describe("config", () => {
     });
 
     it("should clear all tier and subagent-specific overrides when switchActiveProvider is called", () => {
-      process.env.MODEL_MULTI_MASTER = "openai:gpt-4o-mini";
-      process.env.MODEL_MULTI_SUBAGENT_RESEARCHER = "openai:gpt-4-turbo";
-      process.env.PROVIDER_ANTHROPIC_TYPE = "anthropic";
-      process.env.PROVIDER_ANTHROPIC_API_KEY = "dummy";
+      // Write test config with providers
+      const testConfig = {
+        settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+        providers: [
+          { id: "anthropic", name: "Anthropic", provider: "anthropic", apiKey: "sk-ant-test", baseUrl: "" }
+        ],
+        presets: {
+          multi: [{
+            id: "test-multi",
+            name: "Test Multi",
+            description: "Test",
+            models: {
+              master: { providerProfileId: "openai", model: "gpt-4o-mini" },
+              superagent: { providerProfileId: "openai", model: "gpt-4o" },
+              subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+              subagentDetails: {
+                researcher: { providerProfileId: "openai", model: "gpt-4-turbo" }
+              }
+            }
+          }],
+          single: []
+        },
+        activePresetId: { multi: "test-multi", single: "" }
+      };
+      fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+      clearModelConfigCache();
 
+      process.env.SUPERAGENT_MULTI = "true";
       switchActiveProvider("anthropic");
+      delete process.env.SUPERAGENT_MULTI;
 
-      expect(process.env.MODEL_MULTI_MASTER).toBeUndefined();
-      expect(process.env.MODEL_MULTI_SUBAGENT_RESEARCHER).toBeUndefined();
-      expect(process.env.MODEL).toBe("claude-3-5-sonnet-20241022");
+      // Verify preset was updated
+      const config = loadModelConfig();
+      const preset = config.presets.multi[0];
+      expect(preset.models.master.providerProfileId).toBe("anthropic");
+      expect(preset.models.master.model).toBe("claude-3-5-sonnet-20241022");
     });
   });
 
   describe("getModelInstanceForString", () => {
-    afterEach(() => {
-      delete process.env.PROVIDER_MYPROVIDER_API_KEY;
-      delete process.env.PROVIDER_MYPROVIDER_BASE_URL;
-      delete process.env.PROVIDER_MYPROVIDER_TYPE;
-    });
-
-    it("should dynamically resolve custom provider prefix", () => {
-      process.env.PROVIDER_MYPROVIDER_API_KEY = "my-api-key";
-      process.env.PROVIDER_MYPROVIDER_BASE_URL = "https://api.myprovider.com/v1";
-      process.env.PROVIDER_MYPROVIDER_TYPE = "openai";
+    it("should dynamically resolve custom provider prefix from JSON config", () => {
+      // Write config with custom provider
+      const testConfig = {
+        settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+        providers: [
+          { id: "myprovider", name: "MyProvider", provider: "openai", apiKey: "my-api-key", baseUrl: "https://api.myprovider.com/v1" }
+        ],
+        presets: {
+          multi: [],
+          single: []
+        },
+        activePresetId: { multi: "", single: "" }
+      };
+      fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+      clearModelConfigCache();
 
       const model: any = getModelInstanceForString("myprovider:some-cool-model");
       expect(model.modelId).toBe("some-cool-model");
     });
 
     it("should fallback resolve custom provider prefixes starting with openrouter/anthropic/openai", () => {
-      process.env.CUSTOM_API_KEY = "fallback-key";
-      const model: any = getModelInstanceForString("openroutereiyogen:nex-agi/nex-n2-pro:free");
+      // Write config with openrouter provider
+      const testConfig = {
+        settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+        providers: [
+          { id: "openrouter", name: "openrouter", provider: "openrouter", apiKey: "fallback-key", baseUrl: "https://openrouter.ai/api/v1" }
+        ],
+        presets: {
+          multi: [],
+          single: []
+        },
+        activePresetId: { multi: "", single: "" }
+      };
+      fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+      clearModelConfigCache();
+
+      const model: any = getModelInstanceForString("openrouter:nex-agi/nex-n2-pro:free");
       expect(model.modelId).toBe("nex-agi/nex-n2-pro:free");
-      delete process.env.CUSTOM_API_KEY;
     });
 
     it("should throw a descriptive error when API key is missing for a cloud provider", () => {
       process.env.SUPERAGENT_FORCE_VAL_CHECK = "true";
-      // Clear out keys that could be fallback targets
-      const oldOpenRouterKey = process.env.PROVIDER_OPENROUTER_API_KEY;
-      const oldOpenRouterKey2 = process.env.OPENROUTER_API_KEY;
-      const oldCustomKey = process.env.CUSTOM_API_KEY;
-      delete process.env.PROVIDER_OPENROUTER_API_KEY;
-      delete process.env.OPENROUTER_API_KEY;
-      delete process.env.CUSTOM_API_KEY;
+
+      // Write config with provider that has empty API key
+      const testConfig = {
+        settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+        providers: [
+          { id: "openrouter", name: "openrouter", provider: "openrouter", apiKey: "", baseUrl: "https://openrouter.ai/api/v1" }
+        ],
+        presets: {
+          multi: [],
+          single: []
+        },
+        activePresetId: { multi: "", single: "" }
+      };
+      fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+      clearModelConfigCache();
 
       try {
         expect(() => {
-          getModelInstanceForString("openroutereiyogen:nex-agi/nex-n2-pro:free");
+          getModelInstanceForString("openrouter:nex-agi/nex-n2-pro:free");
         }).toThrow(/API key is missing or not configured/);
       } finally {
         delete process.env.SUPERAGENT_FORCE_VAL_CHECK;
-        // Restore keys
-        if (oldOpenRouterKey !== undefined) process.env.PROVIDER_OPENROUTER_API_KEY = oldOpenRouterKey;
-        if (oldOpenRouterKey2 !== undefined) process.env.OPENROUTER_API_KEY = oldOpenRouterKey2;
-        if (oldCustomKey !== undefined) process.env.CUSTOM_API_KEY = oldCustomKey;
       }
     });
 

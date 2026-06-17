@@ -543,10 +543,14 @@ export const mergeSuperagentsTool: Tool = {
         // If diff fails, pass empty list — MasterAgent will resolve all conflicts
       }
 
-      const success = await master.mergeBranch(inst.branch, changedFiles);
+      const mergeResult = await master.mergeBranch(inst.branch, changedFiles);
 
-      if (success) {
-        results.push(`  ✅ Merged: ${inst.branch} (${inst.role})`);
+      if (mergeResult === "merged" || mergeResult === "already-merged") {
+        if (mergeResult === "already-merged") {
+          results.push(`  ✅ Already merged: ${inst.branch} (${inst.role}) — no changes needed`);
+        } else {
+          results.push(`  ✅ Merged: ${inst.branch} (${inst.role})`);
+        }
 
         // Cleanup worktree
         if (cleanup && inst.worktreePath && fs.existsSync(inst.worktreePath)) {

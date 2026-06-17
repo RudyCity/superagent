@@ -2,7 +2,7 @@ import { useInput } from "ink";
 import path from "path";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getPasteSplit, filterSuggestions, getInsertion } from "../utils/text.js";
-import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList } from "../core/config.js";
+import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders } from "../core/config.js";
 import { getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, type Checkpoint } from "../core/checkpoints.js";
 import { getToolDescription } from "../core/permissions.js";
@@ -390,7 +390,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (activeWizard) {
-      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 10)) {
+      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 10 || activeWizard.step === 100 || activeWizard.step === 101 || activeWizard.step === 102)) {
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
@@ -414,23 +414,21 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
               setWizardSelectedIndex(0);
             } else {
-              const list = getConfiguredProviders();
-              if (list.length > 0) {
-                addLine({
-                  type: "system",
-                  content: `Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})`).join("\n"),
-                  timestamp: now,
-                });
+              // "List Configured Providers" → buka wizard step 100
+              const providers = getProviders().filter((p: any) => p.apiKey && p.apiKey.trim() !== "");
+              if (providers.length === 0) {
+                addLine({ type: "system", content: "No providers configured yet. Use /login to add one.", timestamp: now });
+                setActiveWizard(null);
+                setWizardOptions([]);
+                setWizardSelectedIndex(0);
               } else {
-                addLine({
-                  type: "system",
-                  content: `No providers configured yet.`,
-                  timestamp: now,
-                });
+                const providerOptions = providers.map(
+                  (p: any, i: number) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+                );
+                setActiveWizard({ type: "login", step: 100, data: {} });
+                setWizardOptions(providerOptions);
+                setWizardSelectedIndex(0);
               }
-              setActiveWizard(null);
-              setWizardOptions([]);
-              setWizardSelectedIndex(0);
             }
           } else if (activeWizard.step === 10) {
             handleWizardSubmit(selectedOption);
@@ -457,6 +455,22 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             setWizardOptions([]);
             setWizardSelectedIndex(0);
             setInput("");
+          } else if (activeWizard.step === 100) {
+            // Pilih provider dari daftar → delegate ke handleWizardSubmit dengan string "1", "2", dll
+            const idx = wizardSelectedIndex + 1; // 1-based index
+            handleWizardSubmit(String(idx));
+          } else if (activeWizard.step === 101) {
+            // Konfirmasi test koneksi
+            handleWizardSubmit(selectedOption);
+          } else if (activeWizard.step === 102) {
+            // Pilih model — support filter: pakai filtered list jika ada input
+            const currentInput = (typeof input === "string") ? input.trim() : "";
+            const filteredModels = currentInput ? filterSuggestions(wizardOptions, currentInput) : wizardOptions;
+            const clampedIdx = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
+            const chosenModel = filteredModels[clampedIdx] || wizardOptions[wizardSelectedIndex];
+            if (chosenModel) {
+              handleWizardSubmit(chosenModel);
+            }
           }
           return;
         }

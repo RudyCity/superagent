@@ -79,18 +79,47 @@ const a = 2;
 
   describe("mergeBranch", () => {
     it("should merge cleanly if no conflicts occur and validation passes", async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
+      vi.mocked(execa).mockImplementation((cmd, args) => {
+        // merge-base --is-ancestor: exit 1 = NOT an ancestor, proceed with merge
+        if (cmd === "git" && args && args[0] === "merge-base" && args[1] === "--is-ancestor") {
+          const err: any = new Error("Not ancestor");
+          err.exitCode = 1;
+          throw err;
+        }
+        return Promise.resolve({ stdout: "" } as any);
+      });
       const master = new MasterAgent({} as any);
 
-      const success = await master.mergeBranch("feature-1", ["src/app.tsx"]);
-      expect(success).toBe(true);
+      const result = await master.mergeBranch("feature-1", ["src/app.tsx"]);
+      expect(result).toBe("merged");
       expect(execa).toHaveBeenCalledWith("git", ["merge", "--no-commit", "feature-1"], expect.any(Object));
       expect(execa).toHaveBeenCalledWith("git", ["commit", "-m", "Merge branch 'feature-1' via Master Agent"], expect.any(Object));
+    });
+
+    it("should return 'already-merged' if branch is already an ancestor of HEAD", async () => {
+      vi.mocked(execa).mockImplementation((cmd, args) => {
+        // merge-base --is-ancestor: exit 0 = IS an ancestor, already merged
+        if (cmd === "git" && args && args[0] === "merge-base" && args[1] === "--is-ancestor") {
+          return Promise.resolve({ stdout: "" } as any);
+        }
+        return Promise.resolve({ stdout: "" } as any);
+      });
+      const master = new MasterAgent({} as any);
+
+      const result = await master.mergeBranch("feature-already", ["src/app.tsx"]);
+      expect(result).toBe("already-merged");
+      // merge --no-commit should NOT have been called
+      expect(execa).not.toHaveBeenCalledWith("git", ["merge", "--no-commit", "feature-already"], expect.any(Object));
     });
 
     it("should resolve conflicts, run validation, and complete merge if conflict occurs", async () => {
       // Mock git merge failing (conflict) and git diff showing conflicts
       vi.mocked(execa).mockImplementation((cmd, args) => {
+        if (cmd === "git" && args && args[0] === "merge-base" && args[1] === "--is-ancestor") {
+          const err: any = new Error("Not ancestor");
+          err.exitCode = 1;
+          throw err;
+        }
         if (cmd === "git" && args && args[0] === "merge" && args[1] === "--no-commit") {
           throw new Error("Conflict!");
         }
@@ -117,9 +146,9 @@ const b = 2;
       const spyWrite = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
 
       const master = new MasterAgent({} as any);
-      const success = await master.mergeBranch("feature-2", ["src/app.tsx"]);
+      const result = await master.mergeBranch("feature-2", ["src/app.tsx"]);
 
-      expect(success).toBe(true);
+      expect(result).toBe("merged");
       expect(spyWrite).toHaveBeenCalled();
       expect(execa).toHaveBeenCalledWith("git", ["add", "-A"], expect.any(Object));
     });
@@ -127,6 +156,11 @@ const b = 2;
     it("should abort merge and return false if conflict resolution throws error", async () => {
       // Mock git merge failing (conflict) and diff showing conflicts
       vi.mocked(execa).mockImplementation((cmd, args) => {
+        if (cmd === "git" && args && args[0] === "merge-base" && args[1] === "--is-ancestor") {
+          const err: any = new Error("Not ancestor");
+          err.exitCode = 1;
+          throw err;
+        }
         if (cmd === "git" && args && args[0] === "merge" && args[1] === "--no-commit") {
           throw new Error("Conflict!");
         }
@@ -142,15 +176,20 @@ const b = 2;
       });
 
       const master = new MasterAgent({} as any);
-      const success = await master.mergeBranch("feature-error", ["src/app.tsx"]);
+      const result = await master.mergeBranch("feature-error", ["src/app.tsx"]);
 
-      expect(success).toBe(false);
+      expect(result).toBe(false);
       expect(execa).toHaveBeenCalledWith("git", ["merge", "--abort"], expect.any(Object));
     });
 
     it("should abort merge and return false if post-merge validation fails", async () => {
       // Mock git merge succeeding, but npm test failing
       vi.mocked(execa).mockImplementation((cmd, args) => {
+        if (cmd === "git" && args && args[0] === "merge-base" && args[1] === "--is-ancestor") {
+          const err: any = new Error("Not ancestor");
+          err.exitCode = 1;
+          throw err;
+        }
         if (cmd === "npm" && args && args[0] === "test") {
           throw new Error("Tests failed!");
         }
@@ -158,9 +197,9 @@ const b = 2;
       });
 
       const master = new MasterAgent({} as any);
-      const success = await master.mergeBranch("feature-failing-tests", ["src/app.tsx"]);
+      const result = await master.mergeBranch("feature-failing-tests", ["src/app.tsx"]);
 
-      expect(success).toBe(false);
+      expect(result).toBe(false);
       expect(execa).toHaveBeenCalledWith("git", ["merge", "--abort"], expect.any(Object));
     });
   });

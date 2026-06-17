@@ -912,7 +912,15 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               if (this.tier === "master") {
                 const hasSuperagentOrDelegate = /superagent|spawning|delegate|worktree/i.test(planContent);
                 if (!hasSuperagentOrDelegate) {
-                  missing.push("References to Superagent spawning or task delegation (the Master Agent cannot edit codebase files directly, so the 'Proposed Changes' section MUST detail the Superagents to be spawned, their roles, and branch names)");
+                  // Auto-inject delegation context instead of rejecting
+                  planContent = planContent + "\n\n> **Note**: This plan will be executed by spawning Superagents in isolated git worktrees for parallel feature development.";
+                  // Update tool call args with enhanced content
+                  if (tc.args.planContent !== undefined) {
+                    tc.args.planContent = planContent;
+                  } else if (tc.args.content !== undefined) {
+                    tc.args.content = planContent;
+                  }
+                  console.log("[INFO] Auto-injected delegation context into implementation plan");
                 }
               }
 
@@ -931,7 +939,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               if (this.goalMode) {
                 this.planState = "APPROVED";
                 this.onEvent({ type: "text", content: "\n[SYS] Goal Mode active: Auto-approving implementation plan for autonomous execution.\n" });
-              } else {
+              } else if (this.planState !== "APPROVED") {
                 this.planState = "PLANNING_PENDING";
               }
             }
@@ -962,17 +970,49 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               }
 
               if (this.tier === "master") {
-                const hasSuperagentOrSpawnOrMerge = /superagent|spawn|merge|worktree/i.test(taskContent);
-                if (!hasSuperagentOrSpawnOrMerge) {
-                  const blocked: ToolResult = {
-                    toolCallId: tc.id,
-                    name: tc.name,
-                    result: `Error: The Task Tracking File is invalid or lacks multi-agent context. As the Master Agent, your task list MUST include items for spawning, monitoring, and merging Superagents (e.g., 'spawning superagent', 'merge superagents') instead of listing direct file modifications.`,
-                    isError: true,
-                  };
-                  toolResults.push(blocked);
-                  this.onEvent({ type: "tool_end", toolResult: blocked, description });
-                  continue;
+                // Auto-inject missing Master Agent tasks instead of blocking
+                const lines = taskContent.split(/\r?\n/);
+                const taskLines: string[] = [];
+                const otherLines: string[] = [];
+
+                for (const line of lines) {
+                  if (/^\s*-\s*`?\[([xX/ ])\]`?\s*/.test(line)) {
+                    taskLines.push(line);
+                  } else {
+                    otherLines.push(line);
+                  }
+                }
+
+                const combinedTaskText = taskLines.join("\n").toLowerCase();
+                const hasSpawn = /spawn|invoke|create.*superagent|start.*superagent/i.test(combinedTaskText);
+                const hasMonitor = /monitor|await|wait|track|check.*status/i.test(combinedTaskText);
+                const hasMerge = /merge|combine|integrate.*superagent/i.test(combinedTaskText);
+
+                const injectedTasks: string[] = [];
+                if (!hasSpawn) {
+                  injectedTasks.push("- [ ] Spawn Superagents for parallel task execution");
+                }
+                if (!hasMonitor) {
+                  injectedTasks.push("- [ ] Monitor Superagent progress and await completion");
+                }
+                if (!hasMerge) {
+                  injectedTasks.push("- [ ] Merge Superagent branches into main codebase");
+                }
+
+                if (injectedTasks.length > 0) {
+                  // Find the last task line and append after it
+                  const lastTaskIndex = lines.length - 1 - [...lines].reverse().findIndex(l => /^\s*-\s*`?\[([xX/ ])\]`?\s*/.test(l));
+                  lines.splice(lastTaskIndex + 1, 0, ...injectedTasks);
+                  taskContent = lines.join("\n");
+                  // Update the tool call args so the actual write uses the injected content
+                  if (tc.args.content !== undefined) {
+                    tc.args.content = taskContent;
+                  } else if (tc.args.codeContent !== undefined) {
+                    tc.args.codeContent = taskContent;
+                  } else if (tc.args.CodeContent !== undefined) {
+                    tc.args.CodeContent = taskContent;
+                  }
+                  console.log(`[INFO] Auto-injected ${injectedTasks.length} missing Master Agent task(s) into task file`);
                 }
               }
             }

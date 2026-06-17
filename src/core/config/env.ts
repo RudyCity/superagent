@@ -3,33 +3,10 @@ import { loadModelConfig } from "./jsonConfig.js";
 import fs from "fs";
 import path from "path";
 
-// Populate process.env with credentials and settings from model-config.json on startup
+// Populate process.env with settings from model-config.json on startup
+// Provider credentials are resolved directly from JSON config - no env var population needed
 try {
   const config = loadModelConfig();
-  const providers = config.providers;
-  const setKey = (envName: string, value: string | undefined) => {
-    if (value && value.trim() !== "") {
-      process.env[envName] = value;
-    }
-  };
-  for (const provider of providers) {
-    const prefix = provider.provider.toUpperCase();
-    const hasKey = !!(provider.apiKey && provider.apiKey.trim() !== "");
-    if (hasKey) {
-      setKey(`PROVIDER_${prefix}_API_KEY`, provider.apiKey);
-      if (provider.provider === "openai") {
-        setKey("OPENAI_API_KEY", provider.apiKey);
-      } else if (provider.provider === "anthropic") {
-        setKey("ANTHROPIC_API_KEY", provider.apiKey);
-      }
-    }
-    if (provider.baseUrl && provider.baseUrl.trim() !== "") {
-      setKey(`PROVIDER_${prefix}_BASE_URL`, provider.baseUrl);
-      if (provider.provider === "custom") {
-        setKey("CUSTOM_BASE_URL", provider.baseUrl);
-      }
-    }
-  }
   if (config.settings) {
     if (config.settings.concurrencyLimit !== undefined) {
       process.env.SUPERAGENT_MAX_CONCURRENCY = String(config.settings.concurrencyLimit);

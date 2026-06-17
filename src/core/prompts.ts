@@ -58,7 +58,7 @@ WORKFLOW:
 5. Monitor / Inspect: Use \`manage_superagents\` to inspect logs/thoughts.
 6. Await Completion: Call \`await_superagents\` to wait for all spawned agents to finish.
 7. Merge Branches: Call \`merge_superagents\`. This performs transactional build/test verification.
-8. Post-Merge Validation: Run compilation and test commands in the master repository. On Windows, use \`;\` instead of \`&&\` to separate commands.
+8. Post-Merge Validation: Run compilation and test commands in the master repository. On Windows PowerShell, use \`;\` instead of \`&&\` to separate commands. Git Bash supports \`&&\` normally.
 9. Walkthrough: Record test outcomes and findings in the Verification/Walkthrough File.
 10. Cleanup: Remove/prune merged worktrees.
 11. Report: Present a summary of changes, files modified, and verification results.
@@ -127,9 +127,17 @@ RULES:
 - Read files, search the codebase (grep/glob/ripgrep), and search the web
 - Do NOT modify any files (DO NOT attempt to call 'edit', 'write_to_file', or other modifying tools)
 - Do NOT run commands that change system state
-- Provide a concise, structured summary of your findings
 
-OUTPUT: Always end with a structured summary of what you found.
+CRITICAL: You MUST end your final response with a structured report using this EXACT format:
+
+### SUBAGENT TASK REPORT
+- **Goal / Objective**: [What you were asked to research]
+- **Actions Taken**:
+  - [Action 1: e.g. read src/app.tsx]
+  - [Action 2: e.g. searched for auth patterns]
+- **Key Findings / Outcomes**:
+  - [Detail what you discovered]
+- **Status & Next Steps**: [Completed / Blocked / Unresolved issues]
 `.trim(),
 
   coder: `
@@ -142,7 +150,16 @@ RULES:
 - Do NOT run git commands (commit, push, merge)
 - Do NOT modify files outside your working directory
 
-OUTPUT: Report exactly which files you changed and what you implemented.
+CRITICAL: You MUST end your final response with a structured report using this EXACT format:
+
+### SUBAGENT TASK REPORT
+- **Goal / Objective**: [What you were asked to implement]
+- **Actions Taken**:
+  - [Action 1: e.g. edited src/auth.ts]
+  - [Action 2: e.g. added login endpoint]
+- **Key Findings / Outcomes**:
+  - [Detail what you implemented and any issues encountered]
+- **Status & Next Steps**: [Completed / Blocked / Unresolved issues]
 `.trim(),
 
   reviewer: `
@@ -154,7 +171,16 @@ RULES:
 - Do NOT modify source files unless explicitly asked to fix a specific bug (DO NOT attempt to call 'edit', 'write_to_file', or other modifying tools unless authorized)
 - Run linting and tests to validate correctness
 
-OUTPUT: Provide a structured review report with: issues found, tests status, and recommendations.
+CRITICAL: You MUST end your final response with a structured report using this EXACT format:
+
+### SUBAGENT TASK REPORT
+- **Goal / Objective**: [What you were asked to review]
+- **Actions Taken**:
+  - [Action 1: e.g. reviewed src/auth.ts]
+  - [Action 2: e.g. ran test suite]
+- **Key Findings / Outcomes**:
+  - [Issues found, test results, recommendations]
+- **Status & Next Steps**: [Completed / Blocked / Unresolved issues]
 `.trim(),
 
   "manual-tester": `
@@ -176,7 +202,16 @@ CLOAKBROWSER TIPS:
 - When using cloakbrowser, leverage its source-level stealth features and "humanize mode" (realistic mouse movements, typing, and natural scrolling) to bypass anti-bot systems.
 - It can be imported/used as a drop-in replacement for standard Chromium launches in test scripts.
 
-OUTPUT: Provide a structured test report with: tests run, pass/fail counts, screenshots, and any bugs found.
+CRITICAL: You MUST end your final response with a structured report using this EXACT format:
+
+### SUBAGENT TASK REPORT
+- **Goal / Objective**: [What you were asked to test]
+- **Actions Taken**:
+  - [Action 1: e.g. ran Playwright tests]
+  - [Action 2: e.g. took screenshot of login page]
+- **Key Findings / Outcomes**:
+  - [Test results, bugs found, screenshots]
+- **Status & Next Steps**: [Completed / Blocked / Unresolved issues]
 `.trim(),
 };
 

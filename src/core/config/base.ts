@@ -1,4 +1,5 @@
 import { loadAgentSkills } from "./skills.js";
+import { resolveWindowsShell } from "../tools/helpers.js";
 
 export type Provider = "anthropic" | "openai" | "custom";
 
@@ -16,91 +17,17 @@ export interface Config {
 import { loadModelConfig, getActivePreset } from "./jsonConfig.js";
 
 export function getConfig(): Config {
-  // Check process.env first for legacy overrides to ensure test compatibility!
-  const legacyActiveProvider = process.env.ACTIVE_PROVIDER || "";
-  const legacyCustomBaseUrl = process.env.CUSTOM_BASE_URL || "";
-  const legacyCustomApiKey = process.env.CUSTOM_API_KEY || process.env.OPENAI_API_KEY || "";
-  const legacyAnthropicKey = process.env.ANTHROPIC_API_KEY || "";
-  const legacyOpenaiKey = process.env.OPENAI_API_KEY || "";
-
-  if (legacyActiveProvider || legacyCustomBaseUrl || legacyAnthropicKey || legacyOpenaiKey) {
-    let provider: Provider = "openai";
-    let apiKey = "";
-    let baseUrl: string | undefined;
-
-    if (legacyActiveProvider) {
-      const prefix = `PROVIDER_${legacyActiveProvider.toUpperCase()}`;
-      apiKey = process.env[`${prefix}_API_KEY`] || "";
-      baseUrl = process.env[`${prefix}_BASE_URL`] || "";
-      const type = process.env[`${prefix}_TYPE`] || "";
-
-      if (!apiKey && !baseUrl) {
-        if (legacyActiveProvider.toLowerCase() === "custom" && legacyCustomBaseUrl) {
-          provider = "custom";
-          apiKey = legacyCustomApiKey;
-          baseUrl = legacyCustomBaseUrl;
-        } else if (legacyActiveProvider.toLowerCase() === "anthropic" && legacyAnthropicKey) {
-          provider = "anthropic";
-          apiKey = legacyAnthropicKey;
-        } else if (legacyActiveProvider.toLowerCase() === "openai" && legacyOpenaiKey) {
-          provider = "openai";
-          apiKey = legacyOpenaiKey;
-        }
-      } else {
-        if (type === "anthropic" || legacyActiveProvider.toLowerCase() === "anthropic" || legacyActiveProvider.toLowerCase().startsWith("anthropic")) {
-          provider = "anthropic";
-        } else if (type === "custom" || type === "openrouter" || legacyActiveProvider.toLowerCase().startsWith("openrouter") || baseUrl) {
-          provider = "custom";
-        } else {
-          provider = "openai";
-        }
-      }
-    } else {
-      if (legacyCustomBaseUrl) {
-        provider = "custom";
-        apiKey = legacyCustomApiKey;
-        baseUrl = legacyCustomBaseUrl;
-      } else if (legacyAnthropicKey) {
-        provider = "anthropic";
-        apiKey = legacyAnthropicKey;
-      } else {
-        provider = "openai";
-        apiKey = legacyOpenaiKey;
-      }
-    }
-
-    const model = process.env.MODEL || (provider === "anthropic" ? "claude-sonnet-4-20250514" : "gpt-4o");
-    const disableStreaming = process.env.DISABLE_STREAMING === "true";
-
-    return {
-      apiKey,
-      provider,
-      model,
-      baseUrl,
-      maxTokens: 16384,
-      systemPrompt: getSystemPrompt(),
-      workingDirectory: process.cwd(),
-      disableStreaming,
-    };
-  }
-
   const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
   const mode = isMulti ? "multi" : "single";
-  
+
   const config = loadModelConfig();
   const activePreset = getActivePreset<any>(mode);
-  
-  // Resolve the tier model configuration for the main/master agent
   const tierConfig = mode === "multi" ? activePreset.models.master : activePreset.models.superagent;
-  
-  // Find the provider profile
   const providerProfile = config.providers.find((p) => p.id === tierConfig?.providerProfileId) || config.providers[0];
-  
   const apiKey = providerProfile?.apiKey || "";
   const baseUrl = providerProfile?.baseUrl || "";
   const provider = (providerProfile?.provider as Provider) || "openai";
   const model = tierConfig?.model || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
-  
   const disableStreaming = process.env.DISABLE_STREAMING === "true";
 
   // Fallback: if matched profile has empty apiKey, scan for other profiles of same provider type
@@ -138,7 +65,12 @@ export function getConfig(): Config {
 export function getSystemPrompt(): string {
   let shellPrompt = "";
   if (process.platform === "win32") {
-    shellPrompt = `\n- ACTIVE TERMINAL SHELL: Windows PowerShell-compatible command execution.\n- On Windows, use ';' to separate commands. Do not use '&&' in generated shell commands.\n- Use \`run_command\` for validation commands and pass the 'timeout' parameter when a custom timeout is needed.\n- Use 'run_background_process' for long-running servers, watchers, or interactive processes.`;
+    const resolved = resolveWindowsShell();
+    if (resolved.isBash) {
+      shellPrompt = `\n- ACTIVE TERMINAL SHELL: Git Bash (${resolved.shellPath}).\n- Use bash syntax for shell commands (e.g. 'date' not 'Get-Date', '&&' to chain commands).\n- Use \`run_command\` for validation commands and pass the 'timeout' parameter when a custom timeout is needed.\n- Use 'run_background_process' for long-running servers, watchers, or interactive processes.`;
+    } else {
+      shellPrompt = `\n- ACTIVE TERMINAL SHELL: Windows PowerShell (${resolved.shellPath}).\n- On Windows PowerShell, use ';' to separate commands. Do not use '&&' in generated shell commands.\n- Use \`run_command\` for validation commands and pass the 'timeout' parameter when a custom timeout is needed.\n- Use 'run_background_process' for long-running servers, watchers, or interactive processes.`;
+    }
   } else {
     shellPrompt = `\n- Use \`run_command\` for validation commands and pass the 'timeout' parameter when a custom timeout is needed.\n- Use 'run_background_process' for long-running servers, watchers, or interactive processes.`;
   }
@@ -160,7 +92,7 @@ IMPORTANT GUIDELINES:
 - Never commit changes unless explicitly asked.
 - NEVER expose secrets or keys.
 - Always look for and study the 'agents.md' file in the workspace root if it exists, as it contains critical project information, architecture, and developer guidelines.
-- On Windows, use ';' to separate commands. Do not use '&&' in generated shell commands.
+- If using PowerShell on Windows, use ';' to separate commands instead of '&&'. If using Git Bash, '&&' works normally.
 - PLANNING, TASKS & VERIFICATION LIFECYCLE: If a user's request is complex, requires non-trivial refactoring, multi-file modifications, or new architecture/features, you MUST follow this structured lifecycle using session-specific markdown files (the exact absolute paths to use are provided dynamically in the context/system prompt):
   1. Planning Phase: Write a detailed design, proposed file changes, and verification plan to the specified 'Implementation Plan File' absolute path. Summarize it for the user and ask for explicit approval. DO NOT modify any codebase files or run modifying terminal commands until approved.
   2. Task Tracking Phase: Once the plan is approved, create a checklist file at the specified 'Task Tracking File' absolute path containing task checkboxes (e.g. \`[ ]\`, \`[/]\`, \`[x]\`). As you work, update progress in that file, marking items as in-progress or completed.
@@ -212,7 +144,7 @@ AVAILABLE TOOLS:
 - write_to_file: Create a new file or completely overwrite an existing one.
 - replace_file_content: Edit a contiguous block of code specifying lines.
 - multi_replace_file_content: Perform multiple edits across a file at once.
-- run_command: Run shell command (PowerShell on Windows).
+- run_command: Run shell command (PowerShell or Git Bash on Windows, depending on detected shell).
 - manage_background_process: List, check status, send input, or kill processes.
 - schedule: Setup background timers (one-shot/recurring).
 - define_subagent: Register a new specialized subagent type.

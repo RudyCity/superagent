@@ -97,6 +97,18 @@ describe("Agent – goalMode is independent of planState", () => {
     expect(agent.goalMode).toBe("deploy to production");
     expect(agent.planState).toBe("APPROVED");
   });
+
+  it("planState stays APPROVED and does not revert to PLANNING_PENDING via approvePlan", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.planState = "PLANNING_PENDING";
+    expect(agent.planState).toBe("PLANNING_PENDING");
+    agent.approvePlan();
+    expect(agent.planState).toBe("APPROVED");
+    // Calling approvePlan again should keep it APPROVED
+    agent.approvePlan();
+    expect(agent.planState).toBe("APPROVED");
+  });
 });
 
 // ─── Goal Mode: AgentEvent type ───────────────────────────────────────────────

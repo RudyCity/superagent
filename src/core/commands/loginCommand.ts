@@ -4,7 +4,6 @@ import {
   getConfiguredProviders,
   switchActiveProvider,
   fetchAndCacheModels,
-  updateEnvFile,
   getContextWindowLimit,
   addProvider,
   getProviders,
@@ -51,6 +50,32 @@ export const loginCommand: SlashCommand = {
           ].join("\n"),
           timestamp: now,
         });
+      }
+      return;
+    }
+
+    // Direct /login list → open provider selection wizard (step 100)
+    if (args.trim() === "list") {
+      if (ctx.setActiveWizard) {
+        const providers = getProviders().filter(p => p.apiKey && p.apiKey.trim() !== "");
+        if (providers.length === 0) {
+          ctx.addLine({
+            type: "system",
+            content: "No providers configured yet. Use /login to add one.",
+            timestamp: now,
+          });
+          return;
+        }
+        const providerOptions = providers.map(
+          (p, i) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+        );
+        ctx.setActiveWizard({
+          type: "login",
+          step: 100,
+          data: {},
+        });
+        ctx.setWizardOptions?.(providerOptions);
+        ctx.setWizardSelectedIndex?.(0);
       }
       return;
     }
@@ -152,16 +177,6 @@ export const loginCommand: SlashCommand = {
 
       try {
         removeProvider(targetId);
-
-        // Clean up environment variables
-        const prefix = `PROVIDER_${targetId.toUpperCase()}`;
-        const updates: Record<string, string> = {
-          [`${prefix}_TYPE`]: "",
-          [`${prefix}_API_KEY`]: "",
-          [`${prefix}_BASE_URL`]: "",
-        };
-        updateEnvFile(updates);
-
         ctx.addLine({
           type: "system",
           content: `Successfully removed provider: ${targetId}`,
@@ -225,67 +240,42 @@ export const loginCommand: SlashCommand = {
         }
       }
 
-      const profileName = provider;
-      const prefix = `PROVIDER_${profileName.toUpperCase()}`;
-      const updates: Record<string, string> = {
-        ACTIVE_PROVIDER: "",
-        [`${prefix}_TYPE`]: provider,
-        [`${prefix}_API_KEY`]: apiKey,
-      };
-
-      if (baseUrl) {
-        updates[`${prefix}_BASE_URL`] = baseUrl;
-      } else if (provider === "openrouter") {
-        updates[`${prefix}_BASE_URL`] = "https://openrouter.ai/api/v1";
-      }
+      const profileId = provider.toLowerCase().replace(/[^a-z0-9_-]/g, "");
 
       try {
         addProvider({
-          id: profileName.toLowerCase().replace(/[^a-z0-9_-]/g, ""),
-          name: profileName,
+          id: profileId,
+          name: provider,
           provider: provider,
           apiKey: apiKey,
           baseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
         });
 
-        updateEnvFile(updates);
+        // Switch active preset to use this provider
+        switchActiveProvider(profileId);
+
         ctx.addLine({
           type: "system",
-          content: `Successfully logged in. Configured provider: ${profileName} (${provider}).\nSaved to global model-config.json`,
+          content: `Successfully logged in. Configured provider: ${provider}.\nSaved to model-config.json`,
           timestamp: now,
         });
 
-        if (!process.env.MODEL) {
-          let defaultModel = "openai:gpt-4o";
-          if (provider === "openrouter") {
-            defaultModel = "openrouter:google/gemini-2.5-flash";
-          } else if (provider === "anthropic") {
-            defaultModel = "anthropic:claude-3-5-sonnet-20241022";
-          }
-          updateEnvFile({ MODEL: defaultModel });
-          if (ctx.setActiveModel) {
-            const isMulti = ctx.agent?.isMultiAgent ?? false;
-            const nextActiveModel = isMulti
-              ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel())
-              : defaultModel;
-            ctx.setActiveModel(nextActiveModel);
-          }
+        // Set default model based on provider type
+        let defaultModel = "gpt-4o";
+        if (provider === "openrouter") {
+          defaultModel = "google/gemini-2.5-flash";
+        } else if (provider === "anthropic") {
+          defaultModel = "claude-3-5-sonnet-20241022";
+        }
+        if (ctx.setActiveModel) {
+          ctx.setActiveModel(defaultModel);
         }
 
         fetchAndCacheModels()
           .then(() => {
-            const currentModel = process.env.MODEL || getDefaultModel();
-            const limit = getContextWindowLimit(currentModel);
-            if (ctx.setContextLimit) {
-              ctx.setContextLimit(limit);
-            }
-            if (ctx.setActiveModel) {
-              const isMulti = ctx.agent?.isMultiAgent ?? false;
-              const nextActiveModel = isMulti
-                ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel())
-                : currentModel;
-              ctx.setActiveModel(nextActiveModel);
-            }
+            const limit = getContextWindowLimit(defaultModel);
+            if (ctx.setContextLimit) ctx.setContextLimit(limit);
+            if (ctx.setActiveModel) ctx.setActiveModel(defaultModel);
           })
           .catch(() => {});
       } catch (err: any) {

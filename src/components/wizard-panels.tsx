@@ -177,9 +177,62 @@ export function WizardPanels(props: WizardPanelsProps) {
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 13 && (
           <WizardDialog
-            title="🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter, Esc: Back):"
+            title="🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter, Esc: Back)"
             description="State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:"
             borderColor="magenta"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 100 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="🔌 LIST PROVIDERS — Pilih provider (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
+            description="Pilih provider untuk melanjutkan ke test koneksi dan pengiriman pesan:"
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+            maxVisible={10}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 101 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title={`🔌 TEST KONEKSI — ${activeWizard.data.providerName || "Provider"} (↑/↓ Navigate, Enter: Select):`}
+            description={`Apakah ingin menguji koneksi ke provider "${activeWizard.data.providerName || ""}" sebelum memilih model?`}
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 102 && wizardOptions.length > 0 && (() => {
+          const modelSearchQuery = input.trim();
+          const filteredModels = modelSearchQuery
+            ? filterSuggestions(wizardOptions, modelSearchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
+          const provName = activeWizard.data.providerName ? ` [${activeWizard.data.providerName}]` : "";
+          const searchTitle = modelSearchQuery
+            ? `🔌 PILIH MODEL${provName} — 🔍 "${input.trim()}" (${filteredModels.length}/${wizardOptions.length} results):`
+            : `🔌 PILIH MODEL${provName} (${wizardOptions.length} tersedia — ketik untuk filter, ↑/↓ navigasi, Enter pilih):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              borderColor="cyan"
+              options={filteredModels.length > 0 ? filteredModels : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+              isLoading={wizardIsLoadingModels}
+            />
+          );
+        })()}
+
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 103 && (
+          <WizardDialog
+            title={`🔌 KIRIM PESAN TEST — Model: ${activeWizard.data.selectedModel || ""} (Type & Enter):`}
+            description={`Ketik pesan yang ingin dikirim ke model "${activeWizard.data.selectedModel || ""}" via provider "${activeWizard.data.providerName || ""}". Tekan Enter untuk mengirim.`}
+            borderColor="cyan"
             options={[]}
             selectedIndex={0}
           />

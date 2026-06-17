@@ -170,113 +170,114 @@ export function getModelInstanceForString(modelStr: string) {
   let modelName = modelStr;
   let apiKey = config.apiKey;
   let baseUrl = config.baseUrl;
-  let resolvedPrefix = "";
 
   const colonIndex = modelStr.indexOf(":");
   const prefixBeforeColon = colonIndex > 0 ? modelStr.substring(0, colonIndex).toLowerCase() : "";
   const isProviderPrefix = colonIndex > 0 && !prefixBeforeColon.includes("/");
   if (isProviderPrefix) {
     const prefix = prefixBeforeColon;
-    resolvedPrefix = prefix;
     const rest = modelStr.substring(colonIndex + 1);
-    if (prefix === "anthropic") {
-      provider = "anthropic";
-      modelName = rest;
-      apiKey = process.env.PROVIDER_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || config.apiKey;
-      baseUrl = undefined;
-    } else if (prefix === "openai") {
-      provider = "openai";
-      modelName = rest;
-      apiKey = process.env.PROVIDER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || config.apiKey;
-      baseUrl = undefined;
-    } else if (prefix === "custom") {
-      provider = "custom";
-      modelName = rest;
-      apiKey = process.env.PROVIDER_CUSTOM_API_KEY || process.env.CUSTOM_API_KEY || config.apiKey;
-      baseUrl = process.env.PROVIDER_CUSTOM_BASE_URL || process.env.CUSTOM_BASE_URL || config.baseUrl;
-    } else {
-      const providerUpper = prefix.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
-      const customKey = process.env[`PROVIDER_${providerUpper}_API_KEY`];
-      const customBase = process.env[`PROVIDER_${providerUpper}_BASE_URL`];
-      const customType = process.env[`PROVIDER_${providerUpper}_TYPE`];
-      const hasNonEmptyEnv = (customKey && customKey.trim() !== "") || (customBase && customBase.trim() !== "") || (customType && customType.trim() !== "");
-      if (hasNonEmptyEnv) {
-        apiKey = customKey || "";
-        baseUrl = customBase || undefined;
-        modelName = rest;
-        const typeLower = (customType || "").toLowerCase();
-        if (typeLower === "anthropic") {
-          provider = "anthropic";
-          baseUrl = undefined;
-        } else if (typeLower === "custom" || typeLower === "openrouter" || baseUrl) {
-          provider = "custom";
-        } else {
-          provider = "openai";
-        }
+    const modelConfig = loadModelConfig();
 
-        // Fallback: if env key is empty, scan jsonConfig for same-type profile with a key
+    if (prefix === "anthropic") {
+      // Find anthropic provider in JSON config
+      const anthropicProfile = modelConfig.providers.find(
+        (p) => p.provider === "anthropic" && p.apiKey && p.apiKey.trim() !== ""
+      );
+      if (anthropicProfile) {
+        provider = "anthropic";
+        modelName = rest;
+        apiKey = anthropicProfile.apiKey;
+        baseUrl = undefined;
+      }
+    } else if (prefix === "openai") {
+      // Find openai provider in JSON config
+      const openaiProfile = modelConfig.providers.find(
+        (p) => p.provider === "openai" && p.apiKey && p.apiKey.trim() !== ""
+      );
+      if (openaiProfile) {
+        provider = "openai";
+        modelName = rest;
+        apiKey = openaiProfile.apiKey;
+        baseUrl = undefined;
+      }
+    } else if (prefix === "custom") {
+      // Find custom provider in JSON config
+      const customProfile = modelConfig.providers.find(
+        (p) => p.provider === "custom" && p.apiKey && p.apiKey.trim() !== ""
+      );
+      if (customProfile) {
+        provider = "custom";
+        modelName = rest;
+        apiKey = customProfile.apiKey;
+        baseUrl = customProfile.baseUrl || undefined;
+      }
+    } else {
+      // Find provider by ID or name in JSON config
+      const matchedProvider = modelConfig.providers?.find(
+        p => p.id?.toLowerCase() === prefix || p.name?.toLowerCase() === prefix
+      );
+      if (matchedProvider) {
+        apiKey = matchedProvider.apiKey || "";
+        baseUrl = matchedProvider.baseUrl || undefined;
+        modelName = rest;
+        const typeLower = (matchedProvider.provider || "").toLowerCase();
+
+        // Fallback: if matched profile has empty apiKey, scan for other profiles of same provider type
         if (!apiKey || apiKey.trim() === "") {
-          const modelConfig = loadModelConfig();
           const fallbackProfile = modelConfig.providers.find(
-            (p) => (p.provider || "").toLowerCase() === typeLower && p.apiKey && p.apiKey.trim() !== ""
+            (p) => p.id !== matchedProvider.id && (p.provider || "").toLowerCase() === typeLower && p.apiKey && p.apiKey.trim() !== ""
           );
           if (fallbackProfile) {
             apiKey = fallbackProfile.apiKey;
             baseUrl = fallbackProfile.baseUrl || baseUrl;
           }
         }
-      } else {
-        const modelConfig = loadModelConfig();
-        const matchedProvider = modelConfig.providers?.find(
-          p => p.id?.toLowerCase() === prefix || p.name?.toLowerCase() === prefix
-        );
-        if (matchedProvider) {
-          apiKey = matchedProvider.apiKey || "";
-          baseUrl = matchedProvider.baseUrl || undefined;
-          modelName = rest;
-          const typeLower = (matchedProvider.provider || "").toLowerCase();
 
-          // Fallback: if matched profile has empty apiKey, scan for other profiles of same provider type
-          if (!apiKey || apiKey.trim() === "") {
-            const fallbackProfile = modelConfig.providers.find(
-              (p) => p.id !== matchedProvider.id && (p.provider || "").toLowerCase() === typeLower && p.apiKey && p.apiKey.trim() !== ""
-            );
-            if (fallbackProfile) {
-              apiKey = fallbackProfile.apiKey;
-              baseUrl = fallbackProfile.baseUrl || baseUrl;
-            }
-          }
-
-          if (typeLower === "openrouter") {
-            provider = "custom";
-            if (!baseUrl) {
-              baseUrl = "https://openrouter.ai/api/v1";
-            }
-          } else if (typeLower === "anthropic") {
-            provider = "anthropic";
-            baseUrl = undefined;
-          } else if (typeLower === "custom" || baseUrl) {
-            provider = "custom";
-          } else {
-            provider = "openai";
-          }
-        } else if (prefix.startsWith("openrouter")) {
+        if (typeLower === "openrouter") {
           provider = "custom";
-          baseUrl = "https://openrouter.ai/api/v1";
-          const canFallback = config.provider === "custom" || config.provider === "openai";
-          apiKey = process.env.PROVIDER_OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || process.env.CUSTOM_API_KEY || (canFallback ? config.apiKey : "");
-          modelName = rest;
-        } else if (prefix.startsWith("anthropic")) {
+          if (!baseUrl) {
+            baseUrl = "https://openrouter.ai/api/v1";
+          }
+        } else if (typeLower === "anthropic") {
           provider = "anthropic";
           baseUrl = undefined;
-          const canFallback = config.provider === "anthropic";
-          apiKey = process.env.PROVIDER_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || (canFallback ? config.apiKey : "");
+        } else if (typeLower === "custom" || baseUrl) {
+          provider = "custom";
+        } else {
+          provider = "openai";
+        }
+      } else if (prefix.startsWith("openrouter")) {
+        // Find openrouter provider in JSON config
+        const openrouterProfile = modelConfig.providers.find(
+          (p) => (p.provider === "openrouter" || p.provider === "custom") && p.baseUrl?.includes("openrouter.ai") && p.apiKey && p.apiKey.trim() !== ""
+        );
+        if (openrouterProfile) {
+          provider = "custom";
+          baseUrl = openrouterProfile.baseUrl || "https://openrouter.ai/api/v1";
+          apiKey = openrouterProfile.apiKey;
           modelName = rest;
-        } else if (prefix.startsWith("openai")) {
+        }
+      } else if (prefix.startsWith("anthropic")) {
+        // Find anthropic provider in JSON config
+        const anthropicProfile = modelConfig.providers.find(
+          (p) => p.provider === "anthropic" && p.apiKey && p.apiKey.trim() !== ""
+        );
+        if (anthropicProfile) {
+          provider = "anthropic";
+          baseUrl = undefined;
+          apiKey = anthropicProfile.apiKey;
+          modelName = rest;
+        }
+      } else if (prefix.startsWith("openai")) {
+        // Find openai provider in JSON config
+        const openaiProfile = modelConfig.providers.find(
+          (p) => p.provider === "openai" && p.apiKey && p.apiKey.trim() !== ""
+        );
+        if (openaiProfile) {
           provider = "openai";
           baseUrl = undefined;
-          const canFallback = config.provider === "openai";
-          apiKey = process.env.PROVIDER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || (canFallback ? config.apiKey : "");
+          apiKey = openaiProfile.apiKey;
           modelName = rest;
         }
       }

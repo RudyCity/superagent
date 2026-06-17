@@ -23,6 +23,56 @@ When you have completed your assigned task, or if you are blocked and cannot pro
 - **Status & Next Steps**: [Completed / Blocked / Unresolved issues - and any recommendations for the main agent]
 `;
 
+/**
+ * Extract the best report from a subagent's conversation history.
+ * Scans assistant messages in reverse to find one with meaningful content,
+ * preferring messages that contain report markers.
+ */
+function extractSubagentReport(agentInstance: any): string {
+  const msgs = agentInstance.getHistory().getMessages();
+  const assistantMsgs = [...msgs].filter(m => m.role === "assistant");
+
+  // 1. Look for messages containing the SUBAGENT TASK REPORT marker
+  for (let i = assistantMsgs.length - 1; i >= 0; i--) {
+    const content = assistantMsgs[i].content || "";
+    if (content.includes("SUBAGENT TASK REPORT") || content.includes("### SUBAGENT TASK REPORT")) {
+      return content;
+    }
+  }
+
+  // 2. Look for any message with substantial text content (not just tool calls)
+  for (let i = assistantMsgs.length - 1; i >= 0; i--) {
+    const content = assistantMsgs[i].content || "";
+    if (content.trim().length > 20) {
+      return content;
+    }
+  }
+
+  // 3. Fallback: last assistant message (even if short)
+  const last = assistantMsgs[assistantMsgs.length - 1];
+  return last?.content || "";
+}
+
+/**
+ * Resolve a subagent instance by ID first, then by typeName or role.
+ * Returns undefined if no match found.
+ */
+function resolveSubagentInstance(identifier: string): SubagentInstance | undefined {
+  // 1. Try direct ID lookup
+  const byId = subagentInstances.get(identifier);
+  if (byId) return byId;
+
+  // 2. Try matching by typeName or role (case-insensitive)
+  const lower = identifier.toLowerCase();
+  for (const [, inst] of subagentInstances.entries()) {
+    if (inst.typeName.toLowerCase() === lower || inst.role.toLowerCase() === lower) {
+      return inst;
+    }
+  }
+
+  return undefined;
+}
+
 export const defineSubagentTool: Tool = {
   name: "define_subagent",
   description: "Define a new subagent type with a specialized role and system prompt.",
@@ -269,11 +319,7 @@ export const invokeSubagentTool: Tool = {
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();
-        const msgs = agentInstance.getHistory().getMessages();
-        const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
-        if (lastAssistantMsg) {
-          instance.result = lastAssistantMsg.content;
-        }
+        instance.result = extractSubagentReport(agentInstance);
         notifySubagentsChanged();
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
         return `Subagent "${typeName}" (Role: ${role}) finished. Report:\n\n${instance.result || "(no report)"}`;
@@ -293,11 +339,7 @@ export const invokeSubagentTool: Tool = {
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();
-        const msgs = agentInstance.getHistory().getMessages();
-        const lastAssistantMsg = [...msgs].reverse().find(m => m.role === "assistant");
-        if (lastAssistantMsg) {
-          instance.result = lastAssistantMsg.content;
-        }
+        instance.result = extractSubagentReport(agentInstance);
         notifySubagentsChanged();
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
       }).catch((err: any) => {
@@ -323,7 +365,7 @@ export const sendMessageTool: Tool = {
     properties: {
       recipientId: {
         type: "string",
-        description: "The conversation ID of the subagent",
+        description: "The conversation ID or role/type name of the subagent (e.g. 'researcher', 'coder')",
       },
       message: {
         type: "string",
@@ -341,9 +383,9 @@ export const sendMessageTool: Tool = {
     const message = args.message as string;
     const wait = args.wait !== false;
 
-    const instance = subagentInstances.get(recipientId);
+    const instance = resolveSubagentInstance(recipientId);
     if (!instance) {
-      return `Error: Subagent instance "${recipientId}" not found.`;
+      return `Error: Subagent instance "${recipientId}" not found. Use 'list' action to see available IDs and role names.`;
     }
 
     if (instance.status !== "running" && instance.status !== "paused" && instance.status !== "idle") {
@@ -559,7 +601,7 @@ export const manageSubagentsTool: Tool = {
       conversationIds: {
         type: "array",
         items: { type: "string" },
-        description: "List of conversation IDs to kill or read logs/reports from",
+        description: "List of conversation IDs or role/type names (e.g. 'researcher', 'coder') to kill or read logs/reports from",
       },
     },
     required: ["action"],
@@ -592,11 +634,11 @@ export const manageSubagentsTool: Tool = {
         return "Error: conversationIds is required to retrieve logs.";
       }
       const id = conversationIds[0];
-      const inst = subagentInstances.get(id);
+      const inst = resolveSubagentInstance(id);
       if (!inst) {
-        return `Error: Subagent instance "${id}" not found.`;
+        return `Error: Subagent instance "${id}" not found. Use 'list' action to see available IDs and role names.`;
       }
-      return `Logs for Subagent ${id} (${inst.role}):\n${inst.logs.join("") || "(no logs yet)"}`;
+      return `Logs for Subagent ${inst.id} (${inst.role}):\n${inst.logs.join("") || "(no logs yet)"}`;
     }
 
     if (action === "report") {
@@ -604,11 +646,11 @@ export const manageSubagentsTool: Tool = {
         return "Error: conversationIds is required to retrieve the report.";
       }
       const id = conversationIds[0];
-      const inst = subagentInstances.get(id);
+      const inst = resolveSubagentInstance(id);
       if (!inst) {
-        return `Error: Subagent instance "${id}" not found.`;
+        return `Error: Subagent instance "${id}" not found. Use 'list' action to see available IDs and role names.`;
       }
-      return `Report for Subagent ${id} (${inst.role}):\n\n${inst.result || "No report available yet."}`;
+      return `Report for Subagent ${inst.id} (${inst.role}):\n\n${inst.result || "No report available yet."}`;
     }
 
     if (action === "kill") {
@@ -616,10 +658,10 @@ export const manageSubagentsTool: Tool = {
         return "Error: conversationIds is required for kill action.";
       }
       for (const id of conversationIds) {
-        const inst = subagentInstances.get(id);
+        const inst = resolveSubagentInstance(id);
         if (inst) {
           inst.agent.abort();
-          subagentInstances.delete(id);
+          subagentInstances.delete(inst.id);
         }
       }
       notifySubagentsChanged();
