@@ -98,7 +98,7 @@ export function WizardPanels(props: WizardPanelsProps) {
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 1 && wizardOptions.length > 0 && (
           <WizardDialog
-            title="🔑 PROVIDER MANAGER (Use Arrow Keys Up/Down & Enter):"
+            title="🔑 PROVIDER MANAGER (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
             borderColor="cyan"
             options={wizardOptions}
             selectedIndex={wizardSelectedIndex}
@@ -107,7 +107,7 @@ export function WizardPanels(props: WizardPanelsProps) {
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 2 && wizardOptions.length > 0 && (
           <WizardDialog
-            title="🔑 SELECT PROVIDER TEMPLATE (Use Arrow Keys Up/Down & Enter):"
+            title="🔑 SELECT PROVIDER TEMPLATE (↑/↓ Navigate, Enter: Select, Esc: Back):"
             borderColor="cyan"
             options={wizardOptions}
             selectedIndex={wizardSelectedIndex}
@@ -116,7 +116,7 @@ export function WizardPanels(props: WizardPanelsProps) {
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 3 && (
           <WizardDialog
-            title="🔑 CONFIGURE PROVIDER — PROFILE NAME (Type & Enter):"
+            title="🔑 CONFIGURE PROVIDER — PROFILE NAME (Type & Enter, Esc: Back):"
             description={`Enter config profile name (e.g. ${activeWizard.data.provider || "provider name"}, deepseek, or press Enter for default):`}
             borderColor="cyan"
             options={[]}
@@ -126,7 +126,7 @@ export function WizardPanels(props: WizardPanelsProps) {
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 4 && (
           <WizardDialog
-            title="🔑 CONFIGURE PROVIDER — BASE URL (Type & Enter):"
+            title="🔑 CONFIGURE PROVIDER — BASE URL (Type & Enter, Esc: Back):"
             description="Please enter your Base URL (e.g. http://localhost:11434/v1):"
             borderColor="cyan"
             options={[]}
@@ -136,7 +136,7 @@ export function WizardPanels(props: WizardPanelsProps) {
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 6 && (
           <WizardDialog
-            title="🔑 CONFIGURE PROVIDER — API KEY (Type & Enter):"
+            title="🔑 CONFIGURE PROVIDER — API KEY (Type & Enter, Esc: Back):"
             description="Please enter your API Key:"
             borderColor="cyan"
             options={[]}
@@ -147,7 +147,7 @@ export function WizardPanels(props: WizardPanelsProps) {
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 10 && wizardOptions.length > 0 && (
           <WizardDialog
-            title="🛠️ PROJECT INITIALIZATION — Select Technology Stack (Arrows & Enter):"
+            title="🛠️ PROJECT INITIALIZATION — Select Technology Stack (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
             description="Choose a template catalog stack or let AI dynamically design your project details:"
             borderColor="cyan"
             options={wizardOptions}
@@ -157,7 +157,7 @@ export function WizardPanels(props: WizardPanelsProps) {
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 11 && (
           <WizardDialog
-            title="🛠️ PROJECT INITIALIZATION — Enter Project Name (Type & Enter):"
+            title="🛠️ PROJECT INITIALIZATION — Enter Project Name (Type & Enter, Esc: Back):"
             description="Specify the catalog name for this workspace:"
             borderColor="cyan"
             options={[]}
@@ -167,7 +167,7 @@ export function WizardPanels(props: WizardPanelsProps) {
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 12 && (
           <WizardDialog
-            title="🛠️ PROJECT INITIALIZATION — Enter Project Description (Type & Enter):"
+            title="🛠️ PROJECT INITIALIZATION — Enter Project Description (Type & Enter, Esc: Back):"
             description="Give a one-sentence overview description of this software:"
             borderColor="cyan"
             options={[]}
@@ -177,7 +177,7 @@ export function WizardPanels(props: WizardPanelsProps) {
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 13 && (
           <WizardDialog
-            title="🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter):"
+            title="🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter, Esc: Back):"
             description="State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:"
             borderColor="magenta"
             options={[]}

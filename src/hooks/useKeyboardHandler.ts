@@ -1156,6 +1156,69 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           setWizardOptions(options);
           setWizardSelectedIndex(skillIndex);
           return;
+        } else if (activeWizard.type === "login") {
+          if (activeWizard.step === 2) {
+            // Back to step 1: Provider Manager main menu
+            const list = getConfiguredProviders();
+            if (list.length > 0) {
+              setActiveWizard({ type: "login", step: 1, data: {} });
+              setWizardOptions(["1. Add / Log in to a Provider", "2. List Configured Providers"]);
+            } else {
+              // No providers configured, just cancel the wizard
+              setActiveWizard(null);
+              setWizardOptions([]);
+            }
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          } else if (activeWizard.step === 3) {
+            // Back to step 2: Select provider template
+            setActiveWizard({ type: "login", step: 2, data: {} });
+            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          } else if (activeWizard.step === 4) {
+            // Back to step 3: Profile name (preserve provider)
+            setActiveWizard({ type: "login", step: 3, data: { provider: activeWizard.data.provider } });
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          } else if (activeWizard.step === 6) {
+            // Back to step 4 (custom with baseUrl) or step 3 (non-custom)
+            if (activeWizard.data.baseUrl) {
+              setActiveWizard({ type: "login", step: 4, data: { provider: activeWizard.data.provider, name: activeWizard.data.name } });
+            } else {
+              setActiveWizard({ type: "login", step: 3, data: { provider: activeWizard.data.provider } });
+            }
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          } else if (activeWizard.step === 11) {
+            // Back to step 10: Tech stack selection
+            setActiveWizard({ type: "login", step: 10, data: activeWizard.data });
+            setWizardOptions(["1. TypeScript (Recommended)", "2. JavaScript", "3. Python", "4. Rust", "5. Go", "6. AI-Assisted Initialization"]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          } else if (activeWizard.step === 12) {
+            // Back to step 11: Project name
+            setActiveWizard({ type: "login", step: 11, data: activeWizard.data });
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          } else if (activeWizard.step === 13) {
+            // Back to step 10: Tech stack selection
+            setActiveWizard({ type: "login", step: 10, data: activeWizard.data });
+            setWizardOptions(["1. TypeScript (Recommended)", "2. JavaScript", "3. Python", "4. Rust", "5. Go", "6. AI-Assisted Initialization"]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          }
+          // Step 1 and Step 10: fall through to cancel wizard below
         }
 
         if (activeWizard.step !== 1) {

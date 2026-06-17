@@ -103,15 +103,15 @@ export function DashboardWizard({
                     ? "❓ QUESTION FROM AGENT (Arrows: navigate, Space: select, Enter: submit):"
                     : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):")
             ) :
-            activeWizard.type === "login" && activeWizard.step === 1 ? "🔑 PROVIDER MANAGER (Use Arrow Keys Up/Down & Enter):" :
-            activeWizard.type === "login" && activeWizard.step === 2 ? "🔑 SELECT PROVIDER TEMPLATE (Use Arrow Keys Up/Down & Enter):" :
-            activeWizard.type === "login" && activeWizard.step === 3 ? "🔑 CONFIGURE PROVIDER — PROFILE NAME (Type & Enter):" :
-            activeWizard.type === "login" && activeWizard.step === 4 ? "🔑 CONFIGURE PROVIDER — BASE URL (Type & Enter):" :
-            activeWizard.type === "login" && activeWizard.step === 6 ? "🔑 CONFIGURE PROVIDER — API KEY (Type & Enter):" :
-            activeWizard.type === "login" && activeWizard.step === 10 ? "🛠️ PROJECT INITIALIZATION — Select Technology Stack (Arrows & Enter):" :
-            activeWizard.type === "login" && activeWizard.step === 11 ? "🛠️ PROJECT INITIALIZATION — Enter Project Name (Type & Enter):" :
-            activeWizard.type === "login" && activeWizard.step === 12 ? "🛠️ PROJECT INITIALIZATION — Enter Project Description (Type & Enter):" :
-            activeWizard.type === "login" && activeWizard.step === 13 ? "🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter):" :
+            activeWizard.type === "login" && activeWizard.step === 1 ? "🔑 PROVIDER MANAGER (↑/↓ Navigate, Enter: Select, Esc: Cancel):" :
+            activeWizard.type === "login" && activeWizard.step === 2 ? "🔑 SELECT PROVIDER TEMPLATE (↑/↓ Navigate, Enter: Select, Esc: Back):" :
+            activeWizard.type === "login" && activeWizard.step === 3 ? "🔑 CONFIGURE PROVIDER — PROFILE NAME (Type & Enter, Esc: Back):" :
+            activeWizard.type === "login" && activeWizard.step === 4 ? "🔑 CONFIGURE PROVIDER — BASE URL (Type & Enter, Esc: Back):" :
+            activeWizard.type === "login" && activeWizard.step === 6 ? "🔑 CONFIGURE PROVIDER — API KEY (Type & Enter, Esc: Back):" :
+            activeWizard.type === "login" && activeWizard.step === 10 ? "🛠️ PROJECT INITIALIZATION — Select Technology Stack (↑/↓ Navigate, Enter: Select, Esc: Cancel):" :
+            activeWizard.type === "login" && activeWizard.step === 11 ? "🛠️ PROJECT INITIALIZATION — Enter Project Name (Type & Enter, Esc: Back):" :
+            activeWizard.type === "login" && activeWizard.step === 12 ? "🛠️ PROJECT INITIALIZATION — Enter Project Description (Type & Enter, Esc: Back):" :
+            activeWizard.type === "login" && activeWizard.step === 13 ? "🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter, Esc: Back):" :
             `🔑 PROVIDER CREDENTIALS (Step ${activeWizard.step}):`
           }
           description={

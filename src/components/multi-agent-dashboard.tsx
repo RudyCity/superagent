@@ -867,6 +867,15 @@ export function MultiAgentDashboard({
     focusArea,
     setFocusArea,
     setLogScrollOffset,
+    setChecklistScrollOffset,
+    setAgentsScrollOffset,
+    setProcsScrollOffset,
+    checklistTasksCount: checklistTasks.length,
+    maxChecklistVisible,
+    agentsCount: runningSubagentsCount,
+    maxAgentsVisible,
+    procsCount: runningTasksCount,
+    maxProcsVisible,
   });
 
   const maxVisibleSessions = Math.max(3, leftTopHeight - 2);
@@ -962,7 +971,7 @@ export function MultiAgentDashboard({
 
       {/* Horizontal Divider Line */}
       <Box flexDirection="row" paddingX={1} marginTop={1} marginBottom={0}>
-        <Text color="gray" dimColor>{"─".repeat(terminalSize.width - 2)}</Text>
+        <Text color="gray" dimColor>{"─".repeat(Math.floor(terminalSize.width * 0.8))}</Text>
       </Box>
 
       {/* Wizard Dialog (if active - Full Width) */}

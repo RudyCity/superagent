@@ -29,6 +29,15 @@ export interface DashboardMouseContext {
   focusArea: string;
   setFocusArea: React.Dispatch<React.SetStateAction<any>>;
   setLogScrollOffset: React.Dispatch<React.SetStateAction<number>>;
+  setChecklistScrollOffset: React.Dispatch<React.SetStateAction<number>>;
+  setAgentsScrollOffset: React.Dispatch<React.SetStateAction<number>>;
+  setProcsScrollOffset: React.Dispatch<React.SetStateAction<number>>;
+  checklistTasksCount: number;
+  maxChecklistVisible: number;
+  agentsCount: number;
+  maxAgentsVisible: number;
+  procsCount: number;
+  maxProcsVisible: number;
 }
 
 export function useDashboardMouse(ctx: DashboardMouseContext) {
@@ -56,6 +65,15 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     focusArea,
     setFocusArea,
     setLogScrollOffset,
+    setChecklistScrollOffset,
+    setAgentsScrollOffset,
+    setProcsScrollOffset,
+    checklistTasksCount,
+    maxChecklistVisible,
+    agentsCount,
+    maxAgentsVisible,
+    procsCount,
+    maxProcsVisible,
   } = ctx;
 
   useEffect(() => {
@@ -73,12 +91,39 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
         const action = match.groups?.action;
 
         if (btn === "64") {
-          setLogScrollOffset((prev) => {
-            const maxScroll = Math.max(0, wrappedLines.length - logsCount);
-            return Math.min(prev + 1, maxScroll);
-          });
+          // Scroll UP — dispatch based on focused area
+          if (focusArea === "checklist") {
+            setChecklistScrollOffset((prev) => {
+              const maxScroll = Math.max(0, checklistTasksCount - maxChecklistVisible);
+              return Math.min(prev + 1, maxScroll);
+            });
+          } else if (focusArea === "agents") {
+            setAgentsScrollOffset((prev) => {
+              const maxScroll = Math.max(0, agentsCount - maxAgentsVisible);
+              return Math.min(prev + 1, maxScroll);
+            });
+          } else if (focusArea === "procs") {
+            setProcsScrollOffset((prev) => {
+              const maxScroll = Math.max(0, procsCount - maxProcsVisible);
+              return Math.min(prev + 1, maxScroll);
+            });
+          } else {
+            setLogScrollOffset((prev) => {
+              const maxScroll = Math.max(0, wrappedLines.length - logsCount);
+              return Math.min(prev + 1, maxScroll);
+            });
+          }
         } else if (btn === "65") {
-          setLogScrollOffset((prev) => Math.max(0, prev - 1));
+          // Scroll DOWN — dispatch based on focused area
+          if (focusArea === "checklist") {
+            setChecklistScrollOffset((prev) => Math.max(0, prev - 1));
+          } else if (focusArea === "agents") {
+            setAgentsScrollOffset((prev) => Math.max(0, prev - 1));
+          } else if (focusArea === "procs") {
+            setProcsScrollOffset((prev) => Math.max(0, prev - 1));
+          } else {
+            setLogScrollOffset((prev) => Math.max(0, prev - 1));
+          }
         } else if (btn === "0" && action === "M" && colStr && rowStr) {
           const x = parseInt(colStr, 10);
           const y = parseInt(rowStr, 10);
@@ -348,5 +393,12 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     leftTopHeight,
     wizardIsLoadingModels,
     agent,
+    focusArea,
+    checklistTasksCount,
+    maxChecklistVisible,
+    agentsCount,
+    maxAgentsVisible,
+    procsCount,
+    maxProcsVisible,
   ]);
 }

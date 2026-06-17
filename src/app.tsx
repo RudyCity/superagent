@@ -513,15 +513,15 @@ export function App({
   const getWizardPlaceholder = () => {
     if (!activeWizard) return "Type a message or /help...";
     if (activeWizard.type === "login") {
-      if (activeWizard.step === 1) return "Select option using arrows and Enter...";
-      if (activeWizard.step === 2) return "Select provider template using arrows and Enter...";
-      if (activeWizard.step === 3) return "Enter config profile name (or press Enter for default)...";
-      if (activeWizard.step === 4) return "Enter Custom Base URL...";
-      if (activeWizard.step === 6) return "Paste API key...";
-      if (activeWizard.step === 10) return "Select option using arrows and Enter...";
-      if (activeWizard.step === 11) return "Enter project name (press Enter for folder default)...";
-      if (activeWizard.step === 12) return "Enter project description (press Enter for default)...";
-      if (activeWizard.step === 13) return "Describe the project (e.g. CLI tool in Rust)...";
+      if (activeWizard.step === 1) return "Select option using arrows and Enter (Esc: Cancel)...";
+      if (activeWizard.step === 2) return "Select provider template using arrows and Enter (Esc: Back)...";
+      if (activeWizard.step === 3) return "Enter config profile name (or press Enter for default, Esc: Back)...";
+      if (activeWizard.step === 4) return "Enter Custom Base URL (Esc: Back)...";
+      if (activeWizard.step === 6) return "Paste API key (Esc: Back)...";
+      if (activeWizard.step === 10) return "Select option using arrows and Enter (Esc: Cancel)...";
+      if (activeWizard.step === 11) return "Enter project name (press Enter for folder default, Esc: Back)...";
+      if (activeWizard.step === 12) return "Enter project description (press Enter for default, Esc: Back)...";
+      if (activeWizard.step === 13) return "Describe the project (e.g. CLI tool in Rust, Esc: Back)...";
     }
     if (activeWizard.type === "model") {
       if (activeWizard.step === 1) return "Select option using arrows and Enter...";

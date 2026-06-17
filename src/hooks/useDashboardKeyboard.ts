@@ -2,6 +2,7 @@ import React from "react";
 import { useInput } from "ink";
 import { getPasteSplit, filterSuggestions } from "../utils/text.js";
 import { subagentInstances, backgroundTasks } from "../core/tools/state.js";
+import { getConfiguredProviders } from "../core/config.js";
 
 export interface DashboardKeyboardContext {
   exit: () => void;
@@ -300,6 +301,61 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         if (activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 2) {
           handleQuerySubmit("< Back");
           return;
+        }
+        if (activeWizard && activeWizard.type === "login") {
+          if (activeWizard.step === 2) {
+            const list = getConfiguredProviders();
+            if (list.length > 0) {
+              setActiveWizard({ type: "login", step: 1, data: {} });
+              setWizardOptions(["1. Add / Log in to a Provider", "2. List Configured Providers"]);
+            } else {
+              setActiveWizard(null);
+              setWizardOptions([]);
+            }
+            setWizardSelectedIndex(0);
+            setQuery("");
+            return;
+          } else if (activeWizard.step === 3) {
+            setActiveWizard({ type: "login", step: 2, data: {} });
+            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+            setWizardSelectedIndex(0);
+            setQuery("");
+            return;
+          } else if (activeWizard.step === 4) {
+            setActiveWizard({ type: "login", step: 3, data: { provider: activeWizard.data.provider } });
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setQuery("");
+            return;
+          } else if (activeWizard.step === 6) {
+            if (activeWizard.data.baseUrl) {
+              setActiveWizard({ type: "login", step: 4, data: { provider: activeWizard.data.provider, name: activeWizard.data.name } });
+            } else {
+              setActiveWizard({ type: "login", step: 3, data: { provider: activeWizard.data.provider } });
+            }
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setQuery("");
+            return;
+          } else if (activeWizard.step === 11) {
+            setActiveWizard({ type: "login", step: 10, data: activeWizard.data });
+            setWizardOptions(["1. TypeScript (Recommended)", "2. JavaScript", "3. Python", "4. Rust", "5. Go", "6. AI-Assisted Initialization"]);
+            setWizardSelectedIndex(0);
+            setQuery("");
+            return;
+          } else if (activeWizard.step === 12) {
+            setActiveWizard({ type: "login", step: 11, data: activeWizard.data });
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setQuery("");
+            return;
+          } else if (activeWizard.step === 13) {
+            setActiveWizard({ type: "login", step: 10, data: activeWizard.data });
+            setWizardOptions(["1. TypeScript (Recommended)", "2. JavaScript", "3. Python", "4. Rust", "5. Go", "6. AI-Assisted Initialization"]);
+            setWizardSelectedIndex(0);
+            setQuery("");
+            return;
+          }
         }
         if (activeWizard && activeWizard.step !== 1) {
           const backOption = wizardOptions.find(opt => {
