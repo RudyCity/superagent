@@ -45,6 +45,116 @@ try {
   // Ignore errors during initial startup load
 }
 
+// One-time migration: convert legacy bare MODEL_* keys to canonical MODEL_MULTI_* / MODEL_SINGLE_* keys.
+// This handles users who have old .env files with bare keys like MODEL_DEPTH_0, MODEL_SUBAGENT_CODER, etc.
+try {
+  const BARE_TO_MULTI: Record<string, string> = {
+    MODEL_DEPTH_0: "MODEL_MULTI_MASTER",
+    MODEL_DEPT0: "MODEL_MULTI_MASTER",
+    MODEL_DEPTH_1: "MODEL_MULTI_SUPERAGENT",
+    MODEL_DEPT1: "MODEL_MULTI_SUPERAGENT",
+    MODEL_DEPTH_2: "MODEL_MULTI_SUBAGENT",
+    MODEL_DEPT2: "MODEL_MULTI_SUBAGENT",
+    MODEL_MASTER: "MODEL_MULTI_MASTER",
+    MODEL_SUPERAGENT: "MODEL_MULTI_SUPERAGENT",
+    MODEL_SUBAGENT: "MODEL_MULTI_SUBAGENT",
+    MODEL_SUBAGENT_RESEARCHER: "MODEL_MULTI_SUBAGENT_RESEARCHER",
+    MODEL_SUBAGENT_CODER: "MODEL_MULTI_SUBAGENT_CODER",
+    MODEL_SUBAGENT_REVIEWER: "MODEL_MULTI_SUBAGENT_REVIEWER",
+    MODEL_RESEARCHER: "MODEL_MULTI_SUBAGENT_RESEARCHER",
+    MODEL_CODER: "MODEL_MULTI_SUBAGENT_CODER",
+    MODEL_REVIEWER: "MODEL_MULTI_SUBAGENT_REVIEWER",
+  };
+
+  let migrated = false;
+  for (const [bareKey, canonicalKey] of Object.entries(BARE_TO_MULTI)) {
+    const val = process.env[bareKey];
+    if (val && val.trim() !== "") {
+      // Only migrate if the canonical key is not already set
+      if (!process.env[canonicalKey] || process.env[canonicalKey]!.trim() === "") {
+        process.env[canonicalKey] = val;
+      }
+      delete process.env[bareKey];
+      migrated = true;
+    }
+  }
+
+  // Also migrate deprecated MODEL_MULTI_DEPTH_* / MODEL_MULTI_DEPT* aliases
+  const DEPRECATED_ALIASES: Record<string, string> = {
+    MODEL_MULTI_DEPTH_0: "MODEL_MULTI_MASTER",
+    MODEL_MULTI_DEPT0: "MODEL_MULTI_MASTER",
+    MODEL_MULTI_DEPTH_1: "MODEL_MULTI_SUPERAGENT",
+    MODEL_MULTI_DEPT1: "MODEL_MULTI_SUPERAGENT",
+    MODEL_MULTI_DEPTH_2: "MODEL_MULTI_SUBAGENT",
+    MODEL_MULTI_DEPT2: "MODEL_MULTI_SUBAGENT",
+    MODEL_MULTI_RESEARCHER: "MODEL_MULTI_SUBAGENT_RESEARCHER",
+    MODEL_MULTI_CODER: "MODEL_MULTI_SUBAGENT_CODER",
+    MODEL_MULTI_REVIEWER: "MODEL_MULTI_SUBAGENT_REVIEWER",
+    MODEL_SINGLE_DEPTH_2: "MODEL_SINGLE_SUBAGENT",
+    MODEL_SINGLE_RESEARCHER: "MODEL_SINGLE_SUBAGENT_RESEARCHER",
+    MODEL_SINGLE_CODER: "MODEL_SINGLE_SUBAGENT_CODER",
+    MODEL_SINGLE_REVIEWER: "MODEL_SINGLE_SUBAGENT_REVIEWER",
+  };
+
+  for (const [deprecatedKey, canonicalKey] of Object.entries(DEPRECATED_ALIASES)) {
+    const val = process.env[deprecatedKey];
+    if (val && val.trim() !== "") {
+      if (!process.env[canonicalKey] || process.env[canonicalKey]!.trim() === "") {
+        process.env[canonicalKey] = val;
+      }
+      delete process.env[deprecatedKey];
+      migrated = true;
+    }
+  }
+
+  // If migration happened, rewrite the .env file to persist canonical keys
+  if (migrated) {
+    const envPath = path.join(getRootConfigDir(), ".env");
+    if (fs.existsSync(envPath)) {
+      let content = fs.readFileSync(envPath, "utf-8");
+      const allLegacyKeys = [...Object.keys(BARE_TO_MULTI), ...Object.keys(DEPRECATED_ALIASES)];
+      const lines = content.split(/\r?\n/);
+      const cleanLines: string[] = [];
+      const writtenCanonical = new Set<string>();
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#")) {
+          const eqIdx = trimmed.indexOf("=");
+          if (eqIdx > 0) {
+            const key = trimmed.substring(0, eqIdx).trim();
+            if (allLegacyKeys.includes(key)) {
+              // Skip legacy key — canonical version is already in process.env
+              continue;
+            }
+          }
+        }
+        cleanLines.push(line);
+      }
+
+      // Append canonical keys that were migrated
+      for (const [bareKey, canonicalKey] of Object.entries({ ...BARE_TO_MULTI, ...DEPRECATED_ALIASES })) {
+        const val = process.env[canonicalKey];
+        if (val && val.trim() !== "" && !writtenCanonical.has(canonicalKey)) {
+          // Check if canonical key already exists in the file
+          const exists = cleanLines.some(l => {
+            const t = l.trim();
+            return t && !t.startsWith("#") && t.startsWith(`${canonicalKey}=`);
+          });
+          if (!exists) {
+            cleanLines.push(`${canonicalKey}=${val}`);
+          }
+          writtenCanonical.add(canonicalKey);
+        }
+      }
+
+      fs.writeFileSync(envPath, cleanLines.filter(l => l.trim() !== "").join("\n"), "utf-8");
+    }
+  }
+} catch (error) {
+  // Ignore migration errors
+}
+
 function parseTierConfig(val: string) {
   const colonIndex = (val || "").indexOf(":");
   if (colonIndex > 0) {

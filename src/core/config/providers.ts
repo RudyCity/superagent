@@ -51,13 +51,9 @@ export function getConfiguredProviders(): ConfiguredProvider[] {
 export function switchActiveProvider(name: string): Record<string, string> {
   const updates: Record<string, string> = {};
 
-  // Clear all depth overrides to ensure test compatibility and prevent leaks
+  // Clear all model tier overrides to ensure clean state
   for (const key of Object.keys(process.env)) {
-    if (
-      key.startsWith("MODEL_DEPTH_") ||
-      key.startsWith("MODEL_DEPT") ||
-      (key.startsWith("MODEL_") && key !== "MODEL" && key !== "MODEL_LIMITS")
-    ) {
+    if (key.startsWith("MODEL_") && key !== "MODEL" && key !== "MODEL_LIMITS") {
       delete process.env[key];
     }
   }

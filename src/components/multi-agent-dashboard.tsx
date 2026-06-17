@@ -109,7 +109,7 @@ export function MultiAgentDashboard({
   const [pastePrefixLength, setPastePrefixLength] = useState(0);
   const [pasteSuffixLength, setPasteSuffixLength] = useState(0);
   const [activeModel, setActiveModel] = useState(() => {
-    return process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+    return process.env.MODEL_MULTI_MASTER || process.env.MODEL_SINGLE_SUPERAGENT || process.env.MODEL || getDefaultModel();
   });
   const [lastSpeed, setLastSpeed] = useState<number | null>(null);
   const [isExecutingTool, setIsExecutingTool] = useState(false);
@@ -119,7 +119,7 @@ export function MultiAgentDashboard({
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [executingToolDescription, setExecutingToolDescription] = useState("");
   const [contextLimit, setContextLimit] = useState(() => {
-    const modelName = process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel();
+    const modelName = process.env.MODEL_MULTI_MASTER || process.env.MODEL_SINGLE_SUPERAGENT || process.env.MODEL || getDefaultModel();
     let initialLimit = getContextWindowLimit(modelName);
     if (process.env.CONTEXT_WINDOW_LIMIT) {
       const parsed = parseInt(process.env.CONTEXT_WINDOW_LIMIT, 10);

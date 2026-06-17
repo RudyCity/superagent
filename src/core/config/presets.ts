@@ -47,10 +47,17 @@ function readPresetsFile(): ModelPresetsFile {
     if (data && typeof data === "object" && !Array.isArray(data)) {
       const multi = Array.isArray(data.multi) ? data.multi : [];
       const single = Array.isArray(data.single) ? data.single : [];
-      return {
+      const result = {
         multi: multi.map(cleanPreset),
         single: single.map(cleanPreset),
       };
+      // Migrate legacy bare keys in presets to canonical keys
+      const migrated = migratePresetKeys(result);
+      if (migrated) {
+        ensureGlobalConfigDir();
+        fs.writeFileSync(customPath, JSON.stringify(result, null, 2), "utf-8");
+      }
+      return result;
     }
 
     // Old format: [...] (flat array) — migrate
@@ -71,6 +78,8 @@ function readPresetsFile(): ModelPresetsFile {
           }
         }
       }
+      // Migrate legacy bare keys too
+      migratePresetKeys(result);
       // Write migrated file back
       ensureGlobalConfigDir();
       fs.writeFileSync(customPath, JSON.stringify(result, null, 2), "utf-8");
@@ -81,6 +90,60 @@ function readPresetsFile(): ModelPresetsFile {
   }
 
   return { multi: [], single: [] };
+}
+
+/**
+ * Migrate legacy bare MODEL_* keys in preset models to canonical MODEL_MULTI_* keys.
+ * Returns true if any migration happened.
+ */
+function migratePresetKeys(presets: ModelPresetsFile): boolean {
+  const KEY_MAP: Record<string, string> = {
+    MODEL_DEPTH_0: "MODEL_MULTI_MASTER",
+    MODEL_DEPT0: "MODEL_MULTI_MASTER",
+    MODEL_DEPTH_1: "MODEL_MULTI_SUPERAGENT",
+    MODEL_DEPT1: "MODEL_MULTI_SUPERAGENT",
+    MODEL_DEPTH_2: "MODEL_MULTI_SUBAGENT",
+    MODEL_DEPT2: "MODEL_MULTI_SUBAGENT",
+    MODEL_MASTER: "MODEL_MULTI_MASTER",
+    MODEL_SUPERAGENT: "MODEL_MULTI_SUPERAGENT",
+    MODEL_SUBAGENT: "MODEL_MULTI_SUBAGENT",
+    MODEL_SUBAGENT_RESEARCHER: "MODEL_MULTI_SUBAGENT_RESEARCHER",
+    MODEL_SUBAGENT_CODER: "MODEL_MULTI_SUBAGENT_CODER",
+    MODEL_SUBAGENT_REVIEWER: "MODEL_MULTI_SUBAGENT_REVIEWER",
+    MODEL_RESEARCHER: "MODEL_MULTI_SUBAGENT_RESEARCHER",
+    MODEL_CODER: "MODEL_MULTI_SUBAGENT_CODER",
+    MODEL_REVIEWER: "MODEL_MULTI_SUBAGENT_REVIEWER",
+    MODEL_MULTI_DEPTH_0: "MODEL_MULTI_MASTER",
+    MODEL_MULTI_DEPT0: "MODEL_MULTI_MASTER",
+    MODEL_MULTI_DEPTH_1: "MODEL_MULTI_SUPERAGENT",
+    MODEL_MULTI_DEPT1: "MODEL_MULTI_SUPERAGENT",
+    MODEL_MULTI_DEPTH_2: "MODEL_MULTI_SUBAGENT",
+    MODEL_MULTI_DEPT2: "MODEL_MULTI_SUBAGENT",
+    MODEL_MULTI_RESEARCHER: "MODEL_MULTI_SUBAGENT_RESEARCHER",
+    MODEL_MULTI_CODER: "MODEL_MULTI_SUBAGENT_CODER",
+    MODEL_MULTI_REVIEWER: "MODEL_MULTI_SUBAGENT_REVIEWER",
+    MODEL_SINGLE_DEPTH_2: "MODEL_SINGLE_SUBAGENT",
+    MODEL_SINGLE_RESEARCHER: "MODEL_SINGLE_SUBAGENT_RESEARCHER",
+    MODEL_SINGLE_CODER: "MODEL_SINGLE_SUBAGENT_CODER",
+    MODEL_SINGLE_REVIEWER: "MODEL_SINGLE_SUBAGENT_REVIEWER",
+  };
+
+  let migrated = false;
+  const allPresets = [...presets.multi, ...presets.single];
+  for (const preset of allPresets) {
+    if (!preset.models) continue;
+    for (const [oldKey, newKey] of Object.entries(KEY_MAP)) {
+      if (preset.models[oldKey] !== undefined) {
+        // Only set canonical key if not already present
+        if (preset.models[newKey] === undefined) {
+          preset.models[newKey] = preset.models[oldKey];
+        }
+        delete preset.models[oldKey];
+        migrated = true;
+      }
+    }
+  }
+  return migrated;
 }
 
 function cleanPreset(p: any): ModelPreset {
