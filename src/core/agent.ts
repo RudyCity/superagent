@@ -96,6 +96,7 @@ export class Agent {
   private onQuestion: QuestionHandler;
   private abortController: AbortController | null = null;
   private isRunning = false;
+  private pendingMessage: string | null = null;
   private textLogBuffer = "";
 
   public approvePlan(): void {
@@ -296,7 +297,14 @@ export class Agent {
   }
 
   async sendMessage(userInput: string): Promise<void> {
-    if (this.isRunning) return;
+    if (this.isRunning) {
+      // Queue the message instead of dropping it silently.
+      // This handles the race condition where the user approves a plan
+      // while the agent loop is still finishing its current iteration.
+      this.pendingMessage = userInput;
+      this.writeToLogFile("INFO", `Message queued (agent is running): "${userInput.substring(0, 80)}..."`);
+      return;
+    }
     this.isRunning = true;
     this.abortController = new AbortController();
 
@@ -347,7 +355,20 @@ export class Agent {
       this.flushTextLogBuffer();
       this.isRunning = false;
       this.abortController = null;
-      this.onEvent({ type: "done" });
+
+      // If a message was queued while this run was in progress (e.g. plan approval),
+      // auto-send it now instead of firing "done" and stopping.
+      if (this.pendingMessage !== null) {
+        const queued = this.pendingMessage;
+        this.pendingMessage = null;
+        this.writeToLogFile("INFO", `Auto-sending queued message: "${queued.substring(0, 80)}..."`);
+        // Fire a "text" event so the UI knows the agent is continuing
+        this.onEvent({ type: "text", content: "\n[SYS] Resuming with queued approval message...\n" });
+        // Recursively send — this sets isRunning=true and starts a new loop
+        await this.sendMessage(queued);
+      } else {
+        this.onEvent({ type: "done" });
+      }
     }
   }
 
