@@ -86,11 +86,11 @@ describe("Slash Command: /model", () => {
       step: 1,
       data: {},
     });
-    expect(wizardOptions).toContain("1. Load/Apply Model Preset");
-    expect(wizardOptions).toContain("2. List Model Presets");
-    expect(wizardOptions).toContain("3. Create Model Preset");
-    expect(wizardOptions).toContain("4. Edit Model Preset");
-    expect(wizardOptions).toContain("5. Delete Model Preset");
+    expect(wizardOptions).toContain("1. Load/Apply Model Preset [Multi-Agent]");
+    expect(wizardOptions).toContain("2. List Model Presets [Multi-Agent]");
+    expect(wizardOptions).toContain("3. Create Model Preset [Multi-Agent]");
+    expect(wizardOptions).toContain("4. Edit Model Preset [Multi-Agent]");
+    expect(wizardOptions).toContain("5. Delete Model Preset [Multi-Agent]");
     expect(wizardOptions).toContain("< Back");
   });
 

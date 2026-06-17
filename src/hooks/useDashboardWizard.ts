@@ -19,6 +19,7 @@ import {
   getProviderOptionsList,
   getActiveConfigAudit
 } from "../core/config.js";
+import type { PresetMode } from "../core/config.js";
 import { filterSuggestions } from "../utils/text.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint } from "../core/checkpoints.js";
@@ -114,6 +115,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
   } = ctx;
 
   const isMulti = agent.isMultiAgent;
+  const presetMode: PresetMode = isMulti ? "multi" : "single";
+  const modeLabel = isMulti ? "Multi-Agent" : "Single-Agent";
 
   const getTierOptionsList = (
     masterModelFormatted: string,
@@ -576,8 +579,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             step: 4,
             data: {},
           });
-          const presets = getModelPresets();
-          const options = presets.map(p => `${p.name} - ${p.description}`);
+          const presets = getModelPresets(presetMode);
+          const options = presets.map(p => `${p.name} - ${p.description}${p.mode ? ` [${p.mode}]` : ""}`);
           setWizardOptions([...options, "< Back"]);
           setWizardSelectedIndex(0);
           setQuery("");
@@ -585,14 +588,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         }
 
         if (choice.includes("list") || choice === "2. list model presets") {
-          const presets = getModelPresets();
+          const presets = getModelPresets(presetMode);
           const listStr = presets.map(p => {
+            const modeInfo = p.mode ? ` [${p.mode}]` : "";
             const modelsStr = Object.entries(p.models).map(([k, v]) => `    - ${k}: ${v}`).join("\n");
-            return `- **${p.name}**: ${p.description}\n${modelsStr}`;
+            return `- **${p.name}**${modeInfo}: ${p.description}\n${modelsStr}`;
           }).join("\n");
           setMasterLogs((prev) => [
             ...prev,
-            `Available Model Presets:\n${listStr}`
+            `Available Model Presets (${modeLabel}):\n${listStr}`
           ].slice(-500));
           setActiveWizard(null);
           setWizardOptions([]);
@@ -614,10 +618,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         }
 
         if (choice.includes("edit") || choice === "4. edit model preset") {
-          const presets = getModelPresets();
+          const presets = getModelPresets(presetMode);
           const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
           if (customPresets.length === 0) {
-            setMasterLogs((prev) => [...prev, `[ERROR] No custom presets available to edit.`].slice(-500));
+            setMasterLogs((prev) => [...prev, `[ERROR] No custom presets available to edit for ${modeLabel} mode.`].slice(-500));
             setActiveWizard(null);
             setWizardOptions([]);
             setWizardSelectedIndex(0);
@@ -635,10 +639,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         }
 
         if (choice.includes("delete") || choice === "5. delete model preset") {
-          const presets = getModelPresets();
+          const presets = getModelPresets(presetMode);
           const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
           if (customPresets.length === 0) {
-            setMasterLogs((prev) => [...prev, `[ERROR] No custom presets available to delete.`].slice(-500));
+            setMasterLogs((prev) => [...prev, `[ERROR] No custom presets available to delete for ${modeLabel} mode.`].slice(-500));
             setActiveWizard(null);
             setWizardOptions([]);
             setWizardSelectedIndex(0);
@@ -1369,11 +1373,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             data: {},
           });
           setWizardOptions([
-            "1. Load/Apply Model Preset",
-            "2. List Model Presets",
-            "3. Create Model Preset",
-            "4. Edit Model Preset",
-            "5. Delete Model Preset",
+            `1. Load/Apply Model Preset [${modeLabel}]`,
+            `2. List Model Presets [${modeLabel}]`,
+            `3. Create Model Preset [${modeLabel}]`,
+            `4. Edit Model Preset [${modeLabel}]`,
+            `5. Delete Model Preset [${modeLabel}]`,
             "6. Configure Agent Tier Models",
             "< Back"
           ]);
@@ -1385,7 +1389,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const presetChoice = value;
         const presetName = presetChoice.split(" - ")[0].trim();
         try {
-          const envPath = applyModelPreset(presetName);
+          const envPath = applyModelPreset(presetName, presetMode);
           const isSingle = !isMulti;
           const effectiveMasterModel = isSingle
             ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
@@ -1467,11 +1471,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             data: {},
           });
           setWizardOptions([
-            "1. Load/Apply Model Preset",
-            "2. List Model Presets",
-            "3. Create Model Preset",
-            "4. Edit Model Preset",
-            "5. Delete Model Preset",
+            `1. Load/Apply Model Preset [${modeLabel}]`,
+            `2. List Model Presets [${modeLabel}]`,
+            `3. Create Model Preset [${modeLabel}]`,
+            `4. Edit Model Preset [${modeLabel}]`,
+            `5. Delete Model Preset [${modeLabel}]`,
             "6. Configure Agent Tier Models",
             "< Back"
           ]);
@@ -1534,10 +1538,76 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const presetName = activeWizard.data.presetName || "";
           const presetDescription = activeWizard.data.presetDescription || "";
           try {
-            const savedPath = saveModelPreset(presetName, presetDescription, models);
-            setMasterLogs((prev) => [...prev, `[SYSTEM] Model preset "${presetName}" saved successfully!\nSaved to: ${savedPath}`].slice(-500));
+            const savedPath = saveModelPreset(presetName, presetDescription, models, presetMode);
+
+            // Auto-apply the preset after saving
+            const envPath = applyModelPreset(presetName, presetMode);
+            const isSingle = !isMulti;
+            const effectiveMasterModel = isSingle
+              ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
+              : (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
+            const limit = getContextWindowLimit(effectiveMasterModel);
+            setContextLimit(limit);
+            setActiveModel(effectiveMasterModel);
+
+            const updatedLogs = [
+              `[MASTER] Updated Models:`,
+            ];
+
+            if (isSingle) {
+              const singleModel = process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel();
+              const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || "(use default)";
+              updatedLogs.push(
+                `[MASTER]   Single Agent Model: ${singleModel}`,
+                `[MASTER]   Subagent (depth 2): ${subagentModel}`
+              );
+
+              for (const [key, val] of Object.entries(process.env)) {
+                if (val && key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
+                  const name = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
+                  if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
+                    updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
+                  }
+                } else if (val && key.startsWith("MODEL_SINGLE_") && key !== "MODEL_SINGLE" && key !== "MODEL_SINGLE_SUBAGENT" && key !== "MODEL_SINGLE_DEPTH_2") {
+                  const name = key.replace("MODEL_SINGLE_", "").toLowerCase();
+                  if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
+                    updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
+                  }
+                }
+              }
+            } else {
+              const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+              const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+              const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+              
+              updatedLogs.push(
+                `[MASTER]   Master Agent (depth 0): ${masterModel}`,
+                `[MASTER]   Superagent (depth 1): ${superagentModel}`,
+                `[MASTER]   Subagent (depth 2): ${subagentModel}`
+              );
+
+              for (const [key, val] of Object.entries(process.env)) {
+                if (val && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
+                  const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+                    ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+                    : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+                  if (!updatedLogs.some(log => log.includes(`Subagent "${name}":`))) {
+                    updatedLogs.push(`[MASTER]   Subagent "${name}": ${val}`);
+                  }
+                }
+              }
+            }
+
+            setMasterLogs((prev) => [
+              ...prev,
+              `[SYSTEM] Model preset "${presetName}" saved & applied successfully!`,
+              `[MASTER] Context Limit: ${limit.toLocaleString()} tokens`,
+              `[MASTER] Saved to: ${savedPath}`,
+              `[MASTER] Applied to: ${envPath}`,
+              ...updatedLogs
+            ].slice(-500));
           } catch (err: any) {
-            setMasterLogs((prev) => [...prev, `[ERROR] Failed to save model preset: ${err.message}`].slice(-500));
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to save/apply model preset: ${err.message}`].slice(-500));
           }
           setActiveWizard(null);
           setWizardOptions([]);
@@ -1889,11 +1959,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             data: {},
           });
           setWizardOptions([
-            "1. Load/Apply Model Preset",
-            "2. List Model Presets",
-            "3. Create Model Preset",
-            "4. Edit Model Preset",
-            "5. Delete Model Preset",
+            `1. Load/Apply Model Preset [${modeLabel}]`,
+            `2. List Model Presets [${modeLabel}]`,
+            `3. Create Model Preset [${modeLabel}]`,
+            `4. Edit Model Preset [${modeLabel}]`,
+            `5. Delete Model Preset [${modeLabel}]`,
             "6. Configure Agent Tier Models",
             "< Back"
           ]);
@@ -1904,7 +1974,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
         const choice = value;
         const name = choice.split(" - ")[0].trim();
-        const presets = getModelPresets();
+        const presets = getModelPresets(presetMode);
         const preset = presets.find(p => p.name.toLowerCase() === name.toLowerCase());
         const models = preset ? preset.models : {};
         const desc = preset ? preset.description : "";
@@ -1924,7 +1994,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             step: 30,
             data: { ...activeWizard.data },
           });
-          const presets = getModelPresets();
+          const presets = getModelPresets(presetMode);
           const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
           setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
           setWizardSelectedIndex(0);
@@ -1952,11 +2022,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             data: {},
           });
           setWizardOptions([
-            "1. Load/Apply Model Preset",
-            "2. List Model Presets",
-            "3. Create Model Preset",
-            "4. Edit Model Preset",
-            "5. Delete Model Preset",
+            `1. Load/Apply Model Preset [${modeLabel}]`,
+            `2. List Model Presets [${modeLabel}]`,
+            `3. Create Model Preset [${modeLabel}]`,
+            `4. Edit Model Preset [${modeLabel}]`,
+            `5. Delete Model Preset [${modeLabel}]`,
             "6. Configure Agent Tier Models",
             "< Back"
           ]);
@@ -1982,7 +2052,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             step: 40,
             data: { ...activeWizard.data },
           });
-          const presets = getModelPresets();
+          const presets = getModelPresets(presetMode);
           const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
           setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
           setWizardSelectedIndex(0);
@@ -1994,7 +2064,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const doDelete = choice.includes("Yes") || choice.includes("delete");
         if (doDelete) {
           try {
-            const savedPath = deleteModelPreset(name);
+            const savedPath = deleteModelPreset(name, presetMode);
             setMasterLogs((prev) => [...prev, `[SYSTEM] Model preset "${name}" deleted successfully!\nSaved to: ${savedPath}`].slice(-500));
           } catch (err: any) {
             setMasterLogs((prev) => [...prev, `[ERROR] Failed to delete model preset: ${err.message}`].slice(-500));
@@ -2013,11 +2083,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             data: {},
           });
           setWizardOptions([
-            "1. Load/Apply Model Preset",
-            "2. List Model Presets",
-            "3. Create Model Preset",
-            "4. Edit Model Preset",
-            "5. Delete Model Preset",
+            `1. Load/Apply Model Preset [${modeLabel}]`,
+            `2. List Model Presets [${modeLabel}]`,
+            `3. Create Model Preset [${modeLabel}]`,
+            `4. Edit Model Preset [${modeLabel}]`,
+            `5. Delete Model Preset [${modeLabel}]`,
             "6. Configure Agent Tier Models",
             "< Back"
           ]);

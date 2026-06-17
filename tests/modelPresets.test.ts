@@ -124,11 +124,11 @@ describe("Model Presets", () => {
     expect(addedLines.length).toBe(1);
     expect(addedLines[0].content).toContain("Available Model Presets");
 
-    // 2. Save custom preset
+    // 2. Save custom preset (now also auto-applies)
     process.env.MODEL = "openai:test-slash-model";
     handleSlashCommand("/model preset save test-slash A preset from slash command", mockCtx);
     expect(addedLines.length).toBe(2);
-    expect(addedLines[1].content).toContain('Model configuration saved successfully as preset "test-slash"');
+    expect(addedLines[1].content).toContain('saved & applied successfully');
 
     // 3. Load/apply custom preset
     handleSlashCommand("/model preset test-slash", mockCtx);

@@ -139,7 +139,7 @@ describe("Model Wizard Back Navigation", () => {
       step: 1,
       data: {},
     });
-    expect(wizardOptions).toContain("5. Delete Model Preset");
+    expect(wizardOptions).toContain("5. Delete Model Preset [Multi-Agent]");
     expect(wizardOptions).toContain("< Back");
     unmount();
   });
@@ -159,6 +159,7 @@ describe("Model Wizard Back Navigation", () => {
         focusMode: "input",
         scrollOffset: 0,
         focusedResponseOffset: 0,
+        agentRef: mockCtx.agentRef,
       } as any);
       return null;
     };
@@ -176,7 +177,7 @@ describe("Model Wizard Back Navigation", () => {
       step: 1,
       data: {},
     });
-    expect(wizardOptions).toContain("5. Delete Model Preset");
+    expect(wizardOptions).toContain("5. Delete Model Preset [Multi-Agent]");
     unmount();
   });
 

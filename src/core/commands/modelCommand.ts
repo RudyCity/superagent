@@ -8,6 +8,7 @@ import {
   getContextWindowLimit,
   fetchAndCacheModels,
 } from "../config.js";
+import type { PresetMode } from "../config.js";
 
 export const modelCommand: SlashCommand = {
   name: "model",
@@ -25,21 +26,28 @@ export const modelCommand: SlashCommand = {
           if (parts.length === 1 || (parts.length === 2 && parts[1].toLowerCase() === "help")) {
             ctx.addLine({
               type: "system",
-              content: `Model Preset Commands:\n` +
-                       `  /model preset list                      - List all available presets\n` +
-                       `  /model preset save <name> [description]  - Save current model configuration\n` +
-                       `  /model preset <name>                     - Load/apply model preset`,
+              content: `Model Preset Commands (mode-aware):\n` +
+                       `  /model preset list                      - List presets for current mode\n` +
+                       `  /model preset save <name> [description]  - Save & apply preset for current mode\n` +
+                       `  /model preset <name>                     - Load/apply preset for current mode`,
               timestamp: now,
             });
             return;
           }
           const subAction = parts[1].toLowerCase();
+          const isMulti = ctx.agent?.isMultiAgent ?? false;
+          const presetMode: PresetMode = isMulti ? "multi" : "single";
+          const modeLabel = isMulti ? "Multi-Agent" : "Single-Agent";
+
           if (subAction === "list") {
-            const presets = getModelPresets();
-            const listStr = presets.map(p => `- **${p.name}**: ${p.description}`).join("\n");
+            const presets = getModelPresets(presetMode);
+            const listStr = presets.map(p => {
+              const modeInfo = p.mode ? ` [${p.mode}]` : "";
+              return `- **${p.name}**${modeInfo}: ${p.description}`;
+            }).join("\n");
             ctx.addLine({
               type: "system",
-              content: `Available Model Presets:\n${listStr}`,
+              content: `Available Model Presets (${modeLabel}):\n${listStr}`,
               timestamp: now,
             });
             return;
@@ -49,17 +57,32 @@ export const modelCommand: SlashCommand = {
             }
             const presetName = parts[2];
             const desc = parts.slice(3).join(" ");
-            const savedPath = saveModelPreset(presetName, desc);
+            const savedPath = saveModelPreset(presetName, desc, undefined, presetMode);
+
+            // Auto-apply after save
+            const envPath = applyModelPreset(presetName, presetMode);
+            const isSingle = !isMulti;
+            const nextActiveModel = isSingle
+              ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
+              : (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
+            const limit = getContextWindowLimit(nextActiveModel);
+
+            if (ctx.setContextLimit) {
+              ctx.setContextLimit(limit);
+            }
+            if (ctx.setActiveModel) {
+              ctx.setActiveModel(nextActiveModel);
+            }
+
             ctx.addLine({
               type: "system",
-              content: `Model configuration saved successfully as preset "${presetName}" to: ${savedPath}`,
+              content: `Model preset "${presetName}" saved & applied successfully! [${modeLabel}]\nSaved to: ${savedPath}\nApplied to: ${envPath}`,
               timestamp: now,
             });
             return;
           } else {
             const presetName = parts.slice(1).join(" ");
-            const envPath = applyModelPreset(presetName);
-            const isMulti = ctx.agent?.isMultiAgent ?? false;
+            const envPath = applyModelPreset(presetName, presetMode);
             const isSingle = !isMulti;
             const nextActiveModel = isSingle
               ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
@@ -334,17 +357,19 @@ export const modelCommand: SlashCommand = {
       });
 
       if (ctx.setActiveWizard) {
+        const isMultiMenu = ctx.agent?.isMultiAgent ?? false;
+        const modeLabelMenu = isMultiMenu ? "Multi-Agent" : "Single-Agent";
         ctx.setActiveWizard({
           type: "model",
           step: 1,
           data: {},
         });
         ctx.setWizardOptions?.([
-          "1. Load/Apply Model Preset",
-          "2. List Model Presets",
-          "3. Create Model Preset",
-          "4. Edit Model Preset",
-          "5. Delete Model Preset",
+          `1. Load/Apply Model Preset [${modeLabelMenu}]`,
+          `2. List Model Presets [${modeLabelMenu}]`,
+          `3. Create Model Preset [${modeLabelMenu}]`,
+          `4. Edit Model Preset [${modeLabelMenu}]`,
+          `5. Delete Model Preset [${modeLabelMenu}]`,
           "< Back"
         ]);
         ctx.setWizardSelectedIndex?.(0);

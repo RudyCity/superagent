@@ -13,6 +13,7 @@ import {
   getProviderOptionsList,
   addProvider
 } from "../../core/config.js";
+import type { PresetMode } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import type { ChatLine } from "../../core/slash-commands.js";
 
@@ -51,13 +52,16 @@ export function useModelWizard(ctx: ModelWizardContext) {
     const now = Date.now();
     const isMulti = agentRef?.current?.isMultiAgent ?? false;
 
+    const presetMode: PresetMode = isMulti ? "multi" : "single";
+    const modeLabel = isMulti ? "Multi-Agent" : "Single-Agent";
+
     const getStep1Options = (): string[] => {
       return [
-        "1. Load/Apply Model Preset",
-        "2. List Model Presets",
-        "3. Create Model Preset",
-        "4. Edit Model Preset",
-        "5. Delete Model Preset",
+        `1. Load/Apply Model Preset [${modeLabel}]`,
+        `2. List Model Presets [${modeLabel}]`,
+        `3. Create Model Preset [${modeLabel}]`,
+        `4. Edit Model Preset [${modeLabel}]`,
+        `5. Delete Model Preset [${modeLabel}]`,
         "< Back"
       ];
     };
@@ -98,8 +102,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           step: 4,
           data: {},
         });
-        const presets = getModelPresets();
-        const options = presets.map(p => `${p.name} - ${p.description}`);
+        const presets = getModelPresets(presetMode);
+        const options = presets.map(p => `${p.name} - ${p.description}${p.mode ? ` [${p.mode}]` : ""}`);
         setWizardOptions([...options, "< Back"]);
         setWizardSelectedIndex(0);
         setInput("");
@@ -107,14 +111,15 @@ export function useModelWizard(ctx: ModelWizardContext) {
       }
 
       if (choice.includes("list") || choice === "2. list model presets") {
-        const presets = getModelPresets();
+        const presets = getModelPresets(presetMode);
         const listStr = presets.map(p => {
+          const modeInfo = p.mode ? ` [${p.mode}]` : "";
           const modelsStr = Object.entries(p.models).map(([k, v]) => `    - ${k}: ${v}`).join("\n");
-          return `- **${p.name}**: ${p.description}\n${modelsStr}`;
+          return `- **${p.name}**${modeInfo}: ${p.description}\n${modelsStr}`;
         }).join("\n");
         addLine({
           type: "system",
-          content: `Available Model Presets:\n${listStr}`,
+          content: `Available Model Presets (${modeLabel}):\n${listStr}`,
           timestamp: now,
         });
         setActiveWizard(null);
@@ -137,12 +142,12 @@ export function useModelWizard(ctx: ModelWizardContext) {
       }
 
       if (choice.includes("edit") || choice === "4. edit model preset") {
-        const presets = getModelPresets();
+        const presets = getModelPresets(presetMode);
         const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
         if (customPresets.length === 0) {
           addLine({
             type: "error",
-            content: "No custom presets available to edit.",
+            content: `No custom presets available to edit for ${modeLabel} mode.`,
             timestamp: now,
           });
           setActiveWizard(null);
@@ -162,12 +167,12 @@ export function useModelWizard(ctx: ModelWizardContext) {
       }
 
       if (choice.includes("delete") || choice === "5. delete model preset") {
-        const presets = getModelPresets();
+        const presets = getModelPresets(presetMode);
         const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
         if (customPresets.length === 0) {
           addLine({
             type: "error",
-            content: "No custom presets available to delete.",
+            content: `No custom presets available to delete for ${modeLabel} mode.`,
             timestamp: now,
           });
           setActiveWizard(null);
@@ -1180,7 +1185,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const presetChoice = value;
       const presetName = presetChoice.split(" - ")[0].trim();
       try {
-        const envPath = applyModelPreset(presetName);
+        const envPath = applyModelPreset(presetName, presetMode);
         const isSingle = !isMulti;
         const nextActiveModel = isSingle
           ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
@@ -1326,16 +1331,67 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const presetName = data.presetName || "";
         const presetDescription = data.presetDescription || "";
         try {
-          const savedPath = saveModelPreset(presetName, presetDescription, models);
+          const savedPath = saveModelPreset(presetName, presetDescription, models, presetMode);
+
+          // Auto-apply the preset after saving
+          const envPath = applyModelPreset(presetName, presetMode);
+          const isSingle = !isMulti;
+          const nextActiveModel = isSingle
+            ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
+            : (process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || process.env.MODEL || getDefaultModel());
+          const limit = getContextWindowLimit(nextActiveModel);
+          setContextLimit(limit);
+          setActiveModel(nextActiveModel);
+
+          let updatedList = `\n\nUpdated Models:\n`;
+          if (isSingle) {
+            const singleModel = process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel();
+            const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || process.env.MODEL_SINGLE_DEPTH_2 || "(use default)";
+            updatedList += `  Single Agent Model: ${singleModel}\n` +
+              `  Subagent (depth 2): ${subagentModel}`;
+
+            for (const [key, val] of Object.entries(process.env)) {
+              if (val && key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
+                const name = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
+                if (!updatedList.includes(`Subagent "${name}":`)) {
+                  updatedList += `\n  Subagent "${name}": ${val}`;
+                }
+              } else if (val && key.startsWith("MODEL_SINGLE_") && key !== "MODEL_SINGLE" && key !== "MODEL_SINGLE_SUBAGENT" && key !== "MODEL_SINGLE_DEPTH_2") {
+                const name = key.replace("MODEL_SINGLE_", "").toLowerCase();
+                if (!updatedList.includes(`Subagent "${name}":`)) {
+                  updatedList += `\n  Subagent "${name}": ${val}`;
+                }
+              }
+            }
+          } else {
+            const masterModel = process.env.MODEL_MULTI_DEPTH_0 || process.env.MODEL_MULTI_DEPT0 || process.env.MODEL_MULTI_MASTER || process.env.MODEL_DEPTH_0 || process.env.MODEL_DEPT0 || "(use default)";
+            const superagentModel = process.env.MODEL_MULTI_DEPTH_1 || process.env.MODEL_MULTI_DEPT1 || process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_DEPTH_1 || process.env.MODEL_DEPT1 || "(use default)";
+            const subagentModel = process.env.MODEL_MULTI_DEPTH_2 || process.env.MODEL_MULTI_DEPT2 || process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_DEPTH_2 || process.env.MODEL_DEPT2 || "(use default)";
+            updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
+              `  Superagent (depth 1): ${superagentModel}\n` +
+              `  Subagent (depth 2): ${subagentModel}`;
+
+            for (const [key, val] of Object.entries(process.env)) {
+              if (val && (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SUBAGENT_"))) {
+                const name = key.startsWith("MODEL_MULTI_SUBAGENT_")
+                  ? key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase()
+                  : key.replace("MODEL_SUBAGENT_", "").toLowerCase();
+                if (!updatedList.includes(`Subagent "${name}":`)) {
+                  updatedList += `\n  Subagent "${name}": ${val}`;
+                }
+              }
+            }
+          }
+
           addLine({
             type: "system",
-            content: `Model preset "${presetName}" saved successfully!\nSaved to: ${savedPath}`,
+            content: `Model preset "${presetName}" saved & applied successfully!\nSaved to: ${savedPath}\nApplied to: ${envPath}${updatedList}`,
             timestamp: now,
           });
         } catch (err: any) {
           addLine({
             type: "error",
-            content: `Failed to save model preset: ${err.message}`,
+            content: `Failed to save/apply model preset: ${err.message}`,
             timestamp: now,
           });
         }
@@ -1774,11 +1830,11 @@ export function useModelWizard(ctx: ModelWizardContext) {
           data: {},
         });
         setWizardOptions([
-          "1. Load/Apply Model Preset",
-          "2. List Model Presets",
-          "3. Create Model Preset",
-          "4. Edit Model Preset",
-          "5. Delete Model Preset",
+          `1. Load/Apply Model Preset [${modeLabel}]`,
+          `2. List Model Presets [${modeLabel}]`,
+          `3. Create Model Preset [${modeLabel}]`,
+          `4. Edit Model Preset [${modeLabel}]`,
+          `5. Delete Model Preset [${modeLabel}]`,
           isMulti ? "6. Configure Agent Tier Models" : "6. Configure Single Agent Model",
           "< Back"
         ]);
@@ -1788,7 +1844,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       }
       const choice = value;
       const name = choice.split(" - ")[0].trim();
-      const presets = getModelPresets();
+      const presets = getModelPresets(presetMode);
       const preset = presets.find(p => p.name.toLowerCase() === name.toLowerCase());
       const models = preset ? preset.models : {};
       const desc = preset ? preset.description : "";
@@ -1808,7 +1864,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           step: 30,
           data: { ...data },
         });
-        const presets = getModelPresets();
+        const presets = getModelPresets(presetMode);
         const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
         setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
         setWizardSelectedIndex(0);
@@ -1856,7 +1912,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           step: 40,
           data: { ...data },
         });
-        const presets = getModelPresets();
+        const presets = getModelPresets(presetMode);
         const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
         setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
         setWizardSelectedIndex(0);
@@ -1868,7 +1924,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const doDelete = choice.includes("Yes") || choice.includes("delete");
       if (doDelete) {
         try {
-          const savedPath = deleteModelPreset(name);
+          const savedPath = deleteModelPreset(name, presetMode);
           addLine({
             type: "system",
             content: `Model preset "${name}" deleted successfully!\nSaved to: ${savedPath}`,

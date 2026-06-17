@@ -5,10 +5,18 @@ import { updateEnvFile } from "./env.js";
 import { switchActiveProvider } from "./providers.js";
 import { loadModelConfig } from "./jsonConfig.js";
 
+export type PresetMode = "multi" | "single";
+
 export interface ModelPreset {
   name: string;
   description: string;
   models: Record<string, string>;
+}
+
+/** New separated JSON structure */
+export interface ModelPresetsFile {
+  multi: ModelPreset[];
+  single: ModelPreset[];
 }
 
 export function getCustomPresetsPath(): string {
@@ -17,37 +25,103 @@ export function getCustomPresetsPath(): string {
 
 export const BUILT_IN_PRESETS: ModelPreset[] = [];
 
-export function getModelPresets(): ModelPreset[] {
-  const presets = [...BUILT_IN_PRESETS];
+const EMPTY_FILE: ModelPresetsFile = { multi: [], single: [] };
+
+/**
+ * Read the model-presets.json file.
+ * - Handles new format: { multi: [...], single: [...] }
+ * - Auto-migrates old format: [...] (flat array) into the new structure.
+ *   Old presets with mode field go to their respective section;
+ *   old presets without mode field go to "multi" as default.
+ */
+function readPresetsFile(): ModelPresetsFile {
   const customPath = getCustomPresetsPath();
-  if (fs.existsSync(customPath)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(customPath, "utf-8"));
-      if (Array.isArray(data)) {
-        for (const p of data) {
-          if (p && typeof p === "object" && typeof p.name === "string" && p.models && typeof p.models === "object") {
-            const idx = presets.findIndex(bp => bp.name.toLowerCase() === p.name.toLowerCase());
-            const cleanPreset = {
-              name: p.name.toLowerCase(),
-              description: p.description || "Custom model preset.",
-              models: p.models
-            };
-            if (idx !== -1) {
-              presets[idx] = cleanPreset;
-            } else {
-              presets.push(cleanPreset);
-            }
+  if (!fs.existsSync(customPath)) {
+    return { ...EMPTY_FILE, multi: [], single: [] };
+  }
+
+  try {
+    const data = JSON.parse(fs.readFileSync(customPath, "utf-8"));
+
+    // New format: { multi: [...], single: [...] }
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      const multi = Array.isArray(data.multi) ? data.multi : [];
+      const single = Array.isArray(data.single) ? data.single : [];
+      return {
+        multi: multi.map(cleanPreset),
+        single: single.map(cleanPreset),
+      };
+    }
+
+    // Old format: [...] (flat array) — migrate
+    if (Array.isArray(data)) {
+      const result: ModelPresetsFile = { multi: [], single: [] };
+      for (const p of data) {
+        if (p && typeof p === "object" && typeof p.name === "string" && p.models && typeof p.models === "object") {
+          const clean: ModelPreset = {
+            name: p.name.toLowerCase(),
+            description: p.description || "Custom model preset.",
+            models: p.models,
+          };
+          // Route based on old mode field if present
+          if (p.mode === "single") {
+            result.single.push(clean);
+          } else {
+            result.multi.push(clean);
           }
         }
       }
-    } catch {
-      // Ignore corruption
+      // Write migrated file back
+      ensureGlobalConfigDir();
+      fs.writeFileSync(customPath, JSON.stringify(result, null, 2), "utf-8");
+      return result;
     }
+  } catch {
+    // Ignore corruption
   }
-  return presets;
+
+  return { multi: [], single: [] };
 }
 
-export function saveModelPreset(name: string, description: string, models?: Record<string, string>): string {
+function cleanPreset(p: any): ModelPreset {
+  return {
+    name: (typeof p.name === "string" ? p.name : "").toLowerCase(),
+    description: p.description || "Custom model preset.",
+    models: p.models && typeof p.models === "object" ? p.models : {},
+  };
+}
+
+function writePresetsFile(data: ModelPresetsFile): void {
+  const customPath = getCustomPresetsPath();
+  ensureGlobalConfigDir();
+  fs.writeFileSync(customPath, JSON.stringify(data, null, 2), "utf-8");
+}
+
+/**
+ * Get all model presets for a specific mode.
+ * - mode is REQUIRED — presets are physically separated by mode in the JSON file.
+ * - If mode is omitted, returns all presets from both sections (with mode tag for display).
+ */
+export function getModelPresets(mode?: PresetMode): (ModelPreset & { mode?: PresetMode })[] {
+  const fileData = readPresetsFile();
+
+  if (mode) {
+    return fileData[mode].map(p => ({ ...p, mode }));
+  }
+
+  // Return all presets from both sections with mode tag
+  return [
+    ...fileData.multi.map(p => ({ ...p, mode: "multi" as PresetMode })),
+    ...fileData.single.map(p => ({ ...p, mode: "single" as PresetMode })),
+  ];
+}
+
+/**
+ * Save a model preset into the mode-specific section of model-presets.json.
+ * - mode is REQUIRED to determine which section to store in.
+ *   Defaults to "multi" if not provided (backward compat).
+ */
+export function saveModelPreset(name: string, description: string, models?: Record<string, string>, mode?: PresetMode): string {
   const presetName = name.toLowerCase().trim();
   if (!presetName) {
     throw new Error("Preset name cannot be empty");
@@ -55,6 +129,8 @@ export function saveModelPreset(name: string, description: string, models?: Reco
   if (BUILT_IN_PRESETS.some(bp => bp.name === presetName)) {
     throw new Error(`Cannot overwrite built-in preset "${name}"`);
   }
+
+  const targetMode: PresetMode = mode || "multi";
 
   const modelsToSave: Record<string, string> = models || {};
 
@@ -80,40 +156,39 @@ export function saveModelPreset(name: string, description: string, models?: Reco
     throw new Error("No model configuration settings found to save.");
   }
 
-  const customPath = getCustomPresetsPath();
-  let customPresets: ModelPreset[] = [];
-  if (fs.existsSync(customPath)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(customPath, "utf-8"));
-      if (Array.isArray(parsed)) {
-        customPresets = parsed;
-      }
-    } catch {}
-  }
+  const fileData = readPresetsFile();
+  const section = fileData[targetMode];
 
   const newPreset: ModelPreset = {
     name: presetName,
     description: description || "Custom model preset.",
-    models: modelsToSave
+    models: modelsToSave,
   };
 
-  const existingIdx = customPresets.findIndex(p => p.name === presetName);
+  const existingIdx = section.findIndex(p => p.name === presetName);
   if (existingIdx !== -1) {
-    customPresets[existingIdx] = newPreset;
+    section[existingIdx] = newPreset;
   } else {
-    customPresets.push(newPreset);
+    section.push(newPreset);
   }
 
-  ensureGlobalConfigDir();
-  fs.writeFileSync(customPath, JSON.stringify(customPresets, null, 2), "utf-8");
-  return customPath;
+  writePresetsFile(fileData);
+  return getCustomPresetsPath();
 }
 
-export function applyModelPreset(name: string): string {
-  const presets = getModelPresets();
-  const preset = presets.find(p => p.name.toLowerCase() === name.toLowerCase().trim());
+/**
+ * Apply a model preset by name from a specific mode section.
+ * - mode is REQUIRED to know which section to search.
+ *   Defaults to "multi" if not provided.
+ */
+export function applyModelPreset(name: string, mode?: PresetMode): string {
+  const targetMode: PresetMode = mode || "multi";
+  const fileData = readPresetsFile();
+  const targetName = name.toLowerCase().trim();
+
+  const preset = fileData[targetMode].find(p => p.name.toLowerCase() === targetName);
   if (!preset) {
-    throw new Error(`Model preset "${name}" not found.`);
+    throw new Error(`Model preset "${name}" not found in ${targetMode}-agent presets.`);
   }
 
   const presetModel = preset.models.MODEL || preset.models.MODEL_DEPTH_0 || preset.models.MODEL_DEPT0 || "";
@@ -167,7 +242,10 @@ export function applyModelPreset(name: string): string {
   return updateEnvFile(updates);
 }
 
-export function deleteModelPreset(name: string): string {
+/**
+ * Delete a model preset by name from a specific mode section.
+ */
+export function deleteModelPreset(name: string, mode?: PresetMode): string {
   const presetName = name.toLowerCase().trim();
   if (!presetName) {
     throw new Error("Preset name cannot be empty");
@@ -176,31 +254,24 @@ export function deleteModelPreset(name: string): string {
     throw new Error(`Cannot delete built-in preset "${name}"`);
   }
 
-  const customPath = getCustomPresetsPath();
-  if (!fs.existsSync(customPath)) {
-    throw new Error(`Model preset "${name}" not found.`);
-  }
+  const targetMode: PresetMode = mode || "multi";
+  const fileData = readPresetsFile();
+  const section = fileData[targetMode];
 
-  let customPresets: ModelPreset[] = [];
-  try {
-    const parsed = JSON.parse(fs.readFileSync(customPath, "utf-8"));
-    if (Array.isArray(parsed)) {
-      customPresets = parsed;
-    }
-  } catch {}
-
-  const existingIdx = customPresets.findIndex(p => p.name === presetName);
+  const existingIdx = section.findIndex(p => p.name === presetName);
   if (existingIdx === -1) {
-    throw new Error(`Model preset "${name}" not found.`);
+    throw new Error(`Model preset "${name}" not found in ${targetMode}-agent presets.`);
   }
 
-  customPresets.splice(existingIdx, 1);
-  ensureGlobalConfigDir();
-  fs.writeFileSync(customPath, JSON.stringify(customPresets, null, 2), "utf-8");
-  return customPath;
+  section.splice(existingIdx, 1);
+  writePresetsFile(fileData);
+  return getCustomPresetsPath();
 }
 
-export function updateModelPreset(name: string, description: string, models?: Record<string, string>): string {
+/**
+ * Update a model preset by name in a specific mode section.
+ */
+export function updateModelPreset(name: string, description: string, models?: Record<string, string>, mode?: PresetMode): string {
   const presetName = name.toLowerCase().trim();
   if (!presetName) {
     throw new Error("Preset name cannot be empty");
@@ -209,29 +280,21 @@ export function updateModelPreset(name: string, description: string, models?: Re
     throw new Error(`Cannot edit built-in preset "${name}"`);
   }
 
-  const customPath = getCustomPresetsPath();
-  let customPresets: ModelPreset[] = [];
-  if (fs.existsSync(customPath)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(customPath, "utf-8"));
-      if (Array.isArray(parsed)) {
-        customPresets = parsed;
-      }
-    } catch {}
-  }
+  const targetMode: PresetMode = mode || "multi";
+  const fileData = readPresetsFile();
+  const section = fileData[targetMode];
 
-  const existingIdx = customPresets.findIndex(p => p.name === presetName);
+  const existingIdx = section.findIndex(p => p.name === presetName);
   if (existingIdx === -1) {
-    throw new Error(`Model preset "${name}" not found.`);
+    throw new Error(`Model preset "${name}" not found in ${targetMode}-agent presets.`);
   }
 
-  customPresets[existingIdx] = {
+  section[existingIdx] = {
     name: presetName,
-    description: description || customPresets[existingIdx].description,
-    models: models || customPresets[existingIdx].models
+    description: description || section[existingIdx].description,
+    models: models || section[existingIdx].models,
   };
 
-  ensureGlobalConfigDir();
-  fs.writeFileSync(customPath, JSON.stringify(customPresets, null, 2), "utf-8");
-  return customPath;
+  writePresetsFile(fileData);
+  return getCustomPresetsPath();
 }

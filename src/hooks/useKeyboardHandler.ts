@@ -498,13 +498,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
 
           if (choice === "preset_load") {
+            const presetMode = agentRef.current?.isMultiAgent ? "multi" as const : "single" as const;
             setActiveWizard({
               type: "model",
               step: 4,
               data: { tier: choice },
             });
-            const presets = getModelPresets();
-            const options = presets.map(p => `${p.name} - ${p.description}`);
+            const presets = getModelPresets(presetMode);
+            const options = presets.map(p => `${p.name} - ${p.description}${p.mode ? ` [${p.mode}]` : ""}`);
             setWizardOptions([...options, "< Back"]);
             setWizardSelectedIndex(0);
             setInput("");
@@ -512,14 +513,17 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
 
           if (choice === "preset_list") {
-            const presets = getModelPresets();
+            const presetMode = agentRef.current?.isMultiAgent ? "multi" as const : "single" as const;
+            const modeLabel = agentRef.current?.isMultiAgent ? "Multi-Agent" : "Single-Agent";
+            const presets = getModelPresets(presetMode);
             const listStr = presets.map(p => {
+              const modeInfo = p.mode ? ` [${p.mode}]` : "";
               const modelsStr = Object.entries(p.models).map(([k, v]) => `    - ${k}: ${v}`).join("\n");
-              return `- **${p.name}**: ${p.description}\n${modelsStr}`;
+              return `- **${p.name}**${modeInfo}: ${p.description}\n${modelsStr}`;
             }).join("\n");
             addLine({
               type: "system",
-              content: `Available Model Presets:\n${listStr}`,
+              content: `Available Model Presets (${modeLabel}):\n${listStr}`,
               timestamp: Date.now(),
             });
             setActiveWizard(null);
@@ -541,12 +545,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
 
           if (choice === "preset_edit") {
-            const presets = getModelPresets();
+            const presetMode = agentRef.current?.isMultiAgent ? "multi" as const : "single" as const;
+            const modeLabel = agentRef.current?.isMultiAgent ? "Multi-Agent" : "Single-Agent";
+            const presets = getModelPresets(presetMode);
             const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
             if (customPresets.length === 0) {
               addLine({
                 type: "error",
-                content: "No custom presets available to edit.",
+                content: `No custom presets available to edit for ${modeLabel} mode.`,
                 timestamp: Date.now(),
               });
               setActiveWizard(null);
@@ -566,12 +572,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
 
           if (choice === "preset_delete") {
-            const presets = getModelPresets();
+            const presetMode = agentRef.current?.isMultiAgent ? "multi" as const : "single" as const;
+            const modeLabel = agentRef.current?.isMultiAgent ? "Multi-Agent" : "Single-Agent";
+            const presets = getModelPresets(presetMode);
             const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
             if (customPresets.length === 0) {
               addLine({
                 type: "error",
-                content: "No custom presets available to delete.",
+                content: `No custom presets available to delete for ${modeLabel} mode.`,
                 timestamp: Date.now(),
               });
               setActiveWizard(null);
@@ -647,17 +655,18 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           if (!tier) return;
 
           if (tier === "back") {
+            const backModeLabel = agentRef?.current?.isMultiAgent ? "Multi-Agent" : "Single-Agent";
             setActiveWizard({
               type: "model",
               step: 1,
               data: {},
             });
             setWizardOptions([
-              "1. Load/Apply Model Preset",
-              "2. List Model Presets",
-              "3. Create Model Preset",
-              "4. Edit Model Preset",
-              "5. Delete Model Preset",
+              `1. Load/Apply Model Preset [${backModeLabel}]`,
+              `2. List Model Presets [${backModeLabel}]`,
+              `3. Create Model Preset [${backModeLabel}]`,
+              `4. Edit Model Preset [${backModeLabel}]`,
+              `5. Delete Model Preset [${backModeLabel}]`,
               "6. Configure Agent Tier Models"
             ]);
             setWizardSelectedIndex(0);
