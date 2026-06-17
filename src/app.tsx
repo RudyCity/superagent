@@ -25,6 +25,7 @@ import { WizardPanels } from "./components/wizard-panels.js";
 import { ChatArea } from "./components/chat-area.js";
 import { useWizardSubmit } from "./hooks/useWizardSubmit.js";
 import { useKeyboardHandler } from "./hooks/useKeyboardHandler.js";
+import { useMouseScroll } from "./hooks/useMouseScroll.js";
 
 export { stripSgrMouseSequences } from "./utils/text.js";
 
@@ -159,6 +160,9 @@ export function App({
       return Math.min(prev + amount, maxScroll);
     });
   }, [lines.length]);
+
+  // Enable mouse wheel scroll for the chat/conversation log
+  useMouseScroll(scrollChat);
 
   const flushBuffer = useCallback(() => {
     if (streamTimeoutRef.current) {
