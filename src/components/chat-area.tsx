@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useMemo, useEffect } from "react";
 import { Box, Text } from "ink";
 import { Banner } from "./banner.js";
 import { ChatLineComponent, renderMarkdown, truncateStreamDisplay } from "./chat-line.js";
 import { LoadingIndicator, ToolLoadingIndicator } from "./common/LoadingIndicators.js";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay, renderScrollBar } from "../utils/responseScroll.js";
 import type { ChatLine } from "../core/slash-commands.js";
+import type { ChatLinePosition } from "../hooks/useMouseScroll.js";
 
 export interface ChatAreaProps {
   showBanner: boolean;
@@ -29,6 +30,8 @@ export interface ChatAreaProps {
   timeLeft: number | null;
   activeToolOutput: string;
   formatCompactNumber: (val: number) => string;
+  onVisibleLinesChange?: (positions: ChatLinePosition[]) => void;
+  chatContentStartRow?: number;
 }
 
 export function ChatArea(props: ChatAreaProps) {
@@ -55,6 +58,8 @@ export function ChatArea(props: ChatAreaProps) {
     timeLeft,
     activeToolOutput,
     formatCompactNumber,
+    onVisibleLinesChange,
+    chatContentStartRow = 2,
   } = props;
 
   const chatWidth = Math.max(20, terminalWidth - 6);
@@ -89,6 +94,58 @@ export function ChatArea(props: ChatAreaProps) {
 
   const activeToolLines = activeToolOutput ? activeToolOutput.trim().split("\n").slice(-8) : [];
   const activeToolLinesCount = activeToolLines.length;
+
+  // Calculate visible line positions for mouse click detection
+  const truncatedIndexes = useMemo(
+    () => getTruncatedAssistantIndexes(lines, maxAssistantResponseLines, chatWidth),
+    [lines, maxAssistantResponseLines, chatWidth]
+  );
+
+  const visibleLinePositions = useMemo(() => {
+    if (focusedResponseIndex !== null) return [];
+
+    const shouldRenderStream = scrollOffset === 0 && isProcessing && streamDisplay && streamDisplay.trim().length > 0;
+    let startIndex = lines.length;
+    let accumulatedHeight = 0;
+    const endIndex = scrollOffset === 0 ? lines.length : Math.max(0, lines.length - scrollOffset);
+
+    let effectiveLimit = chatHeightLimit;
+    if (shouldRenderStream) {
+      effectiveLimit = Math.max(0, chatHeightLimit - estimateMarkdownLines(streamDisplay, chatWidth));
+    }
+
+    for (let i = endIndex - 1; i >= 0; i--) {
+      const h = estimateChatLineHeight(lines[i], chatWidth);
+      if (accumulatedHeight + h > effectiveLimit) {
+        if (i === endIndex - 1 && effectiveLimit > 0) startIndex = i;
+        break;
+      }
+      accumulatedHeight += h;
+      startIndex = i;
+    }
+
+    let currentRow = chatContentStartRow;
+    const positions: ChatLinePosition[] = [];
+    for (let i = startIndex; i < endIndex; i++) {
+      const line = lines[i];
+      const h = estimateChatLineHeight(line, chatWidth);
+      positions.push({
+        index: i,
+        startRow: currentRow,
+        endRow: currentRow + h - 1,
+        isTruncated: truncatedIndexes.includes(i),
+        type: line.type,
+      });
+      currentRow += h;
+    }
+    return positions;
+  }, [lines, scrollOffset, chatHeightLimit, chatWidth, chatContentStartRow, focusedResponseIndex, isProcessing, streamDisplay, truncatedIndexes]);
+
+  useEffect(() => {
+    if (onVisibleLinesChange) {
+      onVisibleLinesChange(visibleLinePositions);
+    }
+  }, [visibleLinePositions, onVisibleLinesChange]);
 
   return (
     <>
@@ -125,7 +182,7 @@ export function ChatArea(props: ChatAreaProps) {
           return (
             <Box flexDirection="column">
               <Text color="yellow">
-                ┌───[ <Text bold color="yellow">RESPONSE_SCROLL</Text><Text dimColor> {currentPosition + 1}/{Math.max(1, truncatedIndexes.length)} line {safeOffset + 1}-{visibleEnd} / {responseLines.length} {renderScrollBar(safeOffset, focusWindowHeight, responseLines.length)} | n/p switch | Esc close</Text> ]
+                ┌───[ <Text bold color="yellow">RESPONSE_SCROLL</Text><Text dimColor> {currentPosition + 1}/{Math.max(1, truncatedIndexes.length)} line {safeOffset + 1}-{visibleEnd} / {responseLines.length} {renderScrollBar(safeOffset, focusWindowHeight, responseLines.length)} | ↑/↓ scroll | Esc close | click to close</Text> ]
               </Text>
               {renderMarkdown(visibleText, "magenta")}
               <Text color="yellow">└───[ focused assistant response #{focusedResponseIndex + 1} ]</Text>

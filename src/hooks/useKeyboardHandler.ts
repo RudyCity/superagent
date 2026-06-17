@@ -197,16 +197,6 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         setFocusedResponseOffset(0);
         return;
       }
-      if (inputChar === "n" && currentPosition >= 0 && currentPosition < truncatedIndexes.length - 1) {
-        setFocusedResponseIndex(truncatedIndexes[currentPosition + 1]);
-        setFocusedResponseOffset(0);
-        return;
-      }
-      if (inputChar === "p" && currentPosition > 0) {
-        setFocusedResponseIndex(truncatedIndexes[currentPosition - 1]);
-        setFocusedResponseOffset(0);
-        return;
-      }
       if (key.pageUp || (key.ctrl && key.upArrow)) {
         setFocusedResponseOffset((prev) => Math.max(0, prev - focusWindowHeight));
         return;
@@ -322,11 +312,6 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
-    if (key.ctrl && inputChar === "o") {
-      if (!activeWizard) openLatestTruncatedResponse();
-      return;
-    }
-
     if (key.ctrl && inputChar === "h") {
       setFocusMode((prev: any) => {
         const next = prev === "input" ? "history" : "input";
@@ -336,6 +321,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         }
         return next;
       });
+      return;
+    }
+
+    // Ctrl+T: Toggle checklist focus mode
+    if (key.ctrl && inputChar === "t") {
+      if (planState === "APPROVED" && checklistTasks.length > 0) {
+        setFocusMode((prev: any) => (prev === "checklist" ? "input" : "checklist"));
+      }
       return;
     }
 

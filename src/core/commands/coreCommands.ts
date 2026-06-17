@@ -4,13 +4,18 @@ import { execa } from "execa";
 import { registry } from "./registry.js";
 import { SlashCommand, getDefaultModel, getProviderLabel } from "./types.js";
 import { deleteCheckpointsForSession } from "../checkpoints.js";
+import { getGlobalConfigDir, ensureGlobalConfigDir } from "../config.js";
 import { 
   allTools, 
   superagentInstances, 
   subagentInstances, 
   notifySuperagentsChanged, 
   notifySubagentsChanged, 
-  setHistoricalSuperagentTokens 
+  setHistoricalSuperagentTokens,
+  backgroundTasks,
+  clearActiveToolOutput,
+  scheduledJobs,
+  killProcessTree,
 } from "../tools.js";
 
 // /new command
@@ -24,13 +29,32 @@ export const newCommand: SlashCommand = {
     if (sessionFilePath) {
       deleteCheckpointsForSession(sessionFilePath).catch(() => {});
     }
-    ctx.agent?.clearHistory();
+
+    // ── 1. Kill and clear background tasks ────────────────
+    for (const [id, task] of backgroundTasks.entries()) {
+      try {
+        if (task.process && !task.hasExited) {
+          killProcessTree(task.process.pid || 0);
+        }
+      } catch {}
+    }
+    backgroundTasks.clear();
+
+    // ── 2. Clear active tool output buffer ────────────────
+    clearActiveToolOutput();
+
+    // ── 3. Clear scheduled jobs ───────────────────────────
+    scheduledJobs.clear();
+
+    // ── 4. Clear conversation history & agent state ───────
     if (ctx.agent) {
+      ctx.agent.resetInternalState();
+      await ctx.agent.clearHistory();
       ctx.agent.planState = "IDLE";
       ctx.agent.goalMode = null;
     }
 
-    // Cleanup multi-agent instances and tokens
+    // ── 5. Cleanup multi-agent instances and tokens ───────
     for (const inst of superagentInstances.values()) {
       if (inst.status === "running" && inst.agent && typeof inst.agent.abort === "function") {
         try {
@@ -53,10 +77,22 @@ export const newCommand: SlashCommand = {
 
     setHistoricalSuperagentTokens(0);
 
+    // ── 6. Clear session environment variable ─────────────
+    delete process.env.SUPERAGENT_SESSION_PATH;
+
+    // ── 7. Write session separator to persistent log ───────
+    try {
+      ensureGlobalConfigDir();
+      const logPath = path.join(getGlobalConfigDir(), "superagent.log");
+      const separator = `\n${"═".repeat(72)}\n[NEW SESSION] ${new Date().toISOString()} — History, logs, and state cleared.\n${"═".repeat(72)}\n`;
+      await fs.appendFile(logPath, separator, "utf-8");
+    } catch {}
+
+    // ── 8. Reset UI state ─────────────────────────────────
     ctx.setPlanState?.("IDLE");
     ctx.setGoalMode?.(null);
     ctx.clearLines?.();
-    ctx.addLine({ type: "system", content: "New conversation started. History and terminal cleared.", timestamp: Date.now() });
+    ctx.addLine({ type: "system", content: "✓ New conversation started. History, logs, background tasks, and all state fully cleared.", timestamp: Date.now() });
   }
 };
 

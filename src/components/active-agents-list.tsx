@@ -54,6 +54,7 @@ interface ActiveAgentsListProps {
   maxSuperagentsVisible: number;
   maxSubagentsVisible: number;
   maxProcsVisible: number;
+  collapsedSections: { superagents: boolean; subagents: boolean; procs: boolean };
 }
 
 export function ActiveAgentsList({
@@ -67,6 +68,7 @@ export function ActiveAgentsList({
   maxSuperagentsVisible,
   maxSubagentsVisible,
   maxProcsVisible,
+  collapsedSections,
 }: ActiveAgentsListProps) {
   if (runningSuperagentsCount === 0 && runningSubagentsCount === 0 && runningTasksCount === 0) {
     return null;
@@ -78,18 +80,34 @@ export function ActiveAgentsList({
 
   return (
     <Box flexDirection="column" marginBottom={0}>
+      {/* === SUPERAGENTS === */}
       {runningSuperagentsCount > 0 && (() => {
         const totalSA = runningSuperagents.length;
+        const isCollapsed = collapsedSections.superagents;
+        const isFocused = focusMode === "superagents";
+        const collapseIcon = isCollapsed ? "▶" : "▼";
+        const headerColor = isFocused ? "green" : "cyan";
+
+        if (isCollapsed) {
+          return (
+            <Box flexDirection="column">
+              <Text color={headerColor} bold>
+                ┌───[ {collapseIcon} ⚡ ACTIVE SUPERAGENTS ({totalSA}) ] <Text dimColor italic>click to expand</Text>
+              </Text>
+            </Box>
+          );
+        }
+
         const hasScroll = totalSA > maxSuperagentsVisible;
         const scrollIndicator = hasScroll
           ? ` [Scroll: ${superagentsScrollOffset + 1}-${Math.min(totalSA, superagentsScrollOffset + maxSuperagentsVisible)}/${totalSA}]`
           : "";
-        const helpText = focusMode === "superagents" ? " [↑/▼ Scroll • Esc Exit]" : "";
+        const helpText = isFocused ? " [↑/▼ Scroll • Esc Exit]" : "";
         const visibleSA = runningSuperagents.slice(superagentsScrollOffset, superagentsScrollOffset + maxSuperagentsVisible);
         return (
           <Box flexDirection="column">
-            <Text color={focusMode === "superagents" ? "green" : "cyan"} bold>
-              ┌───[ ⚡ ACTIVE SUPERAGENTS ]{scrollIndicator}{helpText}
+            <Text color={headerColor} bold>
+              ┌───[ {collapseIcon} ⚡ ACTIVE SUPERAGENTS ]{scrollIndicator}{helpText} <Text dimColor italic>click header to collapse</Text>
             </Text>
             {visibleSA.map((inst) => (
               <Box key={inst.id} flexDirection="column">
@@ -108,19 +126,36 @@ export function ActiveAgentsList({
         );
       })()}
 
+      {/* === SUBAGENTS === */}
       {runningSubagentsCount > 0 && (() => {
         const totalSubs = runningSubagents.length;
+        const isCollapsed = collapsedSections.subagents;
+        const isFocused = focusMode === "subagents";
+        const collapseIcon = isCollapsed ? "▶" : "▼";
+        const headerColor = isFocused ? "green" : "yellow";
+        const isFirstHeader = runningSuperagentsCount === 0;
+        const branchPrefix = isFirstHeader ? "┌───" : "├───";
+
+        if (isCollapsed) {
+          return (
+            <Box flexDirection="column" marginTop={0}>
+              <Text color={headerColor} bold>
+                {branchPrefix}[ {collapseIcon} 🤖 ACTIVE SUBAGENTS ({totalSubs}) ] <Text dimColor italic>click to expand</Text>
+              </Text>
+            </Box>
+          );
+        }
+
         const hasScroll = totalSubs > maxSubagentsVisible;
         const scrollIndicator = hasScroll
           ? ` [Scroll: ${subagentsScrollOffset + 1}-${Math.min(totalSubs, subagentsScrollOffset + maxSubagentsVisible)}/${totalSubs}]`
           : "";
-        const helpText = focusMode === "subagents" ? " [↑/▼ Scroll • Esc Exit]" : "";
+        const helpText = isFocused ? " [↑/▼ Scroll • Esc Exit]" : "";
         const visibleSubs = runningSubagents.slice(subagentsScrollOffset, subagentsScrollOffset + maxSubagentsVisible);
-        const isFirstHeader = runningSuperagentsCount === 0;
         return (
           <Box flexDirection="column" marginTop={0}>
-            <Text color={focusMode === "subagents" ? "green" : "yellow"} bold>
-              {isFirstHeader ? "┌───" : "├───"}[ 🤖 ACTIVE SUBAGENTS ]{scrollIndicator}{helpText}
+            <Text color={headerColor} bold>
+              {branchPrefix}[ {collapseIcon} 🤖 ACTIVE SUBAGENTS ]{scrollIndicator}{helpText} <Text dimColor italic>click header to collapse</Text>
             </Text>
             {visibleSubs.map((inst, index) => {
               const isLast = index === visibleSubs.length - 1;
@@ -136,19 +171,36 @@ export function ActiveAgentsList({
         );
       })()}
 
+      {/* === PROCESSES === */}
       {runningTasksCount > 0 && (() => {
         const totalProcs = runningProcs.length;
+        const isCollapsed = collapsedSections.procs;
+        const isFocused = focusMode === "procs";
+        const collapseIcon = isCollapsed ? "▶" : "▼";
+        const headerColor = isFocused ? "green" : "cyan";
+        const isFirstHeader = runningSuperagentsCount === 0 && runningSubagentsCount === 0;
+        const branchPrefix = isFirstHeader ? "┌───" : "├───";
+
+        if (isCollapsed) {
+          return (
+            <Box flexDirection="column" marginTop={0}>
+              <Text color={headerColor} bold>
+                {branchPrefix}[ {collapseIcon} ⚙️ ACTIVE PROCESSES ({totalProcs}) ] <Text dimColor italic>click to expand</Text>
+              </Text>
+            </Box>
+          );
+        }
+
         const hasScroll = totalProcs > maxProcsVisible;
         const scrollIndicator = hasScroll
           ? ` [Scroll: ${procsScrollOffset + 1}-${Math.min(totalProcs, procsScrollOffset + maxProcsVisible)}/${totalProcs}]`
           : "";
-        const helpText = focusMode === "procs" ? " [↑/▼ Scroll • Esc Exit]" : "";
+        const helpText = isFocused ? " [↑/▼ Scroll • Esc Exit]" : "";
         const visibleProcs = runningProcs.slice(procsScrollOffset, procsScrollOffset + maxProcsVisible);
-        const isFirstHeader = runningSuperagentsCount === 0 && runningSubagentsCount === 0;
         return (
           <Box flexDirection="column" marginTop={0}>
-            <Text color={focusMode === "procs" ? "green" : "cyan"} bold>
-              {isFirstHeader ? "┌───" : "├───"}[ ⚙️ ACTIVE PROCESSES ]{scrollIndicator}{helpText}
+            <Text color={headerColor} bold>
+              {branchPrefix}[ {collapseIcon} ⚙️ ACTIVE PROCESSES ]{scrollIndicator}{helpText} <Text dimColor italic>click header to collapse</Text>
             </Text>
             {visibleProcs.map(([id, task]) => (
               <Text key={id} color="cyan">

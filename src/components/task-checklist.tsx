@@ -31,11 +31,11 @@ export function TaskChecklist({
   const scrollIndicator = hasScroll
     ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
     : "";
-  const helpText = focusMode === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : "";
+  const helpText = focusMode === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : " [Ctrl+T Focus]";
   const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={focusMode === "checklist" ? "green" : "cyan"} paddingX={1} marginBottom={1}>
+    <Box flexDirection="column" paddingX={1} marginBottom={1} marginTop={1}>
       <Box flexDirection="row" justifyContent="space-between">
         <Text bold color={focusMode === "checklist" ? "green" : "cyan"}>
           📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}
@@ -60,6 +60,8 @@ export function TaskChecklist({
               if (!isMergeOrCleanup) {
                 if (inst.status === "running") {
                   status = "/";
+                } else if (inst.status === "paused") {
+                  status = "paused";
                 } else if (inst.status === "completed") {
                   status = "x";
                 } else if (inst.status === "error") {
@@ -82,6 +84,10 @@ export function TaskChecklist({
           statusChar = "[/]";
           taskColor = "yellow";
           displayStatusText = " (in progress)";
+        } else if (status === "paused") {
+          statusChar = "[⏸]";
+          taskColor = "magenta";
+          displayStatusText = " (paused)";
         } else if (status === "error") {
           statusChar = "[✗]";
           taskColor = "red";
@@ -90,7 +96,7 @@ export function TaskChecklist({
 
         return (
           <Box key={idx} flexDirection="row">
-            <Text color={status === "x" ? "green" : status === "/" ? "yellow" : status === "error" ? "red" : "cyan"}>
+            <Text color={status === "x" ? "green" : status === "/" ? "yellow" : status === "paused" ? "magenta" : status === "error" ? "red" : "cyan"}>
               {statusChar}{" "}
             </Text>
             <Text color={taskColor} strikethrough={status === "x"}>

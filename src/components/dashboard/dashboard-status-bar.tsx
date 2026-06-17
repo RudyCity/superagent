@@ -54,10 +54,24 @@ export function DashboardStatusBar({
             <Text color="green" bold>🟢 ONLINE</Text>
             <Text color="gray"> │ </Text>
             <Text color="yellow" bold>{activeModel}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="green" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="yellow">▲ {formatCompactNumber(masterPromptTokens)}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="green">▼ {formatCompactNumber(masterCompletionTokens)}</Text>
           </Text>
         </Box>
         <Box>
           <Text>
+            {lastSpeed !== null && (
+              <>
+                <Text color="cyan" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
+                <Text color="gray"> │ </Text>
+              </>
+            )}
+            <Text color="magenta" bold>Master: {(masterPromptTokens + masterCompletionTokens).toLocaleString()}t</Text>
+            <Text color="gray"> │ </Text>
             <Text color="cyan" bold>Superagents({activeSuperagentsCount} active): {(historicalSuperagentTokens || 0).toLocaleString()}t</Text>
             <Text color="gray"> │ </Text>
             <Text color="yellow" bold>Subagents: {subagentTokens.toLocaleString()}t</Text>
@@ -67,21 +81,6 @@ export function DashboardStatusBar({
             <Text color="yellow" bold>Proc: {runningTasksCount}</Text>
             <Text color="gray"> • </Text>
             <Text color="magenta" bold>Sub: {runningSubagentsCount}</Text>
-          </Text>
-        </Box>
-      </Box>
-      <Box flexDirection="row" justifyContent="space-between" marginTop={0}>
-        <Box>
-          <Text>
-            <Text color="green" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
-            {lastSpeed !== null && (
-              <>
-                <Text color="gray"> │ </Text>
-                <Text color="cyan" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
-              </>
-            )}
-            <Text color="gray"> │ </Text>
-            <Text color="magenta" bold>Master: {(masterPromptTokens + masterCompletionTokens).toLocaleString()}t</Text>
           </Text>
         </Box>
       </Box>

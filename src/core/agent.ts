@@ -1348,8 +1348,26 @@ ${formatted}`;
 
   async clearHistory(): Promise<void> {
     this.conversation.clear();
+    this.textLogBuffer = "";
+    this.pendingMessage = null;
+    this.lastSpeed = null;
+    this.wasRunningBeforeAbort = false;
     this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
     await this.saveHistory();
+  }
+
+  /**
+   * Reset all internal transient state (buffers, flags) without touching
+   * conversation history or file paths. Called by /new to guarantee a
+   * completely clean slate in both single-agent and multi-agent modes.
+   */
+  public resetInternalState(): void {
+    this.textLogBuffer = "";
+    this.pendingMessage = null;
+    this.lastSpeed = null;
+    this.wasRunningBeforeAbort = false;
+    this.isRunning = false;
+    this.abortController = null;
   }
 
   getHistory(): Conversation {

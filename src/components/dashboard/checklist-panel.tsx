@@ -36,7 +36,7 @@ export function ChecklistPanel({
   const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={focusArea === "checklist" ? "green" : "cyan"} paddingX={1} marginBottom={1}>
+    <Box flexDirection="column" paddingX={1} marginBottom={1}>
       <Box flexDirection="row" justifyContent="space-between">
         <Text bold color={focusArea === "checklist" ? "green" : "cyan"}>
           📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}

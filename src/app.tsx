@@ -4,7 +4,8 @@ import TextInput from "ink-text-input";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
-import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels } from "./core/config.js";
+import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir } from "./core/config.js";
+import fs from "fs/promises";
 import { handleSlashCommand, getDefaultModel } from "./core/slash-commands.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";
 import { getToolDescription } from "./core/permissions.js";
@@ -16,6 +17,7 @@ import { TaskChecklist } from "./components/task-checklist.js";
 import { execa } from "execa";
 import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences } from "./utils/text.js";
 import { getTruncatedAssistantIndexes } from "./utils/responseScroll.js";
+import { wrapTextForDisplay } from "./utils/responseScroll.js";
 import type { ChatLine } from "./core/slash-commands.js";
 import { readChecklistTasks } from "./core/taskChecklist.js";
 
@@ -25,7 +27,7 @@ import { WizardPanels } from "./components/wizard-panels.js";
 import { ChatArea } from "./components/chat-area.js";
 import { useWizardSubmit } from "./hooks/useWizardSubmit.js";
 import { useKeyboardHandler } from "./hooks/useKeyboardHandler.js";
-import { useMouseScroll } from "./hooks/useMouseScroll.js";
+import { useMouseScroll, type SectionBoundary, type ChatLinePosition } from "./hooks/useMouseScroll.js";
 
 export { stripSgrMouseSequences } from "./utils/text.js";
 
@@ -100,6 +102,18 @@ export function App({
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [tempInput, setTempInput] = useState("");
   const agentRef = useRef<Agent | null>(null);
+
+  // Persist input history to disk so it survives restarts
+  const INPUT_HISTORY_FILE = path.join(getRootConfigDir(), "input-history.json");
+  useEffect(() => {
+    fs.readFile(INPUT_HISTORY_FILE, "utf8").then((raw) => {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setHistory(parsed);
+      }
+    }).catch(() => { /* first run or corrupt file — start fresh */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   const [scrollOffset, setScrollOffset] = useState(0);
   const [focusedResponseIndex, setFocusedResponseIndex] = useState<number | null>(null);
@@ -137,6 +151,18 @@ export function App({
   const [subagentsScrollOffset, setSubagentsScrollOffset] = useState(0);
   const [procsScrollOffset, setProcsScrollOffset] = useState(0);
 
+  // Collapsible sections state
+  const [collapsedSections, setCollapsedSections] = useState({
+    superagents: false,
+    subagents: false,
+    procs: false,
+  });
+
+  // Visible line positions for mouse click detection
+  const [visibleLinePositions, setVisibleLinePositions] = useState<
+    Array<{ index: number; startRow: number; endRow: number; isTruncated: boolean; type: string }>
+  >([]);
+
   const maxChecklistVisible = 5;
   const maxSuperagentsVisible = 2;
   const maxSubagentsVisible = 3;
@@ -161,8 +187,28 @@ export function App({
     });
   }, [lines.length]);
 
-  // Enable mouse wheel scroll for the chat/conversation log
-  useMouseScroll(scrollChat);
+  // Toggle collapsible section
+  const toggleCollapse = useCallback((section: string) => {
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section as keyof typeof prev],
+    }));
+  }, []);
+
+  // Open a specific truncated response by index (for mouse click)
+  const openResponseAtIndex = useCallback((index: number) => {
+    if (index >= 0 && index < lines.length && lines[index]?.type === "assistant") {
+      setFocusedResponseIndex(index);
+      setFocusedResponseOffset(0);
+      setScrollOffset(0);
+    }
+  }, [lines]);
+
+  // Mouse context ref - updated on each render with latest values
+  const mouseCtxRef = useRef<any>(null);
+
+  // Enable mouse scroll + click for the single-agent app
+  useMouseScroll(mouseCtxRef);
 
   const flushBuffer = useCallback(() => {
     if (streamTimeoutRef.current) {
@@ -301,7 +347,9 @@ export function App({
         if (prev.length > 0 && prev[prev.length - 1] === trimmed) {
           return prev;
         }
-        return [...prev, trimmed].slice(-200);
+        const next = [...prev, trimmed].slice(-200);
+        fs.writeFile(INPUT_HISTORY_FILE, JSON.stringify(next, null, 2), "utf8").catch(() => {});
+        return next;
       });
 
       setInput("");
@@ -1233,22 +1281,173 @@ export function App({
 
   let liveListHeight = 0;
   if (runningSuperagentsCount > 0 || runningSubagentsCount > 0 || runningTasksCount > 0) {
-    liveListHeight += 1;
     if (runningSuperagentsCount > 0) {
-      liveListHeight += 1 + Math.min(runningSuperagentsCount, maxSuperagentsVisible) * 3;
+      liveListHeight += collapsedSections.superagents
+        ? 1
+        : 1 + Math.min(runningSuperagentsCount, maxSuperagentsVisible) * 3;
     }
     if (runningSubagentsCount > 0) {
-      liveListHeight += 1 + Math.min(runningSubagentsCount, maxSubagentsVisible);
-      if (runningSuperagentsCount > 0) liveListHeight += 1;
+      liveListHeight += collapsedSections.subagents
+        ? 1
+        : 1 + Math.min(runningSubagentsCount, maxSubagentsVisible);
     }
     if (runningTasksCount > 0) {
-      liveListHeight += 1 + Math.min(runningTasksCount, maxProcsVisible);
-      if (runningSuperagentsCount > 0 || runningSubagentsCount > 0) liveListHeight += 1;
+      liveListHeight += collapsedSections.procs
+        ? 1
+        : 1 + Math.min(runningTasksCount, maxProcsVisible);
     }
   }
   chromeHeight += liveListHeight;
 
   const chatHeightLimit = Math.max(5, terminalHeight - chromeHeight - 1);
+
+  // --- Calculate section boundaries for mouse click detection ---
+  // Layout from bottom: StatusBar(3) + margin(1) + bottomChrome(content + margin) + ChatArea
+  const statusBarTotalRows = 4; // 3 content + 1 marginTop
+  const mainContentHeight = terminalHeight - statusBarTotalRows;
+
+  // Agent section heights (for boundary calc)
+  let saSectionHeight = 0;
+  let subSectionHeight = 0;
+  let procSectionHeight = 0;
+  if (runningSuperagentsCount > 0) {
+    saSectionHeight = collapsedSections.superagents
+      ? 1
+      : 1 + Math.min(runningSuperagentsCount, maxSuperagentsVisible) * 3;
+  }
+  if (runningSubagentsCount > 0) {
+    subSectionHeight = collapsedSections.subagents
+      ? 1
+      : 1 + Math.min(runningSubagentsCount, maxSubagentsVisible);
+  }
+  if (runningTasksCount > 0) {
+    procSectionHeight = collapsedSections.procs
+      ? 1
+      : 1 + Math.min(runningTasksCount, maxProcsVisible);
+  }
+  const totalAgentsHeight = saSectionHeight + subSectionHeight + procSectionHeight;
+
+  // Checklist height
+  let checklistSectionHeight = 0;
+  if (planState === "APPROVED" && checklistTasks.length > 0) {
+    checklistSectionHeight = 3 + Math.min(checklistTasks.length, maxChecklistVisible);
+  }
+
+  // Wizard/suggestions height
+  let wizardSectionHeight = 0;
+  if (activeWizard) {
+    wizardSectionHeight += 3;
+    if (activeWizard.type === "login") {
+      if (activeWizard.step === 1 || activeWizard.step === 2) wizardSectionHeight += 8;
+      else if (activeWizard.step === 10) wizardSectionHeight += 8 + Math.min(6, wizardOptions.length);
+      else if ([3,4,6,11,12,13].includes(activeWizard.step)) wizardSectionHeight += 6;
+    } else if (activeWizard.type === "model") {
+      wizardSectionHeight += wizardOptions.length > 0 ? 13 : 6;
+    } else if (activeWizard.type === "permission") {
+      wizardSectionHeight += 9;
+    } else if (activeWizard.type === "question") {
+      wizardSectionHeight += 8 + Math.min(6, wizardOptions.length);
+    }
+  } else if (input.startsWith("/") && suggestions.length > 0) {
+    wizardSectionHeight += 2;
+  }
+
+  // Input section height (border line + input text lines)
+  const inputSectionHeight = 1 + inputLinesCount;
+
+  // Bottom chrome: marginTop(1) + agents + checklist + wizard + input
+  const bottomChromeContentHeight = totalAgentsHeight + checklistSectionHeight + wizardSectionHeight + inputSectionHeight;
+  const bottomChromeTotalHeight = 1 + bottomChromeContentHeight; // +1 for marginTop of the chrome box
+
+  // Chat area height on screen
+  const chatAreaScreenHeight = mainContentHeight - bottomChromeTotalHeight;
+
+  // Build section boundaries (row numbers 1-indexed from top)
+  const sectionBounds: SectionBoundary[] = [];
+
+  // Chat area
+  sectionBounds.push({ name: "chat", startRow: 1, endRow: Math.max(1, chatAreaScreenHeight) });
+
+  // Bottom chrome content starts after chat area + margin
+  let row = chatAreaScreenHeight + 2; // +1 for margin, +1 to start at first content row
+
+  // Agents (from top: superagents → subagents → procs)
+  if (saSectionHeight > 0) {
+    sectionBounds.push({ name: "superagents_header", startRow: row, endRow: row, isHeader: true });
+    sectionBounds.push({ name: "superagents", startRow: row, endRow: row + saSectionHeight - 1 });
+    row += saSectionHeight;
+  }
+  if (subSectionHeight > 0) {
+    sectionBounds.push({ name: "subagents_header", startRow: row, endRow: row, isHeader: true });
+    sectionBounds.push({ name: "subagents", startRow: row, endRow: row + subSectionHeight - 1 });
+    row += subSectionHeight;
+  }
+  if (procSectionHeight > 0) {
+    sectionBounds.push({ name: "procs_header", startRow: row, endRow: row, isHeader: true });
+    sectionBounds.push({ name: "procs", startRow: row, endRow: row + procSectionHeight - 1 });
+    row += procSectionHeight;
+  }
+
+  // Checklist
+  if (checklistSectionHeight > 0) {
+    sectionBounds.push({ name: "checklist", startRow: row, endRow: row + checklistSectionHeight - 1 });
+    row += checklistSectionHeight;
+  }
+
+  // Wizard/suggestions
+  if (wizardSectionHeight > 0) {
+    sectionBounds.push({ name: "wizard", startRow: row, endRow: row + wizardSectionHeight - 1 });
+    row += wizardSectionHeight;
+  }
+
+  // Input
+  sectionBounds.push({ name: "input", startRow: row, endRow: row + inputSectionHeight - 1 });
+  row += inputSectionHeight;
+
+  // Status bar
+  sectionBounds.push({ name: "statusbar", startRow: terminalHeight - 2, endRow: terminalHeight });
+
+  // Focused response scroll metrics
+  const focusRespWidth = Math.max(20, terminalWidth - 6);
+  const focusRespMaxLines = Math.max(8, Math.min(18, Math.floor(terminalHeight * 0.45)));
+  const focusWindowHeight = Math.max(5, chatHeightLimit - 3);
+  let responseLinesCount = 0;
+  if (focusedResponseIndex !== null && lines[focusedResponseIndex]?.type === "assistant") {
+    responseLinesCount = wrapTextForDisplay(lines[focusedResponseIndex].content, focusRespWidth).length;
+  }
+
+  // Chat content start row (after header, for visible line position calculation)
+  const chatContentStartRow = showBanner ? 9 : 2;
+
+  // Update mouse context ref (read by mouse handler on each event)
+  mouseCtxRef.current = {
+    scrollChat,
+    terminalHeight,
+    focusMode,
+    setFocusMode,
+    setScrollOffset,
+    focusedResponseIndex,
+    setFocusedResponseIndex,
+    setFocusedResponseOffset,
+    focusWindowHeight,
+    responseLinesCount,
+    sections: sectionBounds,
+    setSuperagentsScrollOffset,
+    setSubagentsScrollOffset,
+    setProcsScrollOffset,
+    setChecklistScrollOffset,
+    runningSuperagentsCount,
+    runningSubagentsCount,
+    runningTasksCount,
+    checklistTasksCount: checklistTasks.length,
+    maxSuperagentsVisible,
+    maxSubagentsVisible,
+    maxProcsVisible,
+    maxChecklistVisible,
+    toggleCollapse,
+    openResponseAtIndex,
+    visibleLinePositions,
+  };
 
   return (
     <Box flexDirection="column" height={terminalHeight}>
@@ -1279,6 +1478,8 @@ export function App({
             timeLeft={timeLeft}
             activeToolOutput={activeToolOutput}
             formatCompactNumber={formatCompactNumber}
+            onVisibleLinesChange={setVisibleLinePositions}
+            chatContentStartRow={chatContentStartRow}
           />
 
           {/* Active Agents, Tasks checklists & Wizard dialogs */}
@@ -1294,6 +1495,7 @@ export function App({
               maxSuperagentsVisible={maxSuperagentsVisible}
               maxSubagentsVisible={maxSubagentsVisible}
               maxProcsVisible={maxProcsVisible}
+              collapsedSections={collapsedSections}
             />
 
             <TaskChecklist

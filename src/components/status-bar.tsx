@@ -100,13 +100,15 @@ export function StatusBar(props: StatusBarProps) {
             <Text color="gray"> │ </Text>
             <Text color="cyan">Ctrl+P</Text><Text dimColor> Checkpoint</Text>
             <Text color="gray"> │ </Text>
+            <Text color="cyan">Ctrl+H</Text><Text dimColor> History</Text>
+            <Text color="gray"> │ </Text>
             <Text color="cyan">Esc</Text><Text dimColor> Clear</Text>
             <Text color="gray"> │ </Text>
-            <Text color="cyan">↑/↓</Text><Text dimColor> History</Text>
+            <Text color="cyan">↑/↓</Text><Text dimColor> History/Scroll</Text>
             <Text color="gray"> │ </Text>
             <Text color="cyan">Tab</Text><Text dimColor> Autocomplete</Text>
             <Text color="gray"> │ </Text>
-            <Text color="cyan">Ctrl+↑/↓</Text><Text dimColor> Scroll</Text>
+            <Text color="cyan">Click</Text><Text dimColor> Focus/Scroll</Text>
           </Text>
         </Box>
       </Box>
