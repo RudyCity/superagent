@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { switchActiveProvider } from "./providers.js";
-import { loadModelConfig, getActivePreset, savePreset } from "./jsonConfig.js";
+import { loadModelConfig, getActivePreset, savePreset, setActivePresetId } from "./jsonConfig.js";
 
 export type PresetMode = "multi" | "single";
 
@@ -296,8 +296,15 @@ export function applyModelPreset(name: string, mode?: PresetMode): void {
     }
   }
 
-  // Apply to active preset in JSON config
-  savePreset(targetMode, newPreset);
+  // Wrap into proper JSONModelPreset structure and apply to model-config.json
+  const jsonPreset = {
+    id: targetName,
+    name: preset.name,
+    description: preset.description || "",
+    models: newPreset,
+  };
+  savePreset(targetMode, jsonPreset);
+  setActivePresetId(targetMode, jsonPreset.id);
 
   // Switch active provider if model has a provider prefix
   const mainModel = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "";

@@ -131,7 +131,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       if (choice.includes("create") || choice === "3. create model preset") {
         setActiveWizard({
           type: "model",
-          step: 10,
+          step: 20,
           data: {},
         });
         setWizardOptions([]);
@@ -156,7 +156,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
         setActiveWizard({
           type: "model",
-          step: 16,
+          step: 30,
           data: {},
         });
         setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
@@ -181,7 +181,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
         setActiveWizard({
           type: "model",
-          step: 22,
+          step: 40,
           data: {},
         });
         setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
@@ -215,7 +215,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
           setActiveWizard({
             type: "model",
-            step: 9,
+            step: 50,
             data: {},
           });
           setWizardOptions([
@@ -268,7 +268,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
         setActiveWizard({
           type: "model",
-          step: 9,
+          step: 50,
           data: {},
         });
         setWizardOptions([
@@ -295,8 +295,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setActiveWizard(null);
       setWizardOptions([]);
       setWizardSelectedIndex(0);
-    } else if (step === 9) {
-      if (value === "< Back") {
+    } else if (step === 50) {
+      if (value === "< Back" || value === "back") {
         setActiveWizard({
           type: "model",
           step: 1,
@@ -390,7 +390,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         if (isMulti || (data.tier && data.tier !== "single")) {
           setActiveWizard({
             type: "model",
-            step: 9,
+            step: 50,
             data: { ...data },
           });
           if (isMulti) {
@@ -604,7 +604,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       setActiveWizard({
         type: "model",
-        step: 5,
+        step: 15,
         data: { ...data, provider: profileName },
       });
 
@@ -917,193 +917,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         setWizardOptions([]);
         setWizardSelectedIndex(0);
       }
-    } else if (step === 5) {
-      if (value === "< Back") {
-        const providerType = data.providerType;
-        setActiveWizard({
-          type: "model",
-          step: 3,
-          data: { ...data },
-        });
-        const list = getConfiguredProviders();
-        const matchingProfiles = list.filter(p => p.type === providerType);
-        const profileOptions = matchingProfiles.map(p => {
-          const prefix = `PROVIDER_${p.name.toUpperCase()}`;
-          const apiKey = process.env[`${prefix}_API_KEY`] || "";
-          const maskedKey = apiKey
-            ? (apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "...")
-            : "(no key)";
-          return `${p.name} (key: ${maskedKey})`;
-        });
-        setWizardOptions([
-          ...profileOptions,
-          `+ Configure a new ${providerType} profile`,
-          "< Back"
-        ]);
-        setWizardSelectedIndex(0);
-        setInput("");
-        return;
-      }
-
-      const modelName = value;
-      try {
-        const profileName = data.provider;
-        const tier = data.tier;
-        let updates: Record<string, string> = {};
-
-        let targetLabel = "";
-        if (tier === "default") {
-          switchActiveProvider(profileName);
-          process.env.MODEL = modelName;
-          targetLabel = "Default Model";
-        } else if (tier === "all_subagents") {
-          const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
-          const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-            ? `${profileName.toLowerCase()}:${modelName}`
-            : modelName;
-          updates = isMulti
-            ? {
-                MODEL_MULTI_SUBAGENT: finalModelName,
-                MODEL_MULTI_SUBAGENT_RESEARCHER: finalModelName,
-                MODEL_MULTI_SUBAGENT_CODER: finalModelName,
-                MODEL_MULTI_SUBAGENT_REVIEWER: finalModelName
-              }
-            : {
-                MODEL_SINGLE_SUBAGENT: finalModelName,
-                MODEL_SINGLE_SUBAGENT_RESEARCHER: finalModelName,
-                MODEL_SINGLE_SUBAGENT_CODER: finalModelName,
-                MODEL_SINGLE_SUBAGENT_REVIEWER: finalModelName
-              };
-          targetLabel = "All Subagent Models";
-          switchActiveProvider(profileName);
-          // Apply in-memory only
-          for (const [k, v] of Object.entries(updates)) process.env[k] = v;
-        } else if (tier === "all") {
-          const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
-          const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-            ? `${profileName.toLowerCase()}:${modelName}`
-            : modelName;
-          updates = {
-            MODEL: modelName,
-            MODEL_MULTI_MASTER: finalModelName,
-            MODEL_MULTI_SUPERAGENT: finalModelName,
-            MODEL_MULTI_SUBAGENT: finalModelName,
-            MODEL_MULTI_SUBAGENT_RESEARCHER: finalModelName,
-            MODEL_MULTI_SUBAGENT_CODER: finalModelName,
-            MODEL_MULTI_SUBAGENT_REVIEWER: finalModelName
-          };
-          targetLabel = "All Tiers & Subagents";
-          switchActiveProvider(profileName);
-          // Apply in-memory only
-          for (const [k, v] of Object.entries(updates)) process.env[k] = v;
-        } else {
-          const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
-          const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-            ? `${profileName.toLowerCase()}:${modelName}`
-            : modelName;
-          
-          if (tier === "master") {
-            updates = isMulti
-              ? { MODEL_MULTI_MASTER: finalModelName }
-              : { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
-            targetLabel = "Master Agent (depth 0) Model";
-          } else if (tier === "superagent") {
-            updates = isMulti
-              ? { MODEL_MULTI_SUPERAGENT: finalModelName }
-              : { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
-            targetLabel = "Superagent (depth 1) Model";
-          } else if (tier === "subagent") {
-            updates = isMulti
-              ? { MODEL_MULTI_SUBAGENT: finalModelName }
-              : { MODEL_SINGLE_SUBAGENT: finalModelName };
-            targetLabel = "Subagent (depth 2) Model";
-          } else if (tier === "single") {
-            updates = { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
-            targetLabel = "Single Agent Model";
-          } else {
-            const typeUpper = tier.toUpperCase();
-            updates = isMulti
-              ? {
-                  [`MODEL_MULTI_SUBAGENT_${typeUpper}`]: finalModelName
-                }
-              : {
-                  [`MODEL_SINGLE_SUBAGENT_${typeUpper}`]: finalModelName
-                };
-            targetLabel = `Subagent "${tier}" Model`;
-          }
-          // Apply in-memory only
-          for (const [k, v] of Object.entries(updates)) process.env[k] = v;
-        }
-
-        const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
-        const limit = getContextWindowLimit(cleanModelName);
-        
-        const isSingle = agentRef?.current?.tier === "single";
-        const effectiveModel = isSingle
-          ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
-          : (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel());
-        const cleanModel = effectiveModel.includes(":") ? effectiveModel.substring(effectiveModel.indexOf(":") + 1) : effectiveModel;
-        const newLimit = getContextWindowLimit(cleanModel);
-        setContextLimit(newLimit);
-        setActiveModel(effectiveModel);
-        
-        let updatedList = `\n\nUpdated Models:\n`;
-        if (isMulti) {
-          const masterModel = process.env.MODEL_MULTI_MASTER || "(use default)";
-          const superagentModel = process.env.MODEL_MULTI_SUPERAGENT || "(use default)";
-          const subagentModel = process.env.MODEL_MULTI_SUBAGENT || "(use default)";
-          updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
-            `  Superagent (depth 1): ${superagentModel}\n` +
-            `  Subagent (depth 2): ${subagentModel}`;
-
-          for (const [key, value] of Object.entries(process.env)) {
-            if (value && key.startsWith("MODEL_MULTI_SUBAGENT_")) {
-              const name = key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase();
-              if (!updatedList.includes(`Subagent "${name}":`)) {
-                updatedList += `\n  Subagent "${name}": ${value}`;
-              }
-            }
-          }
-        } else {
-          const singleModel = process.env.MODEL_SINGLE || "(use default)";
-          updatedList += `  Single Agent: ${singleModel}`;
-          const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || "";
-          if (subagentModel) {
-            updatedList += `\n  Subagent (depth 2): ${subagentModel}`;
-          }
-          for (const [key, value] of Object.entries(process.env)) {
-            if (value && key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
-              const name = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
-              updatedList += `\n  Subagent "${name}": ${value}`;
-            }
-          }
-        }
-
-        addLine({
-          type: "system",
-          content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSession only — use Save Preset to persist${updatedList}`,
-          timestamp: now,
-        });
-        
-        if (tier === "default" || tier === "all") {
-          fetchAndCacheModels()
-            .then(() => {
-              const newLimit = getContextWindowLimit(cleanModelName);
-              setContextLimit(newLimit);
-            })
-            .catch(() => {});
-        }
-      } catch (err: any) {
-        addLine({
-          type: "error",
-          content: `Failed to set model: ${err.message}`,
-          timestamp: now,
-        });
-      }
-      setActiveWizard(null);
-      setWizardOptions([]);
-      setWizardSelectedIndex(0);
-      setWizardIsLoadingModels(false);
+// step 5 deleted
     } else if (step === 4) {
       if (value === "< Back") {
         setActiveWizard({
@@ -1182,7 +996,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setWizardOptions([]);
       setWizardSelectedIndex(0);
       setWizardIsLoadingModels(false);
-    } else if (step === 10) {
+    } else if (step === 20) {
       const name = value.trim();
       if (name.toLowerCase() === "< back" || name.toLowerCase() === "back") {
         setActiveWizard({
@@ -1213,18 +1027,18 @@ export function useModelWizard(ctx: ModelWizardContext) {
       }
       setActiveWizard({
         type: "model",
-        step: 11,
+        step: 21,
         data: { ...data, presetName: name },
       });
       setWizardOptions([]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 11) {
+    } else if (step === 21) {
       const desc = value.trim();
       if (desc.toLowerCase() === "< back" || desc.toLowerCase() === "back") {
         setActiveWizard({
           type: "model",
-          step: 10,
+          step: 20,
           data: { ...data },
         });
         setWizardOptions([]);
@@ -1234,21 +1048,16 @@ export function useModelWizard(ctx: ModelWizardContext) {
       }
       setActiveWizard({
         type: "model",
-        step: 12,
-        data: { ...data, presetDescription: desc, presetModels: JSON.stringify({}) },
-      });
-      setActiveWizard({
-        type: "model",
-        step: 12,
+        step: 22,
         data: { ...data, presetDescription: desc, presetModels: JSON.stringify({}) },
       });
       setWizardOptions(getPresetOptionsList({}));
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 12 || step === 18) {
+    } else if (step === 22 || step === 32) {
       const models: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
       if (value === "< Back") {
-        const nextStep = step === 12 ? 11 : 17;
+        const nextStep = step === 22 ? 21 : 31;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1256,7 +1065,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         });
         setWizardOptions([]);
         setWizardSelectedIndex(0);
-        setInput(step === 12 ? (data.presetDescription || "") : (data.presetDescription || ""));
+        setInput(step === 22 ? (data.presetDescription || "") : (data.presetDescription || ""));
         return;
       }
       if (value.includes("Save Preset")) {
@@ -1355,7 +1164,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       if (!tier) return;
 
-      const nextStep = step === 12 ? 13 : 19;
+      const nextStep = step === 22 ? 23 : 33;
       setActiveWizard({
         type: "model",
         step: nextStep,
@@ -1372,9 +1181,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
       ]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 13 || step === 19) {
+    } else if (step === 23 || step === 33) {
       if (value === "< Back") {
-        const nextStep = step === 13 ? 12 : 18;
+        const nextStep = step === 23 ? 22 : 32;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1423,7 +1232,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           delete presetModels.MODEL;
         }
 
-        const nextStep = step === 13 ? 22 : 32;
+        const nextStep = step === 23 ? 22 : 32;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1455,7 +1264,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         return;
       }
 
-      const nextStep = step === 13 ? 14 : 20;
+      const nextStep = step === 23 ? 25 : 35;
       setActiveWizard({
         type: "model",
         step: nextStep,
@@ -1480,9 +1289,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
       ]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 14 || step === 20) {
+    } else if (step === 25 || step === 35) {
       if (value === "< Back") {
-        const nextStep = step === 14 ? 13 : 19;
+        const nextStep = step === 25 ? 23 : 33;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1503,7 +1312,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       const providerType = data.providerType;
       if (value.startsWith("+ Configure a new")) {
-        const nextModelStep = step === 14 ? 15 : 21;
+        const nextModelStep = step === 25 ? 24 : 34;
         setActiveWizard({
           type: "model",
           step: 6,
@@ -1532,7 +1341,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         resolvedApiKey = process.env[`${prefix}_API_KEY`] || "";
       }
 
-      const nextStep = step === 14 ? 15 : 21;
+      const nextStep = step === 25 ? 24 : 34;
       setActiveWizard({
         type: "model",
         step: nextStep,
@@ -1617,9 +1426,10 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setWizardOptions([...initialModels, "< Back"]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 15 || step === 21) {
+    } else if (step === 15 || step === 24 || step === 34) {
       if (value === "< Back") {
-        const nextStep = step === 15 ? 14 : 20;
+        const isPreset = step === 24 || step === 34;
+        const nextStep = isPreset ? (step === 24 ? 25 : 35) : 3;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1646,63 +1456,225 @@ export function useModelWizard(ctx: ModelWizardContext) {
         return;
       }
 
-      const modelName = value;
-      const profileName = data.provider || "";
-      const tier = data.tier || "";
-      
-      const activeProvider = process.env.ACTIVE_PROVIDER || "";
-      const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-        ? `${profileName.toLowerCase()}:${modelName}`
-        : modelName;
+      // Model selected
+      const isPreset = step === 24 || step === 34;
+      if (isPreset) {
+        const modelName = value;
+        const profileName = data.provider || "";
+        const tier = data.tier || "";
+        
+        const activeProvider = process.env.ACTIVE_PROVIDER || "";
+        const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+          ? `${profileName.toLowerCase()}:${modelName}`
+          : modelName;
 
-      const presetModels: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
+        const presetModels: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
 
-      if (tier === "master") {
-        presetModels.MODEL_MULTI_MASTER = finalModelName;
-      } else if (tier === "superagent") {
-        presetModels.MODEL_MULTI_SUPERAGENT = finalModelName;
-      } else if (tier === "subagent") {
-        if (isMulti) {
-          presetModels.MODEL_MULTI_SUBAGENT = finalModelName;
-        } else {
-          presetModels.MODEL_SINGLE_SUBAGENT = finalModelName;
+        if (tier === "master") {
+          presetModels.MODEL_MULTI_MASTER = finalModelName;
+        } else if (tier === "superagent") {
+          presetModels.MODEL_MULTI_SUPERAGENT = finalModelName;
+        } else if (tier === "subagent") {
+          if (isMulti) {
+            presetModels.MODEL_MULTI_SUBAGENT = finalModelName;
+          } else {
+            presetModels.MODEL_SINGLE_SUBAGENT = finalModelName;
+          }
+        } else if (tier === "researcher") {
+          if (isMulti) {
+            presetModels.MODEL_MULTI_SUBAGENT_RESEARCHER = finalModelName;
+          } else {
+            presetModels.MODEL_SINGLE_SUBAGENT_RESEARCHER = finalModelName;
+          }
+        } else if (tier === "coder") {
+          if (isMulti) {
+            presetModels.MODEL_MULTI_SUBAGENT_CODER = finalModelName;
+          } else {
+            presetModels.MODEL_SINGLE_SUBAGENT_CODER = finalModelName;
+          }
+        } else if (tier === "reviewer") {
+          if (isMulti) {
+            presetModels.MODEL_MULTI_SUBAGENT_REVIEWER = finalModelName;
+          } else {
+            presetModels.MODEL_SINGLE_SUBAGENT_REVIEWER = finalModelName;
+          }
+        } else if (tier === "default") {
+          presetModels.MODEL = finalModelName;
+        } else if (tier === "single") {
+          presetModels.MODEL_SINGLE = finalModelName;
+          presetModels.MODEL = finalModelName;
         }
-      } else if (tier === "researcher") {
-        if (isMulti) {
-          presetModels.MODEL_MULTI_SUBAGENT_RESEARCHER = finalModelName;
-        } else {
-          presetModels.MODEL_SINGLE_SUBAGENT_RESEARCHER = finalModelName;
+
+        const nextStep = step === 24 ? 22 : 32;
+        setActiveWizard({
+          type: "model",
+          step: nextStep,
+          data: { ...data, presetModels: JSON.stringify(presetModels) },
+        });
+
+        setWizardOptions(getPresetOptionsList(presetModels));
+        setWizardSelectedIndex(0);
+        setInput("");
+      } else {
+        // Direct flow: same as what step 5 used to do
+        const modelName = value;
+        try {
+          const profileName = data.provider;
+          const tier = data.tier;
+          let updates: Record<string, string> = {};
+
+          let targetLabel = "";
+          if (tier === "default") {
+            switchActiveProvider(profileName);
+            process.env.MODEL = modelName;
+            targetLabel = "Default Model";
+          } else if (tier === "all_subagents") {
+            const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
+            const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+              ? `${profileName.toLowerCase()}:${modelName}`
+              : modelName;
+            updates = isMulti
+              ? {
+                  MODEL_MULTI_SUBAGENT: finalModelName,
+                  MODEL_MULTI_SUBAGENT_RESEARCHER: finalModelName,
+                  MODEL_MULTI_SUBAGENT_CODER: finalModelName,
+                  MODEL_MULTI_SUBAGENT_REVIEWER: finalModelName
+                }
+              : {
+                  MODEL_SINGLE_SUBAGENT: finalModelName,
+                  MODEL_SINGLE_SUBAGENT_RESEARCHER: finalModelName,
+                  MODEL_SINGLE_SUBAGENT_CODER: finalModelName,
+                  MODEL_SINGLE_SUBAGENT_REVIEWER: finalModelName
+                };
+            targetLabel = "All Subagent Models";
+            switchActiveProvider(profileName);
+            for (const [k, v] of Object.entries(updates)) process.env[k] = v;
+          } else if (tier === "all") {
+            const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
+            const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+              ? `${profileName.toLowerCase()}:${modelName}`
+              : modelName;
+            updates = {
+              MODEL: modelName,
+              MODEL_MULTI_MASTER: finalModelName,
+              MODEL_MULTI_SUPERAGENT: finalModelName,
+              MODEL_MULTI_SUBAGENT: finalModelName,
+              MODEL_MULTI_SUBAGENT_RESEARCHER: finalModelName,
+              MODEL_MULTI_SUBAGENT_CODER: finalModelName,
+              MODEL_MULTI_SUBAGENT_REVIEWER: finalModelName
+            };
+            targetLabel = "All Tiers & Subagents";
+            switchActiveProvider(profileName);
+            for (const [k, v] of Object.entries(updates)) process.env[k] = v;
+          } else {
+            const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
+            const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
+              ? `${profileName.toLowerCase()}:${modelName}`
+              : modelName;
+            
+            if (tier === "master") {
+              updates = isMulti
+                ? { MODEL_MULTI_MASTER: finalModelName }
+                : { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
+              targetLabel = "Master Agent (depth 0) Model";
+            } else if (tier === "superagent") {
+              updates = isMulti
+                ? { MODEL_MULTI_SUPERAGENT: finalModelName }
+                : { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
+              targetLabel = "Superagent (depth 1) Model";
+            } else if (tier === "subagent") {
+              updates = isMulti
+                ? { MODEL_MULTI_SUBAGENT: finalModelName }
+                : { MODEL_SINGLE_SUBAGENT: finalModelName };
+              targetLabel = "Subagent (depth 2) Model";
+            } else if (tier === "single") {
+              updates = { MODEL_SINGLE: finalModelName, MODEL: finalModelName };
+              targetLabel = "Single Agent Model";
+            } else {
+              const typeUpper = tier.toUpperCase();
+              updates = isMulti
+                ? {
+                    [`MODEL_MULTI_SUBAGENT_${typeUpper}`]: finalModelName
+                  }
+                : {
+                    [`MODEL_SINGLE_SUBAGENT_${typeUpper}`]: finalModelName
+                  };
+              targetLabel = `Subagent "${tier}" Model`;
+            }
+            for (const [k, v] of Object.entries(updates)) process.env[k] = v;
+          }
+
+          const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
+          const limit = getContextWindowLimit(cleanModelName);
+          
+          const isSingle = agentRef?.current?.tier === "single";
+          const effectiveModel = isSingle
+            ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
+            : (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel());
+          const cleanModel = effectiveModel.includes(":") ? effectiveModel.substring(effectiveModel.indexOf(":") + 1) : effectiveModel;
+          const newLimit = getContextWindowLimit(cleanModel);
+          setContextLimit(newLimit);
+          setActiveModel(effectiveModel);
+          
+          let updatedList = `\n\nUpdated Models:\n`;
+          if (isMulti) {
+            const masterModel = process.env.MODEL_MULTI_MASTER || "(use default)";
+            const superagentModel = process.env.MODEL_MULTI_SUPERAGENT || "(use default)";
+            const subagentModel = process.env.MODEL_MULTI_SUBAGENT || "(use default)";
+            updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
+              `  Superagent (depth 1): ${superagentModel}\n` +
+              `  Subagent (depth 2): ${subagentModel}`;
+
+            for (const [key, value] of Object.entries(process.env)) {
+              if (value && key.startsWith("MODEL_MULTI_SUBAGENT_")) {
+                const name = key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase();
+                if (!updatedList.includes(`Subagent "${name}":`)) {
+                  updatedList += `\n  Subagent "${name}": ${value}`;
+                }
+              }
+            }
+          } else {
+            const singleModel = process.env.MODEL_SINGLE || "(use default)";
+            updatedList += `  Single Agent: ${singleModel}`;
+            const subagentModel = process.env.MODEL_SINGLE_SUBAGENT || "";
+            if (subagentModel) {
+              updatedList += `\n  Subagent (depth 2): ${subagentModel}`;
+            }
+            for (const [key, value] of Object.entries(process.env)) {
+              if (value && key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
+                const name = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
+                updatedList += `\n  Subagent "${name}": ${value}`;
+              }
+            }
+          }
+
+          addLine({
+            type: "system",
+            content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSession only — use Save Preset to persist${updatedList}`,
+            timestamp: now,
+          });
+          
+          if (tier === "default" || tier === "all") {
+            fetchAndCacheModels()
+              .then(() => {
+                const newLimit = getContextWindowLimit(cleanModelName);
+                setContextLimit(newLimit);
+              })
+              .catch(() => {});
+          }
+        } catch (err: any) {
+          addLine({
+            type: "error",
+            content: `Failed to set model: ${err.message}`,
+            timestamp: now,
+          });
         }
-      } else if (tier === "coder") {
-        if (isMulti) {
-          presetModels.MODEL_MULTI_SUBAGENT_CODER = finalModelName;
-        } else {
-          presetModels.MODEL_SINGLE_SUBAGENT_CODER = finalModelName;
-        }
-      } else if (tier === "reviewer") {
-        if (isMulti) {
-          presetModels.MODEL_MULTI_SUBAGENT_REVIEWER = finalModelName;
-        } else {
-          presetModels.MODEL_SINGLE_SUBAGENT_REVIEWER = finalModelName;
-        }
-      } else if (tier === "default") {
-        presetModels.MODEL = finalModelName;
-      } else if (tier === "single") {
-        presetModels.MODEL_SINGLE = finalModelName;
-        presetModels.MODEL = finalModelName;
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setWizardIsLoadingModels(false);
       }
-
-      const nextStep = step === 15 ? 12 : 18;
-      setActiveWizard({
-        type: "model",
-        step: nextStep,
-        data: { ...data, presetModels: JSON.stringify(presetModels) },
-      });
-
-      setWizardOptions(getPresetOptionsList(presetModels));
-      setWizardSelectedIndex(0);
-      setInput("");
-    } else if (step === 16) {
+    } else if (step === 30) {
       if (value === "< Back") {
         setActiveWizard({
           type: "model",
@@ -1730,18 +1702,18 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const desc = preset ? preset.description : "";
       setActiveWizard({
         type: "model",
-        step: 17,
+        step: 31,
         data: { ...data, presetName: name, presetDescription: desc, presetModels: JSON.stringify(models) },
       });
       setWizardOptions([]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 17) {
+    } else if (step === 31) {
       const desc = value.trim();
       if (desc.toLowerCase() === "< back" || desc.toLowerCase() === "back") {
         setActiveWizard({
           type: "model",
-          step: 16,
+          step: 30,
           data: { ...data },
         });
         const presets = getModelPresets(presetMode);
@@ -1756,14 +1728,14 @@ export function useModelWizard(ctx: ModelWizardContext) {
       
       setActiveWizard({
         type: "model",
-        step: 18,
+        step: 32,
         data: { ...data, presetDescription: updatedDesc }
       });
 
       setWizardOptions(getPresetOptionsList(models));
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 22) {
+    } else if (step === 40) {
       if (value === "< Back") {
         setActiveWizard({
           type: "model",
@@ -1779,17 +1751,17 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const name = choice.split(" - ")[0].trim();
       setActiveWizard({
         type: "model",
-        step: 23,
+        step: 41,
         data: { ...data, presetName: name },
       });
       setWizardOptions(["1. Yes, delete it", "2. No, cancel"]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 23) {
+    } else if (step === 41) {
       if (value === "< Back") {
         setActiveWizard({
           type: "model",
-          step: 22,
+          step: 40,
           data: { ...data },
         });
         const presets = getModelPresets(presetMode);

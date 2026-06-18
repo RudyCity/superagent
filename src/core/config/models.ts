@@ -180,35 +180,32 @@ export function getModelInstanceForString(modelStr: string) {
     const modelConfig = loadModelConfig();
 
     if (prefix === "anthropic") {
-      // Find anthropic provider in JSON config
+      provider = "anthropic";
+      modelName = rest;
+      baseUrl = undefined;
       const anthropicProfile = modelConfig.providers.find(
         (p) => p.provider === "anthropic" && p.apiKey && p.apiKey.trim() !== ""
       );
       if (anthropicProfile) {
-        provider = "anthropic";
-        modelName = rest;
         apiKey = anthropicProfile.apiKey;
-        baseUrl = undefined;
       }
     } else if (prefix === "openai") {
-      // Find openai provider in JSON config
+      provider = "openai";
+      modelName = rest;
+      baseUrl = undefined;
       const openaiProfile = modelConfig.providers.find(
         (p) => p.provider === "openai" && p.apiKey && p.apiKey.trim() !== ""
       );
       if (openaiProfile) {
-        provider = "openai";
-        modelName = rest;
         apiKey = openaiProfile.apiKey;
-        baseUrl = undefined;
       }
     } else if (prefix === "custom") {
-      // Find custom provider in JSON config
+      provider = "custom";
+      modelName = rest;
       const customProfile = modelConfig.providers.find(
         (p) => p.provider === "custom" && p.apiKey && p.apiKey.trim() !== ""
       );
       if (customProfile) {
-        provider = "custom";
-        modelName = rest;
         apiKey = customProfile.apiKey;
         baseUrl = customProfile.baseUrl || undefined;
       }

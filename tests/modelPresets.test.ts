@@ -148,9 +148,18 @@ describe("Model Presets", () => {
             subagentDetails: {}
           }
         }],
-        single: []
+        single: [{
+          id: "test-single",
+          name: "Test Single",
+          description: "Test single preset",
+          models: {
+            superagent: { providerProfileId: "openai", model: "test-slash-model" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }]
       },
-      activePresetId: { multi: "test-multi", single: "" }
+      activePresetId: { multi: "test-multi", single: "test-single" }
     };
     fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
     clearModelConfigCache();
