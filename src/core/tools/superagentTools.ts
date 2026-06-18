@@ -15,6 +15,7 @@ import {
   superagentInstances,
   notifySuperagentsChanged,
   getMasterAgent,
+  getActiveQuestionHandler,
   addHistoricalSuperagentTokens,
   appendMasterLog,
 } from "./state.js";
@@ -267,6 +268,11 @@ export const invokeSuperagentTool: Tool = {
           });
           appendMasterLog(`[MASTER ANSWER] For Superagent "${role}": "${answer}"`);
           return answer;
+        }
+        // Single-mode fallback: route to user UI
+        const handler = getActiveQuestionHandler();
+        if (handler) {
+          return handler(`[Superagent "${role}"]: ${question}`, options);
         }
         return options[0] ?? "";
       },
@@ -919,6 +925,11 @@ export const sendMessageToSuperagentTool: Tool = {
             });
             appendMasterLog(`[MASTER ANSWER] For Superagent "${role}": "${answer}"`);
             return answer;
+          }
+          // Single-mode fallback: route to user UI
+          const handler = getActiveQuestionHandler();
+          if (handler) {
+            return handler(`[Superagent "${role}"]: ${question}`, options);
           }
           return options[0] ?? "";
         },

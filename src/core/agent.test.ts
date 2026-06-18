@@ -1,33 +1,33 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import fs from "fs";
 import path from "path";
+import os from "os";
+
+// Mock os.homedir() di paling atas untuk isolasi penuh
+const tempHome = path.join(process.cwd(), "tests", "temp-home-agent");
+vi.spyOn(os, "homedir").mockReturnValue(tempHome);
+
 import { Agent } from "./agent.js";
 import type { AgentEvent } from "./agent.js";
 import { savePreset, setActivePresetId, clearModelConfigCache } from "./config/jsonConfig.js";
-import { getModelConfigPath } from "./config/paths.js";
+import { getModelConfigPath, ensureGlobalConfigDir } from "./config/paths.js";
 
-let originalConfigContent: string | null = null;
 const configPath = getModelConfigPath();
 
-beforeAll(() => {
-  if (fs.existsSync(configPath)) {
-    originalConfigContent = fs.readFileSync(configPath, "utf-8");
-  }
-});
-
-afterAll(() => {
-  if (originalConfigContent !== null) {
-    fs.writeFileSync(configPath, originalConfigContent, "utf-8");
-  } else {
-    if (fs.existsSync(configPath)) {
-      try {
-        fs.unlinkSync(configPath);
-      } catch (e) {}
-    }
-  }
-});
-
 beforeEach(() => {
+  // Bersihkan folder temp
+  if (fs.existsSync(tempHome)) {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
+  ensureGlobalConfigDir();
+  clearModelConfigCache();
+});
+
+afterEach(() => {
+  // Bersihkan folder temp
+  if (fs.existsSync(tempHome)) {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  }
   clearModelConfigCache();
 });
 

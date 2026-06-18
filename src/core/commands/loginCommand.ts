@@ -54,31 +54,7 @@ export const loginCommand: SlashCommand = {
       return;
     }
 
-    // Direct /login list → open provider selection wizard (step 100)
-    if (args.trim() === "list") {
-      if (ctx.setActiveWizard) {
-        const providers = getProviders().filter(p => p.apiKey && p.apiKey.trim() !== "");
-        if (providers.length === 0) {
-          ctx.addLine({
-            type: "system",
-            content: "No providers configured yet. Use /login to add one.",
-            timestamp: now,
-          });
-          return;
-        }
-        const providerOptions = providers.map(
-          (p, i) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
-        );
-        ctx.setActiveWizard({
-          type: "login",
-          step: 6,
-          data: {},
-        });
-        ctx.setWizardOptions?.(providerOptions);
-        ctx.setWizardSelectedIndex?.(0);
-      }
-      return;
-    }
+
 
     const parts = args.split(/\s+/);
     const actionArg = parts[0].toLowerCase();

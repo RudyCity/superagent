@@ -22,7 +22,6 @@ import { Agent } from "../core/agent.js";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
 import path from "path";
 import { 
-  updateEnvFile, 
   switchActiveProvider, 
   listHistorySessions, 
   fetchAndCacheModels,

@@ -155,20 +155,23 @@ Pick the BEST option that aligns with the project goals, the implementation plan
 Reply with ONLY the exact text of the chosen option — no numbering, no explanation, no markdown.
 If none of the options are suitable, still pick the closest one.`;
 
-    let concurrencyAcquired = false;
+    // Use rate limiter only — bypass concurrency limiter to avoid deadlock
+    // when SUPERAGENT_MAX_CONCURRENCY=1 and Master's main loop is in flight.
     try {
-      if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
-        await concurrencyLimiter.acquire();
-        concurrencyAcquired = true;
-      }
       await rateLimiter.acquire(1);
 
-      const { text } = await generateText({
+      const result = await generateText({
         model: this.getModel(),
         prompt,
       });
 
-      const cleaned = text.trim().replace(/^["']|["']$/g, "");
+      // Track token usage so Master's token counter stays accurate
+      try {
+        const { addMasterTokens } = await import("./tools/state.js");
+        addMasterTokens(result.usage?.promptTokens || 0, result.usage?.completionTokens || 0);
+      } catch {}
+
+      const cleaned = result.text.trim().replace(/^["']|["']$/g, "");
 
       // Exact match
       const exact = options.find((o) => o === cleaned);
@@ -190,10 +193,6 @@ If none of the options are suitable, still pick the closest one.`;
       return options[0];
     } catch {
       return options[0];
-    } finally {
-      if (concurrencyAcquired) {
-        concurrencyLimiter.release();
-      }
     }
   }
 

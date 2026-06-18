@@ -1,45 +1,39 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
 import fs from "fs";
 import path from "path";
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId } from "./config.js";
+import os from "os";
+
+// Mock os.homedir() di paling atas untuk isolasi penuh
+const tempHome = path.join(process.cwd(), "tests", "temp-home-config");
+vi.spyOn(os, "homedir").mockReturnValue(tempHome);
+
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir } from "./config.js";
 import { getModelConfigPath } from "./config/paths.js";
-import { clearModelConfigCache, loadModelConfig } from "./config/jsonConfig.js";
+import { clearModelConfigCache, loadModelConfig, addProvider } from "./config/jsonConfig.js";
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
-  let originalConfigContent: string | null = null;
   const configPath = getModelConfigPath();
-
-  beforeAll(() => {
-    if (fs.existsSync(configPath)) {
-      originalConfigContent = fs.readFileSync(configPath, "utf-8");
-    }
-  });
-
-  afterAll(() => {
-    if (originalConfigContent !== null) {
-      fs.writeFileSync(configPath, originalConfigContent, "utf-8");
-    } else {
-      if (fs.existsSync(configPath)) {
-        try {
-          fs.unlinkSync(configPath);
-        } catch (e) {}
-      }
-    }
-  });
 
   beforeEach(() => {
     // Back up process.env to avoid side effects
     originalEnv = { ...process.env };
+    
+    // Bersihkan folder temp
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+    ensureGlobalConfigDir();
     clearModelConfigCache();
   });
 
   afterEach(() => {
     // Restore process.env
     process.env = originalEnv;
-    // Restore config file from original
-    if (originalConfigContent !== null) {
-      fs.writeFileSync(configPath, originalConfigContent, "utf-8");
+    
+    // Bersihkan folder temp
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
     }
     clearModelConfigCache();
   });
@@ -110,6 +104,16 @@ describe("config", () => {
         json: () => Promise.resolve(mockResponseData)
       } as Response)
     );
+
+    // Tulis provider 'custom' ke JSON config
+    addProvider({
+      id: "custom",
+      name: "Custom Provider",
+      provider: "openai",
+      apiKey: "test-key",
+      baseUrl: "http://localhost:8080/v1"
+    });
+    switchActiveProvider("custom");
 
     // Mock active provider env override to test OpenAI/custom provider path
     process.env.ACTIVE_PROVIDER = "custom";

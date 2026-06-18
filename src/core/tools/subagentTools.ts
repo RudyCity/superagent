@@ -1,10 +1,11 @@
 import { Tool, SubagentInstance } from "./types.js";
 import {
-  subagentTypes, 
-  subagentInstances, 
+  subagentTypes,
+  subagentInstances,
   superagentInstances,
-  notifySubagentsChanged, 
+  notifySubagentsChanged,
   getMasterAgent,
+  getActiveQuestionHandler,
   appendMasterLog
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
@@ -291,6 +292,11 @@ export const invokeSubagentTool: Tool = {
           appendMasterLog(`[MASTER ANSWER] For Subagent ${subagentId} (${role}): "${answer}"`);
           return answer;
         }
+        // Single-mode fallback: route to user UI
+        const handler = getActiveQuestionHandler();
+        if (handler) {
+          return handler(`[Subagent ${subagentId} (${role})]: ${question}`, options);
+        }
         return options[0] || "";
       },
       resolvedPrompt,
@@ -528,6 +534,11 @@ export const sendMessageTool: Tool = {
             });
             appendMasterLog(`[MASTER ANSWER] For Subagent ${recipientId} (${role}): "${answer}"`);
             return answer;
+          }
+          // Single-mode fallback: route to user UI
+          const handler = getActiveQuestionHandler();
+          if (handler) {
+            return handler(`[Subagent ${recipientId} (${role})]: ${question}`, options);
           }
           return options[0] || "";
         },

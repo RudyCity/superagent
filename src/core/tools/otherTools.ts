@@ -83,7 +83,19 @@ export const askQuestionTool: Tool = {
           return `Error getting Master Agent answer: ${err.message}`;
         }
       }
-      return `Error: Master Agent is not available to route the question. Cannot ask user directly from tier "${currentTier}".`;
+      // Single-mode fallback (no Master registered): route to user UI
+      const fallbackHandler = getActiveQuestionHandler();
+      if (fallbackHandler) {
+        const role = (currentAgent as any).subagentType || (currentAgent as any).tier || "?";
+        const prefix = currentTier === "superagent" ? `[Superagent "${role}"]` : `[Subagent (${role})]`;
+        try {
+          const selected = await fallbackHandler(`${prefix}: ${question}`, options, isMultiSelect);
+          return `User selected option: "${selected}"`;
+        } catch (err: any) {
+          return `Error getting user answer: ${err.message}`;
+        }
+      }
+      return `Error: No question handler available to route the question from tier "${currentTier}".`;
     }
 
     // Master / Single tier — forward to user UI as before

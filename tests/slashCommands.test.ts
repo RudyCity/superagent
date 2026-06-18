@@ -1,10 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
+import os from "os";
+
+// Mock os.homedir() di paling atas untuk isolasi penuh
+const tempHome = path.join(process.cwd(), "tests", "temp-home-slash-commands");
+vi.spyOn(os, "homedir").mockReturnValue(tempHome);
+
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { Agent } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
-import { getModelConfigPath } from "../src/core/config/paths.js";
+import { getModelConfigPath, ensureGlobalConfigDir } from "../src/core/config/paths.js";
 import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 import { execa } from "execa";
 
@@ -64,10 +70,22 @@ describe("Slash Command: /model", () => {
     activeWizard = null;
     wizardOptions = [];
     wizardSelectedIndex = 0;
+
+    // Bersihkan folder temp
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+    ensureGlobalConfigDir();
+    clearModelConfigCache();
   });
 
   afterEach(() => {
     process.env = originalEnv;
+    // Bersihkan folder temp
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+    clearModelConfigCache();
   });
 
   it("should show current configurations when run without arguments", () => {

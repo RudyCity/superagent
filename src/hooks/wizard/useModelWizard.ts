@@ -1248,7 +1248,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
     } else if (step === 12 || step === 18) {
       const models: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
       if (value === "< Back") {
-        const nextStep = step === 12 ? 21 : 31;
+        const nextStep = step === 12 ? 11 : 17;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1355,7 +1355,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       if (!tier) return;
 
-      const nextStep = step === 12 ? 23 : 33;
+      const nextStep = step === 12 ? 13 : 19;
       setActiveWizard({
         type: "model",
         step: nextStep,
@@ -1374,7 +1374,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setInput("");
     } else if (step === 13 || step === 19) {
       if (value === "< Back") {
-        const nextStep = step === 13 ? 22 : 32;
+        const nextStep = step === 13 ? 12 : 18;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1455,7 +1455,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         return;
       }
 
-      const nextStep = step === 13 ? 25 : 35;
+      const nextStep = step === 13 ? 14 : 20;
       setActiveWizard({
         type: "model",
         step: nextStep,
@@ -1482,7 +1482,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setInput("");
     } else if (step === 14 || step === 20) {
       if (value === "< Back") {
-        const nextStep = step === 14 ? 23 : 33;
+        const nextStep = step === 14 ? 13 : 19;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1503,7 +1503,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       const providerType = data.providerType;
       if (value.startsWith("+ Configure a new")) {
-        const nextModelStep = step === 14 ? 24 : 34;
+        const nextModelStep = step === 14 ? 15 : 21;
         setActiveWizard({
           type: "model",
           step: 6,
@@ -1532,7 +1532,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         resolvedApiKey = process.env[`${prefix}_API_KEY`] || "";
       }
 
-      const nextStep = step === 14 ? 24 : 34;
+      const nextStep = step === 14 ? 15 : 21;
       setActiveWizard({
         type: "model",
         step: nextStep,
@@ -1619,7 +1619,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setInput("");
     } else if (step === 15 || step === 21) {
       if (value === "< Back") {
-        const nextStep = step === 15 ? 25 : 35;
+        const nextStep = step === 15 ? 14 : 20;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1692,7 +1692,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         presetModels.MODEL = finalModelName;
       }
 
-      const nextStep = step === 15 ? 22 : 32;
+      const nextStep = step === 15 ? 12 : 18;
       setActiveWizard({
         type: "model",
         step: nextStep,

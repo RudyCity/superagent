@@ -4,7 +4,7 @@ import TextInput from "ink-text-input";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
-import { getContextWindowLimit, updateEnvFile, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir } from "./core/config.js";
+import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir } from "./core/config.js";
 import fs from "fs/promises";
 import { handleSlashCommand, getDefaultModel } from "./core/slash-commands.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";

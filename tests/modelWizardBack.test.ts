@@ -2,9 +2,19 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
 import { render } from "ink";
 import { Console } from "node:console";
+import fs from "fs";
+import path from "path";
+import os from "os";
+
+// Mock os.homedir() di paling atas untuk isolasi penuh
+const tempHome = path.join(process.cwd(), "tests", "temp-home-wizard-back");
+vi.spyOn(os, "homedir").mockReturnValue(tempHome);
+
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { useModelWizard } from "../src/hooks/wizard/useModelWizard.js";
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
+import { ensureGlobalConfigDir } from "../src/core/config/paths.js";
+import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 
 // Restore console.Console if Vitest mocked or removed it
 if (!console.Console) {
@@ -90,10 +100,22 @@ describe("Model Wizard Back Navigation", () => {
     isLoadingModels = false;
     inputCallbacks = [];
     mockCtx.agentRef.current.isMultiAgent = true;
+
+    // Bersihkan folder temp
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+    ensureGlobalConfigDir();
+    clearModelConfigCache();
   });
 
   afterEach(() => {
     process.env = originalEnv;
+    // Bersihkan folder temp
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+    clearModelConfigCache();
   });
 
   it("should list '< Back' in the main /model menu and close wizard when selected", async () => {

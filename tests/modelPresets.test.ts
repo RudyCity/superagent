@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
+
+// Mock os.homedir() di paling atas untuk isolasi penuh
+const tempHome = path.join(process.cwd(), "tests", "temp-home-model-presets");
+vi.spyOn(os, "homedir").mockReturnValue(tempHome);
+
 import { 
   getModelPresets, 
   saveModelPreset, 
@@ -23,41 +28,21 @@ describe("Model Presets", () => {
   const customPresetsPath = getCustomPresetsPath();
   const envPath = path.join(getRootConfigDir(), ".env");
 
-  let originalPresetsContent: string | null = null;
-  let originalEnvContent: string | null = null;
-
   beforeEach(() => {
     originalEnv = { ...process.env };
+    
+    // Pastikan folder temp bersih total sebelum mulai
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
     ensureGlobalConfigDir();
-
-    // Backup existing custom presets and .env
-    if (fs.existsSync(customPresetsPath)) {
-      originalPresetsContent = fs.readFileSync(customPresetsPath, "utf-8");
-      fs.unlinkSync(customPresetsPath);
-    }
-    if (fs.existsSync(envPath)) {
-      originalEnvContent = fs.readFileSync(envPath, "utf-8");
-    }
   });
 
   afterEach(() => {
     process.env = originalEnv;
-
-    // Restore original custom presets and .env
-    if (originalPresetsContent !== null) {
-      fs.writeFileSync(customPresetsPath, originalPresetsContent, "utf-8");
-    } else {
-      if (fs.existsSync(customPresetsPath)) {
-        fs.unlinkSync(customPresetsPath);
-      }
-    }
-
-    if (originalEnvContent !== null) {
-      fs.writeFileSync(envPath, originalEnvContent, "utf-8");
-    } else {
-      if (fs.existsSync(envPath)) {
-        fs.unlinkSync(envPath);
-      }
+    // Bersihkan folder temp setelah tes selesai
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
     }
   });
 
@@ -145,6 +130,31 @@ describe("Model Presets", () => {
   });
 
   it("should execute slash commands for listing, saving and loading presets", () => {
+    // Tulis config tiruan dengan provider 'openai' dan active preset
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "openai", model: "test-slash-model" },
+            superagent: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
     const addedLines: any[] = [];
     let currentLimit = 0;
     let activeModel = "";
@@ -183,9 +193,7 @@ describe("Model Presets", () => {
   });
 
   it("should update a custom model preset", () => {
-    process.env.MODEL = "openai:gpt-4-test";
-    process.env.MODEL_MULTI_MASTER = "openai:gpt-4-test";
-    saveModelPreset("my-update-preset", "Original description");
+    saveModelPreset("my-update-preset", "Original description", { MODEL: "openai:gpt-4-test", MODEL_MULTI_MASTER: "openai:gpt-4-test" });
 
     const path = updateModelPreset("my-update-preset", "Updated description", { MODEL: "openai:gpt-4-updated" });
     expect(fs.existsSync(path)).toBe(true);
@@ -198,9 +206,7 @@ describe("Model Presets", () => {
   });
 
   it("should delete a custom model preset", () => {
-    process.env.MODEL = "openai:gpt-4-test";
-    process.env.MODEL_MULTI_MASTER = "openai:gpt-4-test";
-    saveModelPreset("my-delete-preset", "Delete me");
+    saveModelPreset("my-delete-preset", "Delete me", { MODEL: "openai:gpt-4-test", MODEL_MULTI_MASTER: "openai:gpt-4-test" });
 
     const presetsBefore = getModelPresets();
     expect(presetsBefore.some(p => p.name === "my-delete-preset")).toBe(true);

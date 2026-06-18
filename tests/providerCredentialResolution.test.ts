@@ -1,6 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
+import os from "os";
+
+// Mock os.homedir() di paling atas untuk isolasi penuh
+const tempHome = path.join(process.cwd(), "tests", "temp-home-provider-resolution");
+vi.spyOn(os, "homedir").mockReturnValue(tempHome);
+
 import {
   loadModelConfig,
   addProvider,
@@ -17,9 +23,6 @@ import { getModelInstanceForString } from "../src/core/config/models";
 import { ensureGlobalConfigDir, getRootConfigDir } from "../src/core/config/paths";
 
 describe("Provider Credential Resolution Fixes", () => {
-  let originalConfigContent: string | null = null;
-  let originalPresetsContent: string | null = null;
-  let originalEnvContent: string | null = null;
   let originalProcessEnv: NodeJS.ProcessEnv;
 
   const configPath = getModelConfigPath();
@@ -28,53 +31,21 @@ describe("Provider Credential Resolution Fixes", () => {
 
   beforeEach(() => {
     originalProcessEnv = { ...process.env };
+    
+    // Bersihkan folder temp
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
     ensureGlobalConfigDir();
-
-    if (fs.existsSync(configPath)) {
-      originalConfigContent = fs.readFileSync(configPath, "utf-8");
-    }
-    if (fs.existsSync(presetsPath)) {
-      originalPresetsContent = fs.readFileSync(presetsPath, "utf-8");
-      fs.unlinkSync(presetsPath);
-    }
-    if (fs.existsSync(envPath)) {
-      originalEnvContent = fs.readFileSync(envPath, "utf-8");
-      fs.unlinkSync(envPath);
-    }
-
     clearModelConfigCache();
-    if (fs.existsSync(configPath)) {
-      try { fs.unlinkSync(configPath); } catch (e) {}
-    }
   });
 
   afterEach(() => {
     process.env = originalProcessEnv;
-
-    if (originalConfigContent !== null) {
-      fs.writeFileSync(configPath, originalConfigContent, "utf-8");
-    } else {
-      if (fs.existsSync(configPath)) {
-        try { fs.unlinkSync(configPath); } catch (e) {}
-      }
+    // Bersihkan folder temp
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
     }
-
-    if (originalPresetsContent !== null) {
-      fs.writeFileSync(presetsPath, originalPresetsContent, "utf-8");
-    } else {
-      if (fs.existsSync(presetsPath)) {
-        try { fs.unlinkSync(presetsPath); } catch (e) {}
-      }
-    }
-
-    if (originalEnvContent !== null) {
-      fs.writeFileSync(envPath, originalEnvContent, "utf-8");
-    } else {
-      if (fs.existsSync(envPath)) {
-        try { fs.unlinkSync(envPath); } catch (e) {}
-      }
-    }
-
     clearModelConfigCache();
   });
 
