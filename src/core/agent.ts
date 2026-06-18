@@ -967,6 +967,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 result: "Error: The Master Agent is restricted from directly modifying source code files in the codebase. You must delegate all code modifications to Superagents by invoking them.",
                 isError: true,
               };
+              try {
+                const { appendToolsErrorLog } = await import("./tools/state.js");
+                appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { filePath, reason: "master_direct_modify_blocked" });
+              } catch {}
               toolResults.push(blocked);
               this.onEvent({ type: "tool_end", toolResult: blocked, description });
               continue;
@@ -1032,6 +1036,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   result: `Error: The implementation plan is invalid or lacks deep structure. A valid global plan must include:\n${missing.map(m => `- ${m}`).join("\n")}\n\nPlease rewrite the plan with all required sections and headers included.`,
                   isError: true,
                 };
+                try {
+                  const { appendToolsErrorLog } = await import("./tools/state.js");
+                  appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { filePath, reason: "invalid_plan_structure" });
+                } catch {}
                 toolResults.push(blocked);
                 this.onEvent({ type: "tool_end", toolResult: blocked, description });
                 continue;
@@ -1125,6 +1133,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 result: "Error: File modification blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before modifying any codebase files.",
                 isError: true,
               };
+              try {
+                const { appendToolsErrorLog } = await import("./tools/state.js");
+                appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { filePath, reason: "planning_pending" });
+              } catch {}
               toolResults.push(blocked);
               this.onEvent({ type: "tool_end", toolResult: blocked, description });
               continue;
@@ -1144,6 +1156,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   result: `Error: Terminal command blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before running commands that modify the codebase or repository state. Command blocked: "${cmd}"`,
                   isError: true,
                 };
+                try {
+                  const { appendToolsErrorLog } = await import("./tools/state.js");
+                  appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { command: cmd, reason: "planning_pending_command" });
+                } catch {}
                 toolResults.push(blocked);
                 this.onEvent({ type: "tool_end", toolResult: blocked, description });
                 continue;
@@ -1159,6 +1175,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   result: "User denied permission for this command.",
                   isError: true,
                 };
+                try {
+                  const { appendToolsErrorLog } = await import("./tools/state.js");
+                  appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, denied.result, { command: tc.args.command as string, reason: "user_permission_denied" });
+                } catch {}
                 toolResults.push(denied);
                 this.onEvent({ type: "tool_end", toolResult: denied, description });
                 continue;
@@ -1175,6 +1195,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 result: `Error: Access denied. As a Superagent you may only access files within your worktree: ${this.worktreePath}`,
                 isError: true,
               };
+              try {
+                const { appendToolsErrorLog } = await import("./tools/state.js");
+                appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { worktreePath: this.worktreePath, reason: "superagent_out_of_bounds" });
+              } catch {}
               toolResults.push(blocked);
               this.onEvent({ type: "tool_end", toolResult: blocked, description });
               continue;

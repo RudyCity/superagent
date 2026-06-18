@@ -1,3 +1,6 @@
+import path from "path";
+import fs from "fs";
+import { getGlobalConfigDir, ensureGlobalConfigDir } from "../config.js";
 import { 
   BackgroundTask, 
   TaskChangeListener, 
@@ -189,6 +192,22 @@ export function subscribeToMasterLogs(listener: MasterLogListener) {
 export function appendMasterLog(msg: string) {
   for (const listener of masterLogListeners) {
     listener(msg);
+  }
+}
+
+// ─── Tools Error Log ─────────────────────────────────────────────────────────
+// Dedicated log file for tool execution errors across all tiers.
+
+export function appendToolsErrorLog(tier: string, depth: number, toolName: string, message: string, meta?: Record<string, unknown>): void {
+  try {
+    ensureGlobalConfigDir();
+    const logPath = path.join(getGlobalConfigDir(), "superagent-tools.log");
+    const timestamp = new Date().toISOString();
+    const metaStr = meta && Object.keys(meta).length > 0 ? ` | meta:${JSON.stringify(meta)}` : "";
+    const line = `[${timestamp}] [tier:${tier}] [depth:${depth}] [tool:${toolName}] ${message}${metaStr}\n`;
+    fs.appendFileSync(logPath, line, "utf-8");
+  } catch {
+    // Ignore log write errors to prevent crashing the agent
   }
 }
 

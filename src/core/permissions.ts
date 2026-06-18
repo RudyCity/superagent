@@ -2,6 +2,7 @@ import path from "path";
 import { getToolByName } from "./tools.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { getRootConfigDir } from "./config.js";
+import { agentLocalStorage } from "./agent.js";
 
 export const MODIFYING_TOOLS = [
   "write",
@@ -179,10 +180,14 @@ export async function executeToolCall(
   signal?: AbortSignal
 ): Promise<ToolResult> {
   const tool = getToolByName(toolCall.name);
+  const currentAgent = agentLocalStorage.getStore();
+  const tier = currentAgent ? currentAgent.tier : "unknown";
+  const depth = currentAgent ? currentAgent.delegationDepth : 0;
   if (!tool) {
     try {
-      const { appendMasterLog } = await import("./tools/state.js");
+      const { appendMasterLog, appendToolsErrorLog } = await import("./tools/state.js");
       appendMasterLog(`[ERROR] Unknown tool called: ${toolCall.name}`);
+      appendToolsErrorLog(tier, depth, toolCall.name, `Unknown tool called: ${toolCall.name}`);
     } catch {}
     return {
       toolCallId: toolCall.id,
@@ -197,8 +202,9 @@ export async function executeToolCall(
     const isError = isErrorLikeToolResult(result);
     if (isError) {
       try {
-        const { appendMasterLog } = await import("./tools/state.js");
+        const { appendMasterLog, appendToolsErrorLog } = await import("./tools/state.js");
         appendMasterLog(`[ERROR] Tool returned error: ${toolCall.name} | ${String(result).slice(0, 200)}`);
+        appendToolsErrorLog(tier, depth, toolCall.name, String(result).slice(0, 500), { cwd });
       } catch {}
     }
     return {
@@ -215,8 +221,9 @@ export async function executeToolCall(
     }
     const message = err instanceof Error ? err.message : String(err);
     try {
-      const { appendMasterLog } = await import("./tools/state.js");
+      const { appendMasterLog, appendToolsErrorLog } = await import("./tools/state.js");
       appendMasterLog(`[ERROR] Tool execution failed: ${toolCall.name} | ${message}`);
+      appendToolsErrorLog(tier, depth, toolCall.name, message, { cwd });
     } catch {}
     return {
       toolCallId: toolCall.id,
