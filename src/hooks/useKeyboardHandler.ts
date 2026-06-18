@@ -390,7 +390,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (activeWizard) {
-      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 10 || activeWizard.step === 100 || activeWizard.step === 101 || activeWizard.step === 102)) {
+      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10)) {
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
@@ -425,7 +425,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 const providerOptions = providers.map(
                   (p: any, i: number) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
                 );
-                setActiveWizard({ type: "login", step: 100, data: {} });
+                setActiveWizard({ type: "login", step: 6, data: {} });
                 setWizardOptions(providerOptions);
                 setWizardSelectedIndex(0);
               }
@@ -455,14 +455,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             setWizardOptions([]);
             setWizardSelectedIndex(0);
             setInput("");
-          } else if (activeWizard.step === 100) {
-            // Pilih provider dari daftar → delegate ke handleWizardSubmit dengan string "1", "2", dll
-            const idx = wizardSelectedIndex + 1; // 1-based index
+          } else if (activeWizard.step === 6) {
+            // Pilih provider dari daftar → delegate ke handleWizardSubmit dengan index 1-based
+            const idx = wizardSelectedIndex + 1;
             handleWizardSubmit(String(idx));
-          } else if (activeWizard.step === 101) {
+          } else if (activeWizard.step === 7) {
             // Konfirmasi test koneksi
             handleWizardSubmit(selectedOption);
-          } else if (activeWizard.step === 102) {
+          } else if (activeWizard.step === 8) {
             // Pilih model — support filter: pakai filtered list jika ada input
             const currentInput = (typeof input === "string") ? input.trim() : "";
             const filteredModels = currentInput ? filterSuggestions(wizardOptions, currentInput) : wizardOptions;
@@ -1199,7 +1199,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             setWizardSelectedIndex(0);
             setInput("");
             return;
-          } else if (activeWizard.step === 6) {
+          } else if (activeWizard.step === 5) {
             // Back to step 4 (custom with baseUrl) or step 3 (non-custom)
             if (activeWizard.data.baseUrl) {
               setActiveWizard({ type: "login", step: 4, data: { provider: activeWizard.data.provider, name: activeWizard.data.name } });

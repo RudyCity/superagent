@@ -71,7 +71,7 @@ export const loginCommand: SlashCommand = {
         );
         ctx.setActiveWizard({
           type: "login",
-          step: 100,
+          step: 6,
           data: {},
         });
         ctx.setWizardOptions?.(providerOptions);

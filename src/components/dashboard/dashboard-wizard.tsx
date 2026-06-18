@@ -107,7 +107,11 @@ export function DashboardWizard({
             activeWizard.type === "login" && activeWizard.step === 2 ? "🔑 SELECT PROVIDER TEMPLATE (↑/↓ Navigate, Enter: Select, Esc: Back):" :
             activeWizard.type === "login" && activeWizard.step === 3 ? "🔑 CONFIGURE PROVIDER — PROFILE NAME (Type & Enter, Esc: Back):" :
             activeWizard.type === "login" && activeWizard.step === 4 ? "🔑 CONFIGURE PROVIDER — BASE URL (Type & Enter, Esc: Back):" :
-            activeWizard.type === "login" && activeWizard.step === 6 ? "🔑 CONFIGURE PROVIDER — API KEY (Type & Enter, Esc: Back):" :
+            activeWizard.type === "login" && activeWizard.step === 5 ? "🔑 CONFIGURE PROVIDER — API KEY (Type & Enter, Esc: Back):" :
+            activeWizard.type === "login" && activeWizard.step === 6 ? "🔌 LIST PROVIDERS — Pilih Provider (↑/↓ Navigate, Enter: Select, Esc: Cancel):" :
+            activeWizard.type === "login" && activeWizard.step === 7 ? "🔌 TEST KONEKSI — Konfirmasi (↑/↓ Navigate, Enter: Select):" :
+            activeWizard.type === "login" && activeWizard.step === 8 ? "🔌 PILIH MODEL (↑/↓ Navigate, ketik untuk filter, Enter: Select):" :
+            activeWizard.type === "login" && activeWizard.step === 9 ? "🔌 KIRIM PESAN TEST (Type & Enter):" :
             activeWizard.type === "login" && activeWizard.step === 10 ? "🛠️ PROJECT INITIALIZATION — Select Technology Stack (↑/↓ Navigate, Enter: Select, Esc: Cancel):" :
             activeWizard.type === "login" && activeWizard.step === 11 ? "🛠️ PROJECT INITIALIZATION — Enter Project Name (Type & Enter, Esc: Back):" :
             activeWizard.type === "login" && activeWizard.step === 12 ? "🛠️ PROJECT INITIALIZATION — Enter Project Description (Type & Enter, Esc: Back):" :
@@ -126,7 +130,11 @@ export function DashboardWizard({
             activeWizard.type === "model" && activeWizard.step === 18 ? "Please enter your API Key:" :
             activeWizard.type === "login" && activeWizard.step === 3 ? `Enter config profile name (e.g. ${activeWizard.data.provider || "provider name"}, deepseek, or press Enter for default):` :
             activeWizard.type === "login" && activeWizard.step === 4 ? "Please enter your Base URL (e.g. http://localhost:11434/v1):" :
-            activeWizard.type === "login" && activeWizard.step === 6 ? "Please enter your API Key:" :
+            activeWizard.type === "login" && activeWizard.step === 5 ? "Please enter your API Key:" :
+            activeWizard.type === "login" && activeWizard.step === 6 ? "Pilih provider untuk test koneksi dan kirim pesan:" :
+            activeWizard.type === "login" && activeWizard.step === 7 ? `Apakah ingin test koneksi ke "${activeWizard.data.providerName || "provider"}" sebelum memilih model?` :
+            activeWizard.type === "login" && activeWizard.step === 8 ? `Pilih model dari provider "${activeWizard.data.providerName || ""}". Ketik untuk filter:` :
+            activeWizard.type === "login" && activeWizard.step === 9 ? `Ketik pesan test ke model "${activeWizard.data.selectedModel || ""}". Tekan Enter untuk kirim:` :
             activeWizard.type === "login" && activeWizard.step === 10 ? "Choose a template catalog stack or let AI dynamically design your project details:" :
             activeWizard.type === "login" && activeWizard.step === 11 ? "Specify the name for this workspace:" :
             activeWizard.type === "login" && activeWizard.step === 12 ? "Give a one-sentence overview description of this software:" :

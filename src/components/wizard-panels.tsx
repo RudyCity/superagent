@@ -134,7 +134,7 @@ export function WizardPanels(props: WizardPanelsProps) {
           />
         )}
 
-        {activeWizard && activeWizard.type === "login" && activeWizard.step === 6 && (
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 5 && (
           <WizardDialog
             title="🔑 CONFIGURE PROVIDER — API KEY (Type & Enter, Esc: Back):"
             description="Please enter your API Key:"
@@ -185,7 +185,7 @@ export function WizardPanels(props: WizardPanelsProps) {
           />
         )}
 
-        {activeWizard && activeWizard.type === "login" && activeWizard.step === 100 && wizardOptions.length > 0 && (
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 6 && wizardOptions.length > 0 && (
           <WizardDialog
             title="🔌 LIST PROVIDERS — Pilih provider (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
             description="Pilih provider untuk melanjutkan ke test koneksi dan pengiriman pesan:"
@@ -196,7 +196,7 @@ export function WizardPanels(props: WizardPanelsProps) {
           />
         )}
 
-        {activeWizard && activeWizard.type === "login" && activeWizard.step === 101 && wizardOptions.length > 0 && (
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 7 && wizardOptions.length > 0 && (
           <WizardDialog
             title={`🔌 TEST KONEKSI — ${activeWizard.data.providerName || "Provider"} (↑/↓ Navigate, Enter: Select):`}
             description={`Apakah ingin menguji koneksi ke provider "${activeWizard.data.providerName || ""}" sebelum memilih model?`}
@@ -206,7 +206,7 @@ export function WizardPanels(props: WizardPanelsProps) {
           />
         )}
 
-        {activeWizard && activeWizard.type === "login" && activeWizard.step === 102 && wizardOptions.length > 0 && (() => {
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 8 && wizardOptions.length > 0 && (() => {
           const modelSearchQuery = input.trim();
           const filteredModels = modelSearchQuery
             ? filterSuggestions(wizardOptions, modelSearchQuery)
@@ -228,7 +228,7 @@ export function WizardPanels(props: WizardPanelsProps) {
           );
         })()}
 
-        {activeWizard && activeWizard.type === "login" && activeWizard.step === 103 && (
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 9 && (
           <WizardDialog
             title={`🔌 KIRIM PESAN TEST — Model: ${activeWizard.data.selectedModel || ""} (Type & Enter):`}
             description={`Ketik pesan yang ingin dikirim ke model "${activeWizard.data.selectedModel || ""}" via provider "${activeWizard.data.providerName || ""}". Tekan Enter untuk mengirim.`}

@@ -135,7 +135,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
         });
         setActiveWizard({
           type: "login",
-          step: 6,
+          step: 5,
           data: { provider, name: profileName },
         });
         setInput("");
@@ -152,11 +152,11 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       });
       setActiveWizard({
         type: "login",
-        step: 6,
+        step: 5,
         data: { provider, name: profileName, baseUrl },
       });
       setInput("");
-    } else if (step === 6) {
+    } else if (step === 5) {
       const provider = data.provider;
       const profileName = data.name;
       const baseUrl = data.baseUrl;
@@ -462,8 +462,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setActiveWizard(null);
       setWizardOptions([]);
       setWizardSelectedIndex(0);
-    } else if (step === 100) {
-      // Step 100: User pilih salah satu provider dari daftar
+    } else if (step === 6) {
+      // Step 6: Pilih provider dari daftar (dari /login → List)
       const providers = getProviders().filter(p => p.apiKey && p.apiKey.trim() !== "");
       const idx = parseInt(value, 10) - 1;
       const selectedProvider = providers[idx];
@@ -481,7 +481,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       });
       setActiveWizard({
         type: "login",
-        step: 101,
+        step: 7,
         data: {
           providerId: selectedProvider.id,
           providerName: selectedProvider.name,
@@ -492,8 +492,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       });
       setWizardOptions(["Ya, Test Koneksi", "Tidak"]);
       setWizardSelectedIndex(0);
-    } else if (step === 101) {
-      // Step 101: Konfirmasi test koneksi
+    } else if (step === 7) {
+      // Step 7: Konfirmasi test koneksi
       const choice = value.toLowerCase();
       const skipTest = choice.includes("tidak") || choice === "2" || choice === "no";
       if (skipTest) {
@@ -513,7 +513,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           if (openaiModels.length > 0) models = openaiModels;
           else models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
         }
-        setActiveWizard({ type: "login", step: 102, data });
+        setActiveWizard({ type: "login", step: 8, data });
         setWizardOptions(models.slice(0, 50));
         setWizardSelectedIndex(0);
         return;
@@ -584,11 +584,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         if (filtered.length > 0) models = filtered;
         else models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
       }
-      setActiveWizard({ type: "login", step: 102, data });
+      setActiveWizard({ type: "login", step: 8, data });
       setWizardOptions(models.slice(0, 50));
       setWizardSelectedIndex(0);
-    } else if (step === 102) {
-      // Step 102: User pilih model
+    } else if (step === 8) {
+      // Step 8: User pilih model
       const selectedModel = value;
       addLine({
         type: "system",
@@ -597,14 +597,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       });
       setActiveWizard({
         type: "login",
-        step: 103,
+        step: 9,
         data: { ...data, selectedModel },
       });
       setWizardOptions([]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 103) {
-      // Step 103: Kirim pesan test ke model yang dipilih
+    } else if (step === 9) {
+      // Step 9: Kirim pesan test ke model yang dipilih
       const message = value.trim();
       if (!message) {
         addLine({ type: "error", content: "Pesan tidak boleh kosong.", timestamp: now });

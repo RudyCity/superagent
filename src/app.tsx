@@ -323,7 +323,7 @@ export function App({
         setScrollOffset(0);
 
         const isSelectionStep = 
-          (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 10 || activeWizard.step === 100 || activeWizard.step === 101 || activeWizard.step === 102)) ||
+          (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10)) ||
           (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40 || activeWizard.step === 41 || activeWizard.step === 50)) ||
           (activeWizard.type === "permission") ||
           (activeWizard.type === "question" && wizardOptions.length > 0);
@@ -517,7 +517,11 @@ export function App({
       if (activeWizard.step === 2) return "Select provider template using arrows and Enter (Esc: Back)...";
       if (activeWizard.step === 3) return "Enter config profile name (or press Enter for default, Esc: Back)...";
       if (activeWizard.step === 4) return "Enter Custom Base URL (Esc: Back)...";
-      if (activeWizard.step === 6) return "Paste API key (Esc: Back)...";
+      if (activeWizard.step === 5) return "Paste API key (Esc: Back)...";
+      if (activeWizard.step === 6) return "Select provider using arrows and Enter (Esc: Cancel)...";
+      if (activeWizard.step === 7) return "Select option using arrows and Enter (Esc: Back)...";
+      if (activeWizard.step === 8) return "🔍 Search models (type to filter, arrows to navigate, Enter to select)...";
+      if (activeWizard.step === 9) return "Type your test message and press Enter...";
       if (activeWizard.step === 10) return "Select option using arrows and Enter (Esc: Cancel)...";
       if (activeWizard.step === 11) return "Enter project name (press Enter for folder default, Esc: Back)...";
       if (activeWizard.step === 12) return "Enter project description (press Enter for default, Esc: Back)...";
@@ -1256,11 +1260,17 @@ export function App({
       else if (
         activeWizard.step === 3 ||
         activeWizard.step === 4 ||
-        activeWizard.step === 6 ||
+        activeWizard.step === 5 ||
+        activeWizard.step === 9 ||
         activeWizard.step === 11 ||
         activeWizard.step === 12 ||
         activeWizard.step === 13
       ) chromeHeight += 6;
+      else if (
+        activeWizard.step === 6 ||
+        activeWizard.step === 7 ||
+        activeWizard.step === 8
+      ) chromeHeight += 8 + Math.min(6, wizardOptions.length);
     } else if (activeWizard.type === "model") {
       chromeHeight += wizardOptions.length > 0 ? 13 : 6;
     } else if (activeWizard.type === "permission") {

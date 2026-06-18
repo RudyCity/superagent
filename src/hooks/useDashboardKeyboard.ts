@@ -327,7 +327,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
             setWizardSelectedIndex(0);
             setQuery("");
             return;
-          } else if (activeWizard.step === 6) {
+          } else if (activeWizard.step === 5) {
             if (activeWizard.data.baseUrl) {
               setActiveWizard({ type: "login", step: 4, data: { provider: activeWizard.data.provider, name: activeWizard.data.name } });
             } else {

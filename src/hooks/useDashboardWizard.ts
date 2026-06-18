@@ -260,7 +260,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           ].slice(-500));
           setActiveWizard({
             type: "login",
-            step: 6,
+            step: 5,
             data: { provider, name: profileName },
           });
         }
@@ -277,12 +277,12 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         ].slice(-500));
         setActiveWizard({
           type: "login",
-          step: 6,
+          step: 5,
           data: { provider, name: profileName, baseUrl },
         });
         setWizardOptions([]);
         setWizardSelectedIndex(0);
-      } else if (activeWizard.step === 6) {
+      } else if (activeWizard.step === 5) {
         const provider = activeWizard.data.provider;
         const profileName = activeWizard.data.name;
         const baseUrl = activeWizard.data.baseUrl;
