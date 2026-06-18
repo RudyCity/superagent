@@ -6,7 +6,6 @@ import {
   switchActiveProvider, 
   fetchAndCacheModels, 
   getContextWindowLimit, 
-  updateEnvFile,
   addProvider,
   getActiveConfigAudit,
   getProviders,
@@ -162,45 +161,34 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       const baseUrl = data.baseUrl;
       const apiKey = value;
 
-      const prefix = `PROVIDER_${profileName.toUpperCase()}`;
-      const updates: Record<string, string> = {
-        ACTIVE_PROVIDER: "",
-        [`${prefix}_TYPE`]: provider,
-        [`${prefix}_API_KEY`]: apiKey,
-      };
-
-      if (baseUrl) {
-        updates[`${prefix}_BASE_URL`] = baseUrl;
-      } else if (provider === "openrouter") {
-        updates[`${prefix}_BASE_URL`] = "https://openrouter.ai/api/v1";
-      }
+      const providerId = profileName.toLowerCase().replace(/[^a-z0-9_-]/g, "");
 
       try {
+        // Simpan provider ke JSON (model-config.json) — BUKAN ke .env
         addProvider({
-          id: profileName.toLowerCase().replace(/[^a-z0-9_-]/g, ""),
+          id: providerId,
           name: profileName,
           provider: provider,
           apiKey: apiKey,
           baseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
         });
 
-        updateEnvFile(updates);
+        // Set provider ini sebagai aktif di preset JSON
+        switchActiveProvider(providerId);
+
+        // Set MODEL di memory saja (process.env) — tidak ditulis ke .env
+        if (!process.env.MODEL) {
+          let defaultModel = "openai:gpt-4o";
+          if (provider === "openrouter") defaultModel = "openrouter:google/gemini-2.5-flash";
+          else if (provider === "anthropic") defaultModel = "anthropic:claude-3-5-sonnet-20241022";
+          process.env.MODEL = defaultModel;
+        }
 
         addLine({
           type: "system",
           content: `Successfully configured provider profile: ${profileName} (${provider})!\nSaved to global model-config.json`,
           timestamp: now,
         });
-
-        if (!process.env.MODEL) {
-          let defaultModel = "openai:gpt-4o";
-          if (provider === "openrouter") {
-            defaultModel = "openrouter:google/gemini-2.5-flash";
-          } else if (provider === "anthropic") {
-            defaultModel = "anthropic:claude-3-5-sonnet-20241022";
-          }
-          updateEnvFile({ MODEL: defaultModel });
-        }
 
         fetchAndCacheModels()
           .then(() => {
