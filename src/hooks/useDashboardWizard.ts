@@ -3,7 +3,6 @@ import { execSync } from "child_process";
 import fs from "fs/promises";
 import path from "path";
 import { 
-  updateEnvFile, 
   switchActiveProvider, 
   addProvider,
   listHistorySessions, 
@@ -845,7 +844,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             targetLabel = "All Tiers";
           }
           if (Object.keys(clearUpdates).length > 0) {
-            updateEnvFile(clearUpdates);
+            // Clear in-memory only — not persisted to .env
+            for (const key of Object.keys(clearUpdates)) {
+              delete process.env[key];
+            }
             const effectiveMasterModel = isMulti ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel()) : (process.env.MODEL || getDefaultModel());
             setActiveModel(effectiveMasterModel);
             setMasterLogs((prev) => [
@@ -1143,23 +1145,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const profileName = activeWizard.data.name;
         const baseUrl = activeWizard.data.baseUrl;
 
-        const prefix = `PROVIDER_${profileName.toUpperCase()}`;
-        const updates: Record<string, string> = {
-          [`${prefix}_TYPE`]: providerType,
-          [`${prefix}_API_KEY`]: apiKey,
-        };
-
-        if (baseUrl) {
-          updates[`${prefix}_BASE_URL`] = baseUrl;
-        } else if (providerType === "openrouter") {
-          updates[`${prefix}_BASE_URL`] = "https://openrouter.ai/api/v1";
-        }
-
         try {
-          const envPath = updateEnvFile(updates);
+          addProvider({
+            id: profileName.toLowerCase().replace(/[^a-z0-9_-]/g, ""),
+            name: profileName,
+            provider: providerType,
+            apiKey: apiKey,
+            baseUrl: baseUrl || (providerType === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
+          });
           setMasterLogs((prev) => [
             ...prev,
-            `[SYSTEM] Successfully configured provider profile: ${profileName} (${providerType})!\nSaved to: ${envPath}`
+            `[SYSTEM] Successfully configured provider profile: ${profileName} (${providerType})!\nSaved to global model-config.json`
           ].slice(-500));
           
           const nextStep = activeWizard.data.isPreset === "true"
@@ -1290,21 +1286,18 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const tier = activeWizard.data.tier || "";
         
         try {
-          let envPath = "";
+          let updates: Record<string, string> = {};
           let targetLabel = "";
           if (tier === "default") {
             switchActiveProvider(profileName);
-            envPath = updateEnvFile({ 
-              MODEL: modelName,
-              [`PROVIDER_${profileName.toUpperCase()}_MODEL`]: modelName
-            });
+            process.env.MODEL = modelName;
             targetLabel = "Default Model";
           } else if (tier === "all") {
             const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
             const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
               ? `${profileName.toLowerCase()}:${modelName}`
               : modelName;
-            const updates: Record<string, string> = { MODEL: modelName };
+            updates = { MODEL: modelName };
             if (isMulti) {
               updates.MODEL_MULTI_MASTER = finalModelName;
               updates.MODEL_MULTI_SUPERAGENT = finalModelName;
@@ -1322,43 +1315,45 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             }
             targetLabel = "All Tiers & Subagents";
             switchActiveProvider(profileName);
-            envPath = updateEnvFile(updates);
+            // Apply in-memory only
+            for (const [k, v] of Object.entries(updates)) process.env[k] = v;
           } else {
             const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
             const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
               ? `${profileName.toLowerCase()}:${modelName}`
               : modelName;
             
-            let updates: Record<string, string> = {};
+            let updates2: Record<string, string> = {};
             if (tier === "master") {
               if (isMulti) {
-                updates = { MODEL_MULTI_MASTER: finalModelName };
+                updates2 = { MODEL_MULTI_MASTER: finalModelName };
               }
               targetLabel = "Master Agent (depth 0) Model";
             } else if (tier === "superagent") {
               if (isMulti) {
-                updates = { MODEL_MULTI_SUPERAGENT: finalModelName };
+                updates2 = { MODEL_MULTI_SUPERAGENT: finalModelName };
               } else {
-                updates = { MODEL_SINGLE_SUPERAGENT: finalModelName };
+                updates2 = { MODEL_SINGLE_SUPERAGENT: finalModelName };
               }
               targetLabel = "Superagent (depth 1) Model";
             } else if (tier === "subagent") {
               if (isMulti) {
-                updates = { MODEL_MULTI_SUBAGENT: finalModelName };
+                updates2 = { MODEL_MULTI_SUBAGENT: finalModelName };
               } else {
-                updates = { MODEL_SINGLE_SUBAGENT: finalModelName };
+                updates2 = { MODEL_SINGLE_SUBAGENT: finalModelName };
               }
               targetLabel = "Subagent (depth 2) Model";
             } else {
               const typeUpper = tier.toUpperCase();
               if (isMulti) {
-                updates = { [`MODEL_MULTI_SUBAGENT_${typeUpper}`]: finalModelName };
+                updates2 = { [`MODEL_MULTI_SUBAGENT_${typeUpper}`]: finalModelName };
               } else {
-                updates = { [`MODEL_SINGLE_SUBAGENT_${typeUpper}`]: finalModelName };
+                updates2 = { [`MODEL_SINGLE_SUBAGENT_${typeUpper}`]: finalModelName };
               }
               targetLabel = `Subagent "${tier}" Model`;
             }
-            envPath = updateEnvFile(updates);
+            // Apply in-memory only
+            for (const [k, v] of Object.entries(updates2)) process.env[k] = v;
           }
 
           const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
@@ -1391,7 +1386,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
           setMasterLogs((prev) => [
             ...prev,
-            `[SYSTEM] ${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}${updatedList}`
+            `[SYSTEM] ${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSession only — use Save Preset to persist${updatedList}`
           ].slice(-500));
           
           if (tier === "default" || tier === "all") {
@@ -1579,7 +1574,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const savedPath = saveModelPreset(presetName, presetDescription, models, presetMode);
 
             // Auto-apply the preset after saving
-            const envPath = applyModelPreset(presetName, presetMode);
+            applyModelPreset(presetName, presetMode);
             const isSingle = !isMulti;
             const effectiveMasterModel = isSingle
               ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
@@ -1634,7 +1629,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               `[SYSTEM] Model preset "${presetName}" saved & applied successfully!`,
               `[MASTER] Context Limit: ${limit.toLocaleString()} tokens`,
               `[MASTER] Saved to: ${savedPath}`,
-              `[MASTER] Applied to: ${envPath}`,
               ...updatedLogs
             ].slice(-500));
           } catch (err: any) {
@@ -2241,7 +2235,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             }
           }
 
-          const envPath = updateEnvFile(updates);
+          // Apply in-memory only — not persisted to .env
+          for (const [k, v] of Object.entries(updates)) process.env[k] = v;
           const effectiveMasterModel = isMulti ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel()) : (process.env.MODEL || getDefaultModel());
           setActiveModel(effectiveMasterModel);
           const limit = getContextWindowLimit(selectedModel);
@@ -2270,7 +2265,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             ...prev,
             `[MASTER] ${targetLabel} successfully changed to: ${selectedModel}`,
             `[MASTER] Context Limit: ${limit.toLocaleString()} tokens`,
-            `[MASTER] Saved to: ${envPath}`,
+            `[MASTER] Session only — use Save Preset to persist`,
             ...updatedLogs
           ].slice(-500));
           

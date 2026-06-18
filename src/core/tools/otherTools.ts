@@ -57,7 +57,37 @@ export const askQuestionTool: Tool = {
       : (rawOptionsVal !== undefined && rawOptionsVal !== null ? [rawOptionsVal] : []);
     const options: string[] = rawOptions.map(o => String(o));
 
-    const handler = (await import("./state.js")).getActiveQuestionHandler();
+    // Determine the calling agent's tier to route the question appropriately.
+    // Master/Single tier → forward to user UI (activeQuestionHandler).
+    // Superagent/Subagent tier → route to Master Agent LLM for answering.
+    const { agentLocalStorage } = await import("../agent.js");
+    const { getMasterAgent, getActiveQuestionHandler, appendMasterLog } = await import("./state.js");
+    const currentAgent = agentLocalStorage.getStore();
+    const currentTier = currentAgent ? (currentAgent as any).tier : undefined;
+
+    if (currentTier === "superagent" || currentTier === "subagent") {
+      const master = getMasterAgent();
+      if (master && typeof master.answerQuestionAsMaster === "function") {
+        const role = (currentAgent as any).subagentType || (currentAgent as any).tier || "?";
+        const sourceLabel = currentTier === "superagent" ? `Superagent "${role}"` : `Subagent (${role})`;
+        appendMasterLog(`[QUESTION] ${sourceLabel} asks: ${question} | Options: ${options.join(", ")}`);
+        try {
+          const selected = await master.answerQuestionAsMaster(question, options, {
+            source: currentTier,
+            role,
+            typeName: (currentAgent as any).subagentType,
+          });
+          appendMasterLog(`[MASTER ANSWER] For ${sourceLabel}: "${selected}"`);
+          return `Master Agent selected option: "${selected}"`;
+        } catch (err: any) {
+          return `Error getting Master Agent answer: ${err.message}`;
+        }
+      }
+      return `Error: Master Agent is not available to route the question. Cannot ask user directly from tier "${currentTier}".`;
+    }
+
+    // Master / Single tier — forward to user UI as before
+    const handler = getActiveQuestionHandler();
     if (!handler) {
       return `Error: ask_question must be executed interactively. No question handler is registered.`;
     }

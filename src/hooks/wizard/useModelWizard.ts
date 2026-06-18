@@ -4,7 +4,6 @@ import {
   switchActiveProvider, 
   fetchAndCacheModels, 
   getContextWindowLimit, 
-  updateEnvFile,
   getModelPresets,
   applyModelPreset,
   saveModelPreset,
@@ -132,7 +131,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       if (choice.includes("create") || choice === "3. create model preset") {
         setActiveWizard({
           type: "model",
-          step: 20,
+          step: 10,
           data: {},
         });
         setWizardOptions([]);
@@ -157,7 +156,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
         setActiveWizard({
           type: "model",
-          step: 30,
+          step: 16,
           data: {},
         });
         setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
@@ -182,7 +181,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
         setActiveWizard({
           type: "model",
-          step: 40,
+          step: 22,
           data: {},
         });
         setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
@@ -216,7 +215,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
           setActiveWizard({
             type: "model",
-            step: 50,
+            step: 9,
             data: {},
           });
           setWizardOptions([
@@ -269,7 +268,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
         setActiveWizard({
           type: "model",
-          step: 50,
+          step: 9,
           data: {},
         });
         setWizardOptions([
@@ -296,7 +295,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setActiveWizard(null);
       setWizardOptions([]);
       setWizardSelectedIndex(0);
-    } else if (step === 50) {
+    } else if (step === 9) {
       if (value === "< Back") {
         setActiveWizard({
           type: "model",
@@ -391,7 +390,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         if (isMulti || (data.tier && data.tier !== "single")) {
           setActiveWizard({
             type: "model",
-            step: 50,
+            step: 9,
             data: { ...data },
           });
           if (isMulti) {
@@ -489,7 +488,10 @@ export function useModelWizard(ctx: ModelWizardContext) {
           targetLabel = "Single Agent";
         }
         if (Object.keys(clearUpdates).length > 0) {
-          updateEnvFile(clearUpdates);
+          // Clear in-memory only — not persisted to .env
+          for (const key of Object.keys(clearUpdates)) {
+            delete process.env[key];
+          }
           const effectiveMasterModel = isMulti
             ? (process.env.MODEL_MULTI_MASTER || process.env.MODEL || getDefaultModel())
             : (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel());
@@ -574,7 +576,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       if (value.startsWith("+ Configure a new")) {
         setActiveWizard({
           type: "model",
-          step: 16,
+          step: 6,
           data: { ...data },
         });
         setWizardOptions([]);
@@ -602,7 +604,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       setActiveWizard({
         type: "model",
-        step: 15,
+        step: 5,
         data: { ...data, provider: profileName },
       });
 
@@ -689,7 +691,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         content: `Provider profile "${profileName}" selected. Choose a model below:`,
         timestamp: now,
       });
-    } else if (step === 16) {
+    } else if (step === 6) {
       if (value === "< Back") {
         const providerType = data.providerType;
         setActiveWizard({
@@ -724,7 +726,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       if (providerType === "custom") {
         setActiveWizard({
           type: "model",
-          step: 17,
+          step: 7,
           data: { ...data, name: profileName },
         });
         addLine({
@@ -735,7 +737,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       } else {
         setActiveWizard({
           type: "model",
-          step: 18,
+          step: 8,
           data: { ...data, name: profileName },
         });
         addLine({
@@ -747,11 +749,11 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setWizardOptions([]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 17) {
+    } else if (step === 7) {
       if (value === "< Back") {
         setActiveWizard({
           type: "model",
-          step: 16,
+          step: 6,
           data: { ...data },
         });
         setWizardOptions([]);
@@ -763,7 +765,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const baseUrl = value.trim();
       setActiveWizard({
         type: "model",
-        step: 18,
+        step: 8,
         data: { ...data, baseUrl },
       });
       setWizardOptions([]);
@@ -774,19 +776,19 @@ export function useModelWizard(ctx: ModelWizardContext) {
         content: `Base URL: ${baseUrl}. Please enter API Key:`,
         timestamp: now,
       });
-    } else if (step === 18) {
+    } else if (step === 8) {
       if (value === "< Back") {
         const providerType = data.providerType;
         if (providerType === "custom") {
           setActiveWizard({
             type: "model",
-            step: 17,
+            step: 7,
             data: { ...data },
           });
         } else {
           setActiveWizard({
             type: "model",
-            step: 16,
+            step: 6,
             data: { ...data },
           });
         }
@@ -801,17 +803,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const profileName = data.name;
       const baseUrl = data.baseUrl;
 
-      const prefix = `PROVIDER_${profileName.toUpperCase()}`;
-      const updates: Record<string, string> = {
-        [`${prefix}_TYPE`]: providerType,
-        [`${prefix}_API_KEY`]: apiKey,
-      };
-
-      if (baseUrl) {
-        updates[`${prefix}_BASE_URL`] = baseUrl;
-      } else if (providerType === "openrouter") {
-        updates[`${prefix}_BASE_URL`] = "https://openrouter.ai/api/v1";
-      }
 
       try {
         addProvider({
@@ -821,8 +812,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
           apiKey: apiKey,
           baseUrl: baseUrl || (providerType === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
         });
-
-        updateEnvFile(updates);
 
         addLine({
           type: "system",
@@ -928,7 +917,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         setWizardOptions([]);
         setWizardSelectedIndex(0);
       }
-    } else if (step === 15) {
+    } else if (step === 5) {
       if (value === "< Back") {
         const providerType = data.providerType;
         setActiveWizard({
@@ -962,14 +951,10 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const tier = data.tier;
         let updates: Record<string, string> = {};
 
-        let envPath = "";
         let targetLabel = "";
         if (tier === "default") {
           switchActiveProvider(profileName);
-          envPath = updateEnvFile({ 
-            MODEL: modelName,
-            [`PROVIDER_${profileName.toUpperCase()}_MODEL`]: modelName
-          });
+          process.env.MODEL = modelName;
           targetLabel = "Default Model";
         } else if (tier === "all_subagents") {
           const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
@@ -991,7 +976,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
               };
           targetLabel = "All Subagent Models";
           switchActiveProvider(profileName);
-          envPath = updateEnvFile(updates);
+          // Apply in-memory only
+          for (const [k, v] of Object.entries(updates)) process.env[k] = v;
         } else if (tier === "all") {
           const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
           const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
@@ -1008,7 +994,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           };
           targetLabel = "All Tiers & Subagents";
           switchActiveProvider(profileName);
-          envPath = updateEnvFile(updates);
+          // Apply in-memory only
+          for (const [k, v] of Object.entries(updates)) process.env[k] = v;
         } else {
           const activeProvider = process.env.ACTIVE_PROVIDER || profileName;
           const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
@@ -1044,7 +1031,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 };
             targetLabel = `Subagent "${tier}" Model`;
           }
-          envPath = updateEnvFile(updates);
+          // Apply in-memory only
+          for (const [k, v] of Object.entries(updates)) process.env[k] = v;
         }
 
         const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
@@ -1093,7 +1081,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
         addLine({
           type: "system",
-          content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}${updatedList}`,
+          content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSession only — use Save Preset to persist${updatedList}`,
           timestamp: now,
         });
         
@@ -1131,7 +1119,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const presetChoice = value;
       const presetName = presetChoice.split(" - ")[0].trim();
       try {
-        const envPath = applyModelPreset(presetName, presetMode);
+        applyModelPreset(presetName, presetMode);
         const isSingle = !isMulti;
         const nextActiveModel = isSingle
           ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
@@ -1180,7 +1168,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
         addLine({
           type: "system",
-          content: `Model preset "${presetName}" applied successfully!\nSaved to: ${envPath}${updatedList}`,
+          content: `Model preset "${presetName}" applied successfully!${updatedList}`,
           timestamp: now,
         });
       } catch (err: any) {
@@ -1194,7 +1182,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setWizardOptions([]);
       setWizardSelectedIndex(0);
       setWizardIsLoadingModels(false);
-    } else if (step === 20) {
+    } else if (step === 10) {
       const name = value.trim();
       if (name.toLowerCase() === "< back" || name.toLowerCase() === "back") {
         setActiveWizard({
@@ -1225,18 +1213,18 @@ export function useModelWizard(ctx: ModelWizardContext) {
       }
       setActiveWizard({
         type: "model",
-        step: 21,
+        step: 11,
         data: { ...data, presetName: name },
       });
       setWizardOptions([]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 21) {
+    } else if (step === 11) {
       const desc = value.trim();
       if (desc.toLowerCase() === "< back" || desc.toLowerCase() === "back") {
         setActiveWizard({
           type: "model",
-          step: 20,
+          step: 10,
           data: { ...data },
         });
         setWizardOptions([]);
@@ -1246,21 +1234,21 @@ export function useModelWizard(ctx: ModelWizardContext) {
       }
       setActiveWizard({
         type: "model",
-        step: 22,
+        step: 12,
         data: { ...data, presetDescription: desc, presetModels: JSON.stringify({}) },
       });
       setActiveWizard({
         type: "model",
-        step: 22,
+        step: 12,
         data: { ...data, presetDescription: desc, presetModels: JSON.stringify({}) },
       });
       setWizardOptions(getPresetOptionsList({}));
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 22 || step === 32) {
+    } else if (step === 12 || step === 18) {
       const models: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
       if (value === "< Back") {
-        const nextStep = step === 22 ? 21 : 31;
+        const nextStep = step === 12 ? 21 : 31;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1268,7 +1256,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         });
         setWizardOptions([]);
         setWizardSelectedIndex(0);
-        setInput(step === 22 ? (data.presetDescription || "") : (data.presetDescription || ""));
+        setInput(step === 12 ? (data.presetDescription || "") : (data.presetDescription || ""));
         return;
       }
       if (value.includes("Save Preset")) {
@@ -1278,7 +1266,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           const savedPath = saveModelPreset(presetName, presetDescription, models, presetMode);
 
           // Auto-apply the preset after saving
-          const envPath = applyModelPreset(presetName, presetMode);
+          applyModelPreset(presetName, presetMode);
           const isSingle = !isMulti;
           const nextActiveModel = isSingle
             ? (process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel())
@@ -1327,7 +1315,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
           addLine({
             type: "system",
-            content: `Model preset "${presetName}" saved & applied successfully!\nSaved to: ${savedPath}\nApplied to: ${envPath}${updatedList}`,
+            content: `Model preset "${presetName}" saved & applied successfully!\nSaved to: ${savedPath}${updatedList}`,
             timestamp: now,
           });
         } catch (err: any) {
@@ -1367,7 +1355,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       if (!tier) return;
 
-      const nextStep = step === 22 ? 23 : 33;
+      const nextStep = step === 12 ? 23 : 33;
       setActiveWizard({
         type: "model",
         step: nextStep,
@@ -1384,9 +1372,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
       ]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 23 || step === 33) {
+    } else if (step === 13 || step === 19) {
       if (value === "< Back") {
-        const nextStep = step === 23 ? 22 : 32;
+        const nextStep = step === 13 ? 22 : 32;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1435,7 +1423,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           delete presetModels.MODEL;
         }
 
-        const nextStep = step === 23 ? 22 : 32;
+        const nextStep = step === 13 ? 22 : 32;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1467,7 +1455,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         return;
       }
 
-      const nextStep = step === 23 ? 25 : 35;
+      const nextStep = step === 13 ? 25 : 35;
       setActiveWizard({
         type: "model",
         step: nextStep,
@@ -1492,9 +1480,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
       ]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 25 || step === 35) {
+    } else if (step === 14 || step === 20) {
       if (value === "< Back") {
-        const nextStep = step === 25 ? 23 : 33;
+        const nextStep = step === 14 ? 23 : 33;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1515,10 +1503,10 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       const providerType = data.providerType;
       if (value.startsWith("+ Configure a new")) {
-        const nextModelStep = step === 25 ? 24 : 34;
+        const nextModelStep = step === 14 ? 24 : 34;
         setActiveWizard({
           type: "model",
-          step: 16,
+          step: 6,
           data: { ...data, isPreset: "true", returnStep: String(nextModelStep) },
         });
         setWizardOptions([]);
@@ -1544,7 +1532,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         resolvedApiKey = process.env[`${prefix}_API_KEY`] || "";
       }
 
-      const nextStep = step === 25 ? 24 : 34;
+      const nextStep = step === 14 ? 24 : 34;
       setActiveWizard({
         type: "model",
         step: nextStep,
@@ -1629,9 +1617,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setWizardOptions([...initialModels, "< Back"]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 24 || step === 34) {
+    } else if (step === 15 || step === 21) {
       if (value === "< Back") {
-        const nextStep = step === 24 ? 25 : 35;
+        const nextStep = step === 15 ? 25 : 35;
         setActiveWizard({
           type: "model",
           step: nextStep,
@@ -1704,7 +1692,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         presetModels.MODEL = finalModelName;
       }
 
-      const nextStep = step === 24 ? 22 : 32;
+      const nextStep = step === 15 ? 22 : 32;
       setActiveWizard({
         type: "model",
         step: nextStep,
@@ -1714,7 +1702,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setWizardOptions(getPresetOptionsList(presetModels));
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 30) {
+    } else if (step === 16) {
       if (value === "< Back") {
         setActiveWizard({
           type: "model",
@@ -1742,18 +1730,18 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const desc = preset ? preset.description : "";
       setActiveWizard({
         type: "model",
-        step: 31,
+        step: 17,
         data: { ...data, presetName: name, presetDescription: desc, presetModels: JSON.stringify(models) },
       });
       setWizardOptions([]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 31) {
+    } else if (step === 17) {
       const desc = value.trim();
       if (desc.toLowerCase() === "< back" || desc.toLowerCase() === "back") {
         setActiveWizard({
           type: "model",
-          step: 30,
+          step: 16,
           data: { ...data },
         });
         const presets = getModelPresets(presetMode);
@@ -1768,14 +1756,14 @@ export function useModelWizard(ctx: ModelWizardContext) {
       
       setActiveWizard({
         type: "model",
-        step: 32,
+        step: 18,
         data: { ...data, presetDescription: updatedDesc }
       });
 
       setWizardOptions(getPresetOptionsList(models));
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 40) {
+    } else if (step === 22) {
       if (value === "< Back") {
         setActiveWizard({
           type: "model",
@@ -1791,17 +1779,17 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const name = choice.split(" - ")[0].trim();
       setActiveWizard({
         type: "model",
-        step: 41,
+        step: 23,
         data: { ...data, presetName: name },
       });
       setWizardOptions(["1. Yes, delete it", "2. No, cancel"]);
       setWizardSelectedIndex(0);
       setInput("");
-    } else if (step === 41) {
+    } else if (step === 23) {
       if (value === "< Back") {
         setActiveWizard({
           type: "model",
-          step: 40,
+          step: 22,
           data: { ...data },
         });
         const presets = getModelPresets(presetMode);
@@ -1860,14 +1848,10 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const tier = data.tier;
         let updates: Record<string, string> = {};
 
-        let envPath = "";
         let targetLabel = "";
         if (tier === "default") {
           switchActiveProvider(profileName);
-          envPath = updateEnvFile({ 
-            MODEL: modelName,
-            [`PROVIDER_${profileName.toUpperCase()}_MODEL`]: modelName
-          });
+          process.env.MODEL = modelName;
           targetLabel = "Default Model";
         } else if (tier === "all") {
           const activeProvider = process.env.ACTIVE_PROVIDER || "";
@@ -1885,7 +1869,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           };
           targetLabel = "All Tiers & Subagents";
           switchActiveProvider(profileName);
-          envPath = updateEnvFile(updates);
+          // Apply in-memory only
+          for (const [k, v] of Object.entries(updates)) process.env[k] = v;
         } else {
           const activeProvider = process.env.ACTIVE_PROVIDER || "";
           const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
@@ -1918,7 +1903,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 };
             targetLabel = `Subagent "${tier}" Model`;
           }
-          envPath = updateEnvFile(updates);
+          // Apply in-memory only
+          for (const [k, v] of Object.entries(updates)) process.env[k] = v;
         }
 
         const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
@@ -1954,7 +1940,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
         addLine({
           type: "system",
-          content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSaved to: ${envPath}${updatedList}`,
+          content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSession only — use Save Preset to persist${updatedList}`,
           timestamp: now,
         });
         

@@ -1,10 +1,10 @@
 import { Tool, SubagentInstance } from "./types.js";
-import { 
+import {
   subagentTypes, 
   subagentInstances, 
   superagentInstances,
   notifySubagentsChanged, 
-  activeQuestionHandler,
+  getMasterAgent,
   appendMasterLog
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
@@ -280,8 +280,16 @@ export const invokeSubagentTool: Tool = {
         return !isDestructive;
       },
       async (question, options) => {
-        if (activeQuestionHandler) {
-          return activeQuestionHandler(`[Subagent ${subagentId} (${role})]: ${question}`, options);
+        const master = getMasterAgent();
+        if (master && typeof (master as any).answerQuestionAsMaster === "function") {
+          appendMasterLog(`[QUESTION] Subagent ${subagentId} (${role}) asks: ${question} | Options: ${options.join(", ")}`);
+          const answer = await (master as any).answerQuestionAsMaster(question, options, {
+            source: "subagent",
+            role,
+            typeName,
+          });
+          appendMasterLog(`[MASTER ANSWER] For Subagent ${subagentId} (${role}): "${answer}"`);
+          return answer;
         }
         return options[0] || "";
       },
@@ -510,8 +518,16 @@ export const sendMessageTool: Tool = {
           return !isDestructive;
         },
         async (question, options) => {
-          if (activeQuestionHandler) {
-            return activeQuestionHandler(`[Subagent ${recipientId} (${role})]: ${question}`, options);
+          const master = getMasterAgent();
+          if (master && typeof (master as any).answerQuestionAsMaster === "function") {
+            appendMasterLog(`[QUESTION] Subagent ${recipientId} (${role}) asks: ${question} | Options: ${options.join(", ")}`);
+            const answer = await (master as any).answerQuestionAsMaster(question, options, {
+              source: "subagent",
+              role,
+              typeName,
+            });
+            appendMasterLog(`[MASTER ANSWER] For Subagent ${recipientId} (${role}): "${answer}"`);
+            return answer;
           }
           return options[0] || "";
         },

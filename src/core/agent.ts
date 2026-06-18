@@ -103,6 +103,100 @@ export class Agent {
     this.planState = "APPROVED";
   }
 
+  /**
+   * Answer a question on behalf of a Subagent/Superagent using the Master's
+   * LLM and context (implementation plan + recent conversation). Does NOT
+   * pollute Master's conversation history — uses a standalone generateText call.
+   *
+   * Returns the selected option string.
+   */
+  public async answerQuestionAsMaster(
+    question: string,
+    options: string[],
+    context: { source: string; role?: string; task?: string; branch?: string; typeName?: string }
+  ): Promise<string> {
+    if (options.length === 0) return "";
+
+    // Gather context from Master's plan + recent conversation
+    let planContext = "";
+    try {
+      const planPath = this.getPlanFilePath();
+      if (fs.existsSync(planPath)) {
+        planContext = fs.readFileSync(planPath, "utf-8");
+      }
+    } catch {}
+
+    let recentHistory = "";
+    try {
+      const msgs = this.conversation.getMessages();
+      const recent = msgs.slice(-12);
+      recentHistory = recent
+        .map((m: any) => `${m.role}: ${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`)
+        .join("\n");
+    } catch {}
+
+    const sourceLabel = context.source === "superagent"
+      ? `Superagent (role: ${context.role || "?"}, branch: ${context.branch || "?"}, task: "${context.task || "?"}")`
+      : `Subagent (role: ${context.role || "?"}, type: ${context.typeName || "?"})`;
+
+    const optionsList = options.map((o, i) => `${i + 1}. ${o}`).join("\n");
+
+    const prompt = `You are the Master Agent orchestrating a multi-agent development session.
+A ${sourceLabel} has hit a decision point and is asking a question during task execution.
+You must answer on behalf of the user based on your knowledge of the project, the implementation plan, and the overall task context.
+
+QUESTION FROM THE AGENT:
+${question}
+
+AVAILABLE OPTIONS:
+${optionsList}
+${planContext ? `\n--- CURRENT IMPLEMENTATION PLAN ---\n${planContext.slice(0, 4000)}\n` : ""}${recentHistory ? `\n--- RECENT MASTER CONVERSATION CONTEXT ---\n${recentHistory.slice(0, 3000)}\n` : ""}
+Pick the BEST option that aligns with the project goals, the implementation plan, and good engineering judgment.
+Reply with ONLY the exact text of the chosen option — no numbering, no explanation, no markdown.
+If none of the options are suitable, still pick the closest one.`;
+
+    let concurrencyAcquired = false;
+    try {
+      if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+        await concurrencyLimiter.acquire();
+        concurrencyAcquired = true;
+      }
+      await rateLimiter.acquire(1);
+
+      const { text } = await generateText({
+        model: this.getModel(),
+        prompt,
+      });
+
+      const cleaned = text.trim().replace(/^["']|["']$/g, "");
+
+      // Exact match
+      const exact = options.find((o) => o === cleaned);
+      if (exact) return exact;
+
+      // Loose match: option text appears in response (case-insensitive)
+      const lower = cleaned.toLowerCase();
+      const loose = options.find((o) => lower.includes(o.toLowerCase()));
+      if (loose) return loose;
+
+      // Number prefix match (e.g. "1. Option A" or just "1")
+      const numMatch = cleaned.match(/^(\d+)/);
+      if (numMatch) {
+        const idx = parseInt(numMatch[1], 10) - 1;
+        if (idx >= 0 && idx < options.length) return options[idx];
+      }
+
+      // Fallback: first option
+      return options[0];
+    } catch {
+      return options[0];
+    } finally {
+      if (concurrencyAcquired) {
+        concurrencyLimiter.release();
+      }
+    }
+  }
+
   private flushTextLogBuffer(): void {
     if (this.textLogBuffer) {
       this.writeToLogFile("TEXT", this.textLogBuffer.trim());

@@ -113,6 +113,21 @@ export function getActiveQuestionHandler(): QuestionHandler | null {
   return activeQuestionHandler;
 }
 
+// ─── Master Agent Reference ──────────────────────────────────────────────────
+// Global reference to the Master Agent instance. Used by Subagents and
+// Superagents to route ask_question requests to the Master for answering
+// (instead of forwarding directly to the user UI).
+
+export let masterAgentRef: any = null;
+
+export function registerMasterAgent(agent: any | null) {
+  masterAgentRef = agent;
+}
+
+export function getMasterAgent(): any {
+  return masterAgentRef;
+}
+
 // ─── Superagent Instances ────────────────────────────────────────────────────
 
 export const superagentInstances = new Map<string, SuperagentInstance>();

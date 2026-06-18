@@ -14,7 +14,7 @@ import { Tool } from "./types.js";
 import {
   superagentInstances,
   notifySuperagentsChanged,
-  activeQuestionHandler,
+  getMasterAgent,
   addHistoricalSuperagentTokens,
   appendMasterLog,
 } from "./state.js";
@@ -254,10 +254,19 @@ export const invokeSuperagentTool: Tool = {
         const isDestructive = /(rm\s+-rf\s+[/~]|git\s+reset\s+--hard|git\s+clean\s+-fd|mkfs|dd\s+if=)/i.test(cmd);
         return !isDestructive;
       },
-      // Question handler: forward to user via active handler
+      // Question handler: route to Master Agent LLM for answering
       async (question, options) => {
-        if (activeQuestionHandler) {
-          return activeQuestionHandler(`[Superagent "${role}"]: ${question}`, options);
+        const master = getMasterAgent();
+        if (master && typeof (master as any).answerQuestionAsMaster === "function") {
+          appendMasterLog(`[QUESTION] Superagent "${role}" asks: ${question} | Options: ${options.join(", ")}`);
+          const answer = await (master as any).answerQuestionAsMaster(question, options, {
+            source: "superagent",
+            role,
+            task,
+            branch,
+          });
+          appendMasterLog(`[MASTER ANSWER] For Superagent "${role}": "${answer}"`);
+          return answer;
         }
         return options[0] ?? "";
       },
@@ -899,8 +908,17 @@ export const sendMessageToSuperagentTool: Tool = {
           return !isDestructive;
         },
         async (question, options) => {
-          if (activeQuestionHandler) {
-            return activeQuestionHandler(`[Superagent "${role}"]: ${question}`, options);
+          const master = getMasterAgent();
+          if (master && typeof (master as any).answerQuestionAsMaster === "function") {
+            appendMasterLog(`[QUESTION] Superagent "${role}" asks: ${question} | Options: ${options.join(", ")}`);
+            const answer = await (master as any).answerQuestionAsMaster(question, options, {
+              source: "superagent",
+              role,
+              task,
+              branch,
+            });
+            appendMasterLog(`[MASTER ANSWER] For Superagent "${role}": "${answer}"`);
+            return answer;
           }
           return options[0] ?? "";
         },

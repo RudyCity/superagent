@@ -77,7 +77,7 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 import { MASTER_AGENT_SYSTEM_PROMPT } from "./core/prompts.js";
 import { masterToolset } from "./core/tools/toolsets.js";
-import { registerQuestionHandler, addMasterTokens, subscribeToMasterLogs } from "./core/tools/index.js";
+import { registerQuestionHandler, addMasterTokens, subscribeToMasterLogs, registerMasterAgent } from "./core/tools/index.js";
 
 if (process.stdin.isTTY) {
   const resumeIndex = process.argv.findIndex(arg => arg === "--resume" || arg === "-r");
@@ -159,6 +159,7 @@ if (process.stdin.isTTY) {
     // Set master tier
     agent.tier = "master";
     agent.isMultiAgent = true;
+    registerMasterAgent(agent);
 
     if (autoResume) {
       try {
