@@ -4,7 +4,7 @@ import TextInput from "ink-text-input";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
-import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir } from "./core/config.js";
+import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel } from "./core/config.js";
 import fs from "fs/promises";
 import { handleSlashCommand, getDefaultModel } from "./core/slash-commands.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";
@@ -141,7 +141,7 @@ export function App({
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
   const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
-  const [activeModel, setActiveModel] = useState(() => process.env.MODEL_SINGLE || process.env.MODEL || getDefaultModel());
+  const [activeModel, setActiveModel] = useState(() => getEffectiveMasterModel("single") || getDefaultModel());
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
   const [focusMode, setFocusMode] = useState<"input" | "history" | "checklist" | "superagents" | "subagents" | "procs" | "chat">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);

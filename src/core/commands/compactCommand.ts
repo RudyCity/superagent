@@ -1,13 +1,13 @@
 import { registry } from "./registry.js";
 import { SlashCommand, getDefaultModel } from "./types.js";
-import { getContextWindowLimit } from "../config.js";
+import { getContextWindowLimit, getEffectiveMasterModel } from "../config.js";
 
 // /compact command
 export const compactCommand: SlashCommand = {
   name: "compact",
   description: "Show conversation summary",
   execute(args, ctx) {
-    const currentModel = process.env.MODEL || getDefaultModel();
+    const currentModel = getEffectiveMasterModel("auto") || getDefaultModel();
     const limit = getContextWindowLimit(currentModel);
     const summary = ctx.agent?.getHistory().getCompactSummary(limit);
     ctx.addLine({ type: "system", content: summary || "No history.", timestamp: Date.now() });

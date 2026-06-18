@@ -2,7 +2,7 @@ import { useInput } from "ink";
 import path from "path";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getPasteSplit, filterSuggestions, getInsertion } from "../utils/text.js";
-import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders } from "../core/config.js";
+import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getActiveProviderName, getResolvedModelWithProvider, getTierModel, getEffectiveMasterModel } from "../core/config.js";
 import { getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, type Checkpoint } from "../core/checkpoints.js";
 import { getToolDescription } from "../core/permissions.js";
@@ -606,25 +606,19 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
 
           if (choice === "configure_tiers") {
-            const getResolvedModelWithProvider = (rawVal: string, isDefault: boolean): string => {
-              const mStr = (rawVal || (isDefault ? (process.env.MODEL || getDefaultModel()) : "")).trim();
-              if (!mStr) return "(not set)";
-              if (mStr.includes(":")) return mStr;
-              const activeProvider = (process.env.ACTIVE_PROVIDER || (process.env.CUSTOM_BASE_URL ? "custom" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "openai")).trim();
-              return `${activeProvider}:${mStr}`;
-            };
+            const kbMode = agentRef.current?.isMultiAgent ? "multi" as const : "single" as const;
             const defaultResolved = getResolvedModelWithProvider("", true);
-            const rawMaster = process.env.MODEL_MULTI_MASTER || "";
+            const rawMaster = kbMode === "multi" ? (getTierModel(kbMode, "master") || "") : "";
             const masterModelFormatted = rawMaster ? getResolvedModelWithProvider(rawMaster, false) : `(use default: ${defaultResolved})`;
-            const rawSuperagent = process.env.MODEL_MULTI_SUPERAGENT || process.env.MODEL_SINGLE_SUPERAGENT || "";
+            const rawSuperagent = getTierModel(kbMode, "superagent") || "";
             const superagentModelFormatted = rawSuperagent ? getResolvedModelWithProvider(rawSuperagent, false) : `(use default: ${defaultResolved})`;
-            const rawSubagent = process.env.MODEL_MULTI_SUBAGENT || process.env.MODEL_SINGLE_SUBAGENT || "";
+            const rawSubagent = getTierModel(kbMode, "subagent") || "";
             const subagentModelFormatted = rawSubagent ? getResolvedModelWithProvider(rawSubagent, false) : `(use default: ${defaultResolved})`;
-            const rawResearcher = process.env.MODEL_MULTI_SUBAGENT_RESEARCHER || process.env.MODEL_SINGLE_SUBAGENT_RESEARCHER || "";
+            const rawResearcher = getTierModel(kbMode, "researcher") || "";
             const researcherModelFormatted = rawResearcher ? getResolvedModelWithProvider(rawResearcher, false) : `(use default: ${subagentModelFormatted})`;
-            const rawCoder = process.env.MODEL_MULTI_SUBAGENT_CODER || process.env.MODEL_SINGLE_SUBAGENT_CODER || "";
+            const rawCoder = getTierModel(kbMode, "coder") || "";
             const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
-            const rawReviewer = process.env.MODEL_MULTI_SUBAGENT_REVIEWER || process.env.MODEL_SINGLE_SUBAGENT_REVIEWER || "";
+            const rawReviewer = getTierModel(kbMode, "reviewer") || "";
             const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
 
             setActiveWizard({

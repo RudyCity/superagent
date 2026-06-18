@@ -7,7 +7,8 @@ import {
   getContextWindowLimit,
   addProvider,
   getProviders,
-  removeProvider
+  removeProvider,
+  setAllTierModels
 } from "../config.js";
 
 export const loginCommand: SlashCommand = {
@@ -99,7 +100,7 @@ export const loginCommand: SlashCommand = {
     const subParts = shiftArgs ? parts.slice(1) : parts;
 
     if (action === "list") {
-      const providers = getProviders();
+      const providers = getConfiguredProviders();
       if (providers.length === 0) {
         ctx.addLine({
           type: "system",
@@ -116,7 +117,8 @@ export const loginCommand: SlashCommand = {
             ? (p.apiKey.length <= 8 ? "*".repeat(p.apiKey.length) : `${p.apiKey.slice(0, 4)}...${p.apiKey.slice(-4)}`)
             : "None";
           const baseStr = p.baseUrl ? ` (Base URL: ${p.baseUrl})` : "";
-          return `  - ${p.id} [${p.provider}] (API Key: ${masked})${baseStr}`;
+          const activeLabel = p.isActive ? " [Active]" : "";
+          return `  - ${p.name} [${p.type}] (API Key: ${masked})${baseStr}${activeLabel}`;
         })
       ];
 
@@ -230,12 +232,6 @@ export const loginCommand: SlashCommand = {
         // Switch active preset to use this provider
         switchActiveProvider(profileId);
 
-        ctx.addLine({
-          type: "system",
-          content: `Successfully logged in. Configured provider: ${provider}.\nSaved to model-config.json`,
-          timestamp: now,
-        });
-
         // Set default model based on provider type
         let defaultModel = "gpt-4o";
         if (provider === "openrouter") {
@@ -243,6 +239,19 @@ export const loginCommand: SlashCommand = {
         } else if (provider === "anthropic") {
           defaultModel = "claude-3-5-sonnet-20241022";
         }
+
+        const isMulti = ctx.agent?.isMultiAgent ?? false;
+        const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
+
+        ctx.addLine({
+          type: "system",
+          content: `Successfully configured provider profile: ${profileId} (${provider})${baseUrlInfo}\nDefault Model: ${defaultModel}\nSaved to model-config.json`,
+          timestamp: now,
+        });
+
+        const mode = isMulti ? "multi" : "single";
+        setAllTierModels(mode, defaultModel);
+
         if (ctx.setActiveModel) {
           ctx.setActiveModel(defaultModel);
         }

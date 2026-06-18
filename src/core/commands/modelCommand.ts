@@ -189,7 +189,7 @@ export const modelCommand: SlashCommand = {
             } else {
               preset.models.superagent = { ...preset.models.superagent, model: modelName };
             }
-            targetLabel = "Master Agent (depth 0) Model";
+            targetLabel = isMulti ? "Master Agent (depth 0) Model" : "Single Agent Model";
           } else if (key === "superagent" || key === "depth1" || key === "dept1") {
             preset.models.superagent = { ...preset.models.superagent, model: modelName };
             targetLabel = "Superagent (depth 1) Model";
@@ -263,6 +263,7 @@ export const modelCommand: SlashCommand = {
           `3. Create Model Preset [${modeLabelMenu}]`,
           `4. Edit Model Preset [${modeLabelMenu}]`,
           `5. Delete Model Preset [${modeLabelMenu}]`,
+          `6. Configure ${isMulti ? "Agent Tier" : "Single Agent"} Models`,
           "< Back"
         ]);
         ctx.setWizardSelectedIndex?.(0);

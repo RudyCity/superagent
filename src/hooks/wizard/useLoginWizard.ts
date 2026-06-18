@@ -9,7 +9,9 @@ import {
   addProvider,
   getActiveConfigAudit,
   getProviders,
-  getCachedModelIds
+  getCachedModelIds,
+  getEffectiveMasterModel,
+  setAllTierModels
 } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
@@ -61,7 +63,12 @@ export function useLoginWizard(ctx: LoginWizardContext) {
         if (list.length > 0) {
           addLine({
             type: "system",
-            content: `Configured Providers:\n` + list.map(p => `- ${p.name} (${p.type})`).join("\n"),
+            content: `Configured Providers:\n` + list.map(p => {
+              const masked = p.apiKey ? (p.apiKey.length > 8 ? `${p.apiKey.slice(0, 4)}...${p.apiKey.slice(-4)}` : "****") : "None";
+              const activeLabel = p.isActive ? " [Active]" : "";
+              const baseUrlLabel = p.baseUrl ? ` (Base URL: ${p.baseUrl})` : "";
+              return `- ${p.name} [${p.type}] (API Key: ${masked})${baseUrlLabel}${activeLabel}`;
+            }).join("\n"),
             timestamp: now,
           });
         } else {
@@ -176,23 +183,26 @@ export function useLoginWizard(ctx: LoginWizardContext) {
         // Set provider ini sebagai aktif di preset JSON
         switchActiveProvider(providerId);
 
-        // Set MODEL di memory saja (process.env) — tidak ditulis ke .env
-        if (!process.env.MODEL) {
-          let defaultModel = "openai:gpt-4o";
-          if (provider === "openrouter") defaultModel = "openrouter:google/gemini-2.5-flash";
-          else if (provider === "anthropic") defaultModel = "anthropic:claude-3-5-sonnet-20241022";
-          process.env.MODEL = defaultModel;
+        // Persist model to JSON config — not to process.env
+        const defaultModel = provider === "openrouter" ? "openrouter:google/gemini-2.5-flash"
+          : provider === "anthropic" ? "anthropic:claude-3-5-sonnet-20241022"
+          : "openai:gpt-4o";
+        const currentModel = getEffectiveMasterModel("auto");
+        if (!currentModel || currentModel === "gpt-4o") {
+          setAllTierModels("auto", defaultModel);
         }
+
+        const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
 
         addLine({
           type: "system",
-          content: `Successfully configured provider profile: ${profileName} (${provider})!\nSaved to global model-config.json`,
+          content: `Successfully configured provider profile: ${profileName} (${provider})${baseUrlInfo}\nDefault Model: ${defaultModel}\nSaved to model-config.json`,
           timestamp: now,
         });
 
         fetchAndCacheModels()
           .then(() => {
-            const currentModel = process.env.MODEL || getDefaultModel();
+            const currentModel = getEffectiveMasterModel("auto") || getDefaultModel();
             const limit = getContextWindowLimit(currentModel);
             setContextLimit(limit);
             setActiveModel(currentModel);
@@ -285,7 +295,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
 
         // Run audit/git setup summary
         const gitStatusLabel = data.gitStatus === "ACTIVE" ? "✓ ACTIVE" : data.gitStatus === "INITIALIZED" ? "✓ INITIALIZED (new)" : `✗ ${data.gitStatus}`;
-        const modelName = process.env.MODEL || getDefaultModel();
+        const modelName = getEffectiveMasterModel("auto") || getDefaultModel();
         const limit = getContextWindowLimit(modelName);
 
         const auditLines = [
@@ -392,7 +402,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         if (techMatch) projectTech = techMatch[1].trim();
 
         const gitStatusLabel = data.gitStatus === "ACTIVE" ? "✓ ACTIVE" : data.gitStatus === "INITIALIZED" ? "✓ INITIALIZED (new)" : `✗ ${data.gitStatus}`;
-        const modelName = process.env.MODEL || getDefaultModel();
+        const modelName = getEffectiveMasterModel("auto") || getDefaultModel();
         const limit = getContextWindowLimit(modelName);
 
         const auditLines = [

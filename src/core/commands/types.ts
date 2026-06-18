@@ -1,4 +1,5 @@
 import type { Agent } from "../agent.js";
+import { getEffectiveMasterModel, getActiveProviderName } from "../config.js";
 
 export interface ChatLine {
   type: "user" | "assistant" | "system" | "error" | "tool_start" | "tool_end";
@@ -31,36 +32,11 @@ export interface SlashCommand {
 }
 
 export function getProviderLabel(): string {
-  const active = process.env.ACTIVE_PROVIDER;
-  if (active) {
-    const prefix = `PROVIDER_${active.toUpperCase()}`;
-    const baseUrl = process.env[`${prefix}_BASE_URL`] || "";
-    if (baseUrl) {
-      try {
-        const url = new URL(baseUrl);
-        return `${active} (${url.host})`;
-      } catch {
-        return active;
-      }
-    }
-    return active;
-  }
-  if (process.env.CUSTOM_BASE_URL) {
-    try {
-      const url = new URL(process.env.CUSTOM_BASE_URL);
-      return `custom (${url.host})`;
-    } catch {
-      return "custom";
-    }
-  }
-  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
-  return "openai";
+  return getActiveProviderName();
 }
 
 export function getDefaultModel(): string {
-  if (process.env.CUSTOM_BASE_URL) return "custom";
-  if (process.env.ANTHROPIC_API_KEY) return "claude-sonnet-4-20250514";
-  return "gpt-4o";
+  return getEffectiveMasterModel("auto") || "gpt-4o";
 }
 
 export function formatPresetValue(preset: any): string {

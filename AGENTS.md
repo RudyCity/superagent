@@ -37,11 +37,20 @@ Master Agent  (orchestrator)
 - **Shell Commands**: On Windows, the actual shell is auto-detected (Git Bash is preferred over PowerShell). If using PowerShell, use `;` to separate commands instead of `&&`. Git Bash supports `&&` normally. The system prompt reports the detected shell accurately.
 - **Strict Naming Rules**: Do NOT mention proprietary brand names like "Claude Code" or generic "CLI" terms in user-facing documentation or UI descriptions. Refer to the project as a terminal-based AI coding assistant.
 - **Workspace Isolation**: Configuration `.env`, logs (`superagent.log`), and session histories MUST be stored in the global home directory under `~/.superagent-r/` instead of cluttering the target project repository. Superagent worktrees are stored under `~/.superagent-r/worktrees/<name>`.
-- **Model Config & Credentials — JSON ONLY, NEVER .env**: All provider credentials, model configurations, active presets, and profiles MUST be read and written exclusively to `~/.superagent-r/model-config.json`. This is a hard rule with NO exceptions:
+- **Model Config & Credentials — JSON ONLY, NO process.env**: All provider credentials, model configurations, active presets, tier models, and profiles are stored exclusively in `~/.superagent-r/model-config.json`. There is **NO** use of `process.env` for model or provider data anywhere in production code. This is a hard rule with NO exceptions:
+  - **Reading models**: Use helper functions from `src/core/config/providers.ts`:
+    - `getEffectiveMasterModel(mode)` — returns the primary model name for the given mode (`"multi"`, `"single"`, or `"auto"`)
+    - `getTierModel(mode, tier)` — returns a specific tier's model (`tier`: `"master"`, `"superagent"`, `"subagent"`, `"researcher"`, `"coder"`, `"reviewer"`, or any custom subagent name)
+    - `getAllTierModels(mode)` — returns a `Record<string, string>` of all tier models including subagent details
+  - **Writing models**: Use helper functions from `src/core/config/providers.ts`:
+    - `setTierModel(mode, tier, modelName, providerProfileId?)` — writes a specific tier's model to JSON and persists
+    - `setAllTierModels(mode, modelName, providerProfileId?)` — writes ALL tiers at once to JSON and persists
+    - `clearTierModel(mode, tier)` — clears a tier's model override
+  - **Provider info**: Use `getActiveProviderName()` and `getConfiguredProviders()` — both read from JSON, never from env vars.
   - `/login` (add provider wizard): use `addProvider()` to save to JSON, then `switchActiveProvider()` to activate. **NEVER call `updateEnvFile()` with `PROVIDER_*` or `MODEL` keys.**
-  - `/model` (model/preset wizard): use `savePreset()`, `applyModelPreset()`, `switchActiveProvider()` — all JSON. **NEVER call `updateEnvFile()` with `MODEL_*`, `ACTIVE_PROVIDER`, or `PROVIDER_*` keys.**
+  - `/model` (model/preset wizard): use `savePreset()`, `applyModelPreset()`, `setTierModel()`, `setAllTierModels()` — all JSON. **NEVER call `updateEnvFile()` with `MODEL_*`, `ACTIVE_PROVIDER`, or `PROVIDER_*` keys.**
   - `updateEnvFile()` is ONLY permitted for runtime-behavior settings: `SUPERAGENT_MAX_CONCURRENCY`, `SUPERAGENT_RATE_LIMIT_RPM`, `SUPERAGENT_RATE_LIMIT_CAPACITY`, `DISABLE_STREAMING`. Nothing else.
-  - If you need to update active model in memory after a change, set `process.env.MODEL` directly — do NOT persist it to `.env`.
+  - **NEVER read or write `process.env.MODEL`, `process.env.MODEL_*`, `process.env.ACTIVE_PROVIDER`, `process.env.ANTHROPIC_API_KEY`, `process.env.CUSTOM_BASE_URL`, or `process.env.OPENAI_API_KEY`** — all of these have been fully migrated to JSON config helpers.
 - **Interactive Prompts**: Ensure any executed shell command processes are monitored for interactive inputs (such as asking for yes/no confirmation) to alert the user rather than hanging in the background.
 - **Test Location**: Always create and place all test files inside the `tests/` directory at the project root. Do not place test files under the `src/` directory.
 - **Circular Dependency Prevention**: `toolsets.ts` and `prompts.ts` are imported by multiple tool files. Any tool file that needs to import from `toolsets.ts` or `prompts.ts` MUST use dynamic `import()` inside the `execute()` function body — never a top-level static import — to avoid circular module dependency errors.

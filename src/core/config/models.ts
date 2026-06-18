@@ -5,7 +5,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { getStaticModelLimit } from "../model_limits.js";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { getConfig } from "./base.js";
-import { getConfiguredProviders } from "./providers.js";
+import { getConfiguredProviders, getEffectiveMasterModel } from "./providers.js";
 import { loadModelConfig, getActivePreset, TierModelConfig } from "./jsonConfig.js";
 
 export async function fetchAndCacheModels(): Promise<void> {
@@ -17,20 +17,10 @@ export async function fetchAndCacheModels(): Promise<void> {
 
     let url = "";
     const headers: Record<string, string> = {};
-    const prefix = `PROVIDER_${provider.name.toUpperCase()}`;
-    let apiKey = process.env[`${prefix}_API_KEY`] || "";
-    let baseUrl = process.env[`${prefix}_BASE_URL`] || "";
+    const apiKey = provider.apiKey || "";
+    const baseUrl = provider.baseUrl || "";
 
-    if (!apiKey) {
-      if (provider.name.toLowerCase() === "openai") apiKey = process.env.OPENAI_API_KEY || "";
-      else if (provider.name.toLowerCase() === "anthropic") apiKey = process.env.ANTHROPIC_API_KEY || "";
-      else if (provider.name.toLowerCase() === "custom") apiKey = process.env.CUSTOM_API_KEY || "";
-    }
-    if (!baseUrl) {
-      if (provider.name.toLowerCase() === "custom") baseUrl = process.env.CUSTOM_BASE_URL || "";
-    }
-
-    if (provider.name.toLowerCase() === "openrouter" || provider.type === "openrouter") {
+    if (provider.type === "openrouter") {
       url = "https://openrouter.ai/api/v1/models";
     } else if (provider.type === "openai") {
       url = baseUrl ? `${baseUrl.replace(/\/+$/, "")}/models` : "https://api.openai.com/v1/models";
@@ -406,7 +396,7 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
   const apiKey = providerProfile?.apiKey || "";
   const baseUrl = providerProfile?.baseUrl || undefined;
   const provider = providerProfile?.provider || "openai";
-  const modelName = tierConfig?.model || process.env.MODEL || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
+  const modelName = tierConfig?.model || getEffectiveMasterModel(mode) || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
 
   // Construct a prefix that maps back to the profile credentials
   const profileId = providerProfile?.id || provider;

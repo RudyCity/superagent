@@ -4,7 +4,7 @@ import { execa } from "execa";
 import { registry } from "./registry.js";
 import { SlashCommand, getDefaultModel, getProviderLabel } from "./types.js";
 import { deleteCheckpointsForSession } from "../checkpoints.js";
-import { getGlobalConfigDir, ensureGlobalConfigDir } from "../config.js";
+import { getGlobalConfigDir, ensureGlobalConfigDir, getEffectiveMasterModel } from "../config.js";
 import { 
   allTools, 
   superagentInstances, 
@@ -327,7 +327,7 @@ export const initCommand: SlashCommand = {
       return;
     }
 
-    const modelName = process.env.MODEL || getDefaultModel();
+    const modelName = getEffectiveMasterModel("auto") || getDefaultModel();
     let limit = 256000;
     let configAudit = "";
     try {
