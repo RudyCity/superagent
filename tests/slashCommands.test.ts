@@ -692,19 +692,22 @@ describe("Slash Command: /login", () => {
   });
 
   it("should list configured providers on /login list", async () => {
-    vi.spyOn(configModule, "getProviders").mockReturnValue([
+    vi.spyOn(configModule, "getConfiguredProviders").mockReturnValue([
       {
         id: "openrouter",
         name: "openrouter",
-        provider: "openrouter",
+        type: "openrouter",
         apiKey: "sk-or-test-key-1234",
+        baseUrl: "https://openrouter.ai/api/v1",
+        isActive: true,
       },
       {
         id: "custom-p",
         name: "custom-p",
-        provider: "custom",
+        type: "custom",
         apiKey: "custom-key",
         baseUrl: "https://custom.api/v1",
+        isActive: false,
       }
     ]);
 
@@ -716,7 +719,7 @@ describe("Slash Command: /login", () => {
   });
 
   it("should output message if no providers configured on /login list", async () => {
-    vi.spyOn(configModule, "getProviders").mockReturnValue([]);
+    vi.spyOn(configModule, "getConfiguredProviders").mockReturnValue([]);
     await handleSlashCommand("/login list", mockCtx as any);
     expect(addedLines.length).toBe(1);
     expect(addedLines[0].content).toContain("No providers configured yet.");
@@ -762,7 +765,7 @@ describe("Slash Command: /login", () => {
       baseUrl: "https://openrouter.ai/api/v1",
     });
     expect(switchActiveProviderSpy).toHaveBeenCalledWith("openrouter");
-    expect(addedLines[0].content).toContain("Successfully logged in. Configured provider: openrouter");
+    expect(addedLines[0].content).toContain("Successfully configured provider profile: openrouter (openrouter)");
   });
 
   it("should add custom provider on /login add custom <base_url> <api_key>", async () => {
@@ -780,7 +783,7 @@ describe("Slash Command: /login", () => {
       baseUrl: "https://custom.api/v1",
     });
     expect(switchActiveProviderSpy).toHaveBeenCalledWith("custom");
-    expect(addedLines[0].content).toContain("Successfully logged in. Configured provider: custom");
+    expect(addedLines[0].content).toContain("Successfully configured provider profile: custom (custom)");
   });
 
   it("should support auto-detection on /login add <api_key>", async () => {

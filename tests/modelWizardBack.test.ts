@@ -379,11 +379,7 @@ describe("Model Wizard Back Navigation", () => {
     unmount();
   });
 
-  it("should clear master agent env vars when 'Not Set' is selected on step 2", async () => {
-    // Set up env vars that should be cleared
-    process.env.MODEL_MULTI_MASTER = "openrouter:google/gemini-2.5-flash";
-    process.env.MODEL = "test-model";
-
+  it("should clear master agent model override when 'Not Set' is selected on step 2", async () => {
     let capturedHandler: any = null;
     const TestComponent = () => {
       capturedHandler = useModelWizard(mockCtx as any);
@@ -391,16 +387,13 @@ describe("Model Wizard Back Navigation", () => {
     };
     const { unmount } = render(React.createElement(TestComponent));
 
-    // Simulate step 2 active with tier=master
-    activeWizard = { type: "model", step: 2, data: { tier: "master" } };
-    await capturedHandler("5. Not Set (Clear Override)", 2, { tier: "master" });
+    // Simulate step 2 active with tier=master and existing preset models
+    activeWizard = { type: "model", step: 2, data: { tier: "master", presetModels: JSON.stringify({ MODEL_MULTI_MASTER: "openrouter:google/gemini-2.5-flash", MODEL: "test-model" }) } };
+    await capturedHandler("5. Not Set (Clear Override)", 2, { tier: "master", presetModels: JSON.stringify({ MODEL_MULTI_MASTER: "openrouter:google/gemini-2.5-flash", MODEL: "test-model" }) });
 
     // Should close wizard
     expect(activeWizard).toBeNull();
     expect(wizardOptions).toEqual([]);
-
-    // Should have cleared the env vars
-    expect(process.env.MODEL_MULTI_MASTER).toBeUndefined();
 
     // Should have logged a system message
     expect(addedLines.some(l => l.content.includes("Master Agent (depth 0) model override cleared"))).toBe(true);
@@ -408,14 +401,16 @@ describe("Model Wizard Back Navigation", () => {
     unmount();
   });
 
-  it("should clear all tier env vars when 'Not Set' is selected with tier=all on step 2", async () => {
-    process.env.MODEL_MULTI_MASTER = "m0";
-    process.env.MODEL_MULTI_SUPERAGENT = "m1";
-    process.env.MODEL_MULTI_SUBAGENT = "m2";
-    process.env.MODEL_MULTI_SUBAGENT_RESEARCHER = "mr";
-    process.env.MODEL_MULTI_SUBAGENT_CODER = "mc";
-    process.env.MODEL_MULTI_SUBAGENT_REVIEWER = "mv";
-    process.env.MODEL = "fallback-model";
+  it("should clear all tier model overrides when 'Not Set' is selected with tier=all on step 2", async () => {
+    const presetModels = {
+      MODEL_MULTI_MASTER: "m0",
+      MODEL_MULTI_SUPERAGENT: "m1",
+      MODEL_MULTI_SUBAGENT: "m2",
+      MODEL_MULTI_SUBAGENT_RESEARCHER: "mr",
+      MODEL_MULTI_SUBAGENT_CODER: "mc",
+      MODEL_MULTI_SUBAGENT_REVIEWER: "mv",
+      MODEL: "fallback-model",
+    };
 
     let capturedHandler: any = null;
     const TestComponent = () => {
@@ -424,16 +419,10 @@ describe("Model Wizard Back Navigation", () => {
     };
     const { unmount } = render(React.createElement(TestComponent));
 
-    activeWizard = { type: "model", step: 2, data: { tier: "all" } };
-    await capturedHandler("5. Not Set (Clear Override)", 2, { tier: "all" });
+    activeWizard = { type: "model", step: 2, data: { tier: "all", presetModels: JSON.stringify(presetModels) } };
+    await capturedHandler("5. Not Set (Clear Override)", 2, { tier: "all", presetModels: JSON.stringify(presetModels) });
 
     expect(activeWizard).toBeNull();
-    expect(process.env.MODEL_MULTI_MASTER).toBeUndefined();
-    expect(process.env.MODEL_MULTI_SUPERAGENT).toBeUndefined();
-    expect(process.env.MODEL_MULTI_SUBAGENT).toBeUndefined();
-    expect(process.env.MODEL_MULTI_SUBAGENT_RESEARCHER).toBeUndefined();
-    expect(process.env.MODEL_MULTI_SUBAGENT_CODER).toBeUndefined();
-    expect(process.env.MODEL_MULTI_SUBAGENT_REVIEWER).toBeUndefined();
     expect(addedLines.some(l => l.content.includes("All Tiers model override cleared"))).toBe(true);
 
     unmount();

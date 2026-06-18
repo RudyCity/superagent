@@ -24,6 +24,7 @@ import {
   formatProviderForLog,
   getEffectiveMasterModel,
   getTierModel,
+  getTierModelWithProvider,
   setTierModel,
   setAllTierModels,
   clearTierModel,
@@ -1513,9 +1514,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 }
               }
             } else {
-              const masterModel = getTierModel("multi", "master") || "(use default)";
-              const superagentModel = getTierModel("multi", "superagent") || "(use default)";
-              const subagentModel = getTierModel("multi", "subagent") || "(use default)";
+              const masterModel = getTierModelWithProvider("multi", "master") || "(use default)";
+              const superagentModel = getTierModelWithProvider("multi", "superagent") || "(use default)";
+              const subagentModel = getTierModelWithProvider("multi", "subagent") || "(use default)";
               
               updatedLogs.push(
                 `[MASTER]   Master Agent (depth 0): ${masterModel}`,

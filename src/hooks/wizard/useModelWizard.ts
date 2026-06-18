@@ -17,6 +17,7 @@ import {
   formatProviderForLog,
   getEffectiveMasterModel,
   getTierModel,
+  getTierModelWithProvider,
   setTierModel,
   setAllTierModels,
   clearTierModel,
@@ -891,7 +892,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         let updatedList = `\n\nUpdated Models:\n`;
         if (isSingle) {
           const singleModel = getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel();
-          const subagentModel = getTierModel("single", "subagent") || "(use default)";
+          const subagentModel = getTierModelWithProvider("single", "subagent") || "(use default)";
           updatedList += `  Single Agent Model: ${singleModel}\n` +
             `  Subagent (depth 2): ${subagentModel}`;
 
@@ -905,9 +906,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
             }
           }
         } else {
-          const masterModel = getTierModel("multi", "master") || "(use default)";
-          const superagentModel = getTierModel("multi", "superagent") || "(use default)";
-          const subagentModel = getTierModel("multi", "subagent") || "(use default)";
+          const masterModel = getTierModelWithProvider("multi", "master") || "(use default)";
+          const superagentModel = getTierModelWithProvider("multi", "superagent") || "(use default)";
+          const subagentModel = getTierModelWithProvider("multi", "subagent") || "(use default)";
           updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
             `  Superagent (depth 1): ${superagentModel}\n` +
             `  Subagent (depth 2): ${subagentModel}`;
@@ -1030,7 +1031,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           let updatedList = `\n\nUpdated Models:\n`;
           if (isSingle) {
             const singleModel = getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel();
-            const subagentModel = getTierModel("single", "subagent") || "(use default)";
+            const subagentModel = getTierModelWithProvider("single", "subagent") || "(use default)";
             updatedList += `  Single Agent Model: ${singleModel}\n` +
               `  Subagent (depth 2): ${subagentModel}`;
 
@@ -1044,9 +1045,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
               }
             }
           } else {
-            const masterModel = getTierModel("multi", "master") || "(use default)";
-            const superagentModel = getTierModel("multi", "superagent") || "(use default)";
-            const subagentModel = getTierModel("multi", "subagent") || "(use default)";
+            const masterModel = getTierModelWithProvider("multi", "master") || "(use default)";
+            const superagentModel = getTierModelWithProvider("multi", "superagent") || "(use default)";
+            const subagentModel = getTierModelWithProvider("multi", "subagent") || "(use default)";
             updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
               `  Superagent (depth 1): ${superagentModel}\n` +
               `  Subagent (depth 2): ${subagentModel}`;

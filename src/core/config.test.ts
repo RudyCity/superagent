@@ -427,7 +427,7 @@ describe("config", () => {
       expect(subagentModel.modelId).toBe("local-llama");
     });
 
-    it("should clear all tier and subagent-specific overrides when switchActiveProvider is called", () => {
+    it("should update active provider without overwriting existing tier models", () => {
       // Write test config with providers
       const testConfig = {
         settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
@@ -463,7 +463,11 @@ describe("config", () => {
       const config = loadModelConfig();
       const preset = config.presets.multi[0];
       expect(preset.models.master.providerProfileId).toBe("anthropic");
-      expect(preset.models.master.model).toBe("claude-3-5-sonnet-20241022");
+      expect(preset.models.master.model).toBe("gpt-4o-mini");
+      expect(preset.models.superagent.model).toBe("gpt-4o");
+      expect(preset.models.subagentDefault.providerProfileId).toBe("anthropic");
+      expect(preset.models.subagentDetails.researcher.providerProfileId).toBe("anthropic");
+      expect(preset.models.subagentDetails.researcher.model).toBe("gpt-4-turbo");
     });
   });
 

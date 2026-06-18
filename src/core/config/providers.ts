@@ -40,23 +40,23 @@ export function switchActiveProvider(name: string): void {
   );
   if (!provider) return;
 
-  let defaultModel = "gpt-4o";
-  const type = provider.provider.toLowerCase();
-  if (type === "openrouter") {
-    defaultModel = "google/gemini-2.5-flash";
-  } else if (type === "anthropic") {
-    defaultModel = "claude-3-5-sonnet-20241022";
-  }
-
   const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
   const mode = isMulti ? "multi" : "single";
   const activePreset = getActivePreset<any>(mode);
 
-  const tierUpdate = { providerProfileId: provider.id, model: defaultModel };
+  const tierUpdate = { providerProfileId: provider.id };
   if (mode === "multi") {
     activePreset.models.master = { ...activePreset.models.master, ...tierUpdate };
   }
   activePreset.models.superagent = { ...activePreset.models.superagent, ...tierUpdate };
+  if (activePreset.models.subagentDefault) {
+    activePreset.models.subagentDefault = { ...activePreset.models.subagentDefault, ...tierUpdate };
+  }
+  if (activePreset.models.subagentDetails) {
+    for (const key of Object.keys(activePreset.models.subagentDetails)) {
+      activePreset.models.subagentDetails[key] = { ...activePreset.models.subagentDetails[key], ...tierUpdate };
+    }
+  }
 
   savePreset(mode, activePreset);
 }
@@ -188,6 +188,29 @@ export function getTierModel(mode: ModelMode | "auto", tier: string): string {
   return preset.models.subagentDetails?.[key]?.model || "";
 }
 
+export function getTierModelWithProvider(mode: ModelMode | "auto", tier: string): string {
+  const m = resolveMode(mode);
+  const preset = getActivePreset<any>(m);
+  const key = tier.toLowerCase();
+  let tierConfig: any;
+
+  if (key === "master") {
+    tierConfig = m === "multi" ? preset.models.master : preset.models.superagent;
+  } else if (key === "superagent") {
+    tierConfig = preset.models.superagent;
+  } else if (key === "subagent") {
+    tierConfig = preset.models.subagentDefault;
+  } else {
+    tierConfig = preset.models.subagentDetails?.[key];
+  }
+
+  if (!tierConfig?.model) return "";
+  if (tierConfig.providerProfileId) {
+    return `${tierConfig.providerProfileId}:${tierConfig.model}`;
+  }
+  return tierConfig.model;
+}
+
 /**
  * Set a specific tier's model in JSON config and persist.
  * @param mode "multi" | "single" | "auto"
@@ -260,17 +283,17 @@ export function getAllTierModels(mode: ModelMode | "auto"): Record<string, strin
   const result: Record<string, string> = {};
 
   if (m === "multi") {
-    result.master = preset.models.master?.model || "(use default)";
+    result.master = getTierModelWithProvider(m, "master") || "(use default)";
   } else {
-    result.singleAgent = preset.models.superagent?.model || "(use default)";
+    result.singleAgent = getTierModelWithProvider(m, "singleAgent") || "(use default)";
   }
-  result.superagent = preset.models.superagent?.model || "(use default)";
-  result.subagentDefault = preset.models.subagentDefault?.model || "(use default)";
+  result.superagent = getTierModelWithProvider(m, "superagent") || "(use default)";
+  result.subagentDefault = getTierModelWithProvider(m, "subagent") || "(use default)";
 
   if (preset.models.subagentDetails) {
     for (const [name, cfg] of Object.entries(preset.models.subagentDetails)) {
       const c = cfg as any;
-      if (c?.model) result[`subagent_${name}`] = c.model;
+      if (c?.model) result[`subagent_${name}`] = getTierModelWithProvider(m, name);
     }
   }
 
