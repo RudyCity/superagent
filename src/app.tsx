@@ -19,7 +19,7 @@ import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggesti
 import { getTruncatedAssistantIndexes } from "./utils/responseScroll.js";
 import { wrapTextForDisplay } from "./utils/responseScroll.js";
 import type { ChatLine } from "./core/slash-commands.js";
-import { readChecklistTasks } from "./core/taskChecklist.js";
+import { readChecklistTasks, readTaskHistory } from "./core/taskChecklist.js";
 
 // Hook & Component Baru
 import { StatusBar } from "./components/status-bar.js";
@@ -143,6 +143,7 @@ export function App({
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [activeModel, setActiveModel] = useState(() => getEffectiveMasterModel("single") || getDefaultModel());
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
+  const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string }[]>([]);
   const [focusMode, setFocusMode] = useState<"input" | "history" | "checklist" | "superagents" | "subagents" | "procs" | "chat">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
 
@@ -660,9 +661,19 @@ export function App({
         const result = await readChecklistTasks(taskPath);
         if (!active) return;
         setChecklistTasks(result.tasks);
+
+        // Also poll the task history file for completed tasks archive
+        try {
+          const history = await readTaskHistory(taskPath);
+          if (!active) return;
+          setCompletedHistory(history);
+        } catch {
+          if (active) setCompletedHistory([]);
+        }
       } catch (err: any) {
         if (active) {
           setChecklistTasks([]);
+          setCompletedHistory([]);
         }
       }
     };
@@ -672,6 +683,7 @@ export function App({
       intervalId = setInterval(check, 2000);
     } else {
       setChecklistTasks([]);
+      setCompletedHistory([]);
     }
 
     return () => {
@@ -1515,6 +1527,7 @@ export function App({
               maxChecklistVisible={maxChecklistVisible}
               focusMode={focusMode}
               isMultiAgent={!!agentRef.current?.isMultiAgent}
+              completedHistory={completedHistory}
             />
 
             <WizardPanels

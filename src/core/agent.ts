@@ -17,6 +17,7 @@ import {
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { AsyncLocalStorage } from "async_hooks";
+import { allTasksCompleted, archiveCompletedTasks } from "./taskChecklist.js";
 
 export const agentLocalStorage = new AsyncLocalStorage<Agent>();
 
@@ -98,6 +99,10 @@ export class Agent {
   private isRunning = false;
   private pendingMessage: string | null = null;
   private textLogBuffer = "";
+  /** Flag set when completed tasks were just archived — used to inject system prompt hint */
+  private tasksJustArchived: boolean = false;
+  /** Number of tasks that were archived in the last sendMessage call */
+  private archivedTaskCount: number = 0;
 
   public approvePlan(): void {
     this.planState = "APPROVED";
@@ -289,6 +294,11 @@ If none of the options are suitable, still pick the closest one.`;
     return historyPath.replace(/\.json$/, "_walkthrough.md");
   }
 
+  public getTaskHistoryFilePath(): string {
+    const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
+    return historyPath.replace(/\.json$/, "_task_history.md");
+  }
+
   private resolveHistoryFilePath(autoResume: boolean | string): string {
     ensureGlobalConfigDir();
     const sanitizedPath = this.workingDirectory.replace(/[^a-zA-Z0-9]/g, "_");
@@ -412,6 +422,29 @@ If none of the options are suitable, still pick the closest one.`;
     this.conversation.addUserMessage(userInput);
     await this.compactHistoryIfNeeded();
     await this.saveHistory();
+
+    // ── Auto-archive completed tasks on follow-up messages ──────────────
+    // When all tasks are done and the user sends a new message, archive
+    // the completed tasks to _task_history.md and reset _task.md so new
+    // tasks can be created for the follow-up request.
+    this.tasksJustArchived = false;
+    this.archivedTaskCount = 0;
+    if (this.planState === "APPROVED" && !this.isMultiAgent) {
+      try {
+        const taskPath = this.getTaskFilePath();
+        const allDone = await allTasksCompleted(taskPath);
+        if (allDone) {
+          const archived = await archiveCompletedTasks(taskPath);
+          if (archived.length > 0) {
+            this.tasksJustArchived = true;
+            this.archivedTaskCount = archived.length;
+            this.writeToLogFile("INFO", `Auto-archived ${archived.length} completed tasks to history. Ready for new task creation.`);
+          }
+        }
+      } catch (err: any) {
+        this.writeToLogFile("WARN", `Failed to auto-archive completed tasks: ${err.message}`);
+      }
+    }
 
     const signal = this.abortController?.signal;
     let onAbort: (() => void) | undefined;
@@ -578,6 +611,7 @@ PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
 You MUST write/read the planning lifecycle documents at these exact absolute paths for this specific conversation history:
 - Implementation Plan File: ${this.getPlanFilePath()}
 - Task Tracking File: ${this.getTaskFilePath()}
+- Task History File: ${this.getTaskHistoryFilePath()}
 - Verification/Walkthrough File: ${this.getWalkthroughFilePath()}
 
 Whenever you reference these files in your thoughts or messages to the user, always use their absolute paths or format them as absolute file:/// links so the user can click and open them directly.
@@ -594,6 +628,20 @@ You are temporarily in a READ-ONLY mode.
         } else if (this.planState === "APPROVED") {
           planStateAddendum = `\n\n✓ PLAN STATE NOTICE:
 The user has APPROVED your implementation plan. You are now fully authorized to modify codebase files and run commands to execute the plan.`;
+        }
+
+        // ── Follow-up task creation hint ──────────────────────────────────
+        // When tasks were just archived (all were completed, user sent new message),
+        // tell the AI to create new tasks for the follow-up request.
+        let followUpTaskAddendum = "";
+        if (this.tasksJustArchived && i === 0) {
+          followUpTaskAddendum = `\n\n🔄 TASK CHECKLIST RESET NOTICE:
+All ${this.archivedTaskCount} previous tasks were completed and have been archived to the task history file.
+The active task list has been cleared and is ready for new tasks.
+You SHOULD use the 'manage_tasks' tool (action: 'add') or 'manage_plan' tool (action: 'create') to create fresh tasks for the user's new request.
+This ensures the ACTIVE TASK CHECKLIST stays up-to-date with the current work.`;
+          // Reset the flag after injecting on first iteration only
+          this.tasksJustArchived = false;
         }
 
         const currentStep = i + 1;
@@ -613,7 +661,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - Be highly efficient. If the task is complex, requires multiple steps, or involves extensive research/coding across different components, DO NOT try to do everything in a single sequential thread.
 - Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
 - Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.
-${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${guidelinesText}${planStateNotice}${planStateAddendum}${processNotice}`;
+${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${guidelinesText}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}${processNotice}`;
 
         let textContent = "";
         const toolCalls: ToolCall[] = [];
