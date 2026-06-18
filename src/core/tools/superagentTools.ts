@@ -223,6 +223,7 @@ export const invokeSuperagentTool: Tool = {
         } else if (event.type === "error") {
           closeThinkingNode();
           logs.push(`[ERROR] ${event.message}\n`);
+          agentInstance.writeToLogFile("SUPERAGENT_ERROR", event.message);
           notifySuperagentsChanged();
         } else if (event.type === "tool_start") {
           closeThinkingNode();
@@ -381,6 +382,9 @@ export const invokeSuperagentTool: Tool = {
         });
         notifySuperagentsChanged();
         appendMasterLog(`[ERROR] Superagent "${role}" (branch: ${branch}) failed: ${err.message}`);
+        if (inst && inst.agent) {
+          inst.agent.writeToLogFile("SUPERAGENT_FAILED", err.message);
+        }
         return `Superagent "${role}" failed: ${err.message}`;
       }
     };
@@ -1036,6 +1040,9 @@ export const sendMessageToSuperagentTool: Tool = {
         });
         notifySuperagentsChanged();
         appendMasterLog(`[ERROR] Superagent "${inst.role}" (branch: ${inst.branch}) failed: ${err.message}`);
+        if (superagentInst && superagentInst.agent) {
+          superagentInst.agent.writeToLogFile("SUPERAGENT_FAILED", err.message);
+        }
         return `Superagent "${inst.role}" failed: ${err.message}`;
       }
     };

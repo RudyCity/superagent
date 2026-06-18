@@ -237,6 +237,8 @@ export const invokeSubagentTool: Tool = {
             logs.push(`│   ${line}\n`);
           }
           logs.push(`│\n`);
+          instance.agent.writeToLogFile("SUBAGENT_ERROR", event.message);
+          instance.agent.writeToLogFile("SUBAGENT_ERROR", event.message);
           notifySubagentsChanged();
         } else if (event.type === "tool_start") {
           closeThinkingNode();
@@ -345,6 +347,7 @@ export const invokeSubagentTool: Tool = {
         instance.completedAt = Date.now();
         notifySubagentsChanged();
         appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${err.message}`);
+        instance.agent.writeToLogFile("SUBAGENT_FAILED", err.message);
         return `Subagent failed: ${err.message}`;
       }
     } else {
@@ -364,6 +367,7 @@ export const invokeSubagentTool: Tool = {
         instance.completedAt = Date.now();
         notifySubagentsChanged();
         appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${err.message || err}`);
+        instance.agent.writeToLogFile("SUBAGENT_FAILED", err.message || String(err));
       });
 
       return `Invoked subagent "${typeName}" (Role: ${role}) in background. Conversation ID: ${subagentId}`;
@@ -479,6 +483,7 @@ export const sendMessageTool: Tool = {
               logsList.push(`│   ${line}\n`);
             }
             logsList.push(`│\n`);
+            agentInstance.writeToLogFile("SUBAGENT_ERROR", event.message);
             notifySubagentsChanged();
           } else if (event.type === "tool_start") {
             closeThinkingNode();
@@ -589,6 +594,7 @@ export const sendMessageTool: Tool = {
       } catch (err: any) {
         instance.status = "completed";
         notifySubagentsChanged();
+        agentInstance.writeToLogFile("SUBAGENT_FAILED", err.message);
         return `Subagent failed: ${err.message}`;
       }
     } else {
@@ -604,9 +610,10 @@ export const sendMessageTool: Tool = {
         }
         instance.result = result;
         notifySubagentsChanged();
-      }).catch(() => {
+      }).catch((err: any) => {
         instance.status = "completed";
         notifySubagentsChanged();
+        agentInstance.writeToLogFile("SUBAGENT_FAILED", err.message || String(err));
       });
 
       return `Message sent to subagent "${recipientId}". Subagent is processing.`;
