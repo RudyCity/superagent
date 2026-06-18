@@ -1848,6 +1848,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           if (isMulti) { presetModels.MODEL_MULTI_SUBAGENT_REVIEWER = finalModelName; } else { presetModels.MODEL_SINGLE_SUBAGENT_REVIEWER = finalModelName; }
         } else if (tier === "default") {
           presetModels.MODEL = finalModelName;
+          if (!isMulti) {
+            presetModels.MODEL_SINGLE_SUPERAGENT = finalModelName;
+          }
         }
 
         const nextStep = activeWizard.step === 24 ? 22 : 32;

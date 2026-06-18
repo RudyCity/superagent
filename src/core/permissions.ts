@@ -180,6 +180,10 @@ export async function executeToolCall(
 ): Promise<ToolResult> {
   const tool = getToolByName(toolCall.name);
   if (!tool) {
+    try {
+      const { appendMasterLog } = await import("./tools/state.js");
+      appendMasterLog(`[ERROR] Unknown tool called: ${toolCall.name}`);
+    } catch {}
     return {
       toolCallId: toolCall.id,
       name: toolCall.name,
@@ -191,6 +195,12 @@ export async function executeToolCall(
   try {
     const result = await tool.execute(toolCall.args, cwd, signal);
     const isError = isErrorLikeToolResult(result);
+    if (isError) {
+      try {
+        const { appendMasterLog } = await import("./tools/state.js");
+        appendMasterLog(`[ERROR] Tool returned error: ${toolCall.name} | ${String(result).slice(0, 200)}`);
+      } catch {}
+    }
     return {
       toolCallId: toolCall.id,
       name: toolCall.name,
@@ -204,6 +214,10 @@ export async function executeToolCall(
       throw err;
     }
     const message = err instanceof Error ? err.message : String(err);
+    try {
+      const { appendMasterLog } = await import("./tools/state.js");
+      appendMasterLog(`[ERROR] Tool execution failed: ${toolCall.name} | ${message}`);
+    } catch {}
     return {
       toolCallId: toolCall.id,
       name: toolCall.name,

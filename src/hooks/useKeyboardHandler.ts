@@ -182,6 +182,33 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
   const maxProcsVisible = 5;
 
   useInput((inputChar, key) => {
+    // Ctrl+C when wizard is active: always cancel wizard first, never exit app.
+    // This check must be BEFORE focusedResponseIndex and focusMode checks
+    // so Ctrl+C always works to cancel the wizard regardless of UI state.
+    if (key.ctrl && inputChar === "c" && activeWizard) {
+      if (pendingPermission) {
+        pendingPermission.resolve(false);
+        setPendingPermission(null);
+      }
+      if (pendingQuestion) {
+        pendingQuestion.resolve("");
+        setPendingQuestion(null);
+      }
+      setActiveWizard(null);
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
+      setFocusedResponseIndex(null);
+      setFocusedResponseOffset(0);
+      setFocusMode("input");
+      setScrollOffset(0);
+      addLine({
+        type: "system",
+        content: "Wizard cancelled.",
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
     if (focusedResponseIndex !== null && focusedResponseIndex !== undefined) {
       const width = Math.max(20, terminalWidth - 6);
       const maxLines = Math.max(8, Math.min(18, Math.floor(terminalHeight * 0.45)));
@@ -1094,25 +1121,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (key.ctrl && inputChar === "c") {
-      if (activeWizard) {
-        if (pendingPermission) {
-          pendingPermission.resolve(false);
-          setPendingPermission(null);
-        }
-        if (pendingQuestion) {
-          pendingQuestion.resolve("");
-          setPendingQuestion(null);
-        }
-        setActiveWizard(null);
-        setWizardOptions([]);
-        setWizardSelectedIndex(0);
-        addLine({
-          type: "system",
-          content: "Wizard cancelled.",
-          timestamp: Date.now(),
-        });
-        return;
-      }
+      // Note: wizard-active case already handled at top of useInput callback
       if (stopRunningSubagents() > 0) {
         agentRef.current?.abort();
         setIsProcessing(false);

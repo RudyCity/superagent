@@ -258,7 +258,12 @@ If none of the options are suitable, still pick the closest one.`;
       ensureGlobalConfigDir();
       const logPath = path.join(getGlobalConfigDir(), "superagent.log");
       const timestamp = new Date().toISOString();
-      const prefix = `[${timestamp}] [tier:${this.tier}] [depth:${this.delegationDepth}] [multi:${this.isMultiAgent}] [${level}]`;
+      const tier = this.tier;
+      const depth = this.delegationDepth;
+      const multi = this.isMultiAgent;
+      const worktree = this.worktreePath || "-";
+      const subagentType = this.subagentType || "-";
+      const prefix = `[${timestamp}] [tier:${tier}] [depth:${depth}] [multi:${multi}] [worktree:${worktree}] [subagentType:${subagentType}] [${level}]`;
       const lines = message.split("\n");
       const formattedLines = lines.map(line => `${prefix} ${line}`).join("\n") + "\n";
       fs.appendFileSync(logPath, formattedLines, "utf-8");
@@ -433,6 +438,7 @@ If none of the options are suitable, still pick the closest one.`;
         this.onEvent({ type: "text", content: "\n\n[Interrupted]" });
       } else {
         const message = err instanceof Error ? err.message : String(err);
+        this.writeToLogFile("AGENT_ERROR", message);
         this.onEvent({ type: "error", message });
         this.conversation.addMessage({
           role: "system",
@@ -689,6 +695,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   : rawMsg;
                 const prefixMsg = !isRetryable ? "Fatal error" : `Generate text failed after ${maxRetries} retries`;
                 const errMsg = `${prefixMsg}: ${msg}`;
+                this.writeToLogFile("MODEL_ERROR", errMsg);
                 this.onEvent({ type: "error", message: errMsg });
                 this.conversation.addMessage({
                   role: "system",
@@ -800,6 +807,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   : rawMsg;
                 const prefixMsg = !isRetryable ? "Fatal error" : `Stream error after ${maxRetries} retries`;
                 const errMsg = `${prefixMsg}: ${msg}`;
+                this.writeToLogFile("STREAM_ERROR", errMsg);
                 this.onEvent({ type: "error", message: errMsg });
                 this.conversation.addMessage({
                   role: "system",

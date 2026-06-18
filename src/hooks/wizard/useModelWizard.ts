@@ -93,7 +93,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         ];
       } else {
         return [
-          `1. Single Agent Model (${formatVal(models.MODEL_SINGLE || models.MODEL)})`,
+          `1. Single Agent Model (${formatVal(models.MODEL_SINGLE_SUPERAGENT || models.MODEL_SINGLE || models.MODEL)})`,
           `2. Subagent (depth 2) (${formatVal(models.MODEL_SINGLE_SUBAGENT)})`,
           `3. Subagent: researcher (${formatVal(models.MODEL_SINGLE_SUBAGENT_RESEARCHER)})`,
           `4. Subagent: coder (${formatVal(models.MODEL_SINGLE_SUBAGENT_CODER)})`,
@@ -1426,7 +1426,11 @@ export function useModelWizard(ctx: ModelWizardContext) {
           }
         } else if (tier === "default") {
           presetModels.MODEL = finalModelName;
+          if (!isMulti) {
+            presetModels.MODEL_SINGLE_SUPERAGENT = finalModelName;
+          }
         } else if (tier === "single") {
+          presetModels.MODEL_SINGLE_SUPERAGENT = finalModelName;
           presetModels.MODEL_SINGLE = finalModelName;
           presetModels.MODEL = finalModelName;
         }

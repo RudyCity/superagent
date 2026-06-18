@@ -278,8 +278,9 @@ export function applyModelPreset(name: string, mode?: PresetMode): void {
   };
 
   // Build new preset models from the legacy MODEL_* format
+  const singleMain = preset.models.MODEL_SINGLE_SUPERAGENT || preset.models.MODEL_SINGLE || preset.models.MODEL || "";
   const newPreset: any = {
-    superagent: parseModel(preset.models.MODEL_SINGLE_SUPERAGENT || preset.models.MODEL_MULTI_SUPERAGENT || ""),
+    superagent: parseModel(singleMain || preset.models.MODEL_MULTI_SUPERAGENT || ""),
     subagentDefault: parseModel(preset.models.MODEL_SINGLE_SUBAGENT || preset.models.MODEL_MULTI_SUBAGENT || ""),
     subagentDetails: {},
   };
