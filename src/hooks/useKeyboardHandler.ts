@@ -197,10 +197,10 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       setActiveWizard(null);
       setWizardOptions([]);
       setWizardSelectedIndex(0);
-      setFocusedResponseIndex(null);
-      setFocusedResponseOffset(0);
-      setFocusMode("input");
-      setScrollOffset(0);
+      setFocusedResponseIndex?.(null);
+      setFocusedResponseOffset?.(0);
+      setFocusMode?.("input");
+      setScrollOffset?.(0);
       addLine({
         type: "system",
         content: "Wizard cancelled.",
