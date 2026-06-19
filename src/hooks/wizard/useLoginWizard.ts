@@ -17,7 +17,7 @@ import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
 import type { Agent } from "../../core/agent.js";
 import type { ChatLine } from "../../core/slash-commands.js";
-import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel } from "../../core/loginWizardLogic.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint } from "../../core/loginWizardLogic.js";
 
 interface LoginWizardContext {
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
@@ -516,7 +516,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const apiKey = data.providerApiKey || "";
         const baseUrl = data.providerBaseUrl || "";
         let testModel: any;
-        const testModelName = resolveTestModel(providerType, baseUrl);
+        const testModelName = await resolveTestModelAsync(providerType, baseUrl, apiKey);
+        addLine({ type: "system", content: `🧪 Using test model: ${testModelName}`, timestamp: Date.now() });
         if (providerType === "anthropic") {
           const anthropic = createAnthropic({ apiKey });
           testModel = anthropic(testModelName);
@@ -554,7 +555,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         await fetchAndCacheModels();
       } catch {}
       const pType = data.providerType || "";
-      const models = getModelOptions(pType, getCachedModelIds());
+      const pBaseUrl = data.providerBaseUrl || "";
+      const pApiKey = data.providerApiKey || "";
+      // For custom endpoints, fetch models directly from the endpoint
+      // instead of relying on the potentially stale global cache
+      let models: string[];
+      if (pType === "custom" && pBaseUrl) {
+        const endpointModels = await fetchModelsFromEndpoint(pBaseUrl, pApiKey);
+        models = endpointModels.length > 0 ? endpointModels : getModelOptions(pType, getCachedModelIds());
+      } else {
+        models = getModelOptions(pType, getCachedModelIds());
+      }
       setActiveWizard({ type: "login", step: 8, data });
       setWizardOptions(models);
       setWizardSelectedIndex(0);

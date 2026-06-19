@@ -50,7 +50,7 @@ function isRetryableError(err: unknown): boolean {
     const msg = err.message.toLowerCase();
     
     const statusCode = (err as any).statusCode || (err as any).status;
-    if (statusCode === 401 || statusCode === 403 || statusCode === 400) {
+    if (statusCode === 401 || statusCode === 403 || statusCode === 400 || statusCode === 402) {
       return false;
     }
 
@@ -62,7 +62,10 @@ function isRetryableError(err: unknown): boolean {
       msg.includes("authentication") ||
       msg.includes("authorization") ||
       msg.includes("credentials") ||
-      msg.includes("missing authentication header")
+      msg.includes("missing authentication header") ||
+      msg.includes("credit required") ||
+      msg.includes("no_credit") ||
+      msg.includes("payment required")
     ) {
       return false;
     }

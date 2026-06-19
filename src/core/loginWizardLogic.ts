@@ -65,3 +65,64 @@ export function resolveTestModel(providerType: string, baseUrl: string): string 
   }
   return "gpt-4o-mini";
 }
+
+/**
+ * Fetch the list of available models from an OpenAI-compatible endpoint's
+ * `/models` API. Returns an empty array on any failure so callers can
+ * safely fall back to `resolveTestModel()`.
+ */
+export async function fetchModelsFromEndpoint(
+  baseUrl: string,
+  apiKey: string
+): Promise<string[]> {
+  try {
+    const url = `${baseUrl.replace(/\/+$/, "")}/models`;
+    const headers: Record<string, string> = {};
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+    const res = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(10000), // 10s timeout
+    });
+    if (!res.ok) return [];
+
+    const json = (await res.json()) as any;
+    if (json && Array.isArray(json.data)) {
+      return json.data
+        .map((m: any) => m?.id)
+        .filter((id: any): id is string => typeof id === "string" && id.length > 0);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolve the best model to use for a connection test.
+ * For custom endpoints, fetches the available models list first and picks the
+ * first available model. Falls back to the static `resolveTestModel()` when
+ * the endpoint doesn't respond or returns no models.
+ */
+export async function resolveTestModelAsync(
+  providerType: string,
+  baseUrl: string,
+  apiKey: string
+): Promise<string> {
+  // For custom / unknown endpoints, try to fetch models from the endpoint
+  if (
+    providerType === "custom" ||
+    (baseUrl &&
+      !baseUrl.includes("openrouter.ai") &&
+      !baseUrl.includes("openai.com") &&
+      !baseUrl.includes("anthropic.com"))
+  ) {
+    if (baseUrl) {
+      const models = await fetchModelsFromEndpoint(baseUrl, apiKey);
+      if (models.length > 0) {
+        return models[0];
+      }
+    }
+  }
+  return resolveTestModel(providerType, baseUrl);
+}

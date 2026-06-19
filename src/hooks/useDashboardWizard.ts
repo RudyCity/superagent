@@ -37,7 +37,7 @@ import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint } from "../core/checkpoints.js";
 import { allTools } from "../core/tools.js";
 import type { Agent } from "../core/agent.js";
-import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel } from "../core/loginWizardLogic.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint } from "../core/loginWizardLogic.js";
 
 export interface DashboardWizardContext {
   agent: Agent;
@@ -403,7 +403,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           const apiKey = activeWizard.data.providerApiKey || "";
           const baseUrl = activeWizard.data.providerBaseUrl || "";
           let testModel: any;
-          const testModelName = resolveTestModel(providerType, baseUrl);
+          const testModelName = await resolveTestModelAsync(providerType, baseUrl, apiKey);
+          setMasterLogs((prev) => [...prev, `[SYSTEM] Using test model: ${testModelName}`].slice(-500));
           if (providerType === "anthropic") {
             const anthropic = createAnthropic({ apiKey });
             testModel = anthropic(testModelName);
@@ -429,7 +430,17 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           setWizardIsLoadingModels(false);
         }
         try { await fetchAndCacheModels(); } catch {}
-        const models = getModelOptions(activeWizard.data.providerType || "", getCachedModelIds());
+        // For custom endpoints, fetch models directly from the endpoint
+        const _pType7 = activeWizard.data.providerType || "";
+        const _pBaseUrl7 = activeWizard.data.providerBaseUrl || "";
+        const _pApiKey7 = activeWizard.data.providerApiKey || "";
+        let models: string[];
+        if (_pType7 === "custom" && _pBaseUrl7) {
+          const endpointModels = await fetchModelsFromEndpoint(_pBaseUrl7, _pApiKey7);
+          models = endpointModels.length > 0 ? endpointModels : getModelOptions(_pType7, getCachedModelIds());
+        } else {
+          models = getModelOptions(_pType7, getCachedModelIds());
+        }
         setActiveWizard({ type: "login", step: 8, data: activeWizard.data });
         setWizardOptions(models);
         setWizardSelectedIndex(0);
@@ -1271,7 +1282,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           const apiKey = activeWizard.data.providerApiKey || "";
           const baseUrl = activeWizard.data.providerBaseUrl || "";
           let testModel: any;
-          const testModelName = resolveTestModel(providerType, baseUrl);
+          const testModelName = await resolveTestModelAsync(providerType, baseUrl, apiKey);
+          setMasterLogs((prev) => [...prev, `[SYSTEM] Using test model: ${testModelName}`].slice(-500));
           if (providerType === "anthropic") {
             const anthropic = createAnthropic({ apiKey });
             testModel = anthropic(testModelName);
@@ -1297,7 +1309,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           setWizardIsLoadingModels(false);
         }
         try { await fetchAndCacheModels(); } catch {}
-        const models = getModelOptions(activeWizard.data.providerType || "", getCachedModelIds());
+        // For custom endpoints, fetch models directly from the endpoint
+        const _pType97 = activeWizard.data.providerType || "";
+        const _pBaseUrl97 = activeWizard.data.providerBaseUrl || "";
+        const _pApiKey97 = activeWizard.data.providerApiKey || "";
+        let models: string[];
+        if (_pType97 === "custom" && _pBaseUrl97) {
+          const endpointModels = await fetchModelsFromEndpoint(_pBaseUrl97, _pApiKey97);
+          models = endpointModels.length > 0 ? endpointModels : getModelOptions(_pType97, getCachedModelIds());
+        } else {
+          models = getModelOptions(_pType97, getCachedModelIds());
+        }
         setActiveWizard({ type: "model", step: 98, data: activeWizard.data });
         setWizardOptions(models);
         setWizardSelectedIndex(0);
