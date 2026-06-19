@@ -28,6 +28,9 @@ export const newCommand: SlashCommand = {
     const sessionFilePath = ctx.agent?.getCurrentHistoryFilePath() || "";
     if (sessionFilePath) {
       deleteCheckpointsForSession(sessionFilePath).catch(() => {});
+      // Also clean up the task history file so it doesn't orphan
+      const taskHistoryPath = sessionFilePath.replace(/\.json$/, "_task_history.md");
+      fs.unlink(taskHistoryPath).catch(() => {});
     }
 
     // ── 1. Kill and clear background tasks ────────────────

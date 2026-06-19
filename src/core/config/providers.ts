@@ -206,7 +206,7 @@ export function getTierModelWithProvider(mode: ModelMode | "auto", tier: string)
 
   if (!tierConfig?.model) return "";
   if (tierConfig.providerProfileId) {
-    return `${tierConfig.providerProfileId}:${tierConfig.model}`;
+    return `${tierConfig.providerProfileId}@${tierConfig.model}`;
   }
   return tierConfig.model;
 }

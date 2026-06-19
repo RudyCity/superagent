@@ -287,7 +287,7 @@ export function getModelInfoForDisplay(isMulti: boolean): {
     if (tier.providerProfileId) {
       const profile = config.providers.find(p => p.id === tier.providerProfileId);
       if (profile) {
-        return `${profile.provider}:${tier.model}`;
+        return `${profile.provider}@${tier.model}`;
       }
     }
     return tier.model;

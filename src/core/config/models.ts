@@ -161,12 +161,23 @@ export function getModelInstanceForString(modelStr: string) {
   let apiKey = config.apiKey;
   let baseUrl = config.baseUrl;
 
+  // Prefer `@` as the unambiguous profile/model separator. Fall back to `:` for
+  // backward compatibility, but only treat it as a separator when the prefix
+  // does not contain `/` (so model IDs like openrouter/nex-agi/nex-n2-pro:free
+  // are not split at the pricing-tier colon).
+  const atIndex = modelStr.indexOf("@");
   const colonIndex = modelStr.indexOf(":");
-  const prefixBeforeColon = colonIndex > 0 ? modelStr.substring(0, colonIndex).toLowerCase() : "";
-  const isProviderPrefix = colonIndex > 0 && !prefixBeforeColon.includes("/");
+  let separatorIndex = -1;
+  if (atIndex > 0) {
+    separatorIndex = atIndex;
+  } else if (colonIndex > 0 && !modelStr.substring(0, colonIndex).includes("/")) {
+    separatorIndex = colonIndex;
+  }
+  const prefixBeforeSeparator = separatorIndex > 0 ? modelStr.substring(0, separatorIndex).toLowerCase() : "";
+  const isProviderPrefix = separatorIndex > 0 && !prefixBeforeSeparator.includes("/");
   if (isProviderPrefix) {
-    const prefix = prefixBeforeColon;
-    const rest = modelStr.substring(colonIndex + 1);
+    const prefix = prefixBeforeSeparator;
+    const rest = modelStr.substring(separatorIndex + 1);
     const modelConfig = loadModelConfig();
 
     if (prefix === "anthropic") {
@@ -407,11 +418,11 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
   }
   process.env[`PROVIDER_${prefix}_TYPE`] = provider;
 
-  // If modelName already contains a provider prefix (e.g. 'openai:gpt-4o'), do not double-prepend the profileId
-  if (modelName.includes(":")) {
+  // If modelName already contains a provider prefix (e.g. 'openai@gpt-4o'), do not double-prepend the profileId
+  if (modelName.includes("@")) {
     return getModelInstanceForString(modelName);
   }
 
-  return getModelInstanceForString(`${profileId}:${modelName}`);
+  return getModelInstanceForString(`${profileId}@${modelName}`);
 }
 

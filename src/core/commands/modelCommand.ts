@@ -17,7 +17,7 @@ function formatModelWithProvider(tier: any, config: any): string {
   if (tier.providerProfileId) {
     const profile = config.providers.find((p: any) => p.id === tier.providerProfileId);
     if (profile) {
-      return `${profile.provider}:${tier.model}`;
+      return `${profile.provider}@${tier.model}`;
     }
   }
   return tier.model;
@@ -208,7 +208,7 @@ export const modelCommand: SlashCommand = {
         }
 
         savePreset(mode, preset);
-        const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
+        const cleanModelName = modelName.includes("@") ? modelName.substring(modelName.indexOf("@") + 1) : modelName;
         const limit = getContextWindowLimit(cleanModelName);
         
         if (!tierArg && ctx.setContextLimit) {

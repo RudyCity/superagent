@@ -34,6 +34,7 @@ Master Agent  (orchestrator)
 - `src/core/tools/subagentTools.ts` — Superagent tier tools: spawn ephemeral Subagents
 
 ## Coding Guidelines & Constraints
+- **Language — English Only**: All user-facing text strings, UI labels, log messages, comments, variable names, documentation, and any other text content MUST be written in English. No exceptions.
 - **Shell Commands**: On Windows, the actual shell is auto-detected (Git Bash is preferred over PowerShell). If using PowerShell, use `;` to separate commands instead of `&&`. Git Bash supports `&&` normally. The system prompt reports the detected shell accurately.
 - **Strict Naming Rules**: Do NOT mention proprietary brand names like "Claude Code" or generic "CLI" terms in user-facing documentation or UI descriptions. Refer to the project as a terminal-based AI coding assistant.
 - **Workspace Isolation**: Configuration `.env`, logs (`superagent.log`), and session histories MUST be stored in the global home directory under `~/.superagent-r/` instead of cluttering the target project repository. Superagent worktrees are stored under `~/.superagent-r/worktrees/<name>`.

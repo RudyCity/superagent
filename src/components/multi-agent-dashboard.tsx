@@ -47,7 +47,7 @@ import { WizardDialog } from "./wizard-dialog.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint } from "../core/checkpoints.js";
 import { allTools } from "../core/tools.js";
-import { readChecklistTasks } from "../core/taskChecklist.js";
+import { readChecklistTasks, readTaskHistory } from "../core/taskChecklist.js";
 
 // Import extracted subcomponents
 import { RegistryPanel } from "./dashboard/registry-panel.js";
@@ -195,6 +195,7 @@ export function MultiAgentDashboard({
   const [worktreeCount, setWorktreeCount] = useState<number>(0);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
+  const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string }[]>([]);
 
   const [checklistScrollOffset, setChecklistScrollOffset] = useState(0);
   const [agentsScrollOffset, setAgentsScrollOffset] = useState(0);
@@ -261,12 +262,22 @@ export function MultiAgentDashboard({
         const result = await readChecklistTasks(taskPath);
         if (!active) return;
         setChecklistTasks(result.tasks);
+
+        // Also poll the task history file for completed tasks archive
+        try {
+          const history = await readTaskHistory(taskPath);
+          if (!active) return;
+          setCompletedHistory(history);
+        } catch {
+          if (active) setCompletedHistory([]);
+        }
       } catch (err: any) {
         if (agent) {
           agent.writeToLogFile("WARN", `Failed to read task checklist file from path '${taskPath}': ${err.message}`);
         }
         if (active) {
           setChecklistTasks([]);
+          setCompletedHistory([]);
         }
       }
     };
@@ -276,6 +287,7 @@ export function MultiAgentDashboard({
       intervalId = setInterval(check, 2000);
     } else {
       setChecklistTasks([]);
+      setCompletedHistory([]);
     }
 
     return () => {
@@ -696,6 +708,11 @@ export function MultiAgentDashboard({
     const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
     checklistHeight += 3 + checklistCount;
   }
+  // Account for completed history section height
+  if (planState === "APPROVED" && completedHistory.length > 0) {
+    const historyVisible = Math.min(completedHistory.length, 3);
+    checklistHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
+  }
 
   const leftTopHeight = Math.max(5, workspaceHeight - 2 - checklistHeight);
   const feedWidth = Math.max(10, Math.floor(terminalSize.width * 0.58) - 4);
@@ -823,6 +840,7 @@ export function MultiAgentDashboard({
     suggestions,
     planState,
     checklistTasks,
+    completedHistory,
     runningSubagentsCount,
     runningTasksCount,
     setSelectedIndex,
@@ -946,6 +964,7 @@ export function MultiAgentDashboard({
               maxChecklistVisible={maxChecklistVisible}
               agent={agent}
               superagentInstances={superagentInstances}
+              completedHistory={completedHistory}
             />
           </Box>
         </Box>

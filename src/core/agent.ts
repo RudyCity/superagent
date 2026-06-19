@@ -17,7 +17,7 @@ import {
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { AsyncLocalStorage } from "async_hooks";
-import { allTasksCompleted, archiveCompletedTasks } from "./taskChecklist.js";
+import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./taskChecklist.js";
 
 export const agentLocalStorage = new AsyncLocalStorage<Agent>();
 
@@ -295,8 +295,7 @@ If none of the options are suitable, still pick the closest one.`;
   }
 
   public getTaskHistoryFilePath(): string {
-    const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
-    return historyPath.replace(/\.json$/, "_task_history.md");
+    return getTaskHistoryPath(this.getTaskFilePath());
   }
 
   private resolveHistoryFilePath(autoResume: boolean | string): string {
@@ -429,7 +428,7 @@ If none of the options are suitable, still pick the closest one.`;
     // tasks can be created for the follow-up request.
     this.tasksJustArchived = false;
     this.archivedTaskCount = 0;
-    if (this.planState === "APPROVED" && !this.isMultiAgent) {
+    if (this.planState === "APPROVED") {
       try {
         const taskPath = this.getTaskFilePath();
         const allDone = await allTasksCompleted(taskPath);
@@ -1581,6 +1580,8 @@ ${formatted}`;
     this.wasRunningBeforeAbort = false;
     this.isRunning = false;
     this.abortController = null;
+    this.tasksJustArchived = false;
+    this.archivedTaskCount = 0;
   }
 
   getHistory(): Conversation {

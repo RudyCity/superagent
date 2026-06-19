@@ -202,25 +202,25 @@ export function saveModelPreset(name: string, description: string, models?: Reco
     if (activePreset?.models) {
       const m = activePreset.models;
       if (targetMode === "multi") {
-        if (m.master?.model) modelsToSave.MODEL_MULTI_MASTER = `${m.master.providerProfileId}:${m.master.model}`;
-        if (m.superagent?.model) modelsToSave.MODEL_MULTI_SUPERAGENT = `${m.superagent.providerProfileId}:${m.superagent.model}`;
-        if (m.subagentDefault?.model) modelsToSave.MODEL_MULTI_SUBAGENT = `${m.subagentDefault.providerProfileId}:${m.subagentDefault.model}`;
+        if (m.master?.model) modelsToSave.MODEL_MULTI_MASTER = `${m.master.providerProfileId}@${m.master.model}`;
+        if (m.superagent?.model) modelsToSave.MODEL_MULTI_SUPERAGENT = `${m.superagent.providerProfileId}@${m.superagent.model}`;
+        if (m.subagentDefault?.model) modelsToSave.MODEL_MULTI_SUBAGENT = `${m.subagentDefault.providerProfileId}@${m.subagentDefault.model}`;
         if (m.subagentDetails) {
           for (const [type, cfg] of Object.entries(m.subagentDetails)) {
             if (cfg && typeof cfg === "object" && "model" in cfg) {
               const c = cfg as any;
-              modelsToSave[`MODEL_MULTI_SUBAGENT_${type.toUpperCase()}`] = `${c.providerProfileId}:${c.model}`;
+              modelsToSave[`MODEL_MULTI_SUBAGENT_${type.toUpperCase()}`] = `${c.providerProfileId}@${c.model}`;
             }
           }
         }
       } else {
-        if (m.superagent?.model) modelsToSave.MODEL_SINGLE_SUPERAGENT = `${m.superagent.providerProfileId}:${m.superagent.model}`;
-        if (m.subagentDefault?.model) modelsToSave.MODEL_SINGLE_SUBAGENT = `${m.subagentDefault.providerProfileId}:${m.subagentDefault.model}`;
+        if (m.superagent?.model) modelsToSave.MODEL_SINGLE_SUPERAGENT = `${m.superagent.providerProfileId}@${m.superagent.model}`;
+        if (m.subagentDefault?.model) modelsToSave.MODEL_SINGLE_SUBAGENT = `${m.subagentDefault.providerProfileId}@${m.subagentDefault.model}`;
         if (m.subagentDetails) {
           for (const [type, cfg] of Object.entries(m.subagentDetails)) {
             if (cfg && typeof cfg === "object" && "model" in cfg) {
               const c = cfg as any;
-              modelsToSave[`MODEL_SINGLE_SUBAGENT_${type.toUpperCase()}`] = `${c.providerProfileId}:${c.model}`;
+              modelsToSave[`MODEL_SINGLE_SUBAGENT_${type.toUpperCase()}`] = `${c.providerProfileId}@${c.model}`;
             }
           }
         }
@@ -267,11 +267,18 @@ export function applyModelPreset(name: string, mode?: PresetMode): void {
     throw new Error(`Model preset "${name}" not found in ${targetMode}-agent presets.`);
   }
 
-  // Parse preset models into tier config format
+  // Parse preset models into tier config format.
+  // Use `@` as the profile/model separator to avoid ambiguity with model names
+  // that themselves contain `:`, e.g. openrouter/nex-agi/nex-n2-pro:free.
   const parseModel = (val: string) => {
     if (!val) return undefined;
+    const atIndex = val.indexOf("@");
+    if (atIndex > 0) {
+      return { providerProfileId: val.substring(0, atIndex), model: val.substring(atIndex + 1) };
+    }
+    // Backward compatibility: legacy presets used `:` as the separator.
     const colonIndex = val.indexOf(":");
-    if (colonIndex > 0) {
+    if (colonIndex > 0 && !val.substring(0, colonIndex).includes("/")) {
       return { providerProfileId: val.substring(0, colonIndex), model: val.substring(colonIndex + 1) };
     }
     return { providerProfileId: "", model: val };
@@ -309,9 +316,9 @@ export function applyModelPreset(name: string, mode?: PresetMode): void {
 
   // Switch active provider if model has a provider prefix
   const mainModel = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "";
-  if (mainModel && mainModel.includes(":")) {
-    const providerId = mainModel.split(":")[0].toLowerCase();
-    switchActiveProvider(providerId);
+  if (mainModel) {
+    const providerId = mainModel.includes("@") ? mainModel.split("@")[0].toLowerCase() : mainModel.includes(":") ? mainModel.split(":")[0].toLowerCase() : "";
+    if (providerId) switchActiveProvider(providerId);
   }
 }
 

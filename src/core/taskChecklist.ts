@@ -10,9 +10,22 @@ export interface ReadChecklistResult {
   missing: boolean;
 }
 
+/** A group of completed tasks from a single archive round. */
+export interface HistoryRound {
+  /** The timestamp label from the "## Completed: <label>" header. */
+  round: string;
+  tasks: ChecklistTask[];
+}
+
+/** Maximum number of archive rounds to keep in the history file. */
+const MAX_HISTORY_ROUNDS = 10;
+
 /**
  * Derive the task history file path from the active task file path.
- * e.g. "session_task.md" → "session_task_history.md"
+ * e.g. "session_task.md" -> "session_task_history.md"
+ *
+ * This is the single source of truth for history path derivation.
+ * agent.getTaskHistoryFilePath() delegates to this function.
  */
 export function getTaskHistoryPath(taskPath: string): string {
   return taskPath.replace(/_task\.md$/, "_task_history.md");
@@ -64,7 +77,8 @@ export async function allTasksCompleted(taskPath: string): Promise<boolean> {
  * then clear the active task file so new tasks can be created fresh.
  *
  * The history file accumulates completed tasks across multiple rounds,
- * each round separated by a timestamped header.
+ * each round separated by a timestamped header. Old rounds beyond
+ * MAX_HISTORY_ROUNDS are trimmed to prevent unbounded growth.
  *
  * Returns the list of archived tasks (empty if nothing was archived).
  */
@@ -79,33 +93,60 @@ export async function archiveCompletedTasks(taskPath: string): Promise<Checklist
 
   // Append to history with a timestamped section header
   const timestamp = new Date().toLocaleString();
-  const historyLines = [
+  const newSection = [
     `## Completed: ${timestamp}`,
     ...completed.map((t) => `- [x] ${t.text}`),
     "",
-  ];
+  ].join("\n");
 
   try {
     const existing = await fs.readFile(historyPath, "utf-8");
-    await fs.writeFile(historyPath, existing + "\n" + historyLines.join("\n"), "utf-8");
+    const trimmed = trimHistoryRounds(existing, MAX_HISTORY_ROUNDS - 1);
+    await fs.writeFile(historyPath, trimmed + "\n" + newSection + "\n", "utf-8");
   } catch (err: any) {
     if (err?.code === "ENOENT") {
-      await fs.writeFile(historyPath, "# Task History\n\n" + historyLines.join("\n"), "utf-8");
+      await fs.writeFile(historyPath, "# Task History\n\n" + newSection + "\n", "utf-8");
     } else {
       throw err;
     }
   }
 
-  // Clear the active task file — keep only a header so it's not "missing"
-  await fs.writeFile(taskPath, "# Active Tasks\n\n_No active tasks yet._\n", "utf-8");
+  // Clear the active task file — write empty content so manage_tasks "add"
+  // starts fresh without orphaned placeholder text
+  await fs.writeFile(taskPath, "", "utf-8");
 
   return completed;
 }
 
 /**
- * Read the archived completed tasks from _task_history.md.
- * Returns the parsed tasks (all with status "x") and the raw sections
- * for display purposes.
+ * Trim history content to keep only the last N rounds (sections).
+ * Rounds are delimited by "## Completed:" headers.
+ */
+function trimHistoryRounds(content: string, maxRounds: number): string {
+  const lines = content.split(/\r?\n/);
+  const headerIndices: number[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith("## Completed:")) {
+      headerIndices.push(i);
+    }
+  }
+
+  if (headerIndices.length <= maxRounds) return content;
+
+  // Keep everything before the first header we want to preserve
+  const keepFrom = headerIndices[headerIndices.length - maxRounds];
+
+  // Preserve the "# Task History" header line if present
+  const headerLine = lines[0]?.startsWith("# Task History") ? lines[0] + "\n\n" : "";
+  const keptLines = lines.slice(keepFrom).join("\n");
+
+  return headerLine + keptLines;
+}
+
+/**
+ * Read the archived completed tasks from _task_history.md as a flat list.
+ * Returns all tasks with status "x".
  */
 export async function readTaskHistory(taskPath: string): Promise<ChecklistTask[]> {
   const historyPath = getTaskHistoryPath(taskPath);
@@ -116,4 +157,52 @@ export async function readTaskHistory(taskPath: string): Promise<ChecklistTask[]
     if (err?.code === "ENOENT") return [];
     throw err;
   }
+}
+
+/**
+ * Read the archived completed tasks grouped by archive round.
+ * Each round preserves its timestamp label and the tasks within it.
+ * Useful for displaying history with temporal context.
+ */
+export async function readTaskHistoryGrouped(taskPath: string): Promise<HistoryRound[]> {
+  const historyPath = getTaskHistoryPath(taskPath);
+  try {
+    const content = await fs.readFile(historyPath, "utf-8");
+    return parseHistoryRounds(content);
+  } catch (err: any) {
+    if (err?.code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+/**
+ * Parse history content into grouped rounds.
+ */
+function parseHistoryRounds(content: string): HistoryRound[] {
+  const lines = content.split(/\r?\n/);
+  const rounds: HistoryRound[] = [];
+  let currentRound: HistoryRound | null = null;
+
+  for (const line of lines) {
+    const headerMatch = line.match(/^## Completed:\s*(.*)$/);
+    if (headerMatch) {
+      currentRound = { round: headerMatch[1].trim(), tasks: [] };
+      rounds.push(currentRound);
+      continue;
+    }
+
+    if (currentRound) {
+      const taskMatch =
+        line.match(/^\s*-\s*`\[([xX/ ])\]`?\s*(.*)$/) ||
+        line.match(/^\s*-\s*\[([xX/ ])\]\s*(.*)$/);
+      if (taskMatch) {
+        currentRound.tasks.push({
+          status: taskMatch[1].toLowerCase(),
+          text: taskMatch[2].trim(),
+        });
+      }
+    }
+  }
+
+  return rounds;
 }

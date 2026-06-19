@@ -133,8 +133,15 @@ try {
 }
 
 function parseTierConfig(val: string) {
+  // Use `@` as the profile/model separator to avoid ambiguity with model names
+  // that themselves contain `:`, e.g. openrouter/nex-agi/nex-n2-pro:free.
+  const atIndex = (val || "").indexOf("@");
+  if (atIndex > 0) {
+    return { providerProfileId: val.substring(0, atIndex), model: val.substring(atIndex + 1) };
+  }
+  // Backward compatibility: legacy values used `:` as the separator.
   const colonIndex = (val || "").indexOf(":");
-  if (colonIndex > 0) {
+  if (colonIndex > 0 && !val.substring(0, colonIndex).includes("/")) {
     return { providerProfileId: val.substring(0, colonIndex), model: val.substring(colonIndex + 1) };
   }
   return { providerProfileId: "default-openai", model: val || "gpt-4o" };

@@ -16,6 +16,7 @@ export interface Checkpoint {
   planState: "IDLE" | "PLANNING_PENDING" | "APPROVED";
   planFileContent?: string;
   taskFileContent?: string;
+  taskHistoryFileContent?: string;
   walkthroughFileContent?: string;
   gitSha?: string;
 }
@@ -47,10 +48,12 @@ export async function createCheckpoint(
 ): Promise<Checkpoint> {
   const planPath = sessionFilePath.replace(/\.json$/, "_implementation_plan.md");
   const taskPath = sessionFilePath.replace(/\.json$/, "_task.md");
+  const taskHistoryPath = sessionFilePath.replace(/\.json$/, "_task_history.md");
   const walkthroughPath = sessionFilePath.replace(/\.json$/, "_walkthrough.md");
 
   let planFileContent: string | undefined;
   let taskFileContent: string | undefined;
+  let taskHistoryFileContent: string | undefined;
   let walkthroughFileContent: string | undefined;
 
   try {
@@ -58,6 +61,9 @@ export async function createCheckpoint(
   } catch {}
   try {
     taskFileContent = await fs.readFile(taskPath, "utf-8");
+  } catch {}
+  try {
+    taskHistoryFileContent = await fs.readFile(taskHistoryPath, "utf-8");
   } catch {}
   try {
     walkthroughFileContent = await fs.readFile(walkthroughPath, "utf-8");
@@ -76,6 +82,7 @@ export async function createCheckpoint(
     planState,
     planFileContent,
     taskFileContent,
+    taskHistoryFileContent,
     walkthroughFileContent,
     gitSha,
   };
@@ -159,9 +166,10 @@ export async function restoreCheckpoint(
   };
   await fs.writeFile(sessionFilePath, JSON.stringify(sessionData, null, 2), "utf-8");
 
-  // Re-sync plan, task, and walkthrough markdown files
+  // Re-sync plan, task, task history, and walkthrough markdown files
   const planPath = sessionFilePath.replace(/\.json$/, "_implementation_plan.md");
   const taskPath = sessionFilePath.replace(/\.json$/, "_task.md");
+  const taskHistoryPath = sessionFilePath.replace(/\.json$/, "_task_history.md");
   const walkthroughPath = sessionFilePath.replace(/\.json$/, "_walkthrough.md");
 
   if (checkpoint.planFileContent !== undefined) {
@@ -177,6 +185,14 @@ export async function restoreCheckpoint(
   } else {
     try {
       await fs.unlink(taskPath);
+    } catch {}
+  }
+
+  if (checkpoint.taskHistoryFileContent !== undefined) {
+    await fs.writeFile(taskHistoryPath, checkpoint.taskHistoryFileContent, "utf-8");
+  } else {
+    try {
+      await fs.unlink(taskHistoryPath);
     } catch {}
   }
 

@@ -514,28 +514,29 @@ export function App({
   const getWizardQuestion = () => {
     if (!activeWizard) return null;
     if (activeWizard.type === "login") {
-      if (activeWizard.step === 1) return "Pilih apakah ingin melihat provider yang sudah dikonfigurasi atau membuat provider baru.";
-      if (activeWizard.step === 2) return "Pilih jenis provider yang ingin dikonfigurasi.";
-      if (activeWizard.step === 3) return "Masukkan nama profil provider (atau tekan Enter untuk default).";
-      if (activeWizard.step === 4) return "Masukkan Base URL untuk custom endpoint.";
-      if (activeWizard.step === 5) return "Tempel API key untuk provider ini.";
-      if (activeWizard.step === 6) return "Pilih provider dari daftar yang sudah dikonfigurasi.";
-      if (activeWizard.step === 7) return "Pilih apakah ingin menguji koneksi ke provider terlebih dahulu.";
-      if (activeWizard.step === 8) return "Pilih model yang tersedia (ketik untuk filter).";
-      if (activeWizard.step === 9) return "Ketik pesan test yang ingin dikirim ke model.";
-      if (activeWizard.step === 10) return "Pilih stack teknologi untuk project baru.";
-      if (activeWizard.step === 11) return "Masukkan nama project (atau tekan Enter untuk default).";
-      if (activeWizard.step === 12) return "Masukkan deskripsi singkat project.";
-      if (activeWizard.step === 13) return "Jelaskan project yang ingin dibangun, AI akan membuatkan spesifikasi.";
+      if (activeWizard.step === 1) return "Select whether to view configured providers or create a new one.";
+      if (activeWizard.step === 2) return "Select the provider type to configure.";
+      if (activeWizard.step === 3) return "Enter a name for the provider profile (or press Enter for default).";
+      if (activeWizard.step === 4) return "Enter the custom endpoint base URL.";
+      if (activeWizard.step === 5) return "Paste the API key for this provider.";
+      if (activeWizard.step === 6) return "Select a provider from the configured list.";
+      if (activeWizard.step === 7) return "Select whether to test the provider connection first.";
+      if (activeWizard.step === 8) return "Select an available model (type to filter).";
+      if (activeWizard.step === 9) return "Type a test message to send to the model.";
+      if (activeWizard.step === 10) return "Select the technology stack for the new project.";
+      if (activeWizard.step === 11) return "Enter the project name (or press Enter for folder default).";
+      if (activeWizard.step === 12) return "Enter a short project description.";
+      if (activeWizard.step === 13) return "Describe the project you want to build; AI will create a specification.";
+
     }
     if (activeWizard.type === "model") {
       if (activeWizard.step === 1) return "Pilih opsi konfigurasi model.";
       if (activeWizard.step === 2) return "Pilih provider untuk tier model.";
       if (activeWizard.step === 3) return "Pilih profil provider yang sudah dikonfigurasi, atau buat profil baru.";
-      if (activeWizard.step === 16) return "Masukkan nama profil provider baru.";
-      if (activeWizard.step === 17) return "Masukkan Base URL untuk custom endpoint.";
-      if (activeWizard.step === 18) return "Tempel API key untuk profil baru.";
-      if (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) return "Pilih model yang tersedia (ketik untuk filter).";
+      if (activeWizard.step === 6) return "Enter a name for the new provider profile.";
+      if (activeWizard.step === 7) return "Enter the custom endpoint base URL.";
+      if (activeWizard.step === 8) return "Paste the API key for the new provider profile.";
+      if (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) return "Select an available model (type to filter).";
     }
     if (activeWizard.type === "question") {
       return pendingQuestion?.question || "Pilih salah satu opsi atau jawaban custom.";
@@ -577,9 +578,9 @@ export function App({
       if (activeWizard.step === 40) return "Select preset to delete using arrows and Enter...";
       if (activeWizard.step === 41) return "Select confirmation using arrows and Enter...";
       if (activeWizard.step === 50) return "Select agent tier using arrows and Enter...";
-      if (activeWizard.step === 16) return "Enter config profile name (or press Enter for default)...";
-      if (activeWizard.step === 17) return "Enter Custom Base URL...";
-      if (activeWizard.step === 18) return "Paste API key...";
+      if (activeWizard.step === 6) return "Enter config profile name (or press Enter for default)...";
+      if (activeWizard.step === 7) return "Enter Custom Base URL...";
+      if (activeWizard.step === 8) return "Paste API key...";
       return wizardOptions.length > 0
         ? "🔍 Search models (type to filter, arrows to navigate, Enter to select)..."
         : "Enter model name (e.g. google/gemini-2.5-flash)...";
