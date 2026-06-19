@@ -487,7 +487,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     } else if (step === 7) {
       // Step 7: Confirm connection test
       const choice = value.toLowerCase();
-      const skipTest = choice.includes("tidak") || choice === "2" || choice === "no";
+      const skipTest = choice.includes("tidak") || choice.includes("no") || choice === "2" || choice.startsWith("2.");
+      if (!data || !data.providerType) {
+        addLine({ type: "error", content: "Provider data is missing. Please re-select or create a provider.", timestamp: now });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        return;
+      }
       if (skipTest) {
         addLine({ type: "system", content: "Connection test skipped.", timestamp: now });
         // Continue to step 8: select model

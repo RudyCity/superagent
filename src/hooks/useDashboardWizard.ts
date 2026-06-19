@@ -377,7 +377,14 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         setWizardSelectedIndex(0);
       } else if (activeWizard.step === 7) {
         const choice = value.toLowerCase();
-        const skipTest = choice.includes("tidak") || choice === "2" || choice === "no";
+        const skipTest = choice.includes("tidak") || choice.includes("no") || choice === "2" || choice.startsWith("2.");
+        if (!activeWizard.data || !activeWizard.data.providerType) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Provider data is missing. Please re-select or create a provider.`].slice(-500));
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
         if (skipTest) {
           setMasterLogs((prev) => [...prev, `[SYSTEM] Connection test skipped.`].slice(-500));
           const models = getModelOptions(activeWizard.data.providerType || "", getCachedModelIds());
