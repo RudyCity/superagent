@@ -124,6 +124,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     webSearchTool,
     fetchUrlTool,
     searchHistoryTool,
+    askQuestionTool,
   ],
 
   coder: [
@@ -139,6 +140,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     runCommandTool,
     bashTool,
     webSearchTool,
+    askQuestionTool,
   ],
 
   reviewer: [
@@ -149,6 +151,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     runCommandTool,
     bashTool,
     webSearchTool,
+    askQuestionTool,
   ],
 
   "manual-tester": [
@@ -160,6 +163,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     runBackgroundProcessTool,
     screenshotTool,
     webSearchTool,
+    askQuestionTool,
   ],
 };
 
@@ -173,4 +177,5 @@ export const defaultSubagentToolset: Tool[] = [
   replaceFileContentTool,
   runCommandTool,
   bashTool,
+  askQuestionTool,
 ];
