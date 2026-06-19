@@ -61,6 +61,13 @@ export const invokeSuperagentTool: Tool = {
         type: "string",
         description: "Git branch name for this feature, e.g. 'feat/auth-module'",
       },
+      baseBranch: {
+        type: "string",
+        description:
+          "Optional: the branch to create the worktree FROM. Use this when the Superagent " +
+          "needs to build on top of another feature branch instead of the current HEAD. " +
+          "Example: 'feat/separate-compressor-menu'.",
+      },
       wait: {
         type: "boolean",
         description: "If true, block and wait for the Superagent to finish before returning. Default: false (parallel).",
@@ -78,6 +85,15 @@ export const invokeSuperagentTool: Tool = {
         items: { type: "string" },
         description: "Explicit list of acceptance criteria or test cases to pass (optional).",
       },
+      mode: {
+        type: "string",
+        enum: ["full", "patch"],
+        description:
+          "Execution mode. 'full' (default): creates an isolated git worktree for the Superagent. " +
+          "'patch': lightweight mode — reuses the parent's worktree, skips worktree creation, " +
+          "ideal for small targeted fixes (e.g. fixing 1-2 lines of corruption). " +
+          "Patch mode is faster but the Superagent operates in the same working directory as the parent.",
+      },
     },
     required: ["role", "task", "branch"],
   },
@@ -86,10 +102,13 @@ export const invokeSuperagentTool: Tool = {
     const role = args.role as string;
     const task = args.task as string;
     const branch = args.branch as string;
+    const baseBranch = args.baseBranch as string | undefined;
     const typeName = args.typeName as string | undefined;
     const wait = args.wait === true;
     const constraints = args.constraints as string | undefined;
     const acceptanceCriteria = args.acceptanceCriteria as string[] | undefined;
+    const mode = (args.mode as string | undefined) || "full";
+    const isPatchMode = mode === "patch";
 
     // Only depth-0 (Master Agent) may invoke Superagents
     const parentAgent = agentLocalStorage.getStore();
@@ -110,46 +129,70 @@ export const invokeSuperagentTool: Tool = {
     // Sanitize branch name for use as a directory name
     const safeBranchName = branch.replace(/\//g, "-").replace(/[^a-zA-Z0-9-_]/g, "");
 
-    // Ensure .gitignore has .worktrees and prune orphaned worktrees
-    ensureGitIgnore();
-    try {
-      await pruneWorktrees();
-    } catch {
-      // Ignore if not in git
-    }
+    let worktreePath: string;
 
-    // Create .worktrees directory if it doesn't exist
-    const worktreesDir = path.join(cwd, ".worktrees");
-    if (!fs.existsSync(worktreesDir)) {
-      fs.mkdirSync(worktreesDir, { recursive: true });
-    }
-    const worktreePath = path.join(worktreesDir, safeBranchName);
-
-    // Create git worktree + branch
-    if (fs.existsSync(worktreePath)) {
-      // Worktree already exists — reuse it
-    } else {
+    if (isPatchMode) {
+      // ── Patch mode: reuse parent's working directory, no worktree creation ──
+      worktreePath = cwd;
+      appendMasterLog(`[INFO] Patch mode: Superagent "${role}" will operate in parent worktree: ${cwd}`);
+      
+      // Safety check: warn if there are uncommitted changes in the parent worktree
       try {
-        await execa("git", ["worktree", "add", "-b", branch, worktreePath], { cwd });
+        const { stdout } = await execa("git", ["status", "--porcelain"], { cwd });
+        if (stdout.trim().length > 0) {
+          appendMasterLog(`[WARN] Patch mode: Parent worktree has uncommitted changes. This may cause conflicts.`);
+        }
       } catch {
-        // Branch might already exist — try without -b
+        // Ignore git errors (might not be a git repo)
+      }
+    } else {
+      // ── Full mode: create isolated git worktree ──────────────────────────
+
+      // Ensure .gitignore has .worktrees and prune orphaned worktrees
+      ensureGitIgnore();
+      try {
+        await pruneWorktrees();
+      } catch {
+        // Ignore if not in git
+      }
+
+      // Create .worktrees directory if it doesn't exist
+      const worktreesDir = path.join(cwd, ".worktrees");
+      if (!fs.existsSync(worktreesDir)) {
+        fs.mkdirSync(worktreesDir, { recursive: true });
+      }
+      worktreePath = path.join(worktreesDir, safeBranchName);
+
+      // Determine the base ref for the worktree (baseBranch or HEAD)
+      const baseRef = baseBranch || "HEAD";
+
+      // Create git worktree + branch
+      if (fs.existsSync(worktreePath)) {
+        // Worktree already exists — reuse it
+      } else {
         try {
-          await execa("git", ["worktree", "add", worktreePath, branch], { cwd });
-        } catch (err2: any) {
-          return `Error: Failed to create git worktree for branch "${branch}" at "${worktreePath}": ${err2.message}`;
+          // Try creating from the specified base ref
+          await execa("git", ["worktree", "add", "-b", branch, worktreePath, baseRef], { cwd });
+        } catch {
+          try {
+            // Branch might already exist — try without -b
+            await execa("git", ["worktree", "add", worktreePath, branch], { cwd });
+          } catch (err2: any) {
+            return `Error: Failed to create git worktree for branch "${branch}" at "${worktreePath}" (baseRef: ${baseRef}): ${err2.message}`;
+          }
         }
       }
-    }
 
-    // Link node_modules to make setup instant and allow test execution
-    const rootNodeModules = path.join(cwd, "node_modules");
-    const targetNodeModules = path.join(worktreePath, "node_modules");
-    if (fs.existsSync(rootNodeModules) && !fs.existsSync(targetNodeModules)) {
-      const type = process.platform === "win32" ? "junction" : "dir";
-      try {
-        await fs.promises.symlink(rootNodeModules, targetNodeModules, type);
-      } catch (symlinkErr) {
-        // Ignore if symlink already exists or fails
+      // Link node_modules to make setup instant and allow test execution
+      const rootNodeModules = path.join(cwd, "node_modules");
+      const targetNodeModules = path.join(worktreePath, "node_modules");
+      if (fs.existsSync(rootNodeModules) && !fs.existsSync(targetNodeModules)) {
+        const type = process.platform === "win32" ? "junction" : "dir";
+        try {
+          await fs.promises.symlink(rootNodeModules, targetNodeModules, type);
+        } catch (symlinkErr) {
+          // Ignore if symlink already exists or fails
+        }
       }
     }
 
@@ -287,6 +330,12 @@ export const invokeSuperagentTool: Tool = {
     agentInstance.tier = "superagent";
     agentInstance.worktreePath = worktreePath;
     agentInstance.isMultiAgent = true;
+
+    // ── CRITICAL: Spawned agents are STATELESS executors ─────────────────
+    // They must NEVER read plan state and block themselves. The Master Agent
+    // has already approved the plan — spawned agents just execute.
+    // This prevents the "Plan pending approval" self-blocking bug.
+    agentInstance.planState = "APPROVED";
 
     // Register the instance in global state
     const instance = {
@@ -585,7 +634,13 @@ export const mergeSuperagentsTool: Tool = {
         superagentInstances.delete(inst.id);
         notifySuperagentsChanged();
       } else {
-        results.push(`  ❌ Merge failed: ${inst.branch} (${inst.role}) — manual resolution required`);
+        results.push(`  ❌ Merge failed: ${inst.branch} (${inst.role})`);
+        // Include detailed error info from MasterAgent validation
+        if (master.lastMergeErrors.length > 0) {
+          results.push(`     Reason: ${master.lastMergeErrors.join("\n     ")}`);
+        } else {
+          results.push(`     Reason: manual resolution required`);
+        }
         // Mark as error so it shows in dashboard
         superagentInstances.set(inst.id, { ...inst, status: "error" });
         notifySuperagentsChanged();
@@ -951,6 +1006,12 @@ export const sendMessageToSuperagentTool: Tool = {
       if (inst.historyFilePath) {
         await agentInstance.loadHistoryFromPath(inst.historyFilePath);
       }
+
+      // ── CRITICAL: Spawned agents are STATELESS executors ─────────────────
+      // Set planState AFTER loadHistoryFromPath, because loadHistoryFromPath
+      // overwrites planState from conversation file. We must override it here
+      // to prevent the agent from self-blocking on PLANNING_PENDING.
+      agentInstance.planState = "APPROVED";
 
       inst.agent = agentInstance;
       inst.status = "running";

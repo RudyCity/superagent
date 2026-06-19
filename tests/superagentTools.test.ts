@@ -173,6 +173,88 @@ describe("superagentTools", () => {
       // Wait for background promise to finish to clean up
       await new Promise((resolve) => setTimeout(resolve, 70));
     });
+
+    it("should set planState to APPROVED on spawned agent (stateless executor)", async () => {
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
+
+      vi.spyOn(fs, "existsSync").mockReturnValue(false);
+      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+
+      await agentLocalStorage.run(parentAgent, () => {
+        return invokeSuperagentTool.execute(
+          { role: "test-dev", task: "write tests", branch: "feat/tests", wait: false },
+          process.cwd()
+        );
+      });
+
+      const { Agent } = await import("../src/core/agent.js");
+      const argsPassed = (Agent as any).constructorArgs;
+      const lastArgs = argsPassed[argsPassed.length - 1];
+      // The Agent constructor is called, and then planState is set to APPROVED after.
+      // We verify the instance was registered and the agent's planState is APPROVED.
+      const instance = Array.from(superagentInstances.values()).find(i => i.role === "test-dev");
+      expect(instance).toBeDefined();
+      expect(instance!.agent.planState).toBe("APPROVED");
+
+      // Wait for background promise to finish to clean up
+      await new Promise((resolve) => setTimeout(resolve, 70));
+    });
+
+    it("should create worktree from baseBranch when specified", async () => {
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
+
+      vi.spyOn(fs, "existsSync").mockReturnValue(false);
+      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+
+      await agentLocalStorage.run(parentAgent, () => {
+        return invokeSuperagentTool.execute(
+          { role: "fix-dev", task: "fix corruption", branch: "fix/html", baseBranch: "feat/separate-menu", wait: false },
+          process.cwd()
+        );
+      });
+
+      // Verify git worktree add was called with the baseBranch ref
+      expect(execa).toHaveBeenCalledWith(
+        "git",
+        ["worktree", "add", "-b", "fix/html", expect.stringContaining("fix-html"), "feat/separate-menu"],
+        expect.any(Object)
+      );
+
+      // Wait for background promise to finish to clean up
+      await new Promise((resolve) => setTimeout(resolve, 70));
+    });
+
+    it("should skip worktree creation in patch mode and use parent cwd", async () => {
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
+
+      vi.spyOn(fs, "existsSync").mockReturnValue(false);
+      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+      vi.mocked(execa).mockClear();
+      vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
+
+      const cwd = process.cwd();
+
+      await agentLocalStorage.run(parentAgent, () => {
+        return invokeSuperagentTool.execute(
+          { role: "patch-fix", task: "fix 1 line", branch: "fix/quick", mode: "patch", wait: false },
+          cwd
+        );
+      });
+
+      // In patch mode, git worktree add should NOT be called
+      const worktreeAddCalls = vi.mocked(execa).mock.calls.filter(
+        call => call[0] === "git" && call[1] && call[1][0] === "worktree" && call[1][1] === "add"
+      );
+      expect(worktreeAddCalls).toHaveLength(0);
+
+      // The agent's worktreePath should be the parent cwd
+      const instance = Array.from(superagentInstances.values()).find(i => i.role === "patch-fix");
+      expect(instance).toBeDefined();
+      expect(instance!.worktreePath).toBe(cwd);
+
+      // Wait for background promise to finish to clean up
+      await new Promise((resolve) => setTimeout(resolve, 70));
+    });
   });
 
   describe("awaitSuperagentsTool", () => {

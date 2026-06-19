@@ -969,6 +969,13 @@ export const managePlanTool: Tool = {
         let syncStatus = "";
         try {
           syncStatus = await syncTasks(enhancedPlanContent);
+          
+          // If syncTasks returned "No checklist tasks found", create a minimal task file
+          if (syncStatus.includes("No checklist tasks found")) {
+            await fs.mkdir(path.dirname(taskPath), { recursive: true });
+            await fs.writeFile(taskPath, "# Tasks\n- [ ] Execute implementation plan\n", "utf-8");
+            syncStatus += "\nCreated minimal task file.";
+          }
         } catch (syncErr: any) {
           return `Error: Plan was written to ${planPath}, but task synchronization failed: ${syncErr.message}`;
         }

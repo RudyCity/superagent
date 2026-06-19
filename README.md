@@ -123,8 +123,35 @@ For complex changes, the Master Agent enforces structured planning and execution
 - **Structured Delegation**: When invoking a Superagent, the Master Agent specifies explicit task `constraints` (files or logic NOT to modify) and `acceptanceCriteria` (a checklist of specific test cases to satisfy).
 - **Approval Checkpoint**: The plan is written to the workspace root as `implementation_plan.md` and requires explicit user review and approval before any execution begins, guaranteeing complete oversight.
 
+### 6. Safe Merge Strategy (v2)
+The merge system uses a **safe-by-default** strategy that prevents file corruption:
+- **Line-Based Conflict Resolution**: When conflicts occur, the system first attempts safe line-based resolution (e.g., one side is empty, both sides identical, or one side is a subset). Only trivially safe conflicts are auto-resolved.
+- **Universal Post-Merge Validation**: After a clean merge (or successful line-based resolution), the system runs validation checks:
+  - Conflict marker detection (leftover `<<<<<<<` in files)
+  - Duplicate adjacent lines detection
+  - Duplicate attributes detection
+  - Line merging detection (multiple statements crammed onto one line)
+  - Diff sanity check (abnormally large diffs)
+  - Project-level validation (build/test/lint scripts)
+- **Auto-Revert on Failure**: If validation fails, the merge is automatically reverted before committing. No corrupted files are ever committed.
+- **Manual Resolution Required**: Complex conflicts that cannot be safely resolved are aborted and reported to the user for manual resolution.
 
-### 6. Centralized Logging
+### 7. Advanced Superagent Modes
+- **Patch Mode** (`mode: 'patch'`): Lightweight mode that skips worktree creation and operates directly in the parent's working directory. Ideal for small, targeted fixes (1-2 lines). Much faster than spawning a full Superagent. Includes safety warnings if the parent worktree has uncommitted changes.
+- **Base Branch** (`baseBranch: 'feat/...'`): When a Superagent needs to build on top of another feature branch instead of the current HEAD, specify `baseBranch` to create the worktree from that branch. Useful for dependent features or building on top of in-progress work.
+
+Example:
+```
+invoke_superagent({
+  role: 'fix-html-corrupt',
+  task: 'Fix duplicate closing tags in Toolbar component',
+  branch: 'fix/toolbar-html',
+  baseBranch: 'feat/separate-compressor-menu',  // Build on top of this branch
+  mode: 'patch'  // Quick fix, no worktree needed
+})
+```
+
+### 8. Centralized Logging
 All agent operations, including single-agent and 3-tier multi-agent processes, are dynamically logged to a central log file in the user's home directory (`~/.superagent-r/superagent.log`). The log maintains tier-aware indentation to cleanly trace parallel execution branches.
 
 ---

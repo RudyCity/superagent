@@ -986,15 +986,37 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
 
             const taskFilePath = this.getTaskFilePath();
             if (!fs.existsSync(taskFilePath)) {
-              const blocked: ToolResult = {
-                toolCallId: tc.id,
-                name: tc.name,
-                result: `Error: Task Tracking File is missing at '${taskFilePath}'. Write a task checklist to this exact file before spawning or merging Superagents.`,
-                isError: true,
-              };
-              toolResults.push(blocked);
-              this.onEvent({ type: "tool_end", toolResult: blocked, description });
-              continue;
+              // ── Auto-create _task.md instead of blocking ─────────────────
+              // Missing task file should NEVER prevent spawning. Create from plan
+              // content if available, or a minimal placeholder.
+              let taskContent = "# Tasks\n\n- [ ] Execute implementation plan\n";
+              try {
+                const planPath = this.getPlanFilePath();
+                if (fs.existsSync(planPath)) {
+                  const planContent = fs.readFileSync(planPath, "utf-8");
+                  const taskLines: string[] = [];
+                  for (const line of planContent.split(/\r?\n/)) {
+                    const match = line.match(/^\s*-\s*`?\[([xX/ ])\]`?\s*(.*)$/);
+                    if (match) {
+                      taskLines.push(`- [${match[1]}] ${match[2].trim()}`);
+                    }
+                  }
+                  if (taskLines.length > 0) {
+                    taskContent = taskLines.join("\n") + "\n";
+                  }
+                }
+              } catch {
+                // Fallback: use minimal placeholder
+              }
+
+              try {
+                fs.mkdirSync(path.dirname(taskFilePath), { recursive: true });
+                fs.writeFileSync(taskFilePath, taskContent, "utf-8");
+                this.writeToLogFile("INFO", `Auto-created missing task file at ${taskFilePath} — proceeding with spawn/merge.`);
+              } catch (createErr: any) {
+                // If even auto-create fails, warn but don't block
+                this.writeToLogFile("WARN", `Failed to auto-create task file: ${createErr.message} — proceeding anyway.`);
+              }
             }
           }
 

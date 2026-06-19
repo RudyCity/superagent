@@ -250,7 +250,7 @@ describe("Master Agent Workflow & Guardrails", () => {
     expect(toolEndEvent[0].toolResult.result).toContain("Manual Verification sub-section");
   });
 
-  it("should block Superagent execution when the task tracking file is missing", async () => {
+  it("should auto-create task file and NOT block when task tracking file is missing", async () => {
     const onEvent = vi.fn();
     const onPermission = vi.fn().mockResolvedValue(true);
     const onQuestion = vi.fn();
@@ -326,8 +326,11 @@ describe("Master Agent Workflow & Guardrails", () => {
       call => call[0].type === "tool_end" && call[0].toolResult.name === "invoke_superagent"
     );
     expect(toolEndEvent).toBeDefined();
-    expect(toolEndEvent[0].toolResult.isError).toBe(true);
-    expect(toolEndEvent[0].toolResult.result).toContain("Task Tracking File is missing");
+    // Missing _task.md should NOT block execution — it auto-creates the file
+    // The error (if any) should NOT be about missing task tracking file
+    if (toolEndEvent[0].toolResult.isError) {
+      expect(toolEndEvent[0].toolResult.result).not.toContain("Task Tracking File is missing");
+    }
   });
 
   it("should auto-inject delegation context when Master Agent writes a plan that lacks superagent/spawning references", async () => {

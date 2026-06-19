@@ -88,12 +88,23 @@ const a = 2;
         }
         return Promise.resolve({ stdout: "" } as any);
       });
+
+      // Mock file reads to return clean content (no corruption)
+      const spyExists = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+        if (p.toString().endsWith("package.json")) return false;
+        return false; // no changed files to validate
+      });
+      const spyRead = vi.spyOn(fs, "readFileSync").mockReturnValue("clean content");
+
       const master = new MasterAgent({} as any);
 
       const result = await master.mergeBranch("feature-1", ["src/app.tsx"]);
       expect(result).toBe("merged");
       expect(execa).toHaveBeenCalledWith("git", ["merge", "--no-commit", "feature-1"], expect.any(Object));
       expect(execa).toHaveBeenCalledWith("git", ["commit", "-m", "Merge branch 'feature-1' via Master Agent"], expect.any(Object));
+
+      spyExists.mockRestore();
+      spyRead.mockRestore();
     });
 
     it("should return 'already-merged' if branch is already an ancestor of HEAD", async () => {
@@ -112,7 +123,7 @@ const a = 2;
       expect(execa).not.toHaveBeenCalledWith("git", ["merge", "--no-commit", "feature-already"], expect.any(Object));
     });
 
-    it("should resolve conflicts, run validation, and complete merge if conflict occurs", async () => {
+    it("should abort merge and return false when conflict occurs (no auto-resolve)", async () => {
       // Mock git merge failing (conflict) and git diff showing conflicts
       vi.mocked(execa).mockImplementation((cmd, args) => {
         if (cmd === "git" && args && args[0] === "merge-base" && args[1] === "--is-ancestor") {
@@ -129,28 +140,26 @@ const a = 2;
         return Promise.resolve({ stdout: "" } as any);
       });
 
-      const conflictFile = `
-<<<<<<< HEAD
-const b = 1;
+      // Mock file read to return a complex conflict that can't be resolved by line-based resolution
+      const conflictContent = `<<<<<<< HEAD
+const x = 1;
+const y = 2;
 =======
-const b = 2;
->>>>>>> feature-2
-`;
-      const spyExists = vi.spyOn(fs, "existsSync").mockReturnValue(true);
-      const spyRead = vi.spyOn(fs, "readFileSync").mockImplementation((filePath) => {
-        if (filePath.toString().endsWith("package.json")) {
-          return JSON.stringify({ scripts: { build: "tsc", test: "vitest" } });
-        }
-        return conflictFile;
-      });
-      const spyWrite = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
+const a = 10;
+const b = 20;
+>>>>>>> feature-2`;
+      vi.spyOn(fs, "readFileSync").mockReturnValue(conflictContent);
+      vi.spyOn(fs, "existsSync").mockReturnValue(true);
 
       const master = new MasterAgent({} as any);
       const result = await master.mergeBranch("feature-2", ["src/app.tsx"]);
 
-      expect(result).toBe("merged");
-      expect(spyWrite).toHaveBeenCalled();
-      expect(execa).toHaveBeenCalledWith("git", ["add", "-A"], expect.any(Object));
+      // Complex conflicts should NOT be auto-resolved — merge should abort
+      expect(result).toBe(false);
+      expect(execa).toHaveBeenCalledWith("git", ["merge", "--abort"], expect.any(Object));
+      // lastMergeErrors should contain conflict info
+      expect(master.lastMergeErrors.length).toBeGreaterThan(0);
+      expect(master.lastMergeErrors[0]).toContain("conflict");
     });
 
     it("should abort merge and return false if conflict resolution throws error", async () => {

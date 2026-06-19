@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-06-19
+
+### Added
+- **Safe Merge Strategy v2**: Complete rewrite of the merge system to prevent file corruption:
+  - **Line-Based Conflict Resolution**: Safe auto-resolution for trivial conflicts (empty side, identical sides, subset sides) before falling back to manual resolution.
+  - **Universal Post-Merge Validation**: 5 validation checks run before every commit: conflict marker detection, duplicate adjacent lines, duplicate attributes, line merging detection, and diff sanity check.
+  - **Project-Level Validation**: Automatically runs the project's own build/test/lint scripts after merge.
+  - **Auto-Revert on Failure**: If validation fails, the merge is automatically reverted before committing.
+- **Patch Mode** (`mode: 'patch'`): Lightweight Superagent mode that skips worktree creation for small, targeted fixes. Operates directly in the parent's working directory with safety warnings for uncommitted changes.
+- **Base Branch** (`baseBranch`): New parameter for `invoke_superagent` to create worktrees from a specific branch instead of HEAD. Useful for building dependent features on top of in-progress work.
+- **Detailed Merge Error Reporting**: `MasterAgent.lastMergeErrors` and `lastMergeWarnings` properties expose detailed error/warning information from failed merges.
+- **Auto-Create Task File**: `manage_plan` action `create` now auto-creates a minimal `_task.md` if no checklist tasks are found in the plan.
+
+### Changed
+- **Stateless Spawned Agents**: All spawned Superagents now start with `planState = "APPROVED"` to prevent self-blocking on plan state checks. This fixes the "Plan pending approval" bug where agents would block themselves.
+- **No LLM Auto-Resolve**: Removed LLM-based conflict auto-resolution entirely. Complex conflicts are now aborted and reported for manual resolution to prevent corruption.
+- **Task File No Longer Blocks**: Missing `_task.md` no longer blocks `invoke_superagent` or `merge_superagents`. The file is auto-created from plan content or a minimal placeholder.
+- **Master Agent System Prompt**: Updated to document patch mode, baseBranch, and the new merge strategy.
+
+### Fixed
+- **Merge HTML Corruption** (root cause): Fixed the recurring issue where LLM auto-resolve would corrupt HTML files during merge by removing auto-resolve and adding universal validation.
+- **Agent Plan State Confusion**: Fixed spawned agents blocking themselves by reading plan state from conversation history. Agents are now stateless executors.
+- **Task File Blocking**: Fixed `invoke_superagent` failing with "Task Tracking File is missing" error when `_task.md` didn't exist yet.
+- **Worktree Branch Confusion**: Fixed agents spawning from the wrong branch by adding the `baseBranch` parameter.
+- **Diff Sanity Threshold**: Fixed off-by-one error in diff sanity check (`> 10` → `>= 10`).
+
+### Tests
+- Added 15 new tests for universal post-merge validation (`tests/postMergeValidation.test.ts`).
+- Added 3 new tests for patch mode, baseBranch, and stateless agent behavior.
+- Updated existing tests to match new merge behavior (no auto-resolve, validation-first).
+- **Total: 47 test files, 400 tests passing.**
+
+---
+
 ## [1.1.61] - 2026-06-18
 
 ### Added
