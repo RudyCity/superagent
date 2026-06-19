@@ -157,7 +157,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
               let description = undefined;
               if (activeWizard.type === "plan_approve") {
-                description = `Model AI telah merancang rencana di file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}`;
+                description = `AI model has designed a plan in file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}`;
               } else if (activeWizard.type === "question") {
                 description = pendingQuestion?.question || "";
               } else if (activeWizard.type === "login" && activeWizard.step === 10) {
@@ -309,8 +309,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
               let wizardDescription = "";
               if (activeWizard.type === "plan_approve") {
-                const planPath = agent ? agent.getPlanFilePath() : "";
-                wizardDescription = `Model AI telah merancang rencana di file: file:///${planPath ? path.resolve(planPath).replace(/\\/g, "/") : ""}`;
+                wizardDescription = `AI model has designed a plan in file: file:///${agent ? path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/") : ""}`;
               } else if (activeWizard.type === "question") {
                 wizardDescription = pendingQuestion?.question || "";
               } else if (activeWizard.type === "login" && activeWizard.step === 10) {

@@ -1278,7 +1278,7 @@ export function App({
   const displayPrompt = lastUserPrompt.length > 50 ? lastUserPrompt.slice(0, 47) + "..." : lastUserPrompt;
 
   const planPath = agentRef.current ? agentRef.current.getPlanFilePath() : path.join(process.cwd(), "implementation_plan.md");
-  const planUrl = `file:///${planPath.replace(/\\/g, "/")}`;
+  const planUrl = `file:///${path.resolve(planPath).replace(/\\/g, "/")}`;
 
   const estimateMarkdownLines = (text: string, width: number): number => {
     let count = 0;
