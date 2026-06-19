@@ -7,6 +7,7 @@ import type { ToolCall } from "./core/conversation.js";
 import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel } from "./core/config.js";
 import fs from "fs/promises";
 import { handleSlashCommand, getDefaultModel } from "./core/slash-commands.js";
+import { registry } from "./core/commands/registry.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";
 import { getToolDescription } from "./core/permissions.js";
 import path from "path";
@@ -426,28 +427,13 @@ export function App({
   });
 
   const commands = [
-    "/checkpoint",
-    "/clear",
-    "/compact",
-    "/goal",
-    "/help",
-    "/init",
-    "/new",
-    "/resume",
-    "/search-history",
-    "/quit",
-    "/exit",
-    "/login",
-    "/model",
-    "/agents",
-    "/worktree",
-    "/worktrees",
-    "/tasks",
-    "/processes",
-    "/procs",
-    "/install",
-    "/skills",
-    "/terminal",
+    ...new Set(
+      registry.getAll().flatMap(cmd => {
+        const names = [`/${cmd.name}`];
+        if (cmd.aliases) names.push(...cmd.aliases.map(a => `/${a}`));
+        return names;
+      })
+    ),
     ...skillCommands
   ];
 
@@ -479,6 +465,63 @@ export function App({
         `${mainCommand} remove`
       ];
       return filterSuggestions(worktreeSuggestions, currentInput);
+    }
+
+    if (mainCommand === "/checkpoint") {
+      const checkpointSuggestions = [
+        `${mainCommand} list`,
+        `${mainCommand} restore`
+      ];
+      return filterSuggestions(checkpointSuggestions, currentInput);
+    }
+
+    if (mainCommand === "/login") {
+      const loginSuggestions = [
+        `${mainCommand} add`,
+        `${mainCommand} list`,
+        `${mainCommand} remove`
+      ];
+      return filterSuggestions(loginSuggestions, currentInput);
+    }
+
+    if (mainCommand === "/terminal") {
+      if (currentInput.startsWith(`${mainCommand} stop`)) {
+        const stopSuggestions = [`${mainCommand} stop all`];
+        for (const [id] of backgroundTasks.entries()) {
+          if (id.startsWith("term-")) stopSuggestions.push(`${mainCommand} stop ${id}`);
+        }
+        return stopSuggestions.filter(p => p.startsWith(currentInput));
+      }
+      if (currentInput.startsWith(`${mainCommand} bg`)) {
+        const bgSuggestions = [`${mainCommand} bg preset`];
+        return bgSuggestions.filter(p => p.startsWith(currentInput));
+      }
+      const terminalSuggestions = [
+        `${mainCommand} init`,
+        `${mainCommand} bg`,
+        `${mainCommand} stop`,
+        `${mainCommand} stop all`,
+        `${mainCommand} all`,
+        `${mainCommand} preset`
+      ];
+      return filterSuggestions(terminalSuggestions, currentInput);
+    }
+
+    if (mainCommand === "/model") {
+      if (currentInput.startsWith(`${mainCommand} preset`)) {
+        const presetSuggestions = [
+          `${mainCommand} preset list`,
+          `${mainCommand} preset save`,
+        ];
+        return filterSuggestions(presetSuggestions, currentInput);
+      }
+      const modelSuggestions = [
+        `${mainCommand} preset`,
+        `${mainCommand} master`,
+        `${mainCommand} superagent`,
+        `${mainCommand} subagent`
+      ];
+      return filterSuggestions(modelSuggestions, currentInput);
     }
 
     return [];
