@@ -511,6 +511,41 @@ export function App({
     }
   }, [input, lastTabPrefix, activeWizard, wizardOptions]);
 
+  const getWizardQuestion = () => {
+    if (!activeWizard) return null;
+    if (activeWizard.type === "login") {
+      if (activeWizard.step === 1) return "Pilih apakah ingin melihat provider yang sudah dikonfigurasi atau membuat provider baru.";
+      if (activeWizard.step === 2) return "Pilih jenis provider yang ingin dikonfigurasi.";
+      if (activeWizard.step === 3) return "Masukkan nama profil provider (atau tekan Enter untuk default).";
+      if (activeWizard.step === 4) return "Masukkan Base URL untuk custom endpoint.";
+      if (activeWizard.step === 5) return "Tempel API key untuk provider ini.";
+      if (activeWizard.step === 6) return "Pilih provider dari daftar yang sudah dikonfigurasi.";
+      if (activeWizard.step === 7) return "Pilih apakah ingin menguji koneksi ke provider terlebih dahulu.";
+      if (activeWizard.step === 8) return "Pilih model yang tersedia (ketik untuk filter).";
+      if (activeWizard.step === 9) return "Ketik pesan test yang ingin dikirim ke model.";
+      if (activeWizard.step === 10) return "Pilih stack teknologi untuk project baru.";
+      if (activeWizard.step === 11) return "Masukkan nama project (atau tekan Enter untuk default).";
+      if (activeWizard.step === 12) return "Masukkan deskripsi singkat project.";
+      if (activeWizard.step === 13) return "Jelaskan project yang ingin dibangun, AI akan membuatkan spesifikasi.";
+    }
+    if (activeWizard.type === "model") {
+      if (activeWizard.step === 1) return "Pilih opsi konfigurasi model.";
+      if (activeWizard.step === 2) return "Pilih provider untuk tier model.";
+      if (activeWizard.step === 3) return "Pilih profil provider yang sudah dikonfigurasi, atau buat profil baru.";
+      if (activeWizard.step === 16) return "Masukkan nama profil provider baru.";
+      if (activeWizard.step === 17) return "Masukkan Base URL untuk custom endpoint.";
+      if (activeWizard.step === 18) return "Tempel API key untuk profil baru.";
+      if (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) return "Pilih model yang tersedia (ketik untuk filter).";
+    }
+    if (activeWizard.type === "question") {
+      return pendingQuestion?.question || "Pilih salah satu opsi atau jawaban custom.";
+    }
+    if (activeWizard.type === "permission") {
+      return pendingPermission?.description || "Izinkan atau tolak tindakan ini.";
+    }
+    return null;
+  };
+
   const getWizardPlaceholder = () => {
     if (!activeWizard) return "Type a message or /help...";
     if (activeWizard.type === "login") {
@@ -606,6 +641,7 @@ export function App({
     terminalHeight,
     terminalWidth,
     checklistTasks,
+    completedHistory,
     agentRef,
     pendingPermission,
     setPendingPermission,
@@ -1300,6 +1336,11 @@ export function App({
   if (planState === "APPROVED" && checklistTasks.length > 0) {
     chromeHeight += 3 + Math.min(checklistTasks.length, maxChecklistVisible);
   }
+  // Account for completed history section height
+  if (planState === "APPROVED" && completedHistory.length > 0) {
+    const historyVisible = Math.min(completedHistory.length, 3);
+    chromeHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
+  }
 
   let liveListHeight = 0;
   if (runningSuperagentsCount > 0 || runningSubagentsCount > 0 || runningTasksCount > 0) {
@@ -1353,6 +1394,11 @@ export function App({
   let checklistSectionHeight = 0;
   if (planState === "APPROVED" && checklistTasks.length > 0) {
     checklistSectionHeight = 3 + Math.min(checklistTasks.length, maxChecklistVisible);
+  }
+  // Account for completed history section height
+  if (planState === "APPROVED" && completedHistory.length > 0) {
+    const historyVisible = Math.min(completedHistory.length, 3);
+    checklistSectionHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
   }
 
   // Wizard/suggestions height
@@ -1548,6 +1594,16 @@ export function App({
 
             {/* CommandLine Input */}
             <Box flexDirection="column">
+              {(() => {
+                const question = getWizardQuestion();
+                if (!question) return null;
+                return (
+                  <Box flexDirection="row" marginBottom={1}>
+                    <Text color={activeWizard ? getWizardBorderColor(activeWizard) : "green"}>│ </Text>
+                    <Text color="cyan" wrap="truncate-end">{question}</Text>
+                  </Box>
+                );
+              })()}
               <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "green"}>
                 └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "green"}>
                   {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : "⌨️ COMM_LINK: ACTIVE"}
