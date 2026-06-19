@@ -240,7 +240,7 @@ export const loginCommand: SlashCommand = {
         });
 
         const mode = isMulti ? "multi" : "single";
-        setAllTierModels(mode, defaultModel);
+        setAllTierModels(mode, defaultModel, profileId);
 
         if (ctx.setActiveModel) {
           ctx.setActiveModel(defaultModel);

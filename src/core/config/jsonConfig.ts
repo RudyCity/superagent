@@ -140,13 +140,24 @@ export function loadModelConfig(): GlobalModelConfig {
       const parsed = JSON.parse(data);
       // Basic migrations/fallback validation
       if (!parsed?.providers) {
-        // File exists but structure is invalid — back up before overwriting
+        // File exists but providers field is invalid/missing — back up before repairing
         try {
           const backupPath = configPath + ".corrupt-" + Date.now();
           fs.copyFileSync(configPath, backupPath);
-          console.warn(`model-config.json had invalid structure. Backed up to: ${backupPath}`);
+          console.warn(`model-config.json had invalid providers field. Backed up to: ${backupPath}`);
         } catch {}
+        // Repair: keep any existing presets/activePresetId, only reset providers to defaults
         const fallbackConfig: GlobalModelConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+        if (parsed?.presets) {
+          fallbackConfig.presets = parsed.presets;
+        }
+        if (parsed?.activePresetId) {
+          fallbackConfig.activePresetId = parsed.activePresetId;
+        }
+        if (parsed?.settings) {
+          fallbackConfig.settings = parsed.settings;
+        }
+        console.warn(`[WARNING] model-config.json providers were invalid. Reset to defaults. Presets and settings preserved.`);
         cachedConfig = fallbackConfig;
         saveModelConfig(fallbackConfig);
       } else {

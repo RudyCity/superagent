@@ -33,12 +33,20 @@ export function getConfiguredProviders(): ConfiguredProvider[] {
   return list;
 }
 
-export function switchActiveProvider(name: string): void {
+export function switchActiveProvider(name: string): boolean {
   const config = loadModelConfig();
   const provider = config.providers.find(
     (p) => p.id === name || p.name.toLowerCase() === name.toLowerCase()
   );
-  if (!provider) return;
+  if (!provider) {
+    console.warn(
+      `[WARNING] switchActiveProvider: Provider "${name}" not found in providers array. ` +
+      `Available: [${config.providers.map(p => p.id).join(", ")}]. ` +
+      `The preset tiers may reference a non-existent provider. ` +
+      `Run /login add to create this provider profile.`
+    );
+    return false;
+  }
 
   const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
   const mode = isMulti ? "multi" : "single";
@@ -59,6 +67,7 @@ export function switchActiveProvider(name: string): void {
   }
 
   savePreset(mode, activePreset);
+  return true;
 }
 
 export function getProviderOptionsList(list: ConfiguredProvider[]): string[] {

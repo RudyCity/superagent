@@ -1220,13 +1220,16 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const baseUrl = activeWizard.data.baseUrl;
 
         try {
+          const newProviderId = profileName.toLowerCase().replace(/[^a-z0-9_-]/g, "");
           addProvider({
-            id: profileName.toLowerCase().replace(/[^a-z0-9_-]/g, ""),
+            id: newProviderId,
             name: profileName,
             provider: providerType,
             apiKey: apiKey,
             baseUrl: baseUrl || (providerType === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
           });
+          // Activate the newly created provider in all preset tiers
+          switchActiveProvider(newProviderId);
           const step18BaseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (providerType === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
           setMasterLogs((prev) => [
             ...prev,

@@ -3,6 +3,7 @@ import path from "path";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { switchActiveProvider } from "./providers.js";
 import { loadModelConfig, getActivePreset, savePreset, setActivePresetId } from "./jsonConfig.js";
+import type { ProviderProfile } from "./jsonConfig.js";
 
 export type PresetMode = "multi" | "single";
 
@@ -318,7 +319,35 @@ export function applyModelPreset(name: string, mode?: PresetMode): void {
   const mainModel = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "";
   if (mainModel) {
     const providerId = mainModel.includes("@") ? mainModel.split("@")[0].toLowerCase() : mainModel.includes(":") ? mainModel.split(":")[0].toLowerCase() : "";
-    if (providerId) switchActiveProvider(providerId);
+    if (providerId) {
+      const switched = switchActiveProvider(providerId);
+      if (!switched) {
+        // Provider not found — collect all referenced provider IDs for a helpful warning
+        const referencedIds = new Set<string>();
+        for (const val of Object.values(preset.models)) {
+          if (typeof val === "string" && val.includes("@")) {
+            referencedIds.add(val.split("@")[0]);
+          }
+        }
+        const config = loadModelConfig();
+        const existingIds = config.providers.map((p: ProviderProfile) => p.id);
+        const missingIds = [...referencedIds].filter(id => !existingIds.includes(id));
+        if (missingIds.length > 0) {
+          console.warn(
+            `\n╔═══[ ⚠️  MISSING PROVIDER PROFILE${missingIds.length > 1 ? "S" : ""} ]═══════════════════════════════════\n` +
+            `│ Preset "${preset.name}" references provider profile(s) that do not exist:\n` +
+            missingIds.map(id => `│   • "${id}"`).join("\n") + "\n" +
+            `│\n` +
+            `│ Existing profiles: [${existingIds.join(", ")}]\n` +
+            `│\n` +
+            `│ The preset tiers were saved, but the API key is missing.\n` +
+            `│ To fix this, run:\n` +
+            missingIds.map(id => `│   /login add <your_api_key>    (then select profile name "${id}")`).join("\n") + "\n" +
+            `╚═══════════════════════════════════════════════════════════\n`
+          );
+        }
+      }
+    }
   }
 }
 
