@@ -291,6 +291,40 @@ export const invokeSuperagentTool: Tool = {
           }
           addHistoricalSuperagentTokens((event.promptTokens || 0) + (event.completionTokens || 0));
           notifySuperagentsChanged();
+        } else if (event.type === "illegal_operation") {
+          const v = event.violation;
+          const icon = v.severity === "critical" ? "🚨" : "⚠️";
+          closeThinkingNode();
+          logs.push(`[ILLEGAL_OP] ${icon} ${v.reason} — ${v.toolName}: ${v.description}\n`);
+          const inst = superagentInstances.get(superagentId);
+          if (inst) {
+            if (!inst.violations) inst.violations = [];
+            inst.violations.push(v);
+          }
+          appendMasterLog(`[ILLEGAL_OP] ${icon} Superagent "${role}" (${branch}): ${v.reason} — ${v.description}`);
+          notifySuperagentsChanged();
+
+          // Auto-escalation: inject system message into Master Agent's conversation
+          // so the Master LLM is proactively informed and can take action.
+          if (v.severity === "critical") {
+            const master = getMasterAgent();
+            if (master && typeof master.getHistory === "function") {
+              try {
+                const criticalCount = (inst?.violations || []).filter(vv => vv.severity === "critical").length;
+                master.getHistory().addMessage({
+                  role: "system",
+                  content: `[ILLEGAL_OPERATION — AUTO-ESCALATION]\n` +
+                    `🚨 Superagent "${role}" (branch: ${branch}, ID: ${superagentId}) committed a CRITICAL violation.\n` +
+                    `Reason: ${v.reason}\n` +
+                    `Tool: ${v.toolName}\n` +
+                    `Detail: ${v.description}\n` +
+                    `Total critical violations for this Superagent: ${criticalCount}\n` +
+                    `Consider using manage_superagents (action: "kill") to terminate this Superagent if it continues violating policies.`,
+                  timestamp: Date.now(),
+                });
+              } catch {}
+            }
+          }
         }
       },
       // Permission handler: auto-approve but never approve destructive commands
@@ -681,7 +715,7 @@ export const manageSuperagentsTool: Tool = {
     properties: {
       action: {
         type: "string",
-        enum: ["list", "logs", "report", "kill", "kill_all"],
+        enum: ["list", "logs", "report", "violations", "kill", "kill_all"],
         description: "Action to perform",
       },
       superagentIds: {
@@ -708,6 +742,9 @@ export const manageSuperagentsTool: Tool = {
       if (superagentInstances.size === 0) lines.push("  None");
       for (const [id, inst] of superagentInstances.entries()) {
         let line = `  - ID: ${id} | Role: ${inst.role} | Branch: ${inst.branch} | Status: ${inst.status}`;
+        if (inst.violations && inst.violations.length > 0) {
+          line += ` | Violations: ${inst.violations.length}`;
+        }
         if (inst.status === "completed" && inst.result) {
           const snippet = inst.result.length > 120 ? inst.result.slice(0, 120) + "..." : inst.result;
           line += `\n    Report: ${snippet.replace(/\n/g, "\n    ")}`;
@@ -739,6 +776,24 @@ export const manageSuperagentsTool: Tool = {
         return `Error: Superagent instance "${id}" not found.`;
       }
       return `Report for Superagent ${id} (${inst.role}):\n\n${inst.result || "No report available yet."}`;
+    }
+
+    if (action === "violations") {
+      const lines: string[] = ["Superagent Violations Report:"];
+      let hasViolations = false;
+      for (const [id, inst] of superagentInstances.entries()) {
+        const vList = inst.violations || [];
+        if (vList.length === 0) continue;
+        hasViolations = true;
+        lines.push(`\n  ${inst.role} (${inst.branch}) — ${vList.length} violation(s):`);
+        for (const v of vList) {
+          const icon = v.severity === "critical" ? "🚨" : "⚠️";
+          const time = new Date(v.timestamp).toISOString();
+          lines.push(`    ${icon} [${time}] ${v.reason}: ${v.description}`);
+        }
+      }
+      if (!hasViolations) lines.push("  No violations recorded.");
+      return lines.join("\n");
     }
 
     if (action === "kill") {
@@ -965,6 +1020,39 @@ export const sendMessageToSuperagentTool: Tool = {
             }
             addHistoricalSuperagentTokens((event.promptTokens || 0) + (event.completionTokens || 0));
             notifySuperagentsChanged();
+          } else if (event.type === "illegal_operation") {
+            const v = event.violation;
+            const icon = v.severity === "critical" ? "🚨" : "⚠️";
+            closeThinkingNode();
+            logsList.push(`[ILLEGAL_OP] ${icon} ${v.reason} — ${v.toolName}: ${v.description}\n`);
+            const violInst = superagentInstances.get(superagentId);
+            if (violInst) {
+              if (!violInst.violations) violInst.violations = [];
+              violInst.violations.push(v);
+            }
+            appendMasterLog(`[ILLEGAL_OP] ${icon} Superagent "${role}" (${branch}): ${v.reason} — ${v.description}`);
+            notifySuperagentsChanged();
+
+            // Auto-escalation: inject system message into Master Agent's conversation
+            if (v.severity === "critical") {
+              const master = getMasterAgent();
+              if (master && typeof master.getHistory === "function") {
+                try {
+                  const criticalCount = (violInst?.violations || []).filter(vv => vv.severity === "critical").length;
+                  master.getHistory().addMessage({
+                    role: "system",
+                    content: `[ILLEGAL_OPERATION — AUTO-ESCALATION]\n` +
+                      `🚨 Superagent "${role}" (branch: ${branch}, ID: ${superagentId}) committed a CRITICAL violation.\n` +
+                      `Reason: ${v.reason}\n` +
+                      `Tool: ${v.toolName}\n` +
+                      `Detail: ${v.description}\n` +
+                      `Total critical violations for this Superagent: ${criticalCount}\n` +
+                      `Consider using manage_superagents (action: "kill") to terminate this Superagent if it continues violating policies.`,
+                    timestamp: Date.now(),
+                  });
+                } catch {}
+              }
+            }
           }
         },
         async (_toolCall, _desc) => {

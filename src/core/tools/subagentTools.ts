@@ -274,6 +274,41 @@ export const invokeSubagentTool: Tool = {
             }
           }
           notifySubagentsChanged();
+        } else if (event.type === "illegal_operation") {
+          const v = event.violation;
+          const icon = v.severity === "critical" ? "🚨" : "⚠️";
+          closeThinkingNode();
+          logs.push(`${isFirstNode ? "┌" : "├"}───[ ${icon} ILLEGAL OPERATION ]\n`);
+          isFirstNode = false;
+          logs.push(`│   Reason: ${v.reason}\n`);
+          logs.push(`│   Tool: ${v.toolName}\n`);
+          logs.push(`│   Detail: ${v.description}\n`);
+          logs.push(`│\n`);
+          const inst = subagentInstances.get(subagentId);
+          if (inst) {
+            if (!inst.violations) inst.violations = [];
+            inst.violations.push(v);
+          }
+          appendMasterLog(`[ILLEGAL_OP] ${icon} Subagent ${subagentId} (${role}): ${v.reason} — ${v.description}`);
+          notifySubagentsChanged();
+
+          // Auto-escalation: inject system message into parent agent's conversation
+          if (v.severity === "critical" && parentAgent && typeof parentAgent.getHistory === "function") {
+            try {
+              const criticalCount = (inst?.violations || []).filter(vv => vv.severity === "critical").length;
+              parentAgent.getHistory().addMessage({
+                role: "system",
+                content: `[ILLEGAL_OPERATION — AUTO-ESCALATION]\n` +
+                  `🚨 Subagent "${role}" (type: ${typeName}, ID: ${subagentId}) committed a CRITICAL violation.\n` +
+                  `Reason: ${v.reason}\n` +
+                  `Tool: ${v.toolName}\n` +
+                  `Detail: ${v.description}\n` +
+                  `Total critical violations for this Subagent: ${criticalCount}\n` +
+                  `Consider using manage_subagents (action: "kill") to terminate this Subagent if it continues violating policies.`,
+                timestamp: Date.now(),
+              });
+            } catch {}
+          }
         }
       },
       // Permission: block destructive commands, auto-approve everything else
@@ -400,6 +435,7 @@ export const sendMessageTool: Tool = {
     const recipientId = args.recipientId as string;
     const message = args.message as string;
     const wait = args.wait !== false;
+    const sendParentAgent = agentLocalStorage.getStore();
 
     const instance = resolveSubagentInstance(recipientId);
     if (!instance) {
@@ -521,6 +557,41 @@ export const sendMessageTool: Tool = {
               }
             }
             notifySubagentsChanged();
+          } else if (event.type === "illegal_operation") {
+            const v = event.violation;
+            const icon = v.severity === "critical" ? "🚨" : "⚠️";
+            closeThinkingNode();
+            logsList.push(`${isFirstNode ? "┌" : "├"}───[ ${icon} ILLEGAL OPERATION ]\n`);
+            isFirstNode = false;
+            logsList.push(`│   Reason: ${v.reason}\n`);
+            logsList.push(`│   Tool: ${v.toolName}\n`);
+            logsList.push(`│   Detail: ${v.description}\n`);
+            logsList.push(`│\n`);
+            const inst = subagentInstances.get(recipientId);
+            if (inst) {
+              if (!inst.violations) inst.violations = [];
+              inst.violations.push(v);
+            }
+            appendMasterLog(`[ILLEGAL_OP] ${icon} Subagent ${recipientId} (${role}): ${v.reason} — ${v.description}`);
+            notifySubagentsChanged();
+
+            // Auto-escalation: inject system message into parent agent's conversation
+            if (v.severity === "critical" && sendParentAgent && typeof sendParentAgent.getHistory === "function") {
+              try {
+                const criticalCount = (inst?.violations || []).filter(vv => vv.severity === "critical").length;
+                sendParentAgent.getHistory().addMessage({
+                  role: "system",
+                  content: `[ILLEGAL_OPERATION — AUTO-ESCALATION]\n` +
+                    `🚨 Subagent "${role}" (type: ${typeName}, ID: ${recipientId}) committed a CRITICAL violation.\n` +
+                    `Reason: ${v.reason}\n` +
+                    `Tool: ${v.toolName}\n` +
+                    `Detail: ${v.description}\n` +
+                    `Total critical violations for this Subagent: ${criticalCount}\n` +
+                    `Consider using manage_subagents (action: "kill") to terminate this Subagent if it continues violating policies.`,
+                  timestamp: Date.now(),
+                });
+              } catch {}
+            }
           }
         },
         async (toolCall, _desc) => {
@@ -629,7 +700,7 @@ export const manageSubagentsTool: Tool = {
     properties: {
       action: {
         type: "string",
-        enum: ["list", "logs", "report", "kill", "kill_all"],
+        enum: ["list", "logs", "report", "violations", "kill", "kill_all"],
         description: "Action to perform",
       },
       conversationIds: {
@@ -654,6 +725,9 @@ export const manageSubagentsTool: Tool = {
       if (subagentInstances.size === 0) lines.push("  None");
       for (const [id, inst] of subagentInstances.entries()) {
         let line = `  - ID: ${id} | Type: ${inst.typeName} | Role: ${inst.role} | Status: ${inst.status}`;
+        if (inst.violations && inst.violations.length > 0) {
+          line += ` | Violations: ${inst.violations.length}`;
+        }
         if (inst.status === "completed" && inst.result) {
           const snippet = inst.result.length > 120 ? inst.result.slice(0, 120) + "..." : inst.result;
           line += `\n    Report: ${snippet.replace(/\n/g, "\n    ")}`;
@@ -685,6 +759,24 @@ export const manageSubagentsTool: Tool = {
         return `Error: Subagent instance "${id}" not found. Use 'list' action to see available IDs and role names.`;
       }
       return `Report for Subagent ${inst.id} (${inst.role}):\n\n${inst.result || "No report available yet."}`;
+    }
+
+    if (action === "violations") {
+      const lines: string[] = ["Subagent Violations Report:"];
+      let hasViolations = false;
+      for (const [id, inst] of subagentInstances.entries()) {
+        const vList = inst.violations || [];
+        if (vList.length === 0) continue;
+        hasViolations = true;
+        lines.push(`\n  ${inst.typeName} / ${inst.role} (ID: ${id}) — ${vList.length} violation(s):`);
+        for (const v of vList) {
+          const icon = v.severity === "critical" ? "🚨" : "⚠️";
+          const time = new Date(v.timestamp).toISOString();
+          lines.push(`    ${icon} [${time}] ${v.reason}: ${v.description}`);
+        }
+      }
+      if (!hasViolations) lines.push("  No violations recorded.");
+      return lines.join("\n");
     }
 
     if (action === "kill") {

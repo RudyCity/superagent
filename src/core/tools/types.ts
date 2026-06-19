@@ -57,6 +57,7 @@ export interface SubagentInstance {
   parentId?: string;
   historyFilePath?: string;
   speed?: number;
+  violations?: ViolationRecord[];
 }
 
 export interface SuperagentInstance {
@@ -76,6 +77,25 @@ export interface SuperagentInstance {
   customTypeName?: string;
   constraints?: string;
   acceptanceCriteria?: string[];
+  violations?: ViolationRecord[];
+}
+
+/**
+ * Record of an illegal operation detected by a child agent and reported
+ * to its parent in multi-agent mode.
+ */
+export interface ViolationRecord {
+  timestamp: number;
+  /** Machine-readable reason code, e.g. "master_direct_modify_blocked" */
+  reason: string;
+  /** Which tool triggered the violation */
+  toolName: string;
+  /** Human-readable description of the violation */
+  description: string;
+  /** Severity level: "warning" for soft blocks, "critical" for hard policy violations */
+  severity: "warning" | "critical";
+  /** Optional metadata (filePath, command, worktreePath, etc.) */
+  meta?: Record<string, unknown>;
 }
 
 export type QuestionHandler = (question: string, options: string[], isMultiSelect?: boolean) => Promise<string>;

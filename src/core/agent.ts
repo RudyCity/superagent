@@ -6,7 +6,7 @@ import fs from "fs";
 import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
-import type { Tool, AgentTier } from "./tools.js";
+import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
 import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
 import {
   executeToolCall,
@@ -29,6 +29,7 @@ export type AgentEvent =
   | { type: "done" }
   | { type: "goal_done"; goal: string; summary: string }
   | { type: "permission_required"; toolCall: ToolCall; description: string }
+  | { type: "illegal_operation"; violation: ViolationRecord }
   | { type: "token_usage"; promptTokens: number; completionTokens: number; durationMs?: number };
 
 export type PermissionHandler = (
@@ -241,6 +242,9 @@ If none of the options are suitable, still pick the closest one.`;
         this.writeToLogFile("ERROR", event.message);
       } else if (event.type === "permission_required") {
         this.writeToLogFile("PERMISSION_REQUIRED", `Tool: ${event.toolCall.name}, Description: ${event.description}`);
+      } else if (event.type === "illegal_operation") {
+        const v = event.violation;
+        this.writeToLogFile("ILLEGAL_OPERATION", `[${v.severity}] ${v.reason} | tool:${v.toolName} | ${v.description}`);
       } else if (event.type === "token_usage") {
         let logMsg = `Prompt Tokens: ${event.promptTokens}, Completion Tokens: ${event.completionTokens}`;
         if (event.durationMs !== undefined) {
@@ -273,8 +277,31 @@ If none of the options are suitable, still pick the closest one.`;
       const formattedLines = lines.map(line => `${prefix} ${line}`).join("\n") + "\n";
       fs.appendFileSync(logPath, formattedLines, "utf-8");
     } catch (err) {
-      // Ignore log write errors to prevent crashing the agent
+      // Ignore log writing errors to prevent crashing the agent
     }
+  }
+
+  /**
+   * Emit a structured illegal_operation event when a child agent's operation
+   * is blocked. This propagates to the parent agent's event handler in
+   * multi-agent mode so the parent can track violations and take action.
+   */
+  private emitViolation(
+    reason: string,
+    toolName: string,
+    description: string,
+    severity: "warning" | "critical" = "warning",
+    meta?: Record<string, unknown>
+  ): void {
+    const violation: ViolationRecord = {
+      timestamp: Date.now(),
+      reason,
+      toolName,
+      description,
+      severity,
+      meta,
+    };
+    this.onEvent({ type: "illegal_operation", violation });
   }
 
   private currentHistoryFilePath: string | null = null;
@@ -1040,6 +1067,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 const { appendToolsErrorLog } = await import("./tools/state.js");
                 appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { filePath, reason: "master_direct_modify_blocked" });
               } catch {}
+              this.emitViolation("master_direct_modify_blocked", tc.name, "Master Agent attempted to directly modify source code files. Must delegate to Superagents.", "critical", { filePath });
               toolResults.push(blocked);
               this.onEvent({ type: "tool_end", toolResult: blocked, description });
               continue;
@@ -1109,6 +1137,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   const { appendToolsErrorLog } = await import("./tools/state.js");
                   appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { filePath, reason: "invalid_plan_structure" });
                 } catch {}
+                this.emitViolation("invalid_plan_structure", tc.name, `Implementation plan missing required sections: ${missing.join(", ")}`, "warning", { filePath });
                 toolResults.push(blocked);
                 this.onEvent({ type: "tool_end", toolResult: blocked, description });
                 continue;
@@ -1206,6 +1235,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 const { appendToolsErrorLog } = await import("./tools/state.js");
                 appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { filePath, reason: "planning_pending" });
               } catch {}
+              this.emitViolation("planning_pending", tc.name, "File modification blocked while plan is pending approval.", "warning", { filePath });
               toolResults.push(blocked);
               this.onEvent({ type: "tool_end", toolResult: blocked, description });
               continue;
@@ -1229,6 +1259,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   const { appendToolsErrorLog } = await import("./tools/state.js");
                   appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { command: cmd, reason: "planning_pending_command" });
                 } catch {}
+                this.emitViolation("planning_pending_command", tc.name, `Modifying terminal command blocked while plan is pending approval: "${cmd}"`, "warning", { command: cmd });
                 toolResults.push(blocked);
                 this.onEvent({ type: "tool_end", toolResult: blocked, description });
                 continue;
@@ -1248,6 +1279,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   const { appendToolsErrorLog } = await import("./tools/state.js");
                   appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, denied.result, { command: tc.args.command as string, reason: "user_permission_denied" });
                 } catch {}
+                this.emitViolation("user_permission_denied", tc.name, `Dangerous command denied by user/permission handler: "${tc.args.command as string}"`, "critical", { command: tc.args.command as string });
                 toolResults.push(denied);
                 this.onEvent({ type: "tool_end", toolResult: denied, description });
                 continue;
@@ -1268,6 +1300,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 const { appendToolsErrorLog } = await import("./tools/state.js");
                 appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { worktreePath: this.worktreePath, reason: "superagent_out_of_bounds" });
               } catch {}
+              this.emitViolation("superagent_out_of_bounds", tc.name, `Superagent attempted to access files outside its worktree (${this.worktreePath}).`, "critical", { worktreePath: this.worktreePath });
               toolResults.push(blocked);
               this.onEvent({ type: "tool_end", toolResult: blocked, description });
               continue;
