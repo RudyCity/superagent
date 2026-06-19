@@ -73,10 +73,11 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     return count;
   };
 
-  const estimateChatLineHeight = (line: ChatLine, width: number): number => {
+  const estimateChatLineHeight = (line: ChatLine, width: number, isLastAssistant: boolean = false): number => {
     let linesCount = 2; // Border header + spacing lines
     const textLines = line.content.split("\n");
-    const maxContentLines = line.type === "assistant" ? maxAssistantResponseLines + 1 : Number.POSITIVE_INFINITY;
+    // Only cap assistant responses that are NOT the last one (last response shows full)
+    const maxContentLines = (line.type === "assistant" && !isLastAssistant) ? maxAssistantResponseLines + 1 : Number.POSITIVE_INFINITY;
     for (const l of textLines) {
       let rawText = l;
       if (line.type === "user") {
@@ -94,6 +95,20 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
 
   const activeToolLines = activeToolOutput ? activeToolOutput.trim().split("\n").slice(-8) : [];
   const activeToolLinesCount = activeToolLines.length;
+
+  // Find the last assistant message index in the full lines array.
+  // When streaming, the live response is shown separately (always untruncated),
+  // so all completed messages in `lines` count as "previous" and may be truncated.
+  // When NOT streaming, the last assistant message is the "final" response
+  // and should be shown in full without hide/truncate.
+  const shouldRenderStreamNow = scrollOffset === 0 && isProcessing && streamDisplay && streamDisplay.trim().length > 0;
+  const lastAssistantIdx = useMemo(() => {
+    if (shouldRenderStreamNow) return -1;
+    for (let j = lines.length - 1; j >= 0; j--) {
+      if (lines[j].type === "assistant") return j;
+    }
+    return -1;
+  }, [lines, shouldRenderStreamNow]);
 
   // Calculate visible line positions for mouse click detection
   const truncatedIndexes = useMemo(
@@ -115,7 +130,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     }
 
     for (let i = endIndex - 1; i >= 0; i--) {
-      const h = estimateChatLineHeight(lines[i], chatWidth);
+      const h = estimateChatLineHeight(lines[i], chatWidth, i === lastAssistantIdx);
       if (accumulatedHeight + h > effectiveLimit) {
         if (i === endIndex - 1 && effectiveLimit > 0) startIndex = i;
         break;
@@ -128,7 +143,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     const positions: ChatLinePosition[] = [];
     for (let i = startIndex; i < endIndex; i++) {
       const line = lines[i];
-      const h = estimateChatLineHeight(line, chatWidth);
+      const h = estimateChatLineHeight(line, chatWidth, i === lastAssistantIdx);
       positions.push({
         index: i,
         startRow: currentRow,
@@ -139,7 +154,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       currentRow += h;
     }
     return positions;
-  }, [lines, scrollOffset, chatHeightLimit, chatWidth, chatContentStartRow, focusedResponseIndex, isProcessing, streamDisplay, truncatedIndexes]);
+  }, [lines, scrollOffset, chatHeightLimit, chatWidth, chatContentStartRow, focusedResponseIndex, isProcessing, streamDisplay, truncatedIndexes, lastAssistantIdx]);
 
   useEffect(() => {
     if (onVisibleLinesChange) {
@@ -201,7 +216,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
           }
 
           for (let i = endIndex - 1; i >= 0; i--) {
-            const h = estimateChatLineHeight(lines[i], chatWidth);
+            const h = estimateChatLineHeight(lines[i], chatWidth, i === lastAssistantIdx);
             if (accumulatedHeight + h > effectiveChatHeightLimit) {
               if (i === endIndex - 1 && effectiveChatHeightLimit > 0) {
                 startIndex = i; // Show at least the latest line if there is any history space
@@ -213,6 +228,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
           }
 
           const visibleLines = lines.slice(startIndex, endIndex);
+
           return (
             <>
               {visibleLines.map((line, i) => {
@@ -227,6 +243,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
                     modelName={modelName}
                     maxResponseLines={maxAssistantResponseLines}
                     chatWidth={chatWidth}
+                    isLastAssistant={originalIndex === lastAssistantIdx}
                   />
                 );
               })}

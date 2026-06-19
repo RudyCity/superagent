@@ -419,6 +419,8 @@ interface ChatLineComponentProps {
   modelName?: string;
   maxResponseLines?: number;
   chatWidth?: number;
+  /** When true, skip truncation for this assistant response (used for the last response) */
+  isLastAssistant?: boolean;
 }
 
 export const ChatLineComponent = React.memo(function ChatLineComponent({
@@ -429,6 +431,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
   modelName,
   maxResponseLines,
   chatWidth,
+  isLastAssistant,
 }: ChatLineComponentProps) {
   switch (line.type) {
     case "user": {
@@ -451,7 +454,9 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       );
     }
     case "assistant": {
-      const capped = capDisplayLines(line.content, maxResponseLines || 12, chatWidth || 80);
+      const capped = isLastAssistant
+        ? { text: line.content, truncated: false }
+        : capDisplayLines(line.content, maxResponseLines || 12, chatWidth || 80);
       return (
         <Box flexDirection="column">
           <Text color="magenta">

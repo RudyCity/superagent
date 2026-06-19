@@ -1,5 +1,5 @@
 import fs from "fs";
-import { getModelConfigPath } from "./paths.js";
+import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir } from "./paths.js";
 
 export interface ProviderProfile {
   id: string;
@@ -137,30 +137,66 @@ export function loadModelConfig(): GlobalModelConfig {
   try {
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, "utf-8");
-      cachedConfig = JSON.parse(data);
+      const parsed = JSON.parse(data);
       // Basic migrations/fallback validation
-      if (!cachedConfig?.providers) {
-        cachedConfig = { ...DEFAULT_CONFIG };
+      if (!parsed?.providers) {
+        // File exists but structure is invalid — back up before overwriting
+        try {
+          const backupPath = configPath + ".corrupt-" + Date.now();
+          fs.copyFileSync(configPath, backupPath);
+          console.warn(`model-config.json had invalid structure. Backed up to: ${backupPath}`);
+        } catch {}
+        const fallbackConfig: GlobalModelConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+        cachedConfig = fallbackConfig;
+        saveModelConfig(fallbackConfig);
+      } else {
+        // Validate and repair missing presets / activePresetId (e.g. from older app versions)
+        if (!parsed.presets || !parsed.presets.multi || !parsed.presets.single) {
+          parsed.presets = JSON.parse(JSON.stringify(DEFAULT_CONFIG.presets));
+        }
+        if (!parsed.activePresetId || !parsed.activePresetId.multi || !parsed.activePresetId.single) {
+          parsed.activePresetId = JSON.parse(JSON.stringify(DEFAULT_CONFIG.activePresetId));
+        }
+        cachedConfig = parsed;
       }
       return cachedConfig!;
     }
   } catch (error) {
     console.error("Error reading model-config.json:", error);
+    // Back up the corrupted file before overwriting with defaults
+    try {
+      if (fs.existsSync(configPath)) {
+        const backupPath = configPath + ".corrupt-" + Date.now();
+        fs.copyFileSync(configPath, backupPath);
+        console.warn(`model-config.json was corrupted. Backed up to: ${backupPath}`);
+      }
+    } catch {}
   }
 
-  // Fallback to default
-  cachedConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-  saveModelConfig(cachedConfig!);
+  // Fallback to default — do NOT set cachedConfig until save succeeds
+  const defaultConfig: GlobalModelConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+  const saveResult = saveModelConfig(defaultConfig);
+  if (saveResult) {
+    cachedConfig = defaultConfig;
+  } else {
+    // Save failed (e.g. directory creation failed). Set cache anyway so the app
+    // can still function in-memory, but log a critical warning.
+    cachedConfig = defaultConfig;
+    console.error("CRITICAL: Failed to persist model-config.json to disk. Credentials will be lost on restart. Check permissions for: " + getRootConfigDir());
+  }
   return cachedConfig!;
 }
 
-export function saveModelConfig(config: GlobalModelConfig): void {
+export function saveModelConfig(config: GlobalModelConfig): boolean {
   const configPath = getModelConfigPath();
   try {
+    ensureGlobalConfigDir();
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
     cachedConfig = config;
+    return true;
   } catch (error) {
     console.error("Error writing model-config.json:", error);
+    return false;
   }
 }
 
@@ -176,13 +212,17 @@ export function addProvider(profile: ProviderProfile): void {
   } else {
     config.providers.push(profile);
   }
-  saveModelConfig(config);
+  if (!saveModelConfig(config)) {
+    throw new Error("Failed to save provider credentials to disk. Check permissions for: " + getRootConfigDir());
+  }
 }
 
 export function removeProvider(id: string): void {
   const config = loadModelConfig();
   config.providers = config.providers.filter((p) => p.id !== id);
-  saveModelConfig(config);
+  if (!saveModelConfig(config)) {
+    throw new Error("Failed to save provider removal to disk. Check permissions for: " + getRootConfigDir());
+  }
 }
 
 export function getPresets(mode: "multi" | "single") {
@@ -198,37 +238,48 @@ export function savePreset<T>(mode: "multi" | "single", preset: JSONModelPreset<
   } else {
     presetsList.push(preset);
   }
-  saveModelConfig(config);
+  if (!saveModelConfig(config)) {
+    throw new Error("Failed to save preset to disk. Check permissions for: " + getRootConfigDir());
+  }
 }
 
 export function deletePreset(mode: "multi" | "single", id: string): void {
   const config = loadModelConfig();
   config.presets[mode] = (config.presets[mode] as any[]).filter((p) => p.id !== id);
-  saveModelConfig(config);
+  if (!saveModelConfig(config)) {
+    throw new Error("Failed to save preset deletion to disk. Check permissions for: " + getRootConfigDir());
+  }
 }
 
 export function getActivePresetId(mode: "multi" | "single"): string {
-  return loadModelConfig().activePresetId[mode] || DEFAULT_CONFIG.activePresetId[mode];
+  const config = loadModelConfig();
+  return config.activePresetId?.[mode] || DEFAULT_CONFIG.activePresetId[mode];
 }
 
 export function setActivePresetId(mode: "multi" | "single", id: string): void {
   const config = loadModelConfig();
   config.activePresetId[mode] = id;
-  saveModelConfig(config);
+  if (!saveModelConfig(config)) {
+    throw new Error("Failed to save active preset ID to disk. Check permissions for: " + getRootConfigDir());
+  }
 }
 
 export function getActivePreset<T>(mode: "multi" | "single"): JSONModelPreset<T> {
   const config = loadModelConfig();
   const activeId = getActivePresetId(mode);
-  const preset = (config.presets[mode] as any[]).find((p) => p.id === activeId);
-  if (preset) {
-    return preset;
+  const presetsList = config.presets?.[mode] as any[] | undefined;
+  if (presetsList) {
+    const preset = presetsList.find((p) => p.id === activeId);
+    if (preset) {
+      return preset;
+    }
+    // Fallback to the first preset in the list
+    if (presetsList.length > 0) {
+      return presetsList[0] as any;
+    }
   }
-  // Fallback to the first preset in the list
-  if (config.presets[mode].length > 0) {
-    return config.presets[mode][0] as any;
-  }
-  return DEFAULT_CONFIG.presets[mode][0] as any;
+  // Last resort: return a DEEP COPY of the default to prevent mutating DEFAULT_CONFIG
+  return JSON.parse(JSON.stringify(DEFAULT_CONFIG.presets[mode][0])) as any;
 }
 
 export function getActiveConfigAudit(overrideMode?: "multi" | "single"): string {
