@@ -62,7 +62,7 @@ import { ProcessingIndicator } from "./common/LoadingIndicators.js";
 // Import hooks
 import { useDashboardWizard } from "../hooks/useDashboardWizard.js";
 import { computeWrappedLogs } from "../utils/dashboardLogFormatter.js";
-import { getDashboardSuggestions } from "../utils/dashboardSuggestions.js";
+import { getDashboardSuggestions, getSuggestionDescriptions } from "../utils/dashboardSuggestions.js";
 import { useDashboardSessions } from "../hooks/useDashboardSessions.js";
 import { useDashboardMouse } from "../hooks/useDashboardMouse.js";
 import { useDashboardKeyboard } from "../hooks/useDashboardKeyboard.js";
@@ -326,6 +326,7 @@ export function MultiAgentDashboard({
   }, [activeWizard]);
 
   const suggestions = getDashboardSuggestions(lastTabPrefix || query);
+  const suggestionDescs = getSuggestionDescriptions();
 
   useEffect(() => {
     try {
@@ -649,7 +650,8 @@ export function MultiAgentDashboard({
 
   let bottomPromptHeight = isSelectionOnlyStep ? 0 : 1; // Prompt input row (hidden for selection-only steps)
   if (!isSelectionOnlyStep && focusArea === "input" && query.startsWith("/") && suggestions.length > 0) {
-    bottomPromptHeight += 2;
+    const activeDesc = suggestionDescs[query];
+    bottomPromptHeight += activeDesc ? 3 : 2;
   }
   let wizardHeight = 0;
   if (activeWizard) {
@@ -1049,15 +1051,23 @@ export function MultiAgentDashboard({
       {!isSelectionOnlyStep && (
         <>
           {focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (
-            <Box flexDirection="row" marginBottom={1} paddingX={1}>
-              <Text color="cyan" dimColor>│   </Text>
-              <Text color="gray" dimColor>Suggestions: </Text>
-              {suggestions.slice(0, 5).map((s, idx) => (
-                <Text key={s} color={s === query ? "cyan" : "gray"} bold={s === query} underline={s === query}>
-                  {s}{idx < Math.min(suggestions.length, 5) - 1 ? "  " : ""}
-                </Text>
-              ))}
-              {suggestions.length > 5 && <Text color="gray" dimColor> (+{suggestions.length - 5} more)</Text>}
+            <Box flexDirection="column" marginBottom={1} paddingX={1}>
+              <Box flexDirection="row">
+                <Text color="cyan" dimColor>│   </Text>
+                <Text color="gray" dimColor>Suggestions: </Text>
+                {suggestions.slice(0, 5).map((s, idx) => (
+                  <Text key={s} color={s === query ? "cyan" : "gray"} bold={s === query} underline={s === query}>
+                    {s}{idx < Math.min(suggestions.length, 5) - 1 ? "  " : ""}
+                  </Text>
+                ))}
+                {suggestions.length > 5 && <Text color="gray" dimColor> (+{suggestions.length - 5} more)</Text>}
+              </Box>
+              {suggestionDescs[query] && (
+                <Box flexDirection="row">
+                  <Text color="cyan" dimColor>│   </Text>
+                  <Text color="yellow" dimColor italic>  {suggestionDescs[query].length > 80 ? suggestionDescs[query].slice(0, 77) + "..." : suggestionDescs[query]}</Text>
+                </Box>
+              )}
             </Box>
           )}
           <Box flexDirection="row" marginTop={0} paddingX={1} width="100%">
