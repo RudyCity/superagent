@@ -72,6 +72,7 @@ export interface KeyboardHandlerContext {
   terminalHeight: number;
   terminalWidth: number;
   checklistTasks: { status: string; text: string }[];
+  completedHistory?: { status: string; text: string }[];
   agentRef: React.MutableRefObject<Agent | null>;
   pendingPermission: {
     toolCall: ToolCall;
@@ -152,6 +153,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     terminalHeight,
     terminalWidth,
     checklistTasks,
+    completedHistory = [],
     agentRef,
     pendingPermission,
     setPendingPermission,
@@ -353,7 +355,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
 
     // Ctrl+T: Toggle checklist focus mode
     if (key.ctrl && inputChar === "t") {
-      if (planState === "APPROVED" && checklistTasks.length > 0) {
+      if (planState === "APPROVED" && (checklistTasks.length > 0 || completedHistory.length > 0)) {
         setFocusMode((prev: any) => (prev === "checklist" ? "input" : "checklist"));
       }
       return;
@@ -432,7 +434,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           const now = Date.now();
 
           if (activeWizard.step === 1) {
-            if (selectedOption.includes("Add / Log in")) {
+            if (selectedOption.includes("Create / Log in")) {
               setActiveWizard({
                 type: "login",
                 step: 2,
@@ -441,10 +443,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
               setWizardSelectedIndex(0);
             } else {
-              // "List Configured Providers" → buka wizard step 100
               const providers = getProviders().filter((p: any) => p.apiKey && p.apiKey.trim() !== "");
               if (providers.length === 0) {
-                addLine({ type: "system", content: "No providers configured yet. Use /login to add one.", timestamp: now });
+                addLine({ type: "system", content: "No providers configured yet. Use /login to create one.", timestamp: now });
                 setActiveWizard(null);
                 setWizardOptions([]);
                 setWizardSelectedIndex(0);
@@ -1176,15 +1177,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         } else if (activeWizard.type === "login") {
           if (activeWizard.step === 2) {
             // Back to step 1: Provider Manager main menu
-            const list = getConfiguredProviders();
-            if (list.length > 0) {
-              setActiveWizard({ type: "login", step: 1, data: {} });
-              setWizardOptions(["1. Add / Log in to a Provider", "2. List Configured Providers"]);
-            } else {
-              // No providers configured, just cancel the wizard
-              setActiveWizard(null);
-              setWizardOptions([]);
-            }
+            setActiveWizard({ type: "login", step: 1, data: {} });
+            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider"]);
             setWizardSelectedIndex(0);
             setInput("");
             return;

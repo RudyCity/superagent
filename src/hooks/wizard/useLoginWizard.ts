@@ -17,6 +17,7 @@ import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
 import type { Agent } from "../../core/agent.js";
 import type { ChatLine } from "../../core/slash-commands.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel } from "../../core/loginWizardLogic.js";
 
 interface LoginWizardContext {
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
@@ -50,7 +51,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
 
     if (step === 1) {
       const choice = value.toLowerCase();
-      if (choice.includes("add") || choice === "1") {
+      if (choice.includes("create") || choice === "2") {
         setActiveWizard({
           type: "login",
           step: 2,
@@ -61,39 +62,25 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       } else {
         const list = getConfiguredProviders();
         if (list.length > 0) {
-          addLine({
-            type: "system",
-            content: `Configured Providers:\n` + list.map(p => {
-              const masked = p.apiKey ? (p.apiKey.length > 8 ? `${p.apiKey.slice(0, 4)}...${p.apiKey.slice(-4)}` : "****") : "None";
-              const activeLabel = p.isActive ? " [Active]" : "";
-              const baseUrlLabel = p.baseUrl ? ` (Base URL: ${p.baseUrl})` : "";
-              return `- ${p.name} [${p.type}] (API Key: ${masked})${baseUrlLabel}${activeLabel}`;
-            }).join("\n"),
-            timestamp: now,
-          });
+          setActiveWizard({ type: "login", step: 6, data: {} });
+          setWizardOptions(list.map(
+            (p, i) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+          ));
+          setWizardSelectedIndex(0);
         } else {
           addLine({
             type: "system",
             content: `No providers configured yet.`,
             timestamp: now,
           });
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
         }
-        setActiveWizard(null);
-        setWizardOptions([]);
-        setWizardSelectedIndex(0);
       }
     } else if (step === 2) {
-      const choice = value.toLowerCase();
-      let provider = "";
-      if (choice === "1" || choice.includes("openrouter")) {
-        provider = "openrouter";
-      } else if (choice === "2" || choice.includes("openai")) {
-        provider = "openai";
-      } else if (choice === "3" || choice.includes("anthropic")) {
-        provider = "anthropic";
-      } else if (choice === "4" || choice.includes("custom")) {
-        provider = "custom";
-      } else {
+      const provider = resolveProviderType(value);
+      if (!provider) {
         addLine({
           type: "error",
           content: "Invalid choice. Please select 1, 2, 3, or 4.",
@@ -183,20 +170,11 @@ export function useLoginWizard(ctx: LoginWizardContext) {
         // Set provider ini sebagai aktif di preset JSON
         switchActiveProvider(providerId);
 
-        // Persist model to JSON config — not to process.env
-        const defaultModel = provider === "openrouter" ? "openrouter:google/gemini-2.5-flash"
-          : provider === "anthropic" ? "anthropic:claude-3-5-sonnet-20241022"
-          : "openai:gpt-4o";
-        const currentModel = getEffectiveMasterModel("auto");
-        if (!currentModel || currentModel === "gpt-4o") {
-          setAllTierModels("auto", defaultModel);
-        }
-
         const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
 
         addLine({
           type: "system",
-          content: `Successfully configured provider profile: ${profileName} (${provider})${baseUrlInfo}\nDefault Model: ${defaultModel}\nSaved to model-config.json`,
+          content: `Successfully configured provider profile: ${profileName} (${provider})${baseUrlInfo}\nSaved to model-config.json`,
           timestamp: now,
         });
 
@@ -208,16 +186,32 @@ export function useLoginWizard(ctx: LoginWizardContext) {
             setActiveModel(currentModel);
           })
           .catch(() => {});
+
+        // Lanjut ke wizard test koneksi + pilih model
+        setActiveWizard({
+          type: "login",
+          step: 7,
+          data: {
+            providerId,
+            providerName: profileName,
+            providerType: provider,
+            providerApiKey: apiKey,
+            providerBaseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : ""),
+          },
+        });
+        setWizardOptions(["1. Ya, Test Koneksi", "2. Tidak"]);
+        setWizardSelectedIndex(0);
+        return;
       } catch (err: any) {
         addLine({
           type: "error",
           content: `Failed to save credentials: ${err.message}`,
           timestamp: now,
         });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
       }
-      setActiveWizard(null);
-      setWizardOptions([]);
-      setWizardSelectedIndex(0);
     } else if (step === 10) {
       const choice = value.toLowerCase();
       if (choice.includes("ask ai") || choice.startsWith("6")) {
@@ -488,7 +482,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           providerBaseUrl: selectedProvider.baseUrl || "",
         },
       });
-      setWizardOptions(["Ya, Test Koneksi", "Tidak"]);
+      setWizardOptions(["1. Ya, Test Koneksi", "2. Tidak"]);
       setWizardSelectedIndex(0);
     } else if (step === 7) {
       // Step 7: Konfirmasi test koneksi
@@ -497,26 +491,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       if (skipTest) {
         addLine({ type: "system", content: "Test koneksi dilewati.", timestamp: now });
         // Lanjut ke step 102: pilih model
-        const cachedModels = getCachedModelIds();
         const providerType = data.providerType || "";
-        const baseUrl = data.providerBaseUrl || "";
-        // Filter model list berdasarkan provider type jika memungkinkan
-        let models = cachedModels.length > 0 ? cachedModels : ["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"];
-        if (providerType === "anthropic") {
-          const anthropicModels = models.filter(m => m.includes("claude"));
-          if (anthropicModels.length > 0) models = anthropicModels;
-          else models = ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"];
-        } else if (providerType === "openai") {
-          const openaiModels = models.filter(m => m.startsWith("gpt-") || m.startsWith("o1") || m.startsWith("o3"));
-          if (openaiModels.length > 0) models = openaiModels;
-          else models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
-        }
+        const models = getModelOptions(providerType, getCachedModelIds());
         setActiveWizard({ type: "login", step: 8, data });
-        setWizardOptions(models.slice(0, 50));
+        setWizardOptions(models);
         setWizardSelectedIndex(0);
         return;
       }
-      // Lakukan test koneksi
+              // Lakukan test koneksi
       addLine({ type: "system", content: `🔄 Menguji koneksi ke ${data.providerName}...`, timestamp: now });
       setWizardIsLoadingModels(true);
       try {
@@ -527,10 +509,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         const apiKey = data.providerApiKey || "";
         const baseUrl = data.providerBaseUrl || "";
         let testModel: any;
-        let testModelName = "";
+        const testModelName = resolveTestModel(providerType, baseUrl);
         if (providerType === "anthropic") {
           const anthropic = createAnthropic({ apiKey });
-          testModelName = "claude-3-haiku-20240307";
           testModel = anthropic(testModelName);
         } else {
           const openaiOpts: any = { apiKey };
@@ -540,11 +521,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             "X-Title": "SuperAgent CLI",
           };
           const openai = createOpenAI(openaiOpts);
-          if (providerType === "openrouter" || (baseUrl && baseUrl.includes("openrouter.ai"))) {
-            testModelName = "openai/gpt-4o-mini";
-          } else {
-            testModelName = "gpt-4o-mini";
-          }
           testModel = openai(testModelName);
         }
         const result = await generateText({
@@ -566,24 +542,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       } finally {
         setWizardIsLoadingModels(false);
       }
-      // Fetch model list dan lanjut ke step 102
+      // Fetch model list dan lanjut ke step 8
       try {
         await fetchAndCacheModels();
       } catch {}
-      const cachedModels = getCachedModelIds();
       const pType = data.providerType || "";
-      let models = cachedModels.length > 0 ? cachedModels : ["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022"];
-      if (pType === "anthropic") {
-        const filtered = models.filter(m => m.includes("claude"));
-        if (filtered.length > 0) models = filtered;
-        else models = ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"];
-      } else if (pType === "openai") {
-        const filtered = models.filter(m => m.startsWith("gpt-") || m.startsWith("o1") || m.startsWith("o3"));
-        if (filtered.length > 0) models = filtered;
-        else models = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
-      }
+      const models = getModelOptions(pType, getCachedModelIds());
       setActiveWizard({ type: "login", step: 8, data });
-      setWizardOptions(models.slice(0, 50));
+      setWizardOptions(models);
       setWizardSelectedIndex(0);
     } else if (step === 8) {
       // Step 8: User pilih model

@@ -40,6 +40,7 @@ export interface DashboardKeyboardContext {
   suggestions: string[];
   planState: string;
   checklistTasks: any[];
+  completedHistory?: any[];
   runningSubagentsCount: number;
   runningTasksCount: number;
   setSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
@@ -97,6 +98,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     suggestions,
     planState,
     checklistTasks,
+    completedHistory = [],
     runningSubagentsCount,
     runningTasksCount,
     setSelectedIndex,
@@ -304,14 +306,8 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         }
         if (activeWizard && activeWizard.type === "login") {
           if (activeWizard.step === 2) {
-            const list = getConfiguredProviders();
-            if (list.length > 0) {
-              setActiveWizard({ type: "login", step: 1, data: {} });
-              setWizardOptions(["1. Add / Log in to a Provider", "2. List Configured Providers"]);
-            } else {
-              setActiveWizard(null);
-              setWizardOptions([]);
-            }
+            setActiveWizard({ type: "login", step: 1, data: {} });
+            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider"]);
             setWizardSelectedIndex(0);
             setQuery("");
             return;
@@ -404,7 +400,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
       if (focusArea === "input") {
         setFocusArea("list");
       } else if (focusArea === "list") {
-        if (planState === "APPROVED" && checklistTasks.length > 0) {
+        if (planState === "APPROVED" && (checklistTasks.length > 0 || completedHistory.length > 0)) {
           setFocusArea("checklist");
         } else if (runningSubagentsCount > 0) {
           setFocusArea("agents");

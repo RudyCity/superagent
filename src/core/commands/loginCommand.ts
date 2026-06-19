@@ -18,25 +18,15 @@ export const loginCommand: SlashCommand = {
     const now = Date.now();
     if (!args) {
       if (ctx.setActiveWizard) {
-        const list = getConfiguredProviders();
-        if (list.length > 0) {
-          ctx.setActiveWizard({
-            type: "login",
-            step: 1,
-            data: {},
-          });
-          ctx.setWizardOptions?.([
-            "1. Add / Log in to a Provider",
-            "2. List Configured Providers"
-          ]);
-        } else {
-          ctx.setActiveWizard({
-            type: "login",
-            step: 2,
-            data: {},
-          });
-          ctx.setWizardOptions?.(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
-        }
+        ctx.setActiveWizard({
+          type: "login",
+          step: 1,
+          data: {},
+        });
+        ctx.setWizardOptions?.([
+          "1. List Configured Providers",
+          "2. Create / Log in to a Provider"
+        ]);
         ctx.setWizardSelectedIndex?.(0);
       } else {
         ctx.addLine({

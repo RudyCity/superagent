@@ -124,10 +124,10 @@ describe("Slash Command: /model", () => {
 
     expect(addedLines.length).toBe(1);
     const content = addedLines[0].content;
-    expect(content).toContain("Master Agent (depth 0): openai:gpt-4o-mini");
-    expect(content).toContain("Superagent (depth 1): anthropic:claude-3-5-sonnet");
-    expect(content).toContain("Subagent (depth 2): custom:local-llama");
-    expect(content).toContain('Subagent "researcher": openai:gpt-researcher');
+    expect(content).toContain("Master Agent (depth 0): openai@gpt-4o-mini");
+    expect(content).toContain("Superagent (depth 1): anthropic@claude-3-5-sonnet");
+    expect(content).toContain("Subagent (depth 2): custom@local-llama");
+    expect(content).toContain('Subagent "researcher": openai@gpt-researcher');
 
     expect(activeWizard).toEqual({
       type: "model",
@@ -685,10 +685,25 @@ describe("Slash Command: /login", () => {
     await handleSlashCommand("/login", mockCtx as any);
     expect(activeWizard).toEqual({
       type: "login",
-      step: 2,
+      step: 1,
       data: {},
     });
-    expect(wizardOptions[0]).toContain("OpenRouter");
+    expect(wizardOptions[0]).toContain("List Configured Providers");
+    expect(wizardOptions[1]).toContain("Create / Log in to a Provider");
+  });
+
+  it("should launch wizard at step 1 regardless of configured providers", async () => {
+    vi.spyOn(configModule, "getConfiguredProviders").mockReturnValue([
+      { id: "openrouter", name: "openrouter", type: "openrouter", apiKey: "sk-or-test" },
+    ]);
+    await handleSlashCommand("/login", mockCtx as any);
+    expect(activeWizard).toEqual({
+      type: "login",
+      step: 1,
+      data: {},
+    });
+    expect(wizardOptions[0]).toContain("List Configured Providers");
+    expect(wizardOptions[1]).toContain("Create / Log in to a Provider");
   });
 
   it("should list configured providers on /login list", async () => {
