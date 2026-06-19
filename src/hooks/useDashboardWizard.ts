@@ -1220,28 +1220,176 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             `[SYSTEM] Successfully configured provider profile: ${profileName} (${providerType})${step18BaseUrlInfo}\nSaved to model-config.json`
           ].slice(-500));
           
-          const nextStep = activeWizard.data.isPreset === "true"
-            ? Number(activeWizard.data.returnStep)
-            : 15;
+          const commonData = {
+            ...activeWizard.data,
+            provider: profileName,
+            providerId: profileName.toLowerCase().replace(/[^a-z0-9_-]/g, ""),
+            providerName: profileName,
+            providerType,
+            providerApiKey: apiKey,
+            providerBaseUrl: baseUrl || (providerType === "openrouter" ? "https://openrouter.ai/api/v1" : ""),
+            returnProviderType: providerType,
+            returnStep: activeWizard.data.isPreset === "true" ? Number(activeWizard.data.returnStep) : 15,
+          };
 
           setActiveWizard({
             type: "model",
-            step: nextStep,
-            data: { ...activeWizard.data, provider: profileName },
+            step: 97,
+            data: commonData,
           });
+          setWizardOptions(["1. Ya, Test Koneksi", "2. Tidak"]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        } catch (err: any) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to save credentials: ${err.message}`].slice(-500));
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+        }
+      } else if (activeWizard.step === 97) {
+        const choice = value.toLowerCase();
+        const skipTest = choice.includes("tidak") || choice === "2" || choice === "no";
+        if (skipTest) {
+          setMasterLogs((prev) => [...prev, `[SYSTEM] Connection test skipped.`].slice(-500));
+          const models = getModelOptions(activeWizard.data.providerType || "", getCachedModelIds());
+          setActiveWizard({ type: "model", step: 98, data: activeWizard.data });
+          setWizardOptions(models);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
+        setMasterLogs((prev) => [...prev, `[SYSTEM] Testing connection to ${activeWizard.data.providerName}...`].slice(-500));
+        setWizardIsLoadingModels(true);
+        try {
+          const { generateText } = await import("ai");
+          const { createOpenAI } = await import("@ai-sdk/openai");
+          const { createAnthropic } = await import("@ai-sdk/anthropic");
+          const providerType = activeWizard.data.providerType || "";
+          const apiKey = activeWizard.data.providerApiKey || "";
+          const baseUrl = activeWizard.data.providerBaseUrl || "";
+          let testModel: any;
+          const testModelName = resolveTestModel(providerType, baseUrl);
+          if (providerType === "anthropic") {
+            const anthropic = createAnthropic({ apiKey });
+            testModel = anthropic(testModelName);
+          } else {
+            const openaiOpts: any = { apiKey };
+            if (baseUrl) openaiOpts.baseURL = baseUrl;
+            openaiOpts.headers = {
+              "HTTP-Referer": "https://github.com/RudyCity/superagent",
+              "X-Title": "SuperAgent CLI",
+            };
+            const openai = createOpenAI(openaiOpts);
+            testModel = openai(testModelName);
+          }
+          const result = await generateText({
+            model: testModel,
+            prompt: 'Reply with exactly one word: "OK"',
+            maxTokens: 10,
+          });
+          setMasterLogs((prev) => [...prev, `[SYSTEM] Connection successful! Response: "${result.text.trim()}"`].slice(-500));
+        } catch (err: any) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Connection failed: ${err.message || String(err)}`].slice(-500));
+        } finally {
+          setWizardIsLoadingModels(false);
+        }
+        try { await fetchAndCacheModels(); } catch {}
+        const models = getModelOptions(activeWizard.data.providerType || "", getCachedModelIds());
+        setActiveWizard({ type: "model", step: 98, data: activeWizard.data });
+        setWizardOptions(models);
+        setWizardSelectedIndex(0);
+        setQuery("");
+      } else if (activeWizard.step === 98) {
+        const selectedModel = value;
+        setMasterLogs((prev) => [...prev, `[MASTER] Model selected: ${selectedModel}`].slice(-500));
+        setActiveWizard({ type: "model", step: 99, data: { ...activeWizard.data, selectedModel } });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setQuery("");
+      } else if (activeWizard.step === 99) {
+        const message = value.trim();
+        if (!message) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Message cannot be empty.`].slice(-500));
+          return;
+        }
+        const selectedModel = activeWizard.data.selectedModel || "";
+        const providerType = activeWizard.data.providerType || "";
+        const apiKey = activeWizard.data.providerApiKey || "";
+        const baseUrl = activeWizard.data.providerBaseUrl || "";
+        const returnStep = activeWizard.data.returnStep || 15;
+        const returnProviderType = activeWizard.data.returnProviderType || providerType;
+        const profileName = activeWizard.data.provider || "";
+        setMasterLogs((prev) => [...prev, `[USER] [Test to ${selectedModel}]: ${message}`].slice(-500));
+        setIsProcessing(true);
+        try {
+          const { generateText } = await import("ai");
+          const { createOpenAI } = await import("@ai-sdk/openai");
+          const { createAnthropic } = await import("@ai-sdk/anthropic");
+          let testModel: any;
+          if (providerType === "anthropic") {
+            const anthropic = createAnthropic({ apiKey });
+            testModel = anthropic(selectedModel);
+          } else {
+            const openaiOpts: any = { apiKey };
+            if (baseUrl) openaiOpts.baseURL = baseUrl;
+            openaiOpts.headers = {
+              "HTTP-Referer": "https://github.com/RudyCity/superagent",
+              "X-Title": "SuperAgent CLI",
+            };
+            const openai = createOpenAI(openaiOpts);
+            testModel = openai(selectedModel);
+          }
+          const result = await generateText({ model: testModel, prompt: message, maxTokens: 512 });
+          setMasterLogs((prev) => [...prev, `[ASSISTANT] ${result.text}`].slice(-500));
+        } catch (err: any) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message || String(err)}`].slice(-500));
+        } finally {
+          setIsProcessing(false);
+        }
 
-          let initialModels: string[] = [];
-          if (providerType === "openrouter") {
-            initialModels = [
-              "google/gemini-2.5-flash",
-              "meta-llama/llama-3.3-70b-instruct",
-              "deepseek/deepseek-chat",
-              "anthropic/claude-3.5-sonnet",
-            ];
+        switchActiveProvider(activeWizard.data.providerId || profileName.toLowerCase().replace(/[^a-z0-9_-]/g, ""));
+        try { await fetchAndCacheModels(); } catch {}
+        setActiveWizard({
+          type: "model",
+          step: returnStep,
+          data: { ...activeWizard.data, provider: profileName },
+        });
+
+        let initialModels: string[] = [];
+        const resolvedApiKey = activeWizard.data.providerApiKey || "";
+        const resolvedBaseUrl = activeWizard.data.providerBaseUrl || "";
+        if (returnProviderType === "openrouter") {
+          initialModels = [
+            "google/gemini-2.5-flash",
+            "meta-llama/llama-3.3-70b-instruct",
+            "deepseek/deepseek-chat",
+            "anthropic/claude-3.5-sonnet",
+          ];
+          setWizardIsLoadingModels(true);
+          const headers: Record<string, string> = {};
+          if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
+          fetch("https://openrouter.ai/api/v1/models", { headers })
+            .then(async (res) => {
+              if (res.ok) {
+                const data = await res.json() as any;
+                if (data && Array.isArray(data.data)) {
+                  const modelsList = data.data.map((m: any) => m.id);
+                  setWizardAllOptions([...modelsList, "< Back"]);
+                }
+              }
+            })
+            .catch(() => {})
+            .finally(() => setWizardIsLoadingModels(false));
+        } else if (returnProviderType === "openai") {
+          initialModels = [
+            "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-preview", "o3-mini",
+          ];
+          if (resolvedApiKey) {
             setWizardIsLoadingModels(true);
-            const headers: Record<string, string> = {};
-            if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-            fetch("https://openrouter.ai/api/v1/models", { headers })
+            fetch("https://api.openai.com/v1/models", {
+              headers: { Authorization: `Bearer ${resolvedApiKey}` }
+            })
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
@@ -1253,68 +1401,42 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               })
               .catch(() => {})
               .finally(() => setWizardIsLoadingModels(false));
-          } else if (providerType === "openai") {
-            initialModels = [
-              "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-preview", "o3-mini",
-            ];
-            if (apiKey) {
-              setWizardIsLoadingModels(true);
-              fetch("https://api.openai.com/v1/models", {
-                headers: { Authorization: `Bearer ${apiKey}` }
-              })
-                .then(async (res) => {
-                  if (res.ok) {
-                    const data = await res.json() as any;
-                    if (data && Array.isArray(data.data)) {
-                      const modelsList = data.data.map((m: any) => m.id);
-                      setWizardAllOptions([...modelsList, "< Back"]);
-                    }
-                  }
-                })
-                .catch(() => {})
-                .finally(() => setWizardIsLoadingModels(false));
-            }
-          } else if (providerType === "anthropic") {
-            initialModels = [
-              "claude-opus-4-5",
-              "claude-sonnet-4-5",
-              "claude-3-5-sonnet-20241022",
-              "claude-3-5-haiku-20241022",
-              "claude-3-opus-20240229",
-            ];
-          } else if (providerType === "custom") {
-            initialModels = [
-              "deepseek-chat", "llama-3.3-70b-instruct",
-            ];
-            if (baseUrl) {
-              setWizardIsLoadingModels(true);
-              const headers: Record<string, string> = {};
-              if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-              fetch(`${baseUrl}/models`, { headers })
-                .then(async (res) => {
-                  if (res.ok) {
-                    const data = await res.json() as any;
-                    if (data && Array.isArray(data.data)) {
-                      const modelsList = data.data.map((m: any) => m.id);
-                      setWizardAllOptions([...modelsList, "< Back"]);
-                    }
-                  }
-                })
-                .catch(() => {})
-                .finally(() => setWizardIsLoadingModels(false));
-            }
           }
-
-          setWizardAllOptions([...initialModels, "< Back"]);
-          setWizardOptions([]);
-          setWizardSelectedIndex(0);
-          setQuery("");
-        } catch (err: any) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Failed to save credentials: ${err.message}`].slice(-500));
-          setActiveWizard(null);
-          setWizardOptions([]);
-          setWizardSelectedIndex(0);
+        } else if (returnProviderType === "anthropic") {
+          initialModels = [
+            "claude-opus-4-5",
+            "claude-sonnet-4-5",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229",
+          ];
+        } else if (returnProviderType === "custom") {
+          initialModels = [
+            "deepseek-chat", "llama-3.3-70b-instruct",
+          ];
+          if (resolvedBaseUrl) {
+            setWizardIsLoadingModels(true);
+            const headers: Record<string, string> = {};
+            if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
+            fetch(`${resolvedBaseUrl}/models`, { headers })
+              .then(async (res) => {
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  if (data && Array.isArray(data.data)) {
+                    const modelsList = data.data.map((m: any) => m.id);
+                    setWizardAllOptions([...modelsList, "< Back"]);
+                  }
+                }
+              })
+              .catch(() => {})
+              .finally(() => setWizardIsLoadingModels(false));
+          }
         }
+
+        setWizardAllOptions([...initialModels, "< Back"]);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setQuery("");
       } else if (activeWizard.step === 15) {
         if (value === "< Back") {
           const providerType = activeWizard.data.providerType;
