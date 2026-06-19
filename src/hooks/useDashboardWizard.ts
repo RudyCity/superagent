@@ -1033,44 +1033,38 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           data: { ...activeWizard.data, provider: profileName },
         });
 
-        let initialModels: string[] = [];
+        let modelOptions: string[] = [];
         if (providerType === "openrouter") {
-          initialModels = [
+          modelOptions = [
             "google/gemini-2.5-flash",
             "meta-llama/llama-3.3-70b-instruct",
             "deepseek/deepseek-chat",
             "anthropic/claude-3.5-sonnet",
           ];
-          setWizardIsLoadingModels(true);
-          const headers: Record<string, string> = {};
-          if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-          fetch("https://openrouter.ai/api/v1/models", { headers })
-            .then(async (res) => {
-              if (res.ok) {
-                const data = await res.json() as any;
-                if (data && Array.isArray(data.data)) {
-                  const modelsList: string[] = data.data.map((m: any) => m.id);
-                  setWizardAllOptions([...modelsList, "< Back"]);
-                }
-              }
-            })
-            .catch(() => {})
-            .finally(() => setWizardIsLoadingModels(false));
-        } else if (providerType === "openai") {
-          initialModels = [
-            "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-preview", "o3-mini",
-          ];
           if (resolvedApiKey) {
             setWizardIsLoadingModels(true);
-            fetch("https://api.openai.com/v1/models", {
-              headers: { Authorization: `Bearer ${resolvedApiKey}` }
-            })
+            fetch("https://openrouter.ai/api/v1/models", { headers: { Authorization: `Bearer ${resolvedApiKey}` } })
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
                   if (data && Array.isArray(data.data)) {
-                    const modelsList: string[] = data.data.map((m: any) => m.id);
-                    setWizardAllOptions([...modelsList, "< Back"]);
+                    setWizardOptions([...data.data.map((m: any) => m.id), "< Back"]);
+                  }
+                }
+              })
+              .catch(() => {})
+              .finally(() => setWizardIsLoadingModels(false));
+          }
+        } else if (providerType === "openai") {
+          modelOptions = ["gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-preview", "o3-mini"];
+          if (resolvedApiKey) {
+            setWizardIsLoadingModels(true);
+            fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${resolvedApiKey}` } })
+              .then(async (res) => {
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  if (data && Array.isArray(data.data)) {
+                    setWizardOptions([...data.data.map((m: any) => m.id), "< Back"]);
                   }
                 }
               })
@@ -1078,7 +1072,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
               .finally(() => setWizardIsLoadingModels(false));
           }
         } else if (providerType === "anthropic") {
-          initialModels = [
+          modelOptions = [
             "claude-opus-4-5",
             "claude-sonnet-4-5",
             "claude-3-5-sonnet-20241022",
@@ -1086,20 +1080,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             "claude-3-opus-20240229",
           ];
         } else if (providerType === "custom") {
-          initialModels = [
-            "deepseek-chat", "llama-3.3-70b-instruct",
-          ];
-          if (resolvedBaseUrl) {
+          modelOptions = ["deepseek-chat", "llama-3.3-70b-instruct"];
+          if (resolvedBaseUrl && resolvedApiKey) {
             setWizardIsLoadingModels(true);
-            const headers: Record<string, string> = {};
-            if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-            fetch(`${resolvedBaseUrl}/models`, { headers })
+            fetch(`${resolvedBaseUrl}/models`, { headers: { Authorization: `Bearer ${resolvedApiKey}` } })
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
                   if (data && Array.isArray(data.data)) {
-                    const modelsList: string[] = data.data.map((m: any) => m.id);
-                    setWizardAllOptions([...modelsList, "< Back"]);
+                    setWizardOptions([...data.data.map((m: any) => m.id), "< Back"]);
                   }
                 }
               })
@@ -1108,8 +1097,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           }
         }
 
-        setWizardAllOptions([...initialModels, "< Back"]);
-        setWizardOptions([]);
+        setWizardOptions([...modelOptions, "< Back"]);
         setWizardSelectedIndex(0);
         setQuery("");
         setMasterLogs((prev) => [...prev, `[MASTER] Provider profile "${profileName}" selected. Choose a model below:`].slice(-500));
