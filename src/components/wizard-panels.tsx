@@ -68,16 +68,16 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
       <Box flexDirection="column" marginTop={1}>
         {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (
           <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
-            <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
-            <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">{planUrl}</Text></Text>
-            <Text color="yellow">Silakan kirim pesan/masukan apa saja untuk menampilkan kembali dialog persetujuan wizard.</Text>
+            <Text bold color="yellow">⚠️ PENDING_PLAN: IMPLEMENTATION PLAN REQUIRES APPROVAL</Text>
+            <Text color="yellow">AI model has designed a plan in file: <Text bold color="cyan">{planUrl}</Text></Text>
+            <Text color="yellow">Send any message/feedback to display the plan approval dialog again.</Text>
           </Box>
         )}
 
         {activeWizard && activeWizard.type === "plan_approve" && wizardOptions.length > 0 && (
           <WizardDialog
             title="⚠️ PLAN APPROVAL REQUIRED (Use Arrow Keys Up/Down & Enter):"
-            description={`Model AI telah merancang rencana di file: ${planUrl}`}
+            description={`AI model has designed a plan in file: ${planUrl}`}
             borderColor="yellow"
             options={wizardOptions}
             selectedIndex={wizardSelectedIndex}
@@ -187,8 +187,8 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 6 && wizardOptions.length > 0 && (
           <WizardDialog
-            title="🔌 LIST PROVIDERS — Pilih provider (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
-            description="Pilih provider untuk melanjutkan ke test koneksi dan pengiriman pesan:"
+            title="🔌 LIST PROVIDERS — Select provider (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
+            description="Select a provider to continue with connection test and messaging:"
             borderColor="cyan"
             options={wizardOptions}
             selectedIndex={wizardSelectedIndex}
@@ -198,8 +198,8 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 7 && wizardOptions.length > 0 && (
           <WizardDialog
-            title={`🔌 TEST KONEKSI — ${activeWizard.data.providerName || "Provider"} (↑/↓ Navigate, Enter: Select):`}
-            description={`Apakah ingin menguji koneksi ke provider "${activeWizard.data.providerName || ""}" sebelum memilih model?`}
+            title={`🔌 CONNECTION TEST — ${activeWizard.data.providerName || "Provider"} (↑/↓ Navigate, Enter: Select):`}
+            description={`Do you want to test the connection to provider "${activeWizard.data.providerName || ""}" before selecting a model?`}
             borderColor="cyan"
             options={wizardOptions}
             selectedIndex={wizardSelectedIndex}
@@ -214,8 +214,8 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
           const provName = activeWizard.data.providerName ? ` [${activeWizard.data.providerName}]` : "";
           const searchTitle = modelSearchQuery
-            ? `🔌 PILIH MODEL${provName} — 🔍 "${input.trim()}" (${filteredModels.length}/${wizardOptions.length} results):`
-            : `🔌 PILIH MODEL${provName} (${wizardOptions.length} tersedia — ketik untuk filter, ↑/↓ navigasi, Enter pilih):`;
+            ? `🔌 SELECT MODEL${provName} — 🔍 "${input.trim()}" (${filteredModels.length}/${wizardOptions.length} results):`
+            : `🔌 SELECT MODEL${provName} (${wizardOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
           return (
             <WizardDialog
               title={searchTitle}
@@ -230,8 +230,8 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 9 && (
           <WizardDialog
-            title={`🔌 KIRIM PESAN TEST — Model: ${activeWizard.data.selectedModel || ""} (Type & Enter):`}
-            description={`Ketik pesan yang ingin dikirim ke model "${activeWizard.data.selectedModel || ""}" via provider "${activeWizard.data.providerName || ""}". Tekan Enter untuk mengirim.`}
+            title={`🔌 SEND TEST MESSAGE — Model: ${activeWizard.data.selectedModel || ""} (Type & Enter):`}
+            description={`Type a message to send to model "${activeWizard.data.selectedModel || ""}" via provider "${activeWizard.data.providerName || ""}". Press Enter to send.`}
             borderColor="cyan"
             options={[]}
             selectedIndex={0}
@@ -535,8 +535,8 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
 
         {activeWizard && activeWizard.type === "resume" && wizardOptions.length > 0 && (
           <WizardDialog
-            title="📚 RESUME SESSION — Pilih sesi untuk dilanjutkan (↑/↓ Navigate, Enter: Load, Esc: Cancel):"
-            description="Sesi diurutkan dari yang paling baru:"
+            title="📚 RESUME SESSION — Select session to resume (↑/↓ Navigate, Enter: Load, Esc: Cancel):"
+            description="Sessions sorted by most recent:"
             borderColor="magenta"
             options={wizardOptions}
             selectedIndex={wizardSelectedIndex}
@@ -548,11 +548,11 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           const installedSkills = getInstalledSkills();
           const chosenSkill = installedSkills[parseInt(activeWizard.data.skillIndex || "0", 10)];
           const skillTitle = activeWizard.step === 2
-            ? `📂 SKILL ACTION — Pilih tindakan untuk skill: "${chosenSkill?.name || ""}" (↑/↓ Navigate, Enter: Select):`
-            : "📂 INSTALLED AGENT SKILLS — Pilih skill (↑/↓ Navigate, Enter: Choose, Esc: Cancel):";
+            ? `📂 SKILL ACTION — Select action for skill: "${chosenSkill?.name || ""}" (↑/↓ Navigate, Enter: Select):`
+            : "📂 INSTALLED AGENT SKILLS — Select skill (↑/↓ Navigate, Enter: Choose, Esc: Cancel):";
           const skillDesc = activeWizard.step === 2
-            ? "Silakan pilih apakah ingin mengaktifkan skill ini untuk agen atau melihat detail lokasinya:"
-            : "Daftar kemampuan khusus agen yang terpasang:";
+            ? "Choose whether to activate this skill for the agent or view its location details:"
+            : "List of installed agent capabilities:";
           return (
             <WizardDialog
               title={skillTitle}
@@ -567,8 +567,8 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
 
         {activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 1 && wizardOptions.length > 0 && (
           <WizardDialog
-            title="📌 CHECKPOINT — Pilih checkpoint untuk dipulihkan (↑/↓ Navigate, Enter: Restore, Esc: Cancel):"
-            description="Checkpoints diurutkan dari yang paling baru:"
+            title="📌 CHECKPOINT — Select checkpoint to restore (↑/↓ Navigate, Enter: Restore, Esc: Cancel):"
+            description="Checkpoints sorted by most recent:"
             borderColor="green"
             options={wizardOptions}
             selectedIndex={wizardSelectedIndex}
@@ -578,7 +578,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
 
         {activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 2 && wizardOptions.length > 0 && (
           <WizardDialog
-            title="📌 RESTORE WORKSPACE — Pulihkan kode workspace ke Git commit checkpoint? (↑/↓ Navigate, Enter: Select):"
+            title="📌 RESTORE WORKSPACE — Restore workspace code to Git commit checkpoint? (↑/↓ Navigate, Enter: Select):"
             description={`Git commit: ${checkpointsList[parseInt(activeWizard.data.checkpointIndex || "0", 10)]?.gitSha || "unknown"}`}
             borderColor="yellow"
             options={wizardOptions}
@@ -588,8 +588,8 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
 
         {activeWizard && activeWizard.type === "goal" && activeWizard.step === 1 && (
           <WizardDialog
-            title="🎯 GOAL MODE — Deskripsikan tujuan yang ingin dicapai (Type & Enter):"
-            description="Agent akan bekerja tanpa henti sampai goal tercapai. Gunakan Ctrl+C untuk membatalkan."
+            title="🎯 GOAL MODE — Describe the goal to achieve (Type & Enter):"
+            description="Agent will work continuously until the goal is reached. Use Ctrl+C to cancel."
             borderColor="yellow"
             options={[]}
             selectedIndex={0}

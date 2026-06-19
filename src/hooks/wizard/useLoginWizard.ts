@@ -158,7 +158,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       const providerId = profileName.toLowerCase().replace(/[^a-z0-9_-]/g, "");
 
       try {
-        // Simpan provider ke JSON (model-config.json) — BUKAN ke .env
+        // Save provider to JSON (model-config.json) — NOT to .env
         addProvider({
           id: providerId,
           name: profileName,
@@ -167,7 +167,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           baseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
         });
 
-        // Set provider ini sebagai aktif di preset JSON
+        // Set this provider as active in preset JSON
         switchActiveProvider(providerId);
 
         const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
@@ -187,7 +187,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           })
           .catch(() => {});
 
-        // Lanjut ke wizard test koneksi + pilih model
+        // Continue to connection test + model selection wizard
         setActiveWizard({
           type: "login",
           step: 7,
@@ -199,7 +199,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
             providerBaseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : ""),
           },
         });
-        setWizardOptions(["1. Ya, Test Koneksi", "2. Tidak"]);
+        setWizardOptions(["1. Yes, Test Connection", "2. No"]);
         setWizardSelectedIndex(0);
         return;
       } catch (err: any) {
@@ -455,7 +455,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setWizardOptions([]);
       setWizardSelectedIndex(0);
     } else if (step === 6) {
-      // Step 6: Pilih provider dari daftar (dari /login → List)
+      // Step 6: Select provider from list (from /login → List)
       const providers = getProviders().filter(p => p.apiKey && p.apiKey.trim() !== "");
       const idx = parseInt(value, 10) - 1;
       const selectedProvider = providers[idx];
@@ -468,7 +468,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
       addLine({
         type: "system",
-        content: `Provider dipilih: ${selectedProvider.name} [${selectedProvider.provider}]`,
+        content: `Provider selected: ${selectedProvider.name} [${selectedProvider.provider}]`,
         timestamp: now,
       });
       setActiveWizard({
@@ -482,15 +482,15 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           providerBaseUrl: selectedProvider.baseUrl || "",
         },
       });
-      setWizardOptions(["1. Ya, Test Koneksi", "2. Tidak"]);
+      setWizardOptions(["1. Yes, Test Connection", "2. No"]);
       setWizardSelectedIndex(0);
     } else if (step === 7) {
-      // Step 7: Konfirmasi test koneksi
+      // Step 7: Confirm connection test
       const choice = value.toLowerCase();
       const skipTest = choice.includes("tidak") || choice === "2" || choice === "no";
       if (skipTest) {
-        addLine({ type: "system", content: "Test koneksi dilewati.", timestamp: now });
-        // Lanjut ke step 102: pilih model
+        addLine({ type: "system", content: "Connection test skipped.", timestamp: now });
+        // Continue to step 8: select model
         const providerType = data.providerType || "";
         const models = getModelOptions(providerType, getCachedModelIds());
         setActiveWizard({ type: "login", step: 8, data });
@@ -498,8 +498,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setWizardSelectedIndex(0);
         return;
       }
-              // Lakukan test koneksi
-      addLine({ type: "system", content: `🔄 Menguji koneksi ke ${data.providerName}...`, timestamp: now });
+      // Perform connection test
+      addLine({ type: "system", content: `🔄 Testing connection to ${data.providerName}...`, timestamp: now });
       setWizardIsLoadingModels(true);
       try {
         const { generateText } = await import("ai");
@@ -530,19 +530,19 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         });
         addLine({
           type: "system",
-          content: `✅ Koneksi berhasil! Response: "${result.text.trim()}"`,
+          content: `✅ Connection successful! Response: "${result.text.trim()}"`,
           timestamp: Date.now(),
         });
       } catch (err: any) {
         addLine({
           type: "error",
-          content: `❌ Koneksi gagal: ${err.message || String(err)}`,
+          content: `❌ Connection failed: ${err.message || String(err)}`,
           timestamp: Date.now(),
         });
       } finally {
         setWizardIsLoadingModels(false);
       }
-      // Fetch model list dan lanjut ke step 8
+      // Fetch model list and continue to step 8
       try {
         await fetchAndCacheModels();
       } catch {}
@@ -552,11 +552,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setWizardOptions(models);
       setWizardSelectedIndex(0);
     } else if (step === 8) {
-      // Step 8: User pilih model
+      // Step 8: User selects model
       const selectedModel = value;
       addLine({
         type: "system",
-        content: `Model dipilih: ${selectedModel}`,
+        content: `Model selected: ${selectedModel}`,
         timestamp: now,
       });
       setActiveWizard({
@@ -568,10 +568,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 9) {
-      // Step 9: Kirim pesan test ke model yang dipilih
+      // Step 9: Send test message to selected model
       const message = value.trim();
       if (!message) {
-        addLine({ type: "error", content: "Pesan tidak boleh kosong.", timestamp: now });
+        addLine({ type: "error", content: "Message cannot be empty.", timestamp: now });
         return;
       }
       const selectedModel = data.selectedModel || "";
@@ -580,7 +580,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       const baseUrl = data.providerBaseUrl || "";
       addLine({
         type: "user",
-        content: `❯ [Test ke ${selectedModel}]: ${message}`,
+        content: `❯ [Test to ${selectedModel}]: ${message}`,
         timestamp: now,
       });
       setIsProcessing(true);
@@ -615,7 +615,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       } catch (err: any) {
         addLine({
           type: "error",
-          content: `❌ Gagal mengirim pesan: ${err.message || String(err)}`,
+          content: `❌ Failed to send message: ${err.message || String(err)}`,
           timestamp: Date.now(),
         });
       } finally {

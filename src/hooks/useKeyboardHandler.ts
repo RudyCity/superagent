@@ -484,14 +484,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             setWizardSelectedIndex(0);
             setInput("");
           } else if (activeWizard.step === 6) {
-            // Pilih provider dari daftar → delegate ke handleWizardSubmit dengan index 1-based
+            // Select provider from list → delegate to handleWizardSubmit with 1-based index
             const idx = wizardSelectedIndex + 1;
             handleWizardSubmit(String(idx));
           } else if (activeWizard.step === 7) {
-            // Konfirmasi test koneksi
+            // Confirm connection test
             handleWizardSubmit(selectedOption);
           } else if (activeWizard.step === 8) {
-            // Pilih model — support filter: pakai filtered list jika ada input
+            // Select model — support filter: use filtered list if input exists
             const currentInput = (typeof input === "string") ? input.trim() : "";
             const filteredModels = currentInput ? filterSuggestions(wizardOptions, currentInput) : wizardOptions;
             const clampedIdx = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
@@ -923,7 +923,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           // Step 1: If checkpoint has gitSha, show git restore confirmation
           if (activeWizard.step === 1 && chosen.gitSha) {
             setActiveWizard({ type: "checkpoint", step: 2, data: { checkpointIndex: String(wizardSelectedIndex) } });
-            setWizardOptions(["✓ Ya, pulihkan workspace ke commit ini (git stash & checkout)", "✗ Tidak, hanya pulihkan riwayat percakapan saja"]);
+            setWizardOptions(["✓ Yes, restore workspace to this commit (git stash & checkout)", "✗ No, only restore conversation history"]);
             setWizardSelectedIndex(0);
             return;
           }
@@ -955,10 +955,10 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 setHistory(userInputs);
                 setPlanState(agentRef.current.planState);
               }
-              addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" berhasil dipulihkan! (${chosen.messages.length} messages)`, timestamp: now });
+              addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" restored successfully! (${chosen.messages.length} messages)`, timestamp: now });
             })
             .catch((err: any) => {
-              addLine({ type: "error", content: `Gagal memulihkan checkpoint: ${err.message}`, timestamp: now });
+              addLine({ type: "error", content: `Failed to restore checkpoint: ${err.message}`, timestamp: now });
             });
 
           setActiveWizard(null);
@@ -1000,12 +1000,12 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                   await execaFn("git", ["stash", "--include-untracked"], { cwd: targetCwd, reject: false });
                   const checkoutRes = await execaFn("git", ["checkout", chosen.gitSha], { cwd: targetCwd, reject: false });
                   if (checkoutRes.failed) {
-                    addLine({ type: "error", content: `Git restore gagal: ${checkoutRes.stderr || checkoutRes.message}. Riwayat percakapan tetap dipulihkan.`, timestamp: now });
+                    addLine({ type: "error", content: `Git restore failed: ${checkoutRes.stderr || checkoutRes.message}. Conversation history still restored.`, timestamp: now });
                   } else {
-                    addLine({ type: "system", content: `✓ Workspace dipulihkan ke Git commit: ${chosen.gitSha} (uncommitted changes di-stash)`, timestamp: now });
+                    addLine({ type: "system", content: `✓ Workspace restored to Git commit: ${chosen.gitSha} (uncommitted changes stashed)`, timestamp: now });
                   }
                 } catch (gitErr: any) {
-                  addLine({ type: "error", content: `Git restore gagal: ${gitErr.message}. Riwayat percakapan tetap dipulihkan.`, timestamp: now });
+                  addLine({ type: "error", content: `Git restore failed: ${gitErr.message}. Conversation history still restored.`, timestamp: now });
                 }
               }
 
@@ -1027,9 +1027,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 setHistory(userInputs);
                 setPlanState(agentRef.current.planState);
               }
-              addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" berhasil dipulihkan! (${chosen.messages.length} messages)`, timestamp: now });
+              addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" restored successfully! (${chosen.messages.length} messages)`, timestamp: now });
             } catch (err: any) {
-              addLine({ type: "error", content: `Gagal memulihkan checkpoint: ${err.message}`, timestamp: now });
+              addLine({ type: "error", content: `Failed to restore checkpoint: ${err.message}`, timestamp: now });
             }
           })();
 

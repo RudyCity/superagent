@@ -629,8 +629,26 @@ export function MultiAgentDashboard({
     }
   }
 
-  let bottomPromptHeight = 1; // Prompt input row
-  if (focusArea === "input" && query.startsWith("/") && suggestions.length > 0) {
+  // Determine if current wizard step is a pure selection step (no text input needed)
+  const isSelectionOnlyStep = (() => {
+    if (!activeWizard) return false;
+    if (activeWizard.type === "permission") return true;
+    if (activeWizard.type === "plan_approve") return true;
+    if (activeWizard.type === "resume") return true;
+    if (activeWizard.type === "checkpoint") return true;
+    if (activeWizard.type === "skills") return true;
+    if (activeWizard.type === "question" && activeWizard.step !== 2) return true;
+    if (activeWizard.type === "login") {
+      return [1, 2, 6, 7, 10].includes(activeWizard.step);
+    }
+    if (activeWizard.type === "model") {
+      return [1, 2, 3, 4, 22, 23, 25, 30, 32, 33, 35, 40, 41, 50].includes(activeWizard.step);
+    }
+    return false;
+  })();
+
+  let bottomPromptHeight = isSelectionOnlyStep ? 0 : 1; // Prompt input row (hidden for selection-only steps)
+  if (!isSelectionOnlyStep && focusArea === "input" && query.startsWith("/") && suggestions.length > 0) {
     bottomPromptHeight += 2;
   }
   let wizardHeight = 0;
@@ -663,7 +681,7 @@ export function MultiAgentDashboard({
 
     let wizardDescription = "";
     if (activeWizard.type === "plan_approve") {
-      wizardDescription = `Model AI telah merancang rencana di file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}`;
+      wizardDescription = `AI model has designed a plan in file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}`;
     } else if (activeWizard.type === "question") {
       wizardDescription = pendingQuestion?.question || "";
     } else if (activeWizard.type === "login" && activeWizard.step === 10) {
@@ -949,9 +967,9 @@ export function MultiAgentDashboard({
               const planUrl = "file:///" + path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/");
               return (
                 <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
-                  <Text bold color="yellow">⚠️ PENDING_PLAN: RENCANA IMPLEMENTASI MEMBUTUHKAN PERSETUJUAN</Text>
-                  <Text color="yellow">Model AI telah merancang rencana di file: <Text bold color="cyan">{planUrl}</Text></Text>
-                  <Text color="yellow">Silakan kirim pesan/masukan apa saja untuk menampilkan kembali dialog persetujuan wizard.</Text>
+            <Text bold color="yellow">⚠️ PENDING_PLAN: IMPLEMENTATION PLAN REQUIRES APPROVAL</Text>
+            <Text color="yellow">AI model has designed a plan in file: <Text bold color="cyan">{planUrl}</Text></Text>
+            <Text color="yellow">Send any message/feedback to display the plan approval dialog again.</Text>
                 </Box>
               );
             })()}
@@ -1027,89 +1045,93 @@ export function MultiAgentDashboard({
         </Box>
       )}
 
-      {/* Interactive Full-Width Console Prompt */}
-      {focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (
-        <Box flexDirection="row" marginBottom={1} paddingX={1}>
-          <Text color="cyan" dimColor>│   </Text>
-          <Text color="gray" dimColor>Suggestions: </Text>
-          {suggestions.slice(0, 5).map((s, idx) => (
-            <Text key={s} color={s === query ? "cyan" : "gray"} bold={s === query} underline={s === query}>
-              {s}{idx < Math.min(suggestions.length, 5) - 1 ? "  " : ""}
-            </Text>
-          ))}
-          {suggestions.length > 5 && <Text color="gray" dimColor> (+{suggestions.length - 5} more)</Text>}
-        </Box>
+      {/* Interactive Full-Width Console Prompt — hidden for selection-only wizard steps */}
+      {!isSelectionOnlyStep && (
+        <>
+          {focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (
+            <Box flexDirection="row" marginBottom={1} paddingX={1}>
+              <Text color="cyan" dimColor>│   </Text>
+              <Text color="gray" dimColor>Suggestions: </Text>
+              {suggestions.slice(0, 5).map((s, idx) => (
+                <Text key={s} color={s === query ? "cyan" : "gray"} bold={s === query} underline={s === query}>
+                  {s}{idx < Math.min(suggestions.length, 5) - 1 ? "  " : ""}
+                </Text>
+              ))}
+              {suggestions.length > 5 && <Text color="gray" dimColor> (+{suggestions.length - 5} more)</Text>}
+            </Box>
+          )}
+          <Box flexDirection="row" marginTop={0} paddingX={1} width="100%">
+            <Box flexShrink={0}>
+              <Text bold color={activeWizard ? "magenta" : isProcessing ? "gray" : (focusArea === "input" ? "green" : "cyan")}>
+                {activeWizard?.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)
+                  ? "└──[ MODEL ] ❯ "
+                  : activeWizard?.type === "model" && (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35)
+                  ? "└──[ PROFILE ] ❯ "
+                  : activeWizard?.type === "model" && (activeWizard.step === 2 || activeWizard.step === 23 || activeWizard.step === 33)
+                  ? "└──[ PROVIDER ] ❯ "
+                  : activeWizard?.type === "model" && (activeWizard.step === 1 || activeWizard.step === 22 || activeWizard.step === 32)
+                  ? "└──[ TIER ] ❯ "
+                  : activeWizard?.type === "model" && (activeWizard.step === 4 || activeWizard.step === 30 || activeWizard.step === 40)
+                  ? "└──[ PRESET ] ❯ "
+                  : activeWizard?.type === "model" && activeWizard.step === 20
+                  ? "└──[ PRESET_NAME ] ❯ "
+                  : activeWizard?.type === "model" && (activeWizard.step === 21 || activeWizard.step === 31)
+                  ? "└──[ PRESET_DESC ] ❯ "
+                  : activeWizard?.type === "model" && activeWizard.step === 41
+                  ? "└──[ CONFIRM ] ❯ "
+                  : activeWizard?.type === "model" && activeWizard.step === 50
+                  ? "└──[ CONFIGURE ] ❯ "
+                  : activeWizard?.type === "model" && activeWizard.step === 16
+                  ? "└──[ PROFILE_NAME ] ❯ "
+                  : activeWizard?.type === "model" && activeWizard.step === 17
+                  ? "└──[ BASE_URL ] ❯ "
+                  : activeWizard?.type === "model" && activeWizard.step === 18
+                  ? "└──[ API_KEY ] ❯ "
+                  : activeWizard?.type === "login"
+                  ? `└──[ LOGIN:${activeWizard.step} ] ❯ `
+                  : activeWizard?.type === "resume"
+                  ? "└──[ RESUME ] ❯ "
+                  : activeWizard?.type === "question"
+                  ? "└──[ ANSWER ] ❯ "
+                  : activeWizard?.type === "skills"
+                  ? `└──[ SKILLS:${activeWizard.step} ] ❯ `
+                  : activeWizard?.type === "checkpoint"
+                  ? "└──[ CHECKPOINT ] ❯ "
+                  : isProcessing
+                  ? "└───[ ⚡ PROCESSING ] ❯ "
+                  : "└───[ ⚡ PROMPT ] ❯ "}
+              </Text>
+            </Box>
+            <Box flexGrow={1}>
+              {isProcessing && !activeWizard ? (
+                <ProcessingIndicator scrollOffset={logScrollOffset} />
+              ) : (() => {
+                const { prefix, inserted, suffix } = getPasteSplit(query, pastePrefixLength, pasteSuffixLength);
+                const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
+                if (isPasteActive) {
+                  const lineCount = inserted.split("\n").length;
+                  return (
+                    <Box flexDirection="row">
+                      {prefix ? <Text>{prefix}</Text> : null}
+                      <Text color="yellow" bold>[Pasted Text: {inserted.length} chars, {lineCount} lines] </Text>
+                      {suffix ? <Text>{suffix}</Text> : null}
+                      <Text dimColor>(Press Enter to send, Esc to clear)</Text>
+                    </Box>
+                  );
+                }
+                return (
+                  <TextInput
+                    value={query}
+                    onChange={handleQueryChange}
+                    onSubmit={handleQuerySubmit}
+                    focus={focusArea === "input" && !isProcessing}
+                  />
+                );
+              })()}
+            </Box>
+          </Box>
+        </>
       )}
-      <Box flexDirection="row" marginTop={0} paddingX={1} width="100%">
-        <Box flexShrink={0}>
-          <Text bold color={activeWizard ? "magenta" : isProcessing ? "gray" : (focusArea === "input" ? "green" : "cyan")}>
-            {activeWizard?.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)
-              ? "└──[ MODEL ] ❯ "
-              : activeWizard?.type === "model" && (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35)
-              ? "└──[ PROFILE ] ❯ "
-              : activeWizard?.type === "model" && (activeWizard.step === 2 || activeWizard.step === 23 || activeWizard.step === 33)
-              ? "└──[ PROVIDER ] ❯ "
-              : activeWizard?.type === "model" && (activeWizard.step === 1 || activeWizard.step === 22 || activeWizard.step === 32)
-              ? "└──[ TIER ] ❯ "
-              : activeWizard?.type === "model" && (activeWizard.step === 4 || activeWizard.step === 30 || activeWizard.step === 40)
-              ? "└──[ PRESET ] ❯ "
-              : activeWizard?.type === "model" && activeWizard.step === 20
-              ? "└──[ PRESET_NAME ] ❯ "
-              : activeWizard?.type === "model" && (activeWizard.step === 21 || activeWizard.step === 31)
-              ? "└──[ PRESET_DESC ] ❯ "
-              : activeWizard?.type === "model" && activeWizard.step === 41
-              ? "└──[ CONFIRM ] ❯ "
-              : activeWizard?.type === "model" && activeWizard.step === 50
-              ? "└──[ CONFIGURE ] ❯ "
-              : activeWizard?.type === "model" && activeWizard.step === 16
-              ? "└──[ PROFILE_NAME ] ❯ "
-              : activeWizard?.type === "model" && activeWizard.step === 17
-              ? "└──[ BASE_URL ] ❯ "
-              : activeWizard?.type === "model" && activeWizard.step === 18
-              ? "└──[ API_KEY ] ❯ "
-              : activeWizard?.type === "login"
-              ? `└──[ LOGIN:${activeWizard.step} ] ❯ `
-              : activeWizard?.type === "resume"
-              ? "└──[ RESUME ] ❯ "
-              : activeWizard?.type === "question"
-              ? "└──[ ANSWER ] ❯ "
-              : activeWizard?.type === "skills"
-              ? `└──[ SKILLS:${activeWizard.step} ] ❯ `
-              : activeWizard?.type === "checkpoint"
-              ? "└──[ CHECKPOINT ] ❯ "
-              : isProcessing
-              ? "└───[ ⚡ PROCESSING ] ❯ "
-              : "└───[ ⚡ PROMPT ] ❯ "}
-          </Text>
-        </Box>
-        <Box flexGrow={1}>
-          {isProcessing && !activeWizard ? (
-            <ProcessingIndicator scrollOffset={logScrollOffset} />
-          ) : (() => {
-            const { prefix, inserted, suffix } = getPasteSplit(query, pastePrefixLength, pasteSuffixLength);
-            const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
-            if (isPasteActive) {
-              const lineCount = inserted.split("\n").length;
-              return (
-                <Box flexDirection="row">
-                  {prefix ? <Text>{prefix}</Text> : null}
-                  <Text color="yellow" bold>[Pasted Text: {inserted.length} chars, {lineCount} lines] </Text>
-                  {suffix ? <Text>{suffix}</Text> : null}
-                  <Text dimColor>(Press Enter to send, Esc to clear)</Text>
-                </Box>
-              );
-            }
-            return (
-              <TextInput
-                value={query}
-                onChange={handleQueryChange}
-                onSubmit={handleQuerySubmit}
-                focus={focusArea === "input" && !isProcessing}
-              />
-            );
-          })()}
-        </Box>
-      </Box>
 
       {/* Footer System statistics & shortcuts */}
       <DashboardStatusBar

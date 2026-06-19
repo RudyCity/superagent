@@ -530,19 +530,19 @@ export function App({
 
     }
     if (activeWizard.type === "model") {
-      if (activeWizard.step === 1) return "Pilih opsi konfigurasi model.";
-      if (activeWizard.step === 2) return "Pilih provider untuk tier model.";
-      if (activeWizard.step === 3) return "Pilih profil provider yang sudah dikonfigurasi, atau buat profil baru.";
+      if (activeWizard.step === 1) return "Select model configuration option.";
+      if (activeWizard.step === 2) return "Select provider for model tier.";
+      if (activeWizard.step === 3) return "Select a configured provider profile, or create a new one.";
       if (activeWizard.step === 6) return "Enter a name for the new provider profile.";
       if (activeWizard.step === 7) return "Enter the custom endpoint base URL.";
       if (activeWizard.step === 8) return "Paste the API key for the new provider profile.";
       if (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) return "Select an available model (type to filter).";
     }
     if (activeWizard.type === "question") {
-      return pendingQuestion?.question || "Pilih salah satu opsi atau jawaban custom.";
+      return pendingQuestion?.question || "Select an option or type a custom answer.";
     }
     if (activeWizard.type === "permission") {
-      return pendingPermission?.description || "Izinkan atau tolak tindakan ini.";
+      return pendingPermission?.description || "Allow or deny this action.";
     }
     return null;
   };
@@ -1293,7 +1293,27 @@ export function App({
   const activeToolLinesCount = activeToolOutput ? activeToolOutput.trim().split("\n").slice(-8).length : 0;
   const showBanner = messageCount === 0;
 
-  let chromeHeight = (showBanner ? 15 : 8) + inputLinesCount;
+  // Determine if current wizard step is a pure selection step (no text input needed)
+  const isSelectionOnlyStep = (() => {
+    if (!activeWizard) return false;
+    if (activeWizard.type === "permission") return true;
+    if (activeWizard.type === "plan_approve") return true;
+    if (activeWizard.type === "resume") return true;
+    if (activeWizard.type === "checkpoint") return true;
+    if (activeWizard.type === "skills") return true;
+    if (activeWizard.type === "question" && activeWizard.step !== 2) return true;
+    if (activeWizard.type === "login") {
+      // Steps 1,2,6,7,10 = pure selection; Step 8 = selection with search filter (needs input)
+      return [1, 2, 6, 7, 10].includes(activeWizard.step);
+    }
+    if (activeWizard.type === "model") {
+      // Steps 15,24,34 = model search/filter (needs input); others with options are pure selection
+      return [1, 2, 3, 4, 22, 23, 25, 30, 32, 33, 35, 40, 41, 50].includes(activeWizard.step);
+    }
+    return false;
+  })();
+
+  let chromeHeight = (showBanner ? 15 : 8) + (isSelectionOnlyStep ? 0 : inputLinesCount);
   if (isExecutingTool) {
     chromeHeight += 3;
     if (activeToolLinesCount > 0) chromeHeight += activeToolLinesCount + 1;
@@ -1421,8 +1441,8 @@ export function App({
     wizardSectionHeight += 2;
   }
 
-  // Input section height (border line + input text lines)
-  const inputSectionHeight = 1 + inputLinesCount;
+  // Input section height (border line + input text lines) — hidden for selection-only wizard steps
+  const inputSectionHeight = isSelectionOnlyStep ? 0 : 1 + inputLinesCount;
 
   // Bottom chrome: marginTop(1) + agents + checklist + wizard + input
   const bottomChromeContentHeight = totalAgentsHeight + checklistSectionHeight + wizardSectionHeight + inputSectionHeight;
@@ -1470,8 +1490,10 @@ export function App({
   }
 
   // Input
-  sectionBounds.push({ name: "input", startRow: row, endRow: row + inputSectionHeight - 1 });
-  row += inputSectionHeight;
+  if (inputSectionHeight > 0) {
+    sectionBounds.push({ name: "input", startRow: row, endRow: row + inputSectionHeight - 1 });
+    row += inputSectionHeight;
+  }
 
   // Status bar
   sectionBounds.push({ name: "statusbar", startRow: terminalHeight - 2, endRow: terminalHeight });
@@ -1593,7 +1615,8 @@ export function App({
               suggestions={suggestions}
             />
 
-            {/* CommandLine Input */}
+            {/* CommandLine Input — hidden for selection-only wizard steps */}
+            {!isSelectionOnlyStep && (
             <Box flexDirection="column">
               {(() => {
                 const question = getWizardQuestion();
@@ -1643,6 +1666,7 @@ export function App({
                 })()}
               </Box>
             </Box>
+            )}
 
           </Box>
         </Box>

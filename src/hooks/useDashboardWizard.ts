@@ -341,7 +341,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
               providerBaseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : ""),
             },
           });
-          setWizardOptions(["1. Ya, Test Koneksi", "2. Tidak"]);
+          setWizardOptions(["1. Yes, Test Connection", "2. No"]);
           setWizardSelectedIndex(0);
           return;
         } catch (err: any) {
@@ -373,7 +373,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             providerBaseUrl: selectedProvider.baseUrl || "",
           },
         });
-        setWizardOptions(["1. Ya, Test Koneksi", "2. Tidak"]);
+        setWizardOptions(["1. Yes, Test Connection", "2. No"]);
         setWizardSelectedIndex(0);
       } else if (activeWizard.step === 7) {
         const choice = value.toLowerCase();
@@ -1232,7 +1232,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             step: 97,
             data: commonData,
           });
-          setWizardOptions(["1. Ya, Test Koneksi", "2. Tidak"]);
+          setWizardOptions(["1. Yes, Test Connection", "2. No"]);
           setWizardSelectedIndex(0);
           setQuery("");
           return;
@@ -2497,7 +2497,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
         if (chosen.gitSha) {
           setActiveWizard({ type: "checkpoint", step: 2, data: { checkpointIndex: String(wizardSelectedIndex) } });
-          setWizardOptions(["✓ Ya, pulihkan workspace ke commit ini (git stash & checkout)", "✗ Tidak, hanya pulihkan riwayat percakapan saja"]);
+          setWizardOptions(["✓ Yes, restore workspace to this commit (git stash & checkout)", "✗ No, only restore conversation history"]);
           setWizardSelectedIndex(0);
           return;
         }
