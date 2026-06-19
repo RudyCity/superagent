@@ -164,7 +164,7 @@ export function App({
     Array<{ index: number; startRow: number; endRow: number; isTruncated: boolean; type: string }>
   >([]);
 
-  const maxChecklistVisible = 5;
+  const maxChecklistVisible = 3;
   const maxSuperagentsVisible = 2;
   const maxSubagentsVisible = 3;
   const maxProcsVisible = 5;
@@ -1355,7 +1355,7 @@ export function App({
     else if (activeWizard?.type !== "permission" && !isExecutingTool) chromeHeight += 3;
   }
   if (planState === "APPROVED" && checklistTasks.length > 0) {
-    chromeHeight += 3 + Math.min(checklistTasks.length, maxChecklistVisible);
+    chromeHeight += 1 + Math.min(checklistTasks.length, maxChecklistVisible);
   }
   // Account for completed history section height
   if (planState === "APPROVED" && completedHistory.length > 0) {
@@ -1414,7 +1414,7 @@ export function App({
   // Checklist height
   let checklistSectionHeight = 0;
   if (planState === "APPROVED" && checklistTasks.length > 0) {
-    checklistSectionHeight = 3 + Math.min(checklistTasks.length, maxChecklistVisible);
+    checklistSectionHeight = 1 + Math.min(checklistTasks.length, maxChecklistVisible);
   }
   // Account for completed history section height
   if (planState === "APPROVED" && completedHistory.length > 0) {

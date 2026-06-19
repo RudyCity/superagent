@@ -178,7 +178,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     suggestions = [],
   } = ctx;
 
-  const maxChecklistVisible = 5;
+  const maxChecklistVisible = 3;
   const maxSuperagentsVisible = 2;
   const maxSubagentsVisible = 3;
   const maxProcsVisible = 5;

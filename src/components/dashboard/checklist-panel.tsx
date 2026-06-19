@@ -34,20 +34,12 @@ export function ChecklistPanel({
 
   const totalTasks = checklistTasks.length;
   const completedTasks = checklistTasks.filter((t) => t.status === "x").length;
-  const inProgressTasks = checklistTasks.filter((t) => t.status === "/").length;
-  const pct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   const hasScroll = totalTasks > maxChecklistVisible;
   const scrollIndicator = hasScroll
     ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
     : "";
   const helpText = focusArea === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : "";
   const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
-
-  // Progress bar
-  const barWidth = 20;
-  const filledWidth = Math.round((pct / 100) * barWidth);
-  const emptyWidth = barWidth - filledWidth;
-  const progressBar = "█".repeat(filledWidth) + "░".repeat(emptyWidth);
 
   // History: show the most recent completed tasks (capped)
   const historyToShow = completedHistory.slice(-MAX_HISTORY_VISIBLE);
@@ -57,7 +49,6 @@ export function ChecklistPanel({
     <Box
       flexDirection="column"
       paddingX={1}
-      marginBottom={1}
     >
       {/* Active Tasks Section */}
       {hasActiveTasks && (
@@ -69,17 +60,9 @@ export function ChecklistPanel({
             </Text>
           </Box>
 
-          {/* Progress bar */}
-          <Box flexDirection="row" marginBottom={1}>
-            <Text color="cyan">Progress: </Text>
-            <Text color={pct === 100 ? "green" : "yellow"}>{progressBar}</Text>
-            <Text color="cyan"> {pct}% ({completedTasks}/{totalTasks} completed, {inProgressTasks} in progress)</Text>
-          </Box>
-
           {/* Timeline task list */}
           {visibleChecklist.map((task, index) => {
             const idx = checklistScrollOffset + index;
-            const isLastVisible = index === visibleChecklist.length - 1;
             let status = task.status;
             let statusIcon = "○";
             let taskColor = "white";
@@ -133,22 +116,15 @@ export function ChecklistPanel({
               displayStatusText = " (failed)";
             }
 
-            const connector = isLastVisible && !hasHistory ? "└──" : "├──";
+            const connector = "├──";
 
             return (
-              <Box key={idx} flexDirection="column">
-                <Box flexDirection="row">
-                  <Text color={connectorColor}>{connector} </Text>
-                  <Text color={connectorColor}>{statusIcon} </Text>
-                  <Text color={taskColor} strikethrough={status === "x"}>
-                    {task.text}{displayStatusText}
-                  </Text>
-                </Box>
-                {(!isLastVisible || hasHistory) && (
-                  <Box flexDirection="row">
-                    <Text color="gray">│</Text>
-                  </Box>
-                )}
+              <Box key={idx} flexDirection="row">
+                <Text color={connectorColor}>{connector} </Text>
+                <Text color={connectorColor}>{statusIcon} </Text>
+                <Text color={taskColor} strikethrough={status === "x"}>
+                  {task.text}{displayStatusText}
+                </Text>
               </Box>
             );
           })}
@@ -176,22 +152,14 @@ export function ChecklistPanel({
 
           {/* History task list (dimmed, compact) */}
           {historyToShow.map((task, index) => {
-            const isLast = index === historyToShow.length - 1;
-            const connector = isLast ? "└──" : "├──";
+            const connector = "├──";
             return (
-              <Box key={`hist-${index}`} flexDirection="column">
-                <Box flexDirection="row">
-                  <Text color="gray" dimColor>{connector} </Text>
-                  <Text color="gray" dimColor>◉ </Text>
-                  <Text color="gray" dimColor strikethrough>
-                    {task.text}
-                  </Text>
-                </Box>
-                {!isLast && (
-                  <Box flexDirection="row">
-                    <Text color="gray" dimColor>│</Text>
-                  </Box>
-                )}
+              <Box key={`hist-${index}`} flexDirection="row">
+                <Text color="gray" dimColor>{connector} </Text>
+                <Text color="gray" dimColor>◉ </Text>
+                <Text color="gray" dimColor strikethrough>
+                  {task.text}
+                </Text>
               </Box>
             );
           })}

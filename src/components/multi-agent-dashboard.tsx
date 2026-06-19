@@ -201,7 +201,7 @@ export function MultiAgentDashboard({
   const [agentsScrollOffset, setAgentsScrollOffset] = useState(0);
   const [procsScrollOffset, setProcsScrollOffset] = useState(0);
 
-  const maxChecklistVisible = 5;
+  const maxChecklistVisible = 3;
   const maxAgentsVisible = 3;
   const maxProcsVisible = 5;
 
@@ -726,7 +726,7 @@ export function MultiAgentDashboard({
   let checklistHeight = 0;
   if (planState === "APPROVED" && checklistTasks.length > 0) {
     const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
-    checklistHeight += 3 + checklistCount;
+    checklistHeight += 1 + checklistCount;
   }
   // Account for completed history section height
   if (planState === "APPROVED" && completedHistory.length > 0) {
