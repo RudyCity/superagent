@@ -774,6 +774,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.return) {
+          const isApprove = wizardSelectedIndex === 0;
+          handleWizardSubmit(isApprove ? "approve" : "reject");
           return;
         }
       } else if (activeWizard.type === "permission" && wizardOptions.length > 0) {

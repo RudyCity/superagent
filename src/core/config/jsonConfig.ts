@@ -191,11 +191,18 @@ export function saveModelConfig(config: GlobalModelConfig): boolean {
   const configPath = getModelConfigPath();
   try {
     ensureGlobalConfigDir();
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+    // Atomic write: write to a temp file first, then rename.
+    // This prevents file corruption if the process is killed (Ctrl+C, crash)
+    // during the write — the original file stays intact until rename completes.
+    const tmpPath = configPath + ".tmp";
+    fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), "utf-8");
+    fs.renameSync(tmpPath, configPath);
     cachedConfig = config;
     return true;
   } catch (error) {
     console.error("Error writing model-config.json:", error);
+    // Clean up temp file if rename failed but write succeeded
+    try { fs.unlinkSync(configPath + ".tmp"); } catch {}
     return false;
   }
 }
