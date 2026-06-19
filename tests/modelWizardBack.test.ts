@@ -14,7 +14,7 @@ import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js
 import { useModelWizard } from "../src/hooks/wizard/useModelWizard.js";
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
 import { ensureGlobalConfigDir } from "../src/core/config/paths.js";
-import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
+import { clearModelConfigCache, getProviders, addProvider } from "../src/core/config/jsonConfig.js";
 
 // Restore console.Console if Vitest mocked or removed it
 if (!console.Console) {

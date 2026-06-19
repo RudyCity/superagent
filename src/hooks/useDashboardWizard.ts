@@ -131,6 +131,17 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
   const presetMode: PresetMode = isMulti ? "multi" : "single";
   const modeLabel = isMulti ? "Multi-Agent" : "Single-Agent";
 
+  const getProfilePickerOptions = (providerType: string): string[] => {
+    const providers = getProviders().filter(p => p.provider === providerType);
+    return providers.map(p => {
+      const apiKey = p.apiKey || "";
+      const maskedKey = apiKey
+        ? (apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "...")
+        : "(no key)";
+      return `${p.name} (key: ${maskedKey})`;
+    });
+  };
+
   const getTierOptionsList = (
     masterModelFormatted: string,
     superagentModelFormatted: string,
@@ -959,9 +970,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           data: { ...activeWizard.data, providerType },
         });
 
-        const list = getConfiguredProviders();
-        const matchingProfiles = list.filter(p => p.type === providerType);
-        const profileOptions = formatProviderForPicker(matchingProfiles);
+        const profileOptions = getProfilePickerOptions(providerType);
 
         setWizardOptions([
           ...profileOptions,
@@ -1008,7 +1017,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         }
 
         const profileName = value.split(" (key:")[0].trim();
-        const list = getConfiguredProviders();
+        const list = getProviders();
         const found = list.find(p => p.name.toLowerCase() === profileName.toLowerCase());
         
         let resolvedApiKey = "";
@@ -1112,9 +1121,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             step: 3,
             data: { ...activeWizard.data },
           });
-          const list = getConfiguredProviders();
-          const matchingProfiles = list.filter(p => p.type === providerType);
-          const profileOptions = formatProviderForPicker(matchingProfiles);
+          const profileOptions = getProfilePickerOptions(providerType);
           setWizardOptions([
             ...profileOptions,
             `+ Configure a new ${providerType} profile`,
@@ -1445,9 +1452,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             step: 3,
             data: { ...activeWizard.data },
           });
-          const list = getConfiguredProviders();
-          const matchingProfiles = list.filter(p => p.type === providerType);
-          const profileOptions = formatProviderForPicker(matchingProfiles);
+          const profileOptions = getProfilePickerOptions(providerType);
           setWizardOptions([
             ...profileOptions,
             `+ Configure a new ${providerType} profile`,
@@ -1894,9 +1899,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           data: { ...activeWizard.data, providerType },
         });
 
-        const list = getConfiguredProviders();
-        const matchingProfiles = list.filter(p => p.type === providerType);
-        const profileOptions = formatProviderForPicker(matchingProfiles);
+        const profileOptions = getProfilePickerOptions(providerType);
 
         setWizardOptions([
           ...profileOptions,
@@ -1945,7 +1948,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         }
 
         const profileName = value.split(" (key:")[0].trim();
-        const list = getConfiguredProviders();
+        const list = getProviders();
         const found = list.find(p => p.name.toLowerCase() === profileName.toLowerCase());
         
         let resolvedApiKey = "";
@@ -2050,9 +2053,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             data: { ...activeWizard.data },
           });
           const providerType = activeWizard.data.providerType;
-          const list = getConfiguredProviders();
-          const matchingProfiles = list.filter(p => p.type === providerType);
-          const profileOptions = formatProviderForPicker(matchingProfiles);
+          const profileOptions = getProfilePickerOptions(providerType);
           setWizardOptions([
             ...profileOptions,
             `+ Configure a new ${providerType} profile`,

@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { 
   getConfiguredProviders, 
+  getProviders,
   switchActiveProvider, 
   fetchAndCacheModels, 
   getContextWindowLimit, 
@@ -75,6 +76,17 @@ export function useModelWizard(ctx: ModelWizardContext) {
         `6. Configure ${isMulti ? "Agent Tier" : "Single Agent"} Models`,
         "< Back"
       ];
+    };
+
+    const getProfilePickerOptions = (providerType: string): string[] => {
+      const providers = getProviders().filter(p => p.provider === providerType);
+      return providers.map(p => {
+        const apiKey = p.apiKey || "";
+        const maskedKey = apiKey
+          ? (apiKey.length > 8 ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "...")
+          : "(no key)";
+        return `${p.name} (key: ${maskedKey})`;
+      });
     };
 
     const getPresetOptionsList = (models: Record<string, string>): string[] => {
@@ -1212,9 +1224,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         data: { ...data, providerType },
       });
 
-      const list = getConfiguredProviders();
-      const matchingProfiles = list.filter(p => p.type === providerType);
-      const profileOptions = formatProviderForPicker(matchingProfiles);
+      const profileOptions = getProfilePickerOptions(providerType);
 
       setWizardOptions([
         ...profileOptions,
@@ -1264,7 +1274,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       }
 
       const profileName = value.split(" (key:")[0].trim();
-      const list = getConfiguredProviders();
+      const list = getProviders();
       const found = list.find(p => p.name.toLowerCase() === profileName.toLowerCase());
       
       let resolvedApiKey = "";
@@ -1391,7 +1401,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         
         const activeProvider = getActiveProviderName();
         const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-          ? `${profileName.toLowerCase()}:${modelName}`
+          ? `${profileName.toLowerCase()}@${modelName}`
           : modelName;
 
         const presetModels: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
@@ -1459,7 +1469,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           } else if (tier === "all_subagents") {
             const activeProvider = getActiveProviderName() || profileName;
             const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-              ? `${profileName.toLowerCase()}:${modelName}`
+              ? `${profileName.toLowerCase()}@${modelName}`
               : modelName;
             setTierModel(presetMode, "subagent", finalModelName);
             setTierModel(presetMode, "researcher", finalModelName);
@@ -1470,7 +1480,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           } else if (tier === "all") {
             const activeProvider = getActiveProviderName() || profileName;
             const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-              ? `${profileName.toLowerCase()}:${modelName}`
+              ? `${profileName.toLowerCase()}@${modelName}`
               : modelName;
             setAllTierModels(presetMode, finalModelName);
             targetLabel = "All Tiers & Subagents";
@@ -1478,7 +1488,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           } else {
             const activeProvider = getActiveProviderName() || profileName;
             const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-              ? `${profileName.toLowerCase()}:${modelName}`
+              ? `${profileName.toLowerCase()}@${modelName}`
               : modelName;
             
             if (tier === "master") {
@@ -1499,14 +1509,14 @@ export function useModelWizard(ctx: ModelWizardContext) {
             }
           }
 
-          const cleanModelName = modelName.includes(":") ? modelName.substring(modelName.indexOf(":") + 1) : modelName;
+          const cleanModelName = modelName.includes("@") ? modelName.substring(modelName.indexOf("@") + 1) : modelName;
           const limit = getContextWindowLimit(cleanModelName);
           
           const isSingle = !isMulti;
           const effectiveModel = isSingle
             ? (getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel())
             : (getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel());
-          const cleanModel = effectiveModel.includes(":") ? effectiveModel.substring(effectiveModel.indexOf(":") + 1) : effectiveModel;
+          const cleanModel = effectiveModel.includes("@") ? effectiveModel.substring(effectiveModel.indexOf("@") + 1) : effectiveModel;
           const newLimit = getContextWindowLimit(cleanModel);
           setContextLimit(newLimit);
           setActiveModel(effectiveModel);
@@ -1723,7 +1733,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         } else if (tier === "all") {
           const activeProvider = getActiveProviderName();
           const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-            ? `${profileName.toLowerCase()}:${modelName}`
+            ? `${profileName.toLowerCase()}@${modelName}`
             : modelName;
           setAllTierModels(presetMode, finalModelName);
           targetLabel = "All Tiers & Subagents";
@@ -1731,7 +1741,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         } else {
           const activeProvider = getActiveProviderName();
           const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-            ? `${profileName.toLowerCase()}:${modelName}`
+            ? `${profileName.toLowerCase()}@${modelName}`
             : modelName;
           
           if (tier === "master") {
@@ -1756,7 +1766,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const effectiveModel = isSingle
           ? (getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel())
           : (getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel());
-        const cleanModel = effectiveModel.includes(":") ? effectiveModel.substring(effectiveModel.indexOf(":") + 1) : effectiveModel;
+        const cleanModel = effectiveModel.includes("@") ? effectiveModel.substring(effectiveModel.indexOf("@") + 1) : effectiveModel;
         const newLimit = getContextWindowLimit(cleanModel);
         setContextLimit(newLimit);
         setActiveModel(effectiveModel);
