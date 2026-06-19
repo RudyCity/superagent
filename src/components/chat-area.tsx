@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from "react";
+import React, { useMemo, useEffect, memo } from "react";
 import { Box, Text } from "ink";
 import { Banner } from "./banner.js";
 import { ChatLineComponent, renderMarkdown, truncateStreamDisplay } from "./chat-line.js";
@@ -34,7 +34,7 @@ export interface ChatAreaProps {
   chatContentStartRow?: number;
 }
 
-export function ChatArea(props: ChatAreaProps) {
+export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
   const {
     showBanner,
     focusMode,
@@ -286,4 +286,4 @@ export function ChatArea(props: ChatAreaProps) {
       </Box>
     </>
   );
-}
+});

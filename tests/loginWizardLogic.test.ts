@@ -64,10 +64,10 @@ describe("loginWizardLogic", () => {
       ]);
     });
 
-    it("limits results to 50", () => {
-      const cached = Array.from({ length: 60 }, (_, i) => `gpt-${i}`);
-      expect(getModelOptions("openai", cached)).toHaveLength(50);
-    });
+  it("limits results to 15", () => {
+    const cached = Array.from({ length: 60 }, (_, i) => `gpt-${i}`);
+    expect(getModelOptions("openai", cached)).toHaveLength(15);
+  });
   });
 
   describe("resolveTestModel", () => {

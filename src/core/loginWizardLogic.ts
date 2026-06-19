@@ -55,7 +55,7 @@ export function getModelOptions(providerType: string, cachedModels: string[]): s
     );
     models = filtered.length > 0 ? filtered : fallback;
   }
-  return models.slice(0, 50);
+  return models.slice(0, 15);
 }
 
 export function resolveTestModel(providerType: string, baseUrl: string): string {

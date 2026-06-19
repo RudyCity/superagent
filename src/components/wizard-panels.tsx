@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { WizardDialog } from "./wizard-dialog.js";
 import { filterSuggestions } from "../utils/text.js";
@@ -35,7 +35,7 @@ export interface WizardPanelsProps {
   suggestions: string[];
 }
 
-export function WizardPanels(props: WizardPanelsProps) {
+export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps) {
   const {
     activeWizard,
     wizardOptions,
@@ -643,4 +643,4 @@ export function WizardPanels(props: WizardPanelsProps) {
       </Box>
     </>
   );
-}
+});
