@@ -24,7 +24,8 @@ export function buildProviderOptions(providers: ConfiguredProvider[]): string[] 
     .filter((p) => p.apiKey && p.apiKey.trim() !== "")
     .map((p, i) => {
       const label = p.provider || p.type || "unknown";
-      return `${i + 1}. ${p.name} [${label}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`;
+      const urlPart = p.baseUrl ? ` (${p.baseUrl})` : "";
+      return `${i + 1}. ${p.name} [${label}]${urlPart}`;
     });
 }
 
@@ -88,9 +89,17 @@ export async function fetchModelsFromEndpoint(
 
     const json = (await res.json()) as any;
     if (json && Array.isArray(json.data)) {
+      const seen = new Set<string>();
       return json.data
         .map((m: any) => m?.id)
-        .filter((id: any): id is string => typeof id === "string" && id.length > 0);
+        .filter((id: any): id is string => {
+          if (typeof id !== "string") return false;
+          const trimmed = id.trim();
+          if (trimmed.length === 0 || trimmed.length > 256) return false;
+          if (seen.has(trimmed)) return false;
+          seen.add(trimmed);
+          return true;
+        });
     }
     return [];
   } catch {

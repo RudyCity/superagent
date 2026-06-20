@@ -29,7 +29,8 @@ import {
   setTierModel,
   setAllTierModels,
   clearTierModel,
-  getAllTierModels
+  getAllTierModels,
+  getModelInstanceForString
 } from "../core/config.js";
 import type { PresetMode } from "../core/config.js";
 import { filterSuggestions } from "../utils/text.js";
@@ -316,6 +317,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           // Set provider ini sebagai aktif di preset JSON
           switchActiveProvider(providerId);
 
+          const effectiveBaseUrl = baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : "");
           const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
 
           setMasterLogs((prev) => [
@@ -323,25 +325,33 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             `[SYSTEM] Successfully configured provider profile: ${profileName} (${provider})${baseUrlInfo}\nSaved to model-config.json`
           ].slice(-500));
 
-          fetchAndCacheModels()
-            .then(() => {
-              const effectiveMasterModel = getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel();
-              setActiveModel(effectiveMasterModel);
-            })
-            .catch(() => {});
+          // Skip connection test (old step 7) — go directly to model selection (step 8).
+          // The connection will be tested naturally when the user sends a test message in step 9.
+          setWizardIsLoadingModels(true);
+          let models: string[];
+          try {
+            await fetchAndCacheModels();
+          } catch {}
+          if (provider === "custom" && effectiveBaseUrl) {
+            const endpointModels = await fetchModelsFromEndpoint(effectiveBaseUrl, apiKey);
+            models = endpointModels.length > 0 ? endpointModels : getModelOptions(provider, getCachedModelIds());
+          } else {
+            models = getModelOptions(provider, getCachedModelIds());
+          }
+          setWizardIsLoadingModels(false);
 
           setActiveWizard({
             type: "login",
-            step: 7,
+            step: 8,
             data: {
               providerId,
               providerName: profileName,
               providerType: provider,
               providerApiKey: apiKey,
-              providerBaseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : ""),
+              providerBaseUrl: effectiveBaseUrl,
             },
           });
-          setWizardOptions(["1. Yes, Test Connection", "2. No"]);
+          setWizardOptions(models);
           setWizardSelectedIndex(0);
           return;
         } catch (err: any) {
@@ -362,127 +372,81 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           return;
         }
         setMasterLogs((prev) => [...prev, `[MASTER] Provider selected: ${selectedProvider.name} [${selectedProvider.provider}]`].slice(-500));
+        // Skip connection test (old step 7) — go directly to model selection (step 8).
+        setWizardIsLoadingModels(true);
+        const selBaseUrl = selectedProvider.baseUrl || "";
+        const selApiKey = selectedProvider.apiKey || "";
+        const selType = selectedProvider.provider || "";
+        let models: string[];
+        try {
+          await fetchAndCacheModels();
+        } catch {}
+        if (selType === "custom" && selBaseUrl) {
+          const endpointModels = await fetchModelsFromEndpoint(selBaseUrl, selApiKey);
+          models = endpointModels.length > 0 ? endpointModels : getModelOptions(selType, getCachedModelIds());
+        } else {
+          models = getModelOptions(selType, getCachedModelIds());
+        }
+        setWizardIsLoadingModels(false);
         setActiveWizard({
           type: "login",
-          step: 7,
+          step: 8,
           data: {
             providerId: selectedProvider.id,
             providerName: selectedProvider.name,
-            providerType: selectedProvider.provider,
-            providerApiKey: selectedProvider.apiKey,
-            providerBaseUrl: selectedProvider.baseUrl || "",
+            providerType: selType,
+            providerApiKey: selApiKey,
+            providerBaseUrl: selBaseUrl,
           },
         });
-        setWizardOptions(["1. Yes, Test Connection", "2. No"]);
-        setWizardSelectedIndex(0);
-      } else if (activeWizard.step === 7) {
-        const choice = value.toLowerCase();
-        const skipTest = choice.includes("tidak") || choice.includes("no") || choice === "2" || choice.startsWith("2.");
-        if (!activeWizard.data || !activeWizard.data.providerType) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Provider data is missing. Please re-select or create a provider.`].slice(-500));
-          setActiveWizard(null);
-          setWizardOptions([]);
-          setWizardSelectedIndex(0);
-          return;
-        }
-        if (skipTest) {
-          setMasterLogs((prev) => [...prev, `[SYSTEM] Connection test skipped.`].slice(-500));
-          const models = getModelOptions(activeWizard.data.providerType || "", getCachedModelIds());
-          setActiveWizard({ type: "login", step: 8, data: activeWizard.data });
-          setWizardOptions(models);
-          setWizardSelectedIndex(0);
-          return;
-        }
-        setMasterLogs((prev) => [...prev, `[SYSTEM] Testing connection to ${activeWizard.data.providerName}...`].slice(-500));
-        setWizardIsLoadingModels(true);
-        try {
-          const { generateText } = await import("ai");
-          const { createOpenAI } = await import("@ai-sdk/openai");
-          const { createAnthropic } = await import("@ai-sdk/anthropic");
-          const providerType = activeWizard.data.providerType || "";
-          const apiKey = activeWizard.data.providerApiKey || "";
-          const baseUrl = activeWizard.data.providerBaseUrl || "";
-          let testModel: any;
-          const testModelName = await resolveTestModelAsync(providerType, baseUrl, apiKey);
-          setMasterLogs((prev) => [...prev, `[SYSTEM] Using test model: ${testModelName}`].slice(-500));
-          if (providerType === "anthropic") {
-            const anthropic = createAnthropic({ apiKey });
-            testModel = anthropic(testModelName);
-          } else {
-            const openaiOpts: any = { apiKey };
-            if (baseUrl) openaiOpts.baseURL = baseUrl;
-            openaiOpts.headers = {
-              "HTTP-Referer": "https://github.com/RudyCity/superagent",
-              "X-Title": "SuperAgent CLI",
-            };
-            const openai = createOpenAI(openaiOpts);
-            testModel = openai(testModelName);
-          }
-          const result = await generateText({
-            model: testModel,
-            prompt: 'Reply with exactly one word: "OK"',
-            maxTokens: 10,
-          });
-          setMasterLogs((prev) => [...prev, `[SYSTEM] Connection successful! Response: "${result.text.trim()}"`].slice(-500));
-        } catch (err: any) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Connection failed: ${err.message || String(err)}`].slice(-500));
-        } finally {
-          setWizardIsLoadingModels(false);
-        }
-        try { await fetchAndCacheModels(); } catch {}
-        // For custom endpoints, fetch models directly from the endpoint
-        const _pType7 = activeWizard.data.providerType || "";
-        const _pBaseUrl7 = activeWizard.data.providerBaseUrl || "";
-        const _pApiKey7 = activeWizard.data.providerApiKey || "";
-        let models: string[];
-        if (_pType7 === "custom" && _pBaseUrl7) {
-          const endpointModels = await fetchModelsFromEndpoint(_pBaseUrl7, _pApiKey7);
-          models = endpointModels.length > 0 ? endpointModels : getModelOptions(_pType7, getCachedModelIds());
-        } else {
-          models = getModelOptions(_pType7, getCachedModelIds());
-        }
-        setActiveWizard({ type: "login", step: 8, data: activeWizard.data });
         setWizardOptions(models);
         setWizardSelectedIndex(0);
       } else if (activeWizard.step === 8) {
         const selectedModel = value;
-        setMasterLogs((prev) => [...prev, `[MASTER] Model selected: ${selectedModel}`].slice(-500));
+        setMasterLogs((prev) => [...prev, `[MASTER] Model selected: ${selectedModel}\nNow type a test message to verify the connection works (e.g. "hi"), or type /skip to finish setup.`].slice(-500));
         setActiveWizard({ type: "login", step: 9, data: { ...activeWizard.data, selectedModel } });
         setWizardOptions([]);
         setWizardSelectedIndex(0);
         setQuery("");
       } else if (activeWizard.step === 9) {
         const message = value.trim();
-        if (!message) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Message cannot be empty.`].slice(-500));
+        if (!message || message === "/skip") {
+          // Skip test message — still persist the selected model
+          const selectedModel = activeWizard.data.selectedModel || "";
+          if (selectedModel) {
+            setAllTierModels(isMulti ? "multi" : "single", selectedModel);
+            const limit = getContextWindowLimit(selectedModel);
+            setContextLimit(limit);
+            const effectiveModel = getEffectiveMasterModel(isMulti ? "multi" : "single") || selectedModel;
+            setActiveModel(effectiveModel);
+            setMasterLogs((prev) => [...prev, `[SYSTEM] Setup complete. Active model: ${selectedModel}`].slice(-500));
+          }
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
           return;
         }
         const selectedModel = activeWizard.data.selectedModel || "";
-        const providerType = activeWizard.data.providerType || "";
-        const apiKey = activeWizard.data.providerApiKey || "";
-        const baseUrl = activeWizard.data.providerBaseUrl || "";
+        if (!selectedModel) {
+          setMasterLogs((prev) => [...prev, `[ERROR] No model selected. Please go back and select a model.`].slice(-500));
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
         setMasterLogs((prev) => [...prev, `[USER] [Test to ${selectedModel}]: ${message}`].slice(-500));
         setIsProcessing(true);
         try {
           const { generateText } = await import("ai");
-          const { createOpenAI } = await import("@ai-sdk/openai");
-          const { createAnthropic } = await import("@ai-sdk/anthropic");
-          let testModel: any;
-          if (providerType === "anthropic") {
-            const anthropic = createAnthropic({ apiKey });
-            testModel = anthropic(selectedModel);
-          } else {
-            const openaiOpts: any = { apiKey };
-            if (baseUrl) openaiOpts.baseURL = baseUrl;
-            openaiOpts.headers = {
-              "HTTP-Referer": "https://github.com/RudyCity/superagent",
-              "X-Title": "SuperAgent CLI",
-            };
-            const openai = createOpenAI(openaiOpts);
-            testModel = openai(selectedModel);
-          }
+          const testModel = getModelInstanceForString(selectedModel);
           const result = await generateText({ model: testModel, prompt: message, maxTokens: 512 });
           setMasterLogs((prev) => [...prev, `[ASSISTANT] ${result.text}`].slice(-500));
+          // Persist the selected model after successful test
+          setAllTierModels(isMulti ? "multi" : "single", selectedModel);
+          const limit = getContextWindowLimit(selectedModel);
+          setContextLimit(limit);
+          const effectiveModel = getEffectiveMasterModel(isMulti ? "multi" : "single") || selectedModel;
+          setActiveModel(effectiveModel);
         } catch (err: any) {
           setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message || String(err)}`].slice(-500));
         } finally {
@@ -597,13 +561,16 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             "└──────────────────────────────────────────────"
           ];
           setMasterLogs((prev) => [...prev, `[SYSTEM] ${auditLines.join("\n")}`].slice(-500));
+
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
         })().catch(err => {
           setMasterLogs((prev) => [...prev, `[ERROR] Failed to complete project initialization: ${err.message}`].slice(-500));
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
         });
-
-        setActiveWizard(null);
-        setWizardOptions([]);
-        setWizardSelectedIndex(0);
       } else if (activeWizard.step === 13) {
         const goal = value.trim();
         if (!goal) {
@@ -722,12 +689,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             await fs.writeFile(agentsPath, fallbackContent, "utf-8");
           } finally {
             setCurrentTask("Idle");
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
           }
         })();
-
-        setActiveWizard(null);
-        setWizardOptions([]);
-        setWizardSelectedIndex(0);
       }
     } else if (activeWizard.type === "model") {
       if (activeWizard.step === 1) {
@@ -1248,12 +1214,28 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             returnStep: activeWizard.data.isPreset === "true" ? Number(activeWizard.data.returnStep) : 15,
           };
 
+          // Skip connection test (old step 97) — go directly to model selection (step 98).
+          // The connection will be tested naturally when the user sends a test message in step 99.
+          setWizardIsLoadingModels(true);
+          const mwBaseUrl = commonData.providerBaseUrl;
+          let mwModels: string[];
+          try {
+            await fetchAndCacheModels();
+          } catch {}
+          if (providerType === "custom" && mwBaseUrl) {
+            const endpointModels = await fetchModelsFromEndpoint(mwBaseUrl, apiKey);
+            mwModels = endpointModels.length > 0 ? endpointModels : getModelOptions(providerType, getCachedModelIds());
+          } else {
+            mwModels = getModelOptions(providerType, getCachedModelIds());
+          }
+          setWizardIsLoadingModels(false);
+
           setActiveWizard({
             type: "model",
-            step: 97,
+            step: 98,
             data: commonData,
           });
-          setWizardOptions(["1. Yes, Test Connection", "2. No"]);
+          setWizardOptions(mwModels);
           setWizardSelectedIndex(0);
           setQuery("");
           return;
@@ -1263,116 +1245,46 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           setWizardOptions([]);
           setWizardSelectedIndex(0);
         }
-      } else if (activeWizard.step === 97) {
-        const choice = value.toLowerCase();
-        const skipTest = choice.includes("tidak") || choice === "2" || choice === "no";
-        if (skipTest) {
-          setMasterLogs((prev) => [...prev, `[SYSTEM] Connection test skipped.`].slice(-500));
-          const models = getModelOptions(activeWizard.data.providerType || "", getCachedModelIds());
-          setActiveWizard({ type: "model", step: 98, data: activeWizard.data });
-          setWizardOptions(models);
-          setWizardSelectedIndex(0);
-          setQuery("");
-          return;
-        }
-        setMasterLogs((prev) => [...prev, `[SYSTEM] Testing connection to ${activeWizard.data.providerName}...`].slice(-500));
-        setWizardIsLoadingModels(true);
-        try {
-          const { generateText } = await import("ai");
-          const { createOpenAI } = await import("@ai-sdk/openai");
-          const { createAnthropic } = await import("@ai-sdk/anthropic");
-          const providerType = activeWizard.data.providerType || "";
-          const apiKey = activeWizard.data.providerApiKey || "";
-          const baseUrl = activeWizard.data.providerBaseUrl || "";
-          let testModel: any;
-          const testModelName = await resolveTestModelAsync(providerType, baseUrl, apiKey);
-          setMasterLogs((prev) => [...prev, `[SYSTEM] Using test model: ${testModelName}`].slice(-500));
-          if (providerType === "anthropic") {
-            const anthropic = createAnthropic({ apiKey });
-            testModel = anthropic(testModelName);
-          } else {
-            const openaiOpts: any = { apiKey };
-            if (baseUrl) openaiOpts.baseURL = baseUrl;
-            openaiOpts.headers = {
-              "HTTP-Referer": "https://github.com/RudyCity/superagent",
-              "X-Title": "SuperAgent CLI",
-            };
-            const openai = createOpenAI(openaiOpts);
-            testModel = openai(testModelName);
-          }
-          const result = await generateText({
-            model: testModel,
-            prompt: 'Reply with exactly one word: "OK"',
-            maxTokens: 10,
-          });
-          setMasterLogs((prev) => [...prev, `[SYSTEM] Connection successful! Response: "${result.text.trim()}"`].slice(-500));
-        } catch (err: any) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Connection failed: ${err.message || String(err)}`].slice(-500));
-        } finally {
-          setWizardIsLoadingModels(false);
-        }
-        try { await fetchAndCacheModels(); } catch {}
-        // For custom endpoints, fetch models directly from the endpoint
-        const _pType97 = activeWizard.data.providerType || "";
-        const _pBaseUrl97 = activeWizard.data.providerBaseUrl || "";
-        const _pApiKey97 = activeWizard.data.providerApiKey || "";
-        let models: string[];
-        if (_pType97 === "custom" && _pBaseUrl97) {
-          const endpointModels = await fetchModelsFromEndpoint(_pBaseUrl97, _pApiKey97);
-          models = endpointModels.length > 0 ? endpointModels : getModelOptions(_pType97, getCachedModelIds());
-        } else {
-          models = getModelOptions(_pType97, getCachedModelIds());
-        }
-        setActiveWizard({ type: "model", step: 98, data: activeWizard.data });
-        setWizardOptions(models);
-        setWizardSelectedIndex(0);
-        setQuery("");
       } else if (activeWizard.step === 98) {
         const selectedModel = value;
-        setMasterLogs((prev) => [...prev, `[MASTER] Model selected: ${selectedModel}`].slice(-500));
+        setMasterLogs((prev) => [...prev, `[MASTER] Model selected: ${selectedModel}\nNow type a test message to verify the connection works (e.g. "hi"), or type /skip to finish setup.`].slice(-500));
         setActiveWizard({ type: "model", step: 99, data: { ...activeWizard.data, selectedModel } });
         setWizardOptions([]);
         setWizardSelectedIndex(0);
         setQuery("");
       } else if (activeWizard.step === 99) {
         const message = value.trim();
-        if (!message) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Message cannot be empty.`].slice(-500));
-          return;
-        }
         const selectedModel = activeWizard.data.selectedModel || "";
         const providerType = activeWizard.data.providerType || "";
-        const apiKey = activeWizard.data.providerApiKey || "";
-        const baseUrl = activeWizard.data.providerBaseUrl || "";
         const returnStep = activeWizard.data.returnStep || 15;
         const returnProviderType = activeWizard.data.returnProviderType || providerType;
         const profileName = activeWizard.data.provider || "";
-        setMasterLogs((prev) => [...prev, `[USER] [Test to ${selectedModel}]: ${message}`].slice(-500));
-        setIsProcessing(true);
-        try {
-          const { generateText } = await import("ai");
-          const { createOpenAI } = await import("@ai-sdk/openai");
-          const { createAnthropic } = await import("@ai-sdk/anthropic");
-          let testModel: any;
-          if (providerType === "anthropic") {
-            const anthropic = createAnthropic({ apiKey });
-            testModel = anthropic(selectedModel);
-          } else {
-            const openaiOpts: any = { apiKey };
-            if (baseUrl) openaiOpts.baseURL = baseUrl;
-            openaiOpts.headers = {
-              "HTTP-Referer": "https://github.com/RudyCity/superagent",
-              "X-Title": "SuperAgent CLI",
-            };
-            const openai = createOpenAI(openaiOpts);
-            testModel = openai(selectedModel);
+
+        if (!message || message === "/skip") {
+          // Skip test — still persist and continue
+          if (selectedModel) {
+            setMasterLogs((prev) => [...prev, `[SYSTEM] Test skipped. Model: ${selectedModel}`].slice(-500));
           }
-          const result = await generateText({ model: testModel, prompt: message, maxTokens: 512 });
-          setMasterLogs((prev) => [...prev, `[ASSISTANT] ${result.text}`].slice(-500));
-        } catch (err: any) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message || String(err)}`].slice(-500));
-        } finally {
-          setIsProcessing(false);
+        } else {
+          if (!selectedModel) {
+            setMasterLogs((prev) => [...prev, `[ERROR] No model selected.`].slice(-500));
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            return;
+          }
+          setMasterLogs((prev) => [...prev, `[USER] [Test to ${selectedModel}]: ${message}`].slice(-500));
+          setIsProcessing(true);
+          try {
+            const { generateText } = await import("ai");
+            const testModel = getModelInstanceForString(selectedModel);
+            const result = await generateText({ model: testModel, prompt: message, maxTokens: 512 });
+            setMasterLogs((prev) => [...prev, `[ASSISTANT] ${result.text}`].slice(-500));
+          } catch (err: any) {
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message || String(err)}`].slice(-500));
+          } finally {
+            setIsProcessing(false);
+          }
         }
 
         switchActiveProvider(activeWizard.data.providerId || profileName.toLowerCase().replace(/[^a-z0-9_-]/g, ""));

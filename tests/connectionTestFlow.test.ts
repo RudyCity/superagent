@@ -145,38 +145,21 @@ describe("loginWizardLogic — pure helper functions", () => {
   });
 });
 
-describe("Connection test step 7 — skipTest logic", () => {
-  // Simulates the skipTest logic from step 7
-  function isSkipTest(value: string): boolean {
-    const choice = value.toLowerCase();
-    return choice.includes("tidak") || choice.includes("no") || choice === "2" || choice.startsWith("2.");
-  }
+describe("Wizard flow — step 7 bypassed (connection test via step 9)", () => {
+  // After the refactor, the wizard skips step 7 (hardcoded connection test)
+  // and goes directly from step 5/6 to step 8 (model selection).
+  // The connection is tested naturally when the user sends a test message in step 9.
+  // The step 7 handler code is kept as dead code for backward compatibility.
 
-  it("should skip test when user selects '2. No'", () => {
-    expect(isSkipTest("2. No")).toBe(true);
+  it("should document that resolveTestModel is no longer used in the main wizard flow", () => {
+    // resolveTestModel still works as a helper but is no longer called in the wizard
+    expect(resolveTestModel("custom", "http://localhost:8080/v1")).toBe("gpt-4o-mini");
   });
 
-  it("should skip test when user types 'no'", () => {
-    expect(isSkipTest("no")).toBe(true);
-  });
-
-  it("should skip test when user types 'tidak'", () => {
-    expect(isSkipTest("Tidak")).toBe(true);
-  });
-
-  it("should skip test when user types '2'", () => {
-    expect(isSkipTest("2")).toBe(true);
-  });
-
-  it("should NOT skip test when user selects '1. Yes, Test Connection'", () => {
-    expect(isSkipTest("1. Yes, Test Connection")).toBe(false);
-  });
-
-  it("should NOT skip test when user types 'yes'", () => {
-    expect(isSkipTest("yes")).toBe(false);
-  });
-
-  it("should NOT skip test when user types '1'", () => {
-    expect(isSkipTest("1")).toBe(false);
+  it("should return models for custom provider without filtering", () => {
+    // This is the key function used when transitioning to step 8
+    const cached = ["freemodel/gpt-5.4-mini", "openrouter/owl-alpha", "custom-model"];
+    const result = getModelOptions("custom", cached);
+    expect(result).toEqual(cached);
   });
 });
