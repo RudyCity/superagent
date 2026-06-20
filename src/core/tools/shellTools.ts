@@ -8,7 +8,8 @@ import {
   formatCommandForPowerShell, 
   truncateOutput, 
   detectInteractivePrompt, 
-  resolveWindowsShell 
+  resolveWindowsShell,
+  normalizeGitPaths
 } from "./helpers.js";
 import { 
   backgroundTasks, 
@@ -140,7 +141,7 @@ export const bashTool: Tool = {
     required: ["command"],
   },
   async execute(args, cwd, signal) {
-    let command = args.command as string;
+    let command = normalizeGitPaths(args.command as string);
     const timeout = (args.timeout as number) || 600000;
     
     let shellPath: string | boolean = true;
@@ -254,7 +255,7 @@ export const runCommandTool: Tool = {
     required: ["command"],
   },
   async execute(args, cwd, signal) {
-    let command = args.command as string;
+    let command = normalizeGitPaths(args.command as string);
     const targetCwd = args.cwd 
       ? path.resolve(cwd, args.cwd as string)
       : cwd;
@@ -376,7 +377,7 @@ export const runBackgroundProcessTool: Tool = {
     required: ["command"],
   },
   async execute(args, cwd, signal) {
-    let command = args.command as string;
+    let command = normalizeGitPaths(args.command as string);
     const targetCwd = args.cwd 
       ? path.resolve(cwd, args.cwd as string)
       : cwd;

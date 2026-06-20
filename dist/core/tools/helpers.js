@@ -130,20 +130,41 @@ export function truncateOutput(output, maxLines = 100) {
     }
     return output;
 }
+/**
+ * Normalize backslash paths inside git commands to forward slashes.
+ * Prevents Windows-style `feat\timer-service` being interpreted as
+ * `feat<TAB>imer-service` by Git/Bash.
+ *
+ * Only transforms arguments that follow git subcommands (checkout, diff,
+ * log, branch, worktree, merge, stash, etc.) — leaves the rest untouched.
+ */
+export function normalizeGitPaths(command) {
+    // Match git subcommands that take branch/path arguments
+    const gitSubcommands = /\b(git)\s+(checkout|diff|log|branch|worktree|merge|stash|show|reset|restore|add|cherry-pick|rebase)\b/;
+    if (!gitSubcommands.test(command)) {
+        return command;
+    }
+    // Replace backslash path separators in tokens that look like branch names
+    // or file paths following git subcommands. Avoids modifying string literals.
+    return command.replace(/(?<=git\s+(?:checkout|diff|log|branch|worktree|merge|stash|show|reset|restore|add|cherry-pick|rebase)\s+)([^\s;&|]+)/g, (match) => match.replace(/\\/g, "/"));
+}
 export function detectInteractivePrompt(text) {
+    // Patterns must be specific enough to avoid matching TypeScript/source code.
+    // Each pattern targets typical CLI prompts, not code declarations.
     const patterns = [
-        /\[y\/n\]/i,
-        /\(y\/n\)/i,
-        /confirm\?/i,
-        /proceed\?/i,
-        /enter\s+password/i,
-        /api\s+key/i,
-        /select\s+an\s+option/i,
-        /password:/i,
-        /passphrase:/i,
-        /user(name)?:/i,
-        /input\s+.*:/i,
-        /choice:/i,
+        /\[y\/n\]\s*$/im, // [y/n] at end of line
+        /\(y\/n\)\s*$/im, // (y/n) at end of line
+        /(?:^|\n)\s*(?:please\s+)?confirm\s*\?/im, // "confirm?" as standalone prompt
+        /(?:^|\n)\s*proceed\s*\?/im, // "proceed?" as standalone prompt
+        /(?:^|\n)\s*enter\s+password\s*:/im, // "Enter password:" prompt
+        /(?:^|\n)\s*select\s+an?\s+option/i, // "Select an option"
+        /(?:^|\n)\s*(?:please\s+)?(?:choose|pick)\s+(?:one|an?\s+option)/i,
+        /(?:^|\n)\s*password\s*:\s*$/im, // "password:" at end of line (not in code)
+        /(?:^|\n)\s*passphrase\s+for\s+/im, // SSH passphrase prompt
+        /(?:^|\n)\s*username\s*:\s*$/im, // "username:" at end of line
+        /(?:^|\n)\s*(?:continue|accept)\s*\[y\/n/i, // "Continue [y/n"
+        /(?:^|\n)\s*do\s+you\s+(?:want|wish)\s+to\s+/i, // "Do you want to..."
+        /(?:^|\n)\s*overwrite\s+\(y\/n\)/i, // "Overwrite (y/n)"
     ];
     for (const pattern of patterns) {
         if (pattern.test(text)) {

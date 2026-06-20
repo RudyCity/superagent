@@ -102,21 +102,24 @@ export function useDashboardKeyboard(ctx) {
                 return;
             }
         }
-        if (key.escape) {
-            if (!activeWizard && focusArea === "input") {
-                if (stopAllRunningAgents() > 0) {
-                    setCurrentTask("Idle - Interrupted");
-                    return;
-                }
+        // ESC: stop all running agents regardless of focus area
+        if (key.escape && !activeWizard) {
+            const stopped = stopAllRunningAgents();
+            if (stopped > 0) {
+                setCurrentTask("Idle - Interrupted");
+                setIsProcessing(false);
+                return;
             }
         }
-        if (focusArea === "input" && !activeWizard) {
-            if (key.escape) {
+        if (key.escape) {
+            if (!activeWizard && focusArea === "input") {
                 setQuery("");
                 setHistoryIndex(-1);
                 setLogScrollOffset(0);
                 return;
             }
+        }
+        if (focusArea === "input" && !activeWizard) {
             if (key.upArrow && history.length > 0) {
                 let newIndex = historyIndex;
                 if (historyIndex === -1) {

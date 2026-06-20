@@ -90,7 +90,12 @@ export const invokeSuperagentTool = {
         const typeName = args.typeName;
         const wait = args.wait === true;
         const constraints = args.constraints;
-        const acceptanceCriteria = args.acceptanceCriteria;
+        const rawCriteria = args.acceptanceCriteria;
+        const acceptanceCriteria = Array.isArray(rawCriteria)
+            ? rawCriteria.map(String)
+            : (typeof rawCriteria === "string" && rawCriteria.trim().length > 0
+                ? [rawCriteria]
+                : undefined);
         const mode = args.mode || "full";
         const isPatchMode = mode === "patch";
         // Only depth-0 (Master Agent) may invoke Superagents

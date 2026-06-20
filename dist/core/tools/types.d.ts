@@ -42,7 +42,7 @@ export interface SubagentInstance {
     typeName: string;
     role: string;
     agent: any;
-    status: "idle" | "running" | "completed" | "paused";
+    status: "idle" | "running" | "completed" | "paused" | "error";
     logs: string[];
     result?: string;
     completedAt?: number;

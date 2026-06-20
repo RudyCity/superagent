@@ -3,7 +3,6 @@ import { registerSubagentType } from "./state.js";
 
 import { 
   readTool, 
-  writeTool, 
   editTool, 
   globTool,
   grepTool,

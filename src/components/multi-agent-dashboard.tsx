@@ -13,12 +13,14 @@ import {
   subscribeToActiveOutput,
   notifySubagentsChanged,
   notifySuperagentsChanged,
+  notifyTasksChanged,
   historicalSuperagentTokens,
   masterPromptTokens,
   masterCompletionTokens,
   lastMasterPromptTokens
 } from "../core/tools/state.js";
 import { Agent } from "../core/agent.js";
+import { killProcessTree } from "../core/tools/index.js";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
 import path from "path";
 import { 
@@ -522,7 +524,15 @@ export function MultiAgentDashboard({
             setToolStartTime(null);
             setTimeLeft(null);
           }
-        } else if (event.type === "tool_end" || event.type === "error" || event.type === "done") {
+        } else if (event.type === "tool_end" || event.type === "error") {
+          setIsExecutingTool(false);
+          setToolTimeout(null);
+          setToolStartTime(null);
+          setTimeLeft(null);
+          if (event.type === "error") {
+            setIsProcessing(false);
+          }
+        } else if (event.type === "done") {
           setIsExecutingTool(false);
           setToolTimeout(null);
           setToolStartTime(null);
@@ -787,7 +797,7 @@ export function MultiAgentDashboard({
           inst.agent.abort();
         } catch {}
         inst.status = "completed";
-        inst.result = "[Cancelled by user (Ctrl+C)]";
+        inst.result = "[Cancelled by user]";
         count++;
       }
     }
@@ -801,7 +811,7 @@ export function MultiAgentDashboard({
         superagentInstances.set(inst.id, {
           ...inst,
           status: "error",
-          result: "[Cancelled by user (Ctrl+C)]",
+          result: "[Cancelled by user]",
           completedAt: Date.now()
         });
         count++;
@@ -816,10 +826,24 @@ export function MultiAgentDashboard({
       count++;
     }
 
+    // Kill all background processes (shell tasks spawned by agents)
+    for (const [id, task] of backgroundTasks.entries()) {
+      if (!task.hasExited) {
+        try {
+          killProcessTree(task.process.pid);
+        } catch {}
+        task.hasExited = true;
+        count++;
+      }
+    }
+    if (count > 0) {
+      notifyTasksChanged();
+    }
+
     if (count > 0) {
       notifySubagentsChanged();
       notifySuperagentsChanged();
-      setMasterLogs((prev) => [...prev, `[SYSTEM] 🛑 Interrupted ${count} running agent(s).`].slice(-500));
+      setMasterLogs((prev) => [...prev, `[SYSTEM] 🛑 Interrupted ${count} running agent(s)/process(es).`].slice(-500));
     }
     return count;
   };

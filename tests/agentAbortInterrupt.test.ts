@@ -69,8 +69,11 @@ describe("Agent - Abort and Instant Interruption", () => {
 
     const sendPromise = agent.sendMessage("test message");
 
-    // Let the event loop cycle so the agent starts running and enters the streaming call
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Poll until streamText is called (with a reasonable timeout)
+    const pollStart = Date.now();
+    while (!abortSignalPassed && Date.now() - pollStart < 2000) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
 
     expect(agent.isAgentRunning()).toBe(true);
     expect(abortSignalPassed).toBeDefined();
@@ -127,8 +130,11 @@ describe("Agent - Abort and Instant Interruption", () => {
 
     const sendPromise = agent.sendMessage("test message");
 
-    // Let the event loop cycle so the agent starts running, fails streamText, and enters delayWithCountdown
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Poll until agent is running and has entered the retry delay (with timeout)
+    const pollStart2 = Date.now();
+    while (!agent.isAgentRunning() && Date.now() - pollStart2 < 2000) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
 
     expect(agent.isAgentRunning()).toBe(true);
 

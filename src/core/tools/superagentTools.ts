@@ -106,7 +106,12 @@ export const invokeSuperagentTool: Tool = {
     const typeName = args.typeName as string | undefined;
     const wait = args.wait === true;
     const constraints = args.constraints as string | undefined;
-    const acceptanceCriteria = args.acceptanceCriteria as string[] | undefined;
+    const rawCriteria = args.acceptanceCriteria;
+    const acceptanceCriteria = Array.isArray(rawCriteria)
+      ? rawCriteria.map(String)
+      : (typeof rawCriteria === "string" && rawCriteria.trim().length > 0
+          ? [rawCriteria]
+          : undefined);
     const mode = (args.mode as string | undefined) || "full";
     const isPatchMode = mode === "patch";
 

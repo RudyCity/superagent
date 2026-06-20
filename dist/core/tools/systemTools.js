@@ -47,6 +47,24 @@ function buildEditSummary(before, after, filePath, existedBefore = true) {
     const previewText = preview.length > 0 ? `\nDiff preview:\n${preview.join("\n")}` : "";
     return `${action}: +${added} -${removed}\nFile: ${filePath}${previewText}`;
 }
+/**
+ * Normalize a file path to fix common LLM path construction errors.
+ * Handles:
+ *   - Double drive letter prefix: D:\d\backup... → D:\backup...
+ *   - Git Bash style paths: /d/backup... → D:\backup... (on Windows)
+ */
+function normalizePath(filePath) {
+    // Fix double drive letter: e.g. "D:\d\backup..." or "C:\c\Users..."
+    const doubleDriveMatch = filePath.match(/^([A-Za-z]):\\([a-z])\\(.*)$/);
+    if (doubleDriveMatch) {
+        const drive = doubleDriveMatch[1].toUpperCase();
+        const innerDrive = doubleDriveMatch[2].toLowerCase();
+        if (drive.toLowerCase() === innerDrive) {
+            return `${drive}:\\${doubleDriveMatch[3]}`;
+        }
+    }
+    return filePath;
+}
 export const readTool = {
     name: "read",
     description: "Read file contents. Returns lines with line numbers.",
@@ -69,10 +87,21 @@ export const readTool = {
         required: ["filePath"],
     },
     async execute(args, cwd, signal) {
-        const filePath = path.resolve(cwd, args.filePath);
+        const filePath = normalizePath(path.resolve(cwd, args.filePath));
         const offset = Math.max(1, args.offset || 1);
         const limit = args.limit || 2000;
         try {
+            // Check if path is a directory — list contents instead of failing
+            const stat = await fs.stat(filePath);
+            if (stat.isDirectory()) {
+                const entries = await fs.readdir(filePath, { withFileTypes: true });
+                const lines = entries.slice(0, limit).map((entry) => {
+                    const suffix = entry.isDirectory() ? "/" : "";
+                    return `${entry.name}${suffix}`;
+                });
+                const header = `Directory: ${filePath} (${entries.length} entries)`;
+                return [header, ...lines].join("\n");
+            }
             const buffer = await fs.readFile(filePath);
             // Check for binary content (first 1024 bytes check for null bytes)
             const checkLimit = Math.min(buffer.length, 1024);
@@ -534,8 +563,8 @@ export const replaceFileContentTool = {
         const filePath = path.resolve(cwd, (args.filePath || args.TargetFile));
         const targetContent = (args.targetContent ?? args.TargetContent ?? "");
         const replacementContent = (args.replacementContent ?? args.ReplacementContent ?? "");
-        const startLine = Number(args.startLine ?? args.StartLine ?? 0);
-        const endLine = Number(args.endLine ?? args.EndLine ?? 0);
+        const startLine = Math.max(1, Number(args.startLine ?? args.StartLine ?? 0));
+        const endLine = Math.max(startLine, Number(args.endLine ?? args.EndLine ?? 0));
         try {
             const content = await fs.readFile(filePath, "utf-8");
             const lines = content.split(/\r?\n/);
@@ -649,11 +678,12 @@ export const multiReplaceFileContentTool = {
         const chunks = rawChunksArray.map((c) => {
             if (!c || typeof c !== "object")
                 return c;
+            const sl = Math.max(1, Number(c.startLine ?? c.StartLine ?? 0));
             return {
                 targetContent: c.targetContent ?? c.TargetContent ?? "",
                 replacementContent: c.replacementContent ?? c.ReplacementContent ?? "",
-                startLine: Number(c.startLine ?? c.StartLine ?? 0),
-                endLine: Number(c.endLine ?? c.EndLine ?? 0),
+                startLine: sl,
+                endLine: Math.max(sl, Number(c.endLine ?? c.EndLine ?? 0)),
             };
         });
         if (chunks.length === 0) {

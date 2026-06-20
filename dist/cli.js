@@ -14,6 +14,7 @@ import { render } from "ink";
 import { App } from "./app.js";
 import { getConfig } from "./core/config.js";
 import { backgroundTasks, killProcessTree } from "./core/tools/index.js";
+import { subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
 function cleanupBackgroundTasks() {
     for (const [id, task] of backgroundTasks.entries()) {
         try {
@@ -24,15 +25,62 @@ function cleanupBackgroundTasks() {
         }
     }
 }
+function abortAllAgents() {
+    // Abort all running subagents
+    for (const inst of subagentInstances.values()) {
+        if (inst.status === "running") {
+            try {
+                inst.agent.abort();
+            }
+            catch { }
+            inst.status = "completed";
+            inst.result = "[Cancelled by user (SIGINT)]";
+        }
+    }
+    // Abort all running superagents
+    for (const inst of superagentInstances.values()) {
+        if (inst.status === "running") {
+            try {
+                inst.agent.abort();
+            }
+            catch { }
+            inst.status = "error";
+            inst.result = "[Cancelled by user (SIGINT)]";
+            inst.completedAt = Date.now();
+        }
+    }
+    // Abort master agent
+    if (masterAgentRef && masterAgentRef.isAgentRunning && masterAgentRef.isAgentRunning()) {
+        try {
+            masterAgentRef.abort();
+        }
+        catch { }
+    }
+}
+let sigintCount = 0;
 process.on("exit", cleanupBackgroundTasks);
 process.on("SIGINT", () => {
     if (process.stdin.isTTY) {
+        // First Ctrl+C: abort all running agents & kill background procs.
+        // Second Ctrl+C within 2 seconds: force exit.
+        sigintCount++;
+        if (sigintCount === 1) {
+            abortAllAgents();
+            cleanupBackgroundTasks();
+            // Reset counter after 2 seconds so a later Ctrl+C is treated as first
+            setTimeout(() => { sigintCount = 0; }, 2000);
+        }
+        else {
+            cleanupBackgroundTasks();
+            process.exit(130);
+        }
         return;
     }
     cleanupBackgroundTasks();
     process.exit(130);
 });
 process.on("SIGTERM", () => {
+    abortAllAgents();
     cleanupBackgroundTasks();
     process.exit(143);
 });

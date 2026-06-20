@@ -146,8 +146,11 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         }
         return;
       }
-      if (isProcessing) {
-        stopAllRunningAgents();
+      // Always attempt to stop running agents first, regardless of
+      // isProcessing flag. The flag can be false between tool calls
+      // or when subagents are running independently of the master.
+      const stopped = stopAllRunningAgents();
+      if (stopped > 0 || isProcessing) {
         setIsProcessing(false);
         setCurrentTask("Idle - Interrupted");
         return;
@@ -230,23 +233,26 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
       }
     }
 
-    if (key.escape) {
-      if (!activeWizard && focusArea === "input") {
-        if (stopAllRunningAgents() > 0) {
-          setCurrentTask("Idle - Interrupted");
-          return;
-        }
+    // ESC: stop all running agents regardless of focus area
+    if (key.escape && !activeWizard) {
+      const stopped = stopAllRunningAgents();
+      if (stopped > 0) {
+        setCurrentTask("Idle - Interrupted");
+        setIsProcessing(false);
+        return;
       }
     }
 
-    if (focusArea === "input" && !activeWizard) {
-      if (key.escape) {
+    if (key.escape) {
+      if (!activeWizard && focusArea === "input") {
         setQuery("");
         setHistoryIndex(-1);
         setLogScrollOffset(0);
         return;
       }
+    }
 
+    if (focusArea === "input" && !activeWizard) {
       if (key.upArrow && history.length > 0) {
         let newIndex = historyIndex;
         if (historyIndex === -1) {

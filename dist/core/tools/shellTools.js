@@ -3,7 +3,7 @@ import { exec } from "child_process";
 import path from "path";
 import fs from "fs";
 import { getGlobalConfigDir, getRootConfigDir } from "../config.js";
-import { formatCommandForPowerShell, truncateOutput, detectInteractivePrompt, resolveWindowsShell } from "./helpers.js";
+import { formatCommandForPowerShell, truncateOutput, detectInteractivePrompt, resolveWindowsShell, normalizeGitPaths } from "./helpers.js";
 import { backgroundTasks, notifyTasksChanged, clearActiveToolOutput, appendActiveToolOutput } from "./state.js";
 import net from "net";
 async function isPortAvailable(port) {
@@ -130,7 +130,7 @@ export const bashTool = {
         required: ["command"],
     },
     async execute(args, cwd, signal) {
-        let command = args.command;
+        let command = normalizeGitPaths(args.command);
         const timeout = args.timeout || 600000;
         let shellPath = true;
         if (process.platform === "win32") {
@@ -238,7 +238,7 @@ export const runCommandTool = {
         required: ["command"],
     },
     async execute(args, cwd, signal) {
-        let command = args.command;
+        let command = normalizeGitPaths(args.command);
         const targetCwd = args.cwd
             ? path.resolve(cwd, args.cwd)
             : cwd;
@@ -352,7 +352,7 @@ export const runBackgroundProcessTool = {
         required: ["command"],
     },
     async execute(args, cwd, signal) {
-        let command = args.command;
+        let command = normalizeGitPaths(args.command);
         const targetCwd = args.cwd
             ? path.resolve(cwd, args.cwd)
             : cwd;
