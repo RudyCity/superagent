@@ -102,4 +102,24 @@ export function getPasteSplit(currentInput: string, prefixLen: number, suffixLen
   return { prefix, inserted, suffix };
 }
 
+/**
+ * Apply a Unicode combining long solidus overlay (U+0336) to each visible
+ * character so the text appears struck-through regardless of terminal
+ * ANSI strikethrough support.  Spaces and zero-width characters are
+ * skipped to keep the output visually clean.
+ */
+export function unicodeStrikethrough(text: string): string {
+  const COMBINING_STRIKE = "\u0336";
+  let result = "";
+  for (const ch of text) {
+    // Skip spaces and zero-width characters
+    if (ch === " " || ch === "\u200B" || ch === "\u200C" || ch === "\u200D" || ch === "\uFEFF") {
+      result += ch;
+    } else {
+      result += ch + COMBINING_STRIKE;
+    }
+  }
+  return result;
+}
+
 
