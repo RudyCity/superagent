@@ -1,0 +1,54 @@
+import React from "react";
+import type { Agent } from "../core/agent.js";
+export interface DashboardWizardContext {
+    agent: Agent;
+    exit: () => void;
+    query: string;
+    setQuery: React.Dispatch<React.SetStateAction<string>>;
+    activeWizard: any;
+    setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
+    wizardOptions: string[];
+    setWizardOptions: React.Dispatch<React.SetStateAction<string[]>>;
+    wizardSelectedIndex: number;
+    setWizardSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
+    wizardSelectedSet: Set<number>;
+    setWizardSelectedSet: React.Dispatch<React.SetStateAction<Set<number>>>;
+    masterLogs: string[];
+    setMasterLogs: React.Dispatch<React.SetStateAction<string[]>>;
+    activeModel: string;
+    setActiveModel: React.Dispatch<React.SetStateAction<string>>;
+    currentTask: string;
+    setCurrentTask: React.Dispatch<React.SetStateAction<string>>;
+    history: string[];
+    setHistory: React.Dispatch<React.SetStateAction<string[]>>;
+    historyIndex: number;
+    setHistoryIndex: React.Dispatch<React.SetStateAction<number>>;
+    tempInput: string;
+    setTempInput: React.Dispatch<React.SetStateAction<string>>;
+    planState: string;
+    setPlanState: React.Dispatch<React.SetStateAction<any>>;
+    pendingQuestion: any;
+    setPendingQuestion: React.Dispatch<React.SetStateAction<any>>;
+    wizardAllOptions: string[];
+    setWizardAllOptions: React.Dispatch<React.SetStateAction<string[]>>;
+    wizardIsLoadingModels: boolean;
+    setWizardIsLoadingModels: React.Dispatch<React.SetStateAction<boolean>>;
+    checkpointsList: any[];
+    setCheckpointsList: React.Dispatch<React.SetStateAction<any[]>>;
+    contextLimit: number;
+    setContextLimit: React.Dispatch<React.SetStateAction<number>>;
+    isPasted: boolean;
+    setIsPasted: React.Dispatch<React.SetStateAction<boolean>>;
+    pastePrefixLength: number;
+    pasteSuffixLength: number;
+    HISTORY_FILE: string;
+    cachedSessions: any[];
+    setCachedSessions: React.Dispatch<React.SetStateAction<any[]>>;
+    isProcessing: boolean;
+    setIsProcessing: React.Dispatch<React.SetStateAction<boolean>>;
+}
+export declare function useDashboardWizard(ctx: DashboardWizardContext): {
+    handleWizardSubmit: (value: string) => Promise<void>;
+    handleQuerySubmit: (val: string) => void;
+};
+//# sourceMappingURL=useDashboardWizard.d.ts.map

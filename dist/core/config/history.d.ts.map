@@ -1,0 +1,1 @@
+{"version":3,"file":"history.d.ts","sourceRoot":"","sources":["../../../src/core/config/history.ts"],"names":[],"mappings":"AAIA,MAAM,WAAW,cAAc;IAC7B,QAAQ,EAAE,MAAM,CAAC;IACjB,WAAW,EAAE,MAAM,CAAC;IACpB,YAAY,EAAE,MAAM,CAAC;IACrB,YAAY,EAAE,IAAI,CAAC;IACnB,OAAO,EAAE,MAAM,CAAC;CACjB;AAED,wBAAgB,mBAAmB,CAAC,OAAO,UAAQ,GAAG,cAAc,EAAE,CAuErE"}

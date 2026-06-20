@@ -1,0 +1,69 @@
+{
+  "settings": {
+    "concurrencyLimit": 0,
+    "rateLimitRpm": 45,
+    "rateLimitCapacity": 15
+  },
+  "providers": [
+    {
+      "id": "default-anthropic",
+      "name": "Default Anthropic",
+      "provider": "anthropic",
+      "apiKey": "",
+      "baseUrl": ""
+    },
+    {
+      "id": "default-openai",
+      "name": "Default OpenAI",
+      "provider": "openai",
+      "apiKey": "",
+      "baseUrl": ""
+    }
+  ],
+  "presets": {
+    "multi": [
+      {
+        "id": "default-multi",
+        "name": "Default Multi-Agent Setup",
+        "description": "Standard configuration using Claude Sonnet and GPT-4o-mini",
+        "models": {
+          "master": {
+            "providerProfileId": "default-anthropic",
+            "model": "claude-3-5-sonnet-20241022"
+          },
+          "superagent": {
+            "providerProfileId": "default-anthropic",
+            "model": "claude-3-5-sonnet-20241022"
+          },
+          "subagentDefault": {
+            "providerProfileId": "default-openai",
+            "model": "gpt-4o-mini"
+          },
+          "subagentDetails": {}
+        }
+      }
+    ],
+    "single": [
+      {
+        "id": "default-single",
+        "name": "Default Single-Agent Setup",
+        "description": "Standard single-agent setup using Claude Sonnet and GPT-4o-mini",
+        "models": {
+          "superagent": {
+            "providerProfileId": "default-anthropic",
+            "model": "claude-3-5-sonnet-20241022"
+          },
+          "subagentDefault": {
+            "providerProfileId": "default-openai",
+            "model": "gpt-4o-mini"
+          },
+          "subagentDetails": {}
+        }
+      }
+    ]
+  },
+  "activePresetId": {
+    "multi": "default-multi",
+    "single": "default-single"
+  }
+}

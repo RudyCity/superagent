@@ -273,6 +273,14 @@ If none of the options are suitable, still pick the closest one.`;
     this.onQuestion = onQuestion;
   }
 
+  /**
+   * Emit a text event into the live UI stream.
+   * Used by tools that need to show progress/output while executing.
+   */
+  public emitToolLog(msg: string): void {
+    this.onEvent({ type: "text", content: msg });
+  }
+
   public writeToLogFile(level: string, message: string): void {
     try {
       ensureGlobalConfigDir();
