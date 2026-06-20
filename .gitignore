@@ -1,1 +1,9 @@
 .worktrees/
+
+# ── FastContext project-local environment ──────────────────────────────
+# These are auto-generated on first startup. Recreate with:
+#   Windows:        .\bin\setup-fastcontext.ps1
+#   Linux/macOS:    bash bin/setup-fastcontext.sh
+bin/python/
+vendor/fastcontext/
+.fastcontext/

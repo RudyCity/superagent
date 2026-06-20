@@ -72,6 +72,10 @@ Examples:
   process.exit(0);
 }
 
+// Auto-setup FastContext on first run (portable Python + vendor source)
+import { runFastContextSetup } from "./core/fastcontextSetup.js";
+runFastContextSetup();
+
 import readline from "readline";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";

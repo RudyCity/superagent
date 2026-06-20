@@ -26,6 +26,8 @@ import {
   fetchUrlTool 
 } from "./networkTools.js";
 
+import { fastcontextTool } from "./fastcontextTool.js";
+
 import { 
   defineSubagentTool, 
   invokeSubagentTool, 
@@ -91,6 +93,7 @@ export const allTools: Tool[] = [
   manageTasksTool,
   listPeerSuperagentsTool,
   managePlanTool,
+  fastcontextTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {

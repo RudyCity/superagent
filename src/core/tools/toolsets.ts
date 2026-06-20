@@ -25,6 +25,7 @@ import {
   manageBackgroundProcessTool,
 } from "./shellTools.js";
 import { webSearchTool, fetchUrlTool } from "./networkTools.js";
+import { fastcontextTool } from "./fastcontextTool.js";
 import {
   defineSubagentTool,
   invokeSubagentTool,
@@ -67,6 +68,7 @@ export const masterToolset: Tool[] = [
   scheduleTool,
   searchHistoryTool,
   webSearchTool,
+  fastcontextTool,       // AI-powered repo explorer
   readTool,              // read-only: inspect results
   globTool,
   grepTool,
@@ -92,6 +94,7 @@ export const superagentToolset: Tool[] = [
   globTool,
   grepTool,
   ripgrepSearchTool,
+  fastcontextTool,       // AI-powered repo explorer
   bashTool,
   runCommandTool,
   runBackgroundProcessTool,
@@ -121,6 +124,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     globTool,
     grepTool,
     ripgrepSearchTool,
+    fastcontextTool,     // AI-powered repo explorer (uses researcher tier model)
     webSearchTool,
     fetchUrlTool,
     searchHistoryTool,
@@ -137,6 +141,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     globTool,
     grepTool,
     ripgrepSearchTool,
+    fastcontextTool,     // AI-powered repo explorer
     runCommandTool,
     bashTool,
     webSearchTool,
@@ -148,6 +153,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     globTool,
     grepTool,
     ripgrepSearchTool,
+    fastcontextTool,     // AI-powered repo explorer
     runCommandTool,
     bashTool,
     webSearchTool,
@@ -158,6 +164,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     readTool,
     globTool,
     grepTool,
+    fastcontextTool,     // AI-powered repo explorer
     runCommandTool,
     bashTool,
     runBackgroundProcessTool,
@@ -172,6 +179,7 @@ export const defaultSubagentToolset: Tool[] = [
   readTool,
   globTool,
   grepTool,
+  fastcontextTool,       // AI-powered repo explorer
   webSearchTool,
   writeToFileTool,
   replaceFileContentTool,
