@@ -202,13 +202,17 @@ export const fastcontextTool: Tool = {
       cliArgs.push("--citation");
     }
 
-    // ── 4. Spawn Python runner with live log streaming ──
+    // ── 4. Spawn Python runner with live output panel ──
     try {
-      // Get current agent to push live events into its UI stream
-      const { agentLocalStorage } = await import("../agent.js");
-      const agent = agentLocalStorage.getStore();
-      const log = (msg: string) => {
-        agent?.emitToolLog(msg);
+      // Use the dedicated SYSTEM_CALL_OUTPUT (LIVE) panel for progress,
+      // keeping the AI text stream clean for the final answer only.
+      const { appendActiveToolOutput, clearActiveToolOutput } =
+        await import("./state.js");
+
+      clearActiveToolOutput();
+
+      const log = (line: string) => {
+        appendActiveToolOutput(line + "\n");
       };
 
       const child = execa(PYTHON_BIN, cliArgs, {
@@ -219,7 +223,7 @@ export const fastcontextTool: Tool = {
         buffer: false,
       });
 
-      // ── Stream stderr JSONL events → agent UI ──
+      // ── Stream stderr JSONL events → live output panel ──
       let stderrBuf = "";
 
       child.stderr?.on("data", (chunk: Buffer) => {
@@ -236,38 +240,46 @@ export const fastcontextTool: Tool = {
 
             switch (evt.event) {
               case "start":
-                log(`\n  [FC] ⚡ Exploring: "${evt.query}"\n`);
+                log(`⚡ Exploring: "${evt.query}"`);
+                log("");
                 break;
               case "turn":
-                log(`  [FC] ── Turn ${evt.turn} ──\n`);
+                if (Number(evt.turn) > 1) log("");
+                log(`── Turn ${evt.turn} ──`);
                 break;
               case "thinking": {
-                const snippet = (evt.text || "").replace(/\n/g, " ").slice(0, 140);
-                const suffix = evt.has_tools ? " → tools" : "";
-                log(`  [FC] 💭 ${snippet}${suffix}\n`);
+                const snippet = (evt.text || "")
+                  .replace(/\n/g, " ")
+                  .slice(0, 160);
+                if (snippet) log(`  💭 ${snippet}`);
                 break;
               }
               case "tool_start": {
-                const toolArgs = (evt.args || "").replace(/\n/g, " ").slice(0, 100);
-                log(`  [FC] 🔧 ${evt.tool}: ${toolArgs}\n`);
+                const toolArgs = (evt.args || "")
+                  .replace(/\n/g, " ")
+                  .slice(0, 120);
+                log(`  🔧 ${evt.tool}: ${toolArgs}`);
                 break;
               }
               case "tool_end": {
-                const preview = (evt.preview || "").replace(/\n/g, " ").slice(0, 100);
+                const preview = (evt.preview || "")
+                  .replace(/\n/g, " ")
+                  .slice(0, 120);
                 const icon = evt.ok ? "✅" : "❌";
-                log(`  [FC] ${icon} ${preview}\n`);
+                log(`  ${icon} ${preview}`);
                 break;
               }
               case "error":
-                log(`  [FC] 🚨 ${evt.text}\n`);
+                log(`  🚨 ${evt.text}`);
                 break;
               case "done":
-                log(`  [FC] ✔ Done (${evt.turns} turns)\n\n`);
+                log("");
+                log(`✔ Done — ${evt.turns} turns`);
                 break;
             }
           } catch {
-            // Non-JSON stderr
-            log(`  [FC] ${trimmed}\n`);
+            // Non-JSON stderr — pass through as-is
+            log(`  ${trimmed}`);
           }
         }
       });
@@ -278,11 +290,14 @@ export const fastcontextTool: Tool = {
       if (stderrBuf.trim()) {
         try {
           const evt = JSON.parse(stderrBuf.trim());
-          if (evt.event === "error") log(`  [FC] 🚨 ${evt.text}\n`);
+          if (evt.event === "error") log(`  🚨 ${evt.text}`);
         } catch {
-          log(`  [FC] ${stderrBuf.trim()}\n`);
+          log(`  ${stderrBuf.trim()}`);
         }
       }
+
+      // Clear the live panel so it doesn't linger after the tool finishes
+      clearActiveToolOutput();
 
       const output = (result.stdout || "").trim();
       const stderrRaw = (result.stderr || "").trim();
@@ -297,6 +312,12 @@ export const fastcontextTool: Tool = {
       return output || "(FastContext returned no output)";
     } catch (err: any) {
       const msg = err?.message || String(err);
+
+      // Ensure live panel is cleared on error too
+      try {
+        const { clearActiveToolOutput } = await import("./state.js");
+        clearActiveToolOutput();
+      } catch { /* ignore */ }
 
       if (msg.includes("timed out") || msg.includes("timeout")) {
         return (
