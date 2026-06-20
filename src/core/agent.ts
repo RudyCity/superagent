@@ -31,7 +31,8 @@ export type AgentEvent =
   | { type: "goal_done"; goal: string; summary: string }
   | { type: "permission_required"; toolCall: ToolCall; description: string }
   | { type: "illegal_operation"; violation: ViolationRecord }
-  | { type: "token_usage"; promptTokens: number; completionTokens: number; durationMs?: number };
+  | { type: "token_usage"; promptTokens: number; completionTokens: number; durationMs?: number }
+  | { type: "checkpoint_auto"; name: string; id: string };
 
 export type PermissionHandler = (
   toolCall: ToolCall,
@@ -263,6 +264,8 @@ If none of the options are suitable, still pick the closest one.`;
         this.writeToLogFile("GOAL_DONE", `Goal: ${event.goal}\nSummary: ${event.summary}`);
       } else if (event.type === "done") {
         this.writeToLogFile("DONE", "Agent execution iteration/loop done");
+      } else if (event.type === "checkpoint_auto") {
+        this.writeToLogFile("CHECKPOINT_AUTO", `ID: ${event.id}, Name: ${event.name}`);
       }
       onEvent(event);
     };
@@ -1659,8 +1662,9 @@ ${formatted}`;
     const name = `Auto: ${label} at ${new Date(now).toLocaleTimeString()}`;
 
     createCheckpoint(sessionFilePath, name, messages, this.planState, this.workingDirectory)
-      .then(() => {
+      .then((checkpoint) => {
         this.writeToLogFile("INFO", `Auto-checkpoint created: "${name}"`);
+        this.onEvent({ type: "checkpoint_auto", name: checkpoint.name, id: checkpoint.id });
       })
       .catch((err: any) => {
         this.writeToLogFile("WARN", `Auto-checkpoint failed: ${err.message}`);

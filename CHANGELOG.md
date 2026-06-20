@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.63] - 2026-06-20
+
+### Added
+- **Checkpoint Delete**: New `/checkpoint delete` command and interactive wizard action to delete individual checkpoints by ID. Supports both slash command (`/checkpoint delete <id>`) and interactive wizard selection.
+- **Checkpoint Wizard Sub-Menu**: The checkpoint wizard now shows a contextual sub-menu after selecting a checkpoint, offering "Restore" or "Delete" actions (browse mode). Direct `/checkpoint restore` and `/checkpoint delete` commands open pre-filtered wizards.
+- **Auto-Checkpoint UI Event**: Added `checkpoint_auto` event type that emits a visible system notification in the terminal UI whenever an auto-checkpoint is created (e.g., before destructive operations).
+- **Ctrl+P in Multi-Agent Dashboard**: Added `Ctrl+P` keyboard shortcut in the multi-agent dashboard to open the interactive checkpoint browser wizard.
+- **`deleteCheckpointById()`**: New function in `checkpoints.ts` that safely deletes a single checkpoint file by its ID.
+
+### Changed
+- **Checkpoint List Wizard**: `/checkpoint list` and `/checkpoint` (no args) now open the interactive wizard instead of printing a static list.
+- **Checkpoint Wizard State Machine**: Refactored wizard to use action-based state machine (`browse` → `choose` → `restore`/`delete`) for cleaner flow in both single-agent and multi-agent modes.
+
+### Fixed
+- **Translated Remaining ID Strings**: Translated leftover Indonesian strings in checkpoint restore messages (e.g., "Git restore gagal" → "Git restore failed") to English for consistency.
+
+---
+
 ## [1.2.0] - 2026-06-19
 
 ### Added

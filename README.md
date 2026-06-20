@@ -77,7 +77,7 @@ superagent/
 A rich terminal interface showing live statistics on active prompt sizes, completion token counts, token cost summaries, active models, remaining context windows, and real-time model generation speed (tokens per second).
 
 ### 2. Session Management & Checkpoints
-Allows developers to save the current state of a coding conversation and restore it at any point using `/checkpoint save <name>` and `/checkpoint restore <id>`. This allows you to safely experiment with different implementations. Use the `--resume` or `-r` flag to continue where you left off. Multi-agent sessions are fully serialized, ensuring smooth restore and resume of running tasks and interactive prompts.
+Allows developers to save the current state of a coding conversation and restore it at any point using `/checkpoint save <name>` and `/checkpoint restore <id>`. This allows you to safely experiment with different implementations. Checkpoints can be browsed, restored, or deleted via an interactive wizard (launched by `/checkpoint`, `/checkpoint list`, or `Ctrl+P` in multi-agent mode). Use the `--resume` or `-r` flag to continue where you left off. Multi-agent sessions are fully serialized, ensuring smooth restore and resume of running tasks and interactive prompts.
 
 ### 3. 3-Tier Multi-Agent Orchestration (`--multi`)
 Launch with `superagent --multi` to activate the full 3-tier hierarchy:
@@ -298,8 +298,11 @@ Superagent supports a wide range of slash commands within the terminal chat to m
 
 ### State Checkpoints
 - **`/checkpoint`** (or **`/checkpoint <name>`**): Saves a snapshot of your current conversation history, active model state, and planning states.
-- **`/checkpoint list`**: Displays a styled timeline list of all saved checkpoints in the current session, showing their unique IDs, timestamps, and message counts.
-- **`/checkpoint restore <id>`**: Restores a checkpoint by its ID. It automatically terminates running subagents/tasks and reverts the agent's internal state to the checkpoint.
+- **`/checkpoint list`** (or **`/checkpoint`** with no args): Opens an interactive wizard listing all saved checkpoints with relative timestamps, message counts, and Git commit tags. From the wizard, you can restore or delete any checkpoint.
+- **`/checkpoint restore <id>`**: Restores a checkpoint by its ID. If no ID is provided, opens a pre-filtered restore wizard. Automatically terminates running subagents/tasks and reverts the agent's internal state to the checkpoint.
+- **`/checkpoint delete <id>`**: Deletes a specific checkpoint by its ID. If no ID is provided, opens a pre-filtered delete wizard for interactive selection.
+- **Auto-Checkpoint Notifications**: When an auto-checkpoint is created (e.g., before destructive operations), a visible system notification appears in the terminal UI.
+- **Ctrl+P (Multi-Agent)**: In multi-agent dashboard mode, press `Ctrl+P` to open the interactive checkpoint browser wizard.
 
 ### Automation & Tasks
 - **`/goal <description>`**: Activates **Goal Mode**. The assistant enters a persistent, autonomous loop (up to 200 iterations) to accomplish the goal (e.g., `/goal write a full suite of unit tests for auth.ts`).

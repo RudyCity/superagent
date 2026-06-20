@@ -272,3 +272,26 @@ export async function restoreCheckpointById(
 
   return await restoreCheckpoint(checkpointPath, sessionFilePath);
 }
+
+/**
+ * Deletes a single checkpoint by its ID.
+ * Returns true if the checkpoint was found and deleted, false otherwise.
+ */
+export async function deleteCheckpointById(
+  id: string,
+  sessionFilePath: string
+): Promise<boolean> {
+  const checkpoints = await listCheckpointsForSession(sessionFilePath);
+  const found = checkpoints.find((c) => c.id === id);
+  if (!found) return false;
+
+  const checkpointsDir = path.join(path.dirname(sessionFilePath), "checkpoints");
+  const checkpointPath = path.join(checkpointsDir, `checkpoint_${found.timestamp}.json`);
+
+  try {
+    await fs.unlink(checkpointPath);
+    return true;
+  } catch {
+    return false;
+  }
+}

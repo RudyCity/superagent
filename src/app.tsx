@@ -470,7 +470,8 @@ export function App({
     if (mainCommand === "/checkpoint") {
       const checkpointSuggestions = [
         `${mainCommand} list`,
-        `${mainCommand} restore`
+        `${mainCommand} restore`,
+        `${mainCommand} delete`
       ];
       return filterSuggestions(checkpointSuggestions, currentInput);
     }
@@ -917,6 +918,13 @@ export function App({
             const speed = (event.completionTokens || 0) / (event.durationMs / 1000);
             setLastSpeed(speed);
           }
+          break;
+        case "checkpoint_auto":
+          addLine({
+            type: "system",
+            content: `💾 Auto-checkpoint: ${event.name} [${event.id}]`,
+            timestamp: Date.now(),
+          });
           break;
       }
       if (agentRef.current) {

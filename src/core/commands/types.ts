@@ -17,6 +17,7 @@ export interface SlashCommandContext {
   setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills"; step: number; data: Record<string, string> } | null) => void;
   setWizardOptions?: (options: string[]) => void;
   setWizardSelectedIndex?: (index: number) => void;
+  setCheckpointsList?: (list: any[]) => void;
   resumeSession?: () => Promise<void>;
   resumeFromPath?: (filePath: string) => Promise<void>;
   setPlanState?: (state: "IDLE" | "PLANNING_PENDING" | "APPROVED") => void;

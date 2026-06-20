@@ -103,7 +103,7 @@ export function getDashboardSuggestions(query: string): string[] {
   }
 
   if (mainCommand === "/checkpoint") {
-    const possibilities = ["/checkpoint list", "/checkpoint restore"];
+    const possibilities = ["/checkpoint list", "/checkpoint restore", "/checkpoint delete"];
     return filterSuggestions(possibilities, query);
   }
   

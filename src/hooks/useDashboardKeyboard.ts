@@ -3,6 +3,8 @@ import { useInput } from "ink";
 import { getPasteSplit, filterSuggestions } from "../utils/text.js";
 import { subagentInstances, backgroundTasks } from "../core/tools/state.js";
 import { getConfiguredProviders } from "../core/config.js";
+import { listCheckpointsForSession } from "../core/checkpoints.js";
+import type { Agent } from "../core/agent.js";
 
 export interface DashboardKeyboardContext {
   exit: () => void;
@@ -59,6 +61,9 @@ export interface DashboardKeyboardContext {
   setMasterLogs?: React.Dispatch<React.SetStateAction<string[]>>;
   lastTabPrefix?: string | null;
   setLastTabPrefix?: React.Dispatch<React.SetStateAction<string | null>>;
+  agent?: Agent;
+  checkpointsList?: any[];
+  setCheckpointsList?: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
 export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
@@ -117,6 +122,9 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     setMasterLogs,
     lastTabPrefix = null,
     setLastTabPrefix,
+    agent,
+    checkpointsList,
+    setCheckpointsList,
   } = ctx;
 
   useInput((input, key) => {
@@ -150,6 +158,38 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
 
     if (key.ctrl && input === "t") {
       setIsHistoryTruncated((prev) => !prev);
+      return;
+    }
+
+    // Ctrl+P: Open checkpoint wizard
+    if (key.ctrl && input === "p") {
+      if (isProcessing || activeWizard || !agent) return;
+      const sessionPath = agent.getCurrentHistoryFilePath();
+      listCheckpointsForSession(sessionPath)
+        .then((checkpoints) => {
+          if (checkpoints.length === 0) {
+            setMasterLogs?.((prev) => [...prev, "[SYSTEM] No checkpoints found. Use /checkpoint <name> to create one."].slice(-500));
+            return;
+          }
+          setCheckpointsList?.(checkpoints);
+          const relTime = (ts: number) => {
+            const diff = Math.floor((Date.now() - ts) / 1000);
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return `${Math.floor(diff / 86400)}d ago`;
+          };
+          const options = checkpoints.map((c: any) => {
+            const gitTag = c.gitSha ? ` [${c.gitSha}]` : "";
+            return `📌 ${c.name}  |  ${c.messages.length} msgs  |  ${relTime(c.timestamp)}${gitTag}`;
+          });
+          setActiveWizard({ type: "checkpoint", step: 1, data: { action: "browse" } });
+          setWizardOptions(options);
+          setWizardSelectedIndex(0);
+        })
+        .catch(() => {
+          setMasterLogs?.((prev) => [...prev, "[ERROR] Failed to list checkpoints."].slice(-500));
+        });
       return;
     }
 

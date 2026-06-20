@@ -879,6 +879,9 @@ export function MultiAgentDashboard({
     setMasterLogs,
     lastTabPrefix,
     setLastTabPrefix,
+    agent,
+    checkpointsList,
+    setCheckpointsList,
   });
 
   useDashboardMouse({

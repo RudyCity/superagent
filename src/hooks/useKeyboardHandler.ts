@@ -4,7 +4,7 @@ import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/respo
 import { getPasteSplit, filterSuggestions, getInsertion } from "../utils/text.js";
 import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getActiveProviderName, getResolvedModelWithProvider, getTierModel, getEffectiveMasterModel } from "../core/config.js";
 import { getDefaultModel } from "../core/slash-commands.js";
-import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, type Checkpoint } from "../core/checkpoints.js";
+import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, deleteCheckpointById, type Checkpoint } from "../core/checkpoints.js";
 import { getToolDescription } from "../core/permissions.js";
 import { registerSubagentType, allTools, backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged } from "../core/tools.js";
 import type { ChatLine } from "../core/slash-commands.js";
@@ -384,7 +384,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             const gitTag = c.gitSha ? ` [${c.gitSha}]` : "";
             return `📌 ${c.name}  |  ${c.messages.length} msgs  |  ${relTime(c.timestamp)}${gitTag}`;
           });
-          setActiveWizard({ type: "checkpoint", step: 1, data: {} });
+          setActiveWizard({ type: "checkpoint", step: 1, data: { action: "browse" } });
           setWizardOptions(options);
           setWizardSelectedIndex(0);
         })
@@ -921,53 +921,158 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           const chosen = checkpointsList[wizardSelectedIndex];
           if (!chosen) return;
           const now = Date.now();
+          const action = activeWizard.data.action || "browse";
 
-          // Step 1: If checkpoint has gitSha, show git restore confirmation
-          if (activeWizard.step === 1 && chosen.gitSha) {
-            setActiveWizard({ type: "checkpoint", step: 2, data: { checkpointIndex: String(wizardSelectedIndex) } });
-            setWizardOptions(["✓ Yes, restore workspace to this commit (git stash & checkout)", "✗ No, only restore conversation history"]);
+          // "browse" mode: show action sub-menu (Restore or Delete)
+          if (action === "browse") {
+            setActiveWizard({ type: "checkpoint", step: 1, data: { action: "choose", checkpointIndex: String(wizardSelectedIndex) } });
+            setWizardOptions(["🔄 Restore this checkpoint", "🗑️ Delete this checkpoint"]);
             setWizardSelectedIndex(0);
             return;
           }
 
-          // Perform restore (no git)
-          const sessionPath = agentRef.current?.getCurrentHistoryFilePath();
-          if (!sessionPath) return;
-          const checkpointsDir = path.join(path.dirname(sessionPath), "checkpoints");
-          const chkPath = path.join(checkpointsDir, `checkpoint_${chosen.timestamp}.json`);
+          // "choose" sub-menu: user picked Restore or Delete
+          if (action === "choose") {
+            const chkIndex = parseInt(activeWizard.data.checkpointIndex || "0", 10);
+            const targetChk = checkpointsList[chkIndex];
+            if (!targetChk) return;
 
-          terminateActiveTasksAndSubagents();
-
-          restoreCheckpoint(chkPath, sessionPath)
-            .then(async () => {
-              if (agentRef.current) {
-                await agentRef.current.loadHistoryFromPath(sessionPath);
-                const msgs = agentRef.current.getHistory().getMessages();
-                const loadedLines: ChatLine[] = [];
-                const userInputs: string[] = [];
-                for (const m of msgs) {
-                  if (m.role === "user") {
-                    loadedLines.push({ type: "user", content: `❯ ${m.content}`, timestamp: m.timestamp });
-                    userInputs.push(m.content);
-                  } else if (m.role === "assistant") {
-                    if (m.content) loadedLines.push({ type: "assistant", content: m.content, timestamp: m.timestamp });
-                  }
-                }
-                setLines(loadedLines);
-                setHistory(userInputs);
-                setPlanState(agentRef.current.planState);
+            if (wizardSelectedIndex === 0) {
+              // Restore selected → check git
+              if (targetChk.gitSha) {
+                setActiveWizard({ type: "checkpoint", step: 2, data: { checkpointIndex: String(chkIndex) } });
+                setWizardOptions(["✓ Yes, restore workspace to this commit (git stash & checkout)", "✗ No, only restore conversation history"]);
+                setWizardSelectedIndex(0);
+                return;
               }
-              addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" restored successfully! (${chosen.messages.length} messages)`, timestamp: now });
-            })
-            .catch((err: any) => {
-              addLine({ type: "error", content: `Failed to restore checkpoint: ${err.message}`, timestamp: now });
-            });
+              // No git → direct restore
+              const sessionPath = agentRef.current?.getCurrentHistoryFilePath();
+              if (!sessionPath) return;
+              const checkpointsDir = path.join(path.dirname(sessionPath), "checkpoints");
+              const chkPath = path.join(checkpointsDir, `checkpoint_${targetChk.timestamp}.json`);
+              terminateActiveTasksAndSubagents();
+              restoreCheckpoint(chkPath, sessionPath)
+                .then(async () => {
+                  if (agentRef.current) {
+                    await agentRef.current.loadHistoryFromPath(sessionPath);
+                    const msgs = agentRef.current.getHistory().getMessages();
+                    const loadedLines: ChatLine[] = [];
+                    const userInputs: string[] = [];
+                    for (const m of msgs) {
+                      if (m.role === "user") {
+                        loadedLines.push({ type: "user", content: `❯ ${m.content}`, timestamp: m.timestamp });
+                        userInputs.push(m.content);
+                      } else if (m.role === "assistant") {
+                        if (m.content) loadedLines.push({ type: "assistant", content: m.content, timestamp: m.timestamp });
+                      }
+                    }
+                    setLines(loadedLines);
+                    setHistory(userInputs);
+                    setPlanState(agentRef.current.planState);
+                  }
+                  addLine({ type: "system", content: `✓ Checkpoint "${targetChk.name}" restored successfully! (${targetChk.messages.length} messages)`, timestamp: now });
+                })
+                .catch((err: any) => {
+                  addLine({ type: "error", content: `Failed to restore checkpoint: ${err.message}`, timestamp: now });
+                });
+              setActiveWizard(null);
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+              setCheckpointsList([]);
+              return;
+            } else {
+              // Delete selected
+              const sessionPath = agentRef.current?.getCurrentHistoryFilePath();
+              if (!sessionPath) return;
+              deleteCheckpointById(targetChk.id, sessionPath)
+                .then((deleted) => {
+                  if (deleted) {
+                    addLine({ type: "system", content: `✓ Checkpoint "${targetChk.name}" deleted successfully.`, timestamp: Date.now() });
+                  } else {
+                    addLine({ type: "error", content: `Failed to delete checkpoint "${targetChk.name}".`, timestamp: Date.now() });
+                  }
+                })
+                .catch((err: any) => {
+                  addLine({ type: "error", content: `Failed to delete checkpoint: ${err.message}`, timestamp: Date.now() });
+                });
+              setActiveWizard(null);
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+              setCheckpointsList([]);
+              return;
+            }
+          }
+
+          // "restore" mode (direct from /checkpoint restore wizard)
+          if (action === "restore") {
+            if (chosen.gitSha) {
+              setActiveWizard({ type: "checkpoint", step: 2, data: { checkpointIndex: String(wizardSelectedIndex) } });
+              setWizardOptions(["✓ Yes, restore workspace to this commit (git stash & checkout)", "✗ No, only restore conversation history"]);
+              setWizardSelectedIndex(0);
+              return;
+            }
+            const sessionPath = agentRef.current?.getCurrentHistoryFilePath();
+            if (!sessionPath) return;
+            const checkpointsDir = path.join(path.dirname(sessionPath), "checkpoints");
+            const chkPath = path.join(checkpointsDir, `checkpoint_${chosen.timestamp}.json`);
+            terminateActiveTasksAndSubagents();
+            restoreCheckpoint(chkPath, sessionPath)
+              .then(async () => {
+                if (agentRef.current) {
+                  await agentRef.current.loadHistoryFromPath(sessionPath);
+                  const msgs = agentRef.current.getHistory().getMessages();
+                  const loadedLines: ChatLine[] = [];
+                  const userInputs: string[] = [];
+                  for (const m of msgs) {
+                    if (m.role === "user") {
+                      loadedLines.push({ type: "user", content: `❯ ${m.content}`, timestamp: m.timestamp });
+                      userInputs.push(m.content);
+                    } else if (m.role === "assistant") {
+                      if (m.content) loadedLines.push({ type: "assistant", content: m.content, timestamp: m.timestamp });
+                    }
+                  }
+                  setLines(loadedLines);
+                  setHistory(userInputs);
+                  setPlanState(agentRef.current.planState);
+                }
+                addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" restored successfully! (${chosen.messages.length} messages)`, timestamp: now });
+              })
+              .catch((err: any) => {
+                addLine({ type: "error", content: `Failed to restore checkpoint: ${err.message}`, timestamp: now });
+              });
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setCheckpointsList([]);
+            return;
+          }
+
+          // "delete" mode (direct from /checkpoint delete wizard)
+          if (action === "delete") {
+            const sessionPath = agentRef.current?.getCurrentHistoryFilePath();
+            if (!sessionPath) return;
+            deleteCheckpointById(chosen.id, sessionPath)
+              .then((deleted) => {
+                if (deleted) {
+                  addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" deleted successfully.`, timestamp: Date.now() });
+                } else {
+                  addLine({ type: "error", content: `Failed to delete checkpoint "${chosen.name}".`, timestamp: Date.now() });
+                }
+              })
+              .catch((err: any) => {
+                addLine({ type: "error", content: `Failed to delete checkpoint: ${err.message}`, timestamp: Date.now() });
+              });
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setCheckpointsList([]);
+            return;
+          }
 
           setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);
           setCheckpointsList([]);
-          return;
         }
       } else if (activeWizard.type === "checkpoint" && activeWizard.step === 2) {
         // Git restore confirmation step
@@ -1159,7 +1264,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
           return;
         } else if (activeWizard.type === "checkpoint" && activeWizard.step === 2) {
-          setActiveWizard({ type: "checkpoint", step: 1, data: {} });
+          setActiveWizard({ type: "checkpoint", step: 1, data: { action: "browse" } });
           const listOptions = checkpointsList.map((c: any) => `${c.name} (${new Date(c.timestamp).toLocaleString()}) - ${c.messages.length} messages`);
           setWizardOptions(listOptions);
           setWizardSelectedIndex(0);

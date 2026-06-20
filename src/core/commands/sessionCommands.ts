@@ -1,12 +1,13 @@
 import { execa } from "execa";
 import { registry } from "./registry.js";
-import { SlashCommand } from "./types.js";
+import { SlashCommand, SlashCommandContext } from "./types.js";
 import { listHistorySessions } from "../config.js";
 import { searchHistory } from "../historySearch.js";
 import {
   createCheckpoint,
   listCheckpointsForSession,
   restoreCheckpointById,
+  deleteCheckpointById,
   terminateActiveTasksAndSubagents,
 } from "../checkpoints.js";
 
@@ -81,6 +82,44 @@ export const searchHistoryCommand: SlashCommand = {
   }
 };
 
+// Helper: open checkpoint wizard
+async function openCheckpointWizard(ctx: SlashCommandContext, action: "browse" | "restore" | "delete") {
+  const now = Date.now();
+  if (!ctx.agent) {
+    ctx.addLine({ type: "error", content: "Agent not initialized.", timestamp: now });
+    return;
+  }
+  const sessionFilePath = ctx.agent.getCurrentHistoryFilePath();
+  ctx.setIsProcessing?.(true);
+  try {
+    const checkpoints = await listCheckpointsForSession(sessionFilePath);
+    if (checkpoints.length === 0) {
+      ctx.addLine({ type: "system", content: "No checkpoints found. Use /checkpoint <name> to create one.", timestamp: Date.now() });
+      return;
+    }
+    ctx.setCheckpointsList?.(checkpoints);
+    const relTime = (ts: number) => {
+      const diff = Math.floor((Date.now() - ts) / 1000);
+      if (diff < 60) return `${diff}s ago`;
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return `${Math.floor(diff / 86400)}d ago`;
+    };
+    const actionPrefix = action === "restore" ? "🔄 " : action === "delete" ? "🗑️ " : "📌 ";
+    const options = checkpoints.map((c) => {
+      const gitTag = c.gitSha ? ` [${c.gitSha}]` : "";
+      return `${actionPrefix}${c.name}  |  ${c.messages.length} msgs  |  ${relTime(c.timestamp)}${gitTag}`;
+    });
+    ctx.setActiveWizard?.({ type: "checkpoint", step: 1, data: { action } });
+    ctx.setWizardOptions?.(options);
+    ctx.setWizardSelectedIndex?.(0);
+  } catch (err: any) {
+    ctx.addLine({ type: "error", content: `Failed to list checkpoints: ${err.message}`, timestamp: Date.now() });
+  } finally {
+    ctx.setIsProcessing?.(false);
+  }
+}
+
 // /checkpoint command
 export const checkpointCommand: SlashCommand = {
   name: "checkpoint",
@@ -99,36 +138,14 @@ export const checkpointCommand: SlashCommand = {
     const parts = args.split(/\s+/);
     const subCommand = parts[0] ? parts[0].toLowerCase() : "";
 
-    if (subCommand === "list") {
-      ctx.addLine({ type: "system", content: "Retrieving checkpoints...", timestamp: now });
-      try {
-        const checkpoints = await listCheckpointsForSession(sessionFilePath);
-        if (checkpoints.length === 0) {
-          ctx.addLine({ type: "system", content: "No checkpoints found for this session.", timestamp: Date.now() });
-          return;
-        }
-        const outputLines = [
-          "┌───[ 📋 SESSION CHECKPOINTS ]",
-          "│ ",
-        ];
-        checkpoints.forEach((c) => {
-          const dateStr = new Date(c.timestamp).toLocaleTimeString();
-          const gitInfo = c.gitSha ? ` | Git: ${c.gitSha}` : "";
-          outputLines.push(`│ • ID  : ${c.id}`);
-          outputLines.push(`│   Name: ${c.name} (${dateStr}${gitInfo})`);
-          outputLines.push(`│   Msgs: ${c.messages.length} messages`);
-          outputLines.push("│ ");
-        });
-        outputLines.pop();
-        outputLines.push("└───────────────────────────────");
-        ctx.addLine({ type: "system", content: outputLines.join("\n"), timestamp: Date.now() });
-      } catch (err: any) {
-        ctx.addLine({ type: "error", content: `Failed to list checkpoints: ${err.message}`, timestamp: Date.now() });
-      }
+    if (subCommand === "list" || subCommand === "") {
+      // Show interactive wizard for browsing checkpoints
+      await openCheckpointWizard(ctx, "browse");
     } else if (subCommand === "restore") {
       const targetId = parts[1];
       if (!targetId) {
-        ctx.addLine({ type: "error", content: "Usage: /checkpoint restore <checkpoint_id>", timestamp: now });
+        // No ID provided → show wizard filtered for restore
+        await openCheckpointWizard(ctx, "restore");
         return;
       }
 
@@ -161,26 +178,53 @@ export const checkpointCommand: SlashCommand = {
             if (checkoutRes.failed) {
               ctx.addLine({
                 type: "error",
-                content: `Git restore gagal: ${checkoutRes.stderr || checkoutRes.message}. Riwayat percakapan tetap dipulihkan.`,
+                content: `Git restore failed: ${checkoutRes.stderr || checkoutRes.message}. Conversation history still restored.`,
                 timestamp: Date.now()
               });
             } else {
               ctx.addLine({
                 type: "system",
-                content: `✓ Workspace dipulihkan ke Git commit: ${checkpoint.gitSha} (uncommitted changes di-stash)`,
+                content: `✓ Workspace restored to Git commit: ${checkpoint.gitSha} (uncommitted changes stashed)`,
                 timestamp: Date.now()
               });
             }
           } catch (gitErr: any) {
             ctx.addLine({
               type: "error",
-              content: `Git restore gagal: ${gitErr.message}. Riwayat percakapan tetap dipulihkan.`,
+              content: `Git restore failed: ${gitErr.message}. Conversation history still restored.`,
               timestamp: Date.now()
             });
           }
         }
       } catch (err: any) {
         ctx.addLine({ type: "error", content: `Failed to restore checkpoint: ${err.message}`, timestamp: Date.now() });
+      }
+    } else if (subCommand === "delete") {
+      const targetId = parts[1];
+      if (!targetId) {
+        // No ID provided → show wizard filtered for delete
+        await openCheckpointWizard(ctx, "delete");
+        return;
+      }
+
+      ctx.addLine({ type: "system", content: `Deleting checkpoint ${targetId}...`, timestamp: now });
+      try {
+        const deleted = await deleteCheckpointById(targetId, sessionFilePath);
+        if (deleted) {
+          ctx.addLine({
+            type: "system",
+            content: `✓ Checkpoint "${targetId}" deleted successfully.`,
+            timestamp: Date.now(),
+          });
+        } else {
+          ctx.addLine({
+            type: "error",
+            content: `Checkpoint with ID "${targetId}" not found.`,
+            timestamp: Date.now(),
+          });
+        }
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Failed to delete checkpoint: ${err.message}`, timestamp: Date.now() });
       }
     } else {
       const checkpointName = args || `Manual: Checkpoint at ${new Date(now).toLocaleTimeString()}`;
