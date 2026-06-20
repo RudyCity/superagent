@@ -94,13 +94,13 @@ export async function createCheckpoint(
 
   await fs.writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2), "utf-8");
 
-  // Pruning logic - keep max 30 checkpoints for the current session
+  // Pruning logic - keep max 20 checkpoints for the current session
   try {
     const files = await fs.readdir(checkpointsDir);
     const prefix = "checkpoint_";
     const matched = files.filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
 
-    if (matched.length > 30) {
+    if (matched.length > 20) {
       const sorted = matched
         .map((f) => {
           const parts = f.replace(prefix, "").replace(".json", "");
@@ -109,7 +109,7 @@ export async function createCheckpoint(
         })
         .sort((a, b) => a.timeVal - b.timeVal); // oldest first
 
-      const toDeleteCount = sorted.length - 30;
+      const toDeleteCount = sorted.length - 20;
       for (let i = 0; i < toDeleteCount; i++) {
         await fs.unlink(path.join(checkpointsDir, sorted[i].filename));
       }

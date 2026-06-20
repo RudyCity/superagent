@@ -18,6 +18,7 @@ import {
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { AsyncLocalStorage } from "async_hooks";
 import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./taskChecklist.js";
+import { createCheckpoint } from "./checkpoints.js";
 
 export const agentLocalStorage = new AsyncLocalStorage<Agent>();
 
@@ -107,6 +108,10 @@ export class Agent {
   private tasksJustArchived: boolean = false;
   /** Number of tasks that were archived in the last sendMessage call */
   private archivedTaskCount: number = 0;
+  /** Timestamp of last auto-checkpoint (for cooldown) */
+  private lastAutoCheckpointAt: number = 0;
+  /** Minimum interval between auto-checkpoints in ms */
+  private static readonly AUTO_CHECKPOINT_COOLDOWN_MS = 10_000;
 
   public approvePlan(): void {
     this.planState = "APPROVED";
@@ -451,6 +456,9 @@ If none of the options are suitable, still pick the closest one.`;
     this.conversation.addUserMessage(userInput);
     await this.compactHistoryIfNeeded();
     await this.saveHistory();
+
+    // Auto-checkpoint on every user message (with cooldown)
+    this.autoCheckpoint("User message");
 
     // ── Auto-archive completed tasks on follow-up messages ──────────────
     // When all tasks are done and the user sends a new message, archive
@@ -1315,6 +1323,11 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
             ? this.worktreePath
             : this.workingDirectory;
 
+          // Auto-checkpoint before destructive operations (with cooldown)
+          if (MODIFYING_TOOLS.includes(tc.name)) {
+            this.autoCheckpoint(`Pre-${tc.name}`);
+          }
+
           const toolResult = await executeToolCall(
             tc,
             effectiveCwd,
@@ -1631,6 +1644,29 @@ ${formatted}`;
    * conversation history or file paths. Called by /new to guarantee a
    * completely clean slate in both single-agent and multi-agent modes.
    */
+  /**
+   * Creates an automatic checkpoint if cooldown has elapsed.
+   * Called on every user message and before destructive tool operations.
+   * Non-blocking — runs in background and swallows errors.
+   */
+  private autoCheckpoint(label: string): void {
+    const now = Date.now();
+    if (now - this.lastAutoCheckpointAt < Agent.AUTO_CHECKPOINT_COOLDOWN_MS) return;
+    this.lastAutoCheckpointAt = now;
+
+    const sessionFilePath = this.getCurrentHistoryFilePath();
+    const messages = this.conversation.getMessages();
+    const name = `Auto: ${label} at ${new Date(now).toLocaleTimeString()}`;
+
+    createCheckpoint(sessionFilePath, name, messages, this.planState, this.workingDirectory)
+      .then(() => {
+        this.writeToLogFile("INFO", `Auto-checkpoint created: "${name}"`);
+      })
+      .catch((err: any) => {
+        this.writeToLogFile("WARN", `Auto-checkpoint failed: ${err.message}`);
+      });
+  }
+
   public resetInternalState(): void {
     this.textLogBuffer = "";
     this.pendingMessage = null;
@@ -1640,6 +1676,7 @@ ${formatted}`;
     this.abortController = null;
     this.tasksJustArchived = false;
     this.archivedTaskCount = 0;
+    this.lastAutoCheckpointAt = 0;
   }
 
   getHistory(): Conversation {
