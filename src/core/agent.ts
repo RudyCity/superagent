@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
@@ -554,7 +554,7 @@ If none of the options are suitable, still pick the closest one.`;
 
   private async runAgentLoop(): Promise<void> {
     const isGoalMode = !!this.goalMode;
-    const defaultMax = parseInt(process.env.MAX_ITERATIONS || "50", 10) || 50;
+    const defaultMax = getSettings().maxIterations || 50;
     const maxIterations = isGoalMode ? this.goalMaxIterations : defaultMax;
     let continueCount = 0;
     // In goal mode, allow many more auto-continues without prompting the user

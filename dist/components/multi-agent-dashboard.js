@@ -4,7 +4,8 @@ import { execSync } from "child_process";
 import { Box, Text, useApp } from "ink";
 import TextInput from "ink-text-input";
 import fs from "fs/promises";
-import { subagentInstances, subscribeToSubagents, superagentInstances, subscribeToSuperagents, backgroundTasks, subscribeToTasks, subscribeToActiveOutput, notifySubagentsChanged, notifySuperagentsChanged, historicalSuperagentTokens, masterPromptTokens, masterCompletionTokens, lastMasterPromptTokens } from "../core/tools/state.js";
+import { subagentInstances, subscribeToSubagents, superagentInstances, subscribeToSuperagents, backgroundTasks, subscribeToTasks, subscribeToActiveOutput, notifySubagentsChanged, notifySuperagentsChanged, notifyTasksChanged, historicalSuperagentTokens, masterPromptTokens, masterCompletionTokens, lastMasterPromptTokens } from "../core/tools/state.js";
+import { killProcessTree } from "../core/tools/index.js";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
 import path from "path";
 import { getContextWindowLimit, getRootConfigDir, getEffectiveMasterModel } from "../core/config.js";
@@ -434,7 +435,16 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
                         setTimeLeft(null);
                     }
                 }
-                else if (event.type === "tool_end" || event.type === "error" || event.type === "done") {
+                else if (event.type === "tool_end" || event.type === "error") {
+                    setIsExecutingTool(false);
+                    setToolTimeout(null);
+                    setToolStartTime(null);
+                    setTimeLeft(null);
+                    if (event.type === "error") {
+                        setIsProcessing(false);
+                    }
+                }
+                else if (event.type === "done") {
                     setIsExecutingTool(false);
                     setToolTimeout(null);
                     setToolStartTime(null);
@@ -685,7 +695,7 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
                 }
                 catch { }
                 inst.status = "completed";
-                inst.result = "[Cancelled by user (Ctrl+C)]";
+                inst.result = "[Cancelled by user]";
                 count++;
             }
         }
@@ -699,7 +709,7 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
                 superagentInstances.set(inst.id, {
                     ...inst,
                     status: "error",
-                    result: "[Cancelled by user (Ctrl+C)]",
+                    result: "[Cancelled by user]",
                     completedAt: Date.now()
                 });
                 count++;
@@ -713,10 +723,24 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
             catch { }
             count++;
         }
+        // Kill all background processes (shell tasks spawned by agents)
+        for (const [id, task] of backgroundTasks.entries()) {
+            if (!task.hasExited) {
+                try {
+                    killProcessTree(task.process.pid);
+                }
+                catch { }
+                task.hasExited = true;
+                count++;
+            }
+        }
+        if (count > 0) {
+            notifyTasksChanged();
+        }
         if (count > 0) {
             notifySubagentsChanged();
             notifySuperagentsChanged();
-            setMasterLogs((prev) => [...prev, `[SYSTEM] 🛑 Interrupted ${count} running agent(s).`].slice(-500));
+            setMasterLogs((prev) => [...prev, `[SYSTEM] 🛑 Interrupted ${count} running agent(s)/process(es).`].slice(-500));
         }
         return count;
     };

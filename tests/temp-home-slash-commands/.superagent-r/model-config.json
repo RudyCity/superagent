@@ -2,7 +2,10 @@
   "settings": {
     "concurrencyLimit": 0,
     "rateLimitRpm": 45,
-    "rateLimitCapacity": 15
+    "rateLimitCapacity": 15,
+    "disableStreaming": false,
+    "contextWindowLimit": 0,
+    "maxIterations": 50
   },
   "providers": [
     {

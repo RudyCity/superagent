@@ -432,6 +432,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 content: `Provider selected: ${selectedProvider.name} [${selectedProvider.provider}]`,
                 timestamp: now,
             });
+            // Activate the selected provider in ALL preset tiers (both modes)
+            switchActiveProvider(selectedProvider.id);
             // Skip connection test (old step 7) — go directly to model selection (step 8).
             setWizardIsLoadingModels(true);
             const selBaseUrl = selectedProvider.baseUrl || "";
@@ -484,11 +486,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         else if (step === 9) {
             // Step 9: Send test message to selected model (also serves as connection test)
             const message = value.trim();
+            const providerProfileId = data.providerId || data.providerProfileId || "";
             if (!message || message === "/skip") {
                 // Skip test message — still persist the selected model
                 const selectedModel = data.selectedModel || "";
                 if (selectedModel) {
-                    setAllTierModels("auto", selectedModel);
+                    setAllTierModels("auto", selectedModel, providerProfileId || undefined);
                     const limit = getContextWindowLimit(selectedModel);
                     setContextLimit(limit);
                     setActiveModel(selectedModel);
@@ -527,7 +530,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     timestamp: Date.now(),
                 });
                 // Persist the selected model after successful test
-                setAllTierModels("auto", selectedModel);
+                setAllTierModels("auto", selectedModel, providerProfileId || undefined);
                 const limit = getContextWindowLimit(selectedModel);
                 setContextLimit(limit);
                 setActiveModel(selectedModel);

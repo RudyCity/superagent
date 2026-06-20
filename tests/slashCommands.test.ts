@@ -528,17 +528,15 @@ describe("Slash Commands: /settings & /setting-*", () => {
   });
 
   it("should show settings when running /settings", () => {
-    process.env.SUPERAGENT_MAX_CONCURRENCY = "1";
-    process.env.SUPERAGENT_RATE_LIMIT_RPM = "30";
-    process.env.SUPERAGENT_RATE_LIMIT_CAPACITY = "5";
+    configModule.updateSettings({ concurrencyLimit: 1, rateLimitRpm: 30, rateLimitCapacity: 5 });
 
     handleSlashCommand("/settings", mockCtx as any);
 
     expect(addedLines.length).toBe(1);
     const content = addedLines[0].content;
-    expect(content).toContain("Concurrency Limit : 1 (enabled)");
-    expect(content).toContain("Rate Limit (RPM)  : 30 RPM");
-    expect(content).toContain("Limit Capacity    : 5");
+    expect(content).toContain("Concurrency Limit  : 1 (enabled)");
+    expect(content).toContain("Rate Limit (RPM)   : 30 RPM");
+    expect(content).toContain("Limit Capacity     : 5");
   });
 
   it("should configure concurrency limit when running /setting-concurrency", () => {

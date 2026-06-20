@@ -329,17 +329,17 @@ export const initCommand = {
         const modelName = getEffectiveMasterModel("auto") || getDefaultModel();
         let limit = 256000;
         let configAudit = "";
+        let streamingLabel = "ENABLED";
         try {
-            const { getContextWindowLimit, getActiveConfigAudit } = await import("../config.js");
+            const { getContextWindowLimit, getActiveConfigAudit, getSettings } = await import("../config.js");
             limit = getContextWindowLimit(modelName);
             configAudit = getActiveConfigAudit();
+            const settings = getSettings();
+            if (settings.contextWindowLimit > 0)
+                limit = settings.contextWindowLimit;
+            streamingLabel = settings.disableStreaming ? "DISABLED" : "ENABLED";
         }
         catch { }
-        if (process.env.CONTEXT_WINDOW_LIMIT) {
-            const parsed = parseInt(process.env.CONTEXT_WINDOW_LIMIT, 10);
-            if (!isNaN(parsed))
-                limit = parsed;
-        }
         const gitStatusLabel = gitStatus === "ACTIVE" ? "✓ ACTIVE" : gitStatus === "INITIALIZED" ? "✓ INITIALIZED (new)" : `✗ ${gitStatus}`;
         const auditLines = [
             "┌───[ ⚙️ SYSTEM AUDIT & AGENT INITIALIZATION ]",
@@ -356,7 +356,7 @@ export const initCommand = {
             "│ ",
             "│ [COGNITIVE CORE]",
             configAudit,
-            `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
+            `│ ✦ Streaming       : ${streamingLabel}`,
             "│ ",
             "│ [PROJECT METADATA]",
             `│ 📄 Registry File  : ${fileStatus} (${agentsPath})`,

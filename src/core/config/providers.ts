@@ -48,25 +48,28 @@ export function switchActiveProvider(name: string): boolean {
     return false;
   }
 
-  const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
-  const mode = isMulti ? "multi" : "single";
-  const activePreset = getActivePreset<any>(mode);
-
   const tierUpdate = { providerProfileId: provider.id };
-  if (mode === "multi") {
-    activePreset.models.master = { ...activePreset.models.master, ...tierUpdate };
-  }
-  activePreset.models.superagent = { ...activePreset.models.superagent, ...tierUpdate };
-  if (activePreset.models.subagentDefault) {
-    activePreset.models.subagentDefault = { ...activePreset.models.subagentDefault, ...tierUpdate };
-  }
-  if (activePreset.models.subagentDetails) {
-    for (const key of Object.keys(activePreset.models.subagentDetails)) {
-      activePreset.models.subagentDetails[key] = { ...activePreset.models.subagentDetails[key], ...tierUpdate };
-    }
-  }
 
-  savePreset(mode, activePreset);
+  // Update BOTH modes (multi AND single) so provider is always resolvable
+  // regardless of which mode the user started in.
+  for (const mode of ["multi", "single"] as const) {
+    const activePreset = getActivePreset<any>(mode);
+
+    if (mode === "multi") {
+      activePreset.models.master = { ...activePreset.models.master, ...tierUpdate };
+    }
+    activePreset.models.superagent = { ...activePreset.models.superagent, ...tierUpdate };
+    if (activePreset.models.subagentDefault) {
+      activePreset.models.subagentDefault = { ...activePreset.models.subagentDefault, ...tierUpdate };
+    }
+    if (activePreset.models.subagentDetails) {
+      for (const key of Object.keys(activePreset.models.subagentDetails)) {
+        activePreset.models.subagentDetails[key] = { ...activePreset.models.subagentDetails[key], ...tierUpdate };
+      }
+    }
+
+    savePreset(mode, activePreset);
+  }
   return true;
 }
 

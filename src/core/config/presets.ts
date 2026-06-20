@@ -157,7 +157,26 @@ function cleanPreset(p: any): ModelPreset {
 function writePresetsFile(data: ModelPresetsFile): void {
   const customPath = getCustomPresetsPath();
   ensureGlobalConfigDir();
-  fs.writeFileSync(customPath, JSON.stringify(data, null, 2), "utf-8");
+  // Atomic write: write to .tmp first, then rename to prevent corruption
+  // if the process is killed (Ctrl+C, crash) during the write.
+  const tmpPath = customPath + ".tmp";
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+  // Retry for Windows EPERM (antivirus, indexer, etc.)
+  for (let attempt = 0; attempt <= 3; attempt++) {
+    try {
+      fs.renameSync(tmpPath, customPath);
+      break;
+    } catch (err: any) {
+      if (attempt < 3 && (err?.code === "EPERM" || err?.code === "EBUSY")) {
+        const end = Date.now() + (attempt + 1) * 50;
+        while (Date.now() < end) { /* busy wait */ }
+        continue;
+      }
+      // Clean up temp file on final failure
+      try { fs.unlinkSync(tmpPath); } catch {}
+      throw err;
+    }
+  }
 }
 
 /**

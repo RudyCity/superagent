@@ -1,17 +1,10 @@
 #!/usr/bin/env node
-import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-import os from "os";
-
-// Load local .env from current working directory to allow project-level overrides
-dotenv.config();
-// Load global .env as fallback
-dotenv.config({ path: path.join(os.homedir(), ".superagent-r", ".env") });
 import React from "react";
 import { render } from "ink";
 import { App } from "./app.js";
@@ -87,9 +80,8 @@ const hasCustomEndpoint = !!config.baseUrl;
 
 if (!apiKey && !hasCustomEndpoint && !process.stdin.isTTY) {
   console.error(
-    "Error: Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, or CUSTOM_BASE_URL"
+    "Error: No API key configured. Run superagent and use /login add to configure a provider."
   );
-  console.error("  cp .env.example .env  # then edit .env");
   process.exit(1);
 }
 

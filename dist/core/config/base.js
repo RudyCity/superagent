@@ -1,34 +1,57 @@
 import { loadAgentSkills } from "./skills.js";
 import { resolveWindowsShell } from "../tools/helpers.js";
-import { loadModelConfig, getActivePreset } from "./jsonConfig.js";
+import { loadModelConfig, getActivePreset, savePreset, getSettings } from "./jsonConfig.js";
 export function getConfig() {
     const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
     const mode = isMulti ? "multi" : "single";
     const config = loadModelConfig();
     const activePreset = getActivePreset(mode);
     const tierConfig = mode === "multi" ? activePreset.models.master : activePreset.models.superagent;
-    const providerProfile = config.providers.find((p) => p.id === tierConfig?.providerProfileId) || config.providers[0];
+    // Step 1: Try exact match by providerProfileId
+    let providerProfile = config.providers.find((p) => p.id === tierConfig?.providerProfileId);
+    // Step 2: If exact match fails and providerProfileId is set, try fuzzy match
+    // This handles stale presets that reference non-existent provider IDs (e.g. "openrouter" vs "op")
+    if (!providerProfile && tierConfig?.providerProfileId) {
+        const staleId = tierConfig.providerProfileId.toLowerCase();
+        providerProfile = config.providers.find((p) => p.id?.toLowerCase() === staleId || p.name?.toLowerCase() === staleId || p.provider?.toLowerCase() === staleId);
+    }
+    // Step 3: If still not found, find ANY provider with a non-empty apiKey
+    if (!providerProfile || !providerProfile.apiKey || providerProfile.apiKey.trim() === "") {
+        const anyProviderWithKey = config.providers.find((p) => p.apiKey && p.apiKey.trim() !== "");
+        if (anyProviderWithKey) {
+            providerProfile = anyProviderWithKey;
+            // Auto-repair: update the stale preset to point to the found provider
+            try {
+                const preset = getActivePreset(mode);
+                const tierUpdate = { providerProfileId: anyProviderWithKey.id };
+                if (mode === "multi") {
+                    preset.models.master = { ...preset.models.master, ...tierUpdate };
+                }
+                preset.models.superagent = { ...preset.models.superagent, ...tierUpdate };
+                if (preset.models.subagentDefault) {
+                    preset.models.subagentDefault = { ...preset.models.subagentDefault, ...tierUpdate };
+                }
+                if (preset.models.subagentDetails) {
+                    for (const key of Object.keys(preset.models.subagentDetails)) {
+                        preset.models.subagentDetails[key] = { ...preset.models.subagentDetails[key], ...tierUpdate };
+                    }
+                }
+                savePreset(mode, preset);
+            }
+            catch {
+                // Ignore auto-repair errors
+            }
+        }
+        else {
+            // No provider with key found, fall back to first provider
+            providerProfile = config.providers[0];
+        }
+    }
     const apiKey = providerProfile?.apiKey || "";
     const baseUrl = providerProfile?.baseUrl || "";
     const provider = providerProfile?.provider || "openai";
     const model = tierConfig?.model || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
-    const disableStreaming = process.env.DISABLE_STREAMING === "true";
-    // Fallback: if matched profile has empty apiKey, scan for other profiles of same provider type
-    if (!apiKey && providerProfile) {
-        const fallbackProfile = config.providers.find((p) => p.id !== providerProfile.id && (p.provider || "").toLowerCase() === provider && p.apiKey && p.apiKey.trim() !== "");
-        if (fallbackProfile) {
-            return {
-                apiKey: fallbackProfile.apiKey,
-                provider,
-                model,
-                baseUrl: fallbackProfile.baseUrl || baseUrl,
-                maxTokens: 16384,
-                systemPrompt: getSystemPrompt(),
-                workingDirectory: process.cwd(),
-                disableStreaming,
-            };
-        }
-    }
+    const disableStreaming = getSettings().disableStreaming;
     return {
         apiKey,
         provider,

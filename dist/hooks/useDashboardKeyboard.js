@@ -23,8 +23,11 @@ export function useDashboardKeyboard(ctx) {
                 }
                 return;
             }
-            if (isProcessing) {
-                stopAllRunningAgents();
+            // Always attempt to stop running agents first, regardless of
+            // isProcessing flag. The flag can be false between tool calls
+            // or when subagents are running independently of the master.
+            const stopped = stopAllRunningAgents();
+            if (stopped > 0 || isProcessing) {
                 setIsProcessing(false);
                 setCurrentTask("Idle - Interrupted");
                 return;

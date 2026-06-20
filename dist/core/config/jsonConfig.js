@@ -5,6 +5,9 @@ const DEFAULT_CONFIG = {
         concurrencyLimit: 0,
         rateLimitRpm: 60,
         rateLimitCapacity: 60,
+        disableStreaming: false,
+        contextWindowLimit: 0,
+        maxIterations: 50,
     },
     providers: [
         {
@@ -114,6 +117,63 @@ export function loadModelConfig() {
                 if (!parsed.activePresetId || !parsed.activePresetId.multi || !parsed.activePresetId.single) {
                     parsed.activePresetId = JSON.parse(JSON.stringify(DEFAULT_CONFIG.activePresetId));
                 }
+                // Repair stale providerProfileIds: if a preset references a non-existent provider,
+                // replace it with a valid provider that has an API key (or the first provider).
+                const providerIds = new Set((parsed.providers || []).map((p) => p.id));
+                const firstProviderWithKey = (parsed.providers || []).find((p) => p.apiKey && p.apiKey.trim() !== "");
+                const fallbackProviderId = firstProviderWithKey?.id || parsed.providers?.[0]?.id || "";
+                if (fallbackProviderId) {
+                    let repaired = false;
+                    for (const mode of ["multi", "single"]) {
+                        const presetsList = parsed.presets?.[mode];
+                        if (!presetsList)
+                            continue;
+                        for (const preset of presetsList) {
+                            if (!preset?.models)
+                                continue;
+                            const models = preset.models;
+                            const tierKeys = ["master", "superagent", "subagentDefault"];
+                            for (const key of tierKeys) {
+                                if (models[key]?.providerProfileId && !providerIds.has(models[key].providerProfileId)) {
+                                    models[key].providerProfileId = fallbackProviderId;
+                                    repaired = true;
+                                }
+                            }
+                            if (models.subagentDetails) {
+                                for (const subKey of Object.keys(models.subagentDetails)) {
+                                    if (models.subagentDetails[subKey]?.providerProfileId && !providerIds.has(models.subagentDetails[subKey].providerProfileId)) {
+                                        models.subagentDetails[subKey].providerProfileId = fallbackProviderId;
+                                        repaired = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (repaired) {
+                        // Persist the repaired config with retry for Windows EPERM
+                        try {
+                            const tmpPath = configPath + ".tmp";
+                            fs.writeFileSync(tmpPath, JSON.stringify(parsed, null, 2), "utf-8");
+                            for (let attempt = 0; attempt <= 3; attempt++) {
+                                try {
+                                    fs.renameSync(tmpPath, configPath);
+                                    break;
+                                }
+                                catch (renameErr) {
+                                    if (attempt < 3 && (renameErr?.code === "EPERM" || renameErr?.code === "EBUSY")) {
+                                        const end = Date.now() + (attempt + 1) * 50;
+                                        while (Date.now() < end) { /* busy wait */ }
+                                        continue;
+                                    }
+                                    throw renameErr;
+                                }
+                            }
+                        }
+                        catch {
+                            // Ignore repair write errors
+                        }
+                    }
+                }
                 cachedConfig = parsed;
             }
             return cachedConfig;
@@ -154,7 +214,26 @@ export function saveModelConfig(config) {
         // during the write — the original file stays intact until rename completes.
         const tmpPath = configPath + ".tmp";
         fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), "utf-8");
-        fs.renameSync(tmpPath, configPath);
+        // Retry logic for Windows EPERM: antivirus, Windows Search Indexer, or
+        // OneDrive may momentarily lock the target file. Retry up to 3 times
+        // with a short delay between attempts.
+        const MAX_RETRIES = 3;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                fs.renameSync(tmpPath, configPath);
+                break; // Success
+            }
+            catch (renameErr) {
+                if (attempt < MAX_RETRIES && (renameErr?.code === "EPERM" || renameErr?.code === "EBUSY")) {
+                    // Wait briefly before retrying (50ms, 100ms, 150ms)
+                    const waitMs = (attempt + 1) * 50;
+                    const end = Date.now() + waitMs;
+                    while (Date.now() < end) { /* busy wait — short duration */ }
+                    continue;
+                }
+                throw renameErr; // Re-throw if not EPERM/EBUSY or retries exhausted
+            }
+        }
         cachedConfig = config;
         return true;
     }
@@ -189,6 +268,52 @@ export function removeProvider(id) {
     config.providers = config.providers.filter((p) => p.id !== id);
     if (!saveModelConfig(config)) {
         throw new Error("Failed to save provider removal to disk. Check permissions for: " + getRootConfigDir());
+    }
+}
+/**
+ * Get system settings with defaults filled in for any missing fields.
+ */
+export function getSettings() {
+    const config = loadModelConfig();
+    const s = config.settings || {};
+    return {
+        concurrencyLimit: s.concurrencyLimit ?? 0,
+        rateLimitRpm: s.rateLimitRpm ?? 60,
+        rateLimitCapacity: s.rateLimitCapacity ?? 60,
+        disableStreaming: s.disableStreaming ?? false,
+        contextWindowLimit: s.contextWindowLimit ?? 0,
+        maxIterations: s.maxIterations ?? 50,
+    };
+}
+/**
+ * Update one or more settings and persist to model-config.json.
+ * Also updates process.env so runtime checks stay in sync.
+ */
+export function updateSettings(updates) {
+    const config = loadModelConfig();
+    if (!config.settings) {
+        config.settings = { ...DEFAULT_CONFIG.settings };
+    }
+    Object.assign(config.settings, updates);
+    saveModelConfig(config);
+    // Sync to process.env for backward-compatible runtime checks
+    if (updates.concurrencyLimit !== undefined) {
+        process.env.SUPERAGENT_MAX_CONCURRENCY = String(updates.concurrencyLimit);
+    }
+    if (updates.rateLimitRpm !== undefined) {
+        process.env.SUPERAGENT_RATE_LIMIT_RPM = String(updates.rateLimitRpm);
+    }
+    if (updates.rateLimitCapacity !== undefined) {
+        process.env.SUPERAGENT_RATE_LIMIT_CAPACITY = String(updates.rateLimitCapacity);
+    }
+    if (updates.disableStreaming !== undefined) {
+        process.env.DISABLE_STREAMING = updates.disableStreaming ? "true" : "";
+    }
+    if (updates.contextWindowLimit !== undefined) {
+        process.env.CONTEXT_WINDOW_LIMIT = updates.contextWindowLimit > 0 ? String(updates.contextWindowLimit) : "";
+    }
+    if (updates.maxIterations !== undefined) {
+        process.env.MAX_ITERATIONS = String(updates.maxIterations);
     }
 }
 export function getPresets(mode) {

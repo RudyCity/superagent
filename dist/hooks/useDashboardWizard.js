@@ -242,6 +242,8 @@ export function useDashboardWizard(ctx) {
                     return;
                 }
                 setMasterLogs((prev) => [...prev, `[MASTER] Provider selected: ${selectedProvider.name} [${selectedProvider.provider}]`].slice(-500));
+                // Activate the selected provider in ALL preset tiers (both modes)
+                switchActiveProvider(selectedProvider.id);
                 // Skip connection test (old step 7) — go directly to model selection (step 8).
                 setWizardIsLoadingModels(true);
                 const selBaseUrl = selectedProvider.baseUrl || "";
@@ -284,11 +286,12 @@ export function useDashboardWizard(ctx) {
             }
             else if (activeWizard.step === 9) {
                 const message = value.trim();
+                const providerProfileId = activeWizard.data.providerId || activeWizard.data.providerProfileId || "";
                 if (!message || message === "/skip") {
                     // Skip test message — still persist the selected model
                     const selectedModel = activeWizard.data.selectedModel || "";
                     if (selectedModel) {
-                        setAllTierModels(isMulti ? "multi" : "single", selectedModel);
+                        setAllTierModels(isMulti ? "multi" : "single", selectedModel, providerProfileId || undefined);
                         const limit = getContextWindowLimit(selectedModel);
                         setContextLimit(limit);
                         const effectiveModel = getEffectiveMasterModel(isMulti ? "multi" : "single") || selectedModel;
@@ -316,7 +319,7 @@ export function useDashboardWizard(ctx) {
                     const result = await generateText({ model: testModel, prompt: message, maxTokens: 512 });
                     setMasterLogs((prev) => [...prev, `[ASSISTANT] ${result.text}`].slice(-500));
                     // Persist the selected model after successful test
-                    setAllTierModels(isMulti ? "multi" : "single", selectedModel);
+                    setAllTierModels(isMulti ? "multi" : "single", selectedModel, providerProfileId || undefined);
                     const limit = getContextWindowLimit(selectedModel);
                     setContextLimit(limit);
                     const effectiveModel = getEffectiveMasterModel(isMulti ? "multi" : "single") || selectedModel;

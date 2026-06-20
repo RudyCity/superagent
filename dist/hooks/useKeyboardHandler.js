@@ -1084,7 +1084,7 @@ export function useKeyboardHandler(ctx) {
                 setIsProcessing(false);
                 return;
             }
-            if (isProcessing) {
+            if (isProcessing || agentRef.current?.isAgentRunning() || agentRef.current?.wasRunningBeforeAbort) {
                 agentRef.current?.abort();
                 setIsProcessing(false);
                 return;
@@ -1226,7 +1226,7 @@ export function useKeyboardHandler(ctx) {
                     timestamp: Date.now(),
                 });
             }
-            else if (isProcessing) {
+            else if (isProcessing || agentRef.current?.isAgentRunning() || agentRef.current?.wasRunningBeforeAbort) {
                 if (stopRunningSubagents() > 0) {
                     agentRef.current?.abort();
                     setIsProcessing(false);

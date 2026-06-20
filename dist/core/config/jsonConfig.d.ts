@@ -30,6 +30,9 @@ export interface SystemSettings {
     concurrencyLimit: number;
     rateLimitRpm: number;
     rateLimitCapacity: number;
+    disableStreaming: boolean;
+    contextWindowLimit: number;
+    maxIterations: number;
 }
 export interface GlobalModelConfig {
     providers: ProviderProfile[];
@@ -49,6 +52,15 @@ export declare function saveModelConfig(config: GlobalModelConfig): boolean;
 export declare function getProviders(): ProviderProfile[];
 export declare function addProvider(profile: ProviderProfile): void;
 export declare function removeProvider(id: string): void;
+/**
+ * Get system settings with defaults filled in for any missing fields.
+ */
+export declare function getSettings(): SystemSettings;
+/**
+ * Update one or more settings and persist to model-config.json.
+ * Also updates process.env so runtime checks stay in sync.
+ */
+export declare function updateSettings(updates: Partial<SystemSettings>): void;
 export declare function getPresets(mode: "multi" | "single"): JSONModelPreset<PresetModelsMulti>[] | JSONModelPreset<PresetModelsSingle>[];
 export declare function savePreset<T>(mode: "multi" | "single", preset: JSONModelPreset<T>): void;
 export declare function deletePreset(mode: "multi" | "single", id: string): void;

@@ -6,7 +6,7 @@ import { getStaticModelLimit } from "../model_limits.js";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { getConfig } from "./base.js";
 import { getConfiguredProviders, getEffectiveMasterModel } from "./providers.js";
-import { loadModelConfig, getActivePreset, TierModelConfig } from "./jsonConfig.js";
+import { loadModelConfig, getActivePreset, TierModelConfig, getSettings } from "./jsonConfig.js";
 
 export async function fetchAndCacheModels(): Promise<void> {
   const providers = getConfiguredProviders();
@@ -93,15 +93,9 @@ export function getCachedModelIds(): string[] {
 }
 
 export function getContextWindowLimit(model: string): number {
-  // 1. Env overrides
-  if (process.env.CONTEXT_WINDOW_LIMIT) {
-    const parsed = parseInt(process.env.CONTEXT_WINDOW_LIMIT, 10);
-    if (!isNaN(parsed)) return parsed;
-  }
-  if (process.env.MAX_CONTEXT_TOKENS) {
-    const parsed = parseInt(process.env.MAX_CONTEXT_TOKENS, 10);
-    if (!isNaN(parsed)) return parsed;
-  }
+  // 1. JSON config override (centralized settings)
+  const jsonLimit = getSettings().contextWindowLimit;
+  if (jsonLimit > 0) return jsonLimit;
 
   // 2. Read from models_cache.json
   try {
@@ -401,8 +395,28 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
     tierConfig = activePreset.models.superagent || (activePreset.models as any).master;
   }
 
-  // Find the provider profile
-  const providerProfile = config.providers.find((p) => p.id === tierConfig?.providerProfileId) || config.providers[0];
+  // Find the provider profile with robust fallback chain
+  let providerProfile = config.providers.find((p) => p.id === tierConfig?.providerProfileId);
+
+  // Fallback 1: fuzzy match by name or provider type
+  if (!providerProfile && tierConfig?.providerProfileId) {
+    const staleId = tierConfig.providerProfileId.toLowerCase();
+    providerProfile = config.providers.find(
+      (p) => p.id?.toLowerCase() === staleId || p.name?.toLowerCase() === staleId || p.provider?.toLowerCase() === staleId
+    );
+  }
+
+  // Fallback 2: any provider with a non-empty apiKey
+  if (!providerProfile || !providerProfile.apiKey || providerProfile.apiKey.trim() === "") {
+    const anyWithKey = config.providers.find(
+      (p) => p.apiKey && p.apiKey.trim() !== ""
+    );
+    if (anyWithKey) {
+      providerProfile = anyWithKey;
+    } else {
+      providerProfile = config.providers[0];
+    }
+  }
 
   const apiKey = providerProfile?.apiKey || "";
   const baseUrl = providerProfile?.baseUrl || undefined;
