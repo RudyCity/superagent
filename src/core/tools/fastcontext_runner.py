@@ -19,6 +19,16 @@ import json
 import os
 import sys
 
+# Try to import LiteLLM for multi-provider support (OpenAI, Anthropic, OpenRouter, etc.)
+try:
+    import litellm
+    litellm.suppress_debug_info = True
+    import logging as _logging
+    _logging.getLogger("litellm").setLevel(_logging.ERROR)
+    _HAS_LITELLM = True
+except ImportError:
+    _HAS_LITELLM = False
+
 
 def emit(event: dict):
     """Write a JSONL event to stderr for live logging."""
@@ -35,6 +45,10 @@ def run():
     parser.add_argument("--query", required=True)
     parser.add_argument("--max-turns", type=int, default=6)
     parser.add_argument("--citation", action="store_true")
+    parser.add_argument("--trajectory-path", required=False, default=None,
+                        help="Path for trajectory JSONL file (unique per run)")
+    parser.add_argument("--provider", required=False, default="openai",
+                        help="Provider type: openai, anthropic, openrouter, custom")
     args = parser.parse_args()
 
     # Ensure FastContext source is importable
@@ -43,7 +57,7 @@ def run():
         sys.path.insert(0, source_dir)
 
     from fastcontext.agent.context import Context
-    from fastcontext.agent.llm import LLM, Message, RequestyAPIError
+    from fastcontext.agent.llm import LLM, Message, FunctionCall, RequestyAPIError
     from fastcontext.agent.tool.glob import GlobTool
     from fastcontext.agent.tool.grep import GrepTool
     from fastcontext.agent.tool.read import ReadTool
@@ -51,11 +65,103 @@ def run():
     from fastcontext.agent.utils import load_system_prompt, get_final_answer
 
     system_prompt = load_system_prompt(args.work_dir)
-    llm = LLM(model=args.model, api_key=args.api_key, base_url=args.base_url)
-    toolset = ToolSet([ReadTool(), GlobTool(), GrepTool()], work_dir=args.work_dir)
-    context = Context(".fastcontext/trajectory.jsonl")
 
-    emit({"event": "start", "model": args.model, "query": args.query})
+    if _HAS_LITELLM:
+        class LiteLLMAdapter:
+            """Wraps LiteLLM to unify all providers (OpenAI, Anthropic, OpenRouter, etc.)
+            into an OpenAI-compatible format that FastContext expects."""
+
+            def __init__(self, model, api_key, base_url, provider="openai", **kw):
+                self.model = model
+                self.provider = (provider or "openai").lower()
+                self.api_key = api_key
+                self.base_url = base_url
+                self.max_tokens = kw.get("max_tokens", 32_000)
+                self.temperature = kw.get("temperature", 1.0)
+                self.top_p = kw.get("top_p", 0.95)
+
+                # Build LiteLLM model name with provider prefix
+                if self.provider == "openrouter":
+                    self.litellm_model = f"openrouter/{model}"
+                elif self.provider == "anthropic":
+                    self.litellm_model = f"anthropic/{model}"
+                else:
+                    # openai, custom, or unknown — use openai/ prefix
+                    self.litellm_model = f"openai/{model}"
+
+            async def acall(self, messages, tools):
+                if messages and not isinstance(messages[0], dict):
+                    messages = [m.to_dict(exclude_none=True) for m in messages]
+
+                call_kw = {
+                    "model": self.litellm_model,
+                    "messages": messages,
+                    "max_completion_tokens": self.max_tokens,
+                    "temperature": self.temperature,
+                    "top_p": self.top_p,
+                    "api_key": self.api_key,
+                }
+
+                # Pass base_url for providers that need custom endpoints
+                if self.base_url:
+                    call_kw["base_url"] = self.base_url
+
+                if tools:
+                    call_kw["tools"] = tools
+
+                try:
+                    response = await litellm.acompletion(**call_kw)
+                    choice = response.choices[0]
+                    content = choice.message.content
+                    reasoning = (
+                        getattr(choice.message, "reasoning_content", None)
+                        or getattr(choice.message, "reasoning_text", None)
+                    )
+                    tc_raw = choice.message.tool_calls
+
+                    usage = None
+                    if response.usage:
+                        usage = {
+                            "prompt_tokens": response.usage.prompt_tokens,
+                            "completion_tokens": response.usage.completion_tokens,
+                            "total_tokens": response.usage.total_tokens,
+                        }
+
+                    if tc_raw:
+                        calls = [
+                            FunctionCall(id=tc.id, name=tc.function.name,
+                                         arguments=tc.function.arguments)
+                            for tc in tc_raw
+                        ]
+                        return Message(
+                            role="assistant", content=content,
+                            reasoning_content=reasoning,
+                            tool_calls=calls, tool_call_id=tc_raw[0].id,
+                            model=self.model, usage=usage,
+                        )
+                    return Message(
+                        role="assistant", content=content,
+                        reasoning_content=reasoning,
+                        model=self.model, usage=usage,
+                    )
+                except Exception as e:
+                    raise RequestyAPIError(f"LLM API call failed: {e}") from e
+
+        llm = LiteLLMAdapter(
+            model=args.model, api_key=args.api_key,
+            base_url=args.base_url, provider=args.provider,
+        )
+    else:
+        llm = LLM(model=args.model, api_key=args.api_key, base_url=args.base_url)
+    toolset = ToolSet([ReadTool(), GlobTool(), GrepTool()], work_dir=args.work_dir)
+    trajectory_path = args.trajectory_path or os.path.join(
+        args.work_dir, ".fastcontext", "trajectory.jsonl"
+    )
+    os.makedirs(os.path.dirname(trajectory_path), exist_ok=True)
+    context = Context(trajectory_path)
+
+    emit({"event": "start", "model": args.model, "query": args.query,
+          "backend": "litellm" if _HAS_LITELLM else "openai-sdk"})
 
     async def agent_loop():
         await context.add(Message(role="system", content=system_prompt))

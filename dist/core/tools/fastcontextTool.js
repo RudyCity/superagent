@@ -14,7 +14,7 @@
  * NO environment variables are used anywhere.
  */
 import { execa } from "execa";
-import { existsSync } from "fs";
+import { existsSync, readdirSync, unlinkSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
 const __filename = fileURLToPath(import.meta.url);
@@ -38,6 +38,12 @@ const DEFAULT_BASE_URLS = {
     openrouter: "https://openrouter.ai/api/v1",
     anthropic: "https://api.anthropic.com/v1",
 };
+/** Default fallback models per provider type when tier model is not set. */
+const DEFAULT_FALLBACK_MODELS = {
+    openai: "gpt-4o",
+    anthropic: "claude-sonnet-4-20250514",
+    openrouter: "anthropic/claude-sonnet-4-20250514",
+};
 /**
  * Resolve the OpenAI-compatible base URL, API key, and model name
  * for FastContext from Superagent's JSON config only.
@@ -54,25 +60,49 @@ async function resolveFastContextCredentials() {
     const mode = isMulti ? "multi" : "single";
     const activePreset = getActivePreset(mode);
     const providers = config.providers || [];
-    // Determine tier config: researcher > subagentDefault > superagent
+    // Determine tier config: researcher > subagentDefault > main tier
     const researcherTier = activePreset.models.subagentDetails?.researcher;
     const subagentDefault = activePreset.models.subagentDefault;
     const mainTier = mode === "multi"
         ? activePreset.models.master
         : activePreset.models.superagent;
-    const tierConfig = researcherTier || subagentDefault || mainTier;
+    let tierConfig;
+    let tierName;
+    if (researcherTier?.model) {
+        tierConfig = researcherTier;
+        tierName = "researcher";
+    }
+    else if (subagentDefault?.model) {
+        tierConfig = subagentDefault;
+        tierName = "subagentDefault";
+    }
+    else {
+        tierConfig = mainTier;
+        tierName = mode === "multi" ? "master" : "superagent";
+    }
     // Find matching provider profile by ID
-    let providerProfile = tierConfig?.providerProfileId
-        ? providers.find((p) => p.id === tierConfig.providerProfileId)
-        : undefined;
-    // Fallback: find any provider with a non-empty API key
-    if (!providerProfile) {
+    let providerProfile;
+    let providerMismatch = false;
+    if (tierConfig?.providerProfileId) {
+        providerProfile = providers.find((p) => p.id === tierConfig.providerProfileId);
+        if (!providerProfile) {
+            // Provider ID specified in tier but not found — fallback with mismatch flag
+            providerProfile = providers.find((p) => p.apiKey && p.apiKey.trim() !== "");
+            providerMismatch = true;
+        }
+    }
+    else {
+        // No provider specified in tier — find any with API key
         providerProfile = providers.find((p) => p.apiKey && p.apiKey.trim() !== "");
     }
     const providerType = providerProfile?.provider || "openai";
     const apiKey = providerProfile?.apiKey || "";
     const customBaseUrl = providerProfile?.baseUrl || "";
-    const model = tierConfig?.model || "gpt-4o";
+    const providerName = providerProfile?.name || providerProfile?.id || "unknown";
+    // Use tier model if available, otherwise pick a sensible default for the provider type
+    const model = tierConfig?.model ||
+        DEFAULT_FALLBACK_MODELS[providerType] ||
+        DEFAULT_FALLBACK_MODELS.openai;
     let baseUrl;
     if (customBaseUrl) {
         baseUrl = customBaseUrl;
@@ -80,14 +110,14 @@ async function resolveFastContextCredentials() {
     else {
         baseUrl = DEFAULT_BASE_URLS[providerType] || DEFAULT_BASE_URLS.openai;
     }
-    return { baseUrl, apiKey, model };
+    return { baseUrl, apiKey, model, tierName, providerName, providerType, providerMismatch };
 }
 export const fastcontextTool = {
     name: "fastcontext",
     description: "Explore the codebase using Microsoft's FastContext — an AI-powered repository explorer " +
         "that uses read-only tools (Read, Glob, Grep) with multi-step reasoning and parallel tool " +
         "calls to find relevant code and return compact file-line citations. Uses the model " +
-        "configured for the 'researcher' tier (set via /model). FastContext is significantly more " +
+        "from the subagent tier (researcher > subagentDefault > main fallback). FastContext is significantly more " +
         "efficient than manual grep/read chains for broad exploration queries.",
     parameters: {
         type: "object",
@@ -130,11 +160,19 @@ export const fastcontextTool = {
         let baseUrl;
         let apiKey;
         let model;
+        let tierName;
+        let providerName;
+        let providerType;
+        let providerMismatch;
         try {
             const creds = await resolveFastContextCredentials();
             baseUrl = creds.baseUrl;
             apiKey = creds.apiKey;
             model = creds.model;
+            tierName = creds.tierName;
+            providerName = creds.providerName;
+            providerType = creds.providerType;
+            providerMismatch = creds.providerMismatch;
         }
         catch (err) {
             return (`Error resolving model/provider config: ${err.message}\n` +
@@ -144,6 +182,26 @@ export const fastcontextTool = {
             return ("Error: No API key configured. Run /login to add provider credentials " +
                 "before using FastContext.");
         }
+        // ── 2.5. Generate unique trajectory path ──
+        const trajectoryId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const fcDir = path.join(cwd, ".fastcontext");
+        const trajectoryPath = path.join(fcDir, `trajectory-${trajectoryId}.jsonl`);
+        if (!existsSync(fcDir)) {
+            mkdirSync(fcDir, { recursive: true });
+        }
+        // Cleanup stale trajectory files from previous runs
+        try {
+            const files = readdirSync(fcDir);
+            for (const f of files) {
+                if (f.startsWith("trajectory-") && f.endsWith(".jsonl")) {
+                    try {
+                        unlinkSync(path.join(fcDir, f));
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
         // ── 3. Build CLI args — ALL credentials as flags, ZERO env vars ──
         const cliArgs = [
             RUNNER_SCRIPT,
@@ -154,6 +212,8 @@ export const fastcontextTool = {
             "--work-dir", cwd,
             "--query", query,
             "--max-turns", String(maxTurns),
+            "--trajectory-path", trajectoryPath,
+            "--provider", providerType,
         ];
         if (citation) {
             cliArgs.push("--citation");
@@ -167,6 +227,13 @@ export const fastcontextTool = {
             const log = (line) => {
                 appendActiveToolOutput(line + "\n");
             };
+            // Show model/provider info at start
+            log(`🤖 Model: ${model} (tier: ${tierName})`);
+            log(`🔑 Provider: ${providerName} (${providerType})`);
+            if (providerMismatch) {
+                log(`⚠️  Provider from tier not found, using fallback provider`);
+            }
+            log("");
             const child = execa(PYTHON_BIN, cliArgs, {
                 cwd,
                 timeout: 180_000,
@@ -189,6 +256,8 @@ export const fastcontextTool = {
                         switch (evt.event) {
                             case "start":
                                 log(`⚡ Exploring: "${evt.query}"`);
+                                if (evt.backend)
+                                    log(`  └─ backend: ${evt.backend}`);
                                 log("");
                                 break;
                             case "turn":
@@ -248,6 +317,13 @@ export const fastcontextTool = {
             }
             // Clear the live panel so it doesn't linger after the tool finishes
             clearActiveToolOutput();
+            // Cleanup trajectory file
+            try {
+                if (existsSync(trajectoryPath)) {
+                    unlinkSync(trajectoryPath);
+                }
+            }
+            catch { }
             const output = (result.stdout || "").trim();
             const stderrRaw = (result.stderr || "").trim();
             if (result.exitCode !== 0 && !output) {
@@ -264,6 +340,13 @@ export const fastcontextTool = {
                 clearActiveToolOutput();
             }
             catch { /* ignore */ }
+            // Cleanup trajectory file on error too
+            try {
+                if (existsSync(trajectoryPath)) {
+                    unlinkSync(trajectoryPath);
+                }
+            }
+            catch { }
             if (msg.includes("timed out") || msg.includes("timeout")) {
                 return ("FastContext timed out after 3 minutes. " +
                     "Try a more specific query or reduce --max-turns.");

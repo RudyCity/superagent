@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.71] - 2026-06-22
+
+### Added
+- **FastContext Multi-Provider Support via LiteLLM**: The Python runner (`fastcontext_runner.py`) now uses LiteLLM as a unified adapter to support OpenAI, Anthropic, OpenRouter, and custom providers. Falls back to the native OpenAI SDK if LiteLLM is not installed.
+- **LiteLLM Dependency in Setup Scripts**: Both `setup-fastcontext.ps1` (Windows) and `setup-fastcontext.sh` (Linux/macOS) now install and verify `litellm>=1.74.0` alongside existing dependencies.
+- **Provider-Aware Fallback Models**: `resolveFastContextCredentials()` now returns `providerType`, `providerName`, `tierName`, and `providerMismatch` metadata, and uses `DEFAULT_FALLBACK_MODELS` to pick sensible default models per provider type (OpenAI → `gpt-4o`, Anthropic → `claude-sonnet-4-20250514`, OpenRouter → `anthropic/claude-sonnet-4-20250514`).
+- **Unique Trajectory Paths**: Each FastContext invocation now generates a unique trajectory JSONL file (`trajectory-<timestamp>-<random>.jsonl`) in `.fastcontext/`, preventing collisions during concurrent runs. Stale trajectory files are automatically cleaned up before and after each run.
+- **Live Model/Provider Info in Logs**: FastContext now displays the resolved model name, tier, provider name, and provider type at the start of each run, along with a warning if the tier's configured provider was not found and a fallback was used.
+- **Backend Info in Start Events**: The `start` event in live logging now includes a `backend` field indicating whether LiteLLM or the native OpenAI SDK is being used.
+
+### Changed
+- **Improved Tier Resolution Logic**: The credential resolver now explicitly checks `researcher.model`, `subagentDefault.model`, and falls back to the main tier (`master`/`superagent`), with clear tier name tracking. Provider mismatch is detected and flagged when the tier specifies a `providerProfileId` that doesn't exist.
+- **CLI Args Extended**: FastContext runner now accepts `--trajectory-path` and `--provider` flags for explicit trajectory file location and provider type selection.
+- **Tool Description Updated**: The FastContext tool description now accurately reflects the tier resolution order: `researcher > subagentDefault > main fallback`.
+
+---
+
 ## [1.1.70] - 2026-06-21
 
 ### Added

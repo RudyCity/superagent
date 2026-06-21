@@ -93,6 +93,7 @@ Write-Host "[4/5] Installing FastContext dependencies..." -ForegroundColor Yello
     "azure-core>=1.39.0" `
     "azure-identity>=1.25.3" `
     "jinja2>=3.1.6" `
+    "litellm>=1.74.0" `
     "openai>=2.15.0" `
     "pydantic>=2.12.5" 2>&1
 if ($LASTEXITCODE -ne 0) { throw "Failed to install dependencies" }
@@ -109,6 +110,11 @@ from fastcontext.agent.tool.read import ReadTool
 from fastcontext.agent.tool.tool import ToolSet
 from fastcontext.agent.utils import load_system_prompt
 print("All FastContext imports OK")
+try:
+    import litellm
+    print(f"LiteLLM {litellm.__version__} OK")
+except ImportError:
+    print("LiteLLM not installed — FastContext will use OpenAI SDK only (Anthropic/custom providers may not work)")
 "@
 $VerifyResult = & $PythonExe -c $VerifyScript 2>&1
 if ($LASTEXITCODE -ne 0) {
