@@ -1,7 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import { SharedRateLimiter, SharedConcurrencyLimiter } from "../src/core/rateLimiter.js";
-import { updateSettings, clearModelConfigCache } from "../src/core/config/jsonConfig.js";
+
+let mockSettings = {
+  concurrencyLimit: 0,
+  rateLimitRpm: 60,
+  rateLimitCapacity: 60,
+  disableStreaming: false,
+  contextWindowLimit: 0,
+  maxIterations: 50,
+};
+
+vi.mock("../src/core/config.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/core/config.js")>();
+  return {
+    ...actual,
+    getRootConfigDir: vi.fn(() => "C:/tmp/superagent-rate-limiter-test"),
+    getSettings: vi.fn(() => mockSettings),
+  };
+});
 
 describe("SharedRateLimiter", () => {
   let limiter: SharedRateLimiter;
@@ -11,9 +28,14 @@ describe("SharedRateLimiter", () => {
     vi.restoreAllMocks();
     process.env = { ...originalEnv };
     process.env.SUPERAGENT_TEST_LIMITS = "true";
-    // Reset rate limit settings to defaults
-    updateSettings({ rateLimitRpm: 60, rateLimitCapacity: 60 });
-    clearModelConfigCache();
+    mockSettings = {
+      concurrencyLimit: 0,
+      rateLimitRpm: 60,
+      rateLimitCapacity: 60,
+      disableStreaming: false,
+      contextWindowLimit: 0,
+      maxIterations: 50,
+    };
     limiter = new SharedRateLimiter();
   });
 
@@ -64,16 +86,14 @@ describe("SharedRateLimiter", () => {
   });
 
   it("should bypass rate limiting if rateLimitRpm is 0", async () => {
-    updateSettings({ rateLimitRpm: 0 });
-    clearModelConfigCache();
+    mockSettings = { ...mockSettings, rateLimitRpm: 0 };
     const spyOpen = vi.spyOn(fs, "openSync");
     await expect(limiter.acquire(1)).resolves.not.toThrow();
     expect(spyOpen).not.toHaveBeenCalled();
   });
 
   it("should use rateLimitRpm to dynamically set refill rate and capacity", () => {
-    updateSettings({ rateLimitRpm: 30, rateLimitCapacity: 0 });
-    clearModelConfigCache();
+    mockSettings = { ...mockSettings, rateLimitRpm: 30, rateLimitCapacity: 0 };
     const capacity = (limiter as any).getCapacity();
     const refillRate = (limiter as any).getRefillRatePerMs();
     expect(capacity).toBe(30);
@@ -81,8 +101,7 @@ describe("SharedRateLimiter", () => {
   });
 
   it("should prioritize rateLimitCapacity over rateLimitRpm for capacity", () => {
-    updateSettings({ rateLimitRpm: 30, rateLimitCapacity: 5 });
-    clearModelConfigCache();
+    mockSettings = { ...mockSettings, rateLimitRpm: 30, rateLimitCapacity: 5 };
     const capacity = (limiter as any).getCapacity();
     expect(capacity).toBe(5);
   });

@@ -6,7 +6,7 @@ import { filterSuggestions } from "../utils/text.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint, deleteCheckpointById } from "../core/checkpoints.js";
 import { allTools } from "../core/tools.js";
-import { resolveProviderType, getModelOptions, fetchModelsFromEndpoint } from "../core/loginWizardLogic.js";
+import { resolveProviderType, getModelOptions, fetchModelsFromEndpoint, checkEndpointCompatibility } from "../core/loginWizardLogic.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 export function useDashboardWizard(ctx) {
     const { agent, exit, query, setQuery, activeWizard, setActiveWizard, wizardOptions, setWizardOptions, wizardSelectedIndex, setWizardSelectedIndex, wizardSelectedSet, setWizardSelectedSet, masterLogs, setMasterLogs, setActiveModel, setCurrentTask, history, setHistory, setHistoryIndex, planState, setPlanState, pendingQuestion, setPendingQuestion, wizardAllOptions, setWizardAllOptions, wizardIsLoadingModels, setWizardIsLoadingModels, checkpointsList, setCheckpointsList, setContextLimit, setIsPasted, HISTORY_FILE, cachedSessions, setCachedSessions, isProcessing, setIsProcessing, } = ctx;
@@ -202,8 +202,12 @@ export function useDashboardWizard(ctx) {
                     }
                     catch { }
                     if (provider === "custom" && effectiveBaseUrl) {
-                        const endpointModels = await fetchModelsFromEndpoint(effectiveBaseUrl, apiKey);
+                        const endpointCheck = await checkEndpointCompatibility(effectiveBaseUrl, apiKey);
+                        const endpointModels = endpointCheck.models;
                         models = endpointModels.length > 0 ? endpointModels : getModelOptions(provider, getCachedModelIds());
+                        if (!endpointCheck.ok && endpointCheck.message) {
+                            setMasterLogs((prev) => [...prev, `[SYSTEM] Custom endpoint warning: ${endpointCheck.message}`].slice(-500));
+                        }
                     }
                     else {
                         models = getModelOptions(provider, getCachedModelIds());
@@ -327,7 +331,17 @@ export function useDashboardWizard(ctx) {
                     setActiveModel(effectiveModel);
                 }
                 catch (err) {
-                    setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message || String(err)}`].slice(-500));
+                    const errorMessage = err?.message || String(err);
+                    const hints = [];
+                    if (activeWizard.data.providerType === "custom" || activeWizard.data.providerBaseUrl) {
+                        const baseUrl = activeWizard.data.providerBaseUrl || "custom endpoint";
+                        if (/Invalid JSON response/i.test(errorMessage)) {
+                            hints.push(`Endpoint ${baseUrl} did not return valid OpenAI-compatible JSON.`);
+                            hints.push(`Check ${baseUrl.replace(/\/+$/, "")}/chat/completions for JSON response body.`);
+                            hints.push(`Common causes: HTML error page, plain text error, SSE stream, empty body, or incompatible API schema.`);
+                        }
+                    }
+                    setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${errorMessage}${hints.length ? `\n${hints.join("\n")}` : ""}`].slice(-500));
                 }
                 finally {
                     setIsProcessing(false);
@@ -1166,7 +1180,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                         setMasterLogs((prev) => [...prev, `[ASSISTANT] ${result.text}`].slice(-500));
                     }
                     catch (err) {
-                        setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message || String(err)}`].slice(-500));
+                        const errorMessage = err?.message || String(err);
+                        const hints = [];
+                        if (activeWizard.data.providerType === "custom" || activeWizard.data.providerBaseUrl) {
+                            const baseUrl = activeWizard.data.providerBaseUrl || "custom endpoint";
+                            if (/Invalid JSON response/i.test(errorMessage)) {
+                                hints.push(`Endpoint ${baseUrl} did not return valid OpenAI-compatible JSON.`);
+                                hints.push(`Check ${baseUrl.replace(/\/+$/, "")}/chat/completions for JSON response body.`);
+                                hints.push(`Common causes: HTML error page, plain text error, SSE stream, empty body, or incompatible API schema.`);
+                            }
+                        }
+                        setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${errorMessage}${hints.length ? `\n${hints.join("\n")}` : ""}`].slice(-500));
                     }
                     finally {
                         setIsProcessing(false);

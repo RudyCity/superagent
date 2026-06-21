@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { switchActiveProvider } from "./providers.js";
-import { loadModelConfig, getActivePreset, savePreset, setActivePresetId } from "./jsonConfig.js";
+import { loadModelConfig, getActivePreset, savePreset } from "./jsonConfig.js";
 export function getCustomPresetsPath() {
     return path.join(getRootConfigDir(), "model-presets.json");
 }
@@ -301,7 +301,6 @@ export function applyModelPreset(name, mode) {
         models: newPreset,
     };
     savePreset(targetMode, jsonPreset);
-    setActivePresetId(targetMode, jsonPreset.id);
     // Switch active provider if model has a provider prefix
     const mainModel = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "";
     if (mainModel) {

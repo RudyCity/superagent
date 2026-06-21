@@ -179,24 +179,8 @@ export function loadModelConfig() {
                         }
                     }
                     if (repaired) {
-                        // Persist the repaired config with retry for Windows EPERM
                         try {
-                            const tmpPath = configPath + ".tmp";
-                            fs.writeFileSync(tmpPath, JSON.stringify(parsed, null, 2), "utf-8");
-                            for (let attempt = 0; attempt <= 3; attempt++) {
-                                try {
-                                    fs.renameSync(tmpPath, configPath);
-                                    break;
-                                }
-                                catch (renameErr) {
-                                    if (attempt < 3 && (renameErr?.code === "EPERM" || renameErr?.code === "EBUSY")) {
-                                        const end = Date.now() + (attempt + 1) * 50;
-                                        while (Date.now() < end) { /* busy wait */ }
-                                        continue;
-                                    }
-                                    throw renameErr;
-                                }
-                            }
+                            writeConfigAtomically(configPath, parsed);
                         }
                         catch {
                             // Ignore repair write errors
@@ -336,6 +320,59 @@ function mergePresetsWithDisk(config, configPath) {
         // If the on-disk file is unreadable, fall through and write what we have.
     }
 }
+function writeConfigAtomically(configPath, config) {
+    ensureGlobalConfigDir();
+    const serialized = JSON.stringify(config, null, 2);
+    const tmpPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmpPath, serialized, "utf-8");
+    const MAX_RETRIES = 5;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            try {
+                fs.rmSync(configPath, { force: true });
+            }
+            catch { }
+            fs.renameSync(tmpPath, configPath);
+            return;
+        }
+        catch (renameErr) {
+            const canRetry = attempt < MAX_RETRIES && (renameErr?.code === "EPERM" || renameErr?.code === "EBUSY" || renameErr?.code === "ENOENT");
+            if (renameErr?.code === "ENOENT") {
+                try {
+                    ensureGlobalConfigDir();
+                    if (!fs.existsSync(tmpPath)) {
+                        fs.writeFileSync(tmpPath, serialized, "utf-8");
+                    }
+                    fs.copyFileSync(tmpPath, configPath);
+                    try {
+                        fs.unlinkSync(tmpPath);
+                    }
+                    catch { }
+                    return;
+                }
+                catch { }
+            }
+            if (canRetry) {
+                try {
+                    ensureGlobalConfigDir();
+                    if (!fs.existsSync(tmpPath)) {
+                        fs.writeFileSync(tmpPath, serialized, "utf-8");
+                    }
+                }
+                catch { }
+                const waitMs = (attempt + 1) * 50;
+                const end = Date.now() + waitMs;
+                while (Date.now() < end) { /* busy wait — short duration */ }
+                continue;
+            }
+            try {
+                fs.unlinkSync(tmpPath);
+            }
+            catch { }
+            throw renameErr;
+        }
+    }
+}
 export function saveModelConfig(config, options = {}) {
     const { mergeProviders = true, mergePresets = true } = options;
     const configPath = getModelConfigPath();
@@ -349,51 +386,13 @@ export function saveModelConfig(config, options = {}) {
         if (mergePresets && config.presets) {
             mergePresetsWithDisk(config, configPath);
         }
-        // Atomic write: write to a temp file first, then rename.
-        // This prevents file corruption if the process is killed (Ctrl+C, crash)
-        // during the write — the original file stays intact until rename completes.
-        const tmpPath = configPath + ".tmp";
-        fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), "utf-8");
-        // Retry logic for Windows EPERM: antivirus, Windows Search Indexer, or
-        // OneDrive may momentarily lock the target file. Retry up to 3 times
-        // with a short delay between attempts.
-        const MAX_RETRIES = 3;
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            try {
-                fs.renameSync(tmpPath, configPath);
-                break; // Success
-            }
-            catch (renameErr) {
-                if (attempt < MAX_RETRIES && (renameErr?.code === "EPERM" || renameErr?.code === "EBUSY" || renameErr?.code === "ENOENT")) {
-                    // ENOENT can happen under concurrent test/process interference if tmp or target
-                    // is briefly removed between write and rename. Recreate tmp from current config
-                    // and retry.
-                    try {
-                        if (!fs.existsSync(tmpPath)) {
-                            fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), "utf-8");
-                        }
-                    }
-                    catch { }
-                    // Wait briefly before retrying (50ms, 100ms, 150ms)
-                    const waitMs = (attempt + 1) * 50;
-                    const end = Date.now() + waitMs;
-                    while (Date.now() < end) { /* busy wait — short duration */ }
-                    continue;
-                }
-                throw renameErr; // Re-throw if not transient or retries exhausted
-            }
-        }
+        writeConfigAtomically(configPath, config);
         cachedConfig = config;
         cachedConfigMtimeMs = safeMtimeMs(configPath);
         return true;
     }
     catch (error) {
         console.error("Error writing model-config.json:", error);
-        // Clean up temp file if rename failed but write succeeded
-        try {
-            fs.unlinkSync(configPath + ".tmp");
-        }
-        catch { }
         return false;
     }
 }
@@ -440,7 +439,11 @@ export function updateSettings(updates) {
     if (!config.settings) {
         config.settings = { ...DEFAULT_CONFIG.settings };
     }
-    Object.assign(config.settings, updates);
+    const nextSettings = { ...config.settings, ...updates };
+    if (JSON.stringify(nextSettings) === JSON.stringify(config.settings)) {
+        return;
+    }
+    config.settings = nextSettings;
     saveModelConfig(config);
 }
 export function getPresets(mode) {

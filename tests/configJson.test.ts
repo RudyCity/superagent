@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import fs from "fs";
-import { getModelConfigPath } from "../src/core/config/paths";
+import path from "path";
+import os from "os";
 import { 
   loadModelConfig, 
   addProvider, 
@@ -14,35 +15,24 @@ import {
 import { getModelInstanceForTier } from "../src/core/config/models";
 
 describe("JSON-based model-config.json storage", () => {
-  let originalConfigContent: string | null = null;
-  const path = getModelConfigPath();
+  const originalEnv = process.env;
+  const testConfigDir = path.join(os.tmpdir(), `superagent-config-json-${process.pid}`);
 
   beforeAll(() => {
-    if (fs.existsSync(path)) {
-      originalConfigContent = fs.readFileSync(path, "utf-8");
-    }
+    process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
+    clearModelConfigCache();
+    fs.rmSync(testConfigDir, { recursive: true, force: true });
   });
 
   afterAll(() => {
-    if (originalConfigContent !== null) {
-      fs.writeFileSync(path, originalConfigContent, "utf-8");
-    } else {
-      if (fs.existsSync(path)) {
-        try {
-          fs.unlinkSync(path);
-        } catch (e) {}
-      }
-    }
+    clearModelConfigCache();
+    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    process.env = originalEnv;
   });
 
   beforeEach(() => {
     clearModelConfigCache();
-    // Delete config file if it exists to ensure a clean state for the test
-    if (fs.existsSync(path)) {
-      try {
-        fs.unlinkSync(path);
-      } catch (e) {}
-    }
+    fs.rmSync(testConfigDir, { recursive: true, force: true });
   });
 
   it("should initialize default configuration correctly", () => {

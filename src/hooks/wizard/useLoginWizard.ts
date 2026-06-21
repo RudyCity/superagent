@@ -19,7 +19,7 @@ import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
 import type { Agent } from "../../core/agent.js";
 import type { ChatLine } from "../../core/slash-commands.js";
-import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint } from "../../core/loginWizardLogic.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility } from "../../core/loginWizardLogic.js";
 
 interface LoginWizardContext {
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
@@ -189,8 +189,16 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           await fetchAndCacheModels();
         } catch {}
         if (provider === "custom" && effectiveBaseUrl) {
-          const endpointModels = await fetchModelsFromEndpoint(effectiveBaseUrl, apiKey);
+          const endpointCheck = await checkEndpointCompatibility(effectiveBaseUrl, apiKey);
+          const endpointModels = endpointCheck.models;
           models = endpointModels.length > 0 ? endpointModels : getModelOptions(provider, getCachedModelIds());
+          if (!endpointCheck.ok && endpointCheck.message) {
+            addLine({
+              type: "system",
+              content: `Custom endpoint warning: ${endpointCheck.message}`,
+              timestamp: Date.now(),
+            });
+          }
         } else {
           models = getModelOptions(provider, getCachedModelIds());
         }
@@ -578,9 +586,19 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setContextLimit(limit);
         setActiveModel(selectedModel);
       } catch (err: any) {
+        const errorMessage = err?.message || String(err);
+        const hints: string[] = [];
+        if (data.providerType === "custom" || data.providerBaseUrl) {
+          const baseUrl = data.providerBaseUrl || "custom endpoint";
+          if (/Invalid JSON response/i.test(errorMessage)) {
+            hints.push(`Endpoint ${baseUrl} did not return valid OpenAI-compatible JSON.`);
+            hints.push(`Check ${baseUrl.replace(/\/+$/, "")}/chat/completions for JSON response body.`);
+            hints.push(`Common causes: HTML error page, plain text error, SSE stream, empty body, or incompatible API schema.`);
+          }
+        }
         addLine({
           type: "error",
-          content: `❌ Failed to send message: ${err.message || String(err)}`,
+          content: `❌ Failed to send message: ${errorMessage}${hints.length ? `\n${hints.join("\n")}` : ""}`,
           timestamp: Date.now(),
         });
       } finally {

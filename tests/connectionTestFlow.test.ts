@@ -5,6 +5,7 @@ import {
   getModelOptions,
   resolveTestModel,
   getFallbackModels,
+  checkEndpointCompatibility,
 } from "../src/core/loginWizardLogic";
 
 describe("loginWizardLogic — pure helper functions", () => {
@@ -124,6 +125,64 @@ describe("loginWizardLogic — pure helper functions", () => {
       const cached = ["gpt-4o", "gpt-4o-mini"]; // no claude models
       const result = getModelOptions("anthropic", cached);
       expect(result).toEqual(getFallbackModels("anthropic"));
+    });
+  });
+
+  describe("checkEndpointCompatibility", () => {
+    it("should return parsed models for valid OpenAI-compatible /models response", async () => {
+      const originalFetch = global.fetch;
+      global.fetch = (async () =>
+        new Response(JSON.stringify({
+          data: [{ id: "model-a" }, { id: "model-b" }, { id: "model-a" }, { id: "" }],
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })) as typeof fetch;
+
+      try {
+        const result = await checkEndpointCompatibility("http://localhost:8080/v1", "");
+        expect(result.ok).toBe(true);
+        expect(result.models).toEqual(["model-a", "model-b"]);
+        expect(result.message).toBeUndefined();
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("should diagnose HTML returned from /models", async () => {
+      const originalFetch = global.fetch;
+      global.fetch = (async () =>
+        new Response("<html><body>bad gateway</body></html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        })) as typeof fetch;
+
+      try {
+        const result = await checkEndpointCompatibility("http://localhost:8080/v1", "");
+        expect(result.ok).toBe(false);
+        expect(result.models).toEqual([]);
+        expect(result.message).toContain("HTML instead of JSON");
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("should diagnose missing data array from /models", async () => {
+      const originalFetch = global.fetch;
+      global.fetch = (async () =>
+        new Response(JSON.stringify({ models: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })) as typeof fetch;
+
+      try {
+        const result = await checkEndpointCompatibility("http://localhost:8080/v1", "");
+        expect(result.ok).toBe(false);
+        expect(result.models).toEqual([]);
+        expect(result.message).toContain("missing expected JSON shape");
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
   });
 

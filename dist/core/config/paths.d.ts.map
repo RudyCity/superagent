@@ -1,1 +1,1 @@
-{"version":3,"file":"paths.d.ts","sourceRoot":"","sources":["../../../src/core/config/paths.ts"],"names":[],"mappings":"AAIA,wBAAgB,gBAAgB,IAAI,MAAM,CAEzC;AAED,wBAAgB,kBAAkB,IAAI,MAAM,CAM3C;AAED,wBAAgB,qBAAqB,IAAI,IAAI,CAyB5C;AAED,wBAAgB,kBAAkB,IAAI,MAAM,CAE3C"}
+{"version":3,"file":"paths.d.ts","sourceRoot":"","sources":["../../../src/core/config/paths.ts"],"names":[],"mappings":"AAIA,wBAAgB,gBAAgB,IAAI,MAAM,CAMzC;AAED,wBAAgB,kBAAkB,IAAI,MAAM,CAM3C;AAED,wBAAgB,qBAAqB,IAAI,IAAI,CAyB5C;AAED,wBAAgB,kBAAkB,IAAI,MAAM,CAE3C"}

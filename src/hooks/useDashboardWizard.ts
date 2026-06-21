@@ -39,7 +39,7 @@ import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint, deleteCheckpointById } from "../core/checkpoints.js";
 import { allTools } from "../core/tools.js";
 import type { Agent } from "../core/agent.js";
-import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint } from "../core/loginWizardLogic.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility } from "../core/loginWizardLogic.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 
 export interface DashboardWizardContext {
@@ -334,10 +334,15 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           try {
             await fetchAndCacheModels();
           } catch {}
-          if (provider === "custom" && effectiveBaseUrl) {
-            const endpointModels = await fetchModelsFromEndpoint(effectiveBaseUrl, apiKey);
-            models = endpointModels.length > 0 ? endpointModels : getModelOptions(provider, getCachedModelIds());
-          } else {
+        if (provider === "custom" && effectiveBaseUrl) {
+          const endpointCheck = await checkEndpointCompatibility(effectiveBaseUrl, apiKey);
+          const endpointModels = endpointCheck.models;
+          models = endpointModels.length > 0 ? endpointModels : getModelOptions(provider, getCachedModelIds());
+          if (!endpointCheck.ok && endpointCheck.message) {
+            setMasterLogs((prev) => [...prev, `[SYSTEM] Custom endpoint warning: ${endpointCheck.message}`].slice(-500));
+          }
+        } else {
+
             models = getModelOptions(provider, getCachedModelIds());
           }
           setWizardIsLoadingModels(false);
@@ -453,7 +458,17 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
           const effectiveModel = getEffectiveMasterModel(isMulti ? "multi" : "single") || selectedModel;
           setActiveModel(effectiveModel);
         } catch (err: any) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message || String(err)}`].slice(-500));
+          const errorMessage = err?.message || String(err);
+          const hints: string[] = [];
+          if (activeWizard.data.providerType === "custom" || activeWizard.data.providerBaseUrl) {
+            const baseUrl = activeWizard.data.providerBaseUrl || "custom endpoint";
+            if (/Invalid JSON response/i.test(errorMessage)) {
+              hints.push(`Endpoint ${baseUrl} did not return valid OpenAI-compatible JSON.`);
+              hints.push(`Check ${baseUrl.replace(/\/+$/, "")}/chat/completions for JSON response body.`);
+              hints.push(`Common causes: HTML error page, plain text error, SSE stream, empty body, or incompatible API schema.`);
+            }
+          }
+          setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${errorMessage}${hints.length ? `\n${hints.join("\n")}` : ""}`].slice(-500));
         } finally {
           setIsProcessing(false);
         }
@@ -1286,7 +1301,17 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             const result = await generateText({ model: testModel, prompt: message, maxTokens: 512 });
             setMasterLogs((prev) => [...prev, `[ASSISTANT] ${result.text}`].slice(-500));
           } catch (err: any) {
-            setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${err.message || String(err)}`].slice(-500));
+            const errorMessage = err?.message || String(err);
+            const hints: string[] = [];
+            if (activeWizard.data.providerType === "custom" || activeWizard.data.providerBaseUrl) {
+              const baseUrl = activeWizard.data.providerBaseUrl || "custom endpoint";
+              if (/Invalid JSON response/i.test(errorMessage)) {
+                hints.push(`Endpoint ${baseUrl} did not return valid OpenAI-compatible JSON.`);
+                hints.push(`Check ${baseUrl.replace(/\/+$/, "")}/chat/completions for JSON response body.`);
+                hints.push(`Common causes: HTML error page, plain text error, SSE stream, empty body, or incompatible API schema.`);
+              }
+            }
+            setMasterLogs((prev) => [...prev, `[ERROR] Failed to send message: ${errorMessage}${hints.length ? `\n${hints.join("\n")}` : ""}`].slice(-500));
           } finally {
             setIsProcessing(false);
           }

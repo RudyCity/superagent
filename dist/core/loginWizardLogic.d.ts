@@ -18,7 +18,13 @@ export declare function resolveTestModel(providerType: string, baseUrl: string):
  * `/models` API. Returns an empty array on any failure so callers can
  * safely fall back to `resolveTestModel()`.
  */
+export interface EndpointCompatibilityResult {
+    ok: boolean;
+    models: string[];
+    message?: string;
+}
 export declare function fetchModelsFromEndpoint(baseUrl: string, apiKey: string): Promise<string[]>;
+export declare function checkEndpointCompatibility(baseUrl: string, apiKey: string): Promise<EndpointCompatibilityResult>;
 /**
  * Resolve the best model to use for a connection test.
  * For custom endpoints, fetches the available models list first and picks the

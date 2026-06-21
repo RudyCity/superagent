@@ -4,8 +4,10 @@ import { getToolByName } from "../src/core/tools/index.js";
 import { registerQuestionHandler } from "../src/core/tools/state.js";
 import { streamText } from "ai";
 import * as configModule from "../src/core/config.js";
+import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 import fs from "fs";
 import path from "path";
+import os from "os";
 
 // Mock configuration partially, keeping other config helpers intact
 vi.mock("../src/core/config.js", async (importOriginal) => {
@@ -34,9 +36,21 @@ vi.mock("ai", async (importOriginal) => {
 });
 
 describe("ask_question and ReplacementChunks robustness", () => {
+  const originalEnv = process.env;
+  const testConfigDir = path.join(os.tmpdir(), `superagent-ask-question-${process.pid}`);
+
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
+    clearModelConfigCache();
+    fs.rmSync(testConfigDir, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    clearModelConfigCache();
+    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    process.env = originalEnv;
   });
 
   describe("askQuestionTool execution directly", () => {

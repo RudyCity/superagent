@@ -3,6 +3,10 @@ import path from "path";
 import os from "os";
 
 export function getRootConfigDir(): string {
+  const override = process.env.SUPERAGENT_CONFIG_DIR?.trim();
+  if (override) {
+    return path.resolve(override);
+  }
   return path.join(os.homedir(), ".superagent-r");
 }
 

@@ -4,7 +4,7 @@ import fs from "fs/promises";
 import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, addProvider, getActiveConfigAudit, getProviders, getCachedModelIds, getEffectiveMasterModel, setAllTierModels, getModelInstanceForString, getSettings } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
-import { resolveProviderType, getModelOptions, fetchModelsFromEndpoint } from "../../core/loginWizardLogic.js";
+import { resolveProviderType, getModelOptions, fetchModelsFromEndpoint, checkEndpointCompatibility } from "../../core/loginWizardLogic.js";
 export function useLoginWizard(ctx) {
     const { setActiveWizard, setWizardOptions, setWizardSelectedIndex, addLine, setInput, setIsProcessing, setContextLimit, setActiveModel, agentRef, setWizardIsLoadingModels, } = ctx;
     const handleLoginWizard = useCallback(async (value, step, data) => {
@@ -143,8 +143,16 @@ export function useLoginWizard(ctx) {
                 }
                 catch { }
                 if (provider === "custom" && effectiveBaseUrl) {
-                    const endpointModels = await fetchModelsFromEndpoint(effectiveBaseUrl, apiKey);
+                    const endpointCheck = await checkEndpointCompatibility(effectiveBaseUrl, apiKey);
+                    const endpointModels = endpointCheck.models;
                     models = endpointModels.length > 0 ? endpointModels : getModelOptions(provider, getCachedModelIds());
+                    if (!endpointCheck.ok && endpointCheck.message) {
+                        addLine({
+                            type: "system",
+                            content: `Custom endpoint warning: ${endpointCheck.message}`,
+                            timestamp: Date.now(),
+                        });
+                    }
                 }
                 else {
                     models = getModelOptions(provider, getCachedModelIds());
@@ -536,9 +544,19 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 setActiveModel(selectedModel);
             }
             catch (err) {
+                const errorMessage = err?.message || String(err);
+                const hints = [];
+                if (data.providerType === "custom" || data.providerBaseUrl) {
+                    const baseUrl = data.providerBaseUrl || "custom endpoint";
+                    if (/Invalid JSON response/i.test(errorMessage)) {
+                        hints.push(`Endpoint ${baseUrl} did not return valid OpenAI-compatible JSON.`);
+                        hints.push(`Check ${baseUrl.replace(/\/+$/, "")}/chat/completions for JSON response body.`);
+                        hints.push(`Common causes: HTML error page, plain text error, SSE stream, empty body, or incompatible API schema.`);
+                    }
+                }
                 addLine({
                     type: "error",
-                    content: `❌ Failed to send message: ${err.message || String(err)}`,
+                    content: `❌ Failed to send message: ${errorMessage}${hints.length ? `\n${hints.join("\n")}` : ""}`,
                     timestamp: Date.now(),
                 });
             }

@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
+import path from "path";
+import os from "os";
 import { fuzzyScore, searchHistory } from "../src/core/historySearch.js";
 import { searchHistoryTool } from "../src/core/tools/otherTools.js";
 import { agentLocalStorage } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
+import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 import { generateText } from "ai";
 
 vi.mock("ai", () => ({
@@ -21,8 +24,20 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
 });
 
 describe("historySearch", () => {
+  const originalEnv = process.env;
+  const testConfigDir = path.join(os.tmpdir(), `superagent-history-search-${process.pid}`);
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
+    clearModelConfigCache();
+    fs.rmSync(testConfigDir, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    clearModelConfigCache();
+    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    process.env = originalEnv;
   });
 
   describe("fuzzyScore", () => {

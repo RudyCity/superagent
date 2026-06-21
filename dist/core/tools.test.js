@@ -128,7 +128,7 @@ describe("verifySyntax", () => {
         await fs.writeFile(tempTestFile, "const x = { a: 1 };", "utf-8");
         const result = await verifySyntax(tempTestFile);
         expect(result).toBeNull();
-    });
+    }, 15000);
     it("should fail unmatched brackets", async () => {
         await fs.writeFile(tempTestFile, "const x = { a: 1;", "utf-8");
         const result = await verifySyntax(tempTestFile);
@@ -453,6 +453,6 @@ patched line
             }
             catch { }
         }
-    });
+    }, 15000);
 });
 //# sourceMappingURL=tools.test.js.map

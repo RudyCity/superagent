@@ -54,12 +54,39 @@ export function resolveTestModel(providerType, baseUrl) {
     }
     return "gpt-4o-mini";
 }
-/**
- * Fetch the list of available models from an OpenAI-compatible endpoint's
- * `/models` API. Returns an empty array on any failure so callers can
- * safely fall back to `resolveTestModel()`.
- */
+function formatInvalidJsonDiagnostic(rawText) {
+    const trimmed = rawText.trim();
+    if (!trimmed) {
+        return "endpoint returned empty response body";
+    }
+    const oneLine = trimmed.replace(/\s+/g, " ").slice(0, 160);
+    if (trimmed.startsWith("<")) {
+        return `endpoint returned HTML instead of JSON: ${oneLine}`;
+    }
+    if (trimmed.startsWith("data:")) {
+        return `endpoint returned SSE stream instead of JSON: ${oneLine}`;
+    }
+    return `endpoint returned non-JSON body: ${oneLine}`;
+}
+async function safeReadResponseText(response) {
+    try {
+        if (typeof response.text === "function") {
+            return await response.text();
+        }
+        if (typeof response.json === "function") {
+            return JSON.stringify(await response.json());
+        }
+        return "";
+    }
+    catch {
+        return "";
+    }
+}
 export async function fetchModelsFromEndpoint(baseUrl, apiKey) {
+    const result = await checkEndpointCompatibility(baseUrl, apiKey);
+    return result.models;
+}
+export async function checkEndpointCompatibility(baseUrl, apiKey) {
     try {
         const url = `${baseUrl.replace(/\/+$/, "")}/models`;
         const headers = {};
@@ -67,31 +94,54 @@ export async function fetchModelsFromEndpoint(baseUrl, apiKey) {
             headers["Authorization"] = `Bearer ${apiKey}`;
         const res = await fetch(url, {
             headers,
-            signal: AbortSignal.timeout(10000), // 10s timeout
+            signal: AbortSignal.timeout(10000),
         });
-        if (!res.ok)
-            return [];
-        const json = (await res.json());
-        if (json && Array.isArray(json.data)) {
-            const seen = new Set();
-            return json.data
-                .map((m) => m?.id)
-                .filter((id) => {
-                if (typeof id !== "string")
-                    return false;
-                const trimmed = id.trim();
-                if (trimmed.length === 0 || trimmed.length > 256)
-                    return false;
-                if (seen.has(trimmed))
-                    return false;
-                seen.add(trimmed);
-                return true;
-            });
+        if (!res.ok) {
+            const rawText = await safeReadResponseText(res);
+            const statusMessage = `endpoint returned HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""}`;
+            const detail = rawText.trim() ? ` — ${formatInvalidJsonDiagnostic(rawText)}` : "";
+            return { ok: false, models: [], message: `${statusMessage}${detail}` };
         }
-        return [];
+        const rawText = await safeReadResponseText(res);
+        try {
+            const json = JSON.parse(rawText);
+            if (json && Array.isArray(json.data)) {
+                const seen = new Set();
+                const models = json.data
+                    .map((m) => m?.id)
+                    .filter((id) => {
+                    if (typeof id !== "string")
+                        return false;
+                    const trimmed = id.trim();
+                    if (trimmed.length === 0 || trimmed.length > 256)
+                        return false;
+                    if (seen.has(trimmed))
+                        return false;
+                    seen.add(trimmed);
+                    return true;
+                });
+                return { ok: true, models };
+            }
+            return {
+                ok: false,
+                models: [],
+                message: "endpoint /models response missing expected JSON shape: { data: [{ id: string }] }",
+            };
+        }
+        catch {
+            return {
+                ok: false,
+                models: [],
+                message: formatInvalidJsonDiagnostic(rawText),
+            };
+        }
     }
-    catch {
-        return [];
+    catch (error) {
+        return {
+            ok: false,
+            models: [],
+            message: error?.message || "failed to reach endpoint /models",
+        };
     }
 }
 /**

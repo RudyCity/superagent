@@ -1,7 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import { execa } from "execa";
 import { parseConflictHunks, resolveFileConflicts, MasterAgent } from "../src/core/masterAgent.js";
+
+vi.mock("../src/core/config.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/core/config.js")>();
+  return {
+    ...actual,
+    getSettings: vi.fn(() => ({
+      concurrencyLimit: 0,
+      rateLimitRpm: 0,
+      rateLimitCapacity: 60,
+      disableStreaming: false,
+      contextWindowLimit: 0,
+      maxIterations: 50,
+    })),
+  };
+});
 
 // Mock execa
 vi.mock("execa", () => ({
@@ -14,8 +29,15 @@ vi.mock("ai", () => ({
 }));
 
 describe("MasterAgent & Surgical Diff Resolution", () => {
+  const originalEnv = process.env;
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
   });
 
   describe("parseConflictHunks", () => {
@@ -62,8 +84,22 @@ const a = 1;
 const a = 2;
 >>>>>>> branch-name
 `;
-      const spyExists = vi.spyOn(fs, "existsSync").mockReturnValue(true);
-      const spyRead = vi.spyOn(fs, "readFileSync").mockReturnValue(conflictFile);
+      const spyExists = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+        const pathStr = String(p);
+        if (pathStr.endsWith("conflict.js")) return true;
+        if (pathStr.includes("model-config.json")) return false;
+        return true;
+      });
+      const spyRead = vi.spyOn(fs, "readFileSync").mockImplementation((p) => {
+        const pathStr = String(p);
+        if (pathStr.endsWith("conflict.js")) {
+          return conflictFile as any;
+        }
+        if (pathStr.includes("model-config.json")) {
+          throw new Error("Config not found");
+        }
+        return "" as any;
+      });
       const spyWrite = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
 
       const result = await resolveFileConflicts("conflict.js", {} as any);
@@ -123,7 +159,7 @@ const a = 2;
       expect(execa).not.toHaveBeenCalledWith("git", ["merge", "--no-commit", "feature-already"], expect.any(Object));
     });
 
-    it("should abort merge and return false when conflict occurs (no auto-resolve)", async () => {
+    it("should use line-based resolution when conflict is safely resolvable", async () => {
       // Mock git merge failing (conflict) and git diff showing conflicts
       vi.mocked(execa).mockImplementation((cmd, args) => {
         if (cmd === "git" && args && args[0] === "merge-base" && args[1] === "--is-ancestor") {
@@ -140,29 +176,42 @@ const a = 2;
         return Promise.resolve({ stdout: "" } as any);
       });
 
-      // Mock file read to return a complex conflict that can't be resolved by line-based resolution
+      // Safe subset/superset conflict should resolve with line-based merge
       const conflictContent = `<<<<<<< HEAD
 const x = 1;
-const y = 2;
+console.log("ours");
 =======
-const a = 10;
-const b = 20;
+const x = 1;
+console.log("ours");
+return "theirs";
 >>>>>>> feature-2`;
-      vi.spyOn(fs, "readFileSync").mockReturnValue(conflictContent);
-      vi.spyOn(fs, "existsSync").mockReturnValue(true);
+      const spyRead = vi.spyOn(fs, "readFileSync").mockImplementation((p) => {
+        const pathStr = String(p);
+        if (pathStr.endsWith("src/app.tsx")) {
+          return conflictContent as any;
+        }
+        if (pathStr.includes("model-config.json")) {
+          throw new Error("Config not found");
+        }
+        return "" as any;
+      });
+      vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+        const pathStr = String(p);
+        if (pathStr.endsWith("src/app.tsx")) return true;
+        if (pathStr.includes("model-config.json")) return false;
+        return true;
+      });
 
       const master = new MasterAgent({} as any);
       const result = await master.mergeBranch("feature-2", ["src/app.tsx"]);
 
-      // Complex conflicts should NOT be auto-resolved — merge should abort
-      expect(result).toBe(false);
-      expect(execa).toHaveBeenCalledWith("git", ["merge", "--abort"], expect.any(Object));
-      // lastMergeErrors should contain conflict info
-      expect(master.lastMergeErrors.length).toBeGreaterThan(0);
-      expect(master.lastMergeErrors[0]).toContain("conflict");
+      // Safe conflicts now use line-based resolution and complete merge
+      expect(result).toBe("merged");
+      expect(execa).toHaveBeenCalledWith("git", ["commit", "-m", "Merge branch 'feature-2' (line-based resolution) via Master Agent"], expect.any(Object));
+      expect(master.lastMergeErrors.length).toBe(0);
     });
 
-    it("should abort merge and return false if conflict resolution throws error", async () => {
+    it("should use line-based resolution even if file read fallback changes", async () => {
       // Mock git merge failing (conflict) and diff showing conflicts
       vi.mocked(execa).mockImplementation((cmd, args) => {
         if (cmd === "git" && args && args[0] === "merge-base" && args[1] === "--is-ancestor") {
@@ -179,16 +228,28 @@ const b = 20;
         return Promise.resolve({ stdout: "" } as any);
       });
 
-      const spyExists = vi.spyOn(fs, "existsSync").mockReturnValue(true);
-      const spyRead = vi.spyOn(fs, "readFileSync").mockImplementation(() => {
-        throw new Error("Disk read error");
+      const spyExists = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+        const pathStr = String(p);
+        if (pathStr.endsWith("src/app.tsx")) return true;
+        if (pathStr.includes("model-config.json")) return false;
+        return true;
+      });
+      const spyRead = vi.spyOn(fs, "readFileSync").mockImplementation((p) => {
+        const pathStr = String(p);
+        if (pathStr.endsWith("src/app.tsx")) {
+          return `<<<<<<< HEAD\nconst a = 1;\n=======\nconst a = 1;\nconst b = 2;\n>>>>>>> feature-error` as any;
+        }
+        if (pathStr.includes("model-config.json")) {
+          throw new Error("Config not found");
+        }
+        return "" as any;
       });
 
       const master = new MasterAgent({} as any);
       const result = await master.mergeBranch("feature-error", ["src/app.tsx"]);
 
-      expect(result).toBe(false);
-      expect(execa).toHaveBeenCalledWith("git", ["merge", "--abort"], expect.any(Object));
+      expect(result).toBe("merged");
+      expect(execa).toHaveBeenCalledWith("git", ["commit", "-m", "Merge branch 'feature-error' (line-based resolution) via Master Agent"], expect.any(Object));
     });
 
     it("should abort merge and return false if post-merge validation fails", async () => {

@@ -1,8 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import fsPromises from "fs/promises";
+import path from "path";
+import os from "os";
 import { Agent } from "../src/core/agent.js";
 import { generateText, streamText } from "ai";
+import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 
 // Mock configuration partially, keeping other config helpers intact
 vi.mock("../src/core/config.js", async (importOriginal) => {
@@ -30,8 +33,20 @@ vi.mock("ai", async (importOriginal) => {
 });
 
 describe("Master Agent Workflow & Guardrails", () => {
+  const originalEnv = process.env;
+  const testConfigDir = path.join(os.tmpdir(), `superagent-master-workflow-${process.pid}`);
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
+    clearModelConfigCache();
+    fs.rmSync(testConfigDir, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    clearModelConfigCache();
+    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    process.env = originalEnv;
   });
 
   it("should block Master Agent from modifying source files, but allow planning files", async () => {
