@@ -61,7 +61,7 @@ def run():
     from fastcontext.agent.tool.glob import GlobTool
     from fastcontext.agent.tool.grep import GrepTool
     from fastcontext.agent.tool.read import ReadTool
-    from fastcontext.agent.tool.tool import ToolSet
+    from fastcontext.agent.tool.tool import ToolSet, ToolResult
     from fastcontext.agent.utils import load_system_prompt, get_final_answer
 
     system_prompt = load_system_prompt(args.work_dir)
@@ -127,6 +127,7 @@ def run():
                             "total_tokens": response.usage.total_tokens,
                         }
 
+                    tool_call_failed = False
                     if tc_raw:
                         calls = [
                             FunctionCall(id=tc.id, name=tc.function.name,
@@ -145,7 +146,7 @@ def run():
                         model=self.model, usage=usage,
                     )
                 except Exception as e:
-                    raise RequestyAPIError(f"LLM API call failed: {e}") from e
+                    raise RequestyAPIError(str(e)) from e
 
         llm = LiteLLMAdapter(
             model=args.model, api_key=args.api_key,
@@ -154,6 +155,29 @@ def run():
     else:
         llm = LLM(model=args.model, api_key=args.api_key, base_url=args.base_url)
     toolset = ToolSet([ReadTool(), GlobTool(), GrepTool()], work_dir=args.work_dir)
+    toolset._last_tool_results = []
+    original_toolset_call = toolset.call
+
+    async def call_with_results(msg):
+        results = []
+        if msg.tool_calls:
+            for c in msg.tool_calls:
+                try:
+                    result = await asyncio.wait_for(
+                        toolset._single_tool_call(c.name, c.arguments, c.id), timeout=10
+                    )
+                except TimeoutError:
+                    result = ToolResult(
+                        tool_call_id=c.id,
+                        failed=True,
+                        output="Tool `{}' timed out after 10s.".format(c.name),
+                    )
+                results.append(result)
+
+        toolset._last_tool_results = results
+        return await original_toolset_call(msg)
+
+    toolset.call = call_with_results
     trajectory_path = args.trajectory_path or os.path.join(
         args.work_dir, ".fastcontext", "trajectory.jsonl"
     )
@@ -210,14 +234,20 @@ def run():
 
                 # Execute tools
                 tool_results = await toolset.call(step_msg)
+                raw_tool_results = getattr(toolset, "_last_tool_results", [])
+                raw_tool_results_by_id = {
+                    tr.tool_call_id: tr for tr in raw_tool_results if isinstance(tr, ToolResult)
+                }
 
                 # Emit tool_end for each result
                 for tr_msg in tool_results:
                     preview = (tr_msg.content or "")[:200]
+                    raw_result = raw_tool_results_by_id.get(tr_msg.tool_call_id)
+                    ok = not raw_result.failed if raw_result else True
                     emit({
                         "event": "tool_end",
                         "tool_call_id": tr_msg.tool_call_id,
-                        "ok": True,
+                        "ok": ok,
                         "preview": preview,
                     })
                     await context.add(tr_msg)

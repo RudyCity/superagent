@@ -56,7 +56,7 @@ const DEFAULT_FALLBACK_MODELS = {
 async function resolveFastContextCredentials() {
     const { loadModelConfig, getActivePreset } = await import("../config/jsonConfig.js");
     const config = loadModelConfig();
-    const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+    const isMulti = process.argv.includes("--multi");
     const mode = isMulti ? "multi" : "single";
     const activePreset = getActivePreset(mode);
     const providers = config.providers || [];
@@ -99,17 +99,13 @@ async function resolveFastContextCredentials() {
     const apiKey = providerProfile?.apiKey || "";
     const customBaseUrl = providerProfile?.baseUrl || "";
     const providerName = providerProfile?.name || providerProfile?.id || "unknown";
-    // Use tier model if available, otherwise pick a sensible default for the provider type
-    const model = tierConfig?.model ||
-        DEFAULT_FALLBACK_MODELS[providerType] ||
-        DEFAULT_FALLBACK_MODELS.openai;
-    let baseUrl;
-    if (customBaseUrl) {
-        baseUrl = customBaseUrl;
-    }
-    else {
-        baseUrl = DEFAULT_BASE_URLS[providerType] || DEFAULT_BASE_URLS.openai;
-    }
+    // Avoid provider/model mismatch when tier provider is missing.
+    const model = providerMismatch
+        ? (DEFAULT_FALLBACK_MODELS[providerType] || DEFAULT_FALLBACK_MODELS.openai)
+        : (tierConfig?.model ||
+            DEFAULT_FALLBACK_MODELS[providerType] ||
+            DEFAULT_FALLBACK_MODELS.openai);
+    const baseUrl = customBaseUrl || DEFAULT_BASE_URLS[providerType] || DEFAULT_BASE_URLS.openai;
     return { baseUrl, apiKey, model, tierName, providerName, providerType, providerMismatch };
 }
 export const fastcontextTool = {
@@ -326,9 +322,15 @@ export const fastcontextTool = {
             catch { }
             const output = (result.stdout || "").trim();
             const stderrRaw = (result.stderr || "").trim();
-            if (result.exitCode !== 0 && !output) {
-                return (`FastContext exited with code ${result.exitCode}.\n` +
-                    (stderrRaw ? `stderr: ${stderrRaw}` : "No output was produced."));
+            if (result.exitCode !== 0) {
+                const parts = [`FastContext exited with code ${result.exitCode}.`];
+                if (output)
+                    parts.push(`stdout: ${output}`);
+                if (stderrRaw)
+                    parts.push(`stderr: ${stderrRaw}`);
+                if (!output && !stderrRaw)
+                    parts.push("No output was produced.");
+                return parts.join("\n");
             }
             return output || "(FastContext returned no output)";
         }
