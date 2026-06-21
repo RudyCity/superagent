@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import path from "path";
 import { filterSuggestions } from "../../utils/text.js";
 import { WizardDialog } from "../wizard-dialog.js";
+import { PlanApprovalDialog } from "../plan-approval-dialog.js";
 
 interface DashboardWizardProps {
   activeWizard: any;
@@ -68,8 +69,22 @@ export function DashboardWizard({
         );
       })()}
 
-      {/* All other wizard types */}
-      {(activeWizard.type !== "model" || (activeWizard.step !== 15 && activeWizard.step !== 24 && activeWizard.step !== 34)) && (
+      {/* Plan approval — uses dedicated dialog with scrollable plan content */}
+      {activeWizard.type === "plan_approve" && (
+        <>
+          <PlanApprovalDialog
+            planFilePath={agent ? path.resolve(agent.getPlanFilePath()) : ""}
+            selectedIndex={wizardSelectedIndex}
+            step={activeWizard.step}
+            borderColor="yellow"
+            terminalWidth={terminalWidth}
+            maxContentHeight={10}
+          />
+        </>
+      )}
+
+      {/* All other wizard types (not model search, not plan_approve) */}
+      {(activeWizard.type !== "model" || (activeWizard.step !== 15 && activeWizard.step !== 24 && activeWizard.step !== 34)) && activeWizard.type !== "plan_approve" && (
         <WizardDialog
           title={
             activeWizard.type === "model" && activeWizard.step === 1 ? `⚙️ SELECT AGENT TIER TO CONFIGURE:` :

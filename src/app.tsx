@@ -25,6 +25,7 @@ import { readChecklistTasks, readTaskHistory } from "./core/taskChecklist.js";
 // Hook & Component Baru
 import { StatusBar } from "./components/status-bar.js";
 import { WizardPanels } from "./components/wizard-panels.js";
+import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./components/plan-approval-dialog.js";
 import { ChatArea } from "./components/chat-area.js";
 import { useWizardSubmit } from "./hooks/useWizardSubmit.js";
 import { useKeyboardHandler } from "./hooks/useKeyboardHandler.js";
@@ -334,9 +335,22 @@ export function App({
           return;
         }
 
-        if (activeWizard.type === "plan_approve" && wizardOptions.length > 0) {
-          const isApprove = wizardSelectedIndex === 0;
-          handleWizardSubmit(isApprove ? "approve" : "reject");
+        if (activeWizard.type === "plan_approve") {
+          if (activeWizard.step === 2) {
+            // Step 2: custom feedback input — send the typed text
+            if (trimmed) handleWizardSubmit(trimmed);
+          } else if (wizardOptions.length > 0) {
+            // Step 1: option selection
+            if (wizardSelectedIndex === 0) {
+              handleWizardSubmit("approve");
+            } else if (wizardSelectedIndex === 1) {
+              handleWizardSubmit("reject");
+            } else {
+              // Index 2: Custom Feedback — transition to step 2
+              setWizardOptions([]);
+              setActiveWizard({ ...activeWizard, step: 2 });
+            }
+          }
         } else {
           handleWizardSubmit(trimmed);
         }
@@ -406,7 +420,7 @@ export function App({
         if (nextState === "PLANNING_PENDING") {
           setActiveWizard((curr) => {
             if (curr && curr.type === "plan_approve") return curr;
-            setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+            setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
             setWizardSelectedIndex(0);
             return {
               type: "plan_approve",
@@ -927,13 +941,17 @@ export function App({
           });
           break;
       }
+      // Always sync planState for UI indicators (e.g. PENDING_PLAN banner),
+      // but only open the approval wizard on "done" — after flushBuffer() has
+      // committed all streamed text to chat lines. Opening on every event
+      // caused the wizard to appear before the response finished printing.
       if (agentRef.current) {
         const nextState = agentRef.current.planState;
         setPlanState(nextState);
-        if (nextState === "PLANNING_PENDING") {
+        if (event.type === "done" && nextState === "PLANNING_PENDING") {
           setActiveWizard((curr) => {
             if (curr && curr.type === "plan_approve") return curr;
-            setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+            setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
             setWizardSelectedIndex(0);
             return {
               type: "plan_approve",
@@ -1101,7 +1119,7 @@ export function App({
           if (nextState === "PLANNING_PENDING") {
             setActiveWizard((curr) => {
               if (curr && curr.type === "plan_approve") return curr;
-              setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+              setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
               setWizardSelectedIndex(0);
               return {
                 type: "plan_approve",
@@ -1348,7 +1366,7 @@ export function App({
   const isSelectionOnlyStep = (() => {
     if (!activeWizard) return false;
     if (activeWizard.type === "permission") return true;
-    if (activeWizard.type === "plan_approve") return true;
+    if (activeWizard.type === "plan_approve") return activeWizard.step !== 2;
     if (activeWizard.type === "resume") return true;
     if (activeWizard.type === "checkpoint") return true;
     if (activeWizard.type === "skills") return true;
@@ -1370,7 +1388,9 @@ export function App({
     if (activeToolLinesCount > 0) chromeHeight += activeToolLinesCount + 1;
   }
   if (planState === "PLANNING_PENDING") {
-    chromeHeight += activeWizard?.type === "plan_approve" ? 8 : 6;
+    chromeHeight += activeWizard?.type === "plan_approve"
+      ? planApprovalChromeHeight(planPath, activeWizard.step)
+      : 6;
   }
   if (activeWizard) {
     chromeHeight += 3;
@@ -1659,6 +1679,7 @@ export function App({
               pendingQuestion={pendingQuestion}
               planState={planState}
               planUrl={planUrl}
+              planFilePath={planPath}
               input={input}
               wizardIsLoadingModels={wizardIsLoadingModels}
               checkpointsList={checkpointsList}

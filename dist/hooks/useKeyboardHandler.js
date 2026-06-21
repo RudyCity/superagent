@@ -6,6 +6,7 @@ import { getConfiguredProviders, listHistorySessions, getModelPresets, BUILT_IN_
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, deleteCheckpointById } from "../core/checkpoints.js";
 import { getToolDescription } from "../core/permissions.js";
 import { backgroundTasks, subagentInstances, superagentInstances } from "../core/tools.js";
+import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 function formatArgs(args) {
     if (typeof args === "string")
         return args;
@@ -597,19 +598,40 @@ export function useKeyboardHandler(ctx) {
                     return;
                 }
             }
-            else if (activeWizard.type === "plan_approve" && wizardOptions.length > 0) {
-                if (key.upArrow) {
-                    setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+            else if (activeWizard.type === "plan_approve") {
+                if (activeWizard.step === 2) {
+                    // Step 2: custom feedback input — Escape goes back to step 1
+                    if (key.escape) {
+                        setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
+                        setActiveWizard({ ...activeWizard, step: 1 });
+                        return;
+                    }
+                    // Enter and other keys are handled by the text input onSubmit
                     return;
                 }
-                if (key.downArrow) {
-                    setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
-                    return;
-                }
-                if (key.return) {
-                    const isApprove = wizardSelectedIndex === 0;
-                    handleWizardSubmit(isApprove ? "approve" : "reject");
-                    return;
+                if (wizardOptions.length > 0) {
+                    if (key.upArrow) {
+                        setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+                        return;
+                    }
+                    if (key.downArrow) {
+                        setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+                        return;
+                    }
+                    if (key.return) {
+                        if (wizardSelectedIndex === 0) {
+                            handleWizardSubmit("approve");
+                        }
+                        else if (wizardSelectedIndex === 1) {
+                            handleWizardSubmit("reject");
+                        }
+                        else {
+                            // Index 2: Custom Feedback — transition to step 2
+                            setWizardOptions([]);
+                            setActiveWizard({ ...activeWizard, step: 2 });
+                        }
+                        return;
+                    }
                 }
             }
             else if (activeWizard.type === "permission" && wizardOptions.length > 0) {

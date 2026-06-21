@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { WizardDialog } from "./wizard-dialog.js";
+import { PlanApprovalDialog } from "./plan-approval-dialog.js";
 import { filterSuggestions } from "../utils/text.js";
 import { getInstalledSkills } from "../core/config.js";
 import type { Checkpoint } from "../core/checkpoints.js";
@@ -28,6 +29,7 @@ export interface WizardPanelsProps {
   } | null;
   planState: string;
   planUrl: string;
+  planFilePath: string;
   input: string;
   wizardIsLoadingModels: boolean;
   checkpointsList: Checkpoint[];
@@ -45,6 +47,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
     pendingQuestion,
     planState,
     planUrl,
+    planFilePath,
     input,
     wizardIsLoadingModels,
     checkpointsList,
@@ -74,13 +77,12 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           </Box>
         )}
 
-        {activeWizard && activeWizard.type === "plan_approve" && wizardOptions.length > 0 && (
-          <WizardDialog
-            title="⚠️ PLAN APPROVAL REQUIRED (Use Arrow Keys Up/Down & Enter):"
-            description={`AI model has designed a plan in file: ${planUrl}`}
-            borderColor="yellow"
-            options={wizardOptions}
+        {activeWizard && activeWizard.type === "plan_approve" && (
+          <PlanApprovalDialog
+            planFilePath={planFilePath}
             selectedIndex={wizardSelectedIndex}
+            step={activeWizard.step}
+            borderColor="yellow"
           />
         )}
 

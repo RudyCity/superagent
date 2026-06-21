@@ -2,6 +2,7 @@ import { useInput } from "ink";
 import { getPasteSplit, filterSuggestions } from "../utils/text.js";
 import { subagentInstances, backgroundTasks } from "../core/tools/state.js";
 import { listCheckpointsForSession } from "../core/checkpoints.js";
+import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 export function useDashboardKeyboard(ctx) {
     const { exit, stopAllRunningAgents, setCurrentTask, setIsHistoryTruncated, query, setQuery, pastePrefixLength, pasteSuffixLength, isPasted, setIsPasted, handleQuerySubmit, activeWizard, setActiveWizard, focusArea, setFocusArea, setLogScrollOffset, history, historyIndex, setHistoryIndex, tempInput, setTempInput, wizardSelectedIndex, setWizardSelectedIndex, wizardAllOptions, wizardOptions, wizardSelectedSet, setWizardSelectedSet, setWizardOptions, setWizardAllOptions, setWizardIsLoadingModels, pendingQuestion, setPendingQuestion, suggestions, planState, checklistTasks, completedHistory = [], runningSubagentsCount, runningTasksCount, setSelectedIndex, sessions, selectedIndex, wrappedLines, logsCount, setChecklistScrollOffset, maxChecklistVisible, setAgentsScrollOffset, maxAgentsVisible, setProcsScrollOffset, maxProcsVisible, isProcessing = false, setIsProcessing = () => { }, setMasterLogs, lastTabPrefix = null, setLastTabPrefix, agent, checkpointsList, setCheckpointsList, } = ctx;
     useInput((input, key) => {
@@ -207,6 +208,13 @@ export function useDashboardKeyboard(ctx) {
                 return;
             }
             if (key.escape) {
+                // plan_approve step 2: Escape goes back to step 1
+                if (activeWizard && activeWizard.type === "plan_approve" && activeWizard.step === 2) {
+                    setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
+                    setActiveWizard({ ...activeWizard, step: 1 });
+                    setQuery("");
+                    return;
+                }
                 if (activeWizard && activeWizard.type === "model" && activeWizard.step !== 1) {
                     if (activeWizard.step === 50) {
                         handleQuerySubmit("back");

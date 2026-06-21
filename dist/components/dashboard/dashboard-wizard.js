@@ -1,8 +1,9 @@
-import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { jsx as _jsx, Fragment as _Fragment, jsxs as _jsxs } from "react/jsx-runtime";
 import { Box, Text } from "ink";
 import path from "path";
 import { filterSuggestions } from "../../utils/text.js";
 import { WizardDialog } from "../wizard-dialog.js";
+import { PlanApprovalDialog } from "../plan-approval-dialog.js";
 export function DashboardWizard({ activeWizard, query, wizardAllOptions, wizardSelectedIndex, wizardIsLoadingModels, wizardOptions, wizardSelectedSet, pendingQuestion, agent, terminalWidth, }) {
     if (!activeWizard) {
         return null;
@@ -22,7 +23,7 @@ export function DashboardWizard({ activeWizard, query, wizardAllOptions, wizardS
                         ? `⚙️ SELECT MODEL${tierStr}${provStr} — 🔍 "${query.trim()}" (${filteredModels.length}/${wizardAllOptions.length} results):`
                         : `⚙️ SELECT MODEL${tierStr}${provStr} (${wizardAllOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
                 return (_jsx(WizardDialog, { title: searchTitle, borderColor: wizardBorderColor, options: filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"], selectedIndex: clampedIndex, maxVisible: 8, marginY: 0, isLoading: wizardIsLoadingModels, terminalWidth: terminalWidth }));
-            })(), (activeWizard.type !== "model" || (activeWizard.step !== 15 && activeWizard.step !== 24 && activeWizard.step !== 34)) && (_jsx(WizardDialog, { title: activeWizard.type === "model" && activeWizard.step === 1 ? `⚙️ SELECT AGENT TIER TO CONFIGURE:` :
+            })(), activeWizard.type === "plan_approve" && (_jsx(_Fragment, { children: _jsx(PlanApprovalDialog, { planFilePath: agent ? path.resolve(agent.getPlanFilePath()) : "", selectedIndex: wizardSelectedIndex, step: activeWizard.step, borderColor: "yellow", terminalWidth: terminalWidth, maxContentHeight: 10 }) })), (activeWizard.type !== "model" || (activeWizard.step !== 15 && activeWizard.step !== 24 && activeWizard.step !== 34)) && activeWizard.type !== "plan_approve" && (_jsx(WizardDialog, { title: activeWizard.type === "model" && activeWizard.step === 1 ? `⚙️ SELECT AGENT TIER TO CONFIGURE:` :
                     activeWizard.type === "model" && activeWizard.step === 2 ? `⚙️ SELECT MODEL PROVIDER FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"}:` :
                         activeWizard.type === "model" && activeWizard.step === 3 ? `⚙️ SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"}:` :
                             activeWizard.type === "model" && activeWizard.step === 4 ? `⚙️ LOAD/APPLY MODEL PRESET:` :

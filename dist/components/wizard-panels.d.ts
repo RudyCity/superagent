@@ -23,6 +23,7 @@ export interface WizardPanelsProps {
     } | null;
     planState: string;
     planUrl: string;
+    planFilePath: string;
     input: string;
     wizardIsLoadingModels: boolean;
     checkpointsList: Checkpoint[];

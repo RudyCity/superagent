@@ -7,6 +7,7 @@ import fs from "fs/promises";
 import { subagentInstances, subscribeToSubagents, superagentInstances, subscribeToSuperagents, backgroundTasks, subscribeToTasks, subscribeToActiveOutput, notifySubagentsChanged, notifySuperagentsChanged, notifyTasksChanged, historicalSuperagentTokens, masterPromptTokens, masterCompletionTokens, lastMasterPromptTokens } from "../core/tools/state.js";
 import { killProcessTree } from "../core/tools/index.js";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
+import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./plan-approval-dialog.js";
 import path from "path";
 import { getContextWindowLimit, getRootConfigDir, getEffectiveMasterModel } from "../core/config.js";
 import { filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences } from "../utils/text.js";
@@ -154,16 +155,38 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
                 const currentPlanState = agent.planState;
                 setPlanState((prev) => {
                     if (prev !== currentPlanState) {
+                        // Only open the approval wizard when the agent has finished
+                        // processing (isAgentRunning() === false). This prevents the
+                        // wizard from appearing before the response text has been
+                        // fully printed to the log history.
+                        // Note: planState is always synced (so the PENDING_PLAN banner
+                        // shows), but the wizard opening is deferred.
                         if (currentPlanState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve") {
-                            setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
-                            setWizardSelectedIndex(0);
-                            setActiveWizard({
-                                type: "plan_approve",
-                                step: 1,
-                                data: {},
-                            });
+                            if (!agent.isAgentRunning()) {
+                                setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
+                                setWizardSelectedIndex(0);
+                                setActiveWizard({
+                                    type: "plan_approve",
+                                    step: 1,
+                                    data: {},
+                                });
+                            }
+                            // If agent is still running, the wizard will be opened on a
+                            // subsequent poll tick once isAgentRunning() returns false.
+                            // We still update planState so the PENDING_PLAN banner shows.
                         }
                         return currentPlanState;
+                    }
+                    // Agent may have stopped since last tick — re-check if wizard
+                    // needs to be opened for an existing PLANNING_PENDING state.
+                    if (currentPlanState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && !agent.isAgentRunning()) {
+                        setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
+                        setWizardSelectedIndex(0);
+                        setActiveWizard({
+                            type: "plan_approve",
+                            step: 1,
+                            data: {},
+                        });
                     }
                     return prev;
                 });
@@ -548,7 +571,7 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
         if (activeWizard.type === "permission")
             return true;
         if (activeWizard.type === "plan_approve")
-            return true;
+            return activeWizard.step !== 2;
         if (activeWizard.type === "resume")
             return true;
         if (activeWizard.type === "checkpoint")
@@ -572,67 +595,71 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
     }
     let wizardHeight = 0;
     if (activeWizard) {
-        const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
-        const maxVis = isModelSelectStep ? 8 : 10;
-        const lc = query.trim();
-        const filteredModels = lc
-            ? filterSuggestions(wizardAllOptions, lc)
-            : wizardAllOptions;
-        const effectiveOptions = isModelSelectStep
-            ? (filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"])
-            : wizardOptions;
-        let start = 0;
-        let end = effectiveOptions.length;
-        if (effectiveOptions.length > maxVis) {
-            start = Math.max(0, wizardSelectedIndex - Math.floor(maxVis / 2));
-            end = start + maxVis;
-            if (end > effectiveOptions.length) {
-                end = effectiveOptions.length;
-                start = Math.max(0, end - maxVis);
-            }
-        }
-        const optCount = end - start;
-        const hasAbove = start > 0;
-        const hasBelow = end < effectiveOptions.length;
-        let wizardDescription = "";
+        // Plan approval uses its own dedicated dialog layout
         if (activeWizard.type === "plan_approve") {
-            wizardDescription = `AI model has designed a plan in file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}`;
+            const planPath = agent ? path.resolve(agent.getPlanFilePath()) : "";
+            wizardHeight = planApprovalChromeHeight(planPath, activeWizard.step, 10) + 2; // +2 for outer borders
         }
-        else if (activeWizard.type === "question") {
-            wizardDescription = pendingQuestion?.question || "";
-        }
-        else if (activeWizard.type === "login" && activeWizard.step === 10) {
-            wizardDescription = "Choose a template catalog stack or let AI dynamically design your project details:";
-        }
-        else if (activeWizard.type === "login" && activeWizard.step === 11) {
-            wizardDescription = "Specify the name for this workspace:";
-        }
-        else if (activeWizard.type === "login" && activeWizard.step === 12) {
-            wizardDescription = "Give a one-sentence overview description of this software:";
-        }
-        else if (activeWizard.type === "login" && activeWizard.step === 13) {
-            wizardDescription = "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:";
-        }
-        const descLines = wizardDescription
-            ? wrapTextForDisplay(wizardDescription, Math.max(10, terminalSize.width - 4)).length
-            : 0;
-        const hasLoading = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) && wizardIsLoadingModels;
-        wizardHeight += 1; // Outer top border │
-        wizardHeight += 1; // Title line
-        if (descLines > 0) {
-            wizardHeight += descLines + 1; // Description lines + spacer │
-        }
-        if (hasLoading) {
-            wizardHeight += 2; // Loading spinner + spacer
-        }
-        if (hasAbove) {
-            wizardHeight += 1;
-        }
-        wizardHeight += optCount;
-        if (hasBelow) {
-            wizardHeight += 1;
-        }
-        wizardHeight += 1; // Outer bottom border │
+        else {
+            const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
+            const maxVis = isModelSelectStep ? 8 : 10;
+            const lc = query.trim();
+            const filteredModels = lc
+                ? filterSuggestions(wizardAllOptions, lc)
+                : wizardAllOptions;
+            const effectiveOptions = isModelSelectStep
+                ? (filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"])
+                : wizardOptions;
+            let start = 0;
+            let end = effectiveOptions.length;
+            if (effectiveOptions.length > maxVis) {
+                start = Math.max(0, wizardSelectedIndex - Math.floor(maxVis / 2));
+                end = start + maxVis;
+                if (end > effectiveOptions.length) {
+                    end = effectiveOptions.length;
+                    start = Math.max(0, end - maxVis);
+                }
+            }
+            const optCount = end - start;
+            const hasAbove = start > 0;
+            const hasBelow = end < effectiveOptions.length;
+            let wizardDescription = "";
+            if (activeWizard.type === "question") {
+                wizardDescription = pendingQuestion?.question || "";
+            }
+            else if (activeWizard.type === "login" && activeWizard.step === 10) {
+                wizardDescription = "Choose a template catalog stack or let AI dynamically design your project details:";
+            }
+            else if (activeWizard.type === "login" && activeWizard.step === 11) {
+                wizardDescription = "Specify the name for this workspace:";
+            }
+            else if (activeWizard.type === "login" && activeWizard.step === 12) {
+                wizardDescription = "Give a one-sentence overview description of this software:";
+            }
+            else if (activeWizard.type === "login" && activeWizard.step === 13) {
+                wizardDescription = "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:";
+            }
+            const descLines = wizardDescription
+                ? wrapTextForDisplay(wizardDescription, Math.max(10, terminalSize.width - 4)).length
+                : 0;
+            const hasLoading = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) && wizardIsLoadingModels;
+            wizardHeight += 1; // Outer top border │
+            wizardHeight += 1; // Title line
+            if (descLines > 0) {
+                wizardHeight += descLines + 1; // Description lines + spacer │
+            }
+            if (hasLoading) {
+                wizardHeight += 2; // Loading spinner + spacer
+            }
+            if (hasAbove) {
+                wizardHeight += 1;
+            }
+            wizardHeight += optCount;
+            if (hasBelow) {
+                wizardHeight += 1;
+            }
+            wizardHeight += 1; // Outer bottom border │
+        } // end else (non-plan_approve wizard)
     }
     const statusBarHeight = 5 + (activeWTs.length > 0 ? 1 : 0);
     const fixedHeight = 5 + statusBarHeight; // 3 (header) + 2 (divider) + statusBarHeight

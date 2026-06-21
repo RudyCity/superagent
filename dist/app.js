@@ -22,6 +22,7 @@ import { readChecklistTasks, readTaskHistory } from "./core/taskChecklist.js";
 // Hook & Component Baru
 import { StatusBar } from "./components/status-bar.js";
 import { WizardPanels } from "./components/wizard-panels.js";
+import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./components/plan-approval-dialog.js";
 import { ChatArea } from "./components/chat-area.js";
 import { useWizardSubmit } from "./hooks/useWizardSubmit.js";
 import { useKeyboardHandler } from "./hooks/useKeyboardHandler.js";
@@ -265,9 +266,26 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
             if (isSelectionStep) {
                 return;
             }
-            if (activeWizard.type === "plan_approve" && wizardOptions.length > 0) {
-                const isApprove = wizardSelectedIndex === 0;
-                handleWizardSubmit(isApprove ? "approve" : "reject");
+            if (activeWizard.type === "plan_approve") {
+                if (activeWizard.step === 2) {
+                    // Step 2: custom feedback input — send the typed text
+                    if (trimmed)
+                        handleWizardSubmit(trimmed);
+                }
+                else if (wizardOptions.length > 0) {
+                    // Step 1: option selection
+                    if (wizardSelectedIndex === 0) {
+                        handleWizardSubmit("approve");
+                    }
+                    else if (wizardSelectedIndex === 1) {
+                        handleWizardSubmit("reject");
+                    }
+                    else {
+                        // Index 2: Custom Feedback — transition to step 2
+                        setWizardOptions([]);
+                        setActiveWizard({ ...activeWizard, step: 2 });
+                    }
+                }
             }
             else {
                 handleWizardSubmit(trimmed);
@@ -333,7 +351,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 setActiveWizard((curr) => {
                     if (curr && curr.type === "plan_approve")
                         return curr;
-                    setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+                    setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
                     setWizardSelectedIndex(0);
                     return {
                         type: "plan_approve",
@@ -891,14 +909,18 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 });
                 break;
         }
+        // Always sync planState for UI indicators (e.g. PENDING_PLAN banner),
+        // but only open the approval wizard on "done" — after flushBuffer() has
+        // committed all streamed text to chat lines. Opening on every event
+        // caused the wizard to appear before the response finished printing.
         if (agentRef.current) {
             const nextState = agentRef.current.planState;
             setPlanState(nextState);
-            if (nextState === "PLANNING_PENDING") {
+            if (event.type === "done" && nextState === "PLANNING_PENDING") {
                 setActiveWizard((curr) => {
                     if (curr && curr.type === "plan_approve")
                         return curr;
-                    setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+                    setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
                     setWizardSelectedIndex(0);
                     return {
                         type: "plan_approve",
@@ -1057,7 +1079,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                         setActiveWizard((curr) => {
                             if (curr && curr.type === "plan_approve")
                                 return curr;
-                            setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+                            setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
                             setWizardSelectedIndex(0);
                             return {
                                 type: "plan_approve",
@@ -1283,7 +1305,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
         if (activeWizard.type === "permission")
             return true;
         if (activeWizard.type === "plan_approve")
-            return true;
+            return activeWizard.step !== 2;
         if (activeWizard.type === "resume")
             return true;
         if (activeWizard.type === "checkpoint")
@@ -1309,7 +1331,9 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
             chromeHeight += activeToolLinesCount + 1;
     }
     if (planState === "PLANNING_PENDING") {
-        chromeHeight += activeWizard?.type === "plan_approve" ? 8 : 6;
+        chromeHeight += activeWizard?.type === "plan_approve"
+            ? planApprovalChromeHeight(planPath, activeWizard.step)
+            : 6;
     }
     if (activeWizard) {
         chromeHeight += 3;
@@ -1522,7 +1546,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
         openResponseAtIndex,
         visibleLinePositions,
     };
-    return (_jsxs(Box, { flexDirection: "column", height: terminalHeight, children: [_jsx(Box, { flexDirection: "row", flexGrow: 1, children: _jsxs(Box, { flexDirection: "column", width: "100%", flexGrow: 1, children: [_jsx(ChatArea, { showBanner: showBanner, focusMode: focusMode, scrollOffset: scrollOffset, focusedResponseIndex: focusedResponseIndex, setFocusedResponseIndex: setFocusedResponseIndex, focusedResponseOffset: focusedResponseOffset, setFocusedResponseOffset: setFocusedResponseOffset, lines: lines, chatHeightLimit: chatHeightLimit, terminalHeight: terminalHeight, terminalWidth: terminalWidth, isProcessing: isProcessing, streamDisplay: streamDisplay, tokensUp: tokensUp, tokensDown: tokensDown, liveStreamTokens: liveStreamTokens, modelName: activeModel, maxAssistantResponseLines: 12, isExecutingTool: isExecutingTool, timeLeft: timeLeft, activeToolOutput: activeToolOutput, formatCompactNumber: formatCompactNumber, onVisibleLinesChange: setVisibleLinePositions, chatContentStartRow: chatContentStartRow }), _jsxs(Box, { flexDirection: "column", paddingX: 1, marginTop: 1, flexShrink: 0, children: [_jsx(ActiveAgentsList, { focusMode: focusMode, runningSuperagentsCount: runningSuperagentsCount, runningSubagentsCount: runningSubagentsCount, runningTasksCount: runningTasksCount, superagentsScrollOffset: superagentsScrollOffset, subagentsScrollOffset: subagentsScrollOffset, procsScrollOffset: procsScrollOffset, maxSuperagentsVisible: maxSuperagentsVisible, maxSubagentsVisible: maxSubagentsVisible, maxProcsVisible: maxProcsVisible, collapsedSections: collapsedSections }), _jsx(TaskChecklist, { planState: planState, checklistTasks: checklistTasks, checklistScrollOffset: checklistScrollOffset, maxChecklistVisible: maxChecklistVisible, focusMode: focusMode, isMultiAgent: !!agentRef.current?.isMultiAgent, completedHistory: completedHistory }), _jsx(WizardPanels, { activeWizard: activeWizard, wizardOptions: wizardOptions, wizardSelectedIndex: wizardSelectedIndex, wizardSelectedSet: wizardSelectedSet, pendingPermission: pendingPermission, pendingQuestion: pendingQuestion, planState: planState, planUrl: planUrl, input: input, wizardIsLoadingModels: wizardIsLoadingModels, checkpointsList: checkpointsList, goalMode: goalMode, suggestions: suggestions }), !isSelectionOnlyStep && (_jsxs(Box, { flexDirection: "column", children: [(() => {
+    return (_jsxs(Box, { flexDirection: "column", height: terminalHeight, children: [_jsx(Box, { flexDirection: "row", flexGrow: 1, children: _jsxs(Box, { flexDirection: "column", width: "100%", flexGrow: 1, children: [_jsx(ChatArea, { showBanner: showBanner, focusMode: focusMode, scrollOffset: scrollOffset, focusedResponseIndex: focusedResponseIndex, setFocusedResponseIndex: setFocusedResponseIndex, focusedResponseOffset: focusedResponseOffset, setFocusedResponseOffset: setFocusedResponseOffset, lines: lines, chatHeightLimit: chatHeightLimit, terminalHeight: terminalHeight, terminalWidth: terminalWidth, isProcessing: isProcessing, streamDisplay: streamDisplay, tokensUp: tokensUp, tokensDown: tokensDown, liveStreamTokens: liveStreamTokens, modelName: activeModel, maxAssistantResponseLines: 12, isExecutingTool: isExecutingTool, timeLeft: timeLeft, activeToolOutput: activeToolOutput, formatCompactNumber: formatCompactNumber, onVisibleLinesChange: setVisibleLinePositions, chatContentStartRow: chatContentStartRow }), _jsxs(Box, { flexDirection: "column", paddingX: 1, marginTop: 1, flexShrink: 0, children: [_jsx(ActiveAgentsList, { focusMode: focusMode, runningSuperagentsCount: runningSuperagentsCount, runningSubagentsCount: runningSubagentsCount, runningTasksCount: runningTasksCount, superagentsScrollOffset: superagentsScrollOffset, subagentsScrollOffset: subagentsScrollOffset, procsScrollOffset: procsScrollOffset, maxSuperagentsVisible: maxSuperagentsVisible, maxSubagentsVisible: maxSubagentsVisible, maxProcsVisible: maxProcsVisible, collapsedSections: collapsedSections }), _jsx(TaskChecklist, { planState: planState, checklistTasks: checklistTasks, checklistScrollOffset: checklistScrollOffset, maxChecklistVisible: maxChecklistVisible, focusMode: focusMode, isMultiAgent: !!agentRef.current?.isMultiAgent, completedHistory: completedHistory }), _jsx(WizardPanels, { activeWizard: activeWizard, wizardOptions: wizardOptions, wizardSelectedIndex: wizardSelectedIndex, wizardSelectedSet: wizardSelectedSet, pendingPermission: pendingPermission, pendingQuestion: pendingQuestion, planState: planState, planUrl: planUrl, planFilePath: planPath, input: input, wizardIsLoadingModels: wizardIsLoadingModels, checkpointsList: checkpointsList, goalMode: goalMode, suggestions: suggestions }), !isSelectionOnlyStep && (_jsxs(Box, { flexDirection: "column", children: [(() => {
                                             const question = getWizardQuestion();
                                             if (!question)
                                                 return null;

@@ -7,6 +7,7 @@ import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint, deleteCheckpointById } from "../core/checkpoints.js";
 import { allTools } from "../core/tools.js";
 import { resolveProviderType, getModelOptions, fetchModelsFromEndpoint } from "../core/loginWizardLogic.js";
+import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 export function useDashboardWizard(ctx) {
     const { agent, exit, query, setQuery, activeWizard, setActiveWizard, wizardOptions, setWizardOptions, wizardSelectedIndex, setWizardSelectedIndex, wizardSelectedSet, setWizardSelectedSet, masterLogs, setMasterLogs, setActiveModel, setCurrentTask, history, setHistory, setHistoryIndex, planState, setPlanState, pendingQuestion, setPendingQuestion, wizardAllOptions, setWizardAllOptions, wizardIsLoadingModels, setWizardIsLoadingModels, checkpointsList, setCheckpointsList, setContextLimit, setIsPasted, HISTORY_FILE, cachedSessions, setCachedSessions, isProcessing, setIsProcessing, } = ctx;
     const isMulti = agent.isMultiAgent;
@@ -2612,13 +2613,34 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             setPendingQuestion(null);
         }
         else if (activeWizard.type === "plan_approve") {
-            const approved = value === "Approve Plan & Proceed";
+            // Step 2: custom feedback — send to agent for revision
+            if (activeWizard.step === 2) {
+                const feedback = (typeof value === "string" ? value : "").trim();
+                if (!feedback)
+                    return;
+                agent.planState = "IDLE";
+                setPlanState("IDLE");
+                setMasterLogs((prev) => [...prev, `[MASTER] 💬 Plan feedback: "${feedback.slice(0, 100)}${feedback.length > 100 ? "..." : ""}"`].slice(-500));
+                setIsProcessing(true);
+                agent.sendMessage(`Plan revision feedback: ${feedback}`)
+                    .then(() => { setIsProcessing(false); })
+                    .catch((err) => {
+                    setIsProcessing(false);
+                    setMasterLogs((prev) => [...prev, `[ERROR] Plan feedback error: ${err.message}`].slice(-500));
+                });
+                setActiveWizard(null);
+                setWizardOptions([]);
+                setWizardSelectedIndex(0);
+                return;
+            }
+            // Step 1: approve / reject / custom
+            const approved = value === "approve" || (typeof value === "string" && value.includes("Approve"));
             if (approved && planState === "APPROVED")
                 return;
             if (approved) {
                 agent.approvePlan();
                 setPlanState("APPROVED");
-                setMasterLogs((prev) => [...prev, "✓ Implementation plan approved! Continuing with the approved plan now."].slice(-500));
+                setMasterLogs((prev) => [...prev, "✅ Implementation plan approved! Continuing with the approved plan now."].slice(-500));
                 setIsProcessing(true);
                 agent.sendMessage("Implementation plan approved via interactive approval wizard. Continue with the approved plan now.")
                     .then(() => {
@@ -2629,10 +2651,19 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     setMasterLogs((prev) => [...prev, `[ERROR] Plan approval resume error: ${err.message}`].slice(-500));
                 });
             }
-            else {
+            else if (value === "reject" || (typeof value === "string" && value.includes("Reject"))) {
+                // Reject — stop the agent process
                 agent.planState = "IDLE";
                 setPlanState("IDLE");
-                setMasterLogs((prev) => [...prev, "✗ Implementation plan rejected. Please type your feedback below and press Enter to send it to the agent."].slice(-500));
+                agent.abort();
+                setIsProcessing(false);
+                setMasterLogs((prev) => [...prev, "❌ Implementation plan rejected. Agent process stopped."].slice(-500));
+            }
+            else {
+                // Custom feedback — transition to step 2
+                setWizardOptions([]);
+                setActiveWizard({ ...activeWizard, step: 2 });
+                return; // Don't close wizard
             }
             setActiveWizard(null);
             setWizardOptions([]);
@@ -2708,7 +2739,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             return;
         }
         if (planState === "PLANNING_PENDING") {
-            setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
+            setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
             setWizardSelectedIndex(0);
             setActiveWizard({
                 type: "plan_approve",

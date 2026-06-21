@@ -94,6 +94,33 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     }
 
     if (activeWizard.type === "plan_approve") {
+      // Step 2: custom feedback — send feedback to agent for revision
+      if (activeWizard.step === 2) {
+        const feedback = (typeof value === "string" ? value : "").trim();
+        if (!feedback) return;
+        if (agentRef.current) {
+          agentRef.current.planState = "IDLE";
+          setPlanState("IDLE");
+          setIsProcessing(true);
+          streamBufferRef.current = "";
+          setStreamDisplay("");
+          agentRef.current.sendMessage(`Plan revision feedback: ${feedback}`).catch((err: any) => {
+            setIsProcessing(false);
+            addLine({ type: "error", content: `Plan feedback error: ${err.message}`, timestamp: Date.now() });
+          });
+        }
+        addLine({
+          type: "system",
+          content: `💬 Plan feedback sent: "${feedback.slice(0, 100)}${feedback.length > 100 ? "..." : ""}"`,
+          timestamp: now,
+        });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        return;
+      }
+
+      // Step 1: approve / reject
       const approved = value === "approve";
       if (approved && planState === "APPROVED") return;
       if (approved) {
@@ -110,17 +137,20 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
         }
         addLine({
           type: "system",
-          content: "✓ Implementation plan approved! Continuing with the approved plan now.",
+          content: "✅ Implementation plan approved! Continuing with the approved plan now.",
           timestamp: now,
         });
       } else {
+        // Reject — stop the agent process
         if (agentRef.current) {
           agentRef.current.planState = "IDLE";
           setPlanState("IDLE");
+          agentRef.current.abort();
         }
+        setIsProcessing(false);
         addLine({
           type: "system",
-          content: "✗ Implementation plan rejected. Please type your feedback below and press Enter to send it to the agent.",
+          content: "❌ Implementation plan rejected. Agent process stopped.",
           timestamp: now,
         });
       }

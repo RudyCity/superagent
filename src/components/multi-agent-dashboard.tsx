@@ -22,6 +22,7 @@ import {
 import { Agent } from "../core/agent.js";
 import { killProcessTree } from "../core/tools/index.js";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
+import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./plan-approval-dialog.js";
 import path from "path";
 import { 
   switchActiveProvider, 
@@ -235,16 +236,38 @@ export function MultiAgentDashboard({
         const currentPlanState = agent.planState;
         setPlanState((prev) => {
           if (prev !== currentPlanState) {
+            // Only open the approval wizard when the agent has finished
+            // processing (isAgentRunning() === false). This prevents the
+            // wizard from appearing before the response text has been
+            // fully printed to the log history.
+            // Note: planState is always synced (so the PENDING_PLAN banner
+            // shows), but the wizard opening is deferred.
             if (currentPlanState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve") {
-              setWizardOptions(["Approve Plan & Proceed", "Reject Plan / Give Feedback"]);
-              setWizardSelectedIndex(0);
-              setActiveWizard({
-                type: "plan_approve",
-                step: 1,
-                data: {},
-              });
+              if (!agent.isAgentRunning()) {
+                setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
+                setWizardSelectedIndex(0);
+                setActiveWizard({
+                  type: "plan_approve",
+                  step: 1,
+                  data: {},
+                });
+              }
+              // If agent is still running, the wizard will be opened on a
+              // subsequent poll tick once isAgentRunning() returns false.
+              // We still update planState so the PENDING_PLAN banner shows.
             }
             return currentPlanState;
+          }
+          // Agent may have stopped since last tick — re-check if wizard
+          // needs to be opened for an existing PLANNING_PENDING state.
+          if (currentPlanState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && !agent.isAgentRunning()) {
+            setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
+            setWizardSelectedIndex(0);
+            setActiveWizard({
+              type: "plan_approve",
+              step: 1,
+              data: {},
+            });
           }
           return prev;
         });
@@ -644,7 +667,7 @@ export function MultiAgentDashboard({
   const isSelectionOnlyStep = (() => {
     if (!activeWizard) return false;
     if (activeWizard.type === "permission") return true;
-    if (activeWizard.type === "plan_approve") return true;
+    if (activeWizard.type === "plan_approve") return activeWizard.step !== 2;
     if (activeWizard.type === "resume") return true;
     if (activeWizard.type === "checkpoint") return true;
     if (activeWizard.type === "skills") return true;
@@ -665,6 +688,11 @@ export function MultiAgentDashboard({
   }
   let wizardHeight = 0;
   if (activeWizard) {
+    // Plan approval uses its own dedicated dialog layout
+    if (activeWizard.type === "plan_approve") {
+      const planPath = agent ? path.resolve(agent.getPlanFilePath()) : "";
+      wizardHeight = planApprovalChromeHeight(planPath, activeWizard.step, 10) + 2; // +2 for outer borders
+    } else {
     const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
     const maxVis = isModelSelectStep ? 8 : 10;
 
@@ -692,9 +720,7 @@ export function MultiAgentDashboard({
     const hasBelow = end < effectiveOptions.length;
 
     let wizardDescription = "";
-    if (activeWizard.type === "plan_approve") {
-      wizardDescription = `AI model has designed a plan in file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}`;
-    } else if (activeWizard.type === "question") {
+    if (activeWizard.type === "question") {
       wizardDescription = pendingQuestion?.question || "";
     } else if (activeWizard.type === "login" && activeWizard.step === 10) {
       wizardDescription = "Choose a template catalog stack or let AI dynamically design your project details:";
@@ -728,6 +754,7 @@ export function MultiAgentDashboard({
       wizardHeight += 1;
     }
     wizardHeight += 1; // Outer bottom border │
+    } // end else (non-plan_approve wizard)
   }
   
   const statusBarHeight = 5 + (activeWTs.length > 0 ? 1 : 0);
