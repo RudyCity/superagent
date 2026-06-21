@@ -12,7 +12,8 @@ import {
   getCachedModelIds,
   getEffectiveMasterModel,
   setAllTierModels,
-  getModelInstanceForString
+  getModelInstanceForString,
+  getSettings
 } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
@@ -314,7 +315,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           "│ ",
           "│ [COGNITIVE CORE]",
           getActiveConfigAudit(),
-          `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
+          `│ ✦ Streaming       : ${getSettings().disableStreaming ? "DISABLED" : "ENABLED"}`,
           "│ ",
           "│ [PROJECT METADATA]",
           `│ 📄 Registry File  : CREATED (${agentsPath})`,
@@ -373,7 +374,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         let concurrencyAcquired = false;
         let response;
         try {
-          if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+          if (getSettings().concurrencyLimit === 1) {
             await concurrencyLimiter.acquire();
             concurrencyAcquired = true;
           }
@@ -421,7 +422,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           "│ ",
           "│ [COGNITIVE CORE]",
           getActiveConfigAudit(),
-          `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
+          `│ ✦ Streaming       : ${getSettings().disableStreaming ? "DISABLED" : "ENABLED"}`,
           "│ ",
           "│ [PROJECT METADATA]",
           `│ 📄 Registry File  : CREATED (${agentsPath})`,

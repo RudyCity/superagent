@@ -284,27 +284,32 @@ Model configuration (`model-config.json`) uses atomic write operations to preven
    *(To uninstall the global symlink, run `npm unlink` inside this directory).*
 
 4. Configure Global API Credentials:
-   Superagent isolates config files outside the project repository. Create a `.env` file in `~/.superagent-r/` (e.g., `C:\Users\<Username>\.superagent-r\.env` on Windows, or `~/.superagent-r/.env` on macOS/Linux):
-   ```env
-   # API Keys (Provide at least one)
-   ANTHROPIC_API_KEY=your_anthropic_api_key
-   OPENAI_API_KEY=your_openai_api_key
-
-   # Active Provider (openai / anthropic / openrouter / custom)
-   PROVIDER=openai
-
-   # Active Model
-   MODEL=gpt-4o
+   Superagent stores all configuration — provider credentials, model settings, rate limits, and system settings — in a centralized JSON config file at `~/.superagent-r/model-config.json`. The easiest way to configure everything is through the interactive slash commands:
    ```
+   superagent
+   # Then inside the terminal UI:
+   /login     # Add API keys and configure providers
+   /model     # Set active AI models per tier
+   /settings  # Configure rate limits, concurrency, streaming, etc.
+   ```
+   Alternatively, you can create a `.env` file in `~/.superagent-r/` for optional runtime overrides:
+    ```env
+    # Global model override (format: "provider:model" or just "model")
+    # MODEL=openai:gpt-4o
+
+    # Enable multi-agent mode via flag (or set SUPERAGENT_MULTI=true)
+    # SUPERAGENT_MULTI=false
+    ```
 
 ### 🔑 Multi-API Key & Model Management
-Superagent natively supports configuring multiple API providers concurrently. Inside the global `.env` file, you can define individual credential keys and default models for different services:
-- `PROVIDER_OPENAI_API_KEY`: API key for OpenAI.
-- `PROVIDER_ANTHROPIC_API_KEY`: API key for Anthropic.
-- `PROVIDER_OPENROUTER_API_KEY`: API key for OpenRouter.
-- `PROVIDER_CUSTOM_API_KEY` & `PROVIDER_CUSTOM_BASE_URL`: API key and base URL for any custom local or self-hosted LLM endpoints. Custom endpoints that are Anthropic-compatible (e.g. self-hosted Claude API proxies) are automatically detected and run with the Anthropic driver.
+Superagent natively supports configuring multiple API providers concurrently. All provider profiles, API keys, and model settings are stored in `~/.superagent-r/model-config.json` and managed through slash commands:
+- `/login` — Add or update provider profiles with API keys.
+- `/model` — Set active models per agent tier (Master, Superagent, Subagent).
+- `/settings` — Configure rate limits, concurrency, streaming, context window, and max iterations.
 
-To dynamically switch your active API provider or model at runtime, use the `/login` or `/model` slash commands or wizards. It instantly updates the active session's memory, updates provider-specific model configs (e.g., `PROVIDER_<PROVIDER>_MODEL`), and rewrites the settings in the global `.env` file without requiring you to restart the assistant.
+Custom providers (e.g., self-hosted Claude API proxies, Ollama, vLLM) are supported via `/login custom <base_url> <key>`. Anthropic-compatible endpoints are automatically detected and run with the Anthropic driver.
+
+To dynamically switch your active API provider or model at runtime, use the `/login` or `/model` slash commands. Changes take effect immediately without restarting the assistant.
 
 ---
 

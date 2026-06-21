@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import { SharedRateLimiter, SharedConcurrencyLimiter } from "../src/core/rateLimiter.js";
+import { updateSettings, clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 
 describe("SharedRateLimiter", () => {
   let limiter: SharedRateLimiter;
@@ -9,9 +10,10 @@ describe("SharedRateLimiter", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     process.env = { ...originalEnv };
-    delete process.env.SUPERAGENT_RATE_LIMIT_RPM;
-    delete process.env.SUPERAGENT_RATE_LIMIT_CAPACITY;
     process.env.SUPERAGENT_TEST_LIMITS = "true";
+    // Reset rate limit settings to defaults
+    updateSettings({ rateLimitRpm: 60, rateLimitCapacity: 60 });
+    clearModelConfigCache();
     limiter = new SharedRateLimiter();
   });
 
@@ -61,24 +63,26 @@ describe("SharedRateLimiter", () => {
     expect(spyWriteFile).toHaveBeenCalled();
   });
 
-  it("should bypass rate limiting if SUPERAGENT_RATE_LIMIT_RPM is '0'", async () => {
-    process.env.SUPERAGENT_RATE_LIMIT_RPM = "0";
+  it("should bypass rate limiting if rateLimitRpm is 0", async () => {
+    updateSettings({ rateLimitRpm: 0 });
+    clearModelConfigCache();
     const spyOpen = vi.spyOn(fs, "openSync");
     await expect(limiter.acquire(1)).resolves.not.toThrow();
     expect(spyOpen).not.toHaveBeenCalled();
   });
 
-  it("should use SUPERAGENT_RATE_LIMIT_RPM to dynamically set refill rate and capacity", () => {
-    process.env.SUPERAGENT_RATE_LIMIT_RPM = "30";
+  it("should use rateLimitRpm to dynamically set refill rate and capacity", () => {
+    updateSettings({ rateLimitRpm: 30, rateLimitCapacity: 0 });
+    clearModelConfigCache();
     const capacity = (limiter as any).getCapacity();
     const refillRate = (limiter as any).getRefillRatePerMs();
     expect(capacity).toBe(30);
     expect(refillRate).toBe(30 / 60000);
   });
 
-  it("should prioritize SUPERAGENT_RATE_LIMIT_CAPACITY over RPM for capacity", () => {
-    process.env.SUPERAGENT_RATE_LIMIT_RPM = "30";
-    process.env.SUPERAGENT_RATE_LIMIT_CAPACITY = "5";
+  it("should prioritize rateLimitCapacity over rateLimitRpm for capacity", () => {
+    updateSettings({ rateLimitRpm: 30, rateLimitCapacity: 5 });
+    clearModelConfigCache();
     const capacity = (limiter as any).getCapacity();
     expect(capacity).toBe(5);
   });

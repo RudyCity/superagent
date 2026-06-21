@@ -11,7 +11,7 @@ import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js
 import { Agent } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
 import { getModelConfigPath, ensureGlobalConfigDir } from "../src/core/config/paths.js";
-import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
+import { clearModelConfigCache, getSettings } from "../src/core/config/jsonConfig.js";
 import { execa } from "execa";
 
 const configPath = getModelConfigPath();
@@ -550,11 +550,11 @@ describe("Slash Commands: /settings & /setting-*", () => {
 
     // Valid value
     handleSlashCommand("/setting-concurrency 1", mockCtx as any);
-    expect(process.env.SUPERAGENT_MAX_CONCURRENCY).toBe("1");
+    expect(getSettings().concurrencyLimit).toBe(1);
     expect(addedLines[addedLines.length - 1].content).toContain("Concurrency limit set to: 1");
 
     handleSlashCommand("/setting-concurrency 0", mockCtx as any);
-    expect(process.env.SUPERAGENT_MAX_CONCURRENCY).toBe("0");
+    expect(getSettings().concurrencyLimit).toBe(0);
     expect(addedLines[addedLines.length - 1].content).toContain("Concurrency limit set to: 0");
   });
 
@@ -569,7 +569,7 @@ describe("Slash Commands: /settings & /setting-*", () => {
 
     // Valid value
     handleSlashCommand("/setting-rpm 45", mockCtx as any);
-    expect(process.env.SUPERAGENT_RATE_LIMIT_RPM).toBe("45");
+    expect(getSettings().rateLimitRpm).toBe(45);
     expect(addedLines[addedLines.length - 1].content).toContain("Rate limit set to: 45 RPM");
   });
 
@@ -584,7 +584,7 @@ describe("Slash Commands: /settings & /setting-*", () => {
 
     // Valid value
     handleSlashCommand("/setting-capacity 15", mockCtx as any);
-    expect(process.env.SUPERAGENT_RATE_LIMIT_CAPACITY).toBe("15");
+    expect(getSettings().rateLimitCapacity).toBe(15);
     expect(addedLines[addedLines.length - 1].content).toContain("Rate limit capacity set to: 15");
   });
 });

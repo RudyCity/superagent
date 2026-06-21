@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.69] - 2026-06-21
+
+### Changed
+- **Full Settings Migration to JSON Config**: All system settings (concurrency limit, rate limit RPM/capacity, streaming toggle, context window limit, max iterations) now read exclusively from `getSettings()` in `model-config.json` instead of `process.env`. This completes the migration started in v1.1.66.
+- **Rate Limiter**: `SharedRateLimiter` now reads `rateLimitRpm` and `rateLimitCapacity` from `getSettings()` instead of `process.env.SUPERAGENT_RATE_LIMIT_*`.
+- **Concurrency Checks**: `agent.ts`, `masterAgent.ts`, and `historySearch.ts` now use `getSettings().concurrencyLimit` instead of `process.env.SUPERAGENT_MAX_CONCURRENCY`.
+- **Streaming Display**: Dashboard and login wizards now read `getSettings().disableStreaming` instead of `process.env.DISABLE_STREAMING`.
+- **`.env.example`**: Rewritten in English, simplified to show only optional runtime overrides. Rate limit and concurrency settings removed (now managed via `/settings` slash command and `model-config.json`).
+
+### Removed
+- **`src/core/config/env.ts`**: Deleted entirely. The `updateEnvFile()` function no longer exists. All configuration flows through `jsonConfig.ts` functions (`getSettings()`, `updateSettings()`, `addProvider()`, etc.).
+- **`process.env` Sync in `updateSettings()`**: Removed the backward-compatibility block that wrote settings back to `process.env` after updating JSON config.
+
+### Fixed
+- **AGENTS.md Guidelines**: Updated to reflect the complete removal of `process.env` for settings, expanded the list of forbidden env vars, and documented `getSettings()` / `updateSettings()` as the canonical settings API.
+
+### Tests
+- Updated `configJson.test.ts`, `rateLimiter.test.ts`, `slashCommands.test.ts`, and `providerCredentialResolution.test.ts` to use `updateSettings()` / `getSettings()` instead of `process.env` manipulation and `updateEnvFile()`.
+
+---
+
 ## [1.1.63] - 2026-06-20
 
 ### Added

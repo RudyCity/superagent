@@ -17,17 +17,15 @@ import {
 import { getModelConfigPath } from "../src/core/config/paths";
 import { switchActiveProvider } from "../src/core/config/providers";
 import { applyModelPreset, saveModelPreset, getModelPresets, getCustomPresetsPath } from "../src/core/config/presets";
-import { updateEnvFile } from "../src/core/config/env";
 import { getConfig } from "../src/core/config/base";
 import { getModelInstanceForString } from "../src/core/config/models";
-import { ensureGlobalConfigDir, getRootConfigDir } from "../src/core/config/paths";
+import { ensureGlobalConfigDir } from "../src/core/config/paths";
 
 describe("Provider Credential Resolution Fixes", () => {
   let originalProcessEnv: NodeJS.ProcessEnv;
 
   const configPath = getModelConfigPath();
   const presetsPath = getCustomPresetsPath();
-  const envPath = path.join(getRootConfigDir(), ".env");
 
   beforeEach(() => {
     originalProcessEnv = { ...process.env };
@@ -157,7 +155,7 @@ describe("Provider Credential Resolution Fixes", () => {
     });
   });
 
-  describe("Fix #6: updateEnvFile safety net", () => {
+  describe("Fix #6: JSON config provider storage", () => {
     it("should sync active profile credentials when ACTIVE_PROVIDER is set", () => {
       addProvider({
         id: "test-openrouter",

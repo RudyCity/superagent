@@ -8,7 +8,8 @@ import {
   getActivePreset, 
   savePreset,
   setActivePresetId,
-  clearModelConfigCache
+  clearModelConfigCache,
+  updateSettings
 } from "../src/core/config/jsonConfig";
 import { getModelInstanceForTier } from "../src/core/config/models";
 
@@ -150,11 +151,10 @@ describe("JSON-based model-config.json storage", () => {
   });
 
   it("should synchronize and persist system settings to model-config.json", async () => {
-    const { updateEnvFile } = await import("../src/core/config/env");
-    updateEnvFile({
-      SUPERAGENT_MAX_CONCURRENCY: "1",
-      SUPERAGENT_RATE_LIMIT_RPM: "100",
-      SUPERAGENT_RATE_LIMIT_CAPACITY: "150",
+    updateSettings({
+      concurrencyLimit: 1,
+      rateLimitRpm: 100,
+      rateLimitCapacity: 150,
     });
 
     await new Promise(resolve => setTimeout(resolve, 50));
