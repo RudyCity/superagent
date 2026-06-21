@@ -239,8 +239,11 @@ export const fastcontextTool = {
             });
             // ── Stream stderr JSONL events → live output panel ──
             let stderrBuf = "";
+            let stderrAll = ""; // accumulate ALL stderr for error reporting (buffer:false empties result.stderr)
             child.stderr?.on("data", (chunk) => {
-                stderrBuf += chunk.toString();
+                const text = chunk.toString();
+                stderrAll += text;
+                stderrBuf += text;
                 const lines = stderrBuf.split("\n");
                 stderrBuf = lines.pop() || "";
                 for (const line of lines) {
@@ -321,7 +324,7 @@ export const fastcontextTool = {
             }
             catch { }
             const output = (result.stdout || "").trim();
-            const stderrRaw = (result.stderr || "").trim();
+            const stderrRaw = stderrAll.trim() || (result.stderr || "").trim();
             if (result.exitCode !== 0) {
                 const parts = [`FastContext exited with code ${result.exitCode}.`];
                 if (output)
