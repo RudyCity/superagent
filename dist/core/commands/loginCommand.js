@@ -1,5 +1,5 @@
 import { registry } from "./registry.js";
-import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, addProvider, getProviders, removeProvider, setAllTierModels } from "../config.js";
+import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, addProvider, getProviders, removeProvider } from "../config.js";
 export const loginCommand = {
     name: "login",
     description: "Manage and authenticate provider profiles (add, list, remove)",
@@ -205,15 +205,12 @@ export const loginCommand = {
                 else if (provider === "anthropic") {
                     defaultModel = "claude-3-5-sonnet-20241022";
                 }
-                const isMulti = ctx.agent?.isMultiAgent ?? false;
                 const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
                 ctx.addLine({
                     type: "system",
-                    content: `Successfully configured provider profile: ${profileId} (${provider})${baseUrlInfo}\nDefault Model: ${defaultModel}\nSaved to model-config.json`,
+                    content: `Successfully configured provider profile: ${profileId} (${provider})${baseUrlInfo}\nSaved to model-config.json\nNote: Use /model to configure tier-specific models.`,
                     timestamp: now,
                 });
-                const mode = isMulti ? "multi" : "single";
-                setAllTierModels(mode, defaultModel, profileId);
                 if (ctx.setActiveModel) {
                     ctx.setActiveModel(defaultModel);
                 }

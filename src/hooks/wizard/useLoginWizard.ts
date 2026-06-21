@@ -11,7 +11,6 @@ import {
   getProviders,
   getCachedModelIds,
   getEffectiveMasterModel,
-  setAllTierModels,
   getModelInstanceForString,
   getSettings
 } from "../../core/config.js";
@@ -539,10 +538,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       const message = value.trim();
       const providerProfileId = data.providerId || data.providerProfileId || "";
       if (!message || message === "/skip") {
-        // Skip test message — still persist the selected model
+        // Skip test message — set active model for current session only (don't override preset tier models)
         const selectedModel = data.selectedModel || "";
         if (selectedModel) {
-          setAllTierModels("auto", selectedModel, providerProfileId || undefined);
           const limit = getContextWindowLimit(selectedModel);
           setContextLimit(limit);
           setActiveModel(selectedModel);
@@ -594,8 +592,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           content: responseText,
           timestamp: Date.now(),
         });
-        // Persist the selected model after successful test
-        setAllTierModels("auto", selectedModel, providerProfileId || undefined);
+        // Set active model for current session only (don't override preset tier models)
         const limit = getContextWindowLimit(selectedModel);
         setContextLimit(limit);
         setActiveModel(selectedModel);

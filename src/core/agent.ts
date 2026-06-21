@@ -1070,7 +1070,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           }
 
           if (MODIFYING_TOOLS.includes(tc.name)) {
-            const filePath = tc.args.filePath as string || tc.args.TargetFile as string || "";
+            const filePath = tc.args.filePath as string || tc.args.file_path as string || tc.args.TargetFile as string || "";
             const planFilePath = this.getPlanFilePath();
             const taskFilePath = this.getTaskFilePath();
             const walkthroughFilePath = this.getWalkthroughFilePath();

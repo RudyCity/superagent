@@ -7,8 +7,7 @@ import {
   getContextWindowLimit,
   addProvider,
   getProviders,
-  removeProvider,
-  setAllTierModels
+  removeProvider
 } from "../config.js";
 
 export const loginCommand: SlashCommand = {
@@ -230,17 +229,13 @@ export const loginCommand: SlashCommand = {
           defaultModel = "claude-3-5-sonnet-20241022";
         }
 
-        const isMulti = ctx.agent?.isMultiAgent ?? false;
         const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");
 
         ctx.addLine({
           type: "system",
-          content: `Successfully configured provider profile: ${profileId} (${provider})${baseUrlInfo}\nDefault Model: ${defaultModel}\nSaved to model-config.json`,
+          content: `Successfully configured provider profile: ${profileId} (${provider})${baseUrlInfo}\nSaved to model-config.json\nNote: Use /model to configure tier-specific models.`,
           timestamp: now,
         });
-
-        const mode = isMulti ? "multi" : "single";
-        setAllTierModels(mode, defaultModel, profileId);
 
         if (ctx.setActiveModel) {
           ctx.setActiveModel(defaultModel);

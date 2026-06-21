@@ -141,7 +141,11 @@ export const bashTool: Tool = {
     required: ["command"],
   },
   async execute(args, cwd, signal) {
-    let command = normalizeGitPaths(args.command as string);
+    const rawCommand = (args.command ?? args.cmd) as string | undefined;
+    if (!rawCommand || typeof rawCommand !== "string" || rawCommand.trim() === "") {
+      return "Error: Missing required parameter 'command'. Provide the shell command to execute.";
+    }
+    let command = normalizeGitPaths(rawCommand);
     const timeout = (args.timeout as number) || 600000;
     
     let shellPath: string | boolean = true;
@@ -255,7 +259,11 @@ export const runCommandTool: Tool = {
     required: ["command"],
   },
   async execute(args, cwd, signal) {
-    let command = normalizeGitPaths(args.command as string);
+    const rawCommand = (args.command ?? args.cmd) as string | undefined;
+    if (!rawCommand || typeof rawCommand !== "string" || rawCommand.trim() === "") {
+      return "Error: Missing required parameter 'command'. Provide the shell command to execute.";
+    }
+    let command = normalizeGitPaths(rawCommand);
     const targetCwd = args.cwd 
       ? path.resolve(cwd, args.cwd as string)
       : cwd;
@@ -377,7 +385,11 @@ export const runBackgroundProcessTool: Tool = {
     required: ["command"],
   },
   async execute(args, cwd, signal) {
-    let command = normalizeGitPaths(args.command as string);
+    const rawCommand = (args.command ?? args.cmd) as string | undefined;
+    if (!rawCommand || typeof rawCommand !== "string" || rawCommand.trim() === "") {
+      return "Error: Missing required parameter 'command'. Provide the command to run in the background.";
+    }
+    let command = normalizeGitPaths(rawCommand);
     const targetCwd = args.cwd 
       ? path.resolve(cwd, args.cwd as string)
       : cwd;

@@ -51,6 +51,7 @@ export function switchActiveProvider(name: string): boolean {
   const tierUpdate = { providerProfileId: provider.id };
 
   // Reload latest config and patch only providerProfileId fields inside active presets.
+  // Only update tiers that don't already have a providerProfileId set.
   mutateModelConfig((freshConfig) => {
     for (const mode of ["multi", "single"] as const) {
       const activeId = freshConfig.activePresetId?.[mode];
@@ -59,15 +60,21 @@ export function switchActiveProvider(name: string): boolean {
       if (!activePreset?.models) continue;
 
       if (mode === "multi") {
-        activePreset.models.master = { ...activePreset.models.master, ...tierUpdate };
+        if (!activePreset.models.master?.providerProfileId) {
+          activePreset.models.master = { ...activePreset.models.master, ...tierUpdate };
+        }
       }
-      activePreset.models.superagent = { ...activePreset.models.superagent, ...tierUpdate };
-      if (activePreset.models.subagentDefault) {
+      if (!activePreset.models.superagent?.providerProfileId) {
+        activePreset.models.superagent = { ...activePreset.models.superagent, ...tierUpdate };
+      }
+      if (activePreset.models.subagentDefault && !activePreset.models.subagentDefault.providerProfileId) {
         activePreset.models.subagentDefault = { ...activePreset.models.subagentDefault, ...tierUpdate };
       }
       if (activePreset.models.subagentDetails) {
         for (const key of Object.keys(activePreset.models.subagentDetails)) {
-          activePreset.models.subagentDetails[key] = { ...activePreset.models.subagentDetails[key], ...tierUpdate };
+          if (!activePreset.models.subagentDetails[key]?.providerProfileId) {
+            activePreset.models.subagentDetails[key] = { ...activePreset.models.subagentDetails[key], ...tierUpdate };
+          }
         }
       }
     }

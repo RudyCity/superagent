@@ -15,10 +15,8 @@ import { getEffectiveMasterModel } from "../config/providers.js";
 function formatModelWithProvider(tier: any, config: any): string {
   if (!tier?.model) return "(use default)";
   if (tier.providerProfileId) {
-    const profile = config.providers.find((p: any) => p.id === tier.providerProfileId);
-    if (profile) {
-      return `${profile.provider}@${tier.model}`;
-    }
+    // Use providerProfileId (profile ID) for consistency with getTierModelWithProvider
+    return `${tier.providerProfileId}@${tier.model}`;
   }
   return tier.model;
 }

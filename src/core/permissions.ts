@@ -69,6 +69,7 @@ export function isSuperagentOutOfBounds(
 
   const candidatePaths = [
     toolCall.args.filePath,
+    toolCall.args.file_path,
     toolCall.args.TargetFile,
     toolCall.args.path,
   ].filter((v): v is string => typeof v === "string");
@@ -102,63 +103,67 @@ export function getToolDescription(
   toolCall: ToolCall
 ): string {
   const args = toolCall.args;
+  /** Safely resolve file path from common LLM aliases (filePath, file_path, TargetFile) */
+  const fp = (args.filePath ?? args.file_path ?? args.TargetFile ?? "(missing)") as string;
+  /** Safe string fallback helper for description interpolation */
+  const s = (v: unknown) => (v !== undefined && v !== null ? String(v) : "(missing)");
   switch (toolCall.name) {
     case "read":
-      return `Reading file: ${args.filePath}`;
+      return `Reading file: ${fp}`;
     case "write":
-      return `Writing file: ${args.filePath}`;
+      return `Writing file: ${fp}`;
     case "edit":
-      return `Editing file: ${args.filePath}`;
+      return `Editing file: ${fp}`;
     case "bash":
-      return `Running command: ${args.command}`;
+      return `Running command: ${s(args.command ?? args.cmd)}`;
     case "glob":
-      return `Finding files matching pattern: ${args.pattern}`;
+      return `Finding files matching pattern: ${s(args.pattern)}`;
     case "grep":
-      return `Searching for pattern: ${args.pattern}`;
+      return `Searching for pattern: ${s(args.pattern)}`;
     case "web_search":
-      return `Searching web for: ${args.query}`;
+      return `Searching web for: ${s(args.query)}`;
     case "fetch_url":
-      return `Fetching URL: ${args.url}`;
+      return `Fetching URL: ${s(args.url)}`;
     case "ripgrep_search":
-      return `Searching codebase with ripgrep for: ${args.pattern}`;
+      return `Searching codebase with ripgrep for: ${s(args.pattern)}`;
     case "run_background_process":
-      return `Starting background process: ${args.command}${args.cwd ? ` (in ${args.cwd})` : ""}`;
+      return `Starting background process: ${s(args.command ?? args.cmd)}${args.cwd ? ` (in ${args.cwd})` : ""}`;
     case "write_to_file":
-      return `Writing file: ${args.filePath}`;
+      return `Writing file: ${fp}`;
     case "replace_file_content":
-      return `Replacing content in file: ${args.filePath}`;
+      return `Replacing content in file: ${fp}`;
     case "multi_replace_file_content":
-      return `Replacing multiple blocks in file: ${args.filePath}`;
+      return `Replacing multiple blocks in file: ${fp}`;
     case "run_command":
-      return `Running command: ${args.command}${args.cwd ? ` (in ${args.cwd})` : ""}`;
+      return `Running command: ${s(args.command ?? args.cmd)}${args.cwd ? ` (in ${args.cwd})` : ""}`;
     case "manage_background_process":
-      return `Managing background process (${args.action}): ${args.processId || ""}`;
+      return `Managing background process (${s(args.action)}): ${args.processId || ""}`;
     case "schedule":
-      return `Scheduling job: ${args.prompt}`;
+      return `Scheduling job: ${s(args.prompt)}`;
     case "define_subagent":
-      return `Defining subagent: ${args.name}`;
+      return `Defining subagent: ${s(args.name)}`;
     case "invoke_subagent":
-      return `Invoking subagent (${args.role}): ${args.typeName}`;
+      return `Invoking subagent (${s(args.role)}): ${s(args.typeName)}`;
     case "send_message":
-      return `Sending message to subagent: ${args.recipientId}`;
+      return `Sending message to subagent: ${s(args.recipientId)}`;
     case "manage_subagents":
-      return `Managing subagents (${args.action})`;
+      return `Managing subagents (${s(args.action)})`;
     case "invoke_superagent":
-      return `Spawning Superagent "${args.role}" on branch ${args.branch}`;
+      return `Spawning Superagent "${s(args.role)}" on branch ${s(args.branch)}`;
     case "await_superagents":
       return `Waiting for all Superagents to finish`;
     case "merge_superagents":
       return `Merging all completed Superagent branches`;
     case "apply_patch":
-      return `Applying patch to file: ${args.filePath}`;
+      return `Applying patch to file: ${fp}`;
     case "git_action":
-      return `Running Git action: ${args.action}`;
+      return `Running Git action: ${s(args.action)}`;
     case "screenshot":
       return `Capturing desktop screenshot`;
     case "android_cli":
-      return `Running Android CLI command: android ${args.command}`;
+      return `Running Android CLI command: android ${s(args.command)}`;
     case "ask_question":
-      return `Asking user: ${args.question}`;
+      return `Asking user: ${s(args.question)}`;
     default:
       return `Running tool ${toolCall.name} with parameters ${JSON.stringify(args)}`;
   }
