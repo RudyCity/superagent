@@ -6,6 +6,7 @@ import {
   resolveTestModel,
   getFallbackModels,
   checkEndpointCompatibility,
+  testCustomProviderMessage,
 } from "../src/core/loginWizardLogic";
 
 describe("loginWizardLogic — pure helper functions", () => {
@@ -180,6 +181,70 @@ describe("loginWizardLogic — pure helper functions", () => {
         expect(result.ok).toBe(false);
         expect(result.models).toEqual([]);
         expect(result.message).toContain("missing expected JSON shape");
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe("testCustomProviderMessage", () => {
+    it("should parse OpenAI-compatible chat completion JSON", async () => {
+      const originalFetch = global.fetch;
+      global.fetch = (async (_url, init) => {
+        expect((init as RequestInit).method).toBe("POST");
+        expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({
+          model: "model-a",
+          stream: false,
+        });
+        return new Response(JSON.stringify({
+          choices: [{ message: { role: "assistant", content: "hello" } }],
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as typeof fetch;
+
+      try {
+        const result = await testCustomProviderMessage("http://localhost:8080/v1", "sk-test", "model-a", "hi");
+        expect(result).toEqual({ ok: true, text: "hello" });
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("should parse SSE chat completion response when endpoint streams anyway", async () => {
+      const originalFetch = global.fetch;
+      global.fetch = (async () =>
+        new Response([
+          "data: {\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}",
+          "data: [DONE]",
+          "",
+        ].join("\n"), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        })) as typeof fetch;
+
+      try {
+        const result = await testCustomProviderMessage("http://localhost:8080/v1", "", "model-a", "hi");
+        expect(result).toEqual({ ok: true, text: "hello" });
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("should diagnose non-JSON chat completion body", async () => {
+      const originalFetch = global.fetch;
+      global.fetch = (async () =>
+        new Response("not json", {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        })) as typeof fetch;
+
+      try {
+        const result = await testCustomProviderMessage("http://localhost:8080/v1", "", "model-a", "hi");
+        expect(result.ok).toBe(false);
+        expect(result.message).toContain("non-JSON body");
       } finally {
         global.fetch = originalFetch;
       }

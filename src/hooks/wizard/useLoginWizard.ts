@@ -19,7 +19,7 @@ import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
 import type { Agent } from "../../core/agent.js";
 import type { ChatLine } from "../../core/slash-commands.js";
-import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility } from "../../core/loginWizardLogic.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage } from "../../core/loginWizardLogic.js";
 
 interface LoginWizardContext {
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
@@ -568,16 +568,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       });
       setIsProcessing(true);
       try {
-        const { generateText } = await import("ai");
-        const testModel = getModelInstanceForString(selectedModel);
-        const result = await generateText({
-          model: testModel,
-          prompt: message,
-          maxTokens: 512,
-        });
+        const isCustomProvider = data.providerType === "custom" || data.providerBaseUrl;
+        let responseText = "";
+        if (isCustomProvider && data.providerBaseUrl) {
+          const result = await testCustomProviderMessage(
+            data.providerBaseUrl,
+            data.providerApiKey || "",
+            selectedModel,
+            message
+          );
+          if (!result.ok) throw new Error(result.message || "custom provider test failed");
+          responseText = result.text || "";
+        } else {
+          const { generateText } = await import("ai");
+          const testModel = getModelInstanceForString(selectedModel);
+          const result = await generateText({
+            model: testModel,
+            prompt: message,
+            maxTokens: 512,
+          });
+          responseText = result.text;
+        }
         addLine({
           type: "assistant",
-          content: result.text,
+          content: responseText,
           timestamp: Date.now(),
         });
         // Persist the selected model after successful test

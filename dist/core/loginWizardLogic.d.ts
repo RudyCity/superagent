@@ -23,6 +23,12 @@ export interface EndpointCompatibilityResult {
     models: string[];
     message?: string;
 }
+export interface CustomProviderMessageTestResult {
+    ok: boolean;
+    text?: string;
+    message?: string;
+}
+export declare function testCustomProviderMessage(baseUrl: string, apiKey: string, model: string, message: string): Promise<CustomProviderMessageTestResult>;
 export declare function fetchModelsFromEndpoint(baseUrl: string, apiKey: string): Promise<string[]>;
 export declare function checkEndpointCompatibility(baseUrl: string, apiKey: string): Promise<EndpointCompatibilityResult>;
 /**

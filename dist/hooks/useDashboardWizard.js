@@ -6,7 +6,7 @@ import { filterSuggestions } from "../utils/text.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint, deleteCheckpointById } from "../core/checkpoints.js";
 import { allTools } from "../core/tools.js";
-import { resolveProviderType, getModelOptions, fetchModelsFromEndpoint, checkEndpointCompatibility } from "../core/loginWizardLogic.js";
+import { resolveProviderType, getModelOptions, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage } from "../core/loginWizardLogic.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 export function useDashboardWizard(ctx) {
     const { agent, exit, query, setQuery, activeWizard, setActiveWizard, wizardOptions, setWizardOptions, wizardSelectedIndex, setWizardSelectedIndex, wizardSelectedSet, setWizardSelectedSet, masterLogs, setMasterLogs, setActiveModel, setCurrentTask, history, setHistory, setHistoryIndex, planState, setPlanState, pendingQuestion, setPendingQuestion, wizardAllOptions, setWizardAllOptions, wizardIsLoadingModels, setWizardIsLoadingModels, checkpointsList, setCheckpointsList, setContextLimit, setIsPasted, HISTORY_FILE, cachedSessions, setCachedSessions, isProcessing, setIsProcessing, } = ctx;
@@ -319,10 +319,21 @@ export function useDashboardWizard(ctx) {
                 setMasterLogs((prev) => [...prev, `[USER] [Test to ${selectedModel}]: ${message}`].slice(-500));
                 setIsProcessing(true);
                 try {
-                    const { generateText } = await import("ai");
-                    const testModel = getModelInstanceForString(selectedModel);
-                    const result = await generateText({ model: testModel, prompt: message, maxTokens: 512 });
-                    setMasterLogs((prev) => [...prev, `[ASSISTANT] ${result.text}`].slice(-500));
+                    const isCustomProvider = activeWizard.data.providerType === "custom" || activeWizard.data.providerBaseUrl;
+                    let responseText = "";
+                    if (isCustomProvider && activeWizard.data.providerBaseUrl) {
+                        const result = await testCustomProviderMessage(activeWizard.data.providerBaseUrl, activeWizard.data.providerApiKey || "", selectedModel, message);
+                        if (!result.ok)
+                            throw new Error(result.message || "custom provider test failed");
+                        responseText = result.text || "";
+                    }
+                    else {
+                        const { generateText } = await import("ai");
+                        const testModel = getModelInstanceForString(selectedModel);
+                        const result = await generateText({ model: testModel, prompt: message, maxTokens: 512 });
+                        responseText = result.text;
+                    }
+                    setMasterLogs((prev) => [...prev, `[ASSISTANT] ${responseText}`].slice(-500));
                     // Persist the selected model after successful test
                     setAllTierModels(isMulti ? "multi" : "single", selectedModel, providerProfileId || undefined);
                     const limit = getContextWindowLimit(selectedModel);

@@ -82,6 +82,79 @@ async function safeReadResponseText(response) {
         return "";
     }
 }
+function extractOpenAiMessageText(json) {
+    const choice = Array.isArray(json?.choices) ? json.choices[0] : undefined;
+    const content = choice?.message?.content ?? choice?.text ?? choice?.delta?.content;
+    if (typeof content === "string")
+        return content;
+    if (Array.isArray(content)) {
+        return content
+            .map((part) => part?.text ?? part?.content ?? "")
+            .filter((part) => typeof part === "string" && part.length > 0)
+            .join("");
+    }
+    return "";
+}
+function extractSseMessageText(rawText) {
+    const chunks = [];
+    for (const line of rawText.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:"))
+            continue;
+        const payload = trimmed.slice(5).trim();
+        if (!payload || payload === "[DONE]")
+            continue;
+        try {
+            const json = JSON.parse(payload);
+            const text = extractOpenAiMessageText(json);
+            if (text)
+                chunks.push(text);
+        }
+        catch {
+            // Ignore malformed SSE frames and keep scanning for usable content.
+        }
+    }
+    return chunks.join("");
+}
+export async function testCustomProviderMessage(baseUrl, apiKey, model, message) {
+    try {
+        const headers = { "Content-Type": "application/json" };
+        if (apiKey)
+            headers.Authorization = `Bearer ${apiKey}`;
+        const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+                model,
+                messages: [{ role: "user", content: message }],
+                stream: false,
+            }),
+            signal: AbortSignal.timeout(30000),
+        });
+        const rawText = await safeReadResponseText(res);
+        if (!res.ok) {
+            const statusMessage = `endpoint returned HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""}`;
+            const detail = rawText.trim() ? ` — ${formatInvalidJsonDiagnostic(rawText)}` : "";
+            return { ok: false, message: `${statusMessage}${detail}` };
+        }
+        try {
+            const json = JSON.parse(rawText);
+            const text = extractOpenAiMessageText(json);
+            if (text)
+                return { ok: true, text };
+            return { ok: false, message: "endpoint /chat/completions response missing assistant text in OpenAI-compatible JSON" };
+        }
+        catch {
+            const sseText = extractSseMessageText(rawText);
+            if (sseText)
+                return { ok: true, text: sseText };
+            return { ok: false, message: formatInvalidJsonDiagnostic(rawText) };
+        }
+    }
+    catch (error) {
+        return { ok: false, message: error?.message || "failed to reach endpoint /chat/completions" };
+    }
+}
 export async function fetchModelsFromEndpoint(baseUrl, apiKey) {
     const result = await checkEndpointCompatibility(baseUrl, apiKey);
     return result.models;
