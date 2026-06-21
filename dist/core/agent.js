@@ -638,7 +638,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                     while (true) {
                         let concurrencyAcquired = false;
                         try {
-                            if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+                            if (getSettings().concurrencyLimit === 1) {
                                 await concurrencyLimiter.acquire();
                                 concurrencyAcquired = true;
                             }
@@ -730,7 +730,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                     while (true) {
                         let concurrencyAcquired = false;
                         try {
-                            if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+                            if (getSettings().concurrencyLimit === 1) {
                                 await concurrencyLimiter.acquire();
                                 concurrencyAcquired = true;
                             }
@@ -1417,7 +1417,7 @@ ${formatted}`;
         while (true) {
             let concurrencyAcquired = false;
             try {
-                if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+                if (getSettings().concurrencyLimit === 1) {
                     await concurrencyLimiter.acquire();
                     concurrencyAcquired = true;
                 }

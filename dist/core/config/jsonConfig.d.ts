@@ -61,7 +61,6 @@ export declare function removeProvider(id: string): void;
 export declare function getSettings(): SystemSettings;
 /**
  * Update one or more settings and persist to model-config.json.
- * Also updates process.env so runtime checks stay in sync.
  */
 export declare function updateSettings(updates: Partial<SystemSettings>): void;
 export declare function getPresets(mode: "multi" | "single"): JSONModelPreset<PresetModelsMulti>[] | JSONModelPreset<PresetModelsSingle>[];

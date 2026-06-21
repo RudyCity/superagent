@@ -434,7 +434,6 @@ export function getSettings() {
 }
 /**
  * Update one or more settings and persist to model-config.json.
- * Also updates process.env so runtime checks stay in sync.
  */
 export function updateSettings(updates) {
     const config = loadModelConfig();
@@ -443,25 +442,6 @@ export function updateSettings(updates) {
     }
     Object.assign(config.settings, updates);
     saveModelConfig(config);
-    // Sync to process.env for backward-compatible runtime checks
-    if (updates.concurrencyLimit !== undefined) {
-        process.env.SUPERAGENT_MAX_CONCURRENCY = String(updates.concurrencyLimit);
-    }
-    if (updates.rateLimitRpm !== undefined) {
-        process.env.SUPERAGENT_RATE_LIMIT_RPM = String(updates.rateLimitRpm);
-    }
-    if (updates.rateLimitCapacity !== undefined) {
-        process.env.SUPERAGENT_RATE_LIMIT_CAPACITY = String(updates.rateLimitCapacity);
-    }
-    if (updates.disableStreaming !== undefined) {
-        process.env.DISABLE_STREAMING = updates.disableStreaming ? "true" : "";
-    }
-    if (updates.contextWindowLimit !== undefined) {
-        process.env.CONTEXT_WINDOW_LIMIT = updates.contextWindowLimit > 0 ? String(updates.contextWindowLimit) : "";
-    }
-    if (updates.maxIterations !== undefined) {
-        process.env.MAX_ITERATIONS = String(updates.maxIterations);
-    }
 }
 export function getPresets(mode) {
     return loadModelConfig().presets[mode];

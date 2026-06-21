@@ -3,6 +3,7 @@ import path from "path";
 import { execa } from "execa";
 import { generateText } from "ai";
 import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
+import { getSettings } from "./config.js";
 /**
  * Parses Git merge conflict markers in a file.
  */
@@ -62,7 +63,7 @@ Provide the resolved code for the CONFLICT HUNK only. Output ONLY the resolved c
         // Shared rate limiting check
         let concurrencyAcquired = false;
         try {
-            if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+            if (getSettings().concurrencyLimit === 1) {
                 await concurrencyLimiter.acquire();
                 concurrencyAcquired = true;
             }

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.70] - 2026-06-21
+
+### Added
+- **Version Display in Multi-Agent Dashboard**: The dashboard header now shows the current Superagent version (e.g. `MULTI-AGENT SYSTEM v1.1.70`), read dynamically from `package.json` at runtime.
+
+### Changed
+- **Reduced Visible Process Slots**: `maxProcsVisible` decreased from 5 to 3 in both the single-agent app and multi-agent dashboard to save vertical space on smaller terminals.
+- **Expanded `/terminal` Help Text**: Help output now documents additional `/terminal` subcommands: `/terminal all` (launch all presets), `/terminal init` (AI-guided preset setup), `/terminal preset` (list presets), `!<command>` shortcut syntax, and the background/stop commands.
+
+---
+
 ## [1.1.69] - 2026-06-21
 
 ### Changed

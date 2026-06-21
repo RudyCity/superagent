@@ -3,6 +3,8 @@ import { execSync } from "child_process";
 import { Box, Text, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
 import fs from "fs/promises";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
 import { 
   subagentInstances, 
   subscribeToSubagents, 
@@ -70,6 +72,18 @@ import { useDashboardSessions } from "../hooks/useDashboardSessions.js";
 import { useDashboardMouse } from "../hooks/useDashboardMouse.js";
 import { useDashboardKeyboard } from "../hooks/useDashboardKeyboard.js";
 
+
+// Read version from package.json
+const __mdFilename = fileURLToPath(import.meta.url);
+const __mdDirname = path.dirname(__mdFilename);
+let multiVersion = "1.1.0";
+try {
+  const pkgPath = path.join(__mdDirname, "..", "..", "package.json");
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+  multiVersion = pkg.version;
+} catch (e) {
+  // fallback
+}
 
 export interface AgentSession {
   id: string;
@@ -206,7 +220,7 @@ export function MultiAgentDashboard({
 
   const maxChecklistVisible = 3;
   const maxAgentsVisible = 3;
-  const maxProcsVisible = 5;
+  const maxProcsVisible = 3;
 
   // Safeguard scroll offsets when lists shrink
   useEffect(() => {
@@ -992,7 +1006,7 @@ export function MultiAgentDashboard({
               <Text color="red" bold>S U P E R</Text>
               <Text color="white" bold>A G E N T</Text>
               <Text color="gray"> │ </Text>
-              <Text color="yellow" bold>MULTI-AGENT SYSTEM</Text>
+              <Text color="yellow" bold>MULTI-AGENT SYSTEM v{multiVersion}</Text>
               <Text color="gray"> │ </Text>
               <Text color="magenta" bold>Branch: {gitBranch}</Text>
             </Box>

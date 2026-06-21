@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import fs from "fs/promises";
 import path from "path";
-import { switchActiveProvider, addProvider, listHistorySessions, fetchAndCacheModels, getConfiguredProviders, getProviders, getContextWindowLimit, getInstalledSkills, getCachedModelIds, getModelPresets, applyModelPreset, saveModelPreset, deleteModelPreset, BUILT_IN_PRESETS, getProviderOptionsList, getActiveConfigAudit, getActiveProviderName, getResolvedModelWithProvider, getEffectiveMasterModel, getTierModel, getTierModelWithProvider, setTierModel, setAllTierModels, clearTierModel, getAllTierModels, getModelInstanceForString } from "../core/config.js";
+import { switchActiveProvider, addProvider, listHistorySessions, fetchAndCacheModels, getConfiguredProviders, getProviders, getContextWindowLimit, getInstalledSkills, getCachedModelIds, getModelPresets, applyModelPreset, saveModelPreset, deleteModelPreset, BUILT_IN_PRESETS, getProviderOptionsList, getActiveConfigAudit, getActiveProviderName, getResolvedModelWithProvider, getEffectiveMasterModel, getTierModel, getTierModelWithProvider, setTierModel, setAllTierModels, clearTierModel, getAllTierModels, getModelInstanceForString, getSettings } from "../core/config.js";
 import { filterSuggestions } from "../utils/text.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint, deleteCheckpointById } from "../core/checkpoints.js";
@@ -431,7 +431,7 @@ export function useDashboardWizard(ctx) {
                         "│ ",
                         "│ [COGNITIVE CORE]",
                         getActiveConfigAudit(),
-                        `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
+                        `│ ✦ Streaming       : ${getSettings().disableStreaming ? "DISABLED" : "ENABLED"}`,
                         "│ ",
                         "│ [PROJECT METADATA]",
                         `│ 📄 Registry File  : CREATED (${agentsPath})`,
@@ -486,7 +486,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                         let concurrencyAcquired = false;
                         let response;
                         try {
-                            if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+                            if (getSettings().concurrencyLimit === 1) {
                                 await concurrencyLimiter.acquire();
                                 concurrencyAcquired = true;
                             }
@@ -533,7 +533,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                             "│ ",
                             "│ [COGNITIVE CORE]",
                             getActiveConfigAudit(),
-                            `│ ✦ Streaming       : ${process.env.DISABLE_STREAMING === "true" ? "DISABLED" : "ENABLED"}`,
+                            `│ ✦ Streaming       : ${getSettings().disableStreaming ? "DISABLED" : "ENABLED"}`,
                             "│ ",
                             "│ [PROJECT METADATA]",
                             `│ 📄 Registry File  : CREATED (${agentsPath})`,

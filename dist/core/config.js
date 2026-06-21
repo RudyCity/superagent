@@ -1,5 +1,4 @@
 export * from "./config/paths.js";
-export * from "./config/env.js";
 export * from "./config/history.js";
 export * from "./config/skills.js";
 export * from "./config/base.js";

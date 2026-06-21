@@ -1,6 +1,6 @@
 import fs from "fs";
 import { generateText } from "ai";
-import { listHistorySessions, getModelInstance, getConfig } from "./config.js";
+import { listHistorySessions, getModelInstance, getConfig, getSettings } from "./config.js";
 import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
 /**
  * Custom subsequence fuzzy matching and token-based scoring algorithm.
@@ -146,7 +146,7 @@ If no sessions are relevant, return an empty array: []`;
         let concurrencyAcquiredFilter = false;
         let filterResult = "";
         try {
-            if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+            if (getSettings().concurrencyLimit === 1) {
                 await concurrencyLimiter.acquire();
                 concurrencyAcquiredFilter = true;
             }
@@ -184,7 +184,7 @@ Please summarize what was discussed, decided, or implemented in this session reg
             let concurrencyAcquiredSummary = false;
             let summary = "";
             try {
-                if (process.env.SUPERAGENT_MAX_CONCURRENCY === "1") {
+                if (getSettings().concurrencyLimit === 1) {
                     await concurrencyLimiter.acquire();
                     concurrencyAcquiredSummary = true;
                 }

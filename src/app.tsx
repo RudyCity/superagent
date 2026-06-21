@@ -169,7 +169,7 @@ export function App({
   const maxChecklistVisible = 3;
   const maxSuperagentsVisible = 2;
   const maxSubagentsVisible = 3;
-  const maxProcsVisible = 5;
+  const maxProcsVisible = 3;
 
   const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
   const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);

@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { getRootConfigDir } from "./config.js";
+import { getRootConfigDir, getSettings } from "./config.js";
 const CAPACITY = 60; // Max 60 requests in the bucket
 const REFILL_RATE_PER_MS = 1 / 1000; // Refill 1 token per second (1000ms)
 /**
@@ -83,24 +83,19 @@ export class SharedRateLimiter {
         fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2), "utf-8");
     }
     getCapacity() {
-        if (process.env.SUPERAGENT_RATE_LIMIT_CAPACITY) {
-            const cap = parseInt(process.env.SUPERAGENT_RATE_LIMIT_CAPACITY, 10);
-            if (!isNaN(cap))
-                return cap;
+        const settings = getSettings();
+        if (settings.rateLimitCapacity > 0) {
+            return settings.rateLimitCapacity;
         }
-        if (process.env.SUPERAGENT_RATE_LIMIT_RPM) {
-            const rpm = parseInt(process.env.SUPERAGENT_RATE_LIMIT_RPM, 10);
-            if (!isNaN(rpm))
-                return rpm;
+        if (settings.rateLimitRpm > 0) {
+            return settings.rateLimitRpm;
         }
         return CAPACITY;
     }
     getRefillRatePerMs() {
-        if (process.env.SUPERAGENT_RATE_LIMIT_RPM) {
-            const rpm = parseInt(process.env.SUPERAGENT_RATE_LIMIT_RPM, 10);
-            if (!isNaN(rpm) && rpm > 0) {
-                return rpm / 60000;
-            }
+        const settings = getSettings();
+        if (settings.rateLimitRpm > 0) {
+            return settings.rateLimitRpm / 60000;
         }
         return REFILL_RATE_PER_MS;
     }
@@ -112,7 +107,7 @@ export class SharedRateLimiter {
         if (process.env.VITEST === "true" && process.env.SUPERAGENT_TEST_LIMITS !== "true") {
             return;
         }
-        if (process.env.SUPERAGENT_RATE_LIMIT_RPM === "0") {
+        if (getSettings().rateLimitRpm === 0) {
             return;
         }
         const capacity = this.getCapacity();
