@@ -5,9 +5,9 @@ import os from "os";
 // Mock os.homedir() di paling atas untuk isolasi penuh
 const tempHome = path.join(process.cwd(), "tests", "temp-home-config");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir } from "./config.js";
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset } from "./config.js";
 import { getModelConfigPath } from "./config/paths.js";
-import { clearModelConfigCache, loadModelConfig, addProvider } from "./config/jsonConfig.js";
+import { clearModelConfigCache, loadModelConfig, addProvider, saveModelConfig, getProviders, removeProvider } from "./config/jsonConfig.js";
 describe("config", () => {
     let originalEnv;
     const configPath = getModelConfigPath();
@@ -33,6 +33,90 @@ describe("config", () => {
     it("should get global config directory containing expected name", () => {
         const dir = getGlobalConfigDir();
         expect(dir).toContain(".superagent-r");
+    });
+    describe("provider persistence (no silent loss)", () => {
+        it("does not delete providers added by another process when saving a stale snapshot", () => {
+            // Process A loads config and adds a custom provider with an API key.
+            addProvider({ id: "tss", name: "tss", provider: "custom", apiKey: "sk-secret", baseUrl: "http://localhost/v1" });
+            // Process B started earlier and holds a stale snapshot WITHOUT "tss".
+            const staleSnapshot = JSON.parse(JSON.stringify(loadModelConfig()));
+            staleSnapshot.providers = staleSnapshot.providers.filter((p) => p.id !== "tss");
+            // Simulate B changing an unrelated setting and writing the whole object back.
+            staleSnapshot.settings = { ...(staleSnapshot.settings || {}), rateLimitRpm: 45 };
+            // Force a true cross-process read on next load.
+            clearModelConfigCache();
+            saveModelConfig(staleSnapshot);
+            // The "tss" provider (and its API key) must survive the stale write.
+            clearModelConfigCache();
+            const providers = getProviders();
+            const tss = providers.find((p) => p.id === "tss");
+            expect(tss).toBeDefined();
+            expect(tss?.apiKey).toBe("sk-secret");
+            // The unrelated setting from process B is still applied.
+            expect(loadModelConfig().settings?.rateLimitRpm).toBe(45);
+        });
+        it("still honors explicit provider removal (merge guard is bypassed)", () => {
+            addProvider({ id: "tss", name: "tss", provider: "custom", apiKey: "sk-secret" });
+            expect(getProviders().some((p) => p.id === "tss")).toBe(true);
+            removeProvider("tss");
+            clearModelConfigCache();
+            expect(getProviders().some((p) => p.id === "tss")).toBe(false);
+        });
+        it("reloads when the on-disk file changes out of band", () => {
+            addProvider({ id: "tss", name: "tss", provider: "custom", apiKey: "sk-secret" });
+            // Prime the cache.
+            expect(getProviders().some((p) => p.id === "tss")).toBe(true);
+            // Another process appends a provider directly to disk.
+            const onDisk = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+            onDisk.providers.push({ id: "other", name: "other", provider: "openai", apiKey: "sk-other" });
+            // Bump mtime to a clearly later time so the change is detected.
+            fs.writeFileSync(configPath, JSON.stringify(onDisk, null, 2), "utf-8");
+            const future = new Date(Date.now() + 5000);
+            fs.utimesSync(configPath, future, future);
+            // Without clearing the cache, loadModelConfig should still pick up "other".
+            const providers = getProviders();
+            expect(providers.some((p) => p.id === "other")).toBe(true);
+            expect(providers.some((p) => p.id === "tss")).toBe(true);
+        });
+    });
+    describe("preset persistence (no silent loss)", () => {
+        it("does not delete presets added by another process when saving a stale snapshot", () => {
+            savePreset("single", {
+                id: "home",
+                name: "home",
+                description: "Custom preset",
+                models: {
+                    superagent: { providerProfileId: "default-openai", model: "gpt-4o" },
+                    subagentDefault: { providerProfileId: "default-openai", model: "gpt-4o-mini" },
+                    subagentDetails: {},
+                },
+            });
+            const staleSnapshot = JSON.parse(JSON.stringify(loadModelConfig()));
+            staleSnapshot.presets.single = staleSnapshot.presets.single.filter((p) => p.id !== "home");
+            staleSnapshot.settings = { ...(staleSnapshot.settings || {}), rateLimitCapacity: 77 };
+            clearModelConfigCache();
+            saveModelConfig(staleSnapshot);
+            clearModelConfigCache();
+            const config = loadModelConfig();
+            expect(config.presets.single.some((p) => p.id === "home")).toBe(true);
+            expect(config.settings?.rateLimitCapacity).toBe(77);
+        });
+        it("still honors explicit preset deletion (merge guard is bypassed)", () => {
+            savePreset("single", {
+                id: "home",
+                name: "home",
+                description: "Custom preset",
+                models: {
+                    superagent: { providerProfileId: "default-openai", model: "gpt-4o" },
+                    subagentDefault: { providerProfileId: "default-openai", model: "gpt-4o-mini" },
+                    subagentDetails: {},
+                },
+            });
+            expect(loadModelConfig().presets.single.some((p) => p.id === "home")).toBe(true);
+            deletePreset("single", "home");
+            clearModelConfigCache();
+            expect(loadModelConfig().presets.single.some((p) => p.id === "home")).toBe(false);
+        });
     });
     it("should return correct context window limits based on model name", () => {
         expect(getContextWindowLimit("claude-3-5-sonnet")).toBe(200000);

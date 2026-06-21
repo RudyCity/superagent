@@ -136,16 +136,17 @@ describe("JSON-based model-config.json storage", () => {
     const activePreset = getActivePreset<any>("multi");
     expect(activePreset.id).toBe("test-multi-preset");
 
-    // Verify correct environment variables are set and resolved for different tiers
+    // Verify presets resolve correctly for different tiers without exporting provider
+    // credentials into process.env.
     // Master Agent
     const masterInstance = getModelInstanceForTier("master", 0, undefined, false);
     expect(masterInstance).toBeDefined();
-    expect(process.env.PROVIDER_ANTHROPIC_PERSONAL_API_KEY).toBe("sk-ant-personal-xyz");
+    expect(process.env.PROVIDER_ANTHROPIC_PERSONAL_API_KEY).toBeUndefined();
 
     // Superagent
     const superagentInstance = getModelInstanceForTier("superagent", 1, undefined, false);
     expect(superagentInstance).toBeDefined();
-    expect(process.env.PROVIDER_OPENAI_WORK_API_KEY).toBe("sk-proj-work-abc");
+    expect(process.env.PROVIDER_OPENAI_WORK_API_KEY).toBeUndefined();
   });
 
   it("should synchronize and persist system settings to model-config.json", async () => {

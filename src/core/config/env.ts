@@ -1,5 +1,5 @@
 import { ensureGlobalConfigDir, getRootConfigDir } from "./paths.js";
-import { loadModelConfig, getActivePreset, savePreset, saveModelConfig } from "./jsonConfig.js";
+import { loadModelConfig, saveModelConfig } from "./jsonConfig.js";
 
 // Populate process.env with settings from model-config.json on startup.
 // Provider credentials are resolved directly from JSON config — no env var population needed.
@@ -30,21 +30,6 @@ try {
   // Ignore errors during initial startup load
 }
 
-function parseTierConfig(val: string) {
-  // Use `@` as the profile/model separator to avoid ambiguity with model names
-  // that themselves contain `:`, e.g. openrouter/nex-agi/nex-n2-pro:free.
-  const atIndex = (val || "").indexOf("@");
-  if (atIndex > 0) {
-    return { providerProfileId: val.substring(0, atIndex), model: val.substring(atIndex + 1) };
-  }
-  // Backward compatibility: legacy values used `:` as the separator.
-  const colonIndex = (val || "").indexOf(":");
-  if (colonIndex > 0 && !val.substring(0, colonIndex).includes("/")) {
-    return { providerProfileId: val.substring(0, colonIndex), model: val.substring(colonIndex + 1) };
-  }
-  return { providerProfileId: "default-openai", model: val || "gpt-4o" };
-}
-
 /**
  * Update runtime config: syncs updates to process.env (in-memory) and
  * persists relevant changes to model-config.json (synchronous).
@@ -54,80 +39,27 @@ function parseTierConfig(val: string) {
 export function updateEnvFile(updates: Record<string, string>): string {
   ensureGlobalConfigDir();
 
-  // Update process.env so changes are immediate in memory
+  const forbiddenKeys = Object.keys(updates).filter((key) =>
+    key.startsWith("MODEL_") ||
+    key === "ACTIVE_PROVIDER" ||
+    key.startsWith("PROVIDER_") ||
+    key === "OPENAI_API_KEY" ||
+    key === "ANTHROPIC_API_KEY" ||
+    key === "CUSTOM_API_KEY" ||
+    key === "CUSTOM_BASE_URL"
+  );
+  if (forbiddenKeys.length > 0) {
+    throw new Error(
+      `updateEnvFile no longer accepts provider/model keys after JSON config migration: ${forbiddenKeys.join(", ")}`
+    );
+  }
+
+  // Update process.env so runtime-only settings changes are immediate in memory
   for (const [key, val] of Object.entries(updates)) {
     if (val === "") {
       delete process.env[key];
     } else {
       process.env[key] = val;
-    }
-  }
-
-  // Synchronize MODEL_MULTI_* / MODEL_SINGLE_* keys to the active preset in model-config.json.
-  // This is SYNCHRONOUS to prevent data loss if the process exits (Ctrl+C) before an async
-  // promise resolves.
-  const multiKeys = Object.keys(updates).filter(k => k.startsWith("MODEL_MULTI_"));
-  const singleKeys = Object.keys(updates).filter(k => k.startsWith("MODEL_SINGLE_"));
-  if (multiKeys.length > 0 || singleKeys.length > 0) {
-    try {
-      const modesToSync: ("multi" | "single")[] = [];
-      if (multiKeys.length > 0) modesToSync.push("multi");
-      if (singleKeys.length > 0) modesToSync.push("single");
-      if (modesToSync.length === 0) {
-        if (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true") {
-          modesToSync.push("multi");
-        } else {
-          modesToSync.push("single");
-        }
-      }
-
-      for (const mode of modesToSync) {
-        const keysForMode = mode === "multi" ? multiKeys : singleKeys;
-        if (keysForMode.length === 0) continue;
-
-        const preset = getActivePreset<any>(mode);
-        if (!preset.models.subagentDetails) {
-          preset.models.subagentDetails = {};
-        }
-
-        for (const key of keysForMode) {
-          const val = updates[key];
-          const isClear = !val || val.trim() === "";
-
-          if (mode === "multi") {
-            if (key === "MODEL_MULTI_MASTER") {
-              if (!isClear) preset.models.master = parseTierConfig(val);
-            } else if (key === "MODEL_MULTI_SUPERAGENT") {
-              if (!isClear) preset.models.superagent = parseTierConfig(val);
-            } else if (key === "MODEL_MULTI_SUBAGENT") {
-              if (!isClear) preset.models.subagentDefault = parseTierConfig(val);
-            } else if (key.startsWith("MODEL_MULTI_SUBAGENT_")) {
-              const type = key.replace("MODEL_MULTI_SUBAGENT_", "").toLowerCase();
-              if (isClear) {
-                delete preset.models.subagentDetails[type];
-              } else {
-                preset.models.subagentDetails[type] = parseTierConfig(val);
-              }
-            }
-          } else {
-            if (key === "MODEL_SINGLE_SUPERAGENT") {
-              if (!isClear) preset.models.superagent = parseTierConfig(val);
-            } else if (key === "MODEL_SINGLE_SUBAGENT") {
-              if (!isClear) preset.models.subagentDefault = parseTierConfig(val);
-            } else if (key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
-              const type = key.replace("MODEL_SINGLE_SUBAGENT_", "").toLowerCase();
-              if (isClear) {
-                delete preset.models.subagentDetails[type];
-              } else {
-                preset.models.subagentDetails[type] = parseTierConfig(val);
-              }
-            }
-          }
-        }
-        savePreset(mode, preset);
-      }
-    } catch (err) {
-      // Ignore sync errors
     }
   }
 
@@ -141,6 +73,7 @@ export function updateEnvFile(updates: Record<string, string>): string {
     k === "MAX_CONTEXT_TOKENS" ||
     k === "MAX_ITERATIONS"
   );
+
   if (settingKeys.length > 0) {
     try {
       const config = loadModelConfig();

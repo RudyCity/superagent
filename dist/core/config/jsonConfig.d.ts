@@ -48,7 +48,10 @@ export interface GlobalModelConfig {
 }
 export declare function clearModelConfigCache(): void;
 export declare function loadModelConfig(): GlobalModelConfig;
-export declare function saveModelConfig(config: GlobalModelConfig): boolean;
+export declare function saveModelConfig(config: GlobalModelConfig, options?: {
+    mergeProviders?: boolean;
+    mergePresets?: boolean;
+}): boolean;
 export declare function getProviders(): ProviderProfile[];
 export declare function addProvider(profile: ProviderProfile): void;
 export declare function removeProvider(id: string): void;
@@ -62,6 +65,12 @@ export declare function getSettings(): SystemSettings;
  */
 export declare function updateSettings(updates: Partial<SystemSettings>): void;
 export declare function getPresets(mode: "multi" | "single"): JSONModelPreset<PresetModelsMulti>[] | JSONModelPreset<PresetModelsSingle>[];
+/**
+ * Reload latest config from disk, apply a mutation, then persist in one save.
+ * Use this for provider/model/preset writes that would otherwise do read-mutate-save
+ * on a possibly stale cached snapshot.
+ */
+export declare function mutateModelConfig(mutator: (config: GlobalModelConfig) => void, options?: Parameters<typeof saveModelConfig>[1]): void;
 export declare function savePreset<T>(mode: "multi" | "single", preset: JSONModelPreset<T>): void;
 export declare function deletePreset(mode: "multi" | "single", id: string): void;
 export declare function getActivePresetId(mode: "multi" | "single"): string;

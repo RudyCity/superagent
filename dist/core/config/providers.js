@@ -1,4 +1,4 @@
-import { getProviders, loadModelConfig, getActivePreset, savePreset } from "./jsonConfig.js";
+import { getProviders, loadModelConfig, getActivePreset, mutateModelConfig } from "./jsonConfig.js";
 export function getConfiguredProviders() {
     const providers = getProviders();
     const config = loadModelConfig();
@@ -30,24 +30,28 @@ export function switchActiveProvider(name) {
         return false;
     }
     const tierUpdate = { providerProfileId: provider.id };
-    // Update BOTH modes (multi AND single) so provider is always resolvable
-    // regardless of which mode the user started in.
-    for (const mode of ["multi", "single"]) {
-        const activePreset = getActivePreset(mode);
-        if (mode === "multi") {
-            activePreset.models.master = { ...activePreset.models.master, ...tierUpdate };
-        }
-        activePreset.models.superagent = { ...activePreset.models.superagent, ...tierUpdate };
-        if (activePreset.models.subagentDefault) {
-            activePreset.models.subagentDefault = { ...activePreset.models.subagentDefault, ...tierUpdate };
-        }
-        if (activePreset.models.subagentDetails) {
-            for (const key of Object.keys(activePreset.models.subagentDetails)) {
-                activePreset.models.subagentDetails[key] = { ...activePreset.models.subagentDetails[key], ...tierUpdate };
+    // Reload latest config and patch only providerProfileId fields inside active presets.
+    mutateModelConfig((freshConfig) => {
+        for (const mode of ["multi", "single"]) {
+            const activeId = freshConfig.activePresetId?.[mode];
+            const presetsList = freshConfig.presets?.[mode];
+            const activePreset = presetsList?.find((p) => p.id === activeId) || presetsList?.[0];
+            if (!activePreset?.models)
+                continue;
+            if (mode === "multi") {
+                activePreset.models.master = { ...activePreset.models.master, ...tierUpdate };
+            }
+            activePreset.models.superagent = { ...activePreset.models.superagent, ...tierUpdate };
+            if (activePreset.models.subagentDefault) {
+                activePreset.models.subagentDefault = { ...activePreset.models.subagentDefault, ...tierUpdate };
+            }
+            if (activePreset.models.subagentDetails) {
+                for (const key of Object.keys(activePreset.models.subagentDetails)) {
+                    activePreset.models.subagentDetails[key] = { ...activePreset.models.subagentDetails[key], ...tierUpdate };
+                }
             }
         }
-        savePreset(mode, activePreset);
-    }
+    });
     return true;
 }
 export function getProviderOptionsList(list) {
@@ -198,52 +202,62 @@ export function getTierModelWithProvider(mode, tier) {
  */
 export function setTierModel(mode, tier, modelName, providerProfileId) {
     const m = resolveMode(mode);
-    const preset = getActivePreset(m);
     const key = tier.toLowerCase();
     const update = { model: modelName };
     if (providerProfileId)
         update.providerProfileId = providerProfileId;
-    if (key === "master") {
-        if (m === "multi") {
-            preset.models.master = { ...preset.models.master, ...update };
+    mutateModelConfig((config) => {
+        const activeId = config.activePresetId?.[m];
+        const presetsList = config.presets?.[m];
+        const preset = presetsList?.find((p) => p.id === activeId) || presetsList?.[0];
+        if (!preset?.models)
+            return;
+        if (key === "master") {
+            if (m === "multi") {
+                preset.models.master = { ...preset.models.master, ...update };
+            }
+            else {
+                preset.models.superagent = { ...preset.models.superagent, ...update };
+            }
         }
-        else {
+        else if (key === "superagent") {
             preset.models.superagent = { ...preset.models.superagent, ...update };
         }
-    }
-    else if (key === "superagent") {
-        preset.models.superagent = { ...preset.models.superagent, ...update };
-    }
-    else if (key === "subagent") {
-        preset.models.subagentDefault = { ...preset.models.subagentDefault, ...update };
-    }
-    else {
-        if (!preset.models.subagentDetails)
-            preset.models.subagentDetails = {};
-        preset.models.subagentDetails[key] = { ...preset.models.subagentDetails[key], ...update };
-    }
-    savePreset(m, preset);
+        else if (key === "subagent") {
+            preset.models.subagentDefault = { ...preset.models.subagentDefault, ...update };
+        }
+        else {
+            if (!preset.models.subagentDetails)
+                preset.models.subagentDetails = {};
+            preset.models.subagentDetails[key] = { ...preset.models.subagentDetails[key], ...update };
+        }
+    });
 }
 /**
  * Set ALL tiers' models at once in JSON config and persist.
  */
 export function setAllTierModels(mode, modelName, providerProfileId) {
     const m = resolveMode(mode);
-    const preset = getActivePreset(m);
     const update = { model: modelName };
     if (providerProfileId)
         update.providerProfileId = providerProfileId;
-    if (m === "multi") {
-        preset.models.master = { ...preset.models.master, ...update };
-    }
-    preset.models.superagent = { ...preset.models.superagent, ...update };
-    preset.models.subagentDefault = { ...preset.models.subagentDefault, ...update };
-    if (preset.models.subagentDetails) {
-        for (const key of Object.keys(preset.models.subagentDetails)) {
-            preset.models.subagentDetails[key] = { ...preset.models.subagentDetails[key], ...update };
+    mutateModelConfig((config) => {
+        const activeId = config.activePresetId?.[m];
+        const presetsList = config.presets?.[m];
+        const preset = presetsList?.find((p) => p.id === activeId) || presetsList?.[0];
+        if (!preset?.models)
+            return;
+        if (m === "multi") {
+            preset.models.master = { ...preset.models.master, ...update };
         }
-    }
-    savePreset(m, preset);
+        preset.models.superagent = { ...preset.models.superagent, ...update };
+        preset.models.subagentDefault = { ...preset.models.subagentDefault, ...update };
+        if (preset.models.subagentDetails) {
+            for (const key of Object.keys(preset.models.subagentDetails)) {
+                preset.models.subagentDetails[key] = { ...preset.models.subagentDetails[key], ...update };
+            }
+        }
+    });
 }
 /**
  * Clear a specific tier's model override (set to empty string).

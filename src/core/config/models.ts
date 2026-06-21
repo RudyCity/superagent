@@ -419,18 +419,9 @@ export function getModelInstanceForTier(tier: string, depth: number, subagentTyp
   }
 
   const apiKey = providerProfile?.apiKey || "";
-  const baseUrl = providerProfile?.baseUrl || undefined;
   const provider = providerProfile?.provider || "openai";
   const modelName = tierConfig?.model || getEffectiveMasterModel(mode) || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
-
-  // Construct a prefix that maps back to the profile credentials
   const profileId = providerProfile?.id || provider;
-  const prefix = profileId.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
-  process.env[`PROVIDER_${prefix}_API_KEY`] = apiKey;
-  if (baseUrl) {
-    process.env[`PROVIDER_${prefix}_BASE_URL`] = baseUrl;
-  }
-  process.env[`PROVIDER_${prefix}_TYPE`] = provider;
 
   // If modelName already contains a provider prefix (e.g. 'openai@gpt-4o'), do not double-prepend the profileId
   if (modelName.includes("@")) {
