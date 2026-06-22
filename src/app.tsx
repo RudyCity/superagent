@@ -163,8 +163,56 @@ export function App({
 
   // Visible line positions for mouse click detection
   const [visibleLinePositions, setVisibleLinePositions] = useState<
-    Array<{ index: number; startRow: number; endRow: number; isTruncated: boolean; type: string }>
+    Array<{ index: number; startRow: number; endRow: number; isTruncated: boolean; type: string; isCollapsible?: boolean }>
   >([]);
+
+  // Collapsible chat lines state (tool_start, tool_end, system, error)
+  const [expandedLines, setExpandedLines] = useState<Set<number>>(new Set());
+  const processedCollapseRef = useRef(0);
+
+  // Smart collapse: auto-collapse completed tool calls, keep active ones expanded
+  useEffect(() => {
+    if (lines.length > processedCollapseRef.current) {
+      const newLines = lines.slice(processedCollapseRef.current);
+      setExpandedLines(prev => {
+        const next = new Set(prev);
+        for (let i = processedCollapseRef.current; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.type === "tool_start") {
+            // Active tool starts expanded (will auto-collapse when tool_end arrives)
+            if (isExecutingTool) {
+              next.add(i);
+            }
+            // Non-active tool starts (e.g. loaded from history) stay collapsed
+          } else if (line.type === "tool_end") {
+            // Auto-collapse the matching tool_start
+            for (let j = i - 1; j >= 0; j--) {
+              if (lines[j].type === "tool_start") {
+                next.delete(j);
+                break;
+              }
+            }
+            // tool_end is collapsed by default
+          }
+          // system and error are collapsed by default (not added to set)
+        }
+        return next;
+      });
+      processedCollapseRef.current = lines.length;
+    }
+  }, [lines, isExecutingTool]);
+
+  const toggleLineExpand = useCallback((index: number) => {
+    setExpandedLines(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }, []);
 
   const maxChecklistVisible = 3;
   const maxSuperagentsVisible = 2;
@@ -1654,6 +1702,7 @@ export function App({
     toggleCollapse,
     openResponseAtIndex,
     visibleLinePositions,
+    toggleLineExpand,
   };
 
   return (
@@ -1687,6 +1736,8 @@ export function App({
             formatCompactNumber={formatCompactNumber}
             onVisibleLinesChange={setVisibleLinePositions}
             chatContentStartRow={chatContentStartRow}
+            expandedLines={expandedLines}
+            toggleLineExpand={toggleLineExpand}
           />
 
           {/* Active Agents, Tasks checklists & Wizard dialogs */}

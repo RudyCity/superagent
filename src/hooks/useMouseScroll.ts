@@ -13,6 +13,7 @@ export interface ChatLinePosition {
   endRow: number;
   isTruncated: boolean;
   type: string;
+  isCollapsible?: boolean;
 }
 
 export interface SingleAgentMouseContext {
@@ -54,6 +55,7 @@ export interface SingleAgentMouseContext {
   // Chat item click
   openResponseAtIndex: (index: number) => void;
   visibleLinePositions: ChatLinePosition[];
+  toggleLineExpand?: (index: number) => void;
 }
 
 /**
@@ -155,18 +157,24 @@ export function useMouseScroll(
                 ctx.setFocusedResponseOffset(0);
                 break;
               }
-              // Check if clicked on a truncated chat line
-              let clickedTruncatedLine = false;
+              // Check if clicked on a chat line
+              let handledClick = false;
               for (const pos of ctx.visibleLinePositions) {
                 if (y >= pos.startRow && y <= pos.endRow) {
-                  if (pos.isTruncated && pos.type === "assistant") {
+                  // Collapsible line click → toggle expand/collapse
+                  if (pos.isCollapsible && ctx.toggleLineExpand) {
+                    ctx.toggleLineExpand(pos.index);
+                    handledClick = true;
+                  }
+                  // Truncated assistant line click → open scroll view
+                  else if (pos.isTruncated && pos.type === "assistant") {
                     ctx.openResponseAtIndex(pos.index);
-                    clickedTruncatedLine = true;
+                    handledClick = true;
                   }
                   break;
                 }
               }
-              if (!clickedTruncatedLine) {
+              if (!handledClick) {
                 ctx.setFocusMode("chat");
               }
               break;

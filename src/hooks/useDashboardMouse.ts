@@ -4,6 +4,7 @@ import { wrapTextForDisplay } from "../utils/responseScroll.js";
 import { superagentInstances, subagentInstances, backgroundTasks } from "../core/tools/state.js";
 import { getDashboardSuggestions } from "../utils/dashboardSuggestions.js";
 import { filterSuggestions } from "../utils/text.js";
+import type { LogGroupInfo } from "../utils/dashboardLogFormatter.js";
 
 export interface DashboardMouseContext {
   wrappedLines: React.ReactNode[];
@@ -38,6 +39,12 @@ export interface DashboardMouseContext {
   maxAgentsVisible: number;
   procsCount: number;
   maxProcsVisible: number;
+  /** Start index of visible logs in the full wrappedLines array */
+  startIdxLogs?: number;
+  /** Group boundaries for click detection on collapsible log groups */
+  groupBoundaries?: LogGroupInfo[];
+  /** Toggle expand/collapse for a log group */
+  toggleGroupCollapse?: (groupIndex: number) => void;
 }
 
 export function useDashboardMouse(ctx: DashboardMouseContext) {
@@ -74,6 +81,9 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     maxAgentsVisible,
     procsCount,
     maxProcsVisible,
+    startIdxLogs = 0,
+    groupBoundaries = [],
+    toggleGroupCollapse,
   } = ctx;
 
   useEffect(() => {
@@ -268,6 +278,22 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
                 setFocusArea("checklist");
               }
             } else if (x >= rightStart) {
+              // Clicked in the logs/inspector area
+              // Check if clicked on a collapsible log group
+              if (toggleGroupCollapse && groupBoundaries.length > 0) {
+                // Estimate log box start row within the workspace
+                const workspaceStartRow = 4;
+                const inspectorHeaderRows = 2; // header + task label
+                const logBoxStartRow = workspaceStartRow + inspectorHeaderRows;
+
+                const clickedLogLine = (y - logBoxStartRow) + startIdxLogs;
+                for (const group of groupBoundaries) {
+                  if (group.isCollapsible && clickedLogLine >= group.startLine && clickedLogLine <= group.endLine) {
+                    toggleGroupCollapse(group.groupIndex);
+                    break;
+                  }
+                }
+              }
               setFocusArea("logs");
             }
           } else if (y >= workspaceStartRow + workspaceHeight && y < promptStartRow) {
@@ -399,5 +425,8 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     maxAgentsVisible,
     procsCount,
     maxProcsVisible,
+    startIdxLogs,
+    groupBoundaries,
+    toggleGroupCollapse,
   ]);
 }

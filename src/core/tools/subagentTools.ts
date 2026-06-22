@@ -152,6 +152,13 @@ export const invokeSubagentTool: Tool = {
       return `Error: Maximum subagent delegation depth (2) reached. Spawning subagents from this subagent is blocked.`;
     }
 
+    // Block subagent spawning if parent's plan is not yet approved (mirrors invoke_superagent guard)
+    if (parentAgent && parentAgent.planState !== "APPROVED" && parentAgent.planState !== "IDLE") {
+      if (parentAgent.planState === "PLANNING_PENDING") {
+        return `Error: Spawning Subagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
+      }
+    }
+
     const subType = subagentTypes.get(typeName);
     if (!subType) {
       return `Error: Subagent type "${typeName}" is not defined. Use define_subagent first.`;
@@ -343,6 +350,8 @@ export const invokeSubagentTool: Tool = {
     agentInstance.delegationDepth = parentDepth + 1;
     agentInstance.tier = "subagent";
     agentInstance.subagentType = typeName;
+    // Inherit approved plan state so subagent's internal blocking gates don't falsely activate
+    agentInstance.planState = "APPROVED";
     if (parentAgent) {
       agentInstance.isMultiAgent = parentAgent.isMultiAgent;
     }

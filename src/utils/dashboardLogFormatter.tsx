@@ -13,12 +13,114 @@ interface LogGroup {
   parseMarkdown: boolean;
   noTruncate?: boolean;
   rawLines: string[];
+  /** Group index (position in the groups array) for collapsible tracking */
+  groupIndex?: number;
+}
+
+/** Labels that are collapsible in the multi-agent log view */
+const COLLAPSIBLE_LABELS = new Set([
+  "🔧 TOOL START",
+  "✅ TOOL DONE",
+  "✅ TOOL OK",
+  "🚨 TOOL FAIL",
+  "🧠 THINK",
+  "⚙️ AUTO-APPROVE",
+  "🔧 TOOL START",
+]);
+
+/** Returns true if the given label is collapsible */
+export function isCollapsibleLabel(label: string): boolean {
+  return COLLAPSIBLE_LABELS.has(label);
+}
+
+export interface LogGroupInfo {
+  groupIndex: number;
+  startLine: number;
+  endLine: number;
+  label: string;
+  isCollapsible: boolean;
+}
+
+/** Compute group boundaries for click detection in the multi-agent dashboard */
+export function computeLogGroupBoundaries(
+  selectedSession: AgentSession,
+  feedWidth: number,
+  isHistoryTruncated: boolean,
+  expandedGroups: Set<number>
+): LogGroupInfo[] {
+  const activeLogs = selectedSession.logs.map(l => l.trim()).filter(Boolean);
+  const groups: LogGroup[] = [];
+  for (let logIdx = 0; logIdx < activeLogs.length; logIdx++) {
+    const logStr = activeLogs[logIdx];
+    const isBoxLine = /^[┌├│└─]/.test(logStr);
+    if (isBoxLine) {
+      groups.push({ isBox: true, label: "", color: "gray", isBold: false, dimColor: false, parseMarkdown: false, rawLines: [logStr] });
+      continue;
+    }
+    let label = "INFO";
+    if (logStr.startsWith("[USER]")) label = "👤 USER";
+    else if (logStr.startsWith("[MASTER]")) label = "🤖 SYSTEM";
+    else if (logStr.startsWith("[AGENT]")) label = "🧠 AGENT";
+    else if (logStr.startsWith("[TOOL START]") || logStr.startsWith("[TOOL:START]")) label = "🔧 TOOL START";
+    else if (logStr.startsWith("[TOOL END]") || logStr.startsWith("[TOOL:OK]")) label = "✅ TOOL DONE";
+    else if (logStr.startsWith("[TOOL:FAIL]")) label = "🚨 TOOL FAIL";
+    else if (logStr.startsWith("[ERROR]")) label = "🚨 ERROR";
+    else if (logStr.startsWith("[AUTO-APPROVE]")) label = "⚙️ AUTO-APPROVE";
+    else if (logStr.startsWith("[QUESTION]")) label = "❓ QUESTION";
+    else if (logStr.startsWith("[THINK]")) label = "🧠 THINK";
+
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup && !lastGroup.isBox && lastGroup.label === label) {
+      lastGroup.rawLines.push(logStr);
+    } else {
+      groups.push({ isBox: false, label, color: "gray", isBold: false, dimColor: false, parseMarkdown: false, rawLines: [logStr] });
+    }
+  }
+
+  // Assign group indexes
+  groups.forEach((g, i) => { g.groupIndex = i; });
+
+  const boundaries: LogGroupInfo[] = [];
+  let currentLine = 0;
+
+  for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
+    const group = groups[groupIdx];
+    const isCollapsible = !group.isBox && isCollapsibleLabel(group.label);
+    const isCollapsed = isCollapsible && !expandedGroups.has(groupIdx);
+
+    if (group.isBox) {
+      const lineCount = group.rawLines.length;
+      boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine + lineCount - 1, label: group.label, isCollapsible: false });
+      currentLine += lineCount;
+      continue;
+    }
+
+    if (isCollapsed) {
+      // Collapsed = 1 line (compact header)
+      boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine, label: group.label, isCollapsible: true });
+      currentLine += 1;
+    } else {
+      // Expanded: header + content lines + separator
+      let lineCount = 1; // header
+      for (const rawLine of group.rawLines) {
+        const cleaned = rawLine.replace(/\r\n/g, "\n").replace(/\r/g, "");
+        const subLines = isHistoryTruncated ? cleaned.split("\n") : wrapTextForDisplay(cleaned, Math.max(10, feedWidth - 8));
+        lineCount += subLines.length;
+      }
+      if (groupIdx < groups.length - 1) lineCount += 1; // separator
+      boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine + lineCount - 1, label: group.label, isCollapsible: true });
+      currentLine += lineCount;
+    }
+  }
+
+  return boundaries;
 }
 
 export function computeWrappedLogs(
   selectedSession: AgentSession,
   feedWidth: number,
-  isHistoryTruncated: boolean
+  isHistoryTruncated: boolean,
+  expandedGroups?: Set<number>
 ): React.ReactNode[] {
   const wrappedLines: React.ReactNode[] = [];
   const activeLogs = selectedSession.logs.map(l => l.trim()).filter(Boolean);
@@ -163,6 +265,30 @@ export function computeWrappedLogs(
       continue;
     }
 
+    // Collapsed rendering for collapsible groups
+    const groupIsCollapsible = isCollapsibleLabel(group.label);
+    const groupIsCollapsed = groupIsCollapsible && (!expandedGroups || !expandedGroups.has(groupIdx));
+
+    if (groupIsCollapsed) {
+      const prefix = groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───");
+      const firstContent = group.rawLines[0] || "";
+      const preview = firstContent.length > 50 ? firstContent.slice(0, 47) + "..." : firstContent;
+      const icon = group.label.includes("TOOL START") ? "⚙️" :
+                   group.label.includes("TOOL") && group.label.includes("DONE") ? "✅" :
+                   group.label.includes("TOOL") && group.label.includes("OK") ? "✅" :
+                   group.label.includes("FAIL") ? "🚨" :
+                   group.label.includes("THINK") ? "🧠" :
+                   group.label.includes("AUTO") ? "⚙️" : "▶";
+      wrappedLines.push(
+        <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>
+          <Text color={group.color} dimColor wrap="truncate-end">
+            {prefix} [ <Text bold color={group.color}>▶ {icon} {group.label}</Text> ] <Text dimColor>{preview}</Text> <Text italic dimColor>click to expand</Text>
+          </Text>
+        </Box>
+      );
+      continue;
+    }
+
     const prefix = groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───");
     const subLinePrefix = groupIdx === groups.length - 1 ? "    " : "│   ";
 
@@ -173,6 +299,7 @@ export function computeWrappedLogs(
           <Text color={group.color === "gray" ? "gray" : group.color} bold>{group.label}</Text>
           <Text color="white" bold> ]</Text>
         </Text>
+        {groupIsCollapsible && <Text dimColor italic> click to collapse</Text>}
       </Box>
     );
 

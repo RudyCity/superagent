@@ -66,7 +66,7 @@ import { ProcessingIndicator } from "./common/LoadingIndicators.js";
 
 // Import hooks
 import { useDashboardWizard } from "../hooks/useDashboardWizard.js";
-import { computeWrappedLogs } from "../utils/dashboardLogFormatter.js";
+import { computeWrappedLogs, computeLogGroupBoundaries } from "../utils/dashboardLogFormatter.js";
 import { getDashboardSuggestions, getSuggestionDescriptions } from "../utils/dashboardSuggestions.js";
 import { useDashboardSessions } from "../hooks/useDashboardSessions.js";
 import { useDashboardMouse } from "../hooks/useDashboardMouse.js";
@@ -631,6 +631,27 @@ export function MultiAgentDashboard({
 
   const [logScrollOffset, setLogScrollOffset] = useState(0);
 
+  // Collapsible log groups state (for multi-agent tool/think groups)
+  // Tracks which groups are EXPANDED (all collapsible groups are collapsed by default)
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+
+  // Reset expanded groups when switching sessions
+  useEffect(() => {
+    setExpandedGroups(new Set());
+  }, [selectedIndex]);
+
+  const toggleGroupCollapse = useCallback((groupIndex: number) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupIndex)) {
+        next.delete(groupIndex);
+      } else {
+        next.add(groupIndex);
+      }
+      return next;
+    });
+  }, []);
+
   // Reset scroll offset when switching sessions
   useEffect(() => {
     setLogScrollOffset(0);
@@ -820,7 +841,9 @@ export function MultiAgentDashboard({
     logsCount = Math.max(1, logsCount - executingToolHeight);
   }
 
-  const wrappedLines = computeWrappedLogs(selectedSession, feedWidth, isHistoryTruncated);
+  const wrappedLines = computeWrappedLogs(selectedSession, feedWidth, isHistoryTruncated, expandedGroups);
+
+  const groupBoundaries = computeLogGroupBoundaries(selectedSession, feedWidth, isHistoryTruncated, expandedGroups);
 
   const endIdxLogs = Math.max(0, wrappedLines.length - logScrollOffset);
   const startIdxLogs = Math.max(0, endIdxLogs - logsCount);
@@ -982,6 +1005,9 @@ export function MultiAgentDashboard({
     maxAgentsVisible,
     procsCount: runningTasksCount,
     maxProcsVisible,
+    startIdxLogs,
+    groupBoundaries,
+    toggleGroupCollapse,
   });
 
   const maxVisibleSessions = Math.max(3, leftTopHeight - 2);

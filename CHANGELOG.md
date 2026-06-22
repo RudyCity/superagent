@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.79] - 2026-06-23
+
+### Added
+- **Collapsible Chat Lines (Single-Agent)**: `tool_start`, `tool_end`, `system`, and `error` messages are now collapsible/expandable by clicking. Active tool calls start expanded and auto-collapse when their `tool_end` arrives; completed calls from history stay collapsed by default. Collapsed lines show a compact 1-line header with tool name, status icon, and description preview.
+- **Collapsible Log Groups (Multi-Agent Dashboard)**: Tool start/done/fail, think, and auto-approve log groups in the multi-agent dashboard are now collapsible by clicking. Groups are collapsed by default, showing a compact header with icon, label, and content preview. Expanding shows full log details. Collapsed state resets when switching sessions.
+- **`isCollapsibleType()` Helper**: Exported utility in `chat-line.tsx` to check if a chat line type supports collapse/expand behavior.
+- **`computeLogGroupBoundaries()`**: New exported function in `dashboardLogFormatter.tsx` that computes group start/end line positions for click detection on collapsible log groups in the multi-agent dashboard.
+- **`LogGroupInfo` Type**: New interface for group boundary metadata (groupIndex, startLine, endLine, label, isCollapsible).
+
+### Changed
+- **Plan State Guard Extended to Subagents**: `invoke_subagent` now enforces the same plan-approval gate as `invoke_superagent` — spawning is blocked if the parent agent's plan is not yet approved (`PLANNING_PENDING` or missing plan file). Error messages updated to reference both Superagents and Subagents.
+- **Subagent Plan State Inheritance**: Spawned subagent instances now inherit `planState = "APPROVED"` to prevent false blocking on their own internal plan checks.
+- **Chat Line Height Estimation**: `estimateChatLineHeight()` now accepts a `lineIdx` parameter and accounts for collapsed state when computing scroll positions.
+- **Mouse Click Handling**: Both single-agent (`useMouseScroll.ts`) and multi-agent (`useDashboardMouse.ts`) mouse handlers now detect clicks on collapsible items and toggle expand/collapse, with priority over other click actions.
+
+### Removed
+- **`.gitignore` Cleanup**: Removed redundant entries (`__pycache__/`, `*.pyc`, `dist/`, `node_modules/`, `.fastcontext/`) that are already managed at the project root level.
+
+---
+
 ## [1.1.78] - 2026-06-23
 
 ### Added

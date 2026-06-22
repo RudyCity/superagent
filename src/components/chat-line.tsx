@@ -4,6 +4,11 @@ import { formatCompactNumber } from "../utils/text.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import { capDisplayLines } from "../utils/responseScroll.js";
 
+/** Returns true if the given chat line type supports collapse/expand */
+export function isCollapsibleType(type: string): boolean {
+  return type === "tool_start" || type === "tool_end" || type === "system" || type === "error";
+}
+
 export function truncateStreamDisplay(text: string, maxLines: number, width: number): string {
   const rawLines = text.split("\n");
   let accumulated = 0;
@@ -422,6 +427,8 @@ interface ChatLineComponentProps {
   chatWidth?: number;
   /** When true, skip truncation for this assistant response (used for the last response) */
   isLastAssistant?: boolean;
+  /** When true, render compact collapsed view */
+  isCollapsed?: boolean;
 }
 
 export const ChatLineComponent = React.memo(function ChatLineComponent({
@@ -434,7 +441,20 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
   maxResponseLines,
   chatWidth,
   isLastAssistant,
+  isCollapsed,
 }: ChatLineComponentProps) {
+  // Helper: extract tool name from content
+  const extractToolName = (content: string): string => {
+    const match = content.match(/Detail:\s*(\w+)/);
+    return match ? match[1] : "tool";
+  };
+
+  // Helper: extract description from content
+  const extractDescription = (content: string): string => {
+    const firstLine = content.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
+    return firstLine.length > 60 ? firstLine.slice(0, 57) + "..." : firstLine;
+  };
+
   switch (line.type) {
     case "user": {
       const content = line.content.replace(/^❯ /, "");
@@ -479,10 +499,21 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
     }
     case "tool_start": {
       const content = line.content.replace(/^⚡ /, "");
+      if (isCollapsed) {
+        const toolName = extractToolName(line.content);
+        const desc = extractDescription(content);
+        return (
+          <Box flexDirection="column">
+            <Text color="yellow">
+              ├───[ <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>click to expand</Text>
+            </Text>
+          </Box>
+        );
+      }
       return (
         <Box flexDirection="column">
           <Text color="yellow">
-            ├───[ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ]
+            ├───[ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>click to collapse</Text>
           </Text>
           {renderToolStart(content)}
           <Box flexDirection="row">
@@ -495,10 +526,22 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       const isError = line.content.startsWith("✗");
       const contentText = line.content.substring(2);
       const themeColor = isError ? "red" : "green";
+      if (isCollapsed) {
+        const desc = extractDescription(contentText);
+        const icon = isError ? "🔴" : "🟢";
+        const status = isError ? "Failed" : "Done";
+        return (
+          <Box flexDirection="column">
+            <Text color={themeColor}>
+              ├───[ <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>click to expand</Text>
+            </Text>
+          </Box>
+        );
+      }
       return (
         <Box flexDirection="column">
           <Text color={themeColor}>
-            ├───[ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ]
+            ├───[ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>click to collapse</Text>
           </Text>
           {renderToolEnd(contentText, isError)}
           <Box flexDirection="row">
@@ -509,10 +552,21 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
     }
     case "error": {
       const contentText = line.content.replace(/^Error: /, "");
+      if (isCollapsed) {
+        const firstLine = contentText.split("\n")[0];
+        const preview = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
+        return (
+          <Box flexDirection="column">
+            <Text color="red">
+              ├───[ <Text bold color="red">▶ 🚨 Error:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>click to expand</Text>
+            </Text>
+          </Box>
+        );
+      }
       return (
         <Box flexDirection="column">
           <Text color="red">
-            ├───[ <Text bold color="red">🚨 ERROR_REPORT</Text> ]
+            ├───[ <Text bold color="red">🚨 ERROR_REPORT</Text> ] <Text dimColor italic>click to collapse</Text>
           </Text>
           {contentText.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
@@ -527,10 +581,21 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       );
     }
     case "system":
+      if (isCollapsed) {
+        const firstLine = line.content.split("\n")[0];
+        const preview = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
+        return (
+          <Box flexDirection="column">
+            <Text color="gray">
+              ├───[ <Text bold color="gray">▶ ℹ️ System:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>click to expand</Text>
+            </Text>
+          </Box>
+        );
+      }
       return (
         <Box flexDirection="column">
           <Text color="gray">
-            ├───[ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ]
+            ├───[ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ] <Text dimColor italic>click to collapse</Text>
           </Text>
           {line.content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">

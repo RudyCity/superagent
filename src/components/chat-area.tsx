@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, memo } from "react";
 import { Box, Text } from "ink";
 import { Banner } from "./banner.js";
-import { ChatLineComponent, renderMarkdown, truncateStreamDisplay } from "./chat-line.js";
+import { ChatLineComponent, renderMarkdown, truncateStreamDisplay, isCollapsibleType } from "./chat-line.js";
 import { LoadingIndicator, ToolLoadingIndicator } from "./common/LoadingIndicators.js";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay, renderScrollBar } from "../utils/responseScroll.js";
 import type { ChatLine } from "../core/slash-commands.js";
@@ -32,6 +32,10 @@ export interface ChatAreaProps {
   formatCompactNumber: (val: number) => string;
   onVisibleLinesChange?: (positions: ChatLinePosition[]) => void;
   chatContentStartRow?: number;
+  /** Set of expanded line indexes (for collapsible tool/system/error messages) */
+  expandedLines?: Set<number>;
+  /** Toggle expand/collapse for a specific line index */
+  toggleLineExpand?: (index: number) => void;
 }
 
 export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
@@ -60,6 +64,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     formatCompactNumber,
     onVisibleLinesChange,
     chatContentStartRow = 2,
+    expandedLines = new Set(),
+    toggleLineExpand,
   } = props;
 
   const chatWidth = Math.max(20, terminalWidth - 6);
@@ -73,7 +79,11 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     return count;
   };
 
-  const estimateChatLineHeight = (line: ChatLine, width: number, isLastAssistant: boolean = false): number => {
+  const estimateChatLineHeight = (line: ChatLine, width: number, isLastAssistant: boolean = false, lineIdx: number = -1): number => {
+    // Collapsed items are just 1 line (compact header)
+    if (lineIdx >= 0 && isCollapsibleType(line.type) && !expandedLines.has(lineIdx)) {
+      return 1;
+    }
     let linesCount = 2; // Border header + spacing lines
     const textLines = line.content.split("\n");
     // Only cap assistant responses that are NOT the last one (last response shows full)
@@ -130,7 +140,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     }
 
     for (let i = endIndex - 1; i >= 0; i--) {
-      const h = estimateChatLineHeight(lines[i], chatWidth, i === lastAssistantIdx);
+      const h = estimateChatLineHeight(lines[i], chatWidth, i === lastAssistantIdx, i);
       if (accumulatedHeight + h > effectiveLimit) {
         if (i === endIndex - 1 && effectiveLimit > 0) startIndex = i;
         break;
@@ -143,18 +153,20 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     const positions: ChatLinePosition[] = [];
     for (let i = startIndex; i < endIndex; i++) {
       const line = lines[i];
-      const h = estimateChatLineHeight(line, chatWidth, i === lastAssistantIdx);
+      const h = estimateChatLineHeight(line, chatWidth, i === lastAssistantIdx, i);
+      const isCollapsible = isCollapsibleType(line.type);
       positions.push({
         index: i,
         startRow: currentRow,
         endRow: currentRow + h - 1,
         isTruncated: truncatedIndexes.includes(i),
         type: line.type,
+        isCollapsible,
       });
       currentRow += h;
     }
     return positions;
-  }, [lines, scrollOffset, chatHeightLimit, chatWidth, chatContentStartRow, focusedResponseIndex, isProcessing, streamDisplay, truncatedIndexes, lastAssistantIdx]);
+  }, [lines, scrollOffset, chatHeightLimit, chatWidth, chatContentStartRow, focusedResponseIndex, isProcessing, streamDisplay, truncatedIndexes, lastAssistantIdx, expandedLines]);
 
   useEffect(() => {
     if (onVisibleLinesChange) {
@@ -216,7 +228,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
           }
 
           for (let i = endIndex - 1; i >= 0; i--) {
-            const h = estimateChatLineHeight(lines[i], chatWidth, i === lastAssistantIdx);
+            const h = estimateChatLineHeight(lines[i], chatWidth, i === lastAssistantIdx, i);
             if (accumulatedHeight + h > effectiveChatHeightLimit) {
               if (i === endIndex - 1 && effectiveChatHeightLimit > 0) {
                 startIndex = i; // Show at least the latest line if there is any history space
@@ -233,6 +245,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
             <>
               {visibleLines.map((line, i) => {
                 const originalIndex = startIndex + i;
+                const isCollapsible = isCollapsibleType(line.type);
+                const isCollapsed = isCollapsible && !expandedLines.has(originalIndex);
                 return (
                   <ChatLineComponent
                     key={originalIndex}
@@ -245,6 +259,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
                     maxResponseLines={maxAssistantResponseLines}
                     chatWidth={chatWidth}
                     isLastAssistant={originalIndex === lastAssistantIdx}
+                    isCollapsed={isCollapsed}
                   />
                 );
               })}
