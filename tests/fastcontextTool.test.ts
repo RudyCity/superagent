@@ -95,10 +95,21 @@ function createMockChild(resolvedValue: any = { stdout: "", stderr: "", exitCode
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("fastcontextTool", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     // Default: Python binary exists
     vi.mocked(existsSync).mockReturnValue(true);
+
+    const { loadModelConfig, getActivePreset } = await import("../src/core/config/jsonConfig.js");
+    vi.mocked(loadModelConfig).mockReturnValue({
+      providers: [{ id: "test", provider: "openai", apiKey: "sk-test-key", baseUrl: "" }],
+    } as any);
+    vi.mocked(getActivePreset).mockReturnValue({
+      models: {
+        superagent: { model: "gpt-4o" },
+        subagentDetails: {},
+      },
+    } as any);
   });
 
   it("has correct name and parameters", () => {
@@ -142,9 +153,20 @@ describe("fastcontextTool", () => {
 });
 
 describe("fastcontextTool live output panel", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     vi.mocked(existsSync).mockReturnValue(true);
+
+    const { loadModelConfig, getActivePreset } = await import("../src/core/config/jsonConfig.js");
+    vi.mocked(loadModelConfig).mockReturnValue({
+      providers: [{ id: "test", provider: "openai", apiKey: "sk-test-key", baseUrl: "" }],
+    } as any);
+    vi.mocked(getActivePreset).mockReturnValue({
+      models: {
+        superagent: { model: "gpt-4o" },
+        subagentDetails: {},
+      },
+    } as any);
   });
 
   it("clears and uses appendActiveToolOutput for progress events", async () => {
@@ -287,6 +309,78 @@ describe("fastcontextTool live output panel", () => {
     expect(emitToolLogSpy).not.toHaveBeenCalled();
 
     vi.doUnmock("../src/core/agent.js");
+  });
+
+  it("strips provider prefix from model name and resolves correct credentials", async () => {
+    const { loadModelConfig, getActivePreset } = await import("../src/core/config/jsonConfig.js");
+    
+    vi.mocked(loadModelConfig).mockReturnValue({
+      providers: [
+        { id: "tess", provider: "custom", apiKey: "sk-tess-key", baseUrl: "http://localhost:20128/v1" }
+      ],
+    } as any);
+    
+    vi.mocked(getActivePreset).mockReturnValue({
+      models: {
+        superagent: { providerProfileId: "tess", model: "tess@xmtp/mimo-v2.5-pro" },
+        subagentDetails: {},
+      },
+    } as any);
+
+    const { promise } = createMockChild({ stdout: "success", stderr: "", exitCode: 0 });
+    vi.mocked(execa).mockReturnValue(promise as any);
+
+    await fastcontextTool.execute({ query: "test" }, "/tmp");
+
+    // Verify execa was called with the stripped model name "xmtp/mimo-v2.5-pro"
+    const execaCall = vi.mocked(execa).mock.calls[0];
+    const args = execaCall[1] as string[];
+    const modelArgIndex = args.indexOf("--model");
+    expect(modelArgIndex).toBeGreaterThan(-1);
+    expect(args[modelArgIndex + 1]).toBe("xmtp/mimo-v2.5-pro");
+    
+    const apiKeyArgIndex = args.indexOf("--api-key");
+    expect(apiKeyArgIndex).toBeGreaterThan(-1);
+    expect(args[apiKeyArgIndex + 1]).toBe("sk-tess-key");
+
+    const baseUrlArgIndex = args.indexOf("--base-url");
+    expect(baseUrlArgIndex).toBeGreaterThan(-1);
+    expect(args[baseUrlArgIndex + 1]).toBe("http://localhost:20128/v1");
+  });
+
+  it("falls back to another provider profile if the tier provider has no API key", async () => {
+    const { loadModelConfig, getActivePreset } = await import("../src/core/config/jsonConfig.js");
+    
+    vi.mocked(loadModelConfig).mockReturnValue({
+      providers: [
+        { id: "default-openai", provider: "openai", apiKey: "", baseUrl: "" },
+        { id: "tess", provider: "custom", apiKey: "sk-tess-key", baseUrl: "http://localhost:20128/v1" }
+      ],
+    } as any);
+    
+    vi.mocked(getActivePreset).mockReturnValue({
+      models: {
+        subagentDefault: { providerProfileId: "default-openai", model: "gpt-4o-mini" },
+        subagentDetails: {},
+      },
+    } as any);
+
+    const { promise } = createMockChild({ stdout: "success", stderr: "", exitCode: 0 });
+    vi.mocked(execa).mockReturnValue(promise as any);
+
+    await fastcontextTool.execute({ query: "test" }, "/tmp");
+
+    // Verify execa was called with the fallback provider's API key and baseUrl
+    const execaCall = vi.mocked(execa).mock.calls[0];
+    const args = execaCall[1] as string[];
+    
+    const apiKeyArgIndex = args.indexOf("--api-key");
+    expect(apiKeyArgIndex).toBeGreaterThan(-1);
+    expect(args[apiKeyArgIndex + 1]).toBe("sk-tess-key");
+
+    const baseUrlArgIndex = args.indexOf("--base-url");
+    expect(baseUrlArgIndex).toBeGreaterThan(-1);
+    expect(args[baseUrlArgIndex + 1]).toBe("http://localhost:20128/v1");
   });
 });
 

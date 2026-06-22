@@ -77,7 +77,7 @@ async function resolveFastContextCredentials(): Promise<{
   const { loadModelConfig, getActivePreset } = await import("../config/jsonConfig.js");
 
   const config = loadModelConfig();
-  const isMulti = process.argv.includes("--multi");
+  const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
   const mode = isMulti ? "multi" : "single";
   const activePreset = getActivePreset<any>(mode);
   const providers = config.providers || [];
@@ -104,26 +104,62 @@ async function resolveFastContextCredentials(): Promise<{
     tierName = mode === "multi" ? "master" : "superagent";
   }
 
-  // Find matching provider profile by ID
+  // Extract raw model string and check for provider prefix
+  const rawModel = tierConfig?.model || "";
+  const providerProfileId = tierConfig?.providerProfileId || "";
+
+  // Parse prefix if present in the model string (e.g., "tess@xmtp/mimo-v2.5-pro")
+  let prefix = "";
+  let resolvedModel = rawModel;
+
+  const atIndex = rawModel.indexOf("@");
+  const colonIndex = rawModel.indexOf(":");
+  let separatorIndex = -1;
+  if (atIndex > 0) {
+    separatorIndex = atIndex;
+  } else if (colonIndex > 0 && !rawModel.substring(0, colonIndex).includes("/")) {
+    separatorIndex = colonIndex;
+  }
+
+  const prefixBeforeSeparator = separatorIndex > 0 ? rawModel.substring(0, separatorIndex).toLowerCase() : "";
+  const isProviderPrefix = separatorIndex > 0 && !prefixBeforeSeparator.includes("/");
+
+  if (isProviderPrefix) {
+    prefix = prefixBeforeSeparator;
+    resolvedModel = rawModel.substring(separatorIndex + 1);
+  }
+
+  // Find the provider profile
   let providerProfile: any;
   let providerMismatch = false;
 
-  if (tierConfig?.providerProfileId) {
+  if (prefix) {
     providerProfile = providers.find(
-      (p: any) => p.id === tierConfig.providerProfileId
+      (p: any) => p.id?.toLowerCase() === prefix || p.name?.toLowerCase() === prefix
     );
+  }
+
+  if (!providerProfile && providerProfileId) {
+    providerProfile = providers.find((p: any) => p.id === providerProfileId);
     if (!providerProfile) {
-      // Provider ID specified in tier but not found — fallback with mismatch flag
+      const staleId = providerProfileId.toLowerCase();
       providerProfile = providers.find(
-        (p: any) => p.apiKey && p.apiKey.trim() !== ""
+        (p: any) => p.id?.toLowerCase() === staleId || p.name?.toLowerCase() === staleId || p.provider?.toLowerCase() === staleId
       );
-      providerMismatch = true;
     }
-  } else {
-    // No provider specified in tier — find any with API key
-    providerProfile = providers.find(
+  }
+
+  // Fallback: if providerProfile is not found or has no API key, find first with API key
+  if (!providerProfile || !providerProfile.apiKey || providerProfile.apiKey.trim() === "") {
+    const anyWithKey = providers.find(
       (p: any) => p.apiKey && p.apiKey.trim() !== ""
     );
+    if (anyWithKey) {
+      providerProfile = anyWithKey;
+      providerMismatch = true;
+    } else {
+      providerProfile = providerProfile || providers[0];
+    }
   }
 
   const providerType: string = providerProfile?.provider || "openai";
@@ -132,13 +168,10 @@ async function resolveFastContextCredentials(): Promise<{
   const providerName: string = providerProfile?.name || providerProfile?.id || "unknown";
 
   // Avoid provider/model mismatch when tier provider is missing.
-  const model: string = providerMismatch
-    ? (DEFAULT_FALLBACK_MODELS[providerType] || DEFAULT_FALLBACK_MODELS.openai)
-    : (
-      tierConfig?.model ||
-      DEFAULT_FALLBACK_MODELS[providerType] ||
-      DEFAULT_FALLBACK_MODELS.openai
-    );
+  let model: string = resolvedModel;
+  if (providerMismatch || !model) {
+    model = DEFAULT_FALLBACK_MODELS[providerType] || DEFAULT_FALLBACK_MODELS.openai;
+  }
 
   const baseUrl = customBaseUrl || DEFAULT_BASE_URLS[providerType] || DEFAULT_BASE_URLS.openai;
 
