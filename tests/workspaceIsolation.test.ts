@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import fs from "fs";
+import path from "path";
 import { execa } from "execa";
 import { ensureGitIgnore, setupWorkspaceForSession, cleanupWorkspaceForSession } from "../src/core/workspaceIsolation.js";
 
@@ -56,10 +57,12 @@ describe("workspaceIsolation", () => {
 
   describe("setupWorkspaceForSession", () => {
     it("should call git worktree add and create symlink for node_modules", async () => {
+      const rootNodeModules = path.join(process.cwd(), "node_modules");
       const spyExists = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
         if (typeof p === "string") {
-          if (p.includes(".worktrees")) return false;
-          if (p.includes("node_modules")) return true;
+          const normalizedPath = path.normalize(p).replace(/\\/g, "/");
+          const normalizedRoot = path.normalize(rootNodeModules).replace(/\\/g, "/");
+          if (normalizedPath === normalizedRoot) return true;
         }
         return false;
       });
