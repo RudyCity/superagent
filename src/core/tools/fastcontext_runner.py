@@ -19,6 +19,13 @@ import json
 import os
 import sys
 
+# Force UTF-8 for stdout and stderr to prevent UnicodeEncodeError on Windows
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
+
 # Try to import LiteLLM for multi-provider support (OpenAI, Anthropic, OpenRouter, etc.)
 try:
     import litellm
