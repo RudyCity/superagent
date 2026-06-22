@@ -1340,7 +1340,18 @@ export function App({
   // Setup layouts & heights calculation
   const messageCount = lines.filter((l) => l.type === "user" || l.type === "assistant").length;
   const liveStreamTokens = Math.ceil(streamDisplay.length / 4);
-  const activeContextUsage = lastPromptTokens > 0 ? (lastPromptTokens + liveStreamTokens) : 0;
+  
+  // Use ContextManager's TokenTracker for accurate context usage if available
+  const cm = agentRef.current?.getContextManager?.();
+  let activeContextUsage = 0;
+  if (cm && agentRef.current) {
+    const messages = agentRef.current.getHistory().getMessages();
+    const breakdown = cm.estimateTokensForAll(messages);
+    activeContextUsage = breakdown.total + liveStreamTokens;
+  } else if (lastPromptTokens > 0) {
+    activeContextUsage = lastPromptTokens + liveStreamTokens;
+  }
+  
   const contextPercentage = parseFloat(contextLimit > 0 ? ((activeContextUsage / contextLimit) * 100).toFixed(2) : "0.00");
   const lastUserLine = [...lines].reverse().find((l) => l.type === "user");
   const lastUserPrompt = lastUserLine ? lastUserLine.content.replace(/^❯ /, "").replace(/\n/g, " ") : "";

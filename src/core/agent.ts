@@ -1768,6 +1768,10 @@ ${formatted}`;
     return this.conversation;
   }
 
+  getContextManager() {
+    return this.conversation.getContextManager();
+  }
+
   isAgentRunning(): boolean {
     return this.isRunning;
   }

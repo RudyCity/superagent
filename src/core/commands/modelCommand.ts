@@ -122,6 +122,13 @@ export const modelCommand: SlashCommand = {
             if (ctx.setContextLimit) ctx.setContextLimit(limit);
             if (ctx.setActiveModel) ctx.setActiveModel(nextModel);
 
+            // Update ContextManager if it exists
+            const cm = ctx.agent?.getContextManager?.();
+            if (cm) {
+              cm.setModel(nextModel);
+              cm.setThreshold(limit);
+            }
+
             ctx.addLine({
               type: "system",
               content: `Model preset "${presetName}" saved & applied successfully! [${modeLabel}]\nUpdated Models:\n${formatModelList(info, isMulti)}`,
@@ -137,6 +144,13 @@ export const modelCommand: SlashCommand = {
             
             if (ctx.setContextLimit) ctx.setContextLimit(limit);
             if (ctx.setActiveModel) ctx.setActiveModel(nextModel);
+
+            // Update ContextManager if it exists
+            const cm = ctx.agent?.getContextManager?.();
+            if (cm) {
+              cm.setModel(nextModel);
+              cm.setThreshold(limit);
+            }
 
             ctx.addLine({
               type: "system",
@@ -218,6 +232,13 @@ export const modelCommand: SlashCommand = {
           ctx.setActiveModel(nextModel);
         }
 
+        // Update ContextManager if it exists
+        const cm = ctx.agent?.getContextManager?.();
+        if (cm && !tierArg) {
+          cm.setModel(cleanModelName);
+          cm.setThreshold(limit);
+        }
+
         const info = getActiveModelInfo(isMulti);
         ctx.addLine({
           type: "system",
@@ -230,6 +251,10 @@ export const modelCommand: SlashCommand = {
             .then(() => {
               const newLimit = getContextWindowLimit(cleanModelName);
               if (ctx.setContextLimit) ctx.setContextLimit(newLimit);
+              // Also update ContextManager with fetched limit
+              if (cm) {
+                cm.setThreshold(newLimit);
+              }
             })
             .catch(() => {});
         }

@@ -1,6 +1,6 @@
 import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
-import { getSettings, updateSettings } from "../config.js";
+import { getSettings, updateSettings, getContextWindowLimit, getEffectiveMasterModel } from "../config.js";
 
 // /settings command — show all settings from JSON config
 export const settingsCommand: SlashCommand = {
@@ -224,11 +224,35 @@ export const settingContextLimitCommand: SlashCommand = {
     }
     try {
       updateSettings({ contextWindowLimit: num });
-      ctx.addLine({
-        type: "system",
-        content: `✓ Context window limit set to: ${num > 0 ? `${num} tokens` : "auto (model default)"}`,
-        timestamp: now,
-      });
+
+      // Refresh ContextManager if it exists
+      const cm = ctx.agent?.getContextManager?.();
+      if (cm) {
+        if (num > 0) {
+          cm.setThreshold(num);
+        } else {
+          // Auto mode - reset to model default
+          const currentModel = getEffectiveMasterModel("auto") || "gpt-4o";
+          const modelLimit = getContextWindowLimit(currentModel);
+          cm.setThreshold(modelLimit);
+        }
+        ctx.addLine({
+          type: "system",
+          content: `✓ Context window limit set to: ${num > 0 ? `${num} tokens` : "auto (model default)"}\n  ContextManager threshold updated.`,
+          timestamp: now,
+        });
+      } else {
+        ctx.addLine({
+          type: "system",
+          content: `✓ Context window limit set to: ${num > 0 ? `${num} tokens` : "auto (model default)"}`,
+          timestamp: now,
+        });
+      }
+
+      // Update UI context limit display
+      if (ctx.setContextLimit) {
+        ctx.setContextLimit(num > 0 ? num : 256000);
+      }
     } catch (err: any) {
       ctx.addLine({
         type: "error",
