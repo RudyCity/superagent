@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Box, Text, useApp } from "ink";
 import TextInput from "ink-text-input";
 import { Agent } from "./core/agent.js";
@@ -26,7 +26,7 @@ import { readChecklistTasks, readTaskHistory } from "./core/taskChecklist.js";
 import { StatusBar } from "./components/status-bar.js";
 import { WizardPanels } from "./components/wizard-panels.js";
 import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./components/plan-approval-dialog.js";
-import { ChatArea } from "./components/chat-area.js";
+import { ChatArea, computeWrappedLines } from "./components/chat-area.js";
 import { useWizardSubmit } from "./hooks/useWizardSubmit.js";
 import { useKeyboardHandler } from "./hooks/useKeyboardHandler.js";
 import { useMouseScroll, type SectionBoundary, type ChatLinePosition } from "./hooks/useMouseScroll.js";
@@ -120,6 +120,9 @@ export function App({
   const [scrollOffset, setScrollOffset] = useState(0);
   const [focusedResponseIndex, setFocusedResponseIndex] = useState<number | null>(null);
   const [focusedResponseOffset, setFocusedResponseOffset] = useState(0);
+  
+  const wrappedLinesLengthRef = useRef(0);
+  const chatHeightLimitRef = useRef(15);
   
   const [runningTasksCount, setRunningTasksCount] = useState(0);
   const [runningSubagentsCount, setRunningSubagentsCount] = useState(0);
@@ -270,10 +273,10 @@ export function App({
       if (direction === "down") {
         return Math.max(0, prev - amount);
       }
-      const maxScroll = Math.max(0, lines.length - 15);
+      const maxScroll = Math.max(0, wrappedLinesLengthRef.current - chatHeightLimitRef.current);
       return Math.min(prev + amount, maxScroll);
     });
-  }, [lines.length]);
+  }, []);
 
   // Toggle collapsible section
   const toggleCollapse = useCallback((section: string) => {
@@ -1714,6 +1717,41 @@ export function App({
   const bannerHeight = showBanner ? (gitBranch ? 6 : 8) : 0;
   const chatContentStartRow = bannerHeight + 1 /* header */ + 1 /* first content row */;
 
+  const wrappedLines = useMemo(() => {
+    return computeWrappedLines({
+      lines,
+      chatWidth: Math.max(20, terminalWidth - 6),
+      maxAssistantResponseLines: 12,
+      expandedLines,
+      expandedChildren,
+      tokensUp,
+      tokensDown,
+      modelName: activeModel,
+      isProcessing,
+      streamDisplay,
+      isExecutingTool,
+      activeToolOutput,
+      timeLeft,
+      formatCompactNumber,
+    });
+  }, [
+    lines,
+    terminalWidth,
+    expandedLines,
+    expandedChildren,
+    tokensUp,
+    tokensDown,
+    activeModel,
+    isProcessing,
+    streamDisplay,
+    isExecutingTool,
+    activeToolOutput,
+    timeLeft,
+  ]);
+
+  wrappedLinesLengthRef.current = wrappedLines.length;
+  chatHeightLimitRef.current = chatHeightLimit;
+
   // Update mouse context ref (read by mouse handler on each event)
   mouseCtxRef.current = {
     scrollChat,
@@ -1781,6 +1819,7 @@ export function App({
             toggleLineExpand={toggleLineExpand}
             expandedChildren={expandedChildren}
             toggleChildExpand={toggleChildExpand}
+            wrappedLines={wrappedLines}
           />
 
           {/* Active Agents, Tasks checklists & Wizard dialogs */}

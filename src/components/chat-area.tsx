@@ -4,8 +4,997 @@ import { Banner } from "./banner.js";
 import { ChatLineComponent, renderMarkdown, truncateStreamDisplay, isCollapsibleType } from "./chat-line.js";
 import { LoadingIndicator, ToolLoadingIndicator } from "./common/LoadingIndicators.js";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay, renderScrollBar, capDisplayLines } from "../utils/responseScroll.js";
+import { formatCompactNumber } from "../utils/text.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ChatLinePosition } from "../hooks/useMouseScroll.js";
+
+export interface WrappedChatLine {
+  node: React.ReactNode;
+  lineIndex: number;
+  childIndex?: number;
+  type: string;
+  isHeader?: boolean;
+  isSeparator?: boolean;
+  isCollapsible?: boolean;
+  isTruncated?: boolean;
+}
+
+function visibleLength(str: string): number {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").length;
+}
+
+export function renderInlineMarkdown(text: string, defaultColor: string = "white"): React.ReactNode {
+  const parsedElements: React.ReactNode[] = [];
+  let currentText = text;
+
+  while (currentText.length > 0) {
+    const boldIdx = currentText.indexOf("**");
+    const codeIdx = currentText.indexOf("`");
+    const linkIdx = currentText.indexOf("[");
+    
+    // Check for raw URLs (file:///, http://, https://)
+    const fileUrlIdx = currentText.indexOf("file://");
+    const httpUrlIdx = currentText.indexOf("http://");
+    const httpsUrlIdx = currentText.indexOf("https://");
+    
+    let rawUrlIdx = -1;
+    if (fileUrlIdx !== -1) rawUrlIdx = fileUrlIdx;
+    if (httpUrlIdx !== -1 && (rawUrlIdx === -1 || httpUrlIdx < rawUrlIdx)) rawUrlIdx = httpUrlIdx;
+    if (httpsUrlIdx !== -1 && (rawUrlIdx === -1 || httpsUrlIdx < rawUrlIdx)) rawUrlIdx = httpsUrlIdx;
+
+    let minIdx = -1;
+    let tokenType: "bold" | "code" | "link" | "rawUrl" | "none" = "none";
+
+    if (boldIdx !== -1) {
+      minIdx = boldIdx;
+      tokenType = "bold";
+    }
+
+    if (codeIdx !== -1 && (minIdx === -1 || codeIdx < minIdx)) {
+      minIdx = codeIdx;
+      tokenType = "code";
+    }
+
+    if (linkIdx !== -1 && (minIdx === -1 || linkIdx < minIdx)) {
+      const closeBracketIdx = currentText.indexOf("]", linkIdx);
+      if (closeBracketIdx !== -1 && currentText[closeBracketIdx + 1] === "(") {
+        const closeParenIdx = currentText.indexOf(")", closeBracketIdx + 2);
+        if (closeParenIdx !== -1) {
+          minIdx = linkIdx;
+          tokenType = "link";
+        }
+      }
+    }
+
+    if (rawUrlIdx !== -1 && (minIdx === -1 || rawUrlIdx < minIdx)) {
+      const remainingFromUrl = currentText.slice(rawUrlIdx);
+      const match = remainingFromUrl.match(/^(file:\/\/\/[^\s`'"\(\)\[\]<>]+|https?:\/\/[^\s`'"\(\)\[\]<>]+)/);
+      if (match) {
+        minIdx = rawUrlIdx;
+        tokenType = "rawUrl";
+      }
+    }
+
+    if (tokenType === "none" || minIdx === -1) {
+      parsedElements.push(<Text key={parsedElements.length} color={defaultColor}>{currentText}</Text>);
+      break;
+    }
+
+    if (minIdx > 0) {
+      parsedElements.push(<Text key={parsedElements.length} color={defaultColor}>{currentText.slice(0, minIdx)}</Text>);
+    }
+
+    currentText = currentText.slice(minIdx);
+
+    if (tokenType === "bold") {
+      const nextBoldIdx = currentText.indexOf("**", 2);
+      if (nextBoldIdx !== -1) {
+        const boldContent = currentText.slice(2, nextBoldIdx);
+        parsedElements.push(<Text key={parsedElements.length} bold color="yellow">{boldContent}</Text>);
+        currentText = currentText.slice(nextBoldIdx + 2);
+      } else {
+        parsedElements.push(<Text key={parsedElements.length} color={defaultColor}>{currentText.slice(0, 2)}</Text>);
+        currentText = currentText.slice(2);
+      }
+    } else if (tokenType === "code") {
+      const nextCodeIdx = currentText.indexOf("`", 1);
+      if (nextCodeIdx !== -1) {
+        const codeContent = currentText.slice(1, nextCodeIdx);
+        parsedElements.push(<Text key={parsedElements.length} color="cyan" bold>{codeContent}</Text>);
+        currentText = currentText.slice(nextCodeIdx + 1);
+      } else {
+        parsedElements.push(<Text key={parsedElements.length} color={defaultColor}>{currentText.slice(0, 1)}</Text>);
+        currentText = currentText.slice(1);
+      }
+    } else if (tokenType === "link") {
+      const closeBracketIdx = currentText.indexOf("]");
+      const closeParenIdx = currentText.indexOf(")", closeBracketIdx + 2);
+      const linkText = currentText.slice(1, closeBracketIdx);
+      const linkUrl = currentText.slice(closeBracketIdx + 2, closeParenIdx);
+      
+      const osc8Link = `\u001B]8;;${linkUrl}\u0007${linkText}\u001B]8;;\u0007`;
+      parsedElements.push(
+        <Text key={parsedElements.length} color="cyan" underline>
+          {osc8Link}
+        </Text>
+      );
+      currentText = currentText.slice(closeParenIdx + 1);
+    } else if (tokenType === "rawUrl") {
+      const match = currentText.match(/^(file:\/\/\/[^\s`'"\(\)\[\]<>]+|https?:\/\/[^\s`'"\(\)\[\]<>]+)/);
+      if (match) {
+        let url = match[0];
+        while (url.length > 0 && /[.,;:!?]$/.test(url)) {
+          url = url.slice(0, -1);
+        }
+        const osc8Link = `\u001B]8;;${url}\u0007${url}\u001B]8;;\u0007`;
+        parsedElements.push(
+          <Text key={parsedElements.length} color="cyan" underline>
+            {osc8Link}
+          </Text>
+        );
+        currentText = currentText.slice(url.length);
+      } else {
+        parsedElements.push(<Text key={parsedElements.length} color={defaultColor}>{currentText[0]}</Text>);
+        currentText = currentText.slice(1);
+      }
+    }
+  }
+
+  return <>{parsedElements}</>;
+}
+
+export function wrapMarkdownToLines(
+  content: string,
+  themeColor: string,
+  chatWidth: number,
+  lineIndex: number
+): WrappedChatLine[] {
+  const cleanContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
+  const rawLines = cleanContent.split("\n");
+  const result: WrappedChatLine[] = [];
+
+  let inCodeBlock = false;
+  let codeLanguage = "";
+
+  for (let idx = 0; idx < rawLines.length; idx++) {
+    const l = rawLines[idx];
+    const trimmed = l.trim();
+
+    if (trimmed.startsWith("```")) {
+      inCodeBlock = !inCodeBlock;
+      codeLanguage = trimmed.slice(3).trim();
+      
+      const node = (
+        <Box flexDirection="row">
+          <Text color={themeColor}>│    </Text>
+          <Text color="gray" italic>
+            {inCodeBlock ? `┌─── [ CODE: ${codeLanguage || "TEXT"} ]` : "└─── [ END CODE ]"}
+          </Text>
+        </Box>
+      );
+      result.push({ node, lineIndex, type: "assistant" });
+      continue;
+    }
+
+    if (inCodeBlock) {
+      const subLines = wrapTextForDisplay(l, chatWidth - 8);
+      for (const subLine of subLines) {
+        const node = (
+          <Box flexDirection="row">
+            <Text color={themeColor}>│    │  </Text>
+            <Text color="green">{subLine}</Text>
+          </Box>
+        );
+        result.push({ node, lineIndex, type: "assistant" });
+      }
+      continue;
+    }
+
+    if (l.startsWith("# ")) {
+      const subLines = wrapTextForDisplay(l.slice(2), chatWidth - 5);
+      for (const subLine of subLines) {
+        const node = (
+          <Box flexDirection="row">
+            <Text color={themeColor}>│    </Text>
+            <Text bold color="yellow">{subLine}</Text>
+          </Box>
+        );
+        result.push({ node, lineIndex, type: "assistant" });
+      }
+      continue;
+    }
+    if (l.startsWith("## ")) {
+      const subLines = wrapTextForDisplay(l.slice(3), chatWidth - 5);
+      for (const subLine of subLines) {
+        const node = (
+          <Box flexDirection="row">
+            <Text color={themeColor}>│    </Text>
+            <Text bold color="cyan">{subLine}</Text>
+          </Box>
+        );
+        result.push({ node, lineIndex, type: "assistant" });
+      }
+      continue;
+    }
+    if (l.startsWith("### ")) {
+      const subLines = wrapTextForDisplay(l.slice(4), chatWidth - 5);
+      for (const subLine of subLines) {
+        const node = (
+          <Box flexDirection="row">
+            <Text color={themeColor}>│    </Text>
+            <Text bold color="blue">{subLine}</Text>
+          </Box>
+        );
+        result.push({ node, lineIndex, type: "assistant" });
+      }
+      continue;
+    }
+
+    let listPrefix = "";
+    let isSysLine = false;
+    let remainingText = l;
+    if (l.trim().startsWith("[SYS]")) {
+      isSysLine = true;
+      const sysIndex = l.indexOf("[SYS]");
+      listPrefix = l.slice(0, sysIndex);
+      remainingText = l.slice(sysIndex + 5);
+    } else if (l.trim().startsWith("- ")) {
+      const indent = l.indexOf("- ");
+      listPrefix = " ".repeat(indent) + "• ";
+      remainingText = l.slice(indent + 2);
+    } else if (l.trim().startsWith("* ")) {
+      const indent = l.indexOf("* ");
+      listPrefix = " ".repeat(indent) + "• ";
+      remainingText = l.slice(indent + 2);
+    } else if (/^\d+\.\s/.test(l.trim())) {
+      const match = l.match(/^(\s*)(\d+\.\s)(.*)/);
+      if (match) {
+        listPrefix = match[1] + match[2];
+        remainingText = match[3];
+      }
+    }
+
+    const subLines = wrapTextForDisplay(remainingText, chatWidth - 5 - visibleLength(listPrefix));
+    for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
+      const subLine = subLines[sIdx];
+      const isFirstSubLine = sIdx === 0;
+      
+      const node = (
+        <Box flexDirection="row">
+          <Text color={themeColor}>│    </Text>
+          {isSysLine ? (
+            isFirstSubLine ? (
+              <Text>
+                {listPrefix}
+                <Text bold color="yellow">[SYS]</Text>
+              </Text>
+            ) : (
+              <Text>{" ".repeat(listPrefix.length + 5)}</Text>
+            )
+          ) : listPrefix ? (
+            isFirstSubLine ? (
+              <Text color="blue" bold>{listPrefix}</Text>
+            ) : (
+              <Text>{" ".repeat(listPrefix.length)}</Text>
+            )
+          ) : null}
+          <Box flexShrink={1}>
+            <Text>{renderInlineMarkdown(subLine, "white")}</Text>
+          </Box>
+        </Box>
+      );
+      result.push({ node, lineIndex, type: "assistant" });
+    }
+  }
+
+  return result;
+}
+
+function wrapNestedChild(
+  rawChild: ChatLine,
+  childIdx: number,
+  isCollapsed: boolean,
+  parentIndex: number,
+  chatWidth: number
+): WrappedChatLine[] {
+  const indent = "│        ";
+  const child = {
+    ...rawChild,
+    content: rawChild.content.replace(/\r\n/g, "\n").replace(/\r/g, "")
+  };
+  const result: WrappedChatLine[] = [];
+
+  if (child.type === "tool_start") {
+    const content = child.content.replace(/^⚡ /, "");
+    const firstLine = content.split("\n")[0];
+    const cleanDescRaw = firstLine.replace(/^Detail:\s*/i, "").trim();
+    const cleanDesc = cleanDescRaw.length > 60 ? cleanDescRaw.slice(0, 57) + "..." : cleanDescRaw;
+
+    if (isCollapsed) {
+      const node = (
+        <Box flexDirection="row">
+          <Text color="yellow">
+            {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
+          </Text>
+        </Box>
+      );
+      result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+    } else {
+      const contentLines = content.split("\n");
+      for (let idx = 0; idx < contentLines.length; idx++) {
+        const l = contentLines[idx];
+        const isFirstLine = idx === 0;
+        
+        const subLines = wrapTextForDisplay(
+          isFirstLine ? l.replace(/^(Detail|⚡ Detail):\s*/i, "").trim() : l,
+          chatWidth - 14
+        );
+        for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
+          const subLine = subLines[sIdx];
+          const isFirstSub = isFirstLine && sIdx === 0;
+          
+          const node = (
+            <Box flexDirection="row">
+              <Text color="yellow">
+                {indent}{isFirstSub ? "▼ ⚙️ " : "    "}
+              </Text>
+              {isFirstSub ? (
+                <Text color="yellow">
+                  {subLine}
+                  <Text dimColor italic> (click to collapse)</Text>
+                </Text>
+              ) : (
+                <Text bold color="white">{subLine}</Text>
+              )}
+            </Box>
+          );
+          result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+        }
+      }
+    }
+  } else if (child.type === "tool_end") {
+    const isError = child.content.startsWith("✗") || child.content.startsWith("🚨");
+    const contentText = child.content.substring(2);
+    const themeColor = isError ? "red" : "green";
+    const firstLine = contentText.split("\n")[0];
+    const cleanDescRaw = firstLine.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
+    const cleanDesc = cleanDescRaw.length > 60 ? cleanDescRaw.slice(0, 57) + "..." : cleanDescRaw;
+
+    if (isCollapsed) {
+      const node = (
+        <Box flexDirection="row">
+          <Text color={themeColor}>
+            {indent}<Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text color={themeColor}>{cleanDesc}</Text> <Text dimColor italic>{isError ? "(click to view error)" : "(click to view output)"}</Text>
+          </Text>
+        </Box>
+      );
+      result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_end", isCollapsible: true });
+    } else {
+      const contentLines = contentText.split("\n");
+      for (let idx = 0; idx < contentLines.length; idx++) {
+        const l = contentLines[idx];
+        const isFirstLine = idx === 0;
+        const cleanLine = l.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
+
+        const subLines = wrapTextForDisplay(isFirstLine ? cleanLine : l, chatWidth - 14);
+        for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
+          const subLine = subLines[sIdx];
+          const isFirstSub = isFirstLine && sIdx === 0;
+
+          const node = (
+            <Box flexDirection="row">
+              <Text color={themeColor}>
+                {indent}{isFirstSub ? (isError ? "▼ ✗ " : "▼ ✓ ") : "    "}
+              </Text>
+              {isFirstSub ? (
+                <Text color={themeColor}>
+                  {subLine}
+                  <Text dimColor italic> (click to collapse)</Text>
+                </Text>
+              ) : subLine.startsWith("Output:") || subLine.startsWith("Detail:") ? (() => {
+                const type = subLine.startsWith("Output:") ? "Output: " : "Detail: ";
+                const rest = subLine.substring(type.length);
+                return (
+                  <Text>
+                    <Text bold color={isError ? "cyan" : "gray"} dimColor={!isError}>{type}</Text>
+                    <Text dimColor>{rest}</Text>
+                  </Text>
+                );
+              })() : (
+                <Text color={isError ? "white" : "gray"} dimColor={!isError}>{subLine}</Text>
+              )}
+            </Box>
+          );
+          result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_end", isCollapsible: true });
+        }
+      }
+    }
+  } else {
+    const contentLines = child.content.split("\n");
+    for (const l of contentLines) {
+      const subLines = wrapTextForDisplay(l, chatWidth - 14);
+      for (const subLine of subLines) {
+        const node = (
+          <Box flexDirection="row">
+            <Text color="gray">{indent}│    </Text>
+            <Text>{subLine}</Text>
+          </Box>
+        );
+        result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: child.type });
+      }
+    }
+  }
+
+  return result;
+}
+
+export function wrapChatLineToLines({
+  line,
+  isFirst,
+  lineIndex,
+  tokensUp,
+  tokensDown,
+  modelName,
+  maxResponseLines,
+  chatWidth,
+  isLastAssistant,
+  isCollapsed,
+  expandedChildren,
+}: {
+  line: ChatLine;
+  isFirst: boolean;
+  lineIndex: number;
+  tokensUp: number;
+  tokensDown: number;
+  modelName: string;
+  maxResponseLines: number;
+  chatWidth: number;
+  isLastAssistant: boolean;
+  isCollapsed: boolean;
+  expandedChildren: Set<number>;
+}): WrappedChatLine[] {
+  const result: WrappedChatLine[] = [];
+
+  switch (line.type) {
+    case "user": {
+      const content = line.content.replace(/^❯ /, "");
+      const headerNode = (
+        <Box flexDirection="row">
+          <Text color="cyan">
+            {isFirst ? "┌" : "├"}─── [ <Text bold color="cyan">👤 ACCESS_POINT: USER</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
+          </Text>
+        </Box>
+      );
+      result.push({ node: headerNode, lineIndex, type: "user", isHeader: true });
+
+      const subLines = wrapTextForDisplay(content, chatWidth - 5);
+      for (const subLine of subLines) {
+        const node = (
+          <Box flexDirection="row">
+            <Text color="cyan">│    </Text>
+            <Text>{subLine}</Text>
+          </Box>
+        );
+        result.push({ node, lineIndex, type: "user" });
+      }
+
+      const separatorNode = (
+        <Box flexDirection="row">
+          <Text color="cyan">│ </Text>
+        </Box>
+      );
+      result.push({ node: separatorNode, lineIndex, type: "user", isSeparator: true });
+      break;
+    }
+    case "assistant": {
+      const capped = isLastAssistant
+        ? { text: line.content, truncated: false }
+        : capDisplayLines(line.content, maxResponseLines || 12, chatWidth || 80);
+
+      const headerNode = (
+        <Box flexDirection="row">
+          <Text color="blue">
+            {isFirst ? "┌" : "├"}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT{modelName ? ` (${modelName})` : ""}</Text><Text dimColor> (▲{formatCompactNumber(tokensUp || 0)} | ▼{formatCompactNumber(tokensDown || 0)})</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
+          </Text>
+        </Box>
+      );
+      result.push({ node: headerNode, lineIndex, type: "assistant", isHeader: true });
+
+      const contentLines = wrapMarkdownToLines(capped.text, "blue", chatWidth, lineIndex);
+      for (const wrappedContentLine of contentLines) {
+        result.push({
+          ...wrappedContentLine,
+          isTruncated: capped.truncated,
+        });
+      }
+
+      if (capped.truncated) {
+        const noticeNode = (
+          <Box flexDirection="row">
+            <Text color="blue">│    </Text>
+            <Text color="yellow">... [response panjang dipotong; klik untuk buka scroll view, mouse scroll / ↑↓] ...</Text>
+          </Box>
+        );
+        result.push({ node: noticeNode, lineIndex, type: "assistant", isTruncated: true });
+      }
+
+      const children = line.children || [];
+      if (children.length > 0) {
+        for (let childIdx = 0; childIdx < children.length; childIdx++) {
+          const isChildCollapsed = isCollapsibleType(children[childIdx].type) && !expandedChildren.has(childIdx);
+          const childLines = wrapNestedChild(children[childIdx], childIdx, isChildCollapsed, lineIndex, chatWidth);
+          result.push(...childLines);
+        }
+      }
+
+      const separatorNode = (
+        <Box flexDirection="row">
+          <Text color="blue">│ </Text>
+        </Box>
+      );
+      result.push({ node: separatorNode, lineIndex, type: "assistant", isSeparator: true });
+      break;
+    }
+    case "tool_start": {
+      const content = line.content.replace(/^⚡ /, "");
+      const extractToolName = (str: string): string => {
+        const match = str.match(/Detail:\s*(\w+)/);
+        return match ? match[1] : "tool";
+      };
+      const extractDescription = (str: string): string => {
+        const firstLine = str.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
+        return firstLine.length > 60 ? firstLine.slice(0, 57) + "..." : firstLine;
+      };
+
+      if (isCollapsed) {
+        const toolName = extractToolName(line.content);
+        const desc = extractDescription(content);
+        const node = (
+          <Box flexDirection="row">
+            <Text color="yellow">
+              ├─── [ <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>click to expand</Text>
+            </Text>
+          </Box>
+        );
+        result.push({ node, lineIndex, type: "tool_start", isCollapsible: true });
+      } else {
+        const headerNode = (
+          <Box flexDirection="row">
+            <Text color="yellow">
+              ├─── [ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>click to collapse</Text>
+            </Text>
+          </Box>
+        );
+        result.push({ node: headerNode, lineIndex, type: "tool_start", isHeader: true, isCollapsible: true });
+
+        const contentLines = content.split("\n");
+        for (const l of contentLines) {
+          if (l.includes("Detail:")) {
+            const parts = l.split("Detail:");
+            const prefix = parts[0] + "Detail: ";
+            const rest = parts[1];
+            const openParenIdx = rest.indexOf("(");
+            if (openParenIdx !== -1) {
+              const toolName = rest.slice(0, openParenIdx).trim();
+              let remaining = rest.slice(openParenIdx + 1);
+              let hasClose = false;
+              if (remaining.endsWith(")")) {
+                remaining = remaining.slice(0, -1);
+                hasClose = true;
+              }
+
+              const detailSubLines = wrapTextForDisplay(remaining, chatWidth - 5 - (prefix.length + toolName.length + 2));
+              for (let sIdx = 0; sIdx < detailSubLines.length; sIdx++) {
+                const sub = detailSubLines[sIdx];
+                const isFirstSub = sIdx === 0;
+
+                const node = (
+                  <Box flexDirection="row">
+                    <Text color="yellow">│    </Text>
+                    {isFirstSub ? (
+                      <Text>
+                        <Text dimColor>{prefix}</Text>
+                        <Text bold color="green">{toolName}</Text>
+                        <Text color="cyan">(</Text>
+                        <Text color="yellow">{sub}</Text>
+                        {hasClose && detailSubLines.length === 1 && <Text color="cyan">)</Text>}
+                      </Text>
+                    ) : (
+                      <Text>
+                        {" ".repeat(prefix.length + toolName.length + 1)}
+                        <Text color="yellow">{sub}</Text>
+                        {hasClose && sIdx === detailSubLines.length - 1 && <Text color="cyan">)</Text>}
+                      </Text>
+                    )}
+                  </Box>
+                );
+                result.push({ node, lineIndex, type: "tool_start", isCollapsible: true });
+              }
+              continue;
+            }
+          }
+
+          const subLines = wrapTextForDisplay(l, chatWidth - 5);
+          for (const subLine of subLines) {
+            const node = (
+              <Box flexDirection="row">
+                <Text color="yellow">│    </Text>
+                <Text bold color="white">{subLine}</Text>
+              </Box>
+            );
+            result.push({ node, lineIndex, type: "tool_start", isCollapsible: true });
+          }
+        }
+
+        const separatorNode = (
+          <Box flexDirection="row">
+            <Text color="yellow">│ </Text>
+          </Box>
+        );
+        result.push({ node: separatorNode, lineIndex, type: "tool_start", isSeparator: true, isCollapsible: true });
+      }
+      break;
+    }
+    case "tool_end": {
+      const isError = line.content.startsWith("✗");
+      const contentText = line.content.substring(2);
+      const themeColor = isError ? "red" : "green";
+      const extractDescription = (str: string): string => {
+        const firstLine = str.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
+        return firstLine.length > 60 ? firstLine.slice(0, 57) + "..." : firstLine;
+      };
+
+      if (isCollapsed) {
+        const desc = extractDescription(contentText);
+        const icon = isError ? "🔴" : "🟢";
+        const status = isError ? "Failed" : "Done";
+        const node = (
+          <Box flexDirection="row">
+            <Text color={themeColor}>
+              ├─── [ <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>click to expand</Text>
+            </Text>
+          </Box>
+        );
+        result.push({ node, lineIndex, type: "tool_end", isCollapsible: true });
+      } else {
+        const headerNode = (
+          <Box flexDirection="row">
+            <Text color={themeColor}>
+              ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>click to collapse</Text>
+            </Text>
+          </Box>
+        );
+        result.push({ node: headerNode, lineIndex, type: "tool_end", isHeader: true, isCollapsible: true });
+
+        const contentLines = contentText.split("\n");
+        for (const l of contentLines) {
+          if (l.startsWith("Output:") || l.startsWith("Detail:")) {
+            const type = l.startsWith("Output:") ? "Output: " : "Detail: ";
+            const rest = l.substring(type.length);
+
+            const subLines = wrapTextForDisplay(rest, chatWidth - 5 - type.length);
+            for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
+              const sub = subLines[sIdx];
+              const isFirstSub = sIdx === 0;
+
+              const node = (
+                <Box flexDirection="row">
+                  <Text color={themeColor}>│    </Text>
+                  {isFirstSub ? (
+                    <Text>
+                      <Text bold color={isError ? "cyan" : "gray"} dimColor={!isError}>{type}</Text>
+                      <Text dimColor>{sub}</Text>
+                    </Text>
+                  ) : (
+                    <Text>
+                      {" ".repeat(type.length)}
+                      <Text dimColor>{sub}</Text>
+                    </Text>
+                  )}
+                </Box>
+              );
+              result.push({ node, lineIndex, type: "tool_end", isCollapsible: true });
+            }
+            continue;
+          }
+
+          const subLines = wrapTextForDisplay(l, chatWidth - 5);
+          for (const subLine of subLines) {
+            const node = (
+              <Box flexDirection="row">
+                <Text color={themeColor}>│    </Text>
+                <Text color={isError ? "white" : "gray"} dimColor={!isError}>{subLine}</Text>
+              </Box>
+            );
+            result.push({ node, lineIndex, type: "tool_end", isCollapsible: true });
+          }
+        }
+
+        const separatorNode = (
+          <Box flexDirection="row">
+            <Text color={themeColor}>│ </Text>
+          </Box>
+        );
+        result.push({ node: separatorNode, lineIndex, type: "tool_end", isSeparator: true, isCollapsible: true });
+      }
+      break;
+    }
+    case "error": {
+      const contentText = line.content.replace(/^Error: /, "");
+      if (isCollapsed) {
+        const firstLine = contentText.split("\n")[0];
+        const preview = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
+        const node = (
+          <Box flexDirection="row">
+            <Text color="red">
+              ├─── [ <Text bold color="red">▶ 🚨 Error:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>click to expand</Text>
+            </Text>
+          </Box>
+        );
+        result.push({ node, lineIndex, type: "error", isCollapsible: true });
+      } else {
+        const headerNode = (
+          <Box flexDirection="row">
+            <Text color="red">
+              ├─── [ <Text bold color="red">🚨 ERROR_REPORT</Text> ] <Text dimColor italic>click to collapse</Text>
+            </Text>
+          </Box>
+        );
+        result.push({ node: headerNode, lineIndex, type: "error", isHeader: true, isCollapsible: true });
+
+        const contentLines = contentText.split("\n");
+        for (const l of contentLines) {
+          const subLines = wrapTextForDisplay(l, chatWidth - 5);
+          for (const subLine of subLines) {
+            const node = (
+              <Box flexDirection="row">
+                <Text color="red">│    </Text>
+                <Text color="red">{subLine}</Text>
+              </Box>
+            );
+            result.push({ node, lineIndex, type: "error", isCollapsible: true });
+          }
+        }
+
+        const separatorNode = (
+          <Box flexDirection="row">
+            <Text color="red">│ </Text>
+          </Box>
+        );
+        result.push({ node: separatorNode, lineIndex, type: "error", isSeparator: true, isCollapsible: true });
+      }
+      break;
+    }
+    case "system": {
+      if (isCollapsed) {
+        const firstLine = line.content.split("\n")[0];
+        const preview = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
+        const node = (
+          <Box flexDirection="row">
+            <Text color="gray">
+              ├─── [ <Text bold color="gray">▶ ℹ️ System:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>click to expand</Text>
+            </Text>
+          </Box>
+        );
+        result.push({ node, lineIndex, type: "system", isCollapsible: true });
+      } else {
+        const headerNode = (
+          <Box flexDirection="row">
+            <Text color="gray">
+              ├─── [ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ] <Text dimColor italic>click to collapse</Text>
+            </Text>
+          </Box>
+        );
+        result.push({ node: headerNode, lineIndex, type: "system", isHeader: true, isCollapsible: true });
+
+        const contentLines = line.content.split("\n");
+        for (const l of contentLines) {
+          const subLines = wrapTextForDisplay(l, chatWidth - 5);
+          for (const subLine of subLines) {
+            const node = (
+              <Box flexDirection="row">
+                <Text color="gray">│    </Text>
+                <Text color="gray" italic>{subLine}</Text>
+              </Box>
+            );
+            result.push({ node, lineIndex, type: "system", isCollapsible: true });
+          }
+        }
+
+        const separatorNode = (
+          <Box flexDirection="row">
+            <Text color="gray">│ </Text>
+          </Box>
+        );
+        result.push({ node: separatorNode, lineIndex, type: "system", isSeparator: true, isCollapsible: true });
+      }
+      break;
+    }
+    default: {
+      const headerNode = (
+        <Box flexDirection="row">
+          <Text color="gray">
+            ├─── [ <Text bold color="gray">COMM_PACKET</Text> ]
+          </Text>
+        </Box>
+      );
+      result.push({ node: headerNode, lineIndex, type: "default" });
+
+      const contentLines = line.content.split("\n");
+      for (const l of contentLines) {
+        const subLines = wrapTextForDisplay(l, chatWidth - 5);
+        for (const subLine of subLines) {
+          const node = (
+            <Box flexDirection="row">
+              <Text color="gray">│    </Text>
+              <Text>{subLine}</Text>
+            </Box>
+          );
+          result.push({ node, lineIndex, type: "default" });
+        }
+      }
+
+      const separatorNode = (
+        <Box flexDirection="row">
+          <Text color="gray">│ </Text>
+        </Box>
+      );
+      result.push({ node: separatorNode, lineIndex, type: "default", isSeparator: true });
+      break;
+    }
+  }
+
+  return result;
+}
+
+export function computeWrappedLines({
+  lines,
+  chatWidth,
+  maxAssistantResponseLines,
+  expandedLines,
+  expandedChildren,
+  tokensUp,
+  tokensDown,
+  modelName,
+  isProcessing,
+  streamDisplay,
+  isExecutingTool,
+  activeToolOutput,
+  timeLeft,
+  formatCompactNumber,
+}: {
+  lines: ChatLine[];
+  chatWidth: number;
+  maxAssistantResponseLines: number;
+  expandedLines: Set<number>;
+  expandedChildren: Map<number, Set<number>>;
+  tokensUp: number;
+  tokensDown: number;
+  modelName: string;
+  isProcessing: boolean;
+  streamDisplay: string;
+  isExecutingTool: boolean;
+  activeToolOutput: string;
+  timeLeft: number | null;
+  formatCompactNumber: (val: number) => string;
+}): WrappedChatLine[] {
+  const result: WrappedChatLine[] = [];
+
+  const lastAssistantIdx = (() => {
+    const shouldRenderStreamNow = isProcessing && streamDisplay && streamDisplay.trim().length > 0;
+    if (shouldRenderStreamNow) return -1;
+    for (let j = lines.length - 1; j >= 0; j--) {
+      if (lines[j].type === "assistant") return j;
+    }
+    return -1;
+  })();
+
+  // 1. Process all completed lines
+  for (let idx = 0; idx < lines.length; idx++) {
+    const isFirst = idx === 0;
+    const isCollapsed = isCollapsibleType(lines[idx].type) && !expandedLines.has(idx);
+    const childSet = expandedChildren.get(idx) || new Set<number>();
+
+    const wrapped = wrapChatLineToLines({
+      line: lines[idx],
+      isFirst,
+      lineIndex: idx,
+      tokensUp,
+      tokensDown,
+      modelName,
+      maxResponseLines: maxAssistantResponseLines,
+      chatWidth,
+      isLastAssistant: idx === lastAssistantIdx,
+      isCollapsed,
+      expandedChildren: childSet,
+    });
+    result.push(...wrapped);
+  }
+
+  // 2. Append Live Streaming / Thinking / Tool Output
+  const isLastLinesEmpty = lines.length === 0;
+  const borderPrefix = isLastLinesEmpty ? "┌" : "├";
+
+  const shouldRenderStream = isProcessing && streamDisplay && streamDisplay.trim().length > 0;
+  if (shouldRenderStream) {
+    const headerNode = (
+      <Box flexDirection="row">
+        <Text color="blue">
+          {borderPrefix}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown)})</Text> ]
+        </Text>
+      </Box>
+    );
+    result.push({ node: headerNode, lineIndex: -1, type: "assistant", isHeader: true });
+
+    const contentLines = wrapMarkdownToLines(streamDisplay, "blue", chatWidth, -1);
+    result.push(...contentLines);
+  }
+
+  const shouldRenderThinking = isProcessing && (!streamDisplay || streamDisplay.trim().length === 0) && !isExecutingTool;
+  if (shouldRenderThinking) {
+    const headerNode = (
+      <Box flexDirection="row">
+        <Text color="blue">
+          {borderPrefix}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown)})</Text> ]
+        </Text>
+      </Box>
+    );
+    result.push({ node: headerNode, lineIndex: -1, type: "assistant", isHeader: true });
+
+    const bodyNode = (
+      <Box flexDirection="row">
+        <Text color="blue">│    </Text>
+        <LoadingIndicator />
+      </Box>
+    );
+    result.push({ node: bodyNode, lineIndex: -1, type: "assistant" });
+  }
+
+  if (isExecutingTool) {
+    const headerNode = (
+      <Box flexDirection="row">
+        <Text color="yellow">
+          {borderPrefix}─── [ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
+        </Text>
+      </Box>
+    );
+    result.push({ node: headerNode, lineIndex: -1, type: "tool_start", isHeader: true });
+
+    const spinnerNode = (
+      <Box flexDirection="row">
+        <Text color="yellow">│    </Text>
+        <ToolLoadingIndicator />
+      </Box>
+    );
+    result.push({ node: spinnerNode, lineIndex: -1, type: "tool_start" });
+
+    const activeToolLines = activeToolOutput ? activeToolOutput.trim().split("\n").slice(-8) : [];
+    if (activeToolLines.length > 0) {
+      const liveOutputHeader = (
+        <Box flexDirection="row">
+          <Text color="yellow">├─── [ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]</Text>
+        </Box>
+      );
+      result.push({ node: liveOutputHeader, lineIndex: -1, type: "tool_start" });
+
+      for (const line of activeToolLines) {
+        const subLines = wrapTextForDisplay(line, chatWidth - 5);
+        for (const subLine of subLines) {
+          const node = (
+            <Box flexDirection="row">
+              <Text color="yellow">│    </Text>
+              <Text color="gray">{subLine}</Text>
+            </Box>
+          );
+          result.push({ node, lineIndex: -1, type: "tool_start" });
+        }
+      }
+    }
+  }
+
+  return result;
+}
 
 export interface ChatAreaProps {
   showBanner: boolean;
@@ -32,14 +1021,11 @@ export interface ChatAreaProps {
   formatCompactNumber: (val: number) => string;
   onVisibleLinesChange?: (positions: ChatLinePosition[]) => void;
   chatContentStartRow?: number;
-  /** Set of expanded line indexes (for collapsible tool/system/error messages) */
   expandedLines?: Set<number>;
-  /** Toggle expand/collapse for a specific line index */
   toggleLineExpand?: (index: number) => void;
-  /** Map of parent line index -> Set of expanded child indexes (for nested tool children) */
   expandedChildren?: Map<number, Set<number>>;
-  /** Toggle expand/collapse for a nested child line */
   toggleChildExpand?: (parentIndex: number, childIndex: number) => void;
+  wrappedLines?: WrappedChatLine[];
 }
 
 export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
@@ -72,223 +1058,118 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     toggleLineExpand,
     expandedChildren = new Map(),
     toggleChildExpand,
+    wrappedLines: passedWrappedLines,
   } = props;
 
   const chatWidth = Math.max(20, terminalWidth - 6);
 
-  const estimateMarkdownLines = (text: string, width: number): number => {
-    let count = 0;
-    const rawLines = text.split("\n");
-    for (const l of rawLines) {
-      count += Math.max(1, Math.ceil(l.length / width));
-    }
-    return count;
-  };
-
-  const estimateChatLineHeight = (line: ChatLine, width: number, isLastAssistant: boolean = false, lineIdx: number = -1): number => {
-    // Collapsed items are just 1 line (compact header)
-    if (lineIdx >= 0 && isCollapsibleType(line.type) && !expandedLines.has(lineIdx)) {
-      return 1;
-    }
-
-    // Content width accounts for the "│    " prefix (5 visual chars) in assistant rendering
-    const assistantContentWidth = Math.max(10, width - 5);
-    // Nested child content width: indent("│    " = 5) + indicator("▼ ✓ " = 4) = 9 chars prefix (clamped to 10)
-    const childContentWidth = Math.max(10, width - 10);
-
-    let linesCount = 2; // Border header + closing lines
-
-    if (line.type === "assistant" && !isLastAssistant) {
-      // Apply capDisplayLines like the actual rendering does
-      const capped = capDisplayLines(line.content, maxAssistantResponseLines + 1, assistantContentWidth);
-      const textLines = capped.text.split("\n");
-      for (const l of textLines) {
-        linesCount += Math.max(1, Math.ceil(l.length / assistantContentWidth));
-      }
-      if (capped.truncated) linesCount += 1; // truncation indicator line
-    } else {
-      const textLines = line.content.split("\n");
-      for (const l of textLines) {
-        let rawText = l;
-        if (line.type === "user") {
-          rawText = l.replace(/^❯ /, "");
-        } else if (line.type === "tool_start") {
-          rawText = l.replace(/^⚡ /, "");
-        }
-        linesCount += Math.max(1, Math.ceil(rawText.length / width));
-      }
-    }
-
-    // Account for nested children
-    if (line.children && line.children.length > 0) {
-      const childExpanded = expandedChildren.get(lineIdx) || new Set();
-      for (let ci = 0; ci < line.children.length; ci++) {
-        const child = line.children[ci];
-        const childIsCollapsed = isCollapsibleType(child.type) && !childExpanded.has(ci);
-        if (childIsCollapsed) {
-          linesCount += 1; // Collapsed = 1 line (compact summary)
-        } else {
-          // Expanded = just content lines (no header/closing)
-          const childLines = child.content.split("\n");
-          for (const cl of childLines) {
-            linesCount += Math.max(1, Math.ceil(cl.length / childContentWidth));
-          }
-        }
-      }
-    }
-    return linesCount;
-  };
-
-  const activeToolLines = activeToolOutput ? activeToolOutput.trim().split("\n").slice(-8) : [];
-  const activeToolLinesCount = activeToolLines.length;
-
-  // Find the last assistant message index in the full lines array.
-  // When streaming, the live response is shown separately (always untruncated),
-  // so all completed messages in `lines` count as "previous" and may be truncated.
-  // When NOT streaming, the last assistant message is the "final" response
-  // and should be shown in full without hide/truncate.
-  const shouldRenderStreamNow = scrollOffset === 0 && isProcessing && streamDisplay && streamDisplay.trim().length > 0;
-  const lastAssistantIdx = useMemo(() => {
-    if (shouldRenderStreamNow) return -1;
-    for (let j = lines.length - 1; j >= 0; j--) {
-      if (lines[j].type === "assistant") return j;
-    }
-    return -1;
-  }, [lines, shouldRenderStreamNow]);
-
-  // Calculate visible line positions for mouse click detection
-  const truncatedIndexes = useMemo(
-    () => getTruncatedAssistantIndexes(lines, maxAssistantResponseLines, chatWidth),
-    [lines, maxAssistantResponseLines, chatWidth]
-  );
+  const localWrappedLines = useMemo(() => {
+    if (passedWrappedLines) return passedWrappedLines;
+    return computeWrappedLines({
+      lines,
+      chatWidth,
+      maxAssistantResponseLines,
+      expandedLines,
+      expandedChildren,
+      tokensUp,
+      tokensDown,
+      modelName,
+      isProcessing,
+      streamDisplay,
+      isExecutingTool,
+      activeToolOutput,
+      timeLeft,
+      formatCompactNumber,
+    });
+  }, [
+    passedWrappedLines,
+    lines,
+    chatWidth,
+    maxAssistantResponseLines,
+    expandedLines,
+    expandedChildren,
+    tokensUp,
+    tokensDown,
+    modelName,
+    isProcessing,
+    streamDisplay,
+    isExecutingTool,
+    activeToolOutput,
+    timeLeft,
+    formatCompactNumber,
+  ]);
 
   const visibleLinePositions = useMemo(() => {
     if (focusedResponseIndex !== null) return [];
 
-    const shouldRenderStream = scrollOffset === 0 && isProcessing && streamDisplay && streamDisplay.trim().length > 0;
-    let startIndex = lines.length;
-    let accumulatedHeight = 0;
-    const endIndex = scrollOffset === 0 ? lines.length : Math.max(0, lines.length - scrollOffset);
+    const endIdx = localWrappedLines.length - scrollOffset;
+    const startIdx = Math.max(0, endIdx - chatHeightLimit);
+    const visibleWrappedLines = localWrappedLines.slice(startIdx, endIdx);
 
-    let effectiveLimit = chatHeightLimit;
-    if (shouldRenderStream) {
-      effectiveLimit = Math.max(0, chatHeightLimit - estimateMarkdownLines(streamDisplay, chatWidth));
-    }
-
-    for (let i = endIndex - 1; i >= 0; i--) {
-      const h = estimateChatLineHeight(lines[i], chatWidth, i === lastAssistantIdx, i);
-      if (accumulatedHeight + h > effectiveLimit) {
-        if (i === endIndex - 1 && effectiveLimit > 0) startIndex = i;
-        break;
-      }
-      accumulatedHeight += h;
-      startIndex = i;
-    }
-
-    let currentRow = chatContentStartRow;
     const positions: ChatLinePosition[] = [];
-    for (let i = startIndex; i < endIndex; i++) {
-      const line = lines[i];
-      const h = estimateChatLineHeight(line, chatWidth, i === lastAssistantIdx, i);
-      const isCollapsible = isCollapsibleType(line.type);
+    let currentBlockIndex = -1;
+    let currentChildIndex = -1;
+    let activePos: ChatLinePosition | null = null;
 
-      if (line.type === "assistant" && line.children && line.children.length > 0) {
-        // Calculate parent text height (header + text + truncation + closing, without children)
-        // Use contentWidth to account for "│    " prefix (5 chars) in renderMarkdown
-        const contentWidth = Math.max(10, chatWidth - 5);
-        let parentH = 2; // header + closing
+    for (let i = 0; i < visibleWrappedLines.length; i++) {
+      const line = visibleWrappedLines[i];
+      const y = chatContentStartRow + i;
 
-        if (i !== lastAssistantIdx) {
-          // Apply capDisplayLines like the actual rendering does
-          const capped = capDisplayLines(line.content, (maxAssistantResponseLines || 12) + 1, contentWidth);
-          const textLines = capped.text.split("\n");
-          for (const l of textLines) {
-            parentH += Math.max(1, Math.ceil(l.length / contentWidth));
-          }
-          if (capped.truncated) parentH += 1; // truncation indicator line
-        } else {
-          const textLines = line.content.split("\n");
-          for (const l of textLines) {
-            parentH += Math.max(1, Math.ceil(l.length / contentWidth));
-          }
+      if (line.lineIndex === -1) {
+        if (activePos) {
+          positions.push(activePos);
+          activePos = null;
         }
-        // Calculate parent text height without the closing line
-        const parentHWithoutClosing = parentH - 1;
+        currentBlockIndex = -1;
+        currentChildIndex = -1;
+        continue;
+      }
 
-        // Parent top part position (header + text)
-        positions.push({
-          index: i,
-          startRow: currentRow,
-          endRow: currentRow + parentHWithoutClosing - 1,
-          isTruncated: truncatedIndexes.includes(i),
-          type: "assistant",
-          isCollapsible: false,
-        });
-        currentRow += parentHWithoutClosing;
+      const hasChild = line.childIndex !== undefined;
+      const isNewGroup =
+        line.lineIndex !== currentBlockIndex ||
+        (hasChild && line.childIndex !== currentChildIndex) ||
+        (!hasChild && currentChildIndex !== -1);
 
-        // Child positions
-        // Nested child content width: indent("│    " = 5) + indicator("▼ ✓ " = 4) = 9 chars prefix (clamped to 10)
-        const childContentWidth = Math.max(10, chatWidth - 10);
-        const childExpanded = expandedChildren.get(i) || new Set();
-        for (let ci = 0; ci < line.children.length; ci++) {
-          const child = line.children[ci];
-          const childIsCollapsible = isCollapsibleType(child.type);
-          const childIsCollapsed = childIsCollapsible && !childExpanded.has(ci);
-          let childH: number;
-          if (childIsCollapsed) {
-            childH = 1;
-          } else {
-            // Expanded = just content lines (no header/closing)
-            const childLines = child.content.split("\n");
-            childH = 0;
-            for (const cl of childLines) {
-              childH += Math.max(1, Math.ceil(cl.length / childContentWidth));
-            }
-            if (childH === 0) childH = 1; // minimum 1 row for empty content
-          }
-          positions.push({
-            index: i,
-            parentIndex: i,
-            childIndex: ci,
-            startRow: currentRow,
-            endRow: currentRow + childH - 1,
-            isTruncated: false,
-            type: child.type,
-            isCollapsible: childIsCollapsible,
-          });
-          currentRow += childH;
+      if (isNewGroup) {
+        if (activePos) {
+          positions.push(activePos);
         }
-
-        // Parent closing line position (1 row)
-        positions.push({
-          index: i,
-          startRow: currentRow,
-          endRow: currentRow,
-          isTruncated: truncatedIndexes.includes(i),
-          type: "assistant",
-          isCollapsible: false,
-        });
-        currentRow += 1;
-      } else {
-        positions.push({
-          index: i,
-          startRow: currentRow,
-          endRow: currentRow + h - 1,
-          isTruncated: truncatedIndexes.includes(i),
+        activePos = {
+          index: line.lineIndex,
+          parentIndex: hasChild ? line.lineIndex : undefined,
+          childIndex: line.childIndex,
+          startRow: y,
+          endRow: y,
+          isTruncated: line.isTruncated || false,
           type: line.type,
-          isCollapsible,
-        });
-        currentRow += h;
+          isCollapsible: line.isCollapsible || false,
+        };
+        currentBlockIndex = line.lineIndex;
+        currentChildIndex = hasChild ? (line.childIndex ?? -1) : -1;
+      } else {
+        if (activePos) {
+          activePos.endRow = y;
+        }
       }
     }
+
+    if (activePos) {
+      positions.push(activePos);
+    }
+
     return positions;
-  }, [lines, scrollOffset, chatHeightLimit, chatWidth, chatContentStartRow, focusedResponseIndex, isProcessing, streamDisplay, truncatedIndexes, lastAssistantIdx, expandedLines, expandedChildren]);
+  }, [localWrappedLines, scrollOffset, chatHeightLimit, chatContentStartRow, focusedResponseIndex]);
 
   useEffect(() => {
     if (onVisibleLinesChange) {
       onVisibleLinesChange(visibleLinePositions);
     }
   }, [visibleLinePositions, onVisibleLinesChange]);
+
+  const endIdx = localWrappedLines.length - scrollOffset;
+  const startIdx = Math.max(0, endIdx - chatHeightLimit);
+  const visibleWrappedLines = localWrappedLines.slice(startIdx, endIdx);
 
   return (
     <>
@@ -302,7 +1183,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
         </Text>
         {scrollOffset > 0 && (
           <Text color="yellow" bold>
-            [Scroll: -{scrollOffset} lines/msgs - Esc to snap bottom]
+            [Scroll: -{scrollOffset} lines - Esc to snap bottom]
           </Text>
         )}
       </Box>
@@ -331,108 +1212,14 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
               <Text color="yellow">└─── [ focused assistant response #{focusedResponseIndex + 1} ]</Text>
             </Box>
           );
-        })() : (() => {
-          const shouldRenderStream = scrollOffset === 0 && isProcessing && streamDisplay && streamDisplay.trim().length > 0;
-          let startIndex = lines.length;
-          let accumulatedHeight = 0;
-          const endIndex = scrollOffset === 0 ? lines.length : Math.max(0, lines.length - scrollOffset);
-
-          let effectiveChatHeightLimit = chatHeightLimit;
-          if (shouldRenderStream) {
-            const totalStreamLines = estimateMarkdownLines(streamDisplay, chatWidth);
-            effectiveChatHeightLimit = Math.max(0, chatHeightLimit - totalStreamLines);
-          }
-
-          for (let i = endIndex - 1; i >= 0; i--) {
-            const h = estimateChatLineHeight(lines[i], chatWidth, i === lastAssistantIdx, i);
-            if (accumulatedHeight + h > effectiveChatHeightLimit) {
-              if (i === endIndex - 1 && effectiveChatHeightLimit > 0) {
-                startIndex = i; // Show at least the latest line if there is any history space
-              }
-              break;
-            }
-            accumulatedHeight += h;
-            startIndex = i;
-          }
-
-          const visibleLines = lines.slice(startIndex, endIndex);
-
-          return (
-            <>
-              {visibleLines.map((line, i) => {
-                const originalIndex = startIndex + i;
-                const isCollapsible = isCollapsibleType(line.type);
-                const isCollapsed = isCollapsible && !expandedLines.has(originalIndex);
-                return (
-                  <ChatLineComponent
-                    key={originalIndex}
-                    line={line}
-                    isFirst={false}
-                    lineIndex={originalIndex}
-                    tokensUp={tokensUp}
-                    tokensDown={tokensDown}
-                    modelName={modelName}
-                    maxResponseLines={maxAssistantResponseLines}
-                    chatWidth={chatWidth}
-                    isLastAssistant={originalIndex === lastAssistantIdx}
-                    isCollapsed={isCollapsed}
-                    expandedChildren={expandedChildren.get(originalIndex) || new Set()}
-                    toggleChildExpand={toggleChildExpand ? (childIdx: number) => toggleChildExpand(originalIndex, childIdx) : undefined}
-                  />
-                );
-              })}
-
-              {shouldRenderStream && (
-                <Box flexDirection="column">
-                  <Text color="blue">
-                    {visibleLines.length === 0 ? "┌" : "├"}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown + liveStreamTokens)})</Text> ]
-                  </Text>
-                  {renderMarkdown(
-                    streamDisplay,
-                    "blue",
-                    true
-                  )}
-                </Box>
-              )}
-            </>
-          );
-        })()}
-
-        {scrollOffset === 0 && isProcessing && (!streamDisplay || streamDisplay.trim().length === 0) && !isExecutingTool && (
-          <Box flexDirection="column" marginTop={2}>
-            <Text color="blue">
-              {lines.length === 0 ? "┌" : "├"}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown)})</Text> ]
-            </Text>
-            <Box flexDirection="row">
-              <Text color="blue">│    </Text>
-              <LoadingIndicator />
-            </Box>
-          </Box>
-        )}
-
-        {scrollOffset === 0 && isExecutingTool && (
-          <Box flexDirection="column" marginTop={2}>
-            <Text color="yellow">
-              {lines.length === 0 ? "┌" : "├"}─── [ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
-            </Text>
-            <Box flexDirection="row">
-              <Text color="yellow">│    </Text>
-              <ToolLoadingIndicator />
-            </Box>
-            {activeToolLinesCount > 0 && (
-              <>
-                <Text color="yellow">
-                  ├─── [ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]
-                </Text>
-                {activeToolLines.map((line, idx) => (
-                  <Box key={idx} flexDirection="row">
-                    <Text color="yellow">│    </Text>
-                    <Text color="gray">{line}</Text>
-                  </Box>
-                ))}
-              </>
-            )}
-          </Box>
+        })() : (
+          <>
+            {visibleWrappedLines.map((line, idx) => (
+              <Box key={idx} flexDirection="column">
+                {line.node}
+              </Box>
+            ))}
+          </>
         )}
       </Box>
     </>

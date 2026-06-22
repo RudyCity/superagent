@@ -1264,12 +1264,16 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       }
     }
 
-    if (key.pageUp || (key.ctrl && key.upArrow) || (key.shift && key.upArrow)) {
-      scrollChat("up");
+    if (key.pageUp) {
+      scrollChat("up", 10);
+    } else if ((key.ctrl && key.upArrow) || (key.shift && key.upArrow)) {
+      scrollChat("up", 1);
     }
 
-    if (key.pageDown || (key.ctrl && key.downArrow) || (key.shift && key.downArrow)) {
-      scrollChat("down");
+    if (key.pageDown) {
+      scrollChat("down", 10);
+    } else if ((key.ctrl && key.downArrow) || (key.shift && key.downArrow)) {
+      scrollChat("down", 1);
     }
 
     if (key.escape) {
