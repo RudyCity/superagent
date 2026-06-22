@@ -80,8 +80,8 @@ export function loadAgentSkills(): string {
     return "";
   }
 
-  let text = "\n\nINSTALLED AGENT SKILLS:\n";
-  text += "The following specialized agent skills are installed. If a user's task matches one of these skills, you should read the specified 'SKILL.md' file using a file read tool to obtain the detailed instructions, and execute any scripts or workflows it specifies:\n";
+  let text = "\n\nINSTALLED AGENT SKILLS & MANDATORY DISCOVERY RULES:\n";
+  text += "CRITICAL DIRECTIVE: At the very beginning of processing the user's request, you MUST proactively scan the list of installed specialized agent skills below. If the task or any subtask involves concepts, workflows, platforms, or tools mentioned in a skill's name or description, you MUST immediately read the corresponding instruction file ('SKILL.md') using a file-reading tool (e.g. view_file) to load its complete workflow guidelines and constraints BEFORE executing commands, writing code, or proposing plans. Do NOT attempt to guess the workflow or perform it from memory if a relevant skill exists. Always check for relevant skills first.\n\n";
   for (const s of skills) {
     text += `- **${s.name}**: ${s.description}\n  Instruction File: ${s.path}\n`;
   }
