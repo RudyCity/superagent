@@ -275,6 +275,15 @@ describe("isFastContextReady", () => {
     });
     vi.resetModules();
     const { isFastContextReady } = await import("../src/core/fastcontextSetup.js");
-    expect(typeof isFastContextReady).toBe("function");
+    expect(isFastContextReady()).toBe(false);
+  });
+
+  it("returns false when sentinel verified file is missing", async () => {
+    vi.mocked(existsSync).mockImplementation((p: any) => {
+      return !String(p).includes(".verified");
+    });
+    vi.resetModules();
+    const { isFastContextReady } = await import("../src/core/fastcontextSetup.js");
+    expect(isFastContextReady()).toBe(false);
   });
 });

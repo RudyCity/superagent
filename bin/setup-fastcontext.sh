@@ -133,6 +133,9 @@ except ImportError:
 }
 echo "  $VERIFY_RESULT"
 
+# Create sentinel file to indicate successful verification
+touch "$PYTHON_DIR/.verified"
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 echo ""
 echo "=== Setup Complete ==="

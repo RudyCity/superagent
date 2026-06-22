@@ -10,7 +10,7 @@
  */
 /**
  * Check if FastContext is fully set up.
- * Returns true if both the Python binary and vendor source exist.
+ * Returns true if both the Python binary, vendor source, and the verified sentinel file exist.
  */
 export declare function isFastContextReady(): boolean;
 /**

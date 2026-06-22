@@ -33,12 +33,15 @@ const SETUP_SCRIPT = process.platform === "win32"
 /** Vendor source directory (must also exist). */
 const VENDOR_SRC = path.join(PROJECT_ROOT, "vendor", "fastcontext", "src");
 
+/** Expected sentinel verification file. */
+const SENTINEL_FILE = path.join(PROJECT_ROOT, "bin", "python", ".verified");
+
 /**
  * Check if FastContext is fully set up.
- * Returns true if both the Python binary and vendor source exist.
+ * Returns true if both the Python binary, vendor source, and the verified sentinel file exist.
  */
 export function isFastContextReady(): boolean {
-  return existsSync(PYTHON_BIN) && existsSync(VENDOR_SRC);
+  return existsSync(PYTHON_BIN) && existsSync(VENDOR_SRC) && existsSync(SENTINEL_FILE);
 }
 
 /**
