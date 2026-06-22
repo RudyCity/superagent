@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.84] - 2026-06-23
+
+### Added
+- **HistoryPanel (Ctrl+H)**: New `HistoryPanel` component (`src/components/history-panel.tsx`) that displays the full input history in a scrollable, keyboard-navigable overlay. Press `Ctrl+H` to toggle; arrow keys navigate, `Enter` reuses selected entry, `Esc` closes.
+- **Arrow-Key Input History in Single Mode**: The `SingleModeAgent` input component now maintains a history array of past inputs. `ArrowUp` / `ArrowDown` navigate through previous commands without leaving the input field, matching familiar terminal UX.
+
+### Improved
+- **FastContext Researcher Tier Warning**: FastContext tool now emits a visible warning when the configured model is on the `researcher` tier, helping users identify misconfigured tier assignments.
+- **Trajectory Preservation on Error**: FastContext runner now preserves partial trajectory data when an error occurs mid-run, preventing full data loss on transient failures.
+- **InternalServerError Retry**: FastContext automatically retries on `InternalServerError` responses from the provider, improving reliability on flaky upstream connections.
+- **Custom Provider Model Routing**: Fixed model routing for custom provider configurations so that custom base-URL providers correctly receive the target model name.
+
+---
+
 ## [1.1.81] - 2026-06-22
 
 ### Added
