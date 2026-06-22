@@ -422,7 +422,9 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
 
    if (child.type === "tool_start") {
     const content = child.content.replace(/^⚡ /, "");
-    const cleanDesc = content.replace(/^Detail:\s*/i, "").trim();
+    const firstLine = content.split("\n")[0];
+    const cleanDescRaw = firstLine.replace(/^Detail:\s*/i, "").trim();
+    const cleanDesc = cleanDescRaw.length > 60 ? cleanDescRaw.slice(0, 57) + "..." : cleanDescRaw;
     if (isCollapsed) {
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
@@ -460,7 +462,9 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
     const isError = child.content.startsWith("✗") || child.content.startsWith("🚨");
     const contentText = child.content.substring(2);
     const themeColor = isError ? "red" : "green";
-    const cleanDesc = contentText.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
+    const firstLine = contentText.split("\n")[0];
+    const cleanDescRaw = firstLine.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
+    const cleanDesc = cleanDescRaw.length > 60 ? cleanDescRaw.slice(0, 57) + "..." : cleanDescRaw;
 
     if (isCollapsed) {
       return (
