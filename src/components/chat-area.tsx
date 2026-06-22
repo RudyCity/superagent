@@ -212,16 +212,19 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
             parentH += Math.max(1, Math.ceil(l.length / contentWidth));
           }
         }
-        // Parent position
+        // Calculate parent text height without the closing line
+        const parentHWithoutClosing = parentH - 1;
+
+        // Parent top part position (header + text)
         positions.push({
           index: i,
           startRow: currentRow,
-          endRow: currentRow + parentH - 1,
+          endRow: currentRow + parentHWithoutClosing - 1,
           isTruncated: truncatedIndexes.includes(i),
           type: "assistant",
           isCollapsible: false,
         });
-        currentRow += parentH;
+        currentRow += parentHWithoutClosing;
 
         // Child positions
         // Nested child content width: indent("│    " = 5) + "│    " (5) = 10 chars prefix
@@ -255,6 +258,17 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
           });
           currentRow += childH;
         }
+
+        // Parent closing line position (1 row)
+        positions.push({
+          index: i,
+          startRow: currentRow,
+          endRow: currentRow,
+          isTruncated: truncatedIndexes.includes(i),
+          type: "assistant",
+          isCollapsible: false,
+        });
+        currentRow += 1;
       } else {
         positions.push({
           index: i,
