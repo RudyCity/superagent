@@ -520,7 +520,8 @@ export const fastcontextTool: Tool = {
       const output = stdoutAll.trim();
       const stderrRaw = stderrAll.trim() || (result.stderr || "").trim();
 
-      if (result.exitCode !== 0) {
+      const exitedWithError = result.exitCode !== 0 || result.exitCode == null;
+      if (exitedWithError) {
         // Extract root-cause error messages from JSONL stderr events
         const errorEvents: string[] = [];
         for (const line of stderrRaw.split("\n")) {
@@ -529,7 +530,11 @@ export const fastcontextTool: Tool = {
             if (evt.event === "error" && evt.text) errorEvents.push(evt.text);
           } catch { /* not JSON */ }
         }
-        const parts = [`FastContext exited with code ${result.exitCode}.`];
+        // Build a meaningful exit descriptor — null exitCode means killed by signal
+        const exitDescriptor = result.exitCode != null
+          ? `code ${result.exitCode}`
+          : `signal ${(result as any).signal ?? "unknown"}`;
+        const parts = [`FastContext exited with ${exitDescriptor}.`];
         if (errorEvents.length > 0) {
           parts.push(`Error: ${errorEvents.join(" | ")}`);
         } else {

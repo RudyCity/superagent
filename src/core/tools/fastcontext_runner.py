@@ -112,8 +112,14 @@ def run():
                     self.litellm_model = f"openrouter/{model}"
                 elif self.provider == "anthropic":
                     self.litellm_model = f"anthropic/{model}"
+                elif self.provider == "custom":
+                    # Custom OpenAI-compatible endpoints: use model name as-is.
+                    # Prepending "openai/" would produce "openai/xmtp/mimo-v2-pro"
+                    # which LiteLLM misparses as a nested provider path and may
+                    # route to api.openai.com instead of the configured base_url.
+                    self.litellm_model = model
                 else:
-                    # openai, custom, or unknown — use openai/ prefix
+                    # openai or unknown — standard openai/ prefix
                     self.litellm_model = f"openai/{model}"
 
             async def acall(self, messages, tools):
