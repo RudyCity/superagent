@@ -13,7 +13,7 @@ import {
   setMasterTokens,
   setLastMasterPromptTokens
 } from "./tools/state.js";
-import type { ContextManager, ContextManagerConfig } from "./context/index.js";
+import type { ContextManager, ContextManagerConfig, PinnedMessage } from "./context/index.js";
 
 export interface Message {
   role: "user" | "assistant" | "system" | "tool";
@@ -41,10 +41,18 @@ export class Conversation {
   private maxHistory = 200;
   public loadedPlanState?: "IDLE" | "PLANNING_PENDING" | "APPROVED";
   private contextManager: ContextManager | null = null;
+  /** Pinned messages loaded from file, waiting for ContextManager to be initialized */
+  private pendingPinnedMessages: PinnedMessage[] | null = null;
 
   async initContextManager(config: ContextManagerConfig): Promise<void> {
     const { ContextManager: CM } = await import("./context/index.js");
     this.contextManager = new CM(config);
+
+    // Restore any pinned messages that were loaded from file before ContextManager existed
+    if (this.pendingPinnedMessages && this.pendingPinnedMessages.length > 0) {
+      this.contextManager.restorePinnedMessages(this.pendingPinnedMessages);
+      this.pendingPinnedMessages = null;
+    }
   }
 
   async updateContextManagerLLM(model: any, abortSignal?: AbortSignal): Promise<void> {
@@ -87,6 +95,11 @@ export class Conversation {
         };
       });
 
+      // Serialize pinned messages from ContextManager (if available)
+      const pinnedMessages = this.contextManager
+        ? this.contextManager.serializePinnedMessages()
+        : (this.pendingPinnedMessages || []);
+
       const data = {
         messages: this.messages,
         planState,
@@ -96,6 +109,7 @@ export class Conversation {
         masterPromptTokens,
         masterCompletionTokens,
         lastMasterPromptTokens,
+        pinnedMessages,
       };
       await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
     } catch (err) {
@@ -189,6 +203,17 @@ export class Conversation {
           }
           notifySubagentsChanged();
         }
+
+        // Restore pinned messages
+        if (Array.isArray(parsed.pinnedMessages) && parsed.pinnedMessages.length > 0) {
+          if (this.contextManager) {
+            // ContextManager already initialized — restore directly
+            this.contextManager.restorePinnedMessages(parsed.pinnedMessages);
+          } else {
+            // ContextManager not yet initialized — store for later restoration
+            this.pendingPinnedMessages = parsed.pinnedMessages;
+          }
+        }
       } else if (Array.isArray(parsed)) {
         this.messages = parsed;
         this.loadedPlanState = undefined;
@@ -250,6 +275,10 @@ export class Conversation {
 
   clear(): void {
     this.messages = [];
+    this.pendingPinnedMessages = null;
+    if (this.contextManager) {
+      this.contextManager.restorePinnedMessages([]);
+    }
     setHistoricalSuperagentTokens(0);
     setMasterTokens(0, 0);
     setLastMasterPromptTokens(0);

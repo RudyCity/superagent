@@ -715,6 +715,18 @@ This ensures the ACTIVE TASK CHECKLIST stays up-to-date with the current work.`;
           ? `\n\n⚙️ RUNNING BACKGROUND/TERMINAL PROCESSES:\nYou are aware that the following background/terminal processes are currently running in the environment:\n${runningProcesses}`
           : "";
 
+        // ── Inject pinned knowledge from global store (once per session, on first iteration) ──
+        let pinnedKnowledgeNotice = "";
+        if (i === 0) {
+          try {
+            const { getAllKnowledge, formatKnowledgeForPrompt } = await import("./pinnedKnowledge.js");
+            const knowledgeEntries = getAllKnowledge({ limit: 10 });
+            if (knowledgeEntries.length > 0) {
+              pinnedKnowledgeNotice = "\n\n" + formatKnowledgeForPrompt(knowledgeEntries, 8, 1500);
+            }
+          } catch { /* non-critical */ }
+        }
+
         const systemPrompt = `${baseSystemPrompt}
 
 CRITICAL TASK EXECUTION CONTEXT:
@@ -723,7 +735,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - Be highly efficient. If the task is complex, requires multiple steps, or involves extensive research/coding across different components, DO NOT try to do everything in a single sequential thread.
 - Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
 - Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.
-${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${guidelinesText}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}${processNotice}`;
+${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${guidelinesText}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}${processNotice}${pinnedKnowledgeNotice}`;
 
         let textContent = "";
         const toolCalls: ToolCall[] = [];

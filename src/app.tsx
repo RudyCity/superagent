@@ -551,9 +551,26 @@ export function App({
         `${mainCommand} list`,
         `${mainCommand} list-messages`,
         `${mainCommand} last`,
+        `${mainCommand} view`,
+        `${mainCommand} tag`,
         `${mainCommand} unpin`
       ];
       return filterSuggestions(pinSuggestions, currentInput);
+    }
+
+    if (mainCommand === "/knowledge") {
+      const knowledgeSuggestions = [
+        `${mainCommand} list`,
+        `${mainCommand} projects`
+      ];
+      return filterSuggestions(knowledgeSuggestions, currentInput);
+    }
+
+    if (mainCommand === "/search-history") {
+      const shSuggestions = [
+        `${mainCommand} --all`
+      ];
+      return filterSuggestions(shSuggestions, currentInput);
     }
 
     return [];

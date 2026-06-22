@@ -31,6 +31,10 @@ export const newCommand: SlashCommand = {
       // Also clean up the task history file so it doesn't orphan
       const taskHistoryPath = sessionFilePath.replace(/\.json$/, "_task_history.md");
       fs.unlink(taskHistoryPath).catch(() => {});
+      // Clean up global knowledge entries from this session
+      import("../pinnedKnowledge.js").then(({ removeSessionFromKnowledge }) => {
+        removeSessionFromKnowledge(sessionFilePath);
+      }).catch(() => {});
     }
 
     // ── 1. Kill and clear background tasks ────────────────
@@ -120,14 +124,19 @@ export const helpCommand: SlashCommand = {
         "Commands:",
         "  /new      - Start new session (clear history & screen)",
         "  /resume   - Resume a conversation session from history via wizard dialog",
-        "  /search-history - Search all previous local workspace conversation history files",
-        "                    Usage: /search-history <query-text>",
+        "  /search-history - Search conversation history (shortcut: /sh)",
+        "                    Usage: /search-history <query> [--all]",
+        "                    --all: search across ALL sessions/projects",
+        "  /knowledge - Browse & search global pinned knowledge (shortcut: /k)",
+        "               Usage: /knowledge [query|projects|list]",
+        "               Pins from all sessions are stored in a global store",
+        "               AI agents can access via search_pinned_knowledge & load_pinned_session tools",
         "  /clear    - Clear conversation history",
         "  /compact          - Show conversation summary and ContextManager status",
         "  /compact now      - Force compaction (skip threshold check)",
         "  /compaction-history - View compaction audit trail (shortcut: /ch)",
-        "  /pin      - Pin important messages to prevent compaction",
-        "              Usage: /pin [index|last|unpin <idx>|list|list-messages]",
+        "  /pin      - Pin important messages (full content + agent tag stored)",
+        "              Usage: /pin [index|last|unpin <idx>|list|list-messages|view <idx>|tag <idx> <label>]",
         "              Note: Use /pin list-messages to see correct indexes",
         "  /checkpoint - Manage checkpoints to save/restore conversation state",
         "                Usage: /checkpoint [list|restore <id>|<name>]",

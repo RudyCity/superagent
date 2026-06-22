@@ -46,25 +46,40 @@ export const resumeCommand: SlashCommand = {
 // /search-history command
 export const searchHistoryCommand: SlashCommand = {
   name: "search-history",
-  description: "Search all previous local workspace conversation history files",
+  aliases: ["sh"],
+  description: "Search conversation history. Use --all to search across ALL sessions/projects.",
   async execute(args, ctx) {
     const now = Date.now();
     if (!args) {
       ctx.addLine({
         type: "error",
-        content: "Usage: /search-history <query-text>\nExample: /search-history refactor background task",
+        content: "Usage: /search-history <query-text> [--all]\n\nExamples:\n  /search-history refactor background task\n  /search-history auth login --all    (search ALL sessions cross-project)",
         timestamp: now,
       });
       return;
     }
+
+    // Check for --all flag for cross-session search
+    const hasAllFlag = args.includes("--all") || args.includes("-a");
+    const query = args.replace(/--all|-a/g, "").trim();
+    if (!query) {
+      ctx.addLine({
+        type: "error",
+        content: "Please provide a search query.",
+        timestamp: now,
+      });
+      return;
+    }
+
+    const scope = hasAllFlag ? "ALL sessions (cross-project)" : "current workspace";
     ctx.addLine({
       type: "system",
-      content: `Searching conversation history for: "${args}"...`,
+      content: `Searching ${scope} for: "${query}"...`,
       timestamp: now,
     });
     ctx.setIsProcessing?.(true);
     try {
-      const result = await searchHistory(args, ctx.agent?.isMultiAgent || false);
+      const result = await searchHistory(query, ctx.agent?.isMultiAgent || false, hasAllFlag);
       ctx.addLine({
         type: "system",
         content: result,
@@ -81,6 +96,121 @@ export const searchHistoryCommand: SlashCommand = {
     }
   }
 };
+
+// /knowledge command — browse global pinned knowledge
+export const knowledgeCommand: SlashCommand = {
+  name: "knowledge",
+  aliases: ["k"],
+  description: "Browse and search the global pinned knowledge store (cross-session)",
+  async execute(args, ctx) {
+    const now = Date.now();
+    const trimmed = (args || "").trim();
+
+    try {
+      const { getAllKnowledge, searchKnowledge, getKnowledgeProjects } = await import("../pinnedKnowledge.js");
+
+      // /knowledge projects — list all projects with pinned knowledge
+      if (trimmed === "projects" || trimmed === "p") {
+        const projects = getKnowledgeProjects();
+        if (projects.length === 0) {
+          ctx.addLine({ type: "system", content: "No projects with pinned knowledge found.", timestamp: now });
+          return;
+        }
+        const lines = ["📂 Projects with pinned knowledge:", ""];
+        for (const p of projects) {
+          const entries = getAllKnowledge({ workingDirectory: p, limit: 1 });
+          lines.push(`  📁 ${p} (${entries.length}+ entries)`);
+        }
+        ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
+        return;
+      }
+
+      // /knowledge <query> — search
+      if (trimmed && trimmed !== "list" && trimmed !== "l") {
+        ctx.setIsProcessing?.(true);
+        const results = searchKnowledge(trimmed, { limit: 15 });
+        if (results.length === 0) {
+          ctx.addLine({ type: "system", content: `No pinned knowledge entries found for: "${trimmed}"`, timestamp: now });
+          return;
+        }
+        const lines: string[] = [`📌 Found ${results.length} pinned knowledge entries for "${trimmed}":`, ""];
+        for (let i = 0; i < results.length; i++) {
+          const e = results[i];
+          const tagStr = e.tag ? ` #${e.tag}` : "";
+          const agentStr = e.agentTag ? ` [${e.agentTag.tier}${e.agentTag.subagentType ? ":" + e.agentTag.subagentType : ""}]` : "";
+          lines.push(`  [${i + 1}] ${e.role.toUpperCase()}${agentStr}${tagStr}`);
+          lines.push(`      ${e.preview.replace(/\n/g, " ").substring(0, 150)}`);
+          lines.push(`      📁 ${e.workingDirectory}`);
+          lines.push("");
+        }
+        ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: Date.now() });
+        ctx.setIsProcessing?.(false);
+        return;
+      }
+
+      // /knowledge or /knowledge list — show all entries
+      const entries = getAllKnowledge({ limit: 20 });
+      if (entries.length === 0) {
+        ctx.addLine({
+          type: "system",
+          content: [
+            "No pinned knowledge entries. Pins from any session are stored here.",
+            "",
+            "Usage:",
+            "  /knowledge              Show all pinned knowledge entries",
+            "  /knowledge <query>      Search pinned knowledge",
+            "  /knowledge projects     List all projects with pins",
+            "  /search-history <q> --all  Search history across all sessions",
+          ].join("\n"),
+          timestamp: now,
+        });
+        return;
+      }
+
+      const lines: string[] = [];
+      lines.push("╔══════════════════════════════════════════════════════════════╗");
+      lines.push("║            🌐 GLOBAL PINNED KNOWLEDGE                         ║");
+      lines.push("╚══════════════════════════════════════════════════════════════╝");
+      lines.push("");
+
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        const tagStr = e.tag ? ` #${e.tag}` : "";
+        const agentStr = e.agentTag ? ` [${e.agentTag.tier}${e.agentTag.subagentType ? ":" + e.agentTag.subagentType : ""}]` : "";
+        const preview = e.preview.replace(/\n/g, " ").substring(0, 120);
+
+        lines.push(`  📌 [${i + 1}] ${e.role.toUpperCase()}${agentStr}${tagStr}`);
+        lines.push(`     ${preview}`);
+        lines.push(`     📁 ${e.workingDirectory}  |  pinned ${timeAgo(e.pinnedAt)}`);
+        lines.push("");
+      }
+
+      lines.push("──────────────────────────────────────────────────────────────");
+      lines.push(`  ${entries.length} entries shown  |  AI agents can use search_pinned_knowledge & load_pinned_session tools`);
+      lines.push("");
+      lines.push("  /knowledge <query>      Search knowledge");
+      lines.push("  /knowledge projects     List projects with pins");
+      lines.push("  /search-history <q> --all  Search full history cross-project");
+
+      ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
+    } catch (err: any) {
+      ctx.addLine({ type: "error", content: `Knowledge command failed: ${err.message}`, timestamp: now });
+    }
+  }
+};
+
+/** Helper: format timestamp to relative time (same as pinCommand) */
+function timeAgo(ts: number): string {
+  const diff = Date.now() - ts;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  return `${d}d ago`;
+}
 
 // Helper: open checkpoint wizard
 async function openCheckpointWizard(ctx: SlashCommandContext, action: "browse" | "restore" | "delete") {
@@ -248,3 +378,4 @@ export const checkpointCommand: SlashCommand = {
 registry.register(resumeCommand);
 registry.register(searchHistoryCommand);
 registry.register(checkpointCommand);
+registry.register(knowledgeCommand);

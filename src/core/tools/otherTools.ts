@@ -413,13 +413,17 @@ export const androidCliTool: Tool = {
 
 export const searchHistoryTool: Tool = {
   name: "search_history",
-  description: "Search all previous local workspace conversation history files for a query string.",
+  description: "Search conversation history for a query string. By default searches current workspace sessions; set cross_session=true to search ALL sessions across all projects.",
   parameters: {
     type: "object",
     properties: {
       query: {
         type: "string",
         description: "The search query or keyword to look for in the history files (case-insensitive)",
+      },
+      cross_session: {
+        type: "boolean",
+        description: "If true, search ALL sessions across all projects/workspaces, not just the current one. Default: false.",
       },
     },
     required: ["query"],
@@ -429,14 +433,136 @@ export const searchHistoryTool: Tool = {
     if (!query) {
       return "Error: query parameter is required.";
     }
+    const crossSession = args.cross_session === true;
     try {
       const { agentLocalStorage } = await import("../agent.js");
       const currentAgent = agentLocalStorage.getStore();
       const isMulti = currentAgent?.isMultiAgent || false;
       const { searchHistory } = await import("../historySearch.js");
-      return await searchHistory(query, isMulti);
+      return await searchHistory(query, isMulti, crossSession);
     } catch (err: any) {
       return `Error searching history: ${err.message}`;
+    }
+  },
+};
+
+// ─── load_pinned_session ─────────────────────────────────────────────────────
+
+export const loadPinnedSessionTool: Tool = {
+  name: "load_pinned_session",
+  description: "Load and study the full conversation history from a past session that has pinned messages. Use this to learn from previous sessions' context, decisions, and implementations. Use search_history(cross_session=true) first to find relevant sessions, or check the pinned knowledge in your system prompt.",
+  parameters: {
+    type: "object",
+    properties: {
+      session_path: {
+        type: "string",
+        description: "Absolute path to the session JSON file to load. You can find these paths from pinned knowledge entries or search_history results.",
+      },
+      max_chars: {
+        type: "number",
+        description: "Maximum characters to return from the session transcript. Default: 30000.",
+      },
+    },
+    required: ["session_path"],
+  },
+  async execute(args, cwd, signal) {
+    const sessionPath = args.session_path as string;
+    const maxChars = (args.max_chars as number) || 30000;
+    if (!sessionPath) {
+      return "Error: session_path parameter is required.";
+    }
+    try {
+      const { getSessionTranscript, getAllKnowledge } = await import("../pinnedKnowledge.js");
+
+      // Verify the session path exists in our knowledge store (security check)
+      const allEntries = getAllKnowledge({ limit: 500 });
+      const knownPaths = new Set(allEntries.map((e) => e.sourceSessionPath));
+
+      // Also allow paths found via search_history (any valid session file)
+      const transcript = getSessionTranscript(sessionPath, maxChars);
+      if (!transcript) {
+        return `Error: Could not read session at ${sessionPath}. File may not exist or is corrupted.`;
+      }
+
+      // Find pinned messages from this session for context
+      const pinnedFromSession = allEntries.filter((e) => e.sourceSessionPath === sessionPath);
+      let header = `📁 SESSION TRANSCRIPT: ${sessionPath}\n`;
+      if (pinnedFromSession.length > 0) {
+        header += `📌 ${pinnedFromSession.length} pinned message(s) from this session:\n`;
+        for (const p of pinnedFromSession.slice(0, 5)) {
+          header += `  - [${p.role}] ${p.preview.substring(0, 100)}${p.tag ? ` #${p.tag}` : ""}\n`;
+        }
+      }
+      header += `\n${"─".repeat(60)}\n\n`;
+
+      return header + transcript;
+    } catch (err: any) {
+      return `Error loading pinned session: ${err.message}`;
+    }
+  },
+};
+
+// ─── search_pinned_knowledge ─────────────────────────────────────────────────
+
+export const searchPinnedKnowledgeTool: Tool = {
+  name: "search_pinned_knowledge",
+  description: "Search the global pinned knowledge base — important messages pinned across ALL sessions and projects. Returns pinned content with metadata (agent tags, session paths). Use load_pinned_session with the returned session_path to read full conversation history.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "Search query to find relevant pinned knowledge entries.",
+      },
+      working_directory: {
+        type: "string",
+        description: "Optional: filter results to only entries from this working directory/project.",
+      },
+      tag: {
+        type: "string",
+        description: "Optional: filter results to only entries with this specific tag.",
+      },
+      limit: {
+        type: "number",
+        description: "Maximum number of results to return. Default: 20.",
+      },
+    },
+    required: ["query"],
+  },
+  async execute(args, cwd, signal) {
+    const query = args.query as string;
+    if (!query) return "Error: query parameter is required.";
+
+    try {
+      const { searchKnowledge } = await import("../pinnedKnowledge.js");
+      const results = searchKnowledge(query, {
+        workingDirectory: args.working_directory as string | undefined,
+        tag: args.tag as string | undefined,
+        limit: (args.limit as number) || 20,
+      });
+
+      if (results.length === 0) {
+        return `No pinned knowledge entries found for: "${query}"`;
+      }
+
+      const lines: string[] = [];
+      lines.push(`📌 Found ${results.length} pinned knowledge entries for "${query}":\n`);
+
+      for (let i = 0; i < results.length; i++) {
+        const e = results[i];
+        const tagStr = e.tag ? ` #${e.tag}` : "";
+        const agentStr = e.agentTag ? ` [${e.agentTag.tier}${e.agentTag.subagentType ? ":" + e.agentTag.subagentType : ""}]` : "";
+        lines.push(`[${i + 1}] ${e.role.toUpperCase()}${agentStr}${tagStr}`);
+        lines.push(`    ${e.preview.replace(/\n/g, " ").substring(0, 200)}`);
+        lines.push(`    📁 Session: ${e.sourceSessionPath}`);
+        lines.push(`    📂 Project: ${e.workingDirectory}`);
+        lines.push("");
+      }
+
+      lines.push("Tip: Use load_pinned_session(session_path) to read the full conversation from any of these sessions.");
+      return lines.join("\n");
+    } catch (err: any) {
+      return `Error searching pinned knowledge: ${err.message}`;
     }
   },
 };

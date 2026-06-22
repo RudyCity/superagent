@@ -81,7 +81,7 @@ describe("CompactionStrategy", () => {
       });
     }
 
-    const pinnedId = `user:1000:Message 0`;
+    const pinnedId = `0:user:1000`;
     const pinnedIds = new Set<string>();
     pinnedIds.add(pinnedId);
 

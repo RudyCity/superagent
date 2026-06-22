@@ -35,6 +35,29 @@ export interface CompactionDecision {
   recommendedStrategy?: CompactionStrategy;
 }
 
+/** Metadata about the agent that created/pinned the message */
+export interface AgentTag {
+  tier: string;              // "master" | "superagent" | "subagent" | "single"
+  subagentType?: string;     // e.g. "researcher", "coder"
+  worktreePath?: string;     // git worktree path for superagents
+  workingDirectory?: string; // effective CWD
+  sessionLabel?: string;     // human-readable label like "Superagent #3"
+}
+
+/** Full pinned message data — stores real content without truncation */
+export interface PinnedMessage {
+  id: string;                // message ID: "${index}:${role}:${timestamp}"
+  role: string;              // "user" | "assistant" | "system" | "tool"
+  content: string;           // full, untruncated content
+  timestamp: number;         // original message timestamp
+  pinnedAt: number;          // when the message was pinned
+  originalIndex: number;     // original index in conversation
+  agentTag?: AgentTag;       // which agent produced this message
+  toolCalls?: Array<{ id: string; name: string; args: Record<string, unknown> }>;
+  toolResults?: Array<{ toolCallId: string; name: string; result: string; isError?: boolean }>;
+  tag?: string;              // optional user-defined tag/label
+}
+
 export class ContextManager {
   private state: ContextState = "IDLE";
   private tokenTracker: TokenTracker;
@@ -43,7 +66,7 @@ export class ContextManager {
   private history: CompactionHistory;
   private eventEmitter: EventEmitter;
   private config: ContextManagerConfig;
-  private pinnedMessages: Set<string> = new Set();
+  private pinnedMessages: Map<string, PinnedMessage> = new Map();
 
   constructor(config: ContextManagerConfig) {
     this.config = config;
@@ -118,7 +141,7 @@ export class ContextManager {
 
       const result = await selectedStrategy.execute(messages, {
         tokenBudget: this.calculateThreshold(),
-        pinnedMessageIds: this.pinnedMessages,
+        pinnedMessageIds: new Set(this.pinnedMessages.keys()),
       });
 
       this.setState("VALIDATING");
@@ -184,16 +207,75 @@ export class ContextManager {
     this.tokenTracker.setModel(model);
   }
 
-  addPinnedMessage(messageId: string): void {
-    this.pinnedMessages.add(messageId);
+  addPinnedMessage(messageId: string, data?: Partial<PinnedMessage>): void {
+    if (data) {
+      // Store full pinned message data
+      const pinned: PinnedMessage = {
+        id: messageId,
+        role: data.role || "unknown",
+        content: data.content || "",
+        timestamp: data.timestamp || Date.now(),
+        pinnedAt: data.pinnedAt || Date.now(),
+        originalIndex: data.originalIndex ?? -1,
+        agentTag: data.agentTag,
+        toolCalls: data.toolCalls,
+        toolResults: data.toolResults,
+        tag: data.tag,
+      };
+      this.pinnedMessages.set(messageId, pinned);
+    } else {
+      // Backward-compatible: just store ID with minimal data
+      if (!this.pinnedMessages.has(messageId)) {
+        this.pinnedMessages.set(messageId, {
+          id: messageId,
+          role: "unknown",
+          content: "",
+          timestamp: Date.now(),
+          pinnedAt: Date.now(),
+          originalIndex: -1,
+        });
+      }
+    }
   }
 
   removePinnedMessage(messageId: string): void {
     this.pinnedMessages.delete(messageId);
   }
 
+  /** Backward-compatible: returns just the set of pinned message IDs */
   getPinnedMessages(): Set<string> {
-    return new Set(this.pinnedMessages);
+    return new Set(this.pinnedMessages.keys());
+  }
+
+  /** Returns full pinned message data as a Map */
+  getPinnedMessagesFull(): Map<string, PinnedMessage> {
+    return new Map(this.pinnedMessages);
+  }
+
+  /** Get a single pinned message by ID */
+  getPinnedMessage(messageId: string): PinnedMessage | undefined {
+    return this.pinnedMessages.get(messageId);
+  }
+
+  /** Update tag/label on a pinned message */
+  setPinnedMessageTag(messageId: string, tag: string): boolean {
+    const pinned = this.pinnedMessages.get(messageId);
+    if (!pinned) return false;
+    pinned.tag = tag;
+    return true;
+  }
+
+  /** Restore pinned messages from serialized data (for session restore) */
+  restorePinnedMessages(data: PinnedMessage[]): void {
+    this.pinnedMessages.clear();
+    for (const item of data) {
+      this.pinnedMessages.set(item.id, item);
+    }
+  }
+
+  /** Serialize pinned messages for persistence */
+  serializePinnedMessages(): PinnedMessage[] {
+    return Array.from(this.pinnedMessages.values());
   }
 
   getHistory() {
@@ -237,7 +319,7 @@ export class ContextManager {
       messages,
       tokenBudget: this.calculateThreshold(),
       hasPinnedMessages: this.pinnedMessages.size > 0,
-      pinnedMessageIds: this.pinnedMessages,
+      pinnedMessageIds: new Set(this.pinnedMessages.keys()),
     };
   }
 

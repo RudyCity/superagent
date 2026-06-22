@@ -6,7 +6,7 @@ allowed-tools: fastcontext
 
 # fastcontext
 
-AI-powered repository explorer that uses multi-step reasoning with read-only tools (Read, Glob, Grep) to find relevant code and return compact file-line citations. Executes multiple tools in **parallel** for maximum speed. **Treat it as your default first step for any code comprehension task.**
+AI-powered repository explorer that uses multi-step reasoning with read-only tools (Read, Glob, Grep) to find relevant code and return compact file-line citations. **Treat it as your default first step for any code comprehension task.**
 
 Available to ALL agent tiers: Master Agent, Superagent, and all Subagents (researcher, coder, reviewer, manual-tester, custom).
 
@@ -44,20 +44,20 @@ Use the `fastcontext` tool with these parameters:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `query` | string | (required) | Natural-language exploration question. Be specific. |
-| `maxTurns` | number | **8** | Exploration depth. Use 10-15 for complex traces, 4-6 for quick lookups. |
+| `maxTurns` | number | 6 | Exploration depth. Use 8-12 for complex traces. |
 | `citation` | boolean | true | Return only compact file:line citations. |
 
 ### Examples
 
 ```json
-// Precise answer with file:line citations (default 8 turns)
-{ "query": "Locate the request validation logic in the user registration flow", "citation": true }
+// Precise answer with file:line citations
+{ "query": "Locate the request validation logic in the user registration flow", "maxTurns": 8, "citation": true }
 
 // Deep architecture trace
 { "query": "Trace how database migrations are loaded and applied on startup", "maxTurns": 12, "citation": true }
 
 // Broader summary with explanations
-{ "query": "How does the caching layer work and where is it configured?", "maxTurns": 10, "citation": false }
+{ "query": "How does the caching layer work and where is it configured?", "maxTurns": 8, "citation": false }
 ```
 
 ## Model Configuration

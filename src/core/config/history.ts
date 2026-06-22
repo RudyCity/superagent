@@ -10,20 +10,25 @@ export interface HistorySession {
   preview: string;
 }
 
-export function listHistorySessions(isMulti = false): HistorySession[] {
+export function listHistorySessions(isMulti = false, crossSession = false): HistorySession[] {
   const mode = isMulti ? "multi" : "single";
   const historyDir = path.join(getGlobalConfigDir(), "history", mode);
   if (!fs.existsSync(historyDir)) return [];
 
-  const currentDir = process.cwd();
-  const currentSanitized = currentDir.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
-
   let dirs: string[];
   try {
-    dirs = fs.readdirSync(historyDir).filter((d) => {
-      const nameLower = d.toLowerCase();
-      return nameLower === currentSanitized || nameLower.startsWith(currentSanitized + "_");
-    });
+    if (crossSession) {
+      // Cross-session: list ALL sessions regardless of working directory
+      dirs = fs.readdirSync(historyDir);
+    } else {
+      // Workspace-scoped: only sessions matching current cwd
+      const currentDir = process.cwd();
+      const currentSanitized = currentDir.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+      dirs = fs.readdirSync(historyDir).filter((d) => {
+        const nameLower = d.toLowerCase();
+        return nameLower === currentSanitized || nameLower.startsWith(currentSanitized + "_");
+      });
+    }
   } catch {
     return [];
   }

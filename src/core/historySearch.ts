@@ -50,11 +50,16 @@ export function cleanTranscriptForLLM(messages: any[]): string {
 
 /**
  * Perform a hybrid AI-powered semantic search with an offline fuzzy fallback.
+ * @param query - The search query
+ * @param isMulti - Whether to search multi-agent sessions
+ * @param crossSession - If true, search ALL sessions regardless of working directory
  */
-export async function searchHistory(query: string, isMulti = false): Promise<string> {
-  const sessions = listHistorySessions(isMulti);
+export async function searchHistory(query: string, isMulti = false, crossSession = false): Promise<string> {
+  const sessions = listHistorySessions(isMulti, crossSession);
   if (sessions.length === 0) {
-    return "No conversation history sessions found in the workspace.";
+    return crossSession
+      ? "No conversation history sessions found across any sessions."
+      : "No conversation history sessions found in the workspace.";
   }
 
   const scoredSessions: Array<{

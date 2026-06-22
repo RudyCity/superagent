@@ -3,10 +3,14 @@ fastcontext_runner.py — Cross-platform wrapper that runs FastContext with
 credentials passed as CLI arguments, not environment variables.
 
 Emits structured JSONL progress events to stderr for live logging:
+  {"event":"start","model":"...","query":"...","backend":"..."}
   {"event":"turn","turn":1}
   {"event":"thinking","text":"...","has_tools":true}
-  {"event":"tool_start","tool":"Read","args":"..."}
-  {"event":"tool_end","tool":"Read","ok":true,"preview":"..."}
+  {"event":"tool_start","tool":"Read [x3 parallel]","args":"..."}
+  {"event":"tool_end","tool_call_id":"...","ok":true,"preview":"..."}
+  {"event":"dedup","saved":1,"key":"Read::..."}
+  {"event":"retry","attempt":1,"wait":2,"reason":"..."}
+  {"event":"usage","prompt_tokens":100,"completion_tokens":50,"total_tokens":150}
   {"event":"error","text":"..."}
   {"event":"done","turns":3}
 
@@ -50,7 +54,7 @@ def run():
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--work-dir", required=True)
     parser.add_argument("--query", required=True)
-    parser.add_argument("--max-turns", type=int, default=6)
+    parser.add_argument("--max-turns", type=int, default=8)
     parser.add_argument("--citation", action="store_true")
     parser.add_argument("--trajectory-path", required=False, default=None,
                         help="Path for trajectory JSONL file (unique per run)")
@@ -73,6 +77,7 @@ def run():
 
     system_prompt = load_system_prompt(args.work_dir)
 
+    # ── LiteLLM Adapter ───────────────────────────────────────────────────────
     if _HAS_LITELLM:
         class LiteLLMAdapter:
             """Wraps LiteLLM to unify all providers (OpenAI, Anthropic, OpenRouter, etc.)
@@ -134,7 +139,6 @@ def run():
                             "total_tokens": response.usage.total_tokens,
                         }
 
-                    tool_call_failed = False
                     if tc_raw:
                         calls = [
                             FunctionCall(id=tc.id, name=tc.function.name,
@@ -161,12 +165,13 @@ def run():
         )
     else:
         llm = LLM(model=args.model, api_key=args.api_key, base_url=args.base_url)
+
+    # ── Parallel ToolSet with deduplication ───────────────────────────────────
     toolset = ToolSet([ReadTool(), GlobTool(), GrepTool()], work_dir=args.work_dir)
     toolset._last_tool_results = []
-    original_toolset_call = toolset.call
 
     async def safe_single_tool_call(c):
-        """Execute one tool call with timeout and error isolation."""
+        """Execute one tool call with timeout and isolated error handling."""
         try:
             return await asyncio.wait_for(
                 toolset._single_tool_call(c.name, c.arguments, c.id), timeout=10
@@ -184,18 +189,94 @@ def run():
                 output="Tool `{}' error: {}".format(c.name, e),
             )
 
-    async def call_with_results(msg):
-        results = []
-        if msg.tool_calls:
-            # Execute all tool calls in parallel for maximum speed
-            results = list(
-                await asyncio.gather(*[safe_single_tool_call(c) for c in msg.tool_calls])
-            )
+    async def parallel_toolset_call(msg):
+        """
+        True-parallel tool execution with per-turn deduplication.
 
-        toolset._last_tool_results = results
-        return await original_toolset_call(msg)
+        Replaces the vendor's sequential ToolSet.call() loop entirely:
+        - Groups identical (tool_name, arguments) pairs — executes each ONCE
+        - Runs all unique calls concurrently via asyncio.gather
+        - Builds tool-result Messages directly (no double-execution)
+        """
+        if not msg.tool_calls:
+            return []
 
-    toolset.call = call_with_results
+        # ── 1. Dedup: group by (name, arguments) ──────────────────────────────
+        seen: dict[str, ToolResult] = {}         # cache_key -> ToolResult
+        unique_calls: list = []                   # first call per unique key
+
+        for c in msg.tool_calls:
+            key = f"{c.name}::{c.arguments}"
+            if key not in seen:
+                seen[key] = None                  # placeholder
+                unique_calls.append((key, c))
+
+        n_deduped = len(msg.tool_calls) - len(unique_calls)
+        if n_deduped > 0:
+            emit({"event": "dedup", "saved": n_deduped})
+
+        # ── 2. Execute unique calls in parallel ───────────────────────────────
+        raw_results = await asyncio.gather(
+            *[safe_single_tool_call(c) for _, c in unique_calls]
+        )
+
+        for (key, _), result in zip(unique_calls, raw_results):
+            seen[key] = result
+
+        # ── 3. Build ordered ToolResult list (sharing deduped results) ─────────
+        ordered: list[ToolResult] = []
+        for c in msg.tool_calls:
+            key = f"{c.name}::{c.arguments}"
+            cached = seen[key]
+            # Stamp correct tool_call_id for deduplicated entries
+            ordered.append(ToolResult(
+                tool_call_id=c.id,
+                failed=cached.failed,
+                output=cached.output,
+            ))
+
+        toolset._last_tool_results = ordered
+
+        # ── 4. Build Message list directly (bypass vendor sequential loop) ─────
+        return [
+            Message(role="tool", content=tr.output, tool_call_id=tr.tool_call_id)
+            for tr in ordered
+        ]
+
+    # Wire in our replacement — vendor's sequential .call is never used
+    toolset.call = parallel_toolset_call
+
+    # ── LLM call with exponential-backoff retry ───────────────────────────────
+    _RETRYABLE_SIGNALS = (
+        "rate limit", "429", "timeout", "connection",
+        "overloaded", "503", "529", "service unavailable",
+    )
+    _MAX_LLM_RETRIES = 3
+
+    async def llm_call_with_retry(messages, tools):
+        """Retry transient LLM errors (rate-limits, timeouts) with exponential backoff."""
+        last_err = None
+        for attempt in range(_MAX_LLM_RETRIES):
+            try:
+                return await llm.acall(messages=messages, tools=tools)
+            except RequestyAPIError as exc:
+                last_err = exc
+                err_lower = str(exc).lower()
+                retryable = any(sig in err_lower for sig in _RETRYABLE_SIGNALS)
+                if retryable and attempt < _MAX_LLM_RETRIES - 1:
+                    wait = 2 ** attempt          # 1s → 2s → 4s
+                    emit({
+                        "event": "retry",
+                        "attempt": attempt + 1,
+                        "wait": wait,
+                        "reason": str(exc)[:120],
+                    })
+                    await asyncio.sleep(wait)
+                else:
+                    raise
+        raise last_err  # unreachable but satisfies type checkers
+
+    # ── Trajectory + Context ──────────────────────────────────────────────────
     trajectory_path = args.trajectory_path or os.path.join(
         args.work_dir, ".fastcontext", "trajectory.jsonl"
     )
@@ -205,6 +286,7 @@ def run():
     emit({"event": "start", "model": args.model, "query": args.query,
           "backend": "litellm" if _HAS_LITELLM else "openai-sdk"})
 
+    # ── Main agent loop ───────────────────────────────────────────────────────
     async def agent_loop():
         await context.add(Message(role="system", content=system_prompt))
         await context.add(Message(role="user", content=args.query))
@@ -224,8 +306,9 @@ def run():
 
             emit({"event": "turn", "turn": n_turn})
 
+            # ── LLM call with retry ───────────────────────────────────────────
             try:
-                step_msg = await llm.acall(
+                step_msg = await llm_call_with_retry(
                     messages=context.get_messages(),
                     tools=toolset.schema_list(),
                 )
@@ -237,18 +320,19 @@ def run():
 
             await context.add(step_msg)
 
-            # Emit thinking/reasoning (extended preview for reasoning models)
-            text_preview = (step_msg.content or "")[:500]
+            # ── Emit thinking / reasoning ─────────────────────────────────────
             reasoning_preview = (getattr(step_msg, "reasoning_content", None) or "")[:300]
+            text_preview = (step_msg.content or "")[:500]
             has_tools = bool(step_msg.tool_calls)
 
             if reasoning_preview:
-                emit({"event": "thinking", "text": f"[reasoning] {reasoning_preview}", "has_tools": has_tools})
+                emit({"event": "thinking", "text": f"[reasoning] {reasoning_preview}",
+                      "has_tools": has_tools})
             elif text_preview:
                 emit({"event": "thinking", "text": text_preview, "has_tools": has_tools})
 
-            # Emit token usage if available
-            if step_msg.usage:
+            # ── Emit token usage ──────────────────────────────────────────────
+            if getattr(step_msg, "usage", None):
                 emit({
                     "event": "usage",
                     "prompt_tokens": step_msg.usage.get("prompt_tokens", 0),
@@ -257,27 +341,28 @@ def run():
                 })
 
             if step_msg.tool_calls:
+                # ── Emit tool_start (with parallel badge) ────────────────────
                 n_tools = len(step_msg.tool_calls)
-                parallel_tag = f" [×{n_tools} parallel]" if n_tools > 1 else ""
+                parallel_badge = f" [\u00d7{n_tools} parallel]" if n_tools > 1 else ""
 
-                # Emit tool_start for each call (show parallel tag on first)
                 for i, tc in enumerate(step_msg.tool_calls):
                     args_preview = (tc.arguments or "")[:200]
-                    tag = parallel_tag if i == 0 else ""
-                    emit({"event": "tool_start", "tool": tc.name + tag, "args": args_preview})
+                    badge = parallel_badge if i == 0 else ""
+                    emit({"event": "tool_start", "tool": tc.name + badge, "args": args_preview})
 
-                # Execute all tools (parallel internally via call_with_results)
+                # ── Execute tools (parallel + deduplication) ──────────────────
                 tool_results = await toolset.call(step_msg)
-                raw_tool_results = getattr(toolset, "_last_tool_results", [])
-                raw_tool_results_by_id = {
-                    tr.tool_call_id: tr for tr in raw_tool_results if isinstance(tr, ToolResult)
+                raw_results_by_id: dict = {
+                    tr.tool_call_id: tr
+                    for tr in getattr(toolset, "_last_tool_results", [])
+                    if isinstance(tr, ToolResult)
                 }
 
-                # Emit tool_end for each result
+                # ── Emit tool_end + add to context ────────────────────────────
                 for tr_msg in tool_results:
                     preview = (tr_msg.content or "")[:200]
-                    raw_result = raw_tool_results_by_id.get(tr_msg.tool_call_id)
-                    ok = not raw_result.failed if raw_result else True
+                    raw = raw_results_by_id.get(tr_msg.tool_call_id)
+                    ok = (not raw.failed) if raw else True
                     emit({
                         "event": "tool_end",
                         "tool_call_id": tr_msg.tool_call_id,
@@ -286,7 +371,7 @@ def run():
                     })
                     await context.add(tr_msg)
             else:
-                # Final answer
+                # ── Final answer ──────────────────────────────────────────────
                 emit({"event": "done", "turns": n_turn})
                 if args.citation:
                     return get_final_answer(step_msg.content)

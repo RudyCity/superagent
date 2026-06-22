@@ -3,6 +3,8 @@ export {
   ContextState,
   CompactionDecision,
   ContextManagerConfig,
+  PinnedMessage,
+  AgentTag,
 } from "./ContextManager.js";
 export { TokenTracker, TokenBreakdown } from "./TokenTracker.js";
 export {

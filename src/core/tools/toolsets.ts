@@ -39,6 +39,8 @@ import {
   screenshotTool,
   androidCliTool,
   searchHistoryTool,
+  loadPinnedSessionTool,
+  searchPinnedKnowledgeTool,
   gitWorktreeTool,
   manageTasksTool,
   listPeerSuperagentsTool,
@@ -67,6 +69,8 @@ export const masterToolset: Tool[] = [
   manageSubagentsTool,   // monitor/kill subagents if needed
   scheduleTool,
   searchHistoryTool,
+  loadPinnedSessionTool,
+  searchPinnedKnowledgeTool,
   webSearchTool,
   fastcontextTool,       // AI-powered repo explorer
   readTool,              // read-only: inspect results
@@ -113,6 +117,8 @@ export const superagentToolset: Tool[] = [
   askQuestionTool,
   scheduleTool,
   searchHistoryTool,
+  loadPinnedSessionTool,
+  searchPinnedKnowledgeTool,
   screenshotTool,
   androidCliTool,
 ];
@@ -128,6 +134,8 @@ export const subagentToolsets: Record<string, Tool[]> = {
     webSearchTool,
     fetchUrlTool,
     searchHistoryTool,
+    loadPinnedSessionTool,
+    searchPinnedKnowledgeTool,
     askQuestionTool,
   ],
 

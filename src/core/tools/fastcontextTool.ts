@@ -182,7 +182,7 @@ export const fastcontextTool: Tool = {
 
   async execute(args, cwd, signal) {
     const query = args.query as string;
-    const maxTurns = (args.maxTurns as number) || 8;  // default raised to 8 for thorough traces
+    const maxTurns = (args.maxTurns as number) || 6;
     const citation = args.citation !== false; // default: true
 
     if (!query || query.trim().length === 0) {
@@ -290,7 +290,7 @@ export const fastcontextTool: Tool = {
 
       const child = execa(PYTHON_BIN, cliArgs, {
         cwd,
-        timeout: 300_000,  // 5 minutes — configurable via future /settings fastcontextTimeout
+        timeout: 180_000,
         reject: false,
         cancelSignal: signal,
         buffer: false,
@@ -352,6 +352,17 @@ export const fastcontextTool: Tool = {
                 log(`  ${icon} ${preview}`);
                 break;
               }
+              case "dedup": {
+                const saved = evt.saved ?? 0;
+                if (saved > 0) {
+                  log(`  ♻️  deduped ${saved} redundant tool call${saved > 1 ? "s" : ""}`);
+                }
+                break;
+              }
+              case "retry": {
+                log(`  ⏳ Retry ${evt.attempt}/${3} in ${evt.wait}s — ${(evt.reason || "").slice(0, 80)}`);
+                break;
+              }
               case "usage": {
                 const total = evt.total_tokens ?? 0;
                 const prompt = evt.prompt_tokens ?? 0;
@@ -359,6 +370,36 @@ export const fastcontextTool: Tool = {
                 if (total > 0) {
                   log(`  📊 tokens: ${total.toLocaleString()} (↑${prompt.toLocaleString()} ↓${completion.toLocaleString()})`);
                 }
+                break;
+              }
+              case "error":
+                log(`  🚨 ${evt.text}`);
+                break;
+              case "done":
+                log("");
+                log(`✔ Done — ${evt.turns} turns`);
+                break;
+            }
+          } catch {
+            // Non-JSON stderr — pass through as-is
+            log(`  ${trimmed}`);
+          }
+
+                break;
+              }
+              case "tool_start": {
+                const toolArgs = (evt.args || "")
+                  .replace(/\n/g, " ")
+                  .slice(0, 120);
+                log(`  🔧 ${evt.tool}: ${toolArgs}`);
+                break;
+              }
+              case "tool_end": {
+                const preview = (evt.preview || "")
+                  .replace(/\n/g, " ")
+                  .slice(0, 120);
+                const icon = evt.ok ? "✅" : "❌";
+                log(`  ${icon} ${preview}`);
                 break;
               }
               case "error":

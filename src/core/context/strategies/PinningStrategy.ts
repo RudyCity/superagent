@@ -21,13 +21,16 @@ export class PinningStrategy implements CompactionStrategy {
     const pinnedIds = options.pinnedMessageIds || new Set<string>();
     const preserveRecent = options.preserveRecent || 20;
 
-    const pinned: Message[] = [];
+    const pinned: Array<{ index: number; msg: Message }> = [];
     const unpinned: Message[] = [];
 
-    for (const msg of messages) {
-      const id = this.getMessageId(msg);
+    // Use index-based ID format: "${index}:${role}:${timestamp}"
+    // This matches the format used by pinCommand when pinning messages
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      const id = `${i}:${msg.role}:${msg.timestamp}`;
       if (pinnedIds.has(id)) {
-        pinned.push(msg);
+        pinned.push({ index: i, msg });
       } else {
         unpinned.push(msg);
       }
@@ -45,12 +48,16 @@ export class PinningStrategy implements CompactionStrategy {
       timestamp: Date.now(),
     };
 
-    // Reconstruct: summary + pinned messages (in original order) + recent unpinned
-    const result = this.reconstructOrder(
-      [summaryMessage, ...toKeep],
-      pinned,
-      messages
-    );
+    // Reconstruct: summary first, then pinned messages in original order, then recent unpinned
+    const result: Message[] = [summaryMessage];
+
+    // Insert pinned messages in their original order
+    for (const p of pinned) {
+      result.push(p.msg);
+    }
+
+    // Add recent unpinned messages
+    result.push(...toKeep);
 
     return {
       messages: result,
@@ -74,31 +81,5 @@ export class PinningStrategy implements CompactionStrategy {
       time: 2000,
       apiCalls: 1,
     };
-  }
-
-  private getMessageId(msg: Message): string {
-    return `${msg.role}:${msg.timestamp}:${msg.content.substring(0, 50)}`;
-  }
-
-  private reconstructOrder(
-    summaryAndRecent: Message[],
-    pinned: Message[],
-    original: Message[]
-  ): Message[] {
-    // Simple approach: summary first, then pinned in original order, then recent
-    const result: Message[] = [summaryAndRecent[0]];
-
-    for (const orig of original) {
-      const id = this.getMessageId(orig);
-      const isPinned = pinned.some((p) => this.getMessageId(p) === id);
-      if (isPinned) {
-        result.push(orig);
-      }
-    }
-
-    // Add recent messages (skip the summary which is already added)
-    result.push(...summaryAndRecent.slice(1));
-
-    return result;
   }
 }
