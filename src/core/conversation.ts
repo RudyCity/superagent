@@ -42,8 +42,8 @@ export class Conversation {
   public loadedPlanState?: "IDLE" | "PLANNING_PENDING" | "APPROVED";
   private contextManager: ContextManager | null = null;
 
-  initContextManager(config: ContextManagerConfig): void {
-    const { ContextManager: CM } = require("./context/index.js");
+  async initContextManager(config: ContextManagerConfig): Promise<void> {
+    const { ContextManager: CM } = await import("./context/index.js");
     this.contextManager = new CM(config);
   }
 

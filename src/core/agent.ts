@@ -230,7 +230,7 @@ If none of the options are suitable, still pick the closest one.`;
     this.customTools = customTools;
     this.workingDirectory = workingDirectory || getConfig().workingDirectory;
     this.conversation = new Conversation();
-    this.initContextManager();
+    // ContextManager initializes async via ensureContextManager() on first use
     this.onEvent = (event: AgentEvent) => {
       if (event.type !== "text") {
         this.flushTextLogBuffer();
@@ -274,18 +274,14 @@ If none of the options are suitable, still pick the closest one.`;
     this.onQuestion = onQuestion;
   }
 
-  private initContextManager(): void {
-    try {
-      const modelLimit = getContextWindowLimit(this.config.model);
-      const historyFilePath = this.getCurrentHistoryFilePath().replace(/\.json$/, ".compaction.json");
-      this.conversation.initContextManager({
-        model: this.config.model,
-        contextWindowLimit: modelLimit,
-        historyFilePath,
-      });
-    } catch (err) {
-      this.writeToLogFile("WARN", `Failed to initialize ContextManager: ${(err as Error).message}. Using legacy compaction.`);
-    }
+  private async initContextManager(): Promise<void> {
+    const modelLimit = getContextWindowLimit(this.config.model);
+    const historyFilePath = this.getCurrentHistoryFilePath().replace(/\.json$/, ".compaction.json");
+    await this.conversation.initContextManager({
+      model: this.config.model,
+      contextWindowLimit: modelLimit,
+      historyFilePath,
+    });
   }
 
   /**
@@ -339,6 +335,7 @@ If none of the options are suitable, still pick the closest one.`;
   }
 
   private currentHistoryFilePath: string | null = null;
+  private contextManagerInitFailed = false;
 
   public getPlanFilePath(): string {
     const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
@@ -1498,6 +1495,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
   }
 
   async compactHistoryIfNeeded(): Promise<void> {
+    await this.ensureContextManager();
     const contextManager = this.conversation.getContextManager();
 
     if (contextManager) {
@@ -1506,6 +1504,18 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
     }
 
     await this.legacyCompactHistory();
+  }
+
+  private async ensureContextManager(): Promise<void> {
+    if (this.conversation.hasContextManager()) return;
+    if (this.contextManagerInitFailed) return;
+
+    try {
+      await this.initContextManager();
+    } catch (err) {
+      this.contextManagerInitFailed = true;
+      this.writeToLogFile("WARN", `ContextManager init failed permanently: ${(err as Error).message}`);
+    }
   }
 
   private async contextManagerCompact(): Promise<void> {
