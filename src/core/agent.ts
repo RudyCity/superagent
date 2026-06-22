@@ -230,6 +230,7 @@ If none of the options are suitable, still pick the closest one.`;
     this.customTools = customTools;
     this.workingDirectory = workingDirectory || getConfig().workingDirectory;
     this.conversation = new Conversation();
+    this.initContextManager();
     this.onEvent = (event: AgentEvent) => {
       if (event.type !== "text") {
         this.flushTextLogBuffer();
@@ -271,6 +272,20 @@ If none of the options are suitable, still pick the closest one.`;
     };
     this.onPermission = onPermission;
     this.onQuestion = onQuestion;
+  }
+
+  private initContextManager(): void {
+    try {
+      const modelLimit = getContextWindowLimit(this.config.model);
+      const historyFilePath = this.getCurrentHistoryFilePath().replace(/\.json$/, ".compaction.json");
+      this.conversation.initContextManager({
+        model: this.config.model,
+        contextWindowLimit: modelLimit,
+        historyFilePath,
+      });
+    } catch (err) {
+      this.writeToLogFile("WARN", `Failed to initialize ContextManager: ${(err as Error).message}. Using legacy compaction.`);
+    }
   }
 
   /**
@@ -1483,6 +1498,48 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
   }
 
   async compactHistoryIfNeeded(): Promise<void> {
+    const contextManager = this.conversation.getContextManager();
+
+    if (contextManager) {
+      await this.contextManagerCompact();
+      return;
+    }
+
+    await this.legacyCompactHistory();
+  }
+
+  private async contextManagerCompact(): Promise<void> {
+    const contextManager = this.conversation.getContextManager()!;
+    const messages = this.conversation.getMessages();
+    const decision = contextManager.shouldCompact(messages);
+
+    if (!decision.shouldCompact) {
+      return;
+    }
+
+    try {
+      this.writeToLogFile(
+        "INFO",
+        `Context compaction triggered: ${decision.reason} (strategy: ${decision.recommendedStrategy?.name || "auto"})`
+      );
+
+      const result = await contextManager.compact(messages);
+
+      this.conversation.replaceMessages(result.messages);
+      await this.saveHistory();
+
+      this.writeToLogFile(
+        "INFO",
+        `Compaction completed: ${result.metadata.strategy} strategy, ${result.metadata.messagesBefore || 0} -> ${result.metadata.messagesAfter || 0} messages`
+      );
+    } catch (error) {
+      console.error("ContextManager compaction failed:", error);
+      this.writeToLogFile("ERROR", `ContextManager compaction failed: ${(error as Error).message}`);
+      await this.legacyCompactHistory();
+    }
+  }
+
+  private async legacyCompactHistory(): Promise<void> {
     const modelLimit = getContextWindowLimit(this.config.model);
     const maxHistoryTokens = Math.floor(modelLimit * 0.5);
 
