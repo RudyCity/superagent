@@ -1,9 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
-import { 
-  superagentInstances, 
-  subagentInstances, 
-  notifySuperagentsChanged, 
+import {
+  superagentInstances,
+  subagentInstances,
+  notifySuperagentsChanged,
   notifySubagentsChanged,
   historicalSuperagentTokens,
   setHistoricalSuperagentTokens,
@@ -13,6 +13,7 @@ import {
   setMasterTokens,
   setLastMasterPromptTokens
 } from "./tools/state.js";
+import type { ContextManager, ContextManagerConfig } from "./context/index.js";
 
 export interface Message {
   role: "user" | "assistant" | "system" | "tool";
@@ -39,6 +40,27 @@ export class Conversation {
   private messages: Message[] = [];
   private maxHistory = 200;
   public loadedPlanState?: "IDLE" | "PLANNING_PENDING" | "APPROVED";
+  private contextManager: ContextManager | null = null;
+
+  async initContextManager(config: ContextManagerConfig): Promise<void> {
+    const { ContextManager: CM } = await import("./context/index.js");
+    this.contextManager = new CM(config);
+  }
+
+  getContextManager(): ContextManager | null {
+    return this.contextManager;
+  }
+
+  hasContextManager(): boolean {
+    return this.contextManager !== null;
+  }
+
+  replaceMessages(newMessages: Message[]): void {
+    this.messages = [...newMessages];
+    if (this.messages.length > this.maxHistory) {
+      this.messages = this.messages.slice(-this.maxHistory);
+    }
+  }
 
   async saveToFile(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED"): Promise<void> {
     try {
@@ -273,6 +295,11 @@ export class Conversation {
   }
 
   getTokenEstimate(): number {
+    if (this.contextManager) {
+      const breakdown = this.contextManager.estimateTokensForAll(this.messages);
+      return breakdown.total;
+    }
+
     return this.messages.reduce(
       (sum, m) => sum + Math.ceil(m.content.length / 4),
       0
