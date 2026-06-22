@@ -3,4 +3,6 @@ import "./modelCommand.js";
 import "./settingsCommand.js";
 import "./compactCommand.js";
 import "./terminalCommand.js";
+import "./pinCommand.js";
+import "./compactionHistoryCommand.js";
 //# sourceMappingURL=configCommands.d.ts.map

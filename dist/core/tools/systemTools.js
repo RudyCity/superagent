@@ -65,6 +65,17 @@ function normalizePath(filePath) {
     }
     return filePath;
 }
+/**
+ * Resolve the file path from tool args, accepting common LLM aliases:
+ *   filePath, file_path, TargetFile, path (for file-targeting tools)
+ * Returns the resolved absolute path, or undefined if no valid path was provided.
+ */
+function resolveFilePathFromArgs(args, cwd) {
+    const raw = (args.filePath ?? args.file_path ?? args.TargetFile ?? args.targetFile);
+    if (!raw || typeof raw !== "string" || raw.trim() === "")
+        return undefined;
+    return normalizePath(path.resolve(cwd, raw));
+}
 export const readTool = {
     name: "read",
     description: "Read file contents. Returns lines with line numbers.",
@@ -87,7 +98,10 @@ export const readTool = {
         required: ["filePath"],
     },
     async execute(args, cwd, signal) {
-        const filePath = normalizePath(path.resolve(cwd, args.filePath));
+        const filePath = resolveFilePathFromArgs(args, cwd);
+        if (!filePath) {
+            return "Error: Missing required parameter 'filePath'. Provide the path to the file to read, e.g. { \"filePath\": \"path/to/file\" }.";
+        }
         const offset = Math.max(1, args.offset || 1);
         const limit = args.limit || 2000;
         try {
@@ -139,10 +153,17 @@ export const writeTool = {
         required: ["filePath", "content"],
     },
     async execute(args, cwd, signal) {
-        const filePath = path.resolve(cwd, args.filePath);
+        const filePath = resolveFilePathFromArgs(args, cwd);
+        if (!filePath) {
+            return "Error: Missing required parameter 'filePath'. Provide the path to the file to write.";
+        }
+        const content = args.content;
+        if (content === undefined || content === null) {
+            return "Error: Missing required parameter 'content'. Provide the content to write to the file.";
+        }
         try {
             await fs.mkdir(path.dirname(filePath), { recursive: true });
-            await fs.writeFile(filePath, args.content, "utf-8");
+            await fs.writeFile(filePath, content, "utf-8");
             return `File written: ${filePath}`;
         }
         catch (err) {
@@ -181,7 +202,10 @@ export const editTool = {
         required: ["filePath", "oldString", "newString"],
     },
     async execute(args, cwd, signal) {
-        const filePath = path.resolve(cwd, args.filePath);
+        const filePath = resolveFilePathFromArgs(args, cwd);
+        if (!filePath) {
+            return "Error: Missing required parameter 'filePath'. Provide the path to the file to edit.";
+        }
         try {
             const content = await fs.readFile(filePath, "utf-8");
             const oldStr = args.oldString;
@@ -490,8 +514,15 @@ export const writeToFileTool = {
         required: ["filePath", "content"],
     },
     async execute(args, cwd, signal) {
-        const filePath = path.resolve(cwd, args.filePath);
+        const filePath = resolveFilePathFromArgs(args, cwd);
+        if (!filePath) {
+            return "Error: Missing required parameter 'filePath'. Provide the path to the file to write to.";
+        }
         const overwrite = !!args.overwrite;
+        const nextContent = args.content;
+        if (nextContent === undefined || nextContent === null) {
+            return "Error: Missing required parameter 'content'. Provide the content to write to the file.";
+        }
         try {
             if (!overwrite) {
                 try {
@@ -510,7 +541,6 @@ export const writeToFileTool = {
             catch {
                 existedBefore = false;
             }
-            const nextContent = args.content;
             const summary = buildEditSummary(previousContent, nextContent, filePath, existedBefore);
             if (previousContent === nextContent && existedBefore) {
                 return summary;
@@ -560,7 +590,10 @@ export const replaceFileContentTool = {
         required: ["filePath", "targetContent", "replacementContent", "startLine", "endLine"],
     },
     async execute(args, cwd, signal) {
-        const filePath = path.resolve(cwd, (args.filePath || args.TargetFile));
+        const filePath = resolveFilePathFromArgs(args, cwd);
+        if (!filePath) {
+            return "Error: Missing required parameter 'filePath'. Provide the path to the file to edit.";
+        }
         const targetContent = (args.targetContent ?? args.TargetContent ?? "");
         const replacementContent = (args.replacementContent ?? args.ReplacementContent ?? "");
         const startLine = Math.max(1, Number(args.startLine ?? args.StartLine ?? 0));
@@ -670,7 +703,10 @@ export const multiReplaceFileContentTool = {
         required: ["filePath", "chunks"],
     },
     async execute(args, cwd, signal) {
-        const filePath = path.resolve(cwd, (args.filePath || args.TargetFile));
+        const filePath = resolveFilePathFromArgs(args, cwd);
+        if (!filePath) {
+            return "Error: Missing required parameter 'filePath'. Provide the path to the file to edit.";
+        }
         const rawChunks = args.chunks || args.ReplacementChunks || args.replacementChunks || [];
         const rawChunksArray = Array.isArray(rawChunks)
             ? rawChunks
@@ -746,7 +782,10 @@ export const applyPatchTool = {
         required: ["filePath", "patchContent"],
     },
     async execute(args, cwd, signal) {
-        const filePath = path.resolve(cwd, args.filePath);
+        const filePath = resolveFilePathFromArgs(args, cwd);
+        if (!filePath) {
+            return "Error: Missing required parameter 'filePath'. Provide the path to the file to patch.";
+        }
         const patchContent = args.patchContent;
         try {
             const originalContent = await fs.readFile(filePath, "utf-8");

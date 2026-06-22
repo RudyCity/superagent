@@ -20,7 +20,7 @@ Superagent bridges this gap by providing an integrated terminal environment that
 
 Unlike standard headless execution bots or basic shell wrappers, Superagent is designed from the ground up as a fully interactive developer workspace companion:
 
-- **Real-Time Context Window Tracking & Compacting**: Traditional assistants run blind to token consumption. Superagent features a continuous visual dashboard tracking prompt tokens, completion costs, and remaining context windows. If the context grows too large, the `/compact` command generates an optimized context summary to save API costs.
+- **Real-Time Context Window Tracking & Intelligent Compacting**: Traditional assistants run blind to token consumption. Superagent features a continuous visual dashboard tracking prompt tokens, completion costs, and remaining context windows, powered by a modular **Context Manager** with model-specific tokenizers (OpenAI/Anthropic). When the context grows too large, automatic compaction kicks in using pluggable strategies — truncation, LLM-powered summarization, or semantic-aware scoring. Use `/compact now` to force compaction on demand, `/pin` to protect important messages from being compacted, and `/compaction-history` to audit all compaction events.
 - **Granular Session Checkpoints**: Never lose progress. Superagent lets you snapshot your conversational and code states into checkpoints (via `/checkpoint`). If an experimental approach fails, you can revert back instantly to a previous checkpoint, restoring the entire session timeline.
 - **3-Tier Multi-Agent Orchestration**: Instead of doing all work sequentially under a single LLM thread, Superagent supports a full 3-tier agent hierarchy. A **Master Agent** orchestrates one or more **Superagents**, each isolated in their own git worktree for independent feature development. Superagents can further delegate atomic operations to ephemeral **Subagents**. It adopts explicit multi-stage planning, structured delegation with constraints and acceptance criteria, and automated self-verification. Launch with `superagent --multi`.
 - **Pre-Merge Auto-Debugging Loop**: Ensures code quality at merge boundaries. Before any Superagent task is merged, a verification script runs builds and tests. If a failure occurs, the Master Agent triggers an auto-debugging loop (up to 3 retries), prompting the Superagent to analyze the logs, implement a fix, and verify it dynamically.
@@ -356,7 +356,10 @@ Superagent supports a wide range of slash commands within the terminal chat to m
 - **`/new`**: Starts a fresh conversation session. Wipes the chat history, resets agent states, and deletes temporary checkpoints.
 - **`/resume`**: Opens an interactive visual wizard listing previous session histories, allowing you to select and resume any past conversation.
 - **`/clear`**: Wipes the visual logs and terminal chat screen while maintaining the current conversation history.
-- **`/compact`**: Shows a condensed summary of the active conversation history to help you audit and optimize prompt context usage.
+- **`/compact`**: Shows the current ContextManager status including compaction count, total tokens saved, current state, and last compaction strategy used.
+- **`/compact now`**: Forces manual compaction on demand. Displays tokens before/after, tokens saved, and the strategy used (truncation, summarization, or semantic).
+- **`/pin`**: Pin important messages to prevent them from being removed during compaction. Subcommands: `/pin list` (view pinned messages), `/pin last` (pin the last user message), `/pin unpin <id>` (remove a pin).
+- **`/compaction-history`** (alias: **`/ch`**): View the full audit trail of compaction events with timestamps, strategies used, tokens saved, and messages preserved.
 - **`/quit`** or **`/exit`**: Safely exits the application.
 
 ### State Checkpoints

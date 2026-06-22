@@ -1,3 +1,4 @@
+import type { ContextManager, ContextManagerConfig } from "./context/index.js";
 export interface Message {
     role: "user" | "assistant" | "system" | "tool";
     content: string;
@@ -20,6 +21,12 @@ export declare class Conversation {
     private messages;
     private maxHistory;
     loadedPlanState?: "IDLE" | "PLANNING_PENDING" | "APPROVED";
+    private contextManager;
+    initContextManager(config: ContextManagerConfig): Promise<void>;
+    updateContextManagerLLM(model: any, abortSignal?: AbortSignal): Promise<void>;
+    getContextManager(): ContextManager | null;
+    hasContextManager(): boolean;
+    replaceMessages(newMessages: Message[]): void;
     saveToFile(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED"): Promise<void>;
     loadFromFile(filePath: string): Promise<void>;
     addMessage(msg: Message): void;

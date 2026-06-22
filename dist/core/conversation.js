@@ -5,6 +5,28 @@ export class Conversation {
     messages = [];
     maxHistory = 200;
     loadedPlanState;
+    contextManager = null;
+    async initContextManager(config) {
+        const { ContextManager: CM } = await import("./context/index.js");
+        this.contextManager = new CM(config);
+    }
+    async updateContextManagerLLM(model, abortSignal) {
+        if (!this.contextManager)
+            return;
+        this.contextManager.setLLMModel(model, abortSignal);
+    }
+    getContextManager() {
+        return this.contextManager;
+    }
+    hasContextManager() {
+        return this.contextManager !== null;
+    }
+    replaceMessages(newMessages) {
+        this.messages = [...newMessages];
+        if (this.messages.length > this.maxHistory) {
+            this.messages = this.messages.slice(-this.maxHistory);
+        }
+    }
     async saveToFile(filePath, planState) {
         try {
             await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -215,6 +237,10 @@ export class Conversation {
         return summary;
     }
     getTokenEstimate() {
+        if (this.contextManager) {
+            const breakdown = this.contextManager.estimateTokensForAll(this.messages);
+            return breakdown.total;
+        }
         return this.messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
     }
 }

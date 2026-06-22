@@ -95,6 +95,7 @@ export declare class Agent {
     }): Promise<string>;
     private flushTextLogBuffer;
     constructor(onEvent: (event: AgentEvent) => void, onPermission: PermissionHandler, onQuestion: QuestionHandler, customSystemPrompt?: string, customTools?: Tool[], workingDirectory?: string);
+    private initContextManager;
     /**
      * Emit a text event into the live UI stream.
      * Used by tools that need to show progress/output while executing.
@@ -108,6 +109,7 @@ export declare class Agent {
      */
     private emitViolation;
     private currentHistoryFilePath;
+    private contextManagerInitFailed;
     getPlanFilePath(): string;
     getTaskFilePath(): string;
     getWalkthroughFilePath(): string;
@@ -122,6 +124,9 @@ export declare class Agent {
     private runAgentLoop;
     private buildMessages;
     compactHistoryIfNeeded(): Promise<void>;
+    private ensureContextManager;
+    private contextManagerCompact;
+    private legacyCompactHistory;
     private summarizeMessages;
     private delayWithCountdown;
     abort(): void;
@@ -139,6 +144,7 @@ export declare class Agent {
     private autoCheckpoint;
     resetInternalState(): void;
     getHistory(): Conversation;
+    getContextManager(): import("./context/ContextManager.js").ContextManager | null;
     isAgentRunning(): boolean;
 }
 //# sourceMappingURL=agent.d.ts.map

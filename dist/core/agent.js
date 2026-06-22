@@ -172,6 +172,7 @@ If none of the options are suitable, still pick the closest one.`;
         this.customTools = customTools;
         this.workingDirectory = workingDirectory || getConfig().workingDirectory;
         this.conversation = new Conversation();
+        // ContextManager initializes async via ensureContextManager() on first use
         this.onEvent = (event) => {
             if (event.type !== "text") {
                 this.flushTextLogBuffer();
@@ -222,6 +223,17 @@ If none of the options are suitable, still pick the closest one.`;
         this.onPermission = onPermission;
         this.onQuestion = onQuestion;
     }
+    async initContextManager() {
+        const modelLimit = getContextWindowLimit(this.config.model);
+        const historyFilePath = this.getCurrentHistoryFilePath().replace(/\.json$/, ".compaction.json");
+        await this.conversation.initContextManager({
+            model: this.config.model,
+            contextWindowLimit: modelLimit,
+            historyFilePath,
+            llmModel: this.getModel(),
+            abortSignal: this.abortController?.signal,
+        });
+    }
     /**
      * Emit a text event into the live UI stream.
      * Used by tools that need to show progress/output while executing.
@@ -265,6 +277,7 @@ If none of the options are suitable, still pick the closest one.`;
         this.onEvent({ type: "illegal_operation", violation });
     }
     currentHistoryFilePath = null;
+    contextManagerInitFailed = false;
     getPlanFilePath() {
         const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
         return historyPath.replace(/\.json$/, "_implementation_plan.md");
@@ -978,7 +991,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                         }
                     }
                     if (MODIFYING_TOOLS.includes(tc.name)) {
-                        const filePath = tc.args.filePath || tc.args.TargetFile || "";
+                        const filePath = tc.args.filePath || tc.args.file_path || tc.args.TargetFile || "";
                         const planFilePath = this.getPlanFilePath();
                         const taskFilePath = this.getTaskFilePath();
                         const walkthroughFilePath = this.getWalkthroughFilePath();
@@ -1367,6 +1380,48 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
         return coreMessages;
     }
     async compactHistoryIfNeeded() {
+        await this.ensureContextManager();
+        const contextManager = this.conversation.getContextManager();
+        if (contextManager) {
+            await this.contextManagerCompact();
+            return;
+        }
+        await this.legacyCompactHistory();
+    }
+    async ensureContextManager() {
+        if (this.conversation.hasContextManager())
+            return;
+        if (this.contextManagerInitFailed)
+            return;
+        try {
+            await this.initContextManager();
+        }
+        catch (err) {
+            this.contextManagerInitFailed = true;
+            this.writeToLogFile("WARN", `ContextManager init failed permanently: ${err.message}`);
+        }
+    }
+    async contextManagerCompact() {
+        const contextManager = this.conversation.getContextManager();
+        const messages = this.conversation.getMessages();
+        const decision = contextManager.shouldCompact(messages);
+        if (!decision.shouldCompact) {
+            return;
+        }
+        try {
+            this.writeToLogFile("INFO", `Context compaction triggered: ${decision.reason} (strategy: ${decision.recommendedStrategy?.name || "auto"})`);
+            const result = await contextManager.compact(messages);
+            this.conversation.replaceMessages(result.messages);
+            await this.saveHistory();
+            this.writeToLogFile("INFO", `Compaction completed: ${result.metadata.strategy} strategy, ${result.metadata.messagesBefore || 0} -> ${result.metadata.messagesAfter || 0} messages`);
+        }
+        catch (error) {
+            console.error("ContextManager compaction failed:", error);
+            this.writeToLogFile("ERROR", `ContextManager compaction failed: ${error.message}`);
+            await this.legacyCompactHistory();
+        }
+    }
+    async legacyCompactHistory() {
         const modelLimit = getContextWindowLimit(this.config.model);
         const maxHistoryTokens = Math.floor(modelLimit * 0.5);
         if (this.conversation.getTokenEstimate() > maxHistoryTokens) {
@@ -1568,6 +1623,9 @@ ${formatted}`;
     }
     getHistory() {
         return this.conversation;
+    }
+    getContextManager() {
+        return this.conversation.getContextManager();
     }
     isAgentRunning() {
         return this.isRunning;

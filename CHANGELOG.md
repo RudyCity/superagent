@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.76] - 2026-06-22
+
+### Added
+- **Context Manager Overhaul**: Complete modular rewrite of the context management system, introducing a pluggable architecture for intelligent conversation compaction:
+  - **`TokenTracker`**: Model-specific token counting with support for OpenAI (`tiktoken`) and Anthropic (`@anthropic-ai/tokenizer`) tokenizers. Provides accurate per-message and total token estimation.
+  - **`CompactionStrategy` Interface**: Pluggable strategy pattern for compaction methods — includes `TruncationStrategy` (drop oldest messages), `SummarizationStrategy` (LLM-powered summarization with heuristic fallback), and `SemanticStrategy` (semantic-aware compaction via `SemanticAnalyzer`).
+  - **`SemanticAnalyzer`**: Intelligent message scoring based on technical density, decision points, file references, and error context to preserve high-value messages during compaction.
+  - **`CompactionHistory`**: Persistent audit trail of all compaction events, tracking tokens before/after, strategy used, timestamps, and messages preserved. Queryable via `/compaction-history`.
+  - **`ContextManager` Orchestrator**: Central coordinator that monitors token usage, triggers automatic compaction when thresholds are exceeded, and exposes public API for manual compaction, pinning, and status queries.
+- **`/compact now` Command**: Force manual compaction on demand. Shows tokens before/after, tokens saved, compaction count, and the strategy used.
+- **`/pin` Command**: Pin important messages to prevent them from being compacted. Subcommands: `/pin list` (view pinned messages), `/pin last` (pin the last user message), `/pin unpin <id>` (remove a pin).
+- **`/compaction-history` Command** (alias: `/ch`): View the full audit trail of compaction events with timestamps, strategies used, tokens saved, and messages preserved.
+- **LLM-Powered Summarization**: `SummarizationStrategy` now uses `generateText` (Vercel AI SDK) for real LLM-based conversation summaries, with 3-retry logic and heuristic fallback. Prompt is engineered to preserve file paths, technical decisions, and code snippets.
+- **Autocomplete Suggestions**: Tab-completion support for `/compact now`, `/pin list`, `/pin last`, `/pin unpin` in the input bar.
+
+### Changed
+- **StatusBar Token Display**: Now reads from `ContextManager.getTokenTracker()` for accurate, real-time context usage statistics instead of legacy estimation.
+- **`/setting-context-limit`**: Refreshes ContextManager's compaction threshold in real-time when the context window limit is changed.
+- **`/model` Command**: Automatically refreshes the ContextManager's tokenizer when the active LLM model is switched.
+- **`/compact` (no args)**: Now shows ContextManager status including compaction count, total tokens saved, current state, and last strategy used.
+
+### Tests
+- Added integration tests for the full ContextManager lifecycle (init, compact, pin, history).
+- Fixed async ContextManager initialization to prevent race conditions in tests.
+- All 50 tests passing.
+
+---
+
 ## [1.1.71] - 2026-06-22
 
 ### Added
