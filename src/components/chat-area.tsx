@@ -93,8 +93,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
 
     // Content width accounts for the "│    " prefix (5 visual chars) in assistant rendering
     const assistantContentWidth = Math.max(10, width - 5);
-    // Nested child content width: indent("│    " = 5) + "│    " (5) + indicator("▼ ✓ " = 4) = 14 chars prefix
-    const childContentWidth = Math.max(10, width - 14);
+    // Nested child content width: indent("│    " = 5) + indicator("▼ ✓ " = 4) = 9 chars prefix (clamped to 10)
+    const childContentWidth = Math.max(10, width - 10);
 
     let linesCount = 2; // Border header + closing lines
 
@@ -227,8 +227,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
         currentRow += parentHWithoutClosing;
 
         // Child positions
-        // Nested child content width: indent("│    " = 5) + "│    " (5) + indicator("▼ ✓ " = 4) = 14 chars prefix
-        const childContentWidth = Math.max(10, chatWidth - 14);
+        // Nested child content width: indent("│    " = 5) + indicator("▼ ✓ " = 4) = 9 chars prefix (clamped to 10)
+        const childContentWidth = Math.max(10, chatWidth - 10);
         const childExpanded = expandedChildren.get(i) || new Set();
         for (let ci = 0; ci < line.children.length; ci++) {
           const child = line.children[ci];

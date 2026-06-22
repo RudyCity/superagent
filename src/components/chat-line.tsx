@@ -427,7 +427,7 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
           <Text color="yellow">
-            {indent}│    <Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
+            {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
           </Text>
         </Box>
       );
@@ -439,7 +439,7 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
           return (
             <Box key={idx} flexDirection="row">
               <Text color="yellow">
-                {indent}│    {isFirstLine ? "▼ ⚙️ " : "    "}
+                {indent}{isFirstLine ? "▼ ⚙️ " : "    "}
               </Text>
               {isFirstLine ? (
                 <Text color="yellow">
@@ -466,7 +466,7 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
           <Text color={themeColor}>
-            {indent}│    <Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text color={themeColor}>{cleanDesc}</Text> <Text dimColor italic>{isError ? "(click to view error)" : "(click to view output)"}</Text>
+            {indent}<Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text color={themeColor}>{cleanDesc}</Text> <Text dimColor italic>{isError ? "(click to view error)" : "(click to view output)"}</Text>
           </Text>
         </Box>
       );
@@ -479,7 +479,7 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
           return (
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>
-                {indent}│    {isFirstLine ? (isError ? "▼ ✗ " : "▼ ✓ ") : "    "}
+                {indent}{isFirstLine ? (isError ? "▼ ✗ " : "▼ ✓ ") : "    "}
               </Text>
               {isFirstLine ? (
                 <Text color={themeColor}>
