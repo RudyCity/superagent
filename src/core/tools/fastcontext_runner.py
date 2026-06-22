@@ -463,6 +463,7 @@ def run():
     _RETRYABLE_SIGNALS = (
         "rate limit", "429", "timeout", "connection",
         "overloaded", "503", "529", "service unavailable",
+        "internalservererror", "openaiexception",  # LiteLLM custom endpoint failures
     )
     _MAX_LLM_RETRIES = 3
 

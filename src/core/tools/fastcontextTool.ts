@@ -378,6 +378,9 @@ export const fastcontextTool: Tool = {
       if (providerMismatch) {
         log(`⚠️  Provider from tier not found, using fallback provider`);
       }
+      if (tierName !== "researcher") {
+        log(`💡 Tip: Set a dedicated researcher model via /model for better fastcontext results.`);
+      }
       log("");
 
       const child = execa(PYTHON_BIN, cliArgs, {
@@ -510,17 +513,20 @@ export const fastcontextTool: Tool = {
       // Clear the live panel so it doesn't linger after the tool finishes
       clearActiveToolOutput();
 
-      // Cleanup trajectory file
-      try {
-        if (existsSync(trajectoryPath)) {
-          unlinkSync(trajectoryPath);
-        }
-      } catch {}
+      // Cleanup trajectory file — preserve on failure for post-mortem debugging
+      const exitedWithError2 = result.exitCode !== 0 || result.exitCode == null;
+      if (!exitedWithError2) {
+        try {
+          if (existsSync(trajectoryPath)) {
+            unlinkSync(trajectoryPath);
+          }
+        } catch {}
+      }
 
       const output = stdoutAll.trim();
       const stderrRaw = stderrAll.trim() || (result.stderr || "").trim();
 
-      const exitedWithError = result.exitCode !== 0 || result.exitCode == null;
+      const exitedWithError = exitedWithError2;
       if (exitedWithError) {
         // Extract root-cause error messages from JSONL stderr events
         const errorEvents: string[] = [];
