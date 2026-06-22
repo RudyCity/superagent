@@ -16,6 +16,9 @@ interface DashboardWizardProps {
   pendingQuestion: any;
   agent: any;
   terminalWidth: number;
+  focus?: "plan" | "actions";
+  scrollOffset?: number;
+  onScrollChange?: (val: number) => void;
 }
 
 export function DashboardWizard({
@@ -29,6 +32,9 @@ export function DashboardWizard({
   pendingQuestion,
   agent,
   terminalWidth,
+  focus,
+  scrollOffset,
+  onScrollChange,
 }: DashboardWizardProps) {
   if (!activeWizard) {
     return null;
@@ -79,6 +85,9 @@ export function DashboardWizard({
             borderColor="yellow"
             terminalWidth={terminalWidth}
             maxContentHeight={10}
+            focus={focus}
+            scrollOffset={scrollOffset}
+            onScrollChange={onScrollChange}
           />
         </>
       )}

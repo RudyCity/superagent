@@ -35,6 +35,9 @@ export interface WizardPanelsProps {
   checkpointsList: Checkpoint[];
   goalMode: { goal: string; startedAt: number } | null;
   suggestions: string[];
+  focus?: "plan" | "actions";
+  scrollOffset?: number;
+  onScrollChange?: (val: number) => void;
 }
 
 export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps) {
@@ -83,6 +86,9 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
             selectedIndex={wizardSelectedIndex}
             step={activeWizard.step}
             borderColor="yellow"
+            focus={props.focus}
+            scrollOffset={props.scrollOffset}
+            onScrollChange={props.onScrollChange}
           />
         )}
 

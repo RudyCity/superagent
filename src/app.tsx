@@ -1629,17 +1629,22 @@ export function App({
   // Wizard/suggestions height
   let wizardSectionHeight = 0;
   if (activeWizard) {
-    wizardSectionHeight += 3;
-    if (activeWizard.type === "login") {
-      if (activeWizard.step === 1 || activeWizard.step === 2) wizardSectionHeight += 8;
-      else if (activeWizard.step === 10) wizardSectionHeight += 8 + Math.min(6, wizardOptions.length);
-      else if ([3,4,6,11,12,13].includes(activeWizard.step)) wizardSectionHeight += 6;
-    } else if (activeWizard.type === "model") {
-      wizardSectionHeight += wizardOptions.length > 0 ? 13 : 6;
-    } else if (activeWizard.type === "permission") {
-      wizardSectionHeight += 9;
-    } else if (activeWizard.type === "question") {
-      wizardSectionHeight += 8 + Math.min(6, wizardOptions.length);
+    if (activeWizard.type === "plan_approve") {
+      const planPath = agentRef.current?.getPlanFilePath() || "";
+      wizardSectionHeight = planApprovalChromeHeight(planPath, activeWizard.step);
+    } else {
+      wizardSectionHeight += 3;
+      if (activeWizard.type === "login") {
+        if (activeWizard.step === 1 || activeWizard.step === 2) wizardSectionHeight += 8;
+        else if (activeWizard.step === 10) wizardSectionHeight += 8 + Math.min(6, wizardOptions.length);
+        else if ([3,4,6,11,12,13].includes(activeWizard.step)) wizardSectionHeight += 6;
+      } else if (activeWizard.type === "model") {
+        wizardSectionHeight += wizardOptions.length > 0 ? 13 : 6;
+      } else if (activeWizard.type === "permission") {
+        wizardSectionHeight += 9;
+      } else if (activeWizard.type === "question") {
+        wizardSectionHeight += 8 + Math.min(6, wizardOptions.length);
+      }
     }
   } else if (input.startsWith("/") && suggestions.length > 0) {
     wizardSectionHeight += 2;
@@ -1759,6 +1764,12 @@ export function App({
     focusMode,
     setFocusMode,
     setScrollOffset,
+    activeWizard,
+    setActiveWizard,
+    wizardOptions,
+    wizardSelectedIndex,
+    setWizardSelectedIndex,
+    planPath,
     focusedResponseIndex,
     setFocusedResponseIndex,
     setFocusedResponseOffset,
@@ -1863,6 +1874,9 @@ export function App({
               checkpointsList={checkpointsList}
               goalMode={goalMode}
               suggestions={suggestions}
+              focus={(activeWizard?.data?.focus as "plan" | "actions") || "actions"}
+              scrollOffset={parseInt(activeWizard?.data?.scrollOffset || "0", 10)}
+              onScrollChange={(offset) => setActiveWizard((curr: any) => curr ? { ...curr, data: { ...curr.data, scrollOffset: String(offset) } } : null)}
             />
 
             {/* CommandLine Input — hidden for selection-only wizard steps */}

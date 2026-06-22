@@ -1119,6 +1119,9 @@ export function MultiAgentDashboard({
         pendingQuestion={pendingQuestion}
         agent={agent}
         terminalWidth={terminalSize.width}
+        focus={(activeWizard?.data?.focus as "plan" | "actions") || "actions"}
+        scrollOffset={parseInt(activeWizard?.data?.scrollOffset || "0", 10)}
+        onScrollChange={(offset) => setActiveWizard((curr: any) => curr ? { ...curr, data: { ...curr.data, scrollOffset: String(offset) } } : null)}
       />
 
       {/* Active Subagents & Tasks Live List (Full Width) */}
