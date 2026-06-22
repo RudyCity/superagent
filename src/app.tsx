@@ -163,7 +163,7 @@ export function App({
 
   // Visible line positions for mouse click detection
   const [visibleLinePositions, setVisibleLinePositions] = useState<
-    Array<{ index: number; startRow: number; endRow: number; isTruncated: boolean; type: string; isCollapsible?: boolean }>
+    Array<{ index: number; startRow: number; endRow: number; isTruncated: boolean; type: string; isCollapsible?: boolean; parentIndex?: number; childIndex?: number }>
   >([]);
 
   // Collapsible chat lines state (tool_start, tool_end, system, error)
@@ -1709,7 +1709,10 @@ export function App({
   }
 
   // Chat content start row (after header, for visible line position calculation)
-  const chatContentStartRow = showBanner ? 9 : 2;
+  // Banner: marginY(1) + inner_row(4) + marginY(1) = 6 rows; +1 header row → content starts at row 8
+  // No git warning adds ~2 extra rows (marginY(1) + 1 content row)
+  const bannerHeight = showBanner ? (gitBranch ? 6 : 8) : 0;
+  const chatContentStartRow = bannerHeight + 1 /* header */ + 1 /* first content row */;
 
   // Update mouse context ref (read by mouse handler on each event)
   mouseCtxRef.current = {

@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import { Banner } from "./banner.js";
 import { ChatLineComponent, renderMarkdown, truncateStreamDisplay, isCollapsibleType } from "./chat-line.js";
 import { LoadingIndicator, ToolLoadingIndicator } from "./common/LoadingIndicators.js";
-import { getTruncatedAssistantIndexes, wrapTextForDisplay, renderScrollBar } from "../utils/responseScroll.js";
+import { getTruncatedAssistantIndexes, wrapTextForDisplay, renderScrollBar, capDisplayLines } from "../utils/responseScroll.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ChatLinePosition } from "../hooks/useMouseScroll.js";
 
@@ -90,22 +90,35 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     if (lineIdx >= 0 && isCollapsibleType(line.type) && !expandedLines.has(lineIdx)) {
       return 1;
     }
-    let linesCount = 2; // Border header + spacing lines
-    const textLines = line.content.split("\n");
-    // Only cap assistant responses that are NOT the last one (last response shows full)
-    const maxContentLines = (line.type === "assistant" && !isLastAssistant) ? maxAssistantResponseLines + 1 : Number.POSITIVE_INFINITY;
-    for (const l of textLines) {
-      let rawText = l;
-      if (line.type === "user") {
-        rawText = l.replace(/^❯ /, "");
-      } else if (line.type === "tool_start") {
-        rawText = l.replace(/^⚡ /, "");
+
+    // Content width accounts for the "│    " prefix (5 visual chars) in assistant rendering
+    const assistantContentWidth = Math.max(10, width - 5);
+    // Nested child content width: indent("│    " = 5) + "│    " (5) = 10 chars prefix
+    const childContentWidth = Math.max(10, width - 10);
+
+    let linesCount = 2; // Border header + closing lines
+
+    if (line.type === "assistant" && !isLastAssistant) {
+      // Apply capDisplayLines like the actual rendering does
+      const capped = capDisplayLines(line.content, maxAssistantResponseLines + 1, assistantContentWidth);
+      const textLines = capped.text.split("\n");
+      for (const l of textLines) {
+        linesCount += Math.max(1, Math.ceil(l.length / assistantContentWidth));
       }
-      linesCount += Math.max(1, Math.ceil(rawText.length / width));
-      if (linesCount >= maxContentLines + 2) {
-        return maxContentLines + 2;
+      if (capped.truncated) linesCount += 1; // truncation indicator line
+    } else {
+      const textLines = line.content.split("\n");
+      for (const l of textLines) {
+        let rawText = l;
+        if (line.type === "user") {
+          rawText = l.replace(/^❯ /, "");
+        } else if (line.type === "tool_start") {
+          rawText = l.replace(/^⚡ /, "");
+        }
+        linesCount += Math.max(1, Math.ceil(rawText.length / width));
       }
     }
+
     // Account for nested children
     if (line.children && line.children.length > 0) {
       const childExpanded = expandedChildren.get(lineIdx) || new Set();
@@ -113,12 +126,12 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
         const child = line.children[ci];
         const childIsCollapsed = isCollapsibleType(child.type) && !childExpanded.has(ci);
         if (childIsCollapsed) {
-          linesCount += 1; // Collapsed = 1 line
+          linesCount += 1; // Collapsed = 1 line (compact summary)
         } else {
+          // Expanded = just content lines (no header/closing)
           const childLines = child.content.split("\n");
-          linesCount += 2; // header + spacing
           for (const cl of childLines) {
-            linesCount += Math.max(1, Math.ceil(cl.length / width));
+            linesCount += Math.max(1, Math.ceil(cl.length / childContentWidth));
           }
         }
       }
@@ -180,13 +193,24 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       const isCollapsible = isCollapsibleType(line.type);
 
       if (line.type === "assistant" && line.children && line.children.length > 0) {
-        // Calculate parent text height (header + text + spacing, without children)
-        const textLines = line.content.split("\n");
-        let parentH = 2; // header + spacing
-        const maxContentLines = (i !== lastAssistantIdx) ? (maxAssistantResponseLines || 12) + 1 : Number.POSITIVE_INFINITY;
-        for (const l of textLines) {
-          parentH += Math.max(1, Math.ceil(l.length / chatWidth));
-          if (parentH >= maxContentLines + 2) { parentH = maxContentLines + 2; break; }
+        // Calculate parent text height (header + text + truncation + closing, without children)
+        // Use contentWidth to account for "│    " prefix (5 chars) in renderMarkdown
+        const contentWidth = Math.max(10, chatWidth - 5);
+        let parentH = 2; // header + closing
+
+        if (i !== lastAssistantIdx) {
+          // Apply capDisplayLines like the actual rendering does
+          const capped = capDisplayLines(line.content, (maxAssistantResponseLines || 12) + 1, contentWidth);
+          const textLines = capped.text.split("\n");
+          for (const l of textLines) {
+            parentH += Math.max(1, Math.ceil(l.length / contentWidth));
+          }
+          if (capped.truncated) parentH += 1; // truncation indicator line
+        } else {
+          const textLines = line.content.split("\n");
+          for (const l of textLines) {
+            parentH += Math.max(1, Math.ceil(l.length / contentWidth));
+          }
         }
         // Parent position
         positions.push({
@@ -200,6 +224,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
         currentRow += parentH;
 
         // Child positions
+        // Nested child content width: indent("│    " = 5) + "│    " (5) = 10 chars prefix
+        const childContentWidth = Math.max(10, chatWidth - 10);
         const childExpanded = expandedChildren.get(i) || new Set();
         for (let ci = 0; ci < line.children.length; ci++) {
           const child = line.children[ci];
@@ -209,11 +235,13 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
           if (childIsCollapsed) {
             childH = 1;
           } else {
+            // Expanded = just content lines (no header/closing)
             const childLines = child.content.split("\n");
-            childH = 2; // header + spacing
+            childH = 0;
             for (const cl of childLines) {
-              childH += Math.max(1, Math.ceil(cl.length / chatWidth));
+              childH += Math.max(1, Math.ceil(cl.length / childContentWidth));
             }
+            if (childH === 0) childH = 1; // minimum 1 row for empty content
           }
           positions.push({
             index: i,

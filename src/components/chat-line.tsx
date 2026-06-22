@@ -429,16 +429,13 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
           <Text color="yellow">
-            {indent}├───[ <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>click to expand</Text>
+            {indent}<Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> <Text dimColor italic>click to expand</Text>
           </Text>
         </Box>
       );
     }
     return (
       <Box key={`child-${childIdx}`} flexDirection="column">
-        <Text color="yellow">
-          {indent}├───[ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>click to collapse</Text>
-        </Text>
         {content.split("\n").map((l, idx) => (
           <Box key={idx} flexDirection="row">
             <Text color="yellow">{indent}│    </Text>
@@ -466,9 +463,6 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
             })() : <Text bold color="white">{l}</Text>}
           </Box>
         ))}
-        <Box flexDirection="row">
-          <Text color="yellow">{indent}│ </Text>
-        </Box>
       </Box>
     );
   }
@@ -485,16 +479,13 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
           <Text color={themeColor}>
-            {indent}├───[ <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>click to expand</Text>
+            {indent}<Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> <Text dimColor italic>click to expand</Text>
           </Text>
         </Box>
       );
     }
     return (
       <Box key={`child-${childIdx}`} flexDirection="column">
-        <Text color={themeColor}>
-          {indent}├───[ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>click to collapse</Text>
-        </Text>
         {contentText.split("\n").map((l, idx) => (
           <Box key={idx} flexDirection="row">
             <Text color={themeColor}>{indent}│    </Text>
@@ -510,9 +501,6 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
             })() : <Text color={isError ? "white" : "gray"} dimColor={!isError}>{l}</Text>}
           </Box>
         ))}
-        <Box flexDirection="row">
-          <Text color={themeColor}>{indent}│ </Text>
-        </Box>
       </Box>
     );
   }
@@ -520,18 +508,12 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
   // Fallback for other child types (system, error)
   return (
     <Box key={`child-${childIdx}`} flexDirection="column">
-      <Text color="gray">
-        {indent}├───[ <Text bold color="gray">COMM_PACKET</Text> ]
-      </Text>
       {child.content.split("\n").map((l, idx) => (
         <Box key={idx} flexDirection="row">
           <Text color="gray">{indent}│    </Text>
           <Text>{l}</Text>
         </Box>
       ))}
-      <Box flexDirection="row">
-        <Text color="gray">{indent}│ </Text>
-      </Box>
     </Box>
   );
 }
