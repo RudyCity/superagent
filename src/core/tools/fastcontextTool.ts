@@ -176,6 +176,24 @@ export const fastcontextTool: Tool = {
           "If true, return only compact file:line citations (default: true). " +
           "Set to false for a more verbose explanation alongside citations.",
       },
+      exclude: {
+        type: "string",
+        description:
+          "Comma-separated glob patterns to exclude from all searches (e.g. " +
+          "'node_modules,dist,.git,*.min.js'). Applied to Grep and Glob tool calls.",
+      },
+      maxFileSizeKb: {
+        type: "number",
+        description:
+          "Skip files larger than this size in KB when reading (default: 512). " +
+          "Reduces token usage on binary or generated files.",
+      },
+      noCache: {
+        type: "boolean",
+        description:
+          "If true, bypass the query result cache and always run a fresh exploration. " +
+          "Default: false (cache is used when available).",
+      },
     },
     required: ["query"],
   },
@@ -184,6 +202,13 @@ export const fastcontextTool: Tool = {
     const query = args.query as string;
     const maxTurns = (args.maxTurns as number) || 6;
     const citation = args.citation !== false; // default: true
+    const exclude = (args.exclude as string) || "";
+    const maxFileSizeKb = (args.maxFileSizeKb as number) || 512;
+    const noCache = args.noCache === true;
+
+    // Dynamic timeout: 35s per turn, min 60s, max 600s
+    const timeoutMs = Math.max(60_000, Math.min(600_000, maxTurns * 35_000));
+    const timeoutMin = Math.round(timeoutMs / 60_000 * 10) / 10;
 
     if (!query || query.trim().length === 0) {
       return "Error: 'query' parameter is required. Provide a specific exploration question.";
@@ -262,9 +287,16 @@ export const fastcontextTool: Tool = {
       "--max-turns", String(maxTurns),
       "--trajectory-path", trajectoryPath,
       "--provider", providerType,
+      "--max-file-size-kb", String(maxFileSizeKb),
     ];
     if (citation) {
       cliArgs.push("--citation");
+    }
+    if (exclude) {
+      cliArgs.push("--exclude", exclude);
+    }
+    if (noCache) {
+      cliArgs.push("--no-cache");
     }
 
     // ── 4. Spawn Python runner with live output panel ──
@@ -290,7 +322,7 @@ export const fastcontextTool: Tool = {
 
       const child = execa(PYTHON_BIN, cliArgs, {
         cwd,
-        timeout: 180_000,
+        timeout: timeoutMs,
         reject: false,
         cancelSignal: signal,
         buffer: false,
@@ -325,6 +357,9 @@ export const fastcontextTool: Tool = {
                 log(`⚡ Exploring: "${evt.query}"`);
                 if (evt.backend) log(`  └─ backend: ${evt.backend}`);
                 log("");
+                break;
+              case "cache_hit":
+                log(`💾 Cache hit (key: ${evt.key}, age: ${evt.age_s}s) — returning cached result`);
                 break;
               case "turn":
                 if (Number(evt.turn) > 1) log("");
@@ -384,36 +419,6 @@ export const fastcontextTool: Tool = {
             // Non-JSON stderr — pass through as-is
             log(`  ${trimmed}`);
           }
-
-                break;
-              }
-              case "tool_start": {
-                const toolArgs = (evt.args || "")
-                  .replace(/\n/g, " ")
-                  .slice(0, 120);
-                log(`  🔧 ${evt.tool}: ${toolArgs}`);
-                break;
-              }
-              case "tool_end": {
-                const preview = (evt.preview || "")
-                  .replace(/\n/g, " ")
-                  .slice(0, 120);
-                const icon = evt.ok ? "✅" : "❌";
-                log(`  ${icon} ${preview}`);
-                break;
-              }
-              case "error":
-                log(`  🚨 ${evt.text}`);
-                break;
-              case "done":
-                log("");
-                log(`✔ Done — ${evt.turns} turns`);
-                break;
-            }
-          } catch {
-            // Non-JSON stderr — pass through as-is
-            log(`  ${trimmed}`);
-          }
         }
       });
 
@@ -443,10 +448,22 @@ export const fastcontextTool: Tool = {
       const stderrRaw = stderrAll.trim() || (result.stderr || "").trim();
 
       if (result.exitCode !== 0) {
+        // Extract root-cause error messages from JSONL stderr events
+        const errorEvents: string[] = [];
+        for (const line of stderrRaw.split("\n")) {
+          try {
+            const evt = JSON.parse(line.trim());
+            if (evt.event === "error" && evt.text) errorEvents.push(evt.text);
+          } catch { /* not JSON */ }
+        }
         const parts = [`FastContext exited with code ${result.exitCode}.`];
-        if (output) parts.push(`stdout: ${output}`);
-        if (stderrRaw) parts.push(`stderr: ${stderrRaw}`);
-        if (!output && !stderrRaw) parts.push("No output was produced.");
+        if (errorEvents.length > 0) {
+          parts.push(`Error: ${errorEvents.join(" | ")}`);
+        } else {
+          if (output) parts.push(`stdout: ${output}`);
+          if (stderrRaw) parts.push(`stderr: ${stderrRaw.slice(0, 500)}`);
+          if (!output && !stderrRaw) parts.push("No output was produced.");
+        }
         return parts.join("\n");
       }
 
@@ -469,8 +486,8 @@ export const fastcontextTool: Tool = {
 
       if (msg.includes("timed out") || msg.includes("timeout")) {
         return (
-          "FastContext timed out after 3 minutes. " +
-          "Try a more specific query or reduce --max-turns."
+          `FastContext timed out after ${timeoutMin} minutes. ` +
+          "Try a more specific query or reduce maxTurns."
         );
       }
 

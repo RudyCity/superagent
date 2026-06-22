@@ -4,6 +4,7 @@ credentials passed as CLI arguments, not environment variables.
 
 Emits structured JSONL progress events to stderr for live logging:
   {"event":"start","model":"...","query":"...","backend":"..."}
+  {"event":"cache_hit","key":"...","age_s":42}
   {"event":"turn","turn":1}
   {"event":"thinking","text":"...","has_tools":true}
   {"event":"tool_start","tool":"Read [x3 parallel]","args":"..."}
@@ -19,9 +20,12 @@ Final answer goes to stdout.
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
+import random
 import sys
+import time
 
 # Force UTF-8 for stdout and stderr to prevent UnicodeEncodeError on Windows
 if hasattr(sys.stdout, "reconfigure"):
@@ -60,7 +64,18 @@ def run():
                         help="Path for trajectory JSONL file (unique per run)")
     parser.add_argument("--provider", required=False, default="openai",
                         help="Provider type: openai, anthropic, openrouter, custom")
+    parser.add_argument("--exclude", required=False, default="",
+                        help="Comma-separated glob patterns to exclude (e.g. 'node_modules,dist')")
+    parser.add_argument("--max-file-size-kb", type=int, default=512,
+                        help="Skip files larger than this many KB when reading (default: 512)")
+    parser.add_argument("--no-cache", action="store_true",
+                        help="Bypass the query result cache")
     args = parser.parse_args()
+
+    # Parse exclude patterns
+    exclude_patterns: list[str] = [
+        p.strip() for p in args.exclude.split(",") if p.strip()
+    ] if args.exclude else []
 
     # Ensure FastContext source is importable
     source_dir = os.path.abspath(args.source_dir)
@@ -166,8 +181,127 @@ def run():
     else:
         llm = LLM(model=args.model, api_key=args.api_key, base_url=args.base_url)
 
+    # ── Cache helpers ───────────────────────────────────────────────────────────────────
+    _CACHE_DIR = os.path.join(args.work_dir, ".fastcontext", "cache")
+    _CACHE_TTL_S = 3600  # 1 hour
+
+    def _cache_key() -> str:
+        """SHA-256 hash of query + model + exclude + citation flag."""
+        raw = "|".join([args.query, args.model, args.exclude, str(args.citation)])
+        return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+    def _cache_path(key: str) -> str:
+        return os.path.join(_CACHE_DIR, f"{key}.txt")
+
+    def load_cache() -> str | None:
+        """Return cached result if it exists and is within TTL."""
+        if args.no_cache:
+            return None
+        key = _cache_key()
+        path = _cache_path(key)
+        if not os.path.exists(path):
+            return None
+        age = time.time() - os.path.getmtime(path)
+        if age > _CACHE_TTL_S:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                result = f.read()
+            emit({"event": "cache_hit", "key": key[:8] + "...", "age_s": int(age)})
+            return result
+        except OSError:
+            return None
+
+    def save_cache(result: str) -> None:
+        """Persist result to cache."""
+        if args.no_cache:
+            return
+        try:
+            os.makedirs(_CACHE_DIR, exist_ok=True)
+            key = _cache_key()
+            with open(_cache_path(key), "w", encoding="utf-8") as f:
+                f.write(result)
+        except OSError:
+            pass  # Non-fatal: cache write failure is silently ignored
+
+    # ── Exclude-aware tool subclasses ────────────────────────────────────────────────
+    class ExcludeGrepTool(GrepTool):
+        """GrepTool that automatically injects negation glob exclusions.
+
+        rg supports negation patterns in --glob: e.g. --glob '!node_modules/**'
+        We inject these into the 'glob' parameter as additional comma-separated
+        patterns, since GrepTool passes them as a single --glob flag.
+        Pattern '!name' tells rg to exclude paths matching 'name'.
+        """
+        async def call(self, parameters: str, **kwargs) -> str:
+            if exclude_patterns:
+                try:
+                    a = json.loads(parameters) if parameters else {}
+                    existing_glob = a.get("glob", "") or ""
+                    # Build '!pattern' negation globs
+                    neg = ",".join(f"!{p}" for p in exclude_patterns)
+                    a["glob"] = (existing_glob + "," + neg) if existing_glob else neg
+                    parameters = json.dumps(a)
+                except Exception:
+                    pass
+            return await super().call(parameters, **kwargs)
+
+    class ExcludeGlobTool(GlobTool):
+        """GlobTool with post-filtering of excluded patterns.
+
+        GlobTool only passes one --glob to rg --files, so we cannot inject
+        extra --glob '!...' flags directly. Instead, we run super().call() and
+        then filter out lines whose path components match any exclude pattern.
+        """
+        async def call(self, parameters: str, **kwargs) -> str:
+            result = await super().call(parameters, **kwargs)
+            if not exclude_patterns or not result or result == "No files found":
+                return result
+            import fnmatch
+            lines = result.splitlines()
+            filtered = []
+            for line in lines:
+                excluded = any(
+                    fnmatch.fnmatch(line, f"*{pat}*") or fnmatch.fnmatch(line, pat)
+                    for pat in exclude_patterns
+                )
+                if not excluded:
+                    filtered.append(line)
+            if not filtered:
+                return "No files found (all results matched exclude patterns)"
+            return "\n".join(filtered)
+
+    class SizedReadTool(ReadTool):
+        """ReadTool that skips files exceeding max_file_size_kb."""
+        def __init__(self, max_kb: int):
+            super().__init__()
+            self._max_bytes = max_kb * 1024
+
+        async def call(self, parameters: str, **kwargs) -> str:
+            try:
+                a = json.loads(parameters) if parameters else {}
+                file_path = a.get("path", "")
+                if file_path and os.path.isfile(file_path):
+                    size = os.path.getsize(file_path)
+                    if size > self._max_bytes:
+                        return (
+                            f"[Skipped: file is {size // 1024} KB, "
+                            f"exceeds limit of {self._max_bytes // 1024} KB] "
+                            f"{file_path}"
+                        )
+            except Exception:
+                pass
+            return await super().call(parameters, **kwargs)
+
     # ── Parallel ToolSet with deduplication ───────────────────────────────────
-    toolset = ToolSet([ReadTool(), GlobTool(), GrepTool()], work_dir=args.work_dir)
+    toolset = ToolSet(
+        [SizedReadTool(args.max_file_size_kb), ExcludeGlobTool(), ExcludeGrepTool()],
+        work_dir=args.work_dir,
+    )
     toolset._last_tool_results = []
 
     async def safe_single_tool_call(c):
@@ -254,7 +388,7 @@ def run():
     _MAX_LLM_RETRIES = 3
 
     async def llm_call_with_retry(messages, tools):
-        """Retry transient LLM errors (rate-limits, timeouts) with exponential backoff."""
+        """Retry transient LLM errors with exponential backoff + jitter."""
         last_err = None
         for attempt in range(_MAX_LLM_RETRIES):
             try:
@@ -264,7 +398,9 @@ def run():
                 err_lower = str(exc).lower()
                 retryable = any(sig in err_lower for sig in _RETRYABLE_SIGNALS)
                 if retryable and attempt < _MAX_LLM_RETRIES - 1:
-                    wait = 2 ** attempt          # 1s → 2s → 4s
+                    base_wait = 2 ** attempt          # 1s, 2s, 4s
+                    jitter = random.uniform(0.0, 1.0) # 0–1s jitter
+                    wait = round(base_wait + jitter, 1)
                     emit({
                         "event": "retry",
                         "attempt": attempt + 1,
@@ -378,7 +514,14 @@ def run():
                 return step_msg.content
 
     try:
+        # ── Cache check before running agent ──
+        cached = load_cache()
+        if cached is not None:
+            print(cached)
+            return
+
         result = asyncio.run(agent_loop())
+        save_cache(result)
         print(result)
     except Exception as e:
         emit({"event": "error", "text": str(e)})

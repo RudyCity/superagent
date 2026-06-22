@@ -46,6 +46,9 @@ Use the `fastcontext` tool with these parameters:
 | `query` | string | (required) | Natural-language exploration question. Be specific. |
 | `maxTurns` | number | 6 | Exploration depth. Use 8-12 for complex traces. |
 | `citation` | boolean | true | Return only compact file:line citations. |
+| `exclude` | string | `""` | Comma-separated glob patterns to skip in all searches. Example: `"node_modules,dist,.git,*.min.js"` |
+| `maxFileSizeKb` | number | 512 | Skip files larger than N KB when reading. Reduces token waste on generated/binary files. |
+| `noCache` | boolean | false | Bypass the 1-hour query result cache and always run a fresh exploration. |
 
 ### Examples
 
@@ -53,12 +56,27 @@ Use the `fastcontext` tool with these parameters:
 // Precise answer with file:line citations
 { "query": "Locate the request validation logic in the user registration flow", "maxTurns": 8, "citation": true }
 
-// Deep architecture trace
-{ "query": "Trace how database migrations are loaded and applied on startup", "maxTurns": 12, "citation": true }
+// Deep architecture trace excluding build artifacts
+{ "query": "Trace how database migrations are loaded and applied on startup", "maxTurns": 12, "citation": true, "exclude": "node_modules,dist" }
 
 // Broader summary with explanations
 { "query": "How does the caching layer work and where is it configured?", "maxTurns": 8, "citation": false }
+
+// Force fresh result (bypass cache)
+{ "query": "What changed in the auth module recently?", "maxTurns": 6, "noCache": true }
+
+// Large repo — skip generated files and cap file reads
+{ "query": "Where is the token refresh logic?", "maxTurns": 8, "exclude": "node_modules,dist,*.min.js,*.map", "maxFileSizeKb": 256 }
 ```
+
+## Features
+
+- **Query caching** — Results are cached for 1 hour by default (keyed on query + model + exclude + citation). Repeated identical queries are instant.
+- **Exclude patterns** — Automatically filters out matching paths in Grep and Glob tool calls, and post-filters Glob results.
+- **File size limit** — Skips oversized files in Read tool calls to prevent token bloat.
+- **Dynamic timeout** — Timeout scales with `maxTurns` (35s/turn, min 60s, max 600s).
+- **Retry with jitter** — Rate-limit errors are retried with exponential backoff + random jitter.
+- **Parallel tool execution** — All tool calls per turn run concurrently with deduplication.
 
 ## Model Configuration
 
