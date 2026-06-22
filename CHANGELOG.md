@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.81] - 2026-06-22
+
+### Added
+- **Nested Tool Calls Under Assistant Messages**: Tool events (`tool_start`/`tool_end`) are now rendered as indented children under the parent assistant message instead of appearing as separate top-level chat lines. This groups all tool invocations visually within the assistant response that triggered them.
+- **`children` Property on ChatLine**: New optional `children` array on the `ChatLine` interface for grouping nested tool events under a parent line.
+- **`addToolChild()` Function**: Appends tool-related events as children of the last assistant message in the chat state.
+- **`expandedChildren` State & `toggleChildExpand()`**: New state management for nested collapse/expand of child lines, with a `Map<parentIndex, Set<childIndex>>` tracking which children are expanded.
+- **`renderNestedChild()`**: Renders nested tool start/end children with tree-style indentation (`├───`), collapsible headers, and click-to-toggle support.
+
+### Changed
+- **Auto-Collapse Logic**: Smart collapse now operates on nested children within assistant lines instead of top-level lines. Active tool calls start expanded and auto-collapse when their `tool_end` arrives, same as before but nested.
+- **Mouse Click Handling**: `useMouseScroll` now detects clicks on nested child lines and toggles their expand/collapse state via `toggleChildExpand`.
+- **Dashboard Log Formatter**: TOOL log groups in the multi-agent dashboard are now nested under their parent AGENT group for cleaner visual hierarchy.
+- **Multi-Mode Detection**: FastContext now also checks `SUPERAGENT_MULTI` environment variable (in addition to `--multi` CLI flag) for multi-agent mode detection.
+
+### Fixed
+- **Model Prefix Parsing**: FastContext tool now correctly parses provider prefixes from model strings (e.g., `tess@xmtp/mimo-v2.5-pro` → prefix `tess`, model `xmtp/mimo-v2.5-pro`). Supports both `@` and `:` separators.
+- **Provider Profile Fallback**: Provider resolution now tries prefix match first, then `providerProfileId`, then a case-insensitive fuzzy match, and finally falls back to any provider with an API key — preventing "no credentials" errors when the configured provider is missing.
+- **Python Process Tree Termination**: Added `killProcessTree()` function that uses `taskkill /F /T /PID` on Windows and `pkill -P` + `SIGKILL` on Unix to terminate the entire Python subprocess tree on abort signal, preventing orphaned processes.
+- **AbortSignal Cleanup**: Abort event listener is now properly removed in the `finally` block, and `AbortError`/`CancelError` are handled gracefully without falling through to generic error handling.
+
+### Tests
+- Added tests for `killProcessTree` behavior, abort signal handling, model prefix parsing, and provider profile fallback chain.
+
+---
+
 ## [1.1.80] - 2026-06-22
 
 ### Changed
