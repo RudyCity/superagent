@@ -15,6 +15,10 @@ vi.mock("execa", () => ({
   execa: vi.fn(),
 }));
 
+vi.mock("child_process", () => ({
+  exec: vi.fn(),
+}));
+
 vi.mock("../src/core/tools/state.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/core/tools/state.js")>();
   return {
@@ -50,6 +54,7 @@ function createMockChild(resolvedValue: any = { stdout: "", stderr: "", exitCode
   const innerPromise = new Promise<any>((res) => { resolve = res; });
 
   const promise: any = innerPromise;
+  promise.pid = 99999;
   promise.stderr = {
     on: vi.fn().mockImplementation((event: string, cb: (chunk: Buffer) => void) => {
       if (event === "data") stderrHandlers.push(cb);
@@ -381,6 +386,39 @@ describe("fastcontextTool live output panel", () => {
     const baseUrlArgIndex = args.indexOf("--base-url");
     expect(baseUrlArgIndex).toBeGreaterThan(-1);
     expect(args[baseUrlArgIndex + 1]).toBe("http://localhost:20128/v1");
+  });
+
+  it("kills the process tree and throws AbortError when signal is aborted", async () => {
+    const { exec } = await import("child_process");
+    vi.mocked(exec).mockImplementation((() => {}) as any);
+
+    const controller = new AbortController();
+    const { promise } = createMockChild();
+    vi.mocked(execa).mockReturnValue(promise as any);
+
+    const executePromise = fastcontextTool.execute(
+      { query: "test" },
+      "/tmp",
+      controller.signal
+    );
+
+    // Trigger abort on signal
+    controller.abort();
+
+    // Verify AbortError is thrown
+    await expect(executePromise).rejects.toThrow("AbortError");
+
+    // Verify killProcessTree called taskkill (on win32) or pkill (on non-win32) with mock pid 99999
+    expect(exec).toHaveBeenCalled();
+    const lastCall = vi.mocked(exec).mock.calls[0];
+    const cmd = lastCall[0] as string;
+    if (process.platform === "win32") {
+      expect(cmd).toContain("taskkill");
+      expect(cmd).toContain("99999");
+    } else {
+      expect(cmd).toContain("pkill");
+      expect(cmd).toContain("99999");
+    }
   });
 });
 

@@ -18,10 +18,25 @@ import { execa } from "execa";
 import { existsSync, readdirSync, unlinkSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
+import { exec } from "child_process";
 import { Tool } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+function killProcessTree(pid: number | undefined): void {
+  if (!pid) return;
+  if (process.platform === "win32") {
+    try {
+      exec(`taskkill /F /T /PID ${pid}`);
+    } catch {}
+  } else {
+    try {
+      exec(`pkill -P ${pid}`);
+      process.kill(pid, "SIGKILL");
+    } catch {}
+  }
+}
 
 /**
  * Resolve the project root directory.
@@ -342,6 +357,8 @@ export const fastcontextTool: Tool = {
       cliArgs.push("--no-cache");
     }
 
+    let abortHandler: (() => void) | undefined;
+
     // ── 4. Spawn Python runner with live output panel ──
     try {
       // Use the dedicated SYSTEM_CALL_OUTPUT (LIVE) panel for progress,
@@ -370,6 +387,19 @@ export const fastcontextTool: Tool = {
         cancelSignal: signal,
         buffer: false,
       });
+
+      if (signal) {
+        if (signal.aborted) {
+          killProcessTree(child.pid);
+          const abortErr = new Error("AbortError");
+          abortErr.name = "AbortError";
+          throw abortErr;
+        }
+        abortHandler = () => {
+          killProcessTree(child.pid);
+        };
+        signal.addEventListener("abort", abortHandler);
+      }
 
       // ── Accumulate stdout manually (buffer:false means result.stdout is always empty) ──
       let stdoutAll = "";
@@ -512,6 +542,11 @@ export const fastcontextTool: Tool = {
 
       return output || "(FastContext returned no output)";
     } catch (err: any) {
+      if (signal?.aborted || (err instanceof Error && (err.name === "AbortError" || err.name === "CancelError"))) {
+        const abortErr = new Error("AbortError");
+        abortErr.name = "AbortError";
+        throw abortErr;
+      }
       const msg = err?.message || String(err);
 
       // Ensure live panel is cleared on error too
@@ -535,6 +570,10 @@ export const fastcontextTool: Tool = {
       }
 
       return `FastContext error: ${msg}`;
+    } finally {
+      if (signal && abortHandler) {
+        signal.removeEventListener("abort", abortHandler);
+      }
     }
   },
 };
