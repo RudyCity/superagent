@@ -487,8 +487,8 @@ def run():
             await context.add(step_msg)
 
             # ── Emit thinking / reasoning ─────────────────────────────────────
-            reasoning_preview = (getattr(step_msg, "reasoning_content", None) or "")[:300]
-            text_preview = (step_msg.content or "")[:500]
+            reasoning_preview = (getattr(step_msg, "reasoning_content", None) or "")[:600]
+            text_preview = (step_msg.content or "")[:800]
             has_tools = bool(step_msg.tool_calls)
 
             if reasoning_preview:
@@ -525,6 +525,7 @@ def run():
                 }
 
                 # ── Emit tool_end + add to context ────────────────────────────
+                failed_tools: list[str] = []
                 for tr_msg in tool_results:
                     preview = (tr_msg.content or "")[:200]
                     raw = raw_results_by_id.get(tr_msg.tool_call_id)
@@ -536,6 +537,17 @@ def run():
                         "preview": preview,
                     })
                     await context.add(tr_msg)
+                    if not ok and raw:
+                        failed_tools.append(f"{tr_msg.tool_call_id}: {raw.output[:120]}")
+
+                # ── Inject error recovery hint if any tools failed ────────────
+                if failed_tools:
+                    hint = (
+                        "[System] The following tool call(s) failed this turn:\n"
+                        + "\n".join(f"  - {f}" for f in failed_tools)
+                        + "\nConsider trying a different path, pattern, or tool to achieve the same goal."
+                    )
+                    await context.add(Message(role="user", content=hint))
             else:
                 # ── Final answer ──────────────────────────────────────────────
                 emit({"event": "done", "turns": n_turn})

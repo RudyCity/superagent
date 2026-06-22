@@ -200,11 +200,21 @@ export const fastcontextTool: Tool = {
 
   async execute(args, cwd, signal) {
     const query = args.query as string;
-    const maxTurns = (args.maxTurns as number) || 6;
     const citation = args.citation !== false; // default: true
     const exclude = (args.exclude as string) || "";
     const maxFileSizeKb = (args.maxFileSizeKb as number) || 512;
     const noCache = args.noCache === true;
+
+    // Resolve maxTurns: arg → default 8, capped by maxIterations from global settings.
+    // maxIterations = 0 means "unlimited" (no cap).
+    let maxTurns = (args.maxTurns as number) || 8;
+    try {
+      const { getSettings } = await import("../config/jsonConfig.js");
+      const { maxIterations } = getSettings();
+      if (maxIterations > 0 && maxTurns > maxIterations) {
+        maxTurns = maxIterations;
+      }
+    } catch { /* non-fatal — use computed maxTurns as-is */ }
 
     // Dynamic timeout: 35s per turn, min 60s, max 600s
     const timeoutMs = Math.max(60_000, Math.min(600_000, maxTurns * 35_000));
@@ -368,14 +378,14 @@ export const fastcontextTool: Tool = {
               case "thinking": {
                 const snippet = (evt.text || "")
                   .replace(/\n/g, " ")
-                  .slice(0, 160);
+                  .slice(0, 300);
                 if (snippet) log(`  💭 ${snippet}`);
                 break;
               }
               case "tool_start": {
                 const toolArgs = (evt.args || "")
                   .replace(/\n/g, " ")
-                  .slice(0, 120);
+                  .slice(0, 160);
                 log(`  🔧 ${evt.tool}: ${toolArgs}`);
                 break;
               }
