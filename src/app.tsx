@@ -15,6 +15,7 @@ import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTas
 import { ProcessingIndicator } from "./components/common/LoadingIndicators.js";
 import { ActiveAgentsList } from "./components/active-agents-list.js";
 import { TaskChecklist } from "./components/task-checklist.js";
+import { HistoryPanel } from "./components/history-panel.js";
 import { execa } from "execa";
 import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences } from "./utils/text.js";
 import { getTruncatedAssistantIndexes } from "./utils/responseScroll.js";
@@ -1857,6 +1858,13 @@ export function App({
               focusMode={focusMode}
               isMultiAgent={!!agentRef.current?.isMultiAgent}
               completedHistory={completedHistory}
+            />
+
+            {/* Input History Panel — shown when Ctrl+H is pressed */}
+            <HistoryPanel
+              history={history}
+              historySelectedIndex={historySelectedIndex}
+              focusMode={focusMode}
             />
 
             <WizardPanels
