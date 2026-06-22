@@ -113,11 +113,12 @@ def run():
                 elif self.provider == "anthropic":
                     self.litellm_model = f"anthropic/{model}"
                 elif self.provider == "custom":
-                    # Custom OpenAI-compatible endpoints: use model name as-is.
-                    # Prepending "openai/" would produce "openai/xmtp/mimo-v2-pro"
-                    # which LiteLLM misparses as a nested provider path and may
-                    # route to api.openai.com instead of the configured base_url.
-                    self.litellm_model = model
+                    # Custom OpenAI-compatible endpoints: prefix with "openai/" so
+                    # LiteLLM routes the call through its OpenAI SDK adapter and
+                    # honours the custom base_url.  Without a recognised prefix
+                    # LiteLLM raises "LLM Provider NOT provided" because it cannot
+                    # infer the provider from a bare model string like "xmtp/mimo-v2-pro".
+                    self.litellm_model = f"openai/{model}"
                 else:
                     # openai or unknown — standard openai/ prefix
                     self.litellm_model = f"openai/{model}"
