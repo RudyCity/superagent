@@ -332,6 +332,7 @@ export function applyModelPreset(name: string, mode?: PresetMode): void {
     models: newPreset,
   };
   savePreset(targetMode, jsonPreset);
+  setActivePresetId(targetMode, targetName);
 
   // Switch active provider if model has a provider prefix
   const mainModel = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "";

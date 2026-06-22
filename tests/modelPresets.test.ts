@@ -15,7 +15,8 @@ import {
   updateModelPreset,
   getCustomPresetsPath,
   getRootConfigDir,
-  ensureGlobalConfigDir
+  ensureGlobalConfigDir,
+  getActivePresetId
 } from "../src/core/config.js";
 import { handleSlashCommand, getDefaultModel } from "../src/core/slash-commands.js";
 import { getModelConfigPath } from "../src/core/config/paths.js";
@@ -127,6 +128,7 @@ describe("Model Presets", () => {
     expect(appliedPreset).toBeDefined();
     expect(appliedPreset?.models.MODEL_MULTI_MASTER).toBe("openai:gpt-4o");
     expect(appliedPreset?.models.MODEL_MULTI_SUBAGENT).toBe("openai:gpt-4o-mini");
+    expect(getActivePresetId("multi")).toBe("openai-full");
   });
 
   it("should execute slash commands for listing, saving and loading presets", () => {
