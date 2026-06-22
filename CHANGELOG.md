@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.77] - 2026-06-23
+
+### Added
+- **Global Pinned Knowledge Store** (`pinnedKnowledge.ts`): Persistent, cross-session knowledge base. Pinned messages are now auto-exported to a global store, enabling knowledge sharing across all sessions and projects.
+- **Full-Content Pin Storage**: Pinned messages now store complete, untruncated content along with agent tags (tier, subagent type, worktree), tool calls, tool results, and user-defined labels. Upgraded from `Set<string>` to `Map<string, PinnedMessage>`.
+- **`/knowledge` Command** (alias: `/k`): Browse, search, and manage the global pinned knowledge store. Subcommands: `/knowledge` (list all), `/knowledge <query>` (search), `/knowledge projects` (list projects with pins).
+- **`/pin view <index>`**: View the full, untruncated content of a pinned message with complete metadata (agent tag, timestamps, tool calls/results, content size).
+- **`/pin tag <index> <label>`**: Tag a pinned message with a custom label. Tags sync to the global knowledge store.
+- **Cross-Session History Search**: Added `--all` flag to `/search-history` (alias: `/sh`) and `cross_session` parameter to the `search_history` tool, enabling searches across ALL sessions and projects.
+- **`search_pinned_knowledge` Tool**: AI agents can now search the global pinned knowledge base with query, working directory, and tag filters.
+- **`load_pinned_session` Tool**: AI agents can load and study full conversation transcripts from past sessions that have pinned messages, enabling cross-session learning.
+- **FastContext Enhanced Logging**: New live event types in FastContext output: `dedup` (redundant call deduplication), `retry` (automatic retries), `tool_start`/`tool_end` (tool execution tracking), `error`, and `done` (completion summary).
+
+### Changed
+- **`/pin` Command Overhaul**: Complete UI redesign with box-drawing borders, role icons, relative timestamps (`timeAgo()`), and improved formatting. Help text now documents all subcommands.
+- **`/pin list`**: Now shows full pinned metadata including agent tags, content size, pinned timestamps, and global knowledge sync status.
+- **`/pin <index>`**: Now stores full message content + agent tag and auto-exports to the global knowledge store.
+- **`/pin unpin`**: Now also removes the entry from the global knowledge store.
+- **FastContext Defaults**: Adjusted `maxTurns` default from 8 to 6 and timeout from 5 minutes to 3 minutes for faster, more focused exploration.
+- **`search_history` Tool**: Updated description and added `cross_session` boolean parameter for cross-project search.
+
+---
+
 ## [1.1.76] - 2026-06-22
 
 ### Added
