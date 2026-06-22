@@ -31,7 +31,8 @@ export function truncateStreamDisplay(text: string, maxLines: number, width: num
 }
 
 export function renderMarkdown(content: string, themeColor: string = "blue", showCursor: boolean = false): React.ReactNode {
-  const rawLines = content.split("\n");
+  const cleanContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
+  const rawLines = cleanContent.split("\n");
 
   // Format markdown tables helper
   function formatMarkdownTable(tableLines: string[]): string[] {
@@ -348,7 +349,8 @@ export function renderMarkdown(content: string, themeColor: string = "blue", sho
 }
 
 export function renderToolStart(content: string): React.ReactNode {
-  const lines = content.split("\n");
+  const cleanContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
+  const lines = cleanContent.split("\n");
   return (
     <>
       {lines.map((l, idx) => {
@@ -389,7 +391,8 @@ export function renderToolStart(content: string): React.ReactNode {
 }
 
 export function renderToolEnd(content: string, isError: boolean): React.ReactNode {
-  const lines = content.split("\n");
+  const cleanContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
+  const lines = cleanContent.split("\n");
   const themeColor = isError ? "red" : "green";
   return (
     <>
@@ -417,8 +420,14 @@ export function renderToolEnd(content: string, isError: boolean): React.ReactNod
 }
 
 /** Render a nested child line with extra indentation under a parent */
-function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boolean, parentColor: string): React.ReactNode {
+function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: boolean, parentColor: string): React.ReactNode {
   const indent = "│    ";  // Parent's content indent
+  const child = React.useMemo(() => {
+    return {
+      ...rawChild,
+      content: rawChild.content.replace(/\r\n/g, "\n").replace(/\r/g, "")
+    };
+  }, [rawChild]);
 
    if (child.type === "tool_start") {
     const content = child.content.replace(/^⚡ /, "");
@@ -542,7 +551,7 @@ interface ChatLineComponentProps {
 }
 
 export const ChatLineComponent = React.memo(function ChatLineComponent({
-  line,
+  line: rawLine,
   isFirst,
   lineIndex,
   tokensUp,
@@ -555,6 +564,17 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
   expandedChildren = new Set(),
   toggleChildExpand,
 }: ChatLineComponentProps) {
+  const line = React.useMemo(() => {
+    return {
+      ...rawLine,
+      content: rawLine.content.replace(/\r\n/g, "\n").replace(/\r/g, ""),
+      children: rawLine.children?.map(child => ({
+        ...child,
+        content: child.content.replace(/\r\n/g, "\n").replace(/\r/g, "")
+      }))
+    };
+  }, [rawLine]);
+
   // Helper: extract tool name from content
   const extractToolName = (content: string): string => {
     const match = content.match(/Detail:\s*(\w+)/);
