@@ -422,12 +422,10 @@ export function renderToolEnd(content: string, isError: boolean): React.ReactNod
 /** Render a nested child line with extra indentation under a parent */
 function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: boolean, parentColor: string): React.ReactNode {
   const indent = "│    ";  // Parent's content indent
-  const child = React.useMemo(() => {
-    return {
-      ...rawChild,
-      content: rawChild.content.replace(/\r\n/g, "\n").replace(/\r/g, "")
-    };
-  }, [rawChild]);
+  const child = {
+    ...rawChild,
+    content: rawChild.content.replace(/\r\n/g, "\n").replace(/\r/g, "")
+  };
 
    if (child.type === "tool_start") {
     const content = child.content.replace(/^⚡ /, "");
