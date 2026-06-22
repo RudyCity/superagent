@@ -1,1 +1,11 @@
 .worktrees/
+
+# Python
+__pycache__/
+*.pyc
+
+# Build output
+dist/
+
+# Dependencies
+node_modules/

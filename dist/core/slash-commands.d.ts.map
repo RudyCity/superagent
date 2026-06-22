@@ -1,1 +1,0 @@
-{"version":3,"file":"slash-commands.d.ts","sourceRoot":"","sources":["../../src/core/slash-commands.ts"],"names":[],"mappings":"AACA,OAAO,EAAY,mBAAmB,EAAE,QAAQ,EAAE,MAAM,qBAAqB,CAAC;AAE9E,OAAO,EAAE,QAAQ,EAAE,CAAC;AACpB,OAAO,EACL,iBAAiB,EACjB,cAAc,EACd,UAAU,EACV,gBAAgB,EAChB,eAAe,EAChB,MAAM,qBAAqB,CAAC;AAE7B,wBAAgB,kBAAkB,CAChC,GAAG,EAAE,MAAM,EACX,GAAG,EAAE,mBAAmB,6BA8EzB"}

@@ -1,0 +1,10 @@
+fastuuid-0.14.0.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+fastuuid-0.14.0.dist-info/METADATA,sha256=uyf1iRFUiBrvfxoZL5HUn31Ga-Vk_gsoZbXnWTQvsLQ,1094
+fastuuid-0.14.0.dist-info/RECORD,,
+fastuuid-0.14.0.dist-info/WHEEL,sha256=n8ZdhGDUio-M1d1jdBhS3kD6MKEN1SRxo8BOjWwZdsg,96
+fastuuid-0.14.0.dist-info/licenses/LICENSE,sha256=8td3QkxIVSkqqEchaa00x1QG-tYGIq_Mz-ML6GhYb64,1563
+fastuuid/__init__.py,sha256=DttcCzqwuWmdg2_9O6ZKe5WWv5cpwAPzO3aT-xZx9zk,115
+fastuuid/__init__.pyi,sha256=Z6j7MXQTfHeLnuYXwpdRKD_jiEsDw7fvSbWbbrvN3PE,2209
+fastuuid/__pycache__/__init__.cpython-312.pyc,,
+fastuuid/fastuuid.cp312-win_amd64.pyd,sha256=8qzI8LWGBUx8dSfNoKFwaTyCKoyZHFshaa7we4N85ZU,335872
+fastuuid/py.typed,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0

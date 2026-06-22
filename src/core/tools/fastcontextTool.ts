@@ -296,6 +296,12 @@ export const fastcontextTool: Tool = {
         buffer: false,
       });
 
+      // ── Accumulate stdout manually (buffer:false means result.stdout is always empty) ──
+      let stdoutAll = "";
+      child.stdout?.on("data", (chunk: Buffer) => {
+        stdoutAll += chunk.toString();
+      });
+
       // ── Stream stderr JSONL events → live output panel ──
       let stderrBuf = "";
       let stderrAll = "";  // accumulate ALL stderr for error reporting (buffer:false empties result.stderr)
@@ -383,7 +389,7 @@ export const fastcontextTool: Tool = {
         }
       } catch {}
 
-      const output = (result.stdout || "").trim();
+      const output = stdoutAll.trim();
       const stderrRaw = stderrAll.trim() || (result.stderr || "").trim();
 
       if (result.exitCode !== 0) {
