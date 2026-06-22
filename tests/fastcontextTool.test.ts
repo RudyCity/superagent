@@ -43,12 +43,23 @@ vi.mock("../src/core/config/jsonConfig.js", () => ({
  */
 function createMockChild(resolvedValue: any = { stdout: "", stderr: "", exitCode: 0 }) {
   const stderrHandlers: Array<(chunk: Buffer) => void> = [];
+  const stdoutHandlers: Array<(chunk: Buffer) => void> = [];
 
-  const promise: any = Promise.resolve(resolvedValue);
+  // Build a deferred promise so we can emit stdout data before it resolves
+  let resolve!: (v: any) => void;
+  const innerPromise = new Promise<any>((res) => { resolve = res; });
+
+  const promise: any = innerPromise;
   promise.stderr = {
     on: vi.fn().mockImplementation((event: string, cb: (chunk: Buffer) => void) => {
       if (event === "data") stderrHandlers.push(cb);
       return promise.stderr;
+    }),
+  };
+  promise.stdout = {
+    on: vi.fn().mockImplementation((event: string, cb: (chunk: Buffer) => void) => {
+      if (event === "data") stdoutHandlers.push(cb);
+      return promise.stdout;
     }),
   };
   promise.kill = vi.fn();
@@ -61,6 +72,22 @@ function createMockChild(resolvedValue: any = { stdout: "", stderr: "", exitCode
       cb(Buffer.from(data + "\n"));
     }
   }
+
+  /** Resolve the child process promise, first emitting stdout data. */
+  async function resolveChild() {
+    await new Promise<void>((r) => setTimeout(r, 0));
+    // Emit stdout content to registered handlers before resolving
+    if (resolvedValue.stdout) {
+      for (const cb of stdoutHandlers) {
+        cb(Buffer.from(resolvedValue.stdout));
+      }
+    }
+    await new Promise<void>((r) => setTimeout(r, 0));
+    resolve(resolvedValue);
+  }
+
+  // Auto-resolve after a short delay so tests that don't manually resolve still work
+  resolveChild();
 
   return { promise, emitStderr };
 }
@@ -222,6 +249,7 @@ describe("fastcontextTool live output panel", () => {
     vi.mocked(execa).mockImplementation(() => {
       const p: any = Promise.reject(new Error("spawn ENOENT"));
       p.stderr = { on: vi.fn() };
+      p.stdout = { on: vi.fn() };
       p.kill = vi.fn();
       return p;
     });
