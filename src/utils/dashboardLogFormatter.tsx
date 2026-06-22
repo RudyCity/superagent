@@ -92,6 +92,8 @@ export function computeLogGroupBoundaries(
     for (let j = gi - 1; j >= 0; j--) {
       const prev = groups[j];
       if (prev.isBox) continue;
+      const isPrevTool = prev.label.includes("TOOL") || prev.label.includes("AUTO-APPROVE");
+      if (isPrevTool) continue;
       if (prev.label === "🧠 AGENT" || prev.label === "👤 USER") {
         g.nestLevel = 1;
       }
@@ -284,6 +286,8 @@ export function computeWrappedLogs(
     for (let j = gi - 1; j >= 0; j--) {
       const prev = groups[j];
       if (prev.isBox) continue;
+      const isPrevTool = prev.label.includes("TOOL") || prev.label.includes("AUTO-APPROVE");
+      if (isPrevTool) continue;
       if (prev.label === "🧠 AGENT" || prev.label === "👤 USER") {
         g.nestLevel = 1;
       }
