@@ -48,7 +48,6 @@ export function TaskChecklist({
   return (
     <Box
       flexDirection="column"
-      paddingX={1}
     >
       {/* Active Tasks Section */}
       {hasActiveTasks && (
