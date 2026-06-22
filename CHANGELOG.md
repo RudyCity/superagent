@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.80] - 2026-06-22
+
+### Changed
+- **FastContext Tool Parallelism**: `ExcludeGlobTool`, `ExcludeGrepTool`, and `SizedReadTool` now run blocking subprocess calls via `asyncio.to_thread()`, enabling `asyncio.gather()` to truly parallelise Read + Glob + Grep calls within the same turn and making `asyncio.wait_for()` timeouts effective.
+- **`SizedReadTool` Path Resolution**: Now resolves relative paths against `cwd` before checking file size, preventing false negatives on files that exist but aren't found via absolute path.
+- **`start` Event Timing**: The JSONL `start` event is now emitted inside `agent_loop()` after the cache check, so cache hits no longer trigger a premature `start` event.
+
+### Fixed
+- **Cache Key Collision**: Cache hash now includes `max_turns` as a component, preventing stale results when the same query is run with different `maxTurns` values.
+- **Windows Path Exclusion**: `_is_excluded()` now normalises backslashes to forward slashes before `fnmatch`, so patterns like `node_modules` work correctly on Windows paths.
+- **ExcludeGrepTool Mode Detection**: Content/heading mode detection now uses `"N|..."` numbered-line pattern instead of the unreliable `:` colon heuristic.
+- **Duplicate Tool Classes**: Removed duplicate `ExcludeGlobTool` and `SizedReadTool` definitions, reorganised tool class layout for consistency.
+- **Test Fixes**: `askQuestionRobustness` tests now use multi-call mocks (`callCount`) so `streamText` handles multi-turn correctly; `historySearch` test updated to match new `listSessions()` signature.
+
+---
+
 ## [1.1.79] - 2026-06-23
 
 ### Added
