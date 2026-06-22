@@ -112,15 +112,25 @@ describe("ask_question and ReplacementChunks robustness", () => {
       agent.tier = "master";
       agent.planState = "APPROVED";
 
+      let callCount = 0;
       vi.mocked(streamText).mockImplementation(() => {
+        callCount++;
+        const current = callCount;
         return {
           fullStream: (async function* () {
-            yield {
-              type: "tool-call",
-              toolCallId: "tc-ask-1",
-              toolName: "ask_question",
-              args: { question: "Really?", options: "Yes" },
-            };
+            if (current === 1) {
+              yield {
+                type: "tool-call",
+                toolCallId: "tc-ask-1",
+                toolName: "ask_question",
+                args: { question: "Really?", options: "Yes" },
+              };
+            } else {
+              yield {
+                type: "text-delta",
+                textDelta: "Done",
+              };
+            }
           })(),
           usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
         } as any;
@@ -149,19 +159,29 @@ describe("ask_question and ReplacementChunks robustness", () => {
       agent.tier = "master";
       agent.planState = "APPROVED";
 
+      let callCount = 0;
       vi.mocked(streamText).mockImplementation(() => {
+        callCount++;
+        const current = callCount;
         return {
           fullStream: (async function* () {
-            yield {
-              type: "tool-call",
-              toolCallId: "tc-ask-2",
-              toolName: "ask_question",
-              args: {
-                questions: [
-                  { question: "Choose one", options: ["Option A"], isMultiSelect: true }
-                ]
-              },
-            };
+            if (current === 1) {
+              yield {
+                type: "tool-call",
+                toolCallId: "tc-ask-2",
+                toolName: "ask_question",
+                args: {
+                  questions: [
+                    { question: "Choose one", options: ["Option A"], isMultiSelect: true }
+                  ]
+                },
+              };
+            } else {
+              yield {
+                type: "text-delta",
+                textDelta: "Done",
+              };
+            }
           })(),
           usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
         } as any;
@@ -193,27 +213,37 @@ describe("ask_question and ReplacementChunks robustness", () => {
       fs.mkdirSync(path.dirname(planFile), { recursive: true });
       fs.writeFileSync(planFile, "# Test Plan\n## Proposed Changes\n- Spawning superagent reviewer\n## Verification Plan\n### Automated Tests\n### Manual Verification\n", "utf8");
 
+      let callCount = 0;
       vi.mocked(streamText).mockImplementation(() => {
+        callCount++;
+        const current = callCount;
         return {
           fullStream: (async function* () {
-            yield {
-              type: "tool-call",
-              toolCallId: "tc-replace-1",
-              toolName: "multi_replace_file_content",
-              args: {
-                TargetFile: planFile,
-                filePath: planFile,
-                Instruction: "Apply malformed chunk",
-                Description: "Malformed chunk test",
-                ReplacementChunks: { // Object instead of Array
-                  StartLine: 1,
-                  EndLine: 2,
-                  TargetContent: "# Test Plan",
-                  ReplacementContent: "# Test Plan Robust",
-                  AllowMultiple: false
-                }
-              },
-            };
+            if (current === 1) {
+              yield {
+                type: "tool-call",
+                toolCallId: "tc-replace-1",
+                toolName: "multi_replace_file_content",
+                args: {
+                  TargetFile: planFile,
+                  filePath: planFile,
+                  Instruction: "Apply malformed chunk",
+                  Description: "Malformed chunk test",
+                  ReplacementChunks: { // Object instead of Array
+                    StartLine: 1,
+                    EndLine: 2,
+                    TargetContent: "# Test Plan",
+                    ReplacementContent: "# Test Plan Robust",
+                    AllowMultiple: false
+                  }
+                },
+              };
+            } else {
+              yield {
+                type: "text-delta",
+                textDelta: "Done",
+              };
+            }
           })(),
           usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
         } as any;

@@ -186,8 +186,11 @@ def run():
     _CACHE_TTL_S = 3600  # 1 hour
 
     def _cache_key() -> str:
-        """SHA-256 hash of query + model + exclude + citation flag."""
-        raw = "|".join([args.query, args.model, args.exclude, str(args.citation)])
+        """SHA-256 hash of query + model + exclude + citation + maxTurns."""
+        raw = "|".join([
+            args.query, args.model, args.exclude,
+            str(args.citation), str(args.max_turns),
+        ])
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
     def _cache_path(key: str) -> str:
@@ -232,81 +235,23 @@ def run():
     import fnmatch as _fnmatch
 
     def _is_excluded(path_str: str) -> bool:
-        """Return True if path_str matches any exclude pattern."""
+        """Return True if path_str matches any exclude pattern.
+
+        Normalises backslashes to forward slashes so that patterns like
+        'node_modules' work correctly on Windows paths.
+        """
+        normalised = path_str.replace("\\", "/")
         return any(
-            _fnmatch.fnmatch(path_str, f"*{pat}*") or _fnmatch.fnmatch(path_str, pat)
+            _fnmatch.fnmatch(normalised, f"*{pat}*") or _fnmatch.fnmatch(normalised, pat)
             for pat in exclude_patterns
         )
 
-    class ExcludeGrepTool(GrepTool):
-        """GrepTool with post-filtering for excluded patterns.
-
-        rg's --glob only accepts one pattern per flag — comma-separated negation
-        patterns in a single --glob do NOT work as multiple exclusions.
-        We instead run the normal search and filter the resulting lines by path.
-
-        In 'files_with_matches' mode, each line is a file path (easy to filter).
-        In 'content' mode, file paths appear as section headers after '--heading';
-        we drop both the header and its subsequent match lines for excluded files.
-        """
-        async def call(self, parameters: str, **kwargs) -> str:
-            result = await super().call(parameters, **kwargs)
-            if not exclude_patterns or not result or result == "No matches found":
-                return result
-
-            lines = result.splitlines()
-
-            # Detect mode: if every non-empty line looks like a file path (no ':'),
-            # we're in files_with_matches mode. Otherwise assume content/heading mode.
-            non_empty = [l for l in lines if l.strip()]
-            is_file_list = non_empty and all(
-                not l.startswith(" ") and ":" not in l.split(os.sep)[-1]
-                for l in non_empty[:10]
-            )
-
-            if is_file_list:
-                # files_with_matches: each line is a path — filter directly
-                filtered = [l for l in lines if not l.strip() or not _is_excluded(l)]
-            else:
-                # content/heading mode: headings are file paths, match lines follow
-                filtered = []
-                skip_section = False
-                for line in lines:
-                    stripped = line.strip()
-                    # A heading line has no leading spaces and no digit: prefix
-                    if stripped and not line[0].isspace() and not stripped[0].isdigit():
-                        # Could be a file path heading
-                        if os.sep in stripped or "/" in stripped or stripped.endswith((".py", ".ts", ".js", ".go", ".rs")):
-                            skip_section = _is_excluded(stripped)
-                            if not skip_section:
-                                filtered.append(line)
-                            continue
-                    if not skip_section:
-                        filtered.append(line)
-
-            if not filtered or not any(l.strip() for l in filtered):
-                return "No matches found (all results matched exclude patterns)"
-            return "\n".join(filtered)
-
-    class ExcludeGlobTool(GlobTool):
-        """GlobTool with post-filtering of excluded patterns.
-
-        GlobTool only passes one --glob to rg --files, so we cannot inject
-        extra --glob '!...' flags directly. Instead, we run super().call() and
-        then filter out lines whose path components match any exclude pattern.
-        """
-        async def call(self, parameters: str, **kwargs) -> str:
-            result = await super().call(parameters, **kwargs)
-            if not exclude_patterns or not result or result == "No files found":
-                return result
-            lines = result.splitlines()
-            filtered = [l for l in lines if not l.strip() or not _is_excluded(l)]
-            if not filtered or not any(l.strip() for l in filtered):
-                return "No files found (all results matched exclude patterns)"
-            return "\n".join(filtered)
-
     class SizedReadTool(ReadTool):
-        """ReadTool that skips files exceeding max_file_size_kb."""
+        """ReadTool that skips files exceeding max_file_size_kb.
+
+        Runs the blocking vendor call in a thread so asyncio.gather() can
+        truly parallelise Read + Grep + Glob calls within the same turn.
+        """
         def __init__(self, max_kb: int):
             super().__init__()
             self._max_bytes = max_kb * 1024
@@ -315,6 +260,10 @@ def run():
             try:
                 a = json.loads(parameters) if parameters else {}
                 file_path = a.get("path", "")
+                # Resolve relative paths against cwd
+                cwd = kwargs.get("cwd", args.work_dir)
+                if file_path and not os.path.isabs(file_path):
+                    file_path = os.path.join(cwd, file_path)
                 if file_path and os.path.isfile(file_path):
                     size = os.path.getsize(file_path)
                     if size > self._max_bytes:
@@ -325,7 +274,101 @@ def run():
                         )
             except Exception:
                 pass
+            # ReadTool uses aiofiles internally (truly async), no thread needed
             return await super().call(parameters, **kwargs)
+
+    class ExcludeGlobTool(GlobTool):
+        """GlobTool with post-filtering of excluded patterns.
+
+        GlobTool uses subprocess.run() (blocking). We run it in a thread via
+        asyncio.to_thread() so asyncio.gather() can parallelise tool calls
+        within the same turn, and asyncio.wait_for() timeout is effective.
+        """
+        async def call(self, parameters: str, **kwargs) -> str:
+            # Run the blocking vendor call in a thread pool
+            result = await asyncio.to_thread(self._blocking_call, parameters, **kwargs)
+            if not exclude_patterns or not result or result == "No files found":
+                return result
+            lines = result.splitlines()
+            filtered = [l for l in lines if not l.strip() or not _is_excluded(l)]
+            if not filtered or not any(l.strip() for l in filtered):
+                return "No files found (all results matched exclude patterns)"
+            return "\n".join(filtered)
+
+        def _blocking_call(self, parameters: str, **kwargs) -> str:
+            """Synchronous wrapper for the vendor's blocking subprocess call."""
+            import asyncio as _asyncio
+            loop = _asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(super(ExcludeGlobTool, self).call(parameters, **kwargs))
+            finally:
+                loop.close()
+
+    class ExcludeGrepTool(GrepTool):
+        """GrepTool with post-filtering for excluded patterns.
+
+        rg's --glob only accepts one pattern per flag — comma-separated negation
+        patterns in a single --glob do NOT work as multiple exclusions.
+        We instead run the normal search and filter the resulting lines by path.
+
+        GrepTool uses subprocess.run() (blocking). We run it via asyncio.to_thread()
+        so asyncio.gather() can truly parallelise Read + Glob + Grep calls, and
+        asyncio.wait_for() timeout becomes effective.
+
+        In 'files_with_matches' mode (default), each line is a file path.
+        In 'content' mode with --heading, file paths appear as section headers
+        followed by numbered match lines (e.g. "42|matched text").
+        """
+        async def call(self, parameters: str, **kwargs) -> str:
+            result = await asyncio.to_thread(self._blocking_call, parameters, **kwargs)
+            if not exclude_patterns or not result or result == "No matches found":
+                return result
+
+            lines = result.splitlines()
+            non_empty = [l for l in lines if l.strip()]
+
+            # Detect content/heading mode by presence of "N|..." numbered lines
+            has_numbered = any(
+                "|" in l and l.split("|")[0].strip().isdigit()
+                for l in non_empty[:20]
+            )
+
+            if not has_numbered:
+                # files_with_matches: each line is a file path — filter directly
+                filtered = [l for l in lines if not l.strip() or not _is_excluded(l)]
+            else:
+                # content/heading mode: section headers are file paths
+                filtered = []
+                skip_section = False
+                for line in lines:
+                    stripped = line.strip()
+                    is_numbered = (
+                        stripped and "|" in stripped
+                        and stripped.split("|")[0].strip().isdigit()
+                    )
+                    if stripped and not line[0].isspace() and not is_numbered:
+                        # This is a file path heading
+                        skip_section = _is_excluded(stripped)
+                        if not skip_section:
+                            filtered.append(line)
+                        continue
+                    if not skip_section:
+                        filtered.append(line)
+
+            if not filtered or not any(l.strip() for l in filtered):
+                return "No matches found (all results matched exclude patterns)"
+            return "\n".join(filtered)
+
+        def _blocking_call(self, parameters: str, **kwargs) -> str:
+            """Run the vendor's blocking subprocess in a fresh event loop."""
+            import asyncio as _asyncio
+            loop = _asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(
+                    super(ExcludeGrepTool, self).call(parameters, **kwargs)
+                )
+            finally:
+                loop.close()
 
     # ── Parallel ToolSet with deduplication ───────────────────────────────────
     toolset = ToolSet(
@@ -449,11 +492,10 @@ def run():
     os.makedirs(os.path.dirname(trajectory_path), exist_ok=True)
     context = Context(trajectory_path)
 
-    emit({"event": "start", "model": args.model, "query": args.query,
-          "backend": "litellm" if _HAS_LITELLM else "openai-sdk"})
-
     # ── Main agent loop ───────────────────────────────────────────────────────
     async def agent_loop():
+        emit({"event": "start", "model": args.model, "query": args.query,
+              "backend": "litellm" if _HAS_LITELLM else "openai-sdk"})
         await context.add(Message(role="system", content=system_prompt))
         await context.add(Message(role="user", content=args.query))
 

@@ -199,7 +199,7 @@ describe("historySearch", () => {
       });
 
       // Verify listHistorySessions was called with true (multi-agent mode)
-      expect(listSpy).toHaveBeenCalledWith(true);
+      expect(listSpy).toHaveBeenCalledWith(true, false);
       expect(toolResult).toContain("Multi Session");
     });
   });
