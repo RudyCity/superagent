@@ -87,7 +87,8 @@ Write-Host "  Done." -ForegroundColor Green
 
 # ── Step 4: Install FastContext dependencies ────────────────────────────────
 Write-Host "[4/5] Installing FastContext dependencies..." -ForegroundColor Yellow
-& $PythonExe -m pip install --no-warn-script-location --quiet `
+$LocalSitePackages = Join-Path $PythonDir "Lib\site-packages"
+& $PythonExe -m pip install --no-warn-script-location --upgrade --target "$LocalSitePackages" --quiet `
     "aiofiles>=25.1.0" `
     "asyncio>=4.0.0" `
     "azure-core>=1.39.0" `
