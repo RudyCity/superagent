@@ -5,6 +5,8 @@ export interface ChatLine {
   type: "user" | "assistant" | "system" | "error" | "tool_start" | "tool_end";
   content: string;
   timestamp: number;
+  /** Nested child lines (e.g. tool_start/tool_end grouped under the parent assistant response) */
+  children?: ChatLine[];
 }
 
 export interface SlashCommandContext {

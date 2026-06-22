@@ -14,6 +14,10 @@ export interface ChatLinePosition {
   isTruncated: boolean;
   type: string;
   isCollapsible?: boolean;
+  /** If this position represents a nested child line, the parent line index */
+  parentIndex?: number;
+  /** If this position represents a nested child line, the child index within parent */
+  childIndex?: number;
 }
 
 export interface SingleAgentMouseContext {
@@ -51,6 +55,7 @@ export interface SingleAgentMouseContext {
 
   // Collapsible
   toggleCollapse: (section: string) => void;
+  toggleChildExpand?: (parentIndex: number, childIndex: number) => void;
 
   // Chat item click
   openResponseAtIndex: (index: number) => void;
@@ -161,8 +166,13 @@ export function useMouseScroll(
               let handledClick = false;
               for (const pos of ctx.visibleLinePositions) {
                 if (y >= pos.startRow && y <= pos.endRow) {
+                  // Nested child line click → toggle child expand/collapse
+                  if (pos.parentIndex !== undefined && pos.childIndex !== undefined && pos.isCollapsible && ctx.toggleChildExpand) {
+                    ctx.toggleChildExpand(pos.parentIndex, pos.childIndex);
+                    handledClick = true;
+                  }
                   // Collapsible line click → toggle expand/collapse
-                  if (pos.isCollapsible && ctx.toggleLineExpand) {
+                  else if (pos.isCollapsible && ctx.toggleLineExpand) {
                     ctx.toggleLineExpand(pos.index);
                     handledClick = true;
                   }

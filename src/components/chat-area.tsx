@@ -36,6 +36,10 @@ export interface ChatAreaProps {
   expandedLines?: Set<number>;
   /** Toggle expand/collapse for a specific line index */
   toggleLineExpand?: (index: number) => void;
+  /** Map of parent line index -> Set of expanded child indexes (for nested tool children) */
+  expandedChildren?: Map<number, Set<number>>;
+  /** Toggle expand/collapse for a nested child line */
+  toggleChildExpand?: (parentIndex: number, childIndex: number) => void;
 }
 
 export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
@@ -66,6 +70,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     chatContentStartRow = 2,
     expandedLines = new Set(),
     toggleLineExpand,
+    expandedChildren = new Map(),
+    toggleChildExpand,
   } = props;
 
   const chatWidth = Math.max(20, terminalWidth - 6);
@@ -98,6 +104,23 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       linesCount += Math.max(1, Math.ceil(rawText.length / width));
       if (linesCount >= maxContentLines + 2) {
         return maxContentLines + 2;
+      }
+    }
+    // Account for nested children
+    if (line.children && line.children.length > 0) {
+      const childExpanded = expandedChildren.get(lineIdx) || new Set();
+      for (let ci = 0; ci < line.children.length; ci++) {
+        const child = line.children[ci];
+        const childIsCollapsed = isCollapsibleType(child.type) && !childExpanded.has(ci);
+        if (childIsCollapsed) {
+          linesCount += 1; // Collapsed = 1 line
+        } else {
+          const childLines = child.content.split("\n");
+          linesCount += 2; // header + spacing
+          for (const cl of childLines) {
+            linesCount += Math.max(1, Math.ceil(cl.length / width));
+          }
+        }
       }
     }
     return linesCount;
@@ -155,18 +178,69 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       const line = lines[i];
       const h = estimateChatLineHeight(line, chatWidth, i === lastAssistantIdx, i);
       const isCollapsible = isCollapsibleType(line.type);
-      positions.push({
-        index: i,
-        startRow: currentRow,
-        endRow: currentRow + h - 1,
-        isTruncated: truncatedIndexes.includes(i),
-        type: line.type,
-        isCollapsible,
-      });
-      currentRow += h;
+
+      if (line.type === "assistant" && line.children && line.children.length > 0) {
+        // Calculate parent text height (header + text + spacing, without children)
+        const textLines = line.content.split("\n");
+        let parentH = 2; // header + spacing
+        const maxContentLines = (i !== lastAssistantIdx) ? (maxAssistantResponseLines || 12) + 1 : Number.POSITIVE_INFINITY;
+        for (const l of textLines) {
+          parentH += Math.max(1, Math.ceil(l.length / chatWidth));
+          if (parentH >= maxContentLines + 2) { parentH = maxContentLines + 2; break; }
+        }
+        // Parent position
+        positions.push({
+          index: i,
+          startRow: currentRow,
+          endRow: currentRow + parentH - 1,
+          isTruncated: truncatedIndexes.includes(i),
+          type: "assistant",
+          isCollapsible: false,
+        });
+        currentRow += parentH;
+
+        // Child positions
+        const childExpanded = expandedChildren.get(i) || new Set();
+        for (let ci = 0; ci < line.children.length; ci++) {
+          const child = line.children[ci];
+          const childIsCollapsible = isCollapsibleType(child.type);
+          const childIsCollapsed = childIsCollapsible && !childExpanded.has(ci);
+          let childH: number;
+          if (childIsCollapsed) {
+            childH = 1;
+          } else {
+            const childLines = child.content.split("\n");
+            childH = 2; // header + spacing
+            for (const cl of childLines) {
+              childH += Math.max(1, Math.ceil(cl.length / chatWidth));
+            }
+          }
+          positions.push({
+            index: i,
+            parentIndex: i,
+            childIndex: ci,
+            startRow: currentRow,
+            endRow: currentRow + childH - 1,
+            isTruncated: false,
+            type: child.type,
+            isCollapsible: childIsCollapsible,
+          });
+          currentRow += childH;
+        }
+      } else {
+        positions.push({
+          index: i,
+          startRow: currentRow,
+          endRow: currentRow + h - 1,
+          isTruncated: truncatedIndexes.includes(i),
+          type: line.type,
+          isCollapsible,
+        });
+        currentRow += h;
+      }
     }
     return positions;
-  }, [lines, scrollOffset, chatHeightLimit, chatWidth, chatContentStartRow, focusedResponseIndex, isProcessing, streamDisplay, truncatedIndexes, lastAssistantIdx, expandedLines]);
+  }, [lines, scrollOffset, chatHeightLimit, chatWidth, chatContentStartRow, focusedResponseIndex, isProcessing, streamDisplay, truncatedIndexes, lastAssistantIdx, expandedLines, expandedChildren]);
 
   useEffect(() => {
     if (onVisibleLinesChange) {
@@ -260,6 +334,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
                     chatWidth={chatWidth}
                     isLastAssistant={originalIndex === lastAssistantIdx}
                     isCollapsed={isCollapsed}
+                    expandedChildren={expandedChildren.get(originalIndex) || new Set()}
+                    toggleChildExpand={toggleChildExpand ? (childIdx: number) => toggleChildExpand(originalIndex, childIdx) : undefined}
                   />
                 );
               })}

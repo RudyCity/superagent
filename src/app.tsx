@@ -168,33 +168,38 @@ export function App({
 
   // Collapsible chat lines state (tool_start, tool_end, system, error)
   const [expandedLines, setExpandedLines] = useState<Set<number>>(new Set());
+  // Expanded children: Map<parentLineIndex, Set<childIndex>>
+  const [expandedChildren, setExpandedChildren] = useState<Map<number, Set<number>>>(new Map());
   const processedCollapseRef = useRef(0);
 
   // Smart collapse: auto-collapse completed tool calls, keep active ones expanded
+  // Now handles nested children (tool events are children of assistant lines)
   useEffect(() => {
     if (lines.length > processedCollapseRef.current) {
-      const newLines = lines.slice(processedCollapseRef.current);
-      setExpandedLines(prev => {
-        const next = new Set(prev);
+      setExpandedChildren(prev => {
+        const next = new Map(prev);
         for (let i = processedCollapseRef.current; i < lines.length; i++) {
           const line = lines[i];
-          if (line.type === "tool_start") {
-            // Active tool starts expanded (will auto-collapse when tool_end arrives)
-            if (isExecutingTool) {
-              next.add(i);
-            }
-            // Non-active tool starts (e.g. loaded from history) stay collapsed
-          } else if (line.type === "tool_end") {
-            // Auto-collapse the matching tool_start
-            for (let j = i - 1; j >= 0; j--) {
-              if (lines[j].type === "tool_start") {
-                next.delete(j);
-                break;
+          if (line.type === "assistant" && line.children && line.children.length > 0) {
+            const childSet = new Set(next.get(i) || []);
+            for (let c = 0; c < line.children.length; c++) {
+              const child = line.children[c];
+              if (child.type === "tool_start" && isExecutingTool) {
+                // Active tool starts stay expanded
+                childSet.add(c);
+              } else if (child.type === "tool_end") {
+                // Auto-collapse the matching tool_start child
+                for (let j = c - 1; j >= 0; j--) {
+                  if (line.children[j].type === "tool_start") {
+                    childSet.delete(j);
+                    break;
+                  }
+                }
+                // tool_end collapsed by default
               }
             }
-            // tool_end is collapsed by default
+            next.set(i, childSet);
           }
-          // system and error are collapsed by default (not added to set)
         }
         return next;
       });
@@ -214,6 +219,20 @@ export function App({
     });
   }, []);
 
+  const toggleChildExpand = useCallback((parentIndex: number, childIndex: number) => {
+    setExpandedChildren(prev => {
+      const next = new Map(prev);
+      const childSet = new Set(next.get(parentIndex) || []);
+      if (childSet.has(childIndex)) {
+        childSet.delete(childIndex);
+      } else {
+        childSet.add(childIndex);
+      }
+      next.set(parentIndex, childSet);
+      return next;
+    });
+  }, []);
+
   const maxChecklistVisible = 3;
   const maxSuperagentsVisible = 2;
   const maxSubagentsVisible = 3;
@@ -226,6 +245,24 @@ export function App({
 
   const addLine = useCallback((line: ChatLine) => {
     setLines((prev) => [...prev, line]);
+  }, []);
+
+  /** Append a tool-related line (tool_start/tool_end) as a child of the last assistant message */
+  const addToolChild = useCallback((child: ChatLine) => {
+    setLines((prev) => {
+      // Find the last assistant line
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].type === "assistant") {
+          const updated = [...prev];
+          const parent = { ...updated[i] };
+          parent.children = [...(parent.children || []), child];
+          updated[i] = parent;
+          return updated;
+        }
+      }
+      // Fallback: no assistant line found, add as top-level
+      return [...prev, child];
+    });
   }, []);
 
   const scrollChat = useCallback((direction: "up" | "down", amount = 1) => {
@@ -933,7 +970,7 @@ export function App({
               customTitle = `[SKILL] Loading instructions for: ${skillName}`;
             }
           }
-          addLine({
+          addToolChild({
             type: "tool_start",
             content: `${prefixEmoji} ${customTitle}\n   Detail: ${event.toolCall.name}(${formatArgs(event.toolCall.args)})`,
             timestamp: Date.now(),
@@ -961,7 +998,7 @@ export function App({
           const resultContent = r.isError
             ? `${statusPrefix} ${customTitleEnd}\nDetail: ${r.result}`
             : `${statusPrefix} ${customTitleEnd}\nOutput: ${r.result.slice(0, 500)}${r.result.length > 500 ? "..." : ""}`;
-          addLine({
+          addToolChild({
             type: "tool_end",
             content: resultContent,
             timestamp: Date.now(),
@@ -1044,7 +1081,7 @@ export function App({
         }
       }
     },
-    [flushBuffer, addLine]
+    [flushBuffer, addLine, addToolChild]
   );
 
   const permissionHandler: PermissionHandler = useCallback(
@@ -1700,6 +1737,7 @@ export function App({
     maxProcsVisible,
     maxChecklistVisible,
     toggleCollapse,
+    toggleChildExpand,
     openResponseAtIndex,
     visibleLinePositions,
     toggleLineExpand,
@@ -1738,6 +1776,8 @@ export function App({
             chatContentStartRow={chatContentStartRow}
             expandedLines={expandedLines}
             toggleLineExpand={toggleLineExpand}
+            expandedChildren={expandedChildren}
+            toggleChildExpand={toggleChildExpand}
           />
 
           {/* Active Agents, Tasks checklists & Wizard dialogs */}

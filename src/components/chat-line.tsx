@@ -416,6 +416,126 @@ export function renderToolEnd(content: string, isError: boolean): React.ReactNod
   );
 }
 
+/** Render a nested child line with extra indentation under a parent */
+function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boolean, parentColor: string): React.ReactNode {
+  const indent = "│    ";  // Parent's content indent
+
+  if (child.type === "tool_start") {
+    const content = child.content.replace(/^⚡ /, "");
+    if (isCollapsed) {
+      const toolName = content.match(/Detail:\s*(\w+)/)?.[1] || "tool";
+      const firstLine = content.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
+      const desc = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
+      return (
+        <Box key={`child-${childIdx}`} flexDirection="column">
+          <Text color="yellow">
+            {indent}├───[ <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>click to expand</Text>
+          </Text>
+        </Box>
+      );
+    }
+    return (
+      <Box key={`child-${childIdx}`} flexDirection="column">
+        <Text color="yellow">
+          {indent}├───[ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>click to collapse</Text>
+        </Text>
+        {content.split("\n").map((l, idx) => (
+          <Box key={idx} flexDirection="row">
+            <Text color="yellow">{indent}│    </Text>
+            {l.includes("Detail:") ? (() => {
+              const parts = l.split("Detail:");
+              const prefix = parts[0] + "Detail: ";
+              const rest = parts[1];
+              const openParenIdx = rest.indexOf("(");
+              if (openParenIdx !== -1) {
+                const tName = rest.slice(0, openParenIdx).trim();
+                let remaining = rest.slice(openParenIdx + 1);
+                const hasClose = remaining.endsWith(")");
+                if (hasClose) remaining = remaining.slice(0, -1);
+                return (
+                  <>
+                    <Text dimColor>{prefix}</Text>
+                    <Text bold color="green">{tName}</Text>
+                    <Text color="cyan">(</Text>
+                    <Text color="yellow">{remaining}</Text>
+                    {hasClose && <Text color="cyan">)</Text>}
+                  </>
+                );
+              }
+              return <Text bold color="white">{l}</Text>;
+            })() : <Text bold color="white">{l}</Text>}
+          </Box>
+        ))}
+        <Box flexDirection="row">
+          <Text color="yellow">{indent}│ </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (child.type === "tool_end") {
+    const isError = child.content.startsWith("✗");
+    const contentText = child.content.substring(2);
+    const themeColor = isError ? "red" : "green";
+    if (isCollapsed) {
+      const firstLine = contentText.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
+      const desc = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
+      const icon = isError ? "🔴" : "🟢";
+      const status = isError ? "Failed" : "Done";
+      return (
+        <Box key={`child-${childIdx}`} flexDirection="column">
+          <Text color={themeColor}>
+            {indent}├───[ <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>click to expand</Text>
+          </Text>
+        </Box>
+      );
+    }
+    return (
+      <Box key={`child-${childIdx}`} flexDirection="column">
+        <Text color={themeColor}>
+          {indent}├───[ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>click to collapse</Text>
+        </Text>
+        {contentText.split("\n").map((l, idx) => (
+          <Box key={idx} flexDirection="row">
+            <Text color={themeColor}>{indent}│    </Text>
+            {l.startsWith("Output:") || l.startsWith("Detail:") ? (() => {
+              const type = l.startsWith("Output:") ? "Output: " : "Detail: ";
+              const rest = l.substring(type.length);
+              return (
+                <>
+                  <Text bold color={isError ? "cyan" : "gray"} dimColor={!isError}>{type}</Text>
+                  <Text dimColor>{rest}</Text>
+                </>
+              );
+            })() : <Text color={isError ? "white" : "gray"} dimColor={!isError}>{l}</Text>}
+          </Box>
+        ))}
+        <Box flexDirection="row">
+          <Text color={themeColor}>{indent}│ </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Fallback for other child types (system, error)
+  return (
+    <Box key={`child-${childIdx}`} flexDirection="column">
+      <Text color="gray">
+        {indent}├───[ <Text bold color="gray">COMM_PACKET</Text> ]
+      </Text>
+      {child.content.split("\n").map((l, idx) => (
+        <Box key={idx} flexDirection="row">
+          <Text color="gray">{indent}│    </Text>
+          <Text>{l}</Text>
+        </Box>
+      ))}
+      <Box flexDirection="row">
+        <Text color="gray">{indent}│ </Text>
+      </Box>
+    </Box>
+  );
+}
+
 interface ChatLineComponentProps {
   line: ChatLine;
   isFirst: boolean;
@@ -429,6 +549,10 @@ interface ChatLineComponentProps {
   isLastAssistant?: boolean;
   /** When true, render compact collapsed view */
   isCollapsed?: boolean;
+  /** Set of expanded child indexes (for nested tool children) */
+  expandedChildren?: Set<number>;
+  /** Toggle expand/collapse for a child line */
+  toggleChildExpand?: (childIndex: number) => void;
 }
 
 export const ChatLineComponent = React.memo(function ChatLineComponent({
@@ -442,6 +566,8 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
   chatWidth,
   isLastAssistant,
   isCollapsed,
+  expandedChildren = new Set(),
+  toggleChildExpand,
 }: ChatLineComponentProps) {
   // Helper: extract tool name from content
   const extractToolName = (content: string): string => {
@@ -479,6 +605,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       const capped = isLastAssistant
         ? { text: line.content, truncated: false }
         : capDisplayLines(line.content, maxResponseLines || 12, chatWidth || 80);
+      const children = line.children || [];
       return (
         <Box flexDirection="column">
           <Text color="magenta">
@@ -491,6 +618,10 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
               <Text color="yellow">... [response panjang dipotong; klik untuk buka scroll view, mouse scroll / ↑↓] ...</Text>
             </Box>
           )}
+          {children.length > 0 && children.map((child, childIdx) => {
+            const isChildCollapsed = isCollapsibleType(child.type) && !expandedChildren.has(childIdx);
+            return renderNestedChild(child, childIdx, isChildCollapsed, "magenta");
+          })}
           <Box flexDirection="row">
             <Text color="magenta">│ </Text>
           </Box>

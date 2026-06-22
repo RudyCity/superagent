@@ -15,6 +15,8 @@ interface LogGroup {
   rawLines: string[];
   /** Group index (position in the groups array) for collapsible tracking */
   groupIndex?: number;
+  /** Nesting level: 0 = top-level, 1 = nested under parent agent message */
+  nestLevel?: number;
 }
 
 /** Labels that are collapsible in the multi-agent log view */
@@ -243,9 +245,27 @@ export function computeWrappedLogs(
     }
   }
 
+  // Nest TOOL groups under the preceding AGENT group (visual nesting)
+  for (let gi = 1; gi < groups.length; gi++) {
+    const g = groups[gi];
+    if (g.isBox) continue;
+    const isToolGroup = g.label.includes("TOOL") || g.label.includes("AUTO-APPROVE");
+    if (!isToolGroup) continue;
+    // Look back for the nearest non-box, non-tool group
+    for (let j = gi - 1; j >= 0; j--) {
+      const prev = groups[j];
+      if (prev.isBox) continue;
+      if (prev.label === "🧠 AGENT" || prev.label === "👤 USER") {
+        g.nestLevel = 1;
+      }
+      break;
+    }
+  }
+
   for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
     const group = groups[groupIdx];
     const useTruncate = isHistoryTruncated && !group.parseMarkdown && !group.noTruncate;
+    const nestPrefix = (group.nestLevel || 0) > 0 ? "│   " : "";
 
     if (group.isBox) {
       for (const logStr of group.rawLines) {
@@ -270,7 +290,7 @@ export function computeWrappedLogs(
     const groupIsCollapsed = groupIsCollapsible && (!expandedGroups || !expandedGroups.has(groupIdx));
 
     if (groupIsCollapsed) {
-      const prefix = groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───");
+      const prefix = nestPrefix + (groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───"));
       const firstContent = group.rawLines[0] || "";
       const preview = firstContent.length > 50 ? firstContent.slice(0, 47) + "..." : firstContent;
       const icon = group.label.includes("TOOL START") ? "⚙️" :
@@ -289,8 +309,8 @@ export function computeWrappedLogs(
       continue;
     }
 
-    const prefix = groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───");
-    const subLinePrefix = groupIdx === groups.length - 1 ? "    " : "│   ";
+    const prefix = nestPrefix + (groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───"));
+    const subLinePrefix = nestPrefix + (groupIdx === groups.length - 1 ? "    " : "│   ");
 
     wrappedLines.push(
       <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
