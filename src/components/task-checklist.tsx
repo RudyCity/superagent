@@ -106,8 +106,8 @@ export function TaskChecklist({
               displayStatusText = " (in progress)";
             } else if (status === "paused") {
               statusIcon = "⏸";
-              taskColor = "magenta";
-              connectorColor = "magenta";
+              taskColor = "blue";
+              connectorColor = "blue";
               displayStatusText = " (paused)";
             } else if (status === "error") {
               statusIcon = "✗";

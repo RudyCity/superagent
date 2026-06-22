@@ -55,11 +55,11 @@ export function StatusBar(props: StatusBarProps) {
             <Text color="gray"> • </Text>
             <Text color="yellow">Proc: {runningTasksCount}</Text>
             <Text color="gray"> • </Text>
-            <Text color="magenta">Sub: {runningSubagentsCount}</Text>
+            <Text color="blue">Sub: {runningSubagentsCount}</Text>
           </Text>
         </Box>
         <Box>
-          <Text color="magenta" bold>
+          <Text color="blue" bold>
             Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})
           </Text>
         </Box>

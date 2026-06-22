@@ -7,7 +7,7 @@ interface PlanApprovalDialogProps {
   planFilePath: string;
   selectedIndex: number;
   step: number; // 1 = options, 2 = custom feedback input
-  borderColor?: "yellow" | "cyan" | "magenta" | "green" | "gray" | "white" | "red";
+  borderColor?: "yellow" | "cyan" | "blue" | "green" | "gray" | "white" | "red";
   terminalWidth?: number;
   /** Maximum number of plan content lines visible at once */
   maxContentHeight?: number;

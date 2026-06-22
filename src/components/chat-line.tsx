@@ -30,7 +30,7 @@ export function truncateStreamDisplay(text: string, maxLines: number, width: num
   return resultLines.join("\n");
 }
 
-export function renderMarkdown(content: string, themeColor: string = "magenta", showCursor: boolean = false): React.ReactNode {
+export function renderMarkdown(content: string, themeColor: string = "blue", showCursor: boolean = false): React.ReactNode {
   const rawLines = content.split("\n");
 
   // Format markdown tables helper
@@ -332,7 +332,7 @@ export function renderMarkdown(content: string, themeColor: string = "magenta", 
                 <Text bold color="yellow">[SYS]</Text>
               </Text>
             ) : listPrefix ? (
-              <Text color="magenta" bold>{listPrefix}</Text>
+              <Text color="blue" bold>{listPrefix}</Text>
             ) : null}
             <Box flexShrink={1}>
               <Text>
@@ -608,22 +608,22 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       const children = line.children || [];
       return (
         <Box flexDirection="column">
-          <Text color="magenta">
-            {isFirst ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT{modelName ? ` (${modelName})` : ""}</Text><Text dimColor> (▲{formatCompactNumber(tokensUp || 0)} | ▼{formatCompactNumber(tokensDown || 0)})</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
+          <Text color="blue">
+            {isFirst ? "┌" : "├"}───[ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT{modelName ? ` (${modelName})` : ""}</Text><Text dimColor> (▲{formatCompactNumber(tokensUp || 0)} | ▼{formatCompactNumber(tokensDown || 0)})</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
           </Text>
-          {renderMarkdown(capped.text, "magenta")}
+          {renderMarkdown(capped.text, "blue")}
           {capped.truncated && (
             <Box flexDirection="row">
-              <Text color="magenta">│    </Text>
+              <Text color="blue">│    </Text>
               <Text color="yellow">... [response panjang dipotong; klik untuk buka scroll view, mouse scroll / ↑↓] ...</Text>
             </Box>
           )}
           {children.length > 0 && children.map((child, childIdx) => {
             const isChildCollapsed = isCollapsibleType(child.type) && !expandedChildren.has(childIdx);
-            return renderNestedChild(child, childIdx, isChildCollapsed, "magenta");
+            return renderNestedChild(child, childIdx, isChildCollapsed, "blue");
           })}
           <Box flexDirection="row">
-            <Text color="magenta">│ </Text>
+            <Text color="blue">│ </Text>
           </Box>
         </Box>
       );

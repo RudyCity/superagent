@@ -33,7 +33,7 @@ import { useMouseScroll, type SectionBoundary, type ChatLinePosition } from "./h
 
 export { stripSgrMouseSequences } from "./utils/text.js";
 
-function getWizardBorderColor(activeWizard: any): "yellow" | "cyan" | "magenta" | "green" | "red" {
+function getWizardBorderColor(activeWizard: any): "yellow" | "cyan" | "blue" | "green" | "red" {
   if (!activeWizard) return "cyan";
   switch (activeWizard.type) {
     case "permission":
@@ -44,11 +44,11 @@ function getWizardBorderColor(activeWizard: any): "yellow" | "cyan" | "magenta" 
     case "skills":
       return "cyan";
     case "resume":
-      return "magenta";
+      return "blue";
     case "checkpoint":
       return activeWizard.step === 2 ? "yellow" : "green";
     case "login":
-      return activeWizard.step === 13 ? "magenta" : "cyan";
+      return activeWizard.step === 13 ? "blue" : "cyan";
     case "model":
       return activeWizard.step === 41 ? "red" : "cyan";
     default:

@@ -172,7 +172,7 @@ export function computeWrappedLogs(
     } else if (logStr.startsWith("[TOOL START]")) {
       label = "🔧 TOOL START";
       content = logStr.replace("[TOOL START]", "").trim();
-      color = "magenta";
+      color = "blue";
       noTruncate = true;
     } else if (logStr.startsWith("[TOOL END]")) {
       label = "✅ TOOL DONE";
@@ -193,11 +193,11 @@ export function computeWrappedLogs(
     } else if (logStr.startsWith("[QUESTION]")) {
       label = "❓ QUESTION";
       content = logStr.replace("[QUESTION]", "").trim();
-      color = "magenta";
+      color = "blue";
     } else if (logStr.startsWith("[THINK]")) {
       label = "🧠 THINK";
       content = logStr.replace("[THINK]", "").trim();
-      color = "magenta";
+      color = "blue";
       dimColor = true;
       parseMarkdown = true;
     } else if (logStr.startsWith("[TOOL:START]")) {
@@ -407,7 +407,7 @@ export function computeWrappedLogs(
           wrappedLines.push(
             <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
               <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
-              {listPrefix ? <Text color="magenta" bold>{listPrefix}</Text> : null}
+              {listPrefix ? <Text color="blue" bold>{listPrefix}</Text> : null}
               <Box flexShrink={1}>
                 <Text wrap={useTruncate ? "truncate-end" : undefined}>
                   {renderLogInlineStyles(remainingLine, group.color === "gray" ? "gray" : group.color, group.isBold, group.dimColor)}

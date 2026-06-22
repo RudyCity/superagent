@@ -5,7 +5,7 @@ import { wrapTextForDisplay } from "../utils/responseScroll.js";
 interface WizardDialogProps {
   title: string;
   description?: string;
-  borderColor: "yellow" | "cyan" | "magenta" | "green" | "gray" | "white" | "red";
+  borderColor: "yellow" | "cyan" | "blue" | "green" | "gray" | "white" | "red";
   options: string[];
   selectedIndex: number;
   maxVisible?: number;

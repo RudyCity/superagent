@@ -285,7 +285,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
               <Text color="yellow">
                 ┌───[ <Text bold color="yellow">RESPONSE_SCROLL</Text><Text dimColor> {currentPosition + 1}/{Math.max(1, truncatedIndexes.length)} line {safeOffset + 1}-{visibleEnd} / {responseLines.length} {renderScrollBar(safeOffset, focusWindowHeight, responseLines.length)} | ↑/↓ scroll | Esc close | click to close</Text> ]
               </Text>
-              {renderMarkdown(visibleText, "magenta")}
+              {renderMarkdown(visibleText, "blue")}
               <Text color="yellow">└───[ focused assistant response #{focusedResponseIndex + 1} ]</Text>
             </Box>
           );
@@ -342,12 +342,12 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
 
               {shouldRenderStream && (
                 <Box flexDirection="column">
-                  <Text color="magenta">
-                    {visibleLines.length === 0 ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown + liveStreamTokens)})</Text> ]
+                  <Text color="blue">
+                    {visibleLines.length === 0 ? "┌" : "├"}───[ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown + liveStreamTokens)})</Text> ]
                   </Text>
                   {renderMarkdown(
                     streamDisplay,
-                    "magenta",
+                    "blue",
                     true
                   )}
                 </Box>
@@ -358,11 +358,11 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
 
         {scrollOffset === 0 && isProcessing && (!streamDisplay || streamDisplay.trim().length === 0) && !isExecutingTool && (
           <Box flexDirection="column" marginTop={2}>
-            <Text color="magenta">
-              {lines.length === 0 ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown)})</Text> ]
+            <Text color="blue">
+              {lines.length === 0 ? "┌" : "├"}───[ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown)})</Text> ]
             </Text>
             <Box flexDirection="row">
-              <Text color="magenta">│    </Text>
+              <Text color="blue">│    </Text>
               <LoadingIndicator />
             </Box>
           </Box>

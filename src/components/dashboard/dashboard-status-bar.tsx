@@ -70,7 +70,7 @@ export function DashboardStatusBar({
                 <Text color="gray"> │ </Text>
               </>
             )}
-            <Text color="magenta" bold>Master: {(masterPromptTokens + masterCompletionTokens).toLocaleString()}t</Text>
+            <Text color="blue" bold>Master: {(masterPromptTokens + masterCompletionTokens).toLocaleString()}t</Text>
             <Text color="gray"> │ </Text>
             <Text color="cyan" bold>Superagents({activeSuperagentsCount} active): {(historicalSuperagentTokens || 0).toLocaleString()}t</Text>
             <Text color="gray"> │ </Text>
@@ -80,7 +80,7 @@ export function DashboardStatusBar({
             <Text color="gray"> │ </Text>
             <Text color="yellow" bold>Proc: {runningTasksCount}</Text>
             <Text color="gray"> • </Text>
-            <Text color="magenta" bold>Sub: {runningSubagentsCount}</Text>
+            <Text color="blue" bold>Sub: {runningSubagentsCount}</Text>
           </Text>
         </Box>
       </Box>

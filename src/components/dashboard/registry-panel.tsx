@@ -41,7 +41,7 @@ export function renderStatusBadge(status: AgentSession["status"]) {
   if (status === "WORKING") {
     return <ActiveStatusBadge />;
   }
-  if (status === "PAUSED") return <Text color="black" backgroundColor="magenta" bold> PAUSE </Text>;
+  if (status === "PAUSED") return <Text color="black" backgroundColor="blue" bold> PAUSE </Text>;
   if (status === "COMPLETED") return <Text color="black" backgroundColor="green" bold> DONE </Text>;
   if (status === "ERROR") return <Text color="black" backgroundColor="red" bold> FAIL </Text>;
   return <Text color="black" backgroundColor="gray" bold> IDLE </Text>;
@@ -55,7 +55,7 @@ export const tierIcon: Record<AgentSession["type"], string> = {
 };
 
 export const tierColor: Record<AgentSession["type"], string> = {
-  MASTER:     "magenta",
+  MASTER:     "blue",
   SUPERAGENT: "cyan",
   SUBAGENT:   "yellow",
   TASK:       "gray",

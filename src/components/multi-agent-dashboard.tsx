@@ -1034,7 +1034,7 @@ export function MultiAgentDashboard({
               <Text color="gray"> │ </Text>
               <Text color="yellow" bold>MULTI-AGENT SYSTEM v{multiVersion}</Text>
               <Text color="gray"> │ </Text>
-              <Text color="magenta" bold>Branch: {gitBranch}</Text>
+              <Text color="blue" bold>Branch: {gitBranch}</Text>
             </Box>
           </Box>
         </Box>
@@ -1166,7 +1166,7 @@ export function MultiAgentDashboard({
           )}
           <Box flexDirection="row" marginTop={0} paddingX={1} width="100%">
             <Box flexShrink={0}>
-              <Text bold color={activeWizard ? "magenta" : isProcessing ? "gray" : (focusArea === "input" ? "green" : "cyan")}>
+              <Text bold color={activeWizard ? "blue" : isProcessing ? "gray" : (focusArea === "input" ? "green" : "cyan")}>
                 {activeWizard?.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)
                   ? "└──[ MODEL ] ❯ "
                   : activeWizard?.type === "model" && (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35)

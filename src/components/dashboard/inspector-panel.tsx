@@ -243,7 +243,7 @@ export function InspectorPanel({
           )}
         </Box>
         <Box flexDirection="column" alignItems="flex-end">
-          <Text color="magenta" bold>({selectedSession.branch || "main"})</Text>
+          <Text color="blue" bold>({selectedSession.branch || "main"})</Text>
           {selectedSession.type === "SUPERAGENT" && selectedSession.worktreePath && (
             <Text color="gray" dimColor>wt: ...{selectedSession.worktreePath.slice(-30)}</Text>
           )}

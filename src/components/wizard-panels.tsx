@@ -181,7 +181,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           <WizardDialog
             title="🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter, Esc: Back)"
             description="State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:"
-            borderColor="magenta"
+            borderColor="blue"
             options={[]}
             selectedIndex={0}
           />
@@ -539,7 +539,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           <WizardDialog
             title="📚 RESUME SESSION — Select session to resume (↑/↓ Navigate, Enter: Load, Esc: Cancel):"
             description="Sessions sorted by most recent:"
-            borderColor="magenta"
+            borderColor="blue"
             options={wizardOptions}
             selectedIndex={wizardSelectedIndex}
             maxVisible={10}
