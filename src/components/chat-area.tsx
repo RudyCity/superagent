@@ -297,7 +297,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       {/* Messages Header */}
       <Box flexDirection="row" justifyContent="space-between" paddingX={1} marginBottom={0}>
         <Text color={focusMode === "chat" ? "green" : "cyan"}>
-          ┌───[ <Text bold color={focusMode === "chat" ? "green" : "cyan"}>💬 CONVERSATION LOG</Text>
+          ┌─── [ <Text bold color={focusMode === "chat" ? "green" : "cyan"}>💬 CONVERSATION LOG</Text>
           {focusMode === "chat" && <Text dimColor> [↑/▼ Scroll • Esc Exit]</Text>} ]
         </Text>
         {scrollOffset > 0 && (
@@ -306,7 +306,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
           </Text>
         )}
       </Box>
-
+ 
       {/* Messages */}
       <Box flexDirection="column" paddingX={1} flexGrow={1}>
         {focusedResponseIndex !== null ? (() => {
@@ -325,10 +325,10 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
           return (
             <Box flexDirection="column">
               <Text color="yellow">
-                ┌───[ <Text bold color="yellow">RESPONSE_SCROLL</Text><Text dimColor> {currentPosition + 1}/{Math.max(1, truncatedIndexes.length)} line {safeOffset + 1}-{visibleEnd} / {responseLines.length} {renderScrollBar(safeOffset, focusWindowHeight, responseLines.length)} | ↑/↓ scroll | Esc close | click to close</Text> ]
+                ┌─── [ <Text bold color="yellow">RESPONSE_SCROLL</Text><Text dimColor> {currentPosition + 1}/{Math.max(1, truncatedIndexes.length)} line {safeOffset + 1}-{visibleEnd} / {responseLines.length} {renderScrollBar(safeOffset, focusWindowHeight, responseLines.length)} | ↑/↓ scroll | Esc close | click to close</Text> ]
               </Text>
               {renderMarkdown(visibleText, "blue")}
-              <Text color="yellow">└───[ focused assistant response #{focusedResponseIndex + 1} ]</Text>
+              <Text color="yellow">└─── [ focused assistant response #{focusedResponseIndex + 1} ]</Text>
             </Box>
           );
         })() : (() => {
@@ -385,7 +385,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
               {shouldRenderStream && (
                 <Box flexDirection="column">
                   <Text color="blue">
-                    {visibleLines.length === 0 ? "┌" : "├"}───[ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown + liveStreamTokens)})</Text> ]
+                    {visibleLines.length === 0 ? "┌" : "├"}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown + liveStreamTokens)})</Text> ]
                   </Text>
                   {renderMarkdown(
                     streamDisplay,
@@ -401,7 +401,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
         {scrollOffset === 0 && isProcessing && (!streamDisplay || streamDisplay.trim().length === 0) && !isExecutingTool && (
           <Box flexDirection="column" marginTop={2}>
             <Text color="blue">
-              {lines.length === 0 ? "┌" : "├"}───[ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown)})</Text> ]
+              {lines.length === 0 ? "┌" : "├"}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown)})</Text> ]
             </Text>
             <Box flexDirection="row">
               <Text color="blue">│    </Text>
@@ -413,7 +413,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
         {scrollOffset === 0 && isExecutingTool && (
           <Box flexDirection="column" marginTop={2}>
             <Text color="yellow">
-              {lines.length === 0 ? "┌" : "├"}───[ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
+              {lines.length === 0 ? "┌" : "├"}─── [ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
             </Text>
             <Box flexDirection="row">
               <Text color="yellow">│    </Text>
@@ -422,7 +422,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
             {activeToolLinesCount > 0 && (
               <>
                 <Text color="yellow">
-                  ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]
+                  ├─── [ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]
                 </Text>
                 {activeToolLines.map((line, idx) => (
                   <Box key={idx} flexDirection="row">

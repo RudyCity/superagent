@@ -127,7 +127,7 @@ export function computeLogGroupBoundaries(
         const cleaned = rawLine.replace(/\r\n/g, "\n").replace(/\r/g, "");
         const subLines = isHistoryTruncated
           ? cleaned.split("\n")
-          : wrapTextForDisplay(cleaned, Math.max(10, feedWidth - (isTool ? 12 : 8)));
+          : wrapTextForDisplay(cleaned, Math.max(10, feedWidth - (isTool ? 14 : 9)));
         if (isTool && firstLine && subLines.length > 0) {
           // The first line of content is rendered inline in the header line
           lineCount += subLines.length - 1;
@@ -294,7 +294,7 @@ export function computeWrappedLogs(
   for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
     const group = groups[groupIdx];
     const useTruncate = isHistoryTruncated && !group.parseMarkdown && !group.noTruncate;
-    const nestPrefix = (group.nestLevel || 0) > 0 ? "│   " : "";
+    const nestPrefix = (group.nestLevel || 0) > 0 ? "│    " : "";
 
     if (group.isBox) {
       for (const logStr of group.rawLines) {
@@ -355,7 +355,7 @@ export function computeWrappedLogs(
     }
 
     const prefix = nestPrefix + (groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───"));
-    const subLinePrefix = nestPrefix + (groupIdx === groups.length - 1 ? "    " : "│   ");
+    const subLinePrefix = nestPrefix + (groupIdx === groups.length - 1 ? "     " : "│    ");
 
     if (isTool) {
       const icon = group.label.includes("TOOL START") ? "⚙️ " :
@@ -389,7 +389,7 @@ export function computeWrappedLogs(
       const cleanedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
       const subLines = useTruncate
         ? cleanedContent.split("\n")
-        : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - (isTool ? 12 : 8)));
+        : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - (isTool ? 14 : 9)));
 
       for (let i = 0; i < subLines.length; i++) {
         if (isTool && rawLineIdx === 0 && i === 0) {

@@ -292,7 +292,7 @@ export function InspectorPanel({
         {selectedSession.type === "MASTER" && isExecutingTool && (
           <Box flexDirection="column" marginTop={1}>
             <Text color="yellow">
-              ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
+              ├─── [ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
             </Text>
             <Box flexDirection="row">
               <Text color="yellow">│    </Text>
@@ -301,7 +301,7 @@ export function InspectorPanel({
             {activeToolLines.length > 0 && (
               <>
                 <Text color="yellow">
-                  ├───[ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]
+                  ├─── [ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]
                 </Text>
                 {activeToolLines.map((line, idx) => (
                   <Box key={idx} flexDirection="row">
