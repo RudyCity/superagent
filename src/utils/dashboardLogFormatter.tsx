@@ -82,6 +82,23 @@ export function computeLogGroupBoundaries(
   // Assign group indexes
   groups.forEach((g, i) => { g.groupIndex = i; });
 
+  // Nest TOOL groups under the preceding AGENT group (visual nesting)
+  for (let gi = 1; gi < groups.length; gi++) {
+    const g = groups[gi];
+    if (g.isBox) continue;
+    const isToolGroup = g.label.includes("TOOL") || g.label.includes("AUTO-APPROVE");
+    if (!isToolGroup) continue;
+    // Look back for the nearest non-box, non-tool group
+    for (let j = gi - 1; j >= 0; j--) {
+      const prev = groups[j];
+      if (prev.isBox) continue;
+      if (prev.label === "🧠 AGENT" || prev.label === "👤 USER") {
+        g.nestLevel = 1;
+      }
+      break;
+    }
+  }
+
   const boundaries: LogGroupInfo[] = [];
   let currentLine = 0;
 
@@ -89,6 +106,7 @@ export function computeLogGroupBoundaries(
     const group = groups[groupIdx];
     const isCollapsible = !group.isBox && isCollapsibleLabel(group.label);
     const isCollapsed = isCollapsible && !expandedGroups.has(groupIdx);
+    const isTool = (group.label.includes("TOOL") || group.label.includes("AUTO-APPROVE")) && (group.nestLevel || 0) > 0;
 
     if (group.isBox) {
       const lineCount = group.rawLines.length;
@@ -104,10 +122,19 @@ export function computeLogGroupBoundaries(
     } else {
       // Expanded: header + content lines + separator
       let lineCount = 1; // header
+      let firstLine = true;
       for (const rawLine of group.rawLines) {
         const cleaned = rawLine.replace(/\r\n/g, "\n").replace(/\r/g, "");
-        const subLines = isHistoryTruncated ? cleaned.split("\n") : wrapTextForDisplay(cleaned, Math.max(10, feedWidth - 8));
-        lineCount += subLines.length;
+        const subLines = isHistoryTruncated
+          ? cleaned.split("\n")
+          : wrapTextForDisplay(cleaned, Math.max(10, feedWidth - (isTool ? 12 : 8)));
+        if (isTool && firstLine && subLines.length > 0) {
+          // The first line of content is rendered inline in the header line
+          lineCount += subLines.length - 1;
+          firstLine = false;
+        } else {
+          lineCount += subLines.length;
+        }
       }
       if (groupIdx < groups.length - 1) lineCount += 1; // separator
       boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine + lineCount - 1, label: group.label, isCollapsible: true });
@@ -288,8 +315,24 @@ export function computeWrappedLogs(
     // Collapsed rendering for collapsible groups
     const groupIsCollapsible = isCollapsibleLabel(group.label);
     const groupIsCollapsed = groupIsCollapsible && (!expandedGroups || !expandedGroups.has(groupIdx));
+    const isTool = (group.label.includes("TOOL") || group.label.includes("AUTO-APPROVE")) && (group.nestLevel || 0) > 0;
 
     if (groupIsCollapsed) {
+      if (isTool) {
+        const icon = group.label.includes("TOOL START") ? "⚙️ " :
+                     group.label.includes("FAIL") ? "✗ " : "✓ ";
+        const firstContent = group.rawLines[0] || "";
+        const preview = firstContent.length > 50 ? firstContent.slice(0, 47) + "..." : firstContent;
+        wrappedLines.push(
+          <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>
+            <Text color={group.color} dimColor={group.dimColor} wrap="truncate-end">
+              {nestPrefix}    <Text bold color={group.color}>↳ {icon}</Text><Text color={group.color}>{preview}</Text> <Text dimColor italic>{group.label.includes("FAIL") ? "(click to view error)" : group.label.includes("START") ? "(click to view inputs)" : "(click to view output)"}</Text>
+            </Text>
+          </Box>
+        );
+        continue;
+      }
+
       const prefix = nestPrefix + (groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───"));
       const firstContent = group.rawLines[0] || "";
       const preview = firstContent.length > 50 ? firstContent.slice(0, 47) + "..." : firstContent;
@@ -312,16 +355,31 @@ export function computeWrappedLogs(
     const prefix = nestPrefix + (groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───"));
     const subLinePrefix = nestPrefix + (groupIdx === groups.length - 1 ? "    " : "│   ");
 
-    wrappedLines.push(
-      <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
-        <Text color={group.color === "gray" ? "gray" : group.color} bold wrap={useTruncate ? "truncate-end" : undefined}>
-          {prefix} <Text color="white" bold>[ </Text>
-          <Text color={group.color === "gray" ? "gray" : group.color} bold>{group.label}</Text>
-          <Text color="white" bold> ]</Text>
-        </Text>
-        {groupIsCollapsible && <Text dimColor italic> click to collapse</Text>}
-      </Box>
-    );
+    if (isTool) {
+      const icon = group.label.includes("TOOL START") ? "⚙️ " :
+                   group.label.includes("FAIL") ? "✗ " : "✓ ";
+      const firstContent = group.rawLines[0] || "";
+      const cleaned = firstContent.replace(/\r\n/g, "\n").replace(/\r/g, "");
+      const firstLineText = cleaned.split("\n")[0] || "";
+      wrappedLines.push(
+        <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
+          <Text color={group.color} bold={group.isBold} dimColor={group.dimColor} wrap={useTruncate ? "truncate-end" : undefined}>
+            {nestPrefix}    <Text bold color={group.color}>▼ {icon}</Text><Text color={group.color}>{firstLineText}</Text><Text dimColor italic> (click to collapse)</Text>
+          </Text>
+        </Box>
+      );
+    } else {
+      wrappedLines.push(
+        <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
+          <Text color={group.color === "gray" ? "gray" : group.color} bold wrap={useTruncate ? "truncate-end" : undefined}>
+            {prefix} <Text color="white" bold>[ </Text>
+            <Text color={group.color === "gray" ? "gray" : group.color} bold>{group.label}</Text>
+            <Text color="white" bold> ]</Text>
+          </Text>
+          {groupIsCollapsible && <Text dimColor italic> click to collapse</Text>}
+        </Box>
+      );
+    }
 
     let inCode = false;
     for (let rawLineIdx = 0; rawLineIdx < group.rawLines.length; rawLineIdx++) {
@@ -329,11 +387,15 @@ export function computeWrappedLogs(
       const cleanedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
       const subLines = useTruncate
         ? cleanedContent.split("\n")
-        : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - 8));
+        : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - (isTool ? 12 : 8)));
 
       for (let i = 0; i < subLines.length; i++) {
+        if (isTool && rawLineIdx === 0 && i === 0) {
+          continue; // Rendered in header
+        }
         const lineText = subLines[i];
         const trimmed = lineText.trim();
+        const activeSubLinePrefix = isTool ? subLinePrefix + "    " : subLinePrefix;
 
         if (group.parseMarkdown) {
           if (trimmed.startsWith("```")) {
@@ -341,7 +403,7 @@ export function computeWrappedLogs(
             const codeLang = trimmed.slice(3).trim() || "TEXT";
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{activeSubLinePrefix}</Text>
                 <Text color="gray" italic wrap={useTruncate ? "truncate-end" : undefined}>{inCode ? `┌─── [ CODE: ${codeLang} ]` : "└─── [ END CODE ]"}</Text>
               </Box>
             );
@@ -351,7 +413,7 @@ export function computeWrappedLogs(
           if (inCode) {
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}│  </Text>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{activeSubLinePrefix}│  </Text>
                 <Text color="green" wrap={useTruncate ? "truncate-end" : undefined}>{lineText}</Text>
               </Box>
             );
@@ -361,7 +423,7 @@ export function computeWrappedLogs(
           if (trimmed.startsWith("# ")) {
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{activeSubLinePrefix}</Text>
                 <Text bold color="yellow" wrap={useTruncate ? "truncate-end" : undefined}>{lineText.slice(2)}</Text>
               </Box>
             );
@@ -370,7 +432,7 @@ export function computeWrappedLogs(
           if (trimmed.startsWith("## ")) {
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{activeSubLinePrefix}</Text>
                 <Text bold color="cyan" wrap={useTruncate ? "truncate-end" : undefined}>{lineText.slice(3)}</Text>
               </Box>
             );
@@ -379,7 +441,7 @@ export function computeWrappedLogs(
           if (trimmed.startsWith("### ")) {
             wrappedLines.push(
               <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+                <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{activeSubLinePrefix}</Text>
                 <Text bold color="blue" wrap={useTruncate ? "truncate-end" : undefined}>{lineText.slice(4)}</Text>
               </Box>
             );
@@ -406,7 +468,7 @@ export function computeWrappedLogs(
 
           wrappedLines.push(
             <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-              <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+              <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{activeSubLinePrefix}</Text>
               {listPrefix ? <Text color="blue" bold>{listPrefix}</Text> : null}
               <Box flexShrink={1}>
                 <Text wrap={useTruncate ? "truncate-end" : undefined}>
@@ -418,7 +480,7 @@ export function computeWrappedLogs(
         } else {
           wrappedLines.push(
             <Box flexDirection="row" key={`log-line-${groupIdx}-${rawLineIdx}-${i}`} width={feedWidth}>
-              <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+              <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{activeSubLinePrefix}</Text>
               <Text color={group.color === "gray" ? "gray" : group.color} bold={group.isBold} dimColor={group.dimColor} wrap={useTruncate ? "truncate-end" : undefined}>{lineText}</Text>
             </Box>
           );
@@ -429,7 +491,7 @@ export function computeWrappedLogs(
     if (groupIdx < groups.length - 1) {
       wrappedLines.push(
         <Box flexDirection="row" key={`log-sep-${groupIdx}`}>
-          <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{subLinePrefix}</Text>
+          <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{isTool ? subLinePrefix + "    " : subLinePrefix}</Text>
         </Box>
       );
     }
