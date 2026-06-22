@@ -229,26 +229,64 @@ def run():
             pass  # Non-fatal: cache write failure is silently ignored
 
     # ── Exclude-aware tool subclasses ────────────────────────────────────────────────
-    class ExcludeGrepTool(GrepTool):
-        """GrepTool that automatically injects negation glob exclusions.
+    import fnmatch as _fnmatch
 
-        rg supports negation patterns in --glob: e.g. --glob '!node_modules/**'
-        We inject these into the 'glob' parameter as additional comma-separated
-        patterns, since GrepTool passes them as a single --glob flag.
-        Pattern '!name' tells rg to exclude paths matching 'name'.
+    def _is_excluded(path_str: str) -> bool:
+        """Return True if path_str matches any exclude pattern."""
+        return any(
+            _fnmatch.fnmatch(path_str, f"*{pat}*") or _fnmatch.fnmatch(path_str, pat)
+            for pat in exclude_patterns
+        )
+
+    class ExcludeGrepTool(GrepTool):
+        """GrepTool with post-filtering for excluded patterns.
+
+        rg's --glob only accepts one pattern per flag — comma-separated negation
+        patterns in a single --glob do NOT work as multiple exclusions.
+        We instead run the normal search and filter the resulting lines by path.
+
+        In 'files_with_matches' mode, each line is a file path (easy to filter).
+        In 'content' mode, file paths appear as section headers after '--heading';
+        we drop both the header and its subsequent match lines for excluded files.
         """
         async def call(self, parameters: str, **kwargs) -> str:
-            if exclude_patterns:
-                try:
-                    a = json.loads(parameters) if parameters else {}
-                    existing_glob = a.get("glob", "") or ""
-                    # Build '!pattern' negation globs
-                    neg = ",".join(f"!{p}" for p in exclude_patterns)
-                    a["glob"] = (existing_glob + "," + neg) if existing_glob else neg
-                    parameters = json.dumps(a)
-                except Exception:
-                    pass
-            return await super().call(parameters, **kwargs)
+            result = await super().call(parameters, **kwargs)
+            if not exclude_patterns or not result or result == "No matches found":
+                return result
+
+            lines = result.splitlines()
+
+            # Detect mode: if every non-empty line looks like a file path (no ':'),
+            # we're in files_with_matches mode. Otherwise assume content/heading mode.
+            non_empty = [l for l in lines if l.strip()]
+            is_file_list = non_empty and all(
+                not l.startswith(" ") and ":" not in l.split(os.sep)[-1]
+                for l in non_empty[:10]
+            )
+
+            if is_file_list:
+                # files_with_matches: each line is a path — filter directly
+                filtered = [l for l in lines if not l.strip() or not _is_excluded(l)]
+            else:
+                # content/heading mode: headings are file paths, match lines follow
+                filtered = []
+                skip_section = False
+                for line in lines:
+                    stripped = line.strip()
+                    # A heading line has no leading spaces and no digit: prefix
+                    if stripped and not line[0].isspace() and not stripped[0].isdigit():
+                        # Could be a file path heading
+                        if os.sep in stripped or "/" in stripped or stripped.endswith((".py", ".ts", ".js", ".go", ".rs")):
+                            skip_section = _is_excluded(stripped)
+                            if not skip_section:
+                                filtered.append(line)
+                            continue
+                    if not skip_section:
+                        filtered.append(line)
+
+            if not filtered or not any(l.strip() for l in filtered):
+                return "No matches found (all results matched exclude patterns)"
+            return "\n".join(filtered)
 
     class ExcludeGlobTool(GlobTool):
         """GlobTool with post-filtering of excluded patterns.
@@ -261,17 +299,9 @@ def run():
             result = await super().call(parameters, **kwargs)
             if not exclude_patterns or not result or result == "No files found":
                 return result
-            import fnmatch
             lines = result.splitlines()
-            filtered = []
-            for line in lines:
-                excluded = any(
-                    fnmatch.fnmatch(line, f"*{pat}*") or fnmatch.fnmatch(line, pat)
-                    for pat in exclude_patterns
-                )
-                if not excluded:
-                    filtered.append(line)
-            if not filtered:
+            filtered = [l for l in lines if not l.strip() or not _is_excluded(l)]
+            if not filtered or not any(l.strip() for l in filtered):
                 return "No files found (all results matched exclude patterns)"
             return "\n".join(filtered)
 

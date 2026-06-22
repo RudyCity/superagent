@@ -9,3 +9,6 @@ dist/
 
 # Dependencies
 node_modules/
+
+# FastContext runtime files (cache, trajectories)
+.fastcontext/
