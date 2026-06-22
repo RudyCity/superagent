@@ -549,6 +549,7 @@ export function App({
     if (mainCommand === "/pin") {
       const pinSuggestions = [
         `${mainCommand} list`,
+        `${mainCommand} list-messages`,
         `${mainCommand} last`,
         `${mainCommand} unpin`
       ];

@@ -414,6 +414,7 @@ export function renderToolEnd(content: string, isError: boolean): React.ReactNod
 interface ChatLineComponentProps {
   line: ChatLine;
   isFirst: boolean;
+  lineIndex?: number;  // Index for pinning
   tokensUp?: number;
   tokensDown?: number;
   modelName?: string;
@@ -426,6 +427,7 @@ interface ChatLineComponentProps {
 export const ChatLineComponent = React.memo(function ChatLineComponent({
   line,
   isFirst,
+  lineIndex,
   tokensUp,
   tokensDown,
   modelName,
@@ -439,7 +441,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       return (
         <Box flexDirection="column">
           <Text color="cyan">
-            {isFirst ? "┌" : "├"}───[ <Text bold color="cyan">👤 ACCESS_POINT: USER</Text> ]
+            {isFirst ? "┌" : "├"}───[ <Text bold color="cyan">👤 ACCESS_POINT: USER</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
           </Text>
           {content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
@@ -460,7 +462,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       return (
         <Box flexDirection="column">
           <Text color="magenta">
-            {isFirst ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT{modelName ? ` (${modelName})` : ""}</Text><Text dimColor> (▲{formatCompactNumber(tokensUp || 0)} | ▼{formatCompactNumber(tokensDown || 0)})</Text> ]
+            {isFirst ? "┌" : "├"}───[ <Text bold color="magenta">✦ COGNITIVE_NODE: SUPERAGENT{modelName ? ` (${modelName})` : ""}</Text><Text dimColor> (▲{formatCompactNumber(tokensUp || 0)} | ▼{formatCompactNumber(tokensDown || 0)})</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
           </Text>
           {renderMarkdown(capped.text, "magenta")}
           {capped.truncated && (

@@ -30,6 +30,50 @@ export const pinCommand: SlashCommand = {
 
     const trimmed = args.trim();
 
+    // /pin list-messages - show all messages with correct indexes
+    if (trimmed === "list-messages" || trimmed === "lm") {
+      const messages = agent.getHistory().getMessages();
+      if (messages.length === 0) {
+        ctx.addLine({
+          type: "system",
+          content: "No messages in conversation.",
+          timestamp: now,
+        });
+        return;
+      }
+
+      const pinned = cm.getPinnedMessages();
+      const lines = ["Conversation Messages (use these indexes for /pin):"];
+      lines.push("─".repeat(70));
+
+      const displayCount = Math.min(messages.length, 50); // Show last 50 messages
+      const startIndex = Math.max(0, messages.length - displayCount);
+
+      for (let i = startIndex; i < messages.length; i++) {
+        const msg = messages[i];
+        const msgId = `${i}:${msg.role}:${msg.timestamp}`;
+        const isPinned = pinned.has(msgId);
+        const pinIndicator = isPinned ? " 📌" : "";
+        const preview = msg.content.length > 60 ? msg.content.substring(0, 60) + "..." : msg.content;
+        lines.push(`[${i}] ${msg.role}${pinIndicator}: ${preview}`);
+      }
+
+      if (messages.length > displayCount) {
+        lines.push(`... (${messages.length - displayCount} older messages not shown)`);
+      }
+
+      lines.push("─".repeat(70));
+      lines.push(`Total: ${messages.length} messages, ${pinned.size} pinned`);
+      lines.push("\nUsage: /pin <index> to pin, /pin unpin <index> to unpin");
+
+      ctx.addLine({
+        type: "system",
+        content: lines.join("\n"),
+        timestamp: now,
+      });
+      return;
+    }
+
     // /pin list - show all pinned messages
     if (trimmed === "list" || trimmed === "") {
       const pinned = cm.getPinnedMessages();

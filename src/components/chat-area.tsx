@@ -238,6 +238,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
                     key={originalIndex}
                     line={line}
                     isFirst={false}
+                    lineIndex={originalIndex}
                     tokensUp={tokensUp}
                     tokensDown={tokensDown}
                     modelName={modelName}
