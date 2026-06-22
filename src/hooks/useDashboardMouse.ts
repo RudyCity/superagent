@@ -102,7 +102,14 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
         if (btn === "64") {
           // Scroll UP — dispatch based on focused area
-          if (focusArea === "checklist") {
+          if (activeWizard?.type === "plan_approve") {
+            setActiveWizard((curr: any) => {
+              if (!curr) return null;
+              const currentOffset = parseInt(curr.data?.scrollOffset || "0", 10);
+              const nextOffset = currentOffset + 1;
+              return { ...curr, data: { ...curr.data, scrollOffset: String(nextOffset) } };
+            });
+          } else if (focusArea === "checklist") {
             setChecklistScrollOffset((prev) => {
               const maxScroll = Math.max(0, checklistTasksCount - maxChecklistVisible);
               return Math.min(prev + 1, maxScroll);
@@ -125,7 +132,14 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
           }
         } else if (btn === "65") {
           // Scroll DOWN — dispatch based on focused area
-          if (focusArea === "checklist") {
+          if (activeWizard?.type === "plan_approve") {
+            setActiveWizard((curr: any) => {
+              if (!curr) return null;
+              const currentOffset = parseInt(curr.data?.scrollOffset || "0", 10);
+              const nextOffset = Math.max(0, currentOffset - 1);
+              return { ...curr, data: { ...curr.data, scrollOffset: String(nextOffset) } };
+            });
+          } else if (focusArea === "checklist") {
             setChecklistScrollOffset((prev) => Math.max(0, prev - 1));
           } else if (focusArea === "agents") {
             setAgentsScrollOffset((prev) => Math.max(0, prev - 1));
@@ -198,6 +212,14 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
               const optStartRow = y_options_start;
               const optEndRow = optStartRow + visibleCount - 1;
+
+              if (activeWizard.type === "plan_approve") {
+                if (y >= 8 + workspaceHeight && y < optStartRow - 1) {
+                  setActiveWizard((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "plan" } } : null);
+                } else if (y >= optStartRow - 1 && y <= optEndRow + 1) {
+                  setActiveWizard((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "actions" } } : null);
+                }
+              }
 
               if (y >= optStartRow && y <= optEndRow) {
                 setFocusArea("input");

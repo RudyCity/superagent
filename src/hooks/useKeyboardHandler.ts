@@ -776,14 +776,25 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           // Enter and other keys are handled by the text input onSubmit
           return;
         }
+        if (key.leftArrow) {
+          setActiveWizard((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "plan" } } : null);
+          return;
+        }
+        if (key.rightArrow) {
+          setActiveWizard((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "actions" } } : null);
+          return;
+        }
         if (wizardOptions.length > 0) {
-          if (key.upArrow) {
-            setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
-            return;
-          }
-          if (key.downArrow) {
-            setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
-            return;
+          const currentFocus = activeWizard.data?.focus || "actions";
+          if (currentFocus === "actions") {
+            if (key.upArrow) {
+              setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+              return;
+            }
+            if (key.downArrow) {
+              setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+              return;
+            }
           }
           if (key.return) {
             if (wizardSelectedIndex === 0) {
@@ -1264,16 +1275,18 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       }
     }
 
-    if (key.pageUp) {
-      scrollChat("up", 10);
-    } else if ((key.ctrl && key.upArrow) || (key.shift && key.upArrow)) {
-      scrollChat("up", 1);
-    }
+    if (!activeWizard || activeWizard.type !== "plan_approve") {
+      if (key.pageUp) {
+        scrollChat("up", 10);
+      } else if ((key.ctrl && key.upArrow) || (key.shift && key.upArrow)) {
+        scrollChat("up", 1);
+      }
 
-    if (key.pageDown) {
-      scrollChat("down", 10);
-    } else if ((key.ctrl && key.downArrow) || (key.shift && key.downArrow)) {
-      scrollChat("down", 1);
+      if (key.pageDown) {
+        scrollChat("down", 10);
+      } else if ((key.ctrl && key.downArrow) || (key.shift && key.downArrow)) {
+        scrollChat("down", 1);
+      }
     }
 
     if (key.escape) {

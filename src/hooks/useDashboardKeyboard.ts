@@ -286,37 +286,57 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     }
 
     if (activeWizard) {
-      if (key.upArrow) {
-        if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
-          const lc = query.trim();
-          const len = lc
-            ? filterSuggestions(wizardAllOptions, lc).length
-            : wizardAllOptions.length;
-          setWizardSelectedIndex((prev) => {
-            const currentMax = Math.max(0, len - 1);
-            const clampedPrev = Math.min(prev, currentMax);
-            return Math.max(0, clampedPrev - 1);
-          });
-        } else {
-          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+      if (activeWizard.type === "plan_approve") {
+        if (key.leftArrow) {
+          setActiveWizard((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "plan" } } : null);
+          return;
         }
-        return;
+        if (key.rightArrow) {
+          setActiveWizard((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "actions" } } : null);
+          return;
+        }
+      }
+
+      const currentFocus = activeWizard.data?.focus || "actions";
+      if (key.upArrow) {
+        if (activeWizard.type === "plan_approve" && currentFocus === "plan") {
+          // Do not intercept, let it pass to PlanApprovalDialog local listener
+        } else {
+          if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
+            const lc = query.trim();
+            const len = lc
+              ? filterSuggestions(wizardAllOptions, lc).length
+              : wizardAllOptions.length;
+            setWizardSelectedIndex((prev) => {
+              const currentMax = Math.max(0, len - 1);
+              const clampedPrev = Math.min(prev, currentMax);
+              return Math.max(0, clampedPrev - 1);
+            });
+          } else {
+            setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          }
+          return;
+        }
       }
       if (key.downArrow) {
-        if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
-          const lc = query.trim();
-          const len = lc
-            ? filterSuggestions(wizardAllOptions, lc).length
-            : wizardAllOptions.length;
-          setWizardSelectedIndex((prev) => {
-            const currentMax = Math.max(0, len - 1);
-            const clampedPrev = Math.min(prev, currentMax);
-            return Math.min(currentMax, clampedPrev + 1);
-          });
+        if (activeWizard.type === "plan_approve" && currentFocus === "plan") {
+          // Do not intercept
         } else {
-          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+          if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
+            const lc = query.trim();
+            const len = lc
+              ? filterSuggestions(wizardAllOptions, lc).length
+              : wizardAllOptions.length;
+            setWizardSelectedIndex((prev) => {
+              const currentMax = Math.max(0, len - 1);
+              const clampedPrev = Math.min(prev, currentMax);
+              return Math.min(currentMax, clampedPrev + 1);
+            });
+          } else {
+            setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+          }
+          return;
         }
-        return;
       }
       if (key.return) {
         handleQuerySubmit(query);

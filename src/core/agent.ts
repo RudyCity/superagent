@@ -1393,6 +1393,19 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
         });
         await this.saveHistory();
 
+        // ── Stop the loop as soon as a plan becomes pending approval ──────────
+        // When the model writes a valid implementation plan, planState flips to
+        // PLANNING_PENDING (see the MODIFYING_TOOLS block above). We must break
+        // out of the loop here so runAgentLoop() returns normally and the
+        // `finally` block in sendMessage() emits the "done" event. The UI's
+        // handleEvent opens the plan approval wizard precisely on that "done"
+        // event (see app.tsx handleEvent). Without this break the loop would
+        // keep iterating in read-only mode and the approval dialog would only
+        // surface when the user manually aborts with ESC.
+        if (this.planState === "PLANNING_PENDING") {
+          break;
+        }
+
         if (i === maxIterations - 1) {
           if (continueCount >= maxContinues) {
             const stopMsg = isGoalMode

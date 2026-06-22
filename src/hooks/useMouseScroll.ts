@@ -1,4 +1,5 @@
 import { useEffect, type MutableRefObject } from "react";
+import { planApprovalChromeHeight } from "../components/plan-approval-dialog.js";
 
 export interface SectionBoundary {
   name: string;
@@ -61,6 +62,14 @@ export interface SingleAgentMouseContext {
   openResponseAtIndex: (index: number) => void;
   visibleLinePositions: ChatLinePosition[];
   toggleLineExpand?: (index: number) => void;
+
+  // Wizard scroll/click support
+  activeWizard?: any;
+  setActiveWizard?: (val: any) => void;
+  wizardOptions?: string[];
+  wizardSelectedIndex?: number;
+  setWizardSelectedIndex?: (val: number | ((prev: number) => number)) => void;
+  planPath?: string;
 }
 
 /**
@@ -95,7 +104,14 @@ export function useMouseScroll(
         // --- Scroll wheel ---
         if (btn === "64") {
           // Scroll up
-          if (ctx.focusedResponseIndex !== null) {
+          if (ctx.activeWizard?.type === "plan_approve") {
+            ctx.setActiveWizard?.((curr: any) => {
+              if (!curr) return null;
+              const currentOffset = curr.data?.scrollOffset || 0;
+              const nextOffset = Math.max(0, currentOffset - 1);
+              return { ...curr, data: { ...curr.data, scrollOffset: nextOffset } };
+            });
+          } else if (ctx.focusedResponseIndex !== null) {
             ctx.setFocusedResponseOffset((prev: number) => Math.max(0, prev - 1));
           } else if (
             ctx.focusMode === "superagents" ||
@@ -112,7 +128,14 @@ export function useMouseScroll(
 
         if (btn === "65") {
           // Scroll down
-          if (ctx.focusedResponseIndex !== null) {
+          if (ctx.activeWizard?.type === "plan_approve") {
+            ctx.setActiveWizard?.((curr: any) => {
+              if (!curr) return null;
+              const currentOffset = curr.data?.scrollOffset || 0;
+              const nextOffset = currentOffset + 1;
+              return { ...curr, data: { ...curr.data, scrollOffset: nextOffset } };
+            });
+          } else if (ctx.focusedResponseIndex !== null) {
             ctx.setFocusedResponseOffset((prev: number) => {
               const maxOffset = Math.max(0, ctx.responseLinesCount - ctx.focusWindowHeight);
               return Math.min(prev + 1, maxOffset);
@@ -203,7 +226,24 @@ export function useMouseScroll(
               break;
             case "input":
             case "wizard":
-              ctx.setFocusMode("input");
+              if (ctx.activeWizard?.type === "plan_approve") {
+                const planPath = ctx.planPath || "";
+                const H = planApprovalChromeHeight(planPath, ctx.activeWizard.step);
+                const optStartRow = clickedSection.startRow + H - 4; // OPTIONS.length + 1
+                const optEndRow = clickedSection.startRow + H - 2;
+
+                if (y < optStartRow - 1) {
+                  ctx.setActiveWizard?.((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "plan" } } : null);
+                } else if (y >= optStartRow - 1 && y <= optEndRow + 1) {
+                  ctx.setActiveWizard?.((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "actions" } } : null);
+                  if (y >= optStartRow && y <= optEndRow) {
+                    const idx = y - optStartRow;
+                    ctx.setWizardSelectedIndex?.(idx);
+                  }
+                }
+              } else {
+                ctx.setFocusMode("input");
+              }
               break;
             // statusbar: ignore clicks
           }

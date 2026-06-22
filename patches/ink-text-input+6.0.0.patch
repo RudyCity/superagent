@@ -1,21 +1,17 @@
 diff --git a/node_modules/ink-text-input/build/index.js b/node_modules/ink-text-input/build/index.js
-index ada7cdc..f3e2a1b 100644
+index ada7cdc..ffead6c 100644
 --- a/node_modules/ink-text-input/build/index.js
 +++ b/node_modules/ink-text-input/build/index.js
-@@ -13,8 +13,8 @@
-          const newValue = originalValue || '';
--        if (previousState.cursorOffset > newValue.length - 1) {
--            return {
--                cursorOffset: newValue.length,
--                cursorWidth: 0,
--            };
-+        if (previousState.cursorOffset > newValue.length) {
-+            return {
-+                cursorOffset: newValue.length,
-+                cursorWidth: 0,
-+            };
-         }
-@@ -90,11 +90,11 @@
+@@ -13,7 +13,7 @@ function TextInput({ value: originalValue, placeholder = '', focus = true, mask,
+                 return previousState;
+             }
+             const newValue = originalValue || '';
+-            if (previousState.cursorOffset > newValue.length - 1) {
++            if (previousState.cursorOffset > newValue.length) {
+                 return {
+                     cursorOffset: newValue.length,
+                     cursorWidth: 0,
+@@ -90,11 +90,11 @@ function TextInput({ value: originalValue, placeholder = '', focus = true, mask,
                  nextCursorWidth = input.length;
              }
          }

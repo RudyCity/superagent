@@ -11,6 +11,9 @@ interface PlanApprovalDialogProps {
   terminalWidth?: number;
   /** Maximum number of plan content lines visible at once */
   maxContentHeight?: number;
+  focus?: "plan" | "actions";
+  scrollOffset?: number;
+  onScrollChange?: (val: number) => void;
 }
 
 const OPTIONS = [
@@ -26,8 +29,20 @@ export function PlanApprovalDialog({
   borderColor = "yellow",
   terminalWidth,
   maxContentHeight = 15,
+  focus = "actions",
+  scrollOffset: propScrollOffset,
+  onScrollChange: propOnScrollChange,
 }: PlanApprovalDialogProps) {
-  const [scrollOffset, setScrollOffset] = useState(0);
+  const [localScrollOffset, setLocalScrollOffset] = useState(0);
+  const scrollOffset = propScrollOffset !== undefined ? propScrollOffset : localScrollOffset;
+  const setScrollOffset = (val: number | ((prev: number) => number)) => {
+    const next = typeof val === "function" ? val(scrollOffset) : val;
+    if (propOnScrollChange) {
+      propOnScrollChange(next);
+    } else {
+      setLocalScrollOffset(next);
+    }
+  };
 
   // Read plan content (memoised on file path)
   const planLines = useMemo(() => {
@@ -41,15 +56,19 @@ export function PlanApprovalDialog({
 
   const totalLines = planLines.length;
 
-  // Handle PageUp / PageDown for plan content scroll
+  // Handle PageUp / PageDown / Arrow keys for plan content scroll
   useInput((_input, key) => {
     if (step !== 1) return;
-    if (key.pageUp || (key.ctrl && key.upArrow) || (key.shift && key.upArrow)) {
-      setScrollOffset((prev) => Math.max(0, prev - maxContentHeight));
+    const isPlanFocused = focus === "plan";
+
+    if (key.pageUp || (key.ctrl && key.upArrow) || (key.shift && key.upArrow) || (isPlanFocused && key.upArrow)) {
+      const amount = (key.upArrow && !key.ctrl && !key.shift) ? 1 : maxContentHeight;
+      setScrollOffset((prev) => Math.max(0, prev - amount));
     }
-    if (key.pageDown || (key.ctrl && key.downArrow) || (key.shift && key.downArrow)) {
+    if (key.pageDown || (key.ctrl && key.downArrow) || (key.shift && key.downArrow) || (isPlanFocused && key.downArrow)) {
+      const amount = (key.downArrow && !key.ctrl && !key.shift) ? 1 : maxContentHeight;
       const maxScroll = Math.max(0, totalLines - maxContentHeight);
-      setScrollOffset((prev) => Math.min(maxScroll, prev + maxContentHeight));
+      setScrollOffset((prev) => Math.min(maxScroll, prev + amount));
     }
   });
 
@@ -83,13 +102,18 @@ export function PlanApprovalDialog({
     );
   }
 
+  const isPlanFocused = focus === "plan";
+  const titleHint = isPlanFocused
+    ? "Focus: Plan Content - press Right Arrow to focus Actions"
+    : "Focus: Actions - press Left Arrow to scroll Plan";
+
   // ─── Step 1: plan content + options ───
   return (
     <Box flexDirection="column" marginTop={1}>
       {/* Title */}
       <Box flexDirection="row" width="100%">
         <Text color={borderColor} wrap="truncate-end">
-          ├───[ <Text bold color={borderColor}>⚠️ PLAN APPROVAL REQUIRED</Text> ]
+          ├───[ <Text bold color={borderColor}>⚠️ PLAN APPROVAL REQUIRED ({titleHint})</Text> ]
         </Text>
       </Box>
 
