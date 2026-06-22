@@ -539,6 +539,22 @@ export function App({
       return filterSuggestions(modelSuggestions, currentInput);
     }
 
+    if (mainCommand === "/compact") {
+      const compactSuggestions = [
+        `${mainCommand} now`
+      ];
+      return filterSuggestions(compactSuggestions, currentInput);
+    }
+
+    if (mainCommand === "/pin") {
+      const pinSuggestions = [
+        `${mainCommand} list`,
+        `${mainCommand} last`,
+        `${mainCommand} unpin`
+      ];
+      return filterSuggestions(pinSuggestions, currentInput);
+    }
+
     return [];
   };
 
