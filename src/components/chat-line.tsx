@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { formatCompactNumber } from "../utils/text.js";
+import { formatCompactNumber, minimizePathInDescription } from "../utils/text.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import { capDisplayLines } from "../utils/responseScroll.js";
 
@@ -431,7 +431,8 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
     const content = child.content.replace(/^⚡ /, "");
     const firstLine = content.split("\n")[0];
     const cleanDescRaw = firstLine.replace(/^Detail:\s*/i, "").trim();
-    const cleanDesc = cleanDescRaw.length > 60 ? cleanDescRaw.slice(0, 57) + "..." : cleanDescRaw;
+    const minimizedDesc = minimizePathInDescription(cleanDescRaw);
+    const cleanDesc = minimizedDesc.length > 60 ? minimizedDesc.slice(0, 57) + "..." : minimizedDesc;
     if (isCollapsed) {
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
@@ -471,7 +472,8 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
     const themeColor = isError ? "red" : "green";
     const firstLine = contentText.split("\n")[0];
     const cleanDescRaw = firstLine.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
-    const cleanDesc = cleanDescRaw.length > 60 ? cleanDescRaw.slice(0, 57) + "..." : cleanDescRaw;
+    const minimizedDesc = minimizePathInDescription(cleanDescRaw);
+    const cleanDesc = minimizedDesc.length > 60 ? minimizedDesc.slice(0, 57) + "..." : minimizedDesc;
 
     if (isCollapsed) {
       return (
@@ -582,7 +584,8 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
   // Helper: extract description from content
   const extractDescription = (content: string): string => {
     const firstLine = content.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
-    return firstLine.length > 60 ? firstLine.slice(0, 57) + "..." : firstLine;
+    const minimized = minimizePathInDescription(firstLine);
+    return minimized.length > 60 ? minimized.slice(0, 57) + "..." : minimized;
   };
 
   switch (line.type) {

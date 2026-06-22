@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fuzzyScore, filterSuggestions } from "../src/utils/text.js";
+import { fuzzyScore, filterSuggestions, minimizePathInDescription } from "../src/utils/text.js";
 
 describe("Fuzzy Matching Utilities", () => {
   describe("fuzzyScore", () => {
@@ -69,6 +69,33 @@ describe("Fuzzy Matching Utilities", () => {
       // "cl" should match "/clear" (score 1/prefix) and "/checkpoint list" (score 3/fuzzy)
       const result2 = filterSuggestions(possibilities, "cl");
       expect(result2).toEqual(["/clear", "/checkpoint list"]);
+    });
+  });
+
+  describe("minimizePathInDescription", () => {
+    it("should handle description strings without file paths", () => {
+      expect(minimizePathInDescription("Running command: git status")).toBe("Running command: git status");
+      expect(minimizePathInDescription("Spawning Superagent")).toBe("Spawning Superagent");
+    });
+
+    it("should minimize Windows paths in file descriptions", () => {
+      const input = "Reading file: D:\\backup from pc asus\\Documents Development\\superagent\\src\\components\\chat-line.tsx";
+      expect(minimizePathInDescription(input)).toBe("Reading file: chat-line.tsx");
+    });
+
+    it("should minimize Unix paths in file descriptions", () => {
+      const input = "Replacing content in file: /usr/local/var/log/superagent.log";
+      expect(minimizePathInDescription(input)).toBe("Replacing content in file: superagent.log");
+    });
+
+    it("should minimize paths in completed status messages", () => {
+      const input = "Completed - Reading file: D:\\projects\\test\\app.tsx";
+      expect(minimizePathInDescription(input)).toBe("Completed - Reading file: app.tsx");
+    });
+
+    it("should minimize relative paths", () => {
+      const input = "Applying patch to file: src/app.tsx";
+      expect(minimizePathInDescription(input)).toBe("Applying patch to file: app.tsx");
     });
   });
 });

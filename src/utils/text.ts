@@ -122,4 +122,18 @@ export function unicodeStrikethrough(text: string): string {
   return result;
 }
 
+export function minimizePathInDescription(str: string): string {
+  const fileKeyword = "file: ";
+  const idx = str.indexOf(fileKeyword);
+  if (idx === -1) return str;
 
+  const prefix = str.slice(0, idx + fileKeyword.length);
+  const path = str.slice(idx + fileKeyword.length).trim();
+
+  // Extract basename
+  const normalizedPath = path.replace(/\\/g, "/");
+  const parts = normalizedPath.split("/");
+  const filename = parts[parts.length - 1] || path;
+
+  return prefix + filename;
+}

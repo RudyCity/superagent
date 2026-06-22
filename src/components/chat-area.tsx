@@ -4,7 +4,7 @@ import { Banner } from "./banner.js";
 import { ChatLineComponent, renderMarkdown, truncateStreamDisplay, isCollapsibleType } from "./chat-line.js";
 import { LoadingIndicator, ToolLoadingIndicator } from "./common/LoadingIndicators.js";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay, renderScrollBar, capDisplayLines } from "../utils/responseScroll.js";
-import { formatCompactNumber } from "../utils/text.js";
+import { formatCompactNumber, minimizePathInDescription } from "../utils/text.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ChatLinePosition } from "../hooks/useMouseScroll.js";
 
@@ -309,7 +309,8 @@ function wrapNestedChild(
     const content = child.content.replace(/^⚡ /, "");
     const firstLine = content.split("\n")[0];
     const cleanDescRaw = firstLine.replace(/^Detail:\s*/i, "").trim();
-    const cleanDesc = cleanDescRaw.length > 60 ? cleanDescRaw.slice(0, 57) + "..." : cleanDescRaw;
+    const minimizedDesc = minimizePathInDescription(cleanDescRaw);
+    const cleanDesc = minimizedDesc.length > 60 ? minimizedDesc.slice(0, 57) + "..." : minimizedDesc;
 
     if (isCollapsed) {
       const node = (
@@ -359,7 +360,8 @@ function wrapNestedChild(
     const themeColor = isError ? "red" : "green";
     const firstLine = contentText.split("\n")[0];
     const cleanDescRaw = firstLine.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
-    const cleanDesc = cleanDescRaw.length > 60 ? cleanDescRaw.slice(0, 57) + "..." : cleanDescRaw;
+    const minimizedDesc = minimizePathInDescription(cleanDescRaw);
+    const cleanDesc = minimizedDesc.length > 60 ? minimizedDesc.slice(0, 57) + "..." : minimizedDesc;
 
     if (isCollapsed) {
       const node = (
@@ -544,7 +546,8 @@ export function wrapChatLineToLines({
       };
       const extractDescription = (str: string): string => {
         const firstLine = str.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
-        return firstLine.length > 60 ? firstLine.slice(0, 57) + "..." : firstLine;
+        const minimized = minimizePathInDescription(firstLine);
+        return minimized.length > 60 ? minimized.slice(0, 57) + "..." : minimized;
       };
 
       if (isCollapsed) {
@@ -642,7 +645,8 @@ export function wrapChatLineToLines({
       const themeColor = isError ? "red" : "green";
       const extractDescription = (str: string): string => {
         const firstLine = str.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
-        return firstLine.length > 60 ? firstLine.slice(0, 57) + "..." : firstLine;
+        const minimized = minimizePathInDescription(firstLine);
+        return minimized.length > 60 ? minimized.slice(0, 57) + "..." : minimized;
       };
 
       if (isCollapsed) {
