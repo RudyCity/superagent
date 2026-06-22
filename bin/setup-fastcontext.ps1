@@ -124,6 +124,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  $VerifyResult" -ForegroundColor Green
 
+# Create sentinel file to indicate successful verification
+$SentinelFile = Join-Path $PythonDir ".verified"
+Set-Content -Path $SentinelFile -Value "verified" -Encoding ASCII
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "=== Setup Complete ===" -ForegroundColor Cyan
