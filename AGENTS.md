@@ -32,6 +32,14 @@ Master Agent  (orchestrator)
 - `src/core/tools/state.ts` — Shared subagent registry, instances map, event emitters
 - `src/core/tools/superagentTools.ts` — Master tier tools: invoke/list/merge/manage Superagents
 - `src/core/tools/subagentTools.ts` — Superagent tier tools: spawn ephemeral Subagents
+- `src/core/context/ContextManager.ts` — Central orchestrator for context window management (state machine, strategy selection, recovery)
+- `src/core/context/TokenTracker.ts` — Model-specific token counting via tiktoken (includes tool calls/results)
+- `src/core/context/CompactionStrategy.ts` — Pluggable strategy interface for compaction algorithms
+- `src/core/context/strategies/SummarizationStrategy.ts` — LLM-based summarization (with heuristic fallback)
+- `src/core/context/strategies/PruningStrategy.ts` — Emergency pruning with summary preservation (never silent context loss)
+- `src/core/context/strategies/PinningStrategy.ts` — Preserve critical pinned messages during compaction
+- `src/core/context/SemanticAnalyzer.ts` — Topic boundary detection, importance scoring, key point extraction
+- `src/core/context/CompactionHistory.ts` — Audit trail with disk persistence for all compaction events
 
 ## Coding Guidelines & Constraints
 - **Language — English Only**: All user-facing text strings, UI labels, log messages, comments, variable names, documentation, and any other text content MUST be written in English. No exceptions.

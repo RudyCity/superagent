@@ -6,9 +6,24 @@ import {
   CompactionCost,
 } from "../CompactionStrategy.js";
 import { Message } from "../../conversation.js";
+import { generateText } from "ai";
+
+export interface SummarizationConfig {
+  model?: any;
+  abortSignal?: AbortSignal;
+}
 
 export class SummarizationStrategy implements CompactionStrategy {
   name = "summarization";
+  private config?: SummarizationConfig;
+
+  constructor(config?: SummarizationConfig) {
+    this.config = config;
+  }
+
+  setConfig(config: SummarizationConfig): void {
+    this.config = config;
+  }
 
   canHandle(context: CompactionContext): boolean {
     return context.messages.length > 10;
@@ -23,8 +38,12 @@ export class SummarizationStrategy implements CompactionStrategy {
     const toSummarize = messages.slice(0, -preserveRecent);
     const toKeep = messages.slice(-preserveRecent);
 
-    // Placeholder summary - actual LLM summarization injected by ContextManager
-    const summary = `[Summary of ${toSummarize.length} messages]: Context preserved`;
+    let summary: string;
+    if (this.config?.model) {
+      summary = await this.generateLLMSummary(toSummarize);
+    } else {
+      summary = this.createHeuristicSummary(toSummarize);
+    }
 
     const summaryMessage: Message = {
       role: "user",
@@ -41,6 +60,7 @@ export class SummarizationStrategy implements CompactionStrategy {
         messagesBefore: messages.length,
         messagesAfter: result.length,
         summary,
+        summaryTokens: Math.ceil(summary.length / 4),
       },
     };
   }
@@ -55,7 +75,90 @@ export class SummarizationStrategy implements CompactionStrategy {
     return {
       tokens: inputTokens + outputTokens,
       time: 2000,
-      apiCalls: 1,
+      apiCalls: this.config?.model ? 1 : 0,
     };
+  }
+
+  private async generateLLMSummary(messages: Message[]): Promise<string> {
+    const formatted = messages
+      .map((m) => {
+        const role = m.role.toUpperCase();
+        let details = m.content || "";
+        if (m.toolCalls && m.toolCalls.length > 0) {
+          details += `\n[Tool Calls]: ${m.toolCalls.map((tc) => tc.name).join(", ")}`;
+        }
+        return `[${role}]: ${details}`;
+      })
+      .join("\n\n");
+
+    const prompt = `You are a helper system node. Summarize the following past coding assistant chat history turns extremely briefly.
+Identify:
+1. What the user's goals or requirements were.
+2. What actions the assistant took (e.g. edited files, ran commands).
+3. The resulting workspace state or any unresolved issues.
+
+Keep the summary concise, clear, and direct. Preserve key file paths, function names, and technical decisions.
+
+---
+PAST CHAT HISTORY:
+${formatted}`;
+
+    let attempt = 0;
+    const maxRetries = 3;
+    const baseDelay = 2000;
+
+    while (true) {
+      try {
+        const result = await generateText({
+          model: this.config!.model,
+          system:
+            "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
+          prompt,
+          abortSignal: this.config!.abortSignal,
+        });
+        return result.text;
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          throw err;
+        }
+        attempt++;
+        if (attempt > maxRetries) {
+          // Fallback to heuristic summary on repeated failure
+          return this.createHeuristicSummary(messages);
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1))
+        );
+      }
+    }
+  }
+
+  private createHeuristicSummary(messages: Message[]): string {
+    const userMessages = messages.filter((m) => m.role === "user");
+    const assistantMessages = messages.filter((m) => m.role === "assistant");
+    const errorMessages = messages.filter((m) =>
+      /error|failed|exception/i.test(m.content)
+    );
+
+    const fileMatches = messages
+      .flatMap((m) => m.content.match(/[\w.-]+(?:\/|\\)[\w.-]+(?:\.\w+)?/g) || [])
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .slice(0, 10);
+
+    const parts: string[] = [
+      `Conversation had ${messages.length} messages (${userMessages.length} user, ${assistantMessages.length} assistant).`,
+    ];
+
+    if (fileMatches.length > 0) {
+      parts.push(`Files referenced: ${fileMatches.join(", ")}.`);
+    }
+
+    if (errorMessages.length > 0) {
+      parts.push(`${errorMessages.length} error-related messages encountered.`);
+    }
+
+    parts.push("Key topics and actions were preserved in task files.");
+
+    return parts.join(" ");
   }
 }

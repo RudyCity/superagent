@@ -281,6 +281,8 @@ If none of the options are suitable, still pick the closest one.`;
       model: this.config.model,
       contextWindowLimit: modelLimit,
       historyFilePath,
+      llmModel: this.getModel(),
+      abortSignal: this.abortController?.signal,
     });
   }
 

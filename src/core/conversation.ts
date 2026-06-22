@@ -47,6 +47,11 @@ export class Conversation {
     this.contextManager = new CM(config);
   }
 
+  async updateContextManagerLLM(model: any, abortSignal?: AbortSignal): Promise<void> {
+    if (!this.contextManager) return;
+    this.contextManager.setLLMModel(model, abortSignal);
+  }
+
   getContextManager(): ContextManager | null {
     return this.contextManager;
   }

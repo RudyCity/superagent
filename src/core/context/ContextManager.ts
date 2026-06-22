@@ -24,6 +24,8 @@ export interface ContextManagerConfig {
   model: string;
   contextWindowLimit: number;
   historyFilePath?: string;
+  llmModel?: any;
+  abortSignal?: AbortSignal;
 }
 
 export interface CompactionDecision {
@@ -50,11 +52,25 @@ export class ContextManager {
     this.history = new CompactionHistory(config.historyFilePath);
     this.eventEmitter = new EventEmitter();
 
+    const summarizationStrategy = new SummarizationStrategy({
+      model: config.llmModel,
+      abortSignal: config.abortSignal,
+    });
+
     this.strategies = [
       new PinningStrategy(),
-      new SummarizationStrategy(),
+      summarizationStrategy,
       new PruningStrategy(),
     ];
+  }
+
+  setLLMModel(model: any, abortSignal?: AbortSignal): void {
+    const summarizationStrategy = this.strategies.find(
+      (s) => s.name === "summarization"
+    ) as SummarizationStrategy;
+    if (summarizationStrategy) {
+      summarizationStrategy.setConfig({ model, abortSignal });
+    }
   }
 
   shouldCompact(messages: Message[]): CompactionDecision {
