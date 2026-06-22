@@ -420,87 +420,87 @@ export function renderToolEnd(content: string, isError: boolean): React.ReactNod
 function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boolean, parentColor: string): React.ReactNode {
   const indent = "│    ";  // Parent's content indent
 
-  if (child.type === "tool_start") {
+   if (child.type === "tool_start") {
     const content = child.content.replace(/^⚡ /, "");
+    const cleanDesc = content.replace(/^Detail:\s*/i, "").trim();
     if (isCollapsed) {
-      const toolName = content.match(/Detail:\s*(\w+)/)?.[1] || "tool";
-      const firstLine = content.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
-      const desc = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
           <Text color="yellow">
-            {indent}│    <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> <Text dimColor italic>click to expand</Text>
+            {indent}│    <Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
           </Text>
         </Box>
       );
     }
     return (
       <Box key={`child-${childIdx}`} flexDirection="column">
-        {content.split("\n").map((l, idx) => (
-          <Box key={idx} flexDirection="row">
-            <Text color="yellow">{indent}│    </Text>
-            {l.includes("Detail:") ? (() => {
-              const parts = l.split("Detail:");
-              const prefix = parts[0] + "Detail: ";
-              const rest = parts[1];
-              const openParenIdx = rest.indexOf("(");
-              if (openParenIdx !== -1) {
-                const tName = rest.slice(0, openParenIdx).trim();
-                let remaining = rest.slice(openParenIdx + 1);
-                const hasClose = remaining.endsWith(")");
-                if (hasClose) remaining = remaining.slice(0, -1);
-                return (
-                  <>
-                    <Text dimColor>{prefix}</Text>
-                    <Text bold color="green">{tName}</Text>
-                    <Text color="cyan">(</Text>
-                    <Text color="yellow">{remaining}</Text>
-                    {hasClose && <Text color="cyan">)</Text>}
-                  </>
-                );
-              }
-              return <Text bold color="white">{l}</Text>;
-            })() : <Text bold color="white">{l}</Text>}
-          </Box>
-        ))}
+        {content.split("\n").map((l, idx) => {
+          const isFirstLine = idx === 0;
+          return (
+            <Box key={idx} flexDirection="row">
+              <Text color="yellow">
+                {indent}│    {isFirstLine ? "▼ ⚙️ " : "    "}
+              </Text>
+              {isFirstLine ? (
+                <Text color="yellow">
+                  {l.replace(/^(Detail|⚡ Detail):\s*/i, "").trim()}
+                  <Text dimColor italic> (click to collapse)</Text>
+                </Text>
+              ) : (
+                <Text bold color="white">{l}</Text>
+              )}
+            </Box>
+          );
+        })}
       </Box>
     );
   }
 
   if (child.type === "tool_end") {
-    const isError = child.content.startsWith("✗");
+    const isError = child.content.startsWith("✗") || child.content.startsWith("🚨");
     const contentText = child.content.substring(2);
     const themeColor = isError ? "red" : "green";
+    const cleanDesc = contentText.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
+
     if (isCollapsed) {
-      const firstLine = contentText.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
-      const desc = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
-      const icon = isError ? "🔴" : "🟢";
-      const status = isError ? "Failed" : "Done";
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
           <Text color={themeColor}>
-            {indent}│    <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> <Text dimColor italic>click to expand</Text>
+            {indent}│    <Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text color={themeColor}>{cleanDesc}</Text> <Text dimColor italic>{isError ? "(click to view error)" : "(click to view output)"}</Text>
           </Text>
         </Box>
       );
     }
     return (
       <Box key={`child-${childIdx}`} flexDirection="column">
-        {contentText.split("\n").map((l, idx) => (
-          <Box key={idx} flexDirection="row">
-            <Text color={themeColor}>{indent}│    </Text>
-            {l.startsWith("Output:") || l.startsWith("Detail:") ? (() => {
-              const type = l.startsWith("Output:") ? "Output: " : "Detail: ";
-              const rest = l.substring(type.length);
-              return (
-                <>
-                  <Text bold color={isError ? "cyan" : "gray"} dimColor={!isError}>{type}</Text>
-                  <Text dimColor>{rest}</Text>
-                </>
-              );
-            })() : <Text color={isError ? "white" : "gray"} dimColor={!isError}>{l}</Text>}
-          </Box>
-        ))}
+        {contentText.split("\n").map((l, idx) => {
+          const isFirstLine = idx === 0;
+          const cleanLine = l.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
+          return (
+            <Box key={idx} flexDirection="row">
+              <Text color={themeColor}>
+                {indent}│    {isFirstLine ? (isError ? "▼ ✗ " : "▼ ✓ ") : "    "}
+              </Text>
+              {isFirstLine ? (
+                <Text color={themeColor}>
+                  {cleanLine}
+                  <Text dimColor italic> (click to collapse)</Text>
+                </Text>
+              ) : l.startsWith("Output:") || l.startsWith("Detail:") ? (() => {
+                const type = l.startsWith("Output:") ? "Output: " : "Detail: ";
+                const rest = l.substring(type.length);
+                return (
+                  <>
+                    <Text bold color={isError ? "cyan" : "gray"} dimColor={!isError}>{type}</Text>
+                    <Text dimColor>{rest}</Text>
+                  </>
+                );
+              })() : (
+                <Text color={isError ? "white" : "gray"} dimColor={!isError}>{l}</Text>
+              )}
+            </Box>
+          );
+        })}
       </Box>
     );
   }
