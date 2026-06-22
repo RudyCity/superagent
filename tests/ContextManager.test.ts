@@ -1,0 +1,204 @@
+import { describe, it, expect } from "vitest";
+import { ContextManager } from "../src/core/context/ContextManager.js";
+import { Message } from "../src/core/conversation.js";
+
+describe("ContextManager", () => {
+  it("should return false when below threshold", () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 200000,
+    });
+
+    const messages: Message[] = [
+      { role: "user", content: "Hello", timestamp: Date.now() },
+    ];
+
+    const decision = manager.shouldCompact(messages);
+    expect(decision.shouldCompact).toBe(false);
+  });
+
+  it("should return true when above threshold", () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 10000,
+    });
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 100; i++) {
+      messages.push({
+        role: "user",
+        content: "A".repeat(1000),
+        timestamp: Date.now() + i,
+      });
+    }
+
+    const decision = manager.shouldCompact(messages);
+    expect(decision.shouldCompact).toBe(true);
+    expect(decision.reason).toContain("threshold");
+  });
+
+  it("should return approaching-threshold when near limit", () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 100000,
+    });
+
+    // Threshold = min(100000 - 8000 - 10000, 100000 * 0.7) = min(82000, 70000) = 70000
+    // 80% of threshold = 56000
+    // Create messages totaling ~60000 tokens (between 80% and 100%)
+    const messages: Message[] = [];
+    for (let i = 0; i < 60; i++) {
+      messages.push({
+        role: "user",
+        content: "A".repeat(4000),
+        timestamp: Date.now() + i,
+      });
+    }
+
+    const decision = manager.shouldCompact(messages);
+    expect(decision.shouldCompact).toBe(false);
+    expect(decision.reason).toBe("approaching-threshold");
+  });
+
+  it("should execute compaction and reduce messages", async () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 10000,
+    });
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 100; i++) {
+      messages.push({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `Message ${i}: ` + "A".repeat(500),
+        timestamp: Date.now() + i,
+      });
+    }
+
+    const result = await manager.compact(messages);
+    expect(result.messages.length).toBeLessThan(messages.length);
+    expect(result.metadata.strategy).toBeDefined();
+  });
+
+  it("should record compaction in history", async () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 10000,
+    });
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 50; i++) {
+      messages.push({
+        role: "user",
+        content: "B".repeat(500),
+        timestamp: Date.now() + i,
+      });
+    }
+
+    await manager.compact(messages);
+
+    const history = manager.getHistory();
+    expect(history.length).toBe(1);
+    expect(history[0].strategy).toBeDefined();
+  });
+
+  it("should emit compaction events", async () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 10000,
+    });
+
+    const events: string[] = [];
+    manager.on("compaction:start", () => events.push("start"));
+    manager.on("compaction:complete", () => events.push("complete"));
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 50; i++) {
+      messages.push({
+        role: "user",
+        content: "C".repeat(500),
+        timestamp: Date.now() + i,
+      });
+    }
+
+    await manager.compact(messages);
+    expect(events).toContain("start");
+    expect(events).toContain("complete");
+  });
+
+  it("should manage pinned messages", () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 200000,
+    });
+
+    manager.addPinnedMessage("msg-1");
+    expect(manager.getPinnedMessages().has("msg-1")).toBe(true);
+
+    manager.removePinnedMessage("msg-1");
+    expect(manager.getPinnedMessages().has("msg-1")).toBe(false);
+  });
+
+  it("should update model and clear cache", () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 200000,
+    });
+
+    manager.setModel("gpt-4o");
+    expect(manager.getTokenTracker().getModel()).toBe("gpt-4o");
+  });
+
+  it("should recover from compaction failure", async () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 200000,
+    });
+
+    // Create a failing strategy
+    const failingStrategy = {
+      name: "failing",
+      canHandle: () => true,
+      execute: async () => {
+        throw new Error("Intentional failure");
+      },
+      estimateCost: () => ({ tokens: 0, time: 0, apiCalls: 0 }),
+    };
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 30; i++) {
+      messages.push({
+        role: "user",
+        content: `Message ${i}`,
+        timestamp: Date.now() + i,
+      });
+    }
+
+    // Should fall back to recovery (pruning)
+    const result = await manager.compact(messages, failingStrategy as any);
+    expect(result.messages.length).toBeGreaterThan(0);
+    expect(result.metadata.strategy).toBeDefined();
+  });
+
+  it("should handle long conversation (1000+ messages)", async () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 10000,
+    });
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 1000; i++) {
+      messages.push({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `Message ${i}: ` + "A".repeat(200),
+        timestamp: Date.now() + i * 1000,
+      });
+    }
+
+    const decision = manager.shouldCompact(messages);
+    expect(decision.shouldCompact).toBe(true);
+
+    const result = await manager.compact(messages);
+    expect(result.messages.length).toBeLessThan(messages.length);
+  });
+});
