@@ -429,7 +429,7 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
           <Text color="yellow">
-            {indent}<Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> <Text dimColor italic>click to expand</Text>
+            {indent}│    <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> <Text dimColor italic>click to expand</Text>
           </Text>
         </Box>
       );
@@ -479,7 +479,7 @@ function renderNestedChild(child: ChatLine, childIdx: number, isCollapsed: boole
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
           <Text color={themeColor}>
-            {indent}<Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> <Text dimColor italic>click to expand</Text>
+            {indent}│    <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> <Text dimColor italic>click to expand</Text>
           </Text>
         </Box>
       );
