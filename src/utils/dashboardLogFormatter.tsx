@@ -136,7 +136,9 @@ export function computeLogGroupBoundaries(
           lineCount += subLines.length;
         }
       }
-      if (groupIdx < groups.length - 1) lineCount += 1; // separator
+      const nextGroup = groups[groupIdx + 1];
+      const nextIsNested = nextGroup && (nextGroup.nestLevel || 0) > 0;
+      if (groupIdx < groups.length - 1 && !nextIsNested) lineCount += 1; // separator
       boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine + lineCount - 1, label: group.label, isCollapsible: true });
       currentLine += lineCount;
     }
@@ -488,7 +490,9 @@ export function computeWrappedLogs(
       }
     }
 
-    if (groupIdx < groups.length - 1) {
+    const nextGroup = groups[groupIdx + 1];
+    const nextIsNested = nextGroup && (nextGroup.nestLevel || 0) > 0;
+    if (groupIdx < groups.length - 1 && !nextIsNested) {
       wrappedLines.push(
         <Box flexDirection="row" key={`log-sep-${groupIdx}`}>
           <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{isTool ? subLinePrefix + "    " : subLinePrefix}</Text>
