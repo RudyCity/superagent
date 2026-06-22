@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.78] - 2026-06-23
+
+### Added
+- **Query Result Caching**: FastContext now caches query results with 1h TTL (SHA-256 keyed on query+model+exclude+citation). Cache hits are shown in the live panel with key prefix and age. Use `--no-cache` / `noCache` param to bypass.
+- **Dynamic Timeout**: Timeout is now calculated based on `maxTurns` (35s/turn, min 60s, max 600s) instead of a fixed value. Timeout error messages reflect the actual calculated duration.
+- **`exclude` Parameter**: Comma-separated glob patterns to skip in all FastContext searches. `ExcludeGlobTool` post-filters results via `fnmatch` against exclude patterns.
+- **`maxFileSizeKb` Parameter** (default 512 KB): `SizedReadTool` skips oversized files to prevent token waste from generated/minified/binary files.
+- **Settings Integration**: `maxTurns` is now capped at `maxIterations` from global settings (`getSettings()`) when `maxIterations > 0`, integrating FastContext with the system-wide iteration budget.
+- **Error Recovery**: Structured `[System]` hints are injected into agent context whenever tool calls fail, listing failed calls and error messages to prompt alternative strategies instead of silent retries.
+- **Better Progress Output**: Increased reasoning preview 300→600 chars and content preview 500→800 chars in Python runner; thinking snippet 160→300 chars and tool args preview 120→160 chars in the TS live panel.
+
+### Changed
+- **`maxTurns` Default**: Raised from 6 to 8 for better exploration depth by default.
+- **Smarter Retry Jitter**: Added random 0–1s jitter to exponential backoff to reduce thundering herd when multiple FastContext calls hit rate limits.
+- **Better Error Parsing**: Non-zero exit errors now extract root-cause from JSONL events instead of dumping raw stderr (up to 500 chars).
+
+### Fixed
+- **`ExcludeGrepTool`**: Fixed broken glob-injection approach — `rg --glob` only accepts ONE pattern per flag, so comma-separated negation globs did NOT work. Replaced with post-filtering (same strategy as `ExcludeGlobTool`): runs normal search, then filters result lines by path. Handles both `files_with_matches` and `content`/`heading` modes.
+- **Dead Code Removal**: Removed orphaned duplicate switch-case block in `fastcontextTool.ts` (leftover from a previous bad merge).
+- **`.gitignore`**: Added `.fastcontext/` to prevent cache `.txt` files and trajectory `.jsonl` files from being accidentally committed to target repos.
+
+---
+
 ## [1.1.77] - 2026-06-23
 
 ### Added
