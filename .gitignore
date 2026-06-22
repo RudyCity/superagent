@@ -1,1 +1,16 @@
 .worktrees/
+
+# Python
+__pycache__/
+bin/python/
+
+# Node / build output
+node_modules/
+dist/
+
+# Local config
+opencode.json
+.opencode/
+
+# External project
+ponytail/
