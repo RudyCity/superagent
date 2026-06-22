@@ -165,21 +165,32 @@ def run():
     toolset._last_tool_results = []
     original_toolset_call = toolset.call
 
+    async def safe_single_tool_call(c):
+        """Execute one tool call with timeout and error isolation."""
+        try:
+            return await asyncio.wait_for(
+                toolset._single_tool_call(c.name, c.arguments, c.id), timeout=10
+            )
+        except (TimeoutError, asyncio.TimeoutError):
+            return ToolResult(
+                tool_call_id=c.id,
+                failed=True,
+                output="Tool `{}' timed out after 10s.".format(c.name),
+            )
+        except Exception as e:
+            return ToolResult(
+                tool_call_id=c.id,
+                failed=True,
+                output="Tool `{}' error: {}".format(c.name, e),
+            )
+
     async def call_with_results(msg):
         results = []
         if msg.tool_calls:
-            for c in msg.tool_calls:
-                try:
-                    result = await asyncio.wait_for(
-                        toolset._single_tool_call(c.name, c.arguments, c.id), timeout=10
-                    )
-                except TimeoutError:
-                    result = ToolResult(
-                        tool_call_id=c.id,
-                        failed=True,
-                        output="Tool `{}' timed out after 10s.".format(c.name),
-                    )
-                results.append(result)
+            # Execute all tool calls in parallel for maximum speed
+            results = list(
+                await asyncio.gather(*[safe_single_tool_call(c) for c in msg.tool_calls])
+            )
 
         toolset._last_tool_results = results
         return await original_toolset_call(msg)
@@ -226,20 +237,36 @@ def run():
 
             await context.add(step_msg)
 
-            # Emit thinking/reasoning
-            text_preview = (step_msg.content or "")[:300]
+            # Emit thinking/reasoning (extended preview for reasoning models)
+            text_preview = (step_msg.content or "")[:500]
+            reasoning_preview = (getattr(step_msg, "reasoning_content", None) or "")[:300]
             has_tools = bool(step_msg.tool_calls)
 
-            if text_preview:
+            if reasoning_preview:
+                emit({"event": "thinking", "text": f"[reasoning] {reasoning_preview}", "has_tools": has_tools})
+            elif text_preview:
                 emit({"event": "thinking", "text": text_preview, "has_tools": has_tools})
 
-            if step_msg.tool_calls:
-                # Emit tool_start for each call
-                for tc in step_msg.tool_calls:
-                    args_preview = (tc.arguments or "")[:200]
-                    emit({"event": "tool_start", "tool": tc.name, "args": args_preview})
+            # Emit token usage if available
+            if step_msg.usage:
+                emit({
+                    "event": "usage",
+                    "prompt_tokens": step_msg.usage.get("prompt_tokens", 0),
+                    "completion_tokens": step_msg.usage.get("completion_tokens", 0),
+                    "total_tokens": step_msg.usage.get("total_tokens", 0),
+                })
 
-                # Execute tools
+            if step_msg.tool_calls:
+                n_tools = len(step_msg.tool_calls)
+                parallel_tag = f" [×{n_tools} parallel]" if n_tools > 1 else ""
+
+                # Emit tool_start for each call (show parallel tag on first)
+                for i, tc in enumerate(step_msg.tool_calls):
+                    args_preview = (tc.arguments or "")[:200]
+                    tag = parallel_tag if i == 0 else ""
+                    emit({"event": "tool_start", "tool": tc.name + tag, "args": args_preview})
+
+                # Execute all tools (parallel internally via call_with_results)
                 tool_results = await toolset.call(step_msg)
                 raw_tool_results = getattr(toolset, "_last_tool_results", [])
                 raw_tool_results_by_id = {

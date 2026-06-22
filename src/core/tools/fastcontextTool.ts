@@ -182,7 +182,7 @@ export const fastcontextTool: Tool = {
 
   async execute(args, cwd, signal) {
     const query = args.query as string;
-    const maxTurns = (args.maxTurns as number) || 6;
+    const maxTurns = (args.maxTurns as number) || 8;  // default raised to 8 for thorough traces
     const citation = args.citation !== false; // default: true
 
     if (!query || query.trim().length === 0) {
@@ -290,7 +290,7 @@ export const fastcontextTool: Tool = {
 
       const child = execa(PYTHON_BIN, cliArgs, {
         cwd,
-        timeout: 180_000,
+        timeout: 300_000,  // 5 minutes — configurable via future /settings fastcontextTimeout
         reject: false,
         cancelSignal: signal,
         buffer: false,
@@ -350,6 +350,15 @@ export const fastcontextTool: Tool = {
                   .slice(0, 120);
                 const icon = evt.ok ? "✅" : "❌";
                 log(`  ${icon} ${preview}`);
+                break;
+              }
+              case "usage": {
+                const total = evt.total_tokens ?? 0;
+                const prompt = evt.prompt_tokens ?? 0;
+                const completion = evt.completion_tokens ?? 0;
+                if (total > 0) {
+                  log(`  📊 tokens: ${total.toLocaleString()} (↑${prompt.toLocaleString()} ↓${completion.toLocaleString()})`);
+                }
                 break;
               }
               case "error":
