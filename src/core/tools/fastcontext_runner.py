@@ -38,6 +38,7 @@ if hasattr(sys.stderr, "reconfigure"):
 try:
     import litellm
     litellm.suppress_debug_info = True
+    litellm.drop_params = True          # silently drop unsupported params (e.g. top_p) per model
     import logging as _logging
     _logging.getLogger("litellm").setLevel(_logging.ERROR)
     _HAS_LITELLM = True
