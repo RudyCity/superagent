@@ -37,15 +37,7 @@ export const newCommand: SlashCommand = {
       }).catch(() => {});
     }
 
-    // ── 1. Kill and clear background tasks ────────────────
-    for (const [id, task] of backgroundTasks.entries()) {
-      try {
-        if (task.process && !task.hasExited) {
-          killProcessTree(task.process.pid || 0);
-        }
-      } catch {}
-    }
-    backgroundTasks.clear();
+    // ── 1. Keep running background tasks ──────────────────
 
     // ── 2. Clear active tool output buffer ────────────────
     clearActiveToolOutput();
@@ -107,7 +99,7 @@ export const newCommand: SlashCommand = {
       await fs.writeFile(inputHistoryPath, "[]", "utf-8");
     } catch { /* non-fatal */ }
 
-    ctx.addLine({ type: "system", content: "✓ New conversation started. History, logs, background tasks, and all state fully cleared.", timestamp: Date.now() });
+    ctx.addLine({ type: "system", content: "✓ New conversation started. History, logs, and state cleared.", timestamp: Date.now() });
   }
 };
 
