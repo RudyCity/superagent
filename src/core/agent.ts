@@ -54,35 +54,84 @@ export type QuestionHandler = (
   isMultiSelect?: boolean
 ) => Promise<string | string[]>;
 
-function isRetryableError(err: unknown): boolean {
-  if (!err) return false;
+function formatError(err: unknown): string {
+  if (!err) return "Unknown error";
   if (err instanceof Error) {
-    if (err.name === "AbortError") return false;
-    const msg = err.message.toLowerCase();
-    
-    const statusCode = (err as any).statusCode || (err as any).status;
-    if (statusCode === 401 || statusCode === 403 || statusCode === 400 || statusCode === 402) {
-      return false;
-    }
-
-    if (
-      msg.includes("api key") ||
-      msg.includes("apikey") ||
-      msg.includes("unauthorized") ||
-      msg.includes("forbidden") ||
-      msg.includes("authentication") ||
-      msg.includes("authorization") ||
-      msg.includes("credentials") ||
-      msg.includes("missing authentication header") ||
-      msg.includes("credit required") ||
-      msg.includes("no_credit") ||
-      msg.includes("payment required")
-    ) {
-      return false;
+    return err.message;
+  }
+  if (typeof err === "object") {
+    try {
+      const obj = err as any;
+      if (obj.message && typeof obj.message === "string") {
+        return obj.message;
+      }
+      if (obj.error && typeof obj.error === "object" && obj.error.message && typeof obj.error.message === "string") {
+        return obj.error.message;
+      }
+      const codePart = obj.code || obj.status || (obj.error && (obj.error.code || obj.error.status))
+        ? ` (status/code: ${obj.code || obj.status || (obj.error && (obj.error.code || obj.error.status))})`
+        : "";
+      return JSON.stringify(err) + codePart;
+    } catch {
+      // Fallback if JSON.stringify fails
     }
   }
+  return String(err);
+}
+
+function isRetryableError(err: unknown): boolean {
+  if (!err) return false;
+  
+  let msg = "";
+  let statusCode: number | undefined;
+
+  if (err instanceof Error) {
+    if (err.name === "AbortError") return false;
+    msg = err.message;
+    statusCode = (err as any).statusCode || (err as any).status;
+  } else if (typeof err === "object") {
+    const obj = err as any;
+    statusCode = obj.statusCode || obj.status || (obj.error && (obj.error.statusCode || obj.error.status));
+    if (obj.message && typeof obj.message === "string") {
+      msg = obj.message;
+    } else if (obj.error && typeof obj.error === "object" && obj.error.message && typeof obj.error.message === "string") {
+      msg = obj.error.message;
+    } else {
+      try {
+        msg = JSON.stringify(obj);
+      } catch {
+        msg = String(err);
+      }
+    }
+  } else {
+    msg = String(err);
+  }
+
+  msg = msg.toLowerCase();
+  
+  if (statusCode === 401 || statusCode === 403 || statusCode === 400 || statusCode === 402) {
+    return false;
+  }
+
+  if (
+    msg.includes("api key") ||
+    msg.includes("apikey") ||
+    msg.includes("unauthorized") ||
+    msg.includes("forbidden") ||
+    msg.includes("authentication") ||
+    msg.includes("authorization") ||
+    msg.includes("credentials") ||
+    msg.includes("missing authentication header") ||
+    msg.includes("credit required") ||
+    msg.includes("no_credit") ||
+    msg.includes("payment required")
+  ) {
+    return false;
+  }
+  
   return true;
 }
+
 
 export class Agent {
   public delegationDepth = 0;
@@ -564,7 +613,7 @@ If none of the options are suitable, still pick the closest one.`;
       if (err instanceof Error && err.name === "AbortError") {
         this.onEvent({ type: "text", content: "\n\n[Interrupted]" });
       } else {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = formatError(err);
         this.writeToLogFile("AGENT_ERROR", message);
         this.onEvent({ type: "error", message });
         this.conversation.addMessage({
@@ -865,7 +914,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               const isRetryable = isRetryableError(err);
               attempt++;
               if (attempt > maxRetries || !isRetryable) {
-                const rawMsg = err instanceof Error ? err.message : String(err);
+                const rawMsg = formatError(err);
                 const msg = rawMsg === "Empty response from model"
                   ? "Empty response from model. Check your endpoint/model config."
                   : rawMsg;
@@ -881,7 +930,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 await this.saveHistory();
                 return;
               }
-              const msg = err instanceof Error ? err.message : String(err);
+              const msg = formatError(err);
               this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
               await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
             } finally {
@@ -943,7 +992,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   };
                   toolCalls.push(tc);
                 } else if (delta.type === "error") {
-                  throw delta.error instanceof Error ? delta.error : new Error(String(delta.error));
+                  throw delta.error instanceof Error ? delta.error : new Error(formatError(delta.error));
                 }
               }
 
@@ -977,7 +1026,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               const isRetryable = isRetryableError(err);
               attempt++;
               if (attempt > maxRetries || !isRetryable) {
-                const rawMsg = err instanceof Error ? err.message : String(err);
+                const rawMsg = formatError(err);
                 const msg = rawMsg === "Empty response from model"
                   ? "Empty response from model. Check your endpoint/model config."
                   : rawMsg;
@@ -993,7 +1042,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 await this.saveHistory();
                 return;
               }
-              const msg = err instanceof Error ? err.message : String(err);
+              const msg = formatError(err);
               this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
               await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
             } finally {
