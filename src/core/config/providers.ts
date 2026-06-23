@@ -203,16 +203,34 @@ export function getTierModel(mode: ModelMode | "auto", tier: string): string {
     return preset.models.superagent?.model || "";
   }
   if (key === "subagent") {
-    return preset.models.subagentDefault?.model || "";
+    // subagentDefault → superagent → master (multi only)
+    return (
+      preset.models.subagentDefault?.model ||
+      preset.models.superagent?.model ||
+      (m === "multi" ? preset.models.master?.model : "") ||
+      ""
+    );
   }
   // Named subagent (researcher, coder, reviewer, etc.)
-  return preset.models.subagentDetails?.[key]?.model || "";
+  // Fallback chain: subagentDetails[name] → subagentDefault → superagent → master (multi only)
+  return (
+    preset.models.subagentDetails?.[key]?.model ||
+    preset.models.subagentDefault?.model ||
+    preset.models.superagent?.model ||
+    (m === "multi" ? preset.models.master?.model : "") ||
+    ""
+  );
 }
 
 export function getTierModelWithProvider(mode: ModelMode | "auto", tier: string): string {
   const m = resolveMode(mode);
   const preset = getActivePreset<any>(m);
   const key = tier.toLowerCase();
+
+  // Pick the first config that has a non-empty model string
+  const pick = (...configs: (any | undefined)[]): any =>
+    configs.find((c) => c?.model);
+
   let tierConfig: any;
 
   if (key === "master") {
@@ -220,9 +238,20 @@ export function getTierModelWithProvider(mode: ModelMode | "auto", tier: string)
   } else if (key === "superagent") {
     tierConfig = preset.models.superagent;
   } else if (key === "subagent") {
-    tierConfig = preset.models.subagentDefault;
+    // subagentDefault → superagent → master (multi only)
+    tierConfig = pick(
+      preset.models.subagentDefault,
+      preset.models.superagent,
+      m === "multi" ? preset.models.master : undefined
+    );
   } else {
-    tierConfig = preset.models.subagentDetails?.[key];
+    // Named subagent — fallback chain: subagentDetails[name] → subagentDefault → superagent → master (multi only)
+    tierConfig = pick(
+      preset.models.subagentDetails?.[key],
+      preset.models.subagentDefault,
+      preset.models.superagent,
+      m === "multi" ? preset.models.master : undefined
+    );
   }
 
   if (!tierConfig?.model) return "";

@@ -69,6 +69,7 @@ const DEFAULT_FALLBACK_MODELS: Record<string, string> = {
   openai: "gpt-4o",
   anthropic: "claude-sonnet-4-20250514",
   openrouter: "anthropic/claude-sonnet-4-20250514",
+  custom: "gpt-4o",
 };
 
 /**
@@ -97,27 +98,20 @@ async function resolveFastContextCredentials(): Promise<{
   const activePreset = getActivePreset<any>(mode);
   const providers = config.providers || [];
 
-  // Determine tier config: researcher > subagentDefault > main tier
-  const researcherTier = activePreset.models.subagentDetails?.researcher;
-  const subagentDefault = activePreset.models.subagentDefault;
-  const mainTier =
-    mode === "multi"
-      ? activePreset.models.master
-      : activePreset.models.superagent;
+  // Determine tier config with full fallback chain: researcher -> subagentDefault -> superagent -> master (multi only)
+  const pick = (...configs: { name: string; value: any }[]): { name: string; value: any } | undefined =>
+    configs.find((c) => c.value?.model);
 
-  let tierConfig: any;
-  let tierName: string;
+  const resolved = pick(
+    { name: "researcher", value: activePreset.models.subagentDetails?.researcher },
+    { name: "subagentDefault", value: activePreset.models.subagentDefault },
+    { name: "superagent", value: activePreset.models.superagent },
+    { name: "master", value: mode === "multi" ? activePreset.models.master : undefined }
+  );
 
-  if (researcherTier?.model) {
-    tierConfig = researcherTier;
-    tierName = "researcher";
-  } else if (subagentDefault?.model) {
-    tierConfig = subagentDefault;
-    tierName = "subagentDefault";
-  } else {
-    tierConfig = mainTier;
-    tierName = mode === "multi" ? "master" : "superagent";
-  }
+  const tierConfig = resolved?.value;
+  const tierName = resolved?.name || (mode === "multi" ? "master" : "superagent");
+
 
   // Extract raw model string and check for provider prefix
   const rawModel = tierConfig?.model || "";
