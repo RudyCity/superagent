@@ -1557,11 +1557,25 @@ for (const tc of toolCalls) {
             ? !this.allowSessionEnvAccess
             : isToolCallOutOfBounds(tc, effectiveWorkspace) && !this.allowSessionOutOfBounds;
           if (needsPermission) {
+            let details = "";
+            if (tc.args) {
+              const cmd = (tc.args.command ?? tc.args.cmd) as string | undefined;
+              const targetPath = (tc.args.filePath ?? tc.args.file_path ?? tc.args.TargetFile ?? tc.args.path ?? tc.args.DirectoryPath ?? tc.args.SearchPath ?? tc.args.AbsolutePath) as string | undefined;
+              const cwd = tc.args.cwd as string | undefined;
+              const detailsParts: string[] = [];
+              if (cmd) detailsParts.push(`Command: "${cmd}"`);
+              if (targetPath) detailsParts.push(`Target Path: "${targetPath}"`);
+              if (cwd) detailsParts.push(`CWD: "${cwd}"`);
+              if (detailsParts.length > 0) {
+                details = `\n  Details:\n    - ${detailsParts.join("\n    - ")}`;
+              }
+            }
+
             const permMessage = isModelCfg
               ? `⚠️  Protected file access detected: model-config.json contains your API keys and model presets. Tool "${tc.name}" is attempting to access this file. This requires your explicit permission.`
               : isEnvFile
               ? `⚠️  Sensitive file access detected: Tool "${tc.name}" is attempting to access a .env file which may contain API keys, database credentials, or other secrets. This requires your explicit permission.`
-              : `Out-of-bounds access detected for tool: ${tc.name}. Requires permission to access files/directories/processes outside the workspace.`;
+              : `Out-of-bounds access detected for tool: ${tc.name}. Requires permission to access files/directories/processes outside the workspace.${details}`;
             const approved = await this.onPermission(
               tc,
               permMessage
