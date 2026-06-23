@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.88] - 2026-06-23
+
+### Improved
+- **Plan Approval Keyboard Submission**: Require Enter key to submit selected plan options instead of immediate submit on mouse click.
+
+### Fixed
+- **FastContext Rate Limit**: Increased max retries to 6, emit total attempts, and integrated a shared rate limiter.
+- **Checklist Strikethrough**: Replaced custom Unicode combining strikethrough characters with native Ink Text strikethrough.
+
+---
+
 ## [1.1.87] - 2026-06-23
 
 ### Added
