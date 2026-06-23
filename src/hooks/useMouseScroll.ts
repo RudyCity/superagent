@@ -70,6 +70,7 @@ export interface SingleAgentMouseContext {
   wizardSelectedIndex?: number;
   setWizardSelectedIndex?: (val: number | ((prev: number) => number)) => void;
   planPath?: string;
+  handleWizardSubmit?: (val: string) => void;
 }
 
 /**
@@ -98,57 +99,80 @@ export function useMouseScroll(
 
       for (const match of matches) {
         const btn = match.groups?.btn;
+        const colStr = match.groups?.col;
         const rowStr = match.groups?.row;
         const action = match.groups?.action;
 
         // --- Scroll wheel ---
-        if (btn === "64") {
-          // Scroll up
-          if (ctx.activeWizard?.type === "plan_approve") {
-            ctx.setActiveWizard?.((curr: any) => {
-              if (!curr) return null;
-              const currentOffset = curr.data?.scrollOffset || 0;
-              const nextOffset = Math.max(0, currentOffset - 1);
-              return { ...curr, data: { ...curr.data, scrollOffset: nextOffset } };
-            });
-          } else if (ctx.focusedResponseIndex !== null) {
-            ctx.setFocusedResponseOffset((prev: number) => Math.max(0, prev - 1));
-          } else if (
-            ctx.focusMode === "superagents" ||
-            ctx.focusMode === "subagents" ||
-            ctx.focusMode === "procs" ||
-            ctx.focusMode === "checklist"
-          ) {
-            scrollSection(ctx, ctx.focusMode, "up");
-          } else {
-            ctx.scrollChat("up");
-          }
-          continue;
-        }
+        if (btn === "64" || btn === "65") {
+          const isUp = btn === "64";
+          const y = rowStr ? parseInt(rowStr, 10) : 0;
 
-        if (btn === "65") {
-          // Scroll down
-          if (ctx.activeWizard?.type === "plan_approve") {
+          // Find which section was scrolled (hovered)
+          let hoveredSection: SectionBoundary | null = null;
+          if (y > 0) {
+            for (const section of ctx.sections) {
+              if (y >= section.startRow && y <= section.endRow) {
+                hoveredSection = section;
+                break;
+              }
+            }
+          }
+
+          const sectionName = hoveredSection?.name;
+
+          if (sectionName === "chat") {
+            if (ctx.focusedResponseIndex !== null) {
+              ctx.setFocusedResponseOffset((prev: number) => {
+                if (isUp) {
+                  return Math.max(0, prev - 1);
+                } else {
+                  const maxOffset = Math.max(0, ctx.responseLinesCount - ctx.focusWindowHeight);
+                  return Math.min(prev + 1, maxOffset);
+                }
+              });
+            } else {
+              ctx.scrollChat(isUp ? "up" : "down");
+            }
+          } else if (sectionName === "wizard" && ctx.activeWizard?.type === "plan_approve") {
             ctx.setActiveWizard?.((curr: any) => {
               if (!curr) return null;
-              const currentOffset = curr.data?.scrollOffset || 0;
-              const nextOffset = currentOffset + 1;
-              return { ...curr, data: { ...curr.data, scrollOffset: nextOffset } };
-            });
-          } else if (ctx.focusedResponseIndex !== null) {
-            ctx.setFocusedResponseOffset((prev: number) => {
-              const maxOffset = Math.max(0, ctx.responseLinesCount - ctx.focusWindowHeight);
-              return Math.min(prev + 1, maxOffset);
+              const currentOffset = parseInt(curr.data?.scrollOffset || "0", 10);
+              const nextOffset = isUp ? Math.max(0, currentOffset - 1) : currentOffset + 1;
+              return { ...curr, data: { ...curr.data, scrollOffset: String(nextOffset) } };
             });
           } else if (
-            ctx.focusMode === "superagents" ||
-            ctx.focusMode === "subagents" ||
-            ctx.focusMode === "procs" ||
-            ctx.focusMode === "checklist"
+            sectionName === "superagents" ||
+            sectionName === "subagents" ||
+            sectionName === "procs" ||
+            sectionName === "checklist"
           ) {
-            scrollSection(ctx, ctx.focusMode, "down");
+            scrollSection(ctx, sectionName, isUp ? "up" : "down");
           } else {
-            ctx.scrollChat("down");
+            // Fallback scroll behavior if no section matches or hover detection isn't active
+            if (ctx.activeWizard?.type === "plan_approve") {
+              ctx.setActiveWizard?.((curr: any) => {
+                if (!curr) return null;
+                const currentOffset = parseInt(curr.data?.scrollOffset || "0", 10);
+                const nextOffset = isUp ? Math.max(0, currentOffset - 1) : currentOffset + 1;
+                return { ...curr, data: { ...curr.data, scrollOffset: String(nextOffset) } };
+              });
+            } else if (ctx.focusedResponseIndex !== null) {
+              ctx.setFocusedResponseOffset((prev: number) => {
+                if (isUp) return Math.max(0, prev - 1);
+                const maxOffset = Math.max(0, ctx.responseLinesCount - ctx.focusWindowHeight);
+                return Math.min(prev + 1, maxOffset);
+              });
+            } else if (
+              ctx.focusMode === "superagents" ||
+              ctx.focusMode === "subagents" ||
+              ctx.focusMode === "procs" ||
+              ctx.focusMode === "checklist"
+            ) {
+              scrollSection(ctx, ctx.focusMode, isUp ? "up" : "down");
+            } else {
+              ctx.scrollChat(isUp ? "up" : "down");
+            }
           }
           continue;
         }
@@ -227,18 +251,63 @@ export function useMouseScroll(
             case "input":
             case "wizard":
               if (ctx.activeWizard?.type === "plan_approve") {
-                const planPath = ctx.planPath || "";
-                const H = planApprovalChromeHeight(planPath, ctx.activeWizard.step);
-                const optStartRow = clickedSection.startRow + H - 4; // OPTIONS.length + 1
-                const optEndRow = clickedSection.startRow + H - 2;
+                if (ctx.activeWizard.step === 2) {
+                  ctx.setFocusMode("input");
+                  break;
+                }
+                // In PlanApprovalDialog step 1, OPTIONS.length is 3.
+                // The footer hint takes 1 line at the bottom.
+                const optEndRow = clickedSection.endRow - 1;
+                const optStartRow = optEndRow - 3 + 1; // 3 options
 
-                if (y < optStartRow - 1) {
+                if (y < optStartRow) {
                   ctx.setActiveWizard?.((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "plan" } } : null);
-                } else if (y >= optStartRow - 1 && y <= optEndRow + 1) {
+                } else if (y >= optStartRow && y <= optEndRow) {
                   ctx.setActiveWizard?.((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "actions" } } : null);
+                  const idx = y - optStartRow;
+                  ctx.setWizardSelectedIndex?.(idx);
+                  
+                  // Submit immediately
+                  if (idx === 0) {
+                    ctx.handleWizardSubmit?.("approve");
+                  } else if (idx === 1) {
+                    ctx.handleWizardSubmit?.("reject");
+                  } else if (idx === 2) {
+                    ctx.setActiveWizard?.({ ...ctx.activeWizard, step: 2 });
+                  }
+                }
+              } else if (ctx.activeWizard) {
+                // Clicking on options for any other WizardDialog
+                const options = ctx.wizardOptions || [];
+                const total = options.length;
+                if (total > 0) {
+                  const maxVisible = 10;
+                  const numericSelectedIndex = Math.min(Math.max(0, ctx.wizardSelectedIndex || 0), total - 1);
+                  let start = 0;
+                  let end = total;
+                  if (total > maxVisible) {
+                    start = Math.max(0, numericSelectedIndex - Math.floor(maxVisible / 2));
+                    end = start + maxVisible;
+                    if (end > total) {
+                      end = total;
+                      start = Math.max(0, end - maxVisible);
+                    }
+                  }
+                  const visibleCount = end - start;
+                  const hasBelow = end < total;
+
+                  const optEndRow = clickedSection.endRow - (hasBelow ? 1 : 0);
+                  const optStartRow = optEndRow - visibleCount + 1;
+
                   if (y >= optStartRow && y <= optEndRow) {
-                    const idx = y - optStartRow;
-                    ctx.setWizardSelectedIndex?.(idx);
+                    const idx = start + (y - optStartRow);
+                    if (idx >= 0 && idx < total) {
+                      ctx.setWizardSelectedIndex?.(idx);
+                      const selectedOption = options[idx];
+                      if (selectedOption) {
+                        ctx.handleWizardSubmit?.(selectedOption);
+                      }
+                    }
                   }
                 }
               } else {

@@ -1798,6 +1798,7 @@ export function App({
     openResponseAtIndex,
     visibleLinePositions,
     toggleLineExpand,
+    handleWizardSubmit,
   };
 
   return (

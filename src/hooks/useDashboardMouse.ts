@@ -100,55 +100,177 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
         const rowStr = match.groups?.row;
         const action = match.groups?.action;
 
-        if (btn === "64") {
-          // Scroll UP — dispatch based on focused area
-          if (activeWizard?.type === "plan_approve") {
+        const activeWTsCount = [...superagentInstances.values()]
+          .filter((i) => i.status === "running")
+          .map((i) => i.branch).length;
+        const statusBarHeight = 5 + (activeWTsCount > 0 ? 1 : 0);
+        const suggestions = getDashboardSuggestions(query);
+        const isSuggestionsVisible = ctx.focusArea === "input" && query.startsWith("/") && suggestions.length > 0;
+        const bottomPromptHeight = 1 + (isSuggestionsVisible ? 2 : 0);
+        const promptStartRow = terminalSize.height - statusBarHeight - bottomPromptHeight + 1;
+
+        if (btn === "64" || btn === "65") {
+          const isUp = btn === "64";
+          const x = colStr ? parseInt(colStr, 10) : 0;
+          const y = rowStr ? parseInt(rowStr, 10) : 0;
+
+          const leftLimit = Math.floor(terminalSize.width * 0.40);
+          const rightStart = Math.floor(terminalSize.width * 0.42);
+          const workspaceStartRow = 4;
+
+          // Determine hover area
+          let hoverArea = "";
+          if (x >= rightStart) {
+            hoverArea = "logs";
+          } else if (x <= leftLimit) {
+            const runningSubagentsCount = [...subagentInstances.values()]
+              .filter((s) => s.status === "running").length;
+            const runningTasksCount = [...backgroundTasks.values()]
+              .filter((t) => t.isDetachedWindow || !t.hasExited).length;
+            const maxAgentsVisible = 3;
+            const maxProcsVisible = 5;
+
+            let wizardHeight = 0;
+            if (activeWizard) {
+              const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
+              const maxVis = isModelSelectStep ? 8 : 10;
+
+              const lc = query.trim();
+              const filteredModels = lc
+                ? filterSuggestions(wizardAllOptions, lc)
+                : wizardAllOptions;
+
+              const effectiveOptions = isModelSelectStep
+                ? (filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"])
+                : wizardOptions;
+
+              let start = 0;
+              let end = effectiveOptions.length;
+              if (effectiveOptions.length > maxVis) {
+                start = Math.max(0, wizardSelectedIndex - Math.floor(maxVis / 2));
+                end = start + maxVis;
+                if (end > effectiveOptions.length) {
+                  end = effectiveOptions.length;
+                  start = Math.max(0, end - maxVis);
+                }
+              }
+              const optCount = end - start;
+              const hasAbove = start > 0;
+              const hasBelow = end < effectiveOptions.length;
+
+              let wizardDescription = "";
+              if (activeWizard.type === "plan_approve") {
+                wizardDescription = `AI model has designed a plan in file: file:///${agent ? path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/") : ""}`;
+              } else if (activeWizard.type === "question") {
+                wizardDescription = pendingQuestion?.question || "";
+              } else if (activeWizard.type === "login" && activeWizard.step === 10) {
+                wizardDescription = "Choose a template catalog stack or let AI dynamically design your project details:";
+              } else if (activeWizard.type === "login" && activeWizard.step === 11) {
+                wizardDescription = "Specify the name for this workspace:";
+              } else if (activeWizard.type === "login" && activeWizard.step === 12) {
+                wizardDescription = "Give a one-sentence overview description of this software:";
+              } else if (activeWizard.type === "login" && activeWizard.step === 13) {
+                wizardDescription = "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:";
+              }
+
+              const descLines = wizardDescription
+                ? wrapTextForDisplay(wizardDescription, Math.max(10, terminalSize.width - 4)).length
+                : 0;
+
+              const hasLoading = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) && wizardIsLoadingModels;
+
+              wizardHeight += 1; // Outer top border │
+              wizardHeight += 1; // Title line
+              if (descLines > 0) {
+                wizardHeight += descLines + 1; // Description lines + spacer │
+              }
+              if (hasLoading) {
+                wizardHeight += 2; // Loading spinner + spacer
+              }
+              if (hasAbove) {
+                wizardHeight += 1;
+              }
+              wizardHeight += optCount;
+              if (hasBelow) {
+                wizardHeight += 1;
+              }
+              wizardHeight += 1; // Outer bottom border │
+            }
+
+            const y_wizard_start = workspaceStartRow + workspaceHeight;
+            const y_agents_start = y_wizard_start + 2 + wizardHeight;
+            const agentsCount = Math.min(runningSubagentsCount, maxAgentsVisible);
+            const agentsHeight = runningSubagentsCount > 0 ? 1 + agentsCount : 0;
+
+            const y_procs_start = y_agents_start + agentsHeight;
+            const procsCount = Math.min(runningTasksCount, maxProcsVisible);
+            const procsHeight = runningTasksCount > 0 ? 1 + procsCount : 0;
+
+            if (y >= workspaceStartRow && y < workspaceStartRow + leftTopHeight) {
+              hoverArea = "list";
+            } else if (y >= workspaceStartRow + leftTopHeight && y < workspaceStartRow + workspaceHeight) {
+              hoverArea = "checklist";
+            } else if (activeWizard && y >= y_wizard_start && y < y_agents_start) {
+              hoverArea = "wizard";
+            } else if (runningSubagentsCount > 0 && y >= y_agents_start && y < y_agents_start + agentsHeight) {
+              hoverArea = "agents";
+            } else if (runningTasksCount > 0 && y >= y_procs_start && y < y_procs_start + procsHeight) {
+              hoverArea = "procs";
+            }
+          }
+
+          // Fallback to active focus area / active wizard if hover region not detected
+          const targetArea = hoverArea || (activeWizard ? "wizard" : focusArea);
+
+          if (targetArea === "wizard" && activeWizard?.type === "plan_approve") {
             setActiveWizard((curr: any) => {
               if (!curr) return null;
               const currentOffset = parseInt(curr.data?.scrollOffset || "0", 10);
-              const nextOffset = currentOffset + 1;
+              const nextOffset = isUp ? Math.max(0, currentOffset - 1) : currentOffset + 1;
               return { ...curr, data: { ...curr.data, scrollOffset: String(nextOffset) } };
             });
-          } else if (focusArea === "checklist") {
+          } else if (targetArea === "checklist") {
             setChecklistScrollOffset((prev) => {
-              const maxScroll = Math.max(0, checklistTasksCount - maxChecklistVisible);
-              return Math.min(prev + 1, maxScroll);
+              if (isUp) {
+                return Math.max(0, prev - 1);
+              } else {
+                const maxScroll = Math.max(0, checklistTasksCount - maxChecklistVisible);
+                return Math.min(prev + 1, maxScroll);
+              }
             });
-          } else if (focusArea === "agents") {
+          } else if (targetArea === "agents") {
             setAgentsScrollOffset((prev) => {
-              const maxScroll = Math.max(0, agentsCount - maxAgentsVisible);
-              return Math.min(prev + 1, maxScroll);
+              if (isUp) {
+                return Math.max(0, prev - 1);
+              } else {
+                const maxScroll = Math.max(0, agentsCount - maxAgentsVisible);
+                return Math.min(prev + 1, maxScroll);
+              }
             });
-          } else if (focusArea === "procs") {
+          } else if (targetArea === "procs") {
             setProcsScrollOffset((prev) => {
-              const maxScroll = Math.max(0, procsCount - maxProcsVisible);
-              return Math.min(prev + 1, maxScroll);
+              if (isUp) {
+                return Math.max(0, prev - 1);
+              } else {
+                const maxScroll = Math.max(0, procsCount - maxProcsVisible);
+                return Math.min(prev + 1, maxScroll);
+              }
             });
           } else {
+            // Logs scroll (Wheel UP increases offset to scroll backwards; wheel DOWN decreases)
             setLogScrollOffset((prev) => {
-              const maxScroll = Math.max(0, wrappedLines.length - logsCount);
-              return Math.min(prev + 1, maxScroll);
+              if (isUp) {
+                const maxScroll = Math.max(0, wrappedLines.length - logsCount);
+                return Math.min(prev + 1, maxScroll);
+              } else {
+                return Math.max(0, prev - 1);
+              }
             });
           }
-        } else if (btn === "65") {
-          // Scroll DOWN — dispatch based on focused area
-          if (activeWizard?.type === "plan_approve") {
-            setActiveWizard((curr: any) => {
-              if (!curr) return null;
-              const currentOffset = parseInt(curr.data?.scrollOffset || "0", 10);
-              const nextOffset = Math.max(0, currentOffset - 1);
-              return { ...curr, data: { ...curr.data, scrollOffset: String(nextOffset) } };
-            });
-          } else if (focusArea === "checklist") {
-            setChecklistScrollOffset((prev) => Math.max(0, prev - 1));
-          } else if (focusArea === "agents") {
-            setAgentsScrollOffset((prev) => Math.max(0, prev - 1));
-          } else if (focusArea === "procs") {
-            setProcsScrollOffset((prev) => Math.max(0, prev - 1));
-          } else {
-            setLogScrollOffset((prev) => Math.max(0, prev - 1));
-          }
-        } else if (btn === "0" && action === "M" && colStr && rowStr) {
+          continue;
+        }
+
+        if (btn === "0" && action === "M" && colStr && rowStr) {
           const x = parseInt(colStr, 10);
           const y = parseInt(rowStr, 10);
           const leftLimit = Math.floor(terminalSize.width * 0.40);
@@ -254,23 +376,36 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
                       setQuery("");
                     } else {
                       setWizardSelectedIndex(targetIndex);
+                      // Submit immediately
+                      if (activeWizard.type === "plan_approve") {
+                        if (targetIndex === 0) {
+                          handleWizardSubmit("approve");
+                        } else if (targetIndex === 1) {
+                          handleWizardSubmit("reject");
+                        } else if (targetIndex === 2) {
+                          setWizardOptions([]);
+                          setActiveWizard({ ...activeWizard, step: 2 });
+                        }
+                      } else {
+                        handleWizardSubmit(selectedOption);
+                      }
                     }
                   }
                 }
-                return; // Handled wizard option click (selection handled, submission requires Enter)
+                return; // Handled wizard option click
               }
             }
           }
 
           // If click wasn't in wizard options, handle regular panel focusing
-          const activeWTsCount = [...superagentInstances.values()]
+          const activeWTsCount_click = [...superagentInstances.values()]
             .filter((i) => i.status === "running")
             .map((i) => i.branch).length;
-          const statusBarHeight = 5 + (activeWTsCount > 0 ? 1 : 0);
-          const suggestions = getDashboardSuggestions(query);
-          const isSuggestionsVisible = ctx.focusArea === "input" && query.startsWith("/") && suggestions.length > 0;
-          const bottomPromptHeight = 1 + (isSuggestionsVisible ? 2 : 0);
-          const promptStartRow = terminalSize.height - statusBarHeight - bottomPromptHeight + 1;
+          const statusBarHeight_click = 5 + (activeWTsCount_click > 0 ? 1 : 0);
+          const suggestions_click = getDashboardSuggestions(query);
+          const isSuggestionsVisible_click = ctx.focusArea === "input" && query.startsWith("/") && suggestions_click.length > 0;
+          const bottomPromptHeight_click = 1 + (isSuggestionsVisible_click ? 2 : 0);
+          const promptStartRow_click = terminalSize.height - statusBarHeight_click - bottomPromptHeight_click + 1;
 
           if (y >= promptStartRow) {
             if (isSuggestionsVisible && y === promptStartRow) {
