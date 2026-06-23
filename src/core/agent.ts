@@ -679,7 +679,7 @@ CRITICAL GOAL MODE RULES:
           : getToolDefinitions();
 
         let planStateNotice = "";
-        if (this.tier === "master") {
+        if (this.tier === "master" || this.tier === "single") {
           planStateNotice = `
 
 PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
