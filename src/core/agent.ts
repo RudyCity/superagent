@@ -872,7 +872,18 @@ Skill categories to always check:
 - Code review → 'requesting-code-review', 'code-review-reception'
 - Finishing work → 'finishing-a-development-branch', 'verification-before-completion'
 - Research/exploration → 'dispatching-parallel-agents'
-DO NOT skip skill reading. Instruct your subagents to also read and follow the relevant SKILL.md.` : "";
+DO NOT skip skill reading. Instruct your subagents to also read and follow the relevant SKILL.md.
+
+SELF-VERIFICATION & CRITIC — MANDATORY BEFORE RESPONDING TO USER:
+After all subagents finish, you MUST perform this verification loop before considering the task done:
+1. VALIDATE OUTPUTS: Review each subagent's report. Check that build passed, tests passed, and all task requirements are met.
+2. CRITIC: Actively challenge the results. Ask yourself:
+   - Did the coder subagent actually run the build and tests? If not, spawn a reviewer to verify.
+   - Are there edge cases that were not addressed?
+   - Does the implementation actually solve the user's original request (not just a surface interpretation)?
+   - Are there any TODOs, placeholders, or incomplete parts?
+3. IF GAPS FOUND → spawn a fix subagent (coder or reviewer) to address them. Do NOT report completion with known gaps.
+4. ONLY report completion when you have concrete evidence (build pass, test pass, acceptance criteria met).` : "";
 
         const systemPrompt = `${baseSystemPrompt}
 
