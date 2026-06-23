@@ -1163,8 +1163,12 @@ export function App({
   const permissionHandler: PermissionHandler = useCallback(
     (toolCall: ToolCall, description: string) => {
       return new Promise<boolean>((resolve) => {
+        const isCmd = ["bash", "run_command", "run_background_process"].includes(toolCall.name);
+        const options = isCmd
+          ? ["Allow Command Execution", "Deny Command Execution"]
+          : ["Allow File/Directory Access", "Deny File/Directory Access"];
         setPendingPermission({ toolCall, description, resolve });
-        setWizardOptions(["Allow Command Execution", "Deny Command Execution"]);
+        setWizardOptions(options);
         setWizardSelectedIndex(0);
         setActiveWizard({
           type: "permission",
