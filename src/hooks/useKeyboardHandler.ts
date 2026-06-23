@@ -1666,7 +1666,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     if (
       (key.backspace || key.delete) &&
       isPasteActive &&
-      !isProcessing
+      (!isProcessing || activeWizard)
     ) {
       setInput((prev) => {
         const next = prev.slice(0, -1);
@@ -1679,7 +1679,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
-    if (key.return && !isProcessing) {
+    if (key.return && (!isProcessing || activeWizard)) {
       if (isPasteActive) {
         handleSubmit(input);
         return;
