@@ -11,6 +11,42 @@ export interface LoadedSkill {
   author?: string;
 }
 
+const OBRA_SKILLS = new Set([
+  "brainstorming-ideas-into-designs",
+  "code-review-reception",
+  "collision-zone-thinking",
+  "condition-based-waiting",
+  "defense-in-depth-validation",
+  "dispatching-parallel-agents",
+  "executing-plans",
+  "find-skills",
+  "finishing-a-development-branch",
+  "gardening-skills-wiki",
+  "getting-started-with-skills",
+  "inversion-exercise",
+  "master-agent-orchestration",
+  "meta-pattern-recognition",
+  "preserving-productive-tensions",
+  "pulling-updates-from-skills-repository",
+  "remembering-conversations",
+  "requesting-code-review",
+  "root-cause-tracing",
+  "scale-game",
+  "sharing-skills",
+  "simplification-cascades",
+  "subagent-driven-development",
+  "systematic-debugging",
+  "test-driven-development-tdd",
+  "testing-anti-patterns",
+  "testing-skills-with-subagents",
+  "tracing-knowledge-lineages",
+  "using-git-worktrees",
+  "verification-before-completion",
+  "when-stuck-problem-solving-dispatch",
+  "writing-plans",
+  "writing-skills"
+]);
+
 export function getInstalledSkills(): LoadedSkill[] {
   const skills: LoadedSkill[] = [];
   const __filename = fileURLToPath(import.meta.url);
@@ -36,7 +72,7 @@ export function getInstalledSkills(): LoadedSkill[] {
             const skillMdPath = path.join(skillDir, "SKILL.md");
             if (fs.existsSync(skillMdPath)) {
               // Flat structure: e.g. .agents/skills/fastcontext/SKILL.md
-              processSkillFile(skillMdPath, item.name, "obra");
+              processSkillFile(skillMdPath, item.name, "local");
             } else {
               // Check for nested structure: e.g. .agents/skills/vercel-labs/find-skills/SKILL.md
               try {
@@ -68,6 +104,10 @@ export function getInstalledSkills(): LoadedSkill[] {
       let name = folderName;
       let description = "No description provided.";
       let author = defaultAuthor;
+
+      if (OBRA_SKILLS.has(folderName)) {
+        author = "obra";
+      }
 
       // Simple frontmatter parser
       const fmMatch = content.match(/^---[\r\n]+([\s\S]*?)[\r\n]+---/);
@@ -110,7 +150,7 @@ export function loadAgentSkills(): string {
   let text = "\n\nINSTALLED AGENT SKILLS & MANDATORY DISCOVERY RULES:\n";
   text += "CRITICAL DIRECTIVE: At the very beginning of processing the user's request, you MUST proactively scan the list of installed specialized agent skills below. If the task or any subtask involves concepts, workflows, platforms, or tools mentioned in a skill's name or description, you MUST immediately read the corresponding instruction file ('SKILL.md') using a file-reading tool (e.g. view_file) to load its complete workflow guidelines and constraints BEFORE executing commands, writing code, or proposing plans. Do NOT attempt to guess the workflow or perform it from memory if a relevant skill exists. Always check for relevant skills first.\n\n";
   for (const s of skills) {
-    const provider = s.author || "obra";
+    const provider = s.author || "local";
     text += `- **${provider}/${s.name}**: ${s.description}\n  Instruction File: ${s.path}\n`;
   }
   return text;
