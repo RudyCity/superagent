@@ -39,11 +39,17 @@ export type PermissionHandler = (
   description: string
 ) => Promise<boolean>;
 
+export interface QuestionItem {
+  question: string;
+  options: string[];
+  isMultiSelect?: boolean;
+}
+
 export type QuestionHandler = (
-  question: string,
-  options: string[],
+  question: string | QuestionItem[],
+  options?: string[],
   isMultiSelect?: boolean
-) => Promise<string>;
+) => Promise<string | string[]>;
 
 function isRetryableError(err: unknown): boolean {
   if (!err) return false;
@@ -972,7 +978,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
 
         const toolResults: ToolResult[] = [];
 
-        for (const tc of toolCalls) {
+for (const tc of toolCalls) {
           if (this.abortController?.signal.aborted) {
             const err = new Error("AbortError");
             err.name = "AbortError";
@@ -982,27 +988,51 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           this.onEvent({ type: "tool_start", toolCall: tc, description });
 
           if (tc.name === "ask_question") {
+            if (Array.isArray(tc.args.questions) && tc.args.questions.length > 0) {
+              const normalizedQuestions: QuestionItem[] = tc.args.questions.map((q: any) => {
+                const qObj = q as Record<string, any>;
+                const qOpts = Array.isArray(qObj.options) ? qObj.options.map((o: any) => {
+                  if (typeof o === "string") return o;
+                  if (o && typeof o === "object") {
+                    const label = o["label"] ?? o["name"] ?? o["command"] ?? o["title"] ?? o["value"];
+                    if (label !== undefined) return String(label);
+                    return JSON.stringify(o);
+                  }
+                  return String(o);
+                }) : [];
+                return {
+                  question: String(qObj.question || ""),
+                  options: qOpts,
+                  isMultiSelect: !!(qObj.is_multi_select ?? qObj.isMultiSelect),
+                };
+              });
+
+              try {
+                const selected = await this.onQuestion(normalizedQuestions);
+                const toolResult: ToolResult = {
+                  toolCallId: tc.id,
+                  name: tc.name,
+                  result: `User selected options: ${JSON.stringify(selected)}`,
+                };
+                toolResults.push(toolResult);
+                this.onEvent({ type: "tool_end", toolResult, description });
+                continue;
+              } catch (err: any) {
+                const toolResult: ToolResult = {
+                  toolCallId: tc.id,
+                  name: tc.name,
+                  result: `Error getting user answers: ${err.message}`,
+                  isError: true,
+                };
+                toolResults.push(toolResult);
+                this.onEvent({ type: "tool_end", toolResult, description });
+                continue;
+              }
+            }
+
             let question = tc.args.question as string || "";
             let rawOptionsVal = tc.args.options;
             let isMultiSelect = tc.args.isMultiSelect as boolean | undefined;
-
-            if (Array.isArray(tc.args.questions) && tc.args.questions.length > 0) {
-              const firstQ = tc.args.questions[0];
-              if (firstQ && typeof firstQ === "object") {
-                const firstQObj = firstQ as Record<string, unknown>;
-                if (typeof firstQObj.question === "string") {
-                  question = firstQObj.question;
-                }
-                if (firstQObj.options !== undefined) {
-                  rawOptionsVal = firstQObj.options;
-                }
-                if (typeof firstQObj.is_multi_select === "boolean") {
-                  isMultiSelect = firstQObj.is_multi_select;
-                } else if (typeof firstQObj.isMultiSelect === "boolean") {
-                  isMultiSelect = firstQObj.isMultiSelect;
-                }
-              }
-            }
 
             const rawOptions = Array.isArray(rawOptionsVal)
               ? rawOptionsVal

@@ -30,33 +30,6 @@ export const askQuestionTool: Tool = {
     required: ["question", "options"],
   },
   async execute(args, cwd, signal) {
-    let question = args.question as string || "";
-    let rawOptionsVal = args.options;
-    let isMultiSelect = args.isMultiSelect as boolean | undefined;
-
-    if (Array.isArray(args.questions) && args.questions.length > 0) {
-      const firstQ = args.questions[0];
-      if (firstQ && typeof firstQ === "object") {
-        const firstQObj = firstQ as Record<string, unknown>;
-        if (typeof firstQObj.question === "string") {
-          question = firstQObj.question;
-        }
-        if (firstQObj.options !== undefined) {
-          rawOptionsVal = firstQObj.options;
-        }
-        if (typeof firstQObj.is_multi_select === "boolean") {
-          isMultiSelect = firstQObj.is_multi_select;
-        } else if (typeof firstQObj.isMultiSelect === "boolean") {
-          isMultiSelect = firstQObj.isMultiSelect;
-        }
-      }
-    }
-
-    const rawOptions = Array.isArray(rawOptionsVal)
-      ? rawOptionsVal
-      : (rawOptionsVal !== undefined && rawOptionsVal !== null ? [rawOptionsVal] : []);
-    const options: string[] = rawOptions.map(o => String(o));
-
     // Determine the calling agent's tier to route the question appropriately.
     // Master/Single tier → forward to user UI (activeQuestionHandler).
     // Superagent/Subagent tier → route to Master Agent LLM for answering.
@@ -64,6 +37,75 @@ export const askQuestionTool: Tool = {
     const { getMasterAgent, getActiveQuestionHandler, appendMasterLog } = await import("./state.js");
     const currentAgent = agentLocalStorage.getStore();
     const currentTier = currentAgent ? (currentAgent as any).tier : undefined;
+    const handler = getActiveQuestionHandler();
+
+    // Check if we are running in a multi-question workflow
+    const hasQuestionsArray = Array.isArray(args.questions) && args.questions.length > 0;
+
+    if (hasQuestionsArray) {
+      const questionsList = args.questions as any[];
+      const normalizedQuestions = questionsList.map((q: any, idx: number) => {
+        const qText = q.question as string || "";
+        const qOptsRaw = q.options || [];
+        const qOpts = Array.isArray(qOptsRaw) ? qOptsRaw.map(o => String(o)) : [];
+        const isMs = !!(q.isMultiSelect || q.is_multi_select || q.isMultiSelect || q.is_multi_select);
+        return { question: qText, options: qOpts, isMultiSelect: isMs };
+      });
+
+      if (currentTier === "superagent" || currentTier === "subagent") {
+        const master = getMasterAgent();
+        const role = (currentAgent as any).subagentType || (currentAgent as any).tier || "?";
+        const sourceLabel = currentTier === "superagent" ? `Superagent "${role}"` : `Subagent (${role})`;
+        
+        const answers: string[] = [];
+        for (const q of normalizedQuestions) {
+          appendMasterLog(`[QUESTION] ${sourceLabel} asks: ${q.question} | Options: ${q.options.join(", ")}`);
+          if (master && typeof master.answerQuestionAsMaster === "function") {
+            try {
+              const selected = await master.answerQuestionAsMaster(q.question, q.options, {
+                source: currentTier,
+                role,
+                typeName: (currentAgent as any).subagentType,
+              });
+              appendMasterLog(`[MASTER ANSWER] For ${sourceLabel}: "${selected}"`);
+              answers.push(selected);
+            } catch (err: any) {
+              answers.push(`Error: ${err.message}`);
+            }
+          } else if (handler) {
+            try {
+              const selected = await handler(q.question, q.options, q.isMultiSelect);
+              answers.push(String(selected));
+            } catch (err: any) {
+              answers.push(`Error: ${err.message}`);
+            }
+          } else {
+            answers.push("Error: No handler");
+          }
+        }
+        return answers;
+      }
+
+      // Master / Single tier — forward to activeQuestionHandler directly passing the array of questions
+      if (!handler) {
+        return "Error: ask_question must be executed interactively. No question handler is registered.";
+      }
+      try {
+        const result = await handler(normalizedQuestions);
+        return result;
+      } catch (err: any) {
+        return `Error getting user answer: ${err.message}`;
+      }
+    }
+
+    let question = args.question as string || "";
+    let rawOptionsVal = args.options;
+    let isMultiSelect = args.isMultiSelect as boolean | undefined;
+
+    const rawOptions = Array.isArray(rawOptionsVal)
+      ? rawOptionsVal
+      : (rawOptionsVal !== undefined && rawOptionsVal !== null ? [rawOptionsVal] : []);
+    const options: string[] = rawOptions.map(o => String(o));
 
     if (currentTier === "superagent" || currentTier === "subagent") {
       const master = getMasterAgent();
@@ -84,12 +126,11 @@ export const askQuestionTool: Tool = {
         }
       }
       // Single-mode fallback (no Master registered): route to user UI
-      const fallbackHandler = getActiveQuestionHandler();
-      if (fallbackHandler) {
+      if (handler) {
         const role = (currentAgent as any).subagentType || (currentAgent as any).tier || "?";
         const prefix = currentTier === "superagent" ? `[Superagent "${role}"]` : `[Subagent (${role})]`;
         try {
-          const selected = await fallbackHandler(`${prefix}: ${question}`, options, isMultiSelect);
+          const selected = await handler(`${prefix}: ${question}`, options, isMultiSelect);
           return `User selected option: "${selected}"`;
         } catch (err: any) {
           return `Error getting user answer: ${err.message}`;
@@ -98,8 +139,6 @@ export const askQuestionTool: Tool = {
       return `Error: No question handler available to route the question from tier "${currentTier}".`;
     }
 
-    // Master / Single tier — forward to user UI as before
-    const handler = getActiveQuestionHandler();
     if (!handler) {
       return `Error: ask_question must be executed interactively. No question handler is registered.`;
     }

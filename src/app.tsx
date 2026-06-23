@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from "react"
 import { Box, Text, useApp } from "ink";
 import TextInput from "ink-text-input";
 import { Agent } from "./core/agent.js";
-import type { AgentEvent, PermissionHandler, QuestionHandler } from "./core/agent.js";
+import type { AgentEvent, PermissionHandler, QuestionHandler, QuestionItem } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
 import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel } from "./core/config.js";
 import fs from "fs/promises";
@@ -87,7 +87,7 @@ export function App({
   const [pendingQuestion, setPendingQuestion] = useState<{
     question: string;
     options: string[];
-    resolve: (value: string) => void;
+    resolve: (value: any) => void;
   } | null>(null);
 
   const [lastTabPrefix, setLastTabPrefix] = useState<string | null>(null);
@@ -139,6 +139,9 @@ export function App({
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;
+    questions?: QuestionItem[];
+    currentQuestionIndex?: number;
+    answers?: string[];
   } | null>(null);
 
   const [wizardSelectedSet, setWizardSelectedSet] = useState<Set<number>>(new Set());
@@ -1106,28 +1109,46 @@ export function App({
       });
     },
     []
-  );
-
-  const questionHandler: QuestionHandler = useCallback(
-    (question: string, options: string[], isMultiSelect?: boolean) => {
-      return new Promise<string>((resolve) => {
-        const hasOptions = Array.isArray(options) && options.length > 0;
-        const allOptions = hasOptions ? [...options, "Custom..."] : [];
-        setPendingQuestion({ question, options: allOptions, resolve });
-        setWizardOptions(allOptions);
-        setWizardSelectedIndex(0);
-        setWizardSelectedSet(new Set());
-        setActiveWizard({
-          type: "question",
-          step: hasOptions ? 1 : 2,
-          data: { question },
-          isMultiSelect,
-        });
+  );  const questionHandler: QuestionHandler = useCallback(
+    (question: string | QuestionItem[], options?: string[], isMultiSelect?: boolean) => {
+      return new Promise<any>((resolve) => {
+        if (Array.isArray(question)) {
+          const questions = question;
+          const answers = new Array(questions.length).fill("");
+          const q0 = questions[0];
+          const hasOptions = Array.isArray(q0.options) && q0.options.length > 0;
+          const allOptions = hasOptions ? [...q0.options, "Custom..."] : [];
+          setPendingQuestion({ question: q0.question, options: allOptions, resolve });
+          setWizardOptions(allOptions);
+          setWizardSelectedIndex(0);
+          setWizardSelectedSet(new Set());
+          setActiveWizard({
+            type: "question",
+            step: hasOptions ? 1 : 2,
+            data: { question: q0.question },
+            isMultiSelect: q0.isMultiSelect,
+            questions,
+            currentQuestionIndex: 0,
+            answers,
+          });
+        } else {
+          const hasOptions = Array.isArray(options) && options.length > 0;
+          const allOptions = hasOptions ? [...options, "Custom..."] : [];
+          setPendingQuestion({ question, options: allOptions, resolve });
+          setWizardOptions(allOptions);
+          setWizardSelectedIndex(0);
+          setWizardSelectedSet(new Set());
+          setActiveWizard({
+            type: "question",
+            step: hasOptions ? 1 : 2,
+            data: { question },
+            isMultiSelect,
+          });
+        }
       });
     },
     []
   );
-
   const activeWizardRef = useRef(activeWizard);
   activeWizardRef.current = activeWizard;
   const pendingPermissionRef = useRef(pendingPermission);

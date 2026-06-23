@@ -22,6 +22,7 @@ import {
   lastMasterPromptTokens
 } from "../core/tools/state.js";
 import { Agent } from "../core/agent.js";
+import type { QuestionItem } from "../core/agent.js";
 import { killProcessTree } from "../core/tools/index.js";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
 import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./plan-approval-dialog.js";
@@ -109,7 +110,7 @@ export function MultiAgentDashboard({
   autoResume?: boolean | string;
   registerLogHandler: (handler: (msg: string) => void) => void;
   registerEventHandler?: (handler: (event: any) => void) => void;
-  registerQuestionHandlerRef?: (setter: (q: string, opts: string[], isMultiSelect?: boolean) => Promise<string>) => void;
+  registerQuestionHandlerRef?: (setter: (q: string | QuestionItem[], opts?: string[], isMultiSelect?: boolean) => Promise<string | string[]>) => void;
 }) {
   const { exit } = useApp();
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -170,6 +171,9 @@ export function MultiAgentDashboard({
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;
+    questions?: QuestionItem[];
+    currentQuestionIndex?: number;
+    answers?: string[];
   } | null>(null);
   const [wizardOptions, setWizardOptions] = useState<string[]>([]);
   const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
@@ -206,7 +210,7 @@ export function MultiAgentDashboard({
   const [pendingQuestion, setPendingQuestion] = useState<{
     question: string;
     options: string[];
-    resolve: (value: string) => void;
+    resolve: (value: any) => void;
   } | null>(null);
   const [checkpointsList, setCheckpointsList] = useState<any[]>([]);
   const [worktreeCount, setWorktreeCount] = useState<number>(0);
@@ -339,19 +343,40 @@ export function MultiAgentDashboard({
   useEffect(() => {
     if (registerQuestionHandlerRef) {
       registerQuestionHandlerRef(async (question, options, isMultiSelect) => {
-        return new Promise<string>((resolve) => {
-          const hasOptions = Array.isArray(options) && options.length > 0;
-          const allOptions = hasOptions ? [...options, "Custom..."] : [];
-          setPendingQuestion({ question, options: allOptions, resolve });
-          setWizardOptions(allOptions);
-          setWizardSelectedIndex(0);
-          setWizardSelectedSet(new Set());
-          setActiveWizard({
-            type: "question",
-            step: hasOptions ? 1 : 2,
-            data: { question },
-            isMultiSelect,
-          });
+        return new Promise<any>((resolve) => {
+          if (Array.isArray(question)) {
+            const questions = question;
+            const answers = new Array(questions.length).fill("");
+            const q0 = questions[0];
+            const hasOptions = Array.isArray(q0.options) && q0.options.length > 0;
+            const allOptions = hasOptions ? [...q0.options, "Custom..."] : [];
+            setPendingQuestion({ question: q0.question, options: allOptions, resolve });
+            setWizardOptions(allOptions);
+            setWizardSelectedIndex(0);
+            setWizardSelectedSet(new Set());
+            setActiveWizard({
+              type: "question",
+              step: hasOptions ? 1 : 2,
+              data: { question: q0.question },
+              isMultiSelect: q0.isMultiSelect,
+              questions,
+              currentQuestionIndex: 0,
+              answers,
+            });
+          } else {
+            const hasOptions = Array.isArray(options) && options.length > 0;
+            const allOptions = hasOptions ? [...options, "Custom..."] : [];
+            setPendingQuestion({ question, options: allOptions, resolve });
+            setWizardOptions(allOptions);
+            setWizardSelectedIndex(0);
+            setWizardSelectedSet(new Set());
+            setActiveWizard({
+              type: "question",
+              step: hasOptions ? 1 : 2,
+              data: { question },
+              isMultiSelect,
+            });
+          }
         });
       });
     }

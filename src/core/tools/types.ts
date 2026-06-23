@@ -98,4 +98,14 @@ export interface ViolationRecord {
   meta?: Record<string, unknown>;
 }
 
-export type QuestionHandler = (question: string, options: string[], isMultiSelect?: boolean) => Promise<string>;
+export interface QuestionItem {
+  question: string;
+  options: string[];
+  isMultiSelect?: boolean;
+}
+
+export type QuestionHandler = (
+  question: string | QuestionItem[],
+  options?: string[],
+  isMultiSelect?: boolean
+) => Promise<string | string[]>;

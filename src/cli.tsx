@@ -110,6 +110,7 @@ runFastContextSetup();
 import readline from "readline";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
+import type { QuestionItem } from "./core/tools/types.js";
 import { MASTER_AGENT_SYSTEM_PROMPT } from "./core/prompts.js";
 import { masterToolset } from "./core/tools/toolsets.js";
 import { registerQuestionHandler, addMasterTokens, subscribeToMasterLogs, registerMasterAgent } from "./core/tools/index.js";
@@ -150,7 +151,7 @@ if (process.stdin.isTTY) {
 
     // Question handler: forward to dashboard's interactive wizard
     // This is registered so subagents can also ask the user questions
-    const questionHandlerRef: { current: ((q: string, opts: string[], isMultiSelect?: boolean) => Promise<string>) | null } = { current: null };
+    const questionHandlerRef: { current: ((q: string | QuestionItem[], opts?: string[], isMultiSelect?: boolean) => Promise<string | string[]>) | null } = { current: null };
 
     const agent = new Agent(
       (event: AgentEvent) => {
@@ -184,8 +185,12 @@ if (process.stdin.isTTY) {
         if (questionHandlerRef.current) {
           return questionHandlerRef.current(question, options, isMultiSelect);
         }
-        logHandler?.(`[QUESTION] ${question} (auto-selected: ${options[0]})`);
-        return options[0];
+        if (Array.isArray(question)) {
+          logHandler?.(`[QUESTION] Multi-question requested (auto-selecting first option for each)`);
+          return question.map(q => q.options[0] ?? "");
+        }
+        logHandler?.(`[QUESTION] ${question} (auto-selected: ${options?.[0]})`);
+        return options?.[0] ?? "";
       },
       MASTER_AGENT_SYSTEM_PROMPT,  // Master orchestrator system prompt
       masterToolset                // Master-only toolset (no direct coding tools)
@@ -209,7 +214,10 @@ if (process.stdin.isTTY) {
       if (questionHandlerRef.current) {
         return questionHandlerRef.current(question, options, isMultiSelect);
       }
-      return options[0] ?? "";
+      if (Array.isArray(question)) {
+        return question.map(q => q.options[0] ?? "");
+      }
+      return options?.[0] ?? "";
     });
 
     const { MultiAgentDashboard } = await import("./components/multi-agent-dashboard.js");
