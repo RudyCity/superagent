@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.94] - 2026-06-23
+
+### Security
+- **model-config.json Protection**: `model-config.json` (containing API keys and model presets) is now strictly protected from any agent tool access (file reads, writes, grep, shell commands) without explicit user permission confirmation, even though it resides inside the allowed `~/.superagent-r/` config directory.
+- **Directory Trust Prompt on Startup**: Added a mandatory security dialog on every interactive startup — agents cannot start working unless the user explicitly trusts the target folder. Navigable with arrow keys, confirmation on Enter.
+- **Session-Level Permission Memory**: Permission grants now support an "Allow for This Session" option, which remembers the grant for the duration of the session so the user is not prompted again for the same type of out-of-bounds action.
+
+---
+
 ## [1.1.93] - 2026-06-23
 
 ### Added
