@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.98] - 2026-06-23
+
+### Added
+- **Multi-Agent Prompts & Self-Verification**: Mandated self-verification, testing, and critique checklists across all agent tiers (Superagent, coder, researcher, reviewer, single-mode).
+- **Subagent Skills Injection**: Injected relevant agent skills into all subagent system prompts.
+- **FastContext Registries Integration**: Integrated fastcontext instructions to manual-tester and subagent registries.
+
+### Improved
+- **Out-of-Bounds Arguments Visibility**: Displayed detailed arguments in the out-of-bounds permission dialog.
+- **UI Log Merging & Collapsing**: Collapsed `tool_start` and `tool_end` logs into a single interactive row.
+- **Dashboard Log Consolidation**: Merged consecutive `TOOL:START` and `TOOL:OK/FAIL` logs into a single row in the multi-agent dashboard UI.
+- **Wizard UI Simplification**: Simplified the collapsed UI layout for the `ask_question` tool.
+- **System Prompts Optimization**: Optimized fastcontext tool usage instructions in system prompts.
+- **Single Mode Guidelines**: Mandated skill checking, reading guidelines, and strengthened orchestration with mandatory subagent usage instructions in single-agent mode.
+
+### Fixed
+- **Persistent Background Tasks**: Preserved active background processes across new chat sessions (`/new`).
+- **Response Truncation Warning Translation**: Translated truncated response warning message into English.
+- **DeepSeek/OpenRouter Validation**: Resolved DeepSeek/OpenRouter orphaned tool message validation errors and improved API HTTP status 400 error response handling.
+- **Error Serialization**: Enhanced error serialization to handle non-Error objects cleanly.
+
+---
+
 ## [1.1.97] - 2026-06-23
 
 ### Added
