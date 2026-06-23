@@ -20,8 +20,12 @@ export class PruningStrategy implements CompactionStrategy {
   ): Promise<CompactionResult> {
     const preserveRecent = options.preserveRecent || 20;
 
-    const toPrune = messages.slice(0, -preserveRecent);
-    const toKeep = messages.slice(-preserveRecent);
+    let keepIndex = Math.max(0, messages.length - preserveRecent);
+    while (keepIndex < messages.length && messages[keepIndex]?.role === "tool") {
+      keepIndex++;
+    }
+    const toPrune = messages.slice(0, keepIndex);
+    const toKeep = messages.slice(keepIndex);
 
     const emergencySummary = this.createEmergencySummary(toPrune);
 

@@ -36,9 +36,12 @@ export class PinningStrategy implements CompactionStrategy {
       }
     }
 
-    // Summarize unpinned messages (keep recent + summary of older)
-    const toSummarize = unpinned.slice(0, -preserveRecent);
-    const toKeep = unpinned.slice(-preserveRecent);
+    let keepIndex = Math.max(0, unpinned.length - preserveRecent);
+    while (keepIndex < unpinned.length && unpinned[keepIndex]?.role === "tool") {
+      keepIndex++;
+    }
+    const toSummarize = unpinned.slice(0, keepIndex);
+    const toKeep = unpinned.slice(keepIndex);
 
     const summary = `[Summary of ${toSummarize.length} unpinned messages]: Context preserved`;
 

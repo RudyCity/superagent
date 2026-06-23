@@ -124,7 +124,10 @@ function isRetryableError(err: unknown): boolean {
     msg.includes("missing authentication header") ||
     msg.includes("credit required") ||
     msg.includes("no_credit") ||
-    msg.includes("payment required")
+    msg.includes("payment required") ||
+    msg.includes("status 400") ||
+    msg.includes("status: 400") ||
+    msg.includes("invalid_request_error")
   ) {
     return false;
   }
@@ -1672,6 +1675,26 @@ for (const tc of toolCalls) {
           });
         }
       } else if (m.role === "tool") {
+        // Safe check to avoid orphaned tool messages (required by DeepSeek)
+        let lastAssistantWithToolCalls = false;
+        for (let i = coreMessages.length - 1; i >= 0; i--) {
+          const prev = coreMessages[i];
+          if (prev.role === "assistant") {
+            if (Array.isArray(prev.content)) {
+              lastAssistantWithToolCalls = prev.content.some(
+                (part) => part.type === "tool-call"
+              );
+            }
+            break;
+          } else if (prev.role === "user") {
+            break;
+          }
+        }
+
+        if (!lastAssistantWithToolCalls) {
+          continue;
+        }
+
         const contentParts: Array<{
           type: "tool-result";
           toolCallId: string;

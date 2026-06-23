@@ -300,7 +300,11 @@ export class Conversation {
   }
 
   replaceOldMessagesWithSummary(count: number, summaryText: string): void {
-    const kept = this.messages.slice(count);
+    let keptIndex = count;
+    while (keptIndex < this.messages.length && this.messages[keptIndex]?.role === "tool") {
+      keptIndex++;
+    }
+    const kept = this.messages.slice(keptIndex);
     const summaryMsg: Message = {
       role: "user",
       content: `[System Conversation Summary of older turns]:\n${summaryText}`,

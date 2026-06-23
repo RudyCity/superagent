@@ -35,8 +35,12 @@ export class SummarizationStrategy implements CompactionStrategy {
   ): Promise<CompactionResult> {
     const preserveRecent = options.preserveRecent || 20;
 
-    const toSummarize = messages.slice(0, -preserveRecent);
-    const toKeep = messages.slice(-preserveRecent);
+    let keepIndex = Math.max(0, messages.length - preserveRecent);
+    while (keepIndex < messages.length && messages[keepIndex]?.role === "tool") {
+      keepIndex++;
+    }
+    const toSummarize = messages.slice(0, keepIndex);
+    const toKeep = messages.slice(keepIndex);
 
     let summary: string;
     if (this.config?.model) {
