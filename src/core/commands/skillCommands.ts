@@ -26,7 +26,11 @@ export const installCommand: SlashCommand = {
     try {
       const isWin = process.platform === "win32";
       const shell = isWin ? "powershell.exe" : true;
-      const result = await execa("npx", ["skills", "add", args], {
+      const parsedArgs = args.split(/\s+/).filter(Boolean);
+      if (!parsedArgs.includes("-y") && !parsedArgs.includes("--yes")) {
+        parsedArgs.push("-y");
+      }
+      const result = await execa("npx", ["skills", "add", ...parsedArgs], {
         shell,
         cwd: process.cwd(),
         reject: false,
