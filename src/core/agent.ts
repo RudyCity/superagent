@@ -678,17 +678,39 @@ CRITICAL GOAL MODE RULES:
             }))
           : getToolDefinitions();
 
-        const planStateNotice = `
+        let planStateNotice = "";
+        if (this.tier === "master") {
+          planStateNotice = `
 
 PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
-You MUST write/read the planning lifecycle documents at these exact absolute paths for this specific conversation history:
 - Implementation Plan File: ${this.getPlanFilePath()}
 - Task Tracking File: ${this.getTaskFilePath()}
 - Task History File: ${this.getTaskHistoryFilePath()}
 - Verification/Walkthrough File: ${this.getWalkthroughFilePath()}
 
-Whenever you reference these files in your thoughts or messages to the user, always use their absolute paths or format them as absolute file:/// links so the user can click and open them directly.
-Do NOT write them in the local workspace directory. Always write/read to/from these global paths.`;
+CRITICAL RULES FOR PLANNING:
+1. You MUST use the 'manage_plan' tool (action: 'create' or 'sync') to create, update, or synchronize the Implementation Plan and tasks.
+2. You MUST use the 'manage_tasks' tool (action: 'update') to update the status of checklist tasks.
+3. DO NOT use 'write_to_file', 'replace_file_content', 'multi_replace_file_content', or 'edit' to create, modify, or update the Implementation Plan File or the Task Tracking File directly. Doing so is strictly forbidden.
+4. For the Verification/Walkthrough File, you may use 'write_to_file' directly.
+5. Do NOT write or create plan or task files in the local workspace directory.
+6. Whenever you reference these files, always use their absolute paths or format them as absolute file:/// links.`;
+        } else if (this.tier === "superagent") {
+          planStateNotice = `
+
+PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
+- Implementation Plan File: ${this.getPlanFilePath()}
+- Task Tracking File: ${this.getTaskFilePath()}
+- Task History File: ${this.getTaskHistoryFilePath()}
+- Verification/Walkthrough File: ${this.getWalkthroughFilePath()}
+
+CRITICAL RULES FOR PLANNING:
+1. You MUST use the 'manage_tasks' tool (action: 'update') to update the status of checklist tasks.
+2. DO NOT attempt to directly modify the Implementation Plan File or Task Tracking File using 'write_to_file', 'replace_file_content', or other file writing tools. Direct modification of these files is strictly blocked by the system's security boundaries.
+3. For the Verification/Walkthrough File, you may use 'write_to_file' directly.
+4. Do NOT write or create plan or task files in the local workspace directory.
+5. Whenever you reference these files, always use their absolute paths or format them as absolute file:/// links.`;
+        }
 
         let planStateAddendum = "";
         if (this.planState === "PLANNING_PENDING") {
