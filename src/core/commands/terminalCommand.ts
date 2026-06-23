@@ -44,7 +44,7 @@ export const terminalCommand: SlashCommand = {
         "1. Inspect the workspace files (e.g. read package.json scripts/dependencies, Cargo.toml, go.mod, requirements.txt, or list directories) to identify the project type and find common commands.\n" +
         "2. Dynamically construct AI suggestions/recommendations of potential terminal preset commands (e.g. dev/start servers, watch processes, test suites, builds) based on your discovery.\n" +
         "3. Ask the user to select which commands they want to set up as presets. You MUST call the `ask_question` tool with `isMultiSelect: true` so the user can check/uncheck multiple suggested commands using Space and Enter.\n" +
-        "4. Once selected, guide them or define the preset names, custom working directories, and env variables if needed.\n" +
+        "4. Once selected, guide them or define the preset names, custom working directories, and env variables if needed. Note: Preset names (keys in the JSON) MUST be short, simple, lowercase, alphanumeric characters, and may use hyphens or underscores (e.g. 'dev', 'build', 'start', 'test'). EMOJIS ARE STRICTLY FORBIDDEN in preset names to ensure they are easy for the user to type in the terminal.\n" +
         "5. Write the final configuration back to the local project file `.superagent-r/terminal-presets.json` using a file writing tool. Confirm to the user once it is completed."
       ).catch((err: any) => {
         ctx.addLine({ type: "error", content: `Wizard error: ${err.message}`, timestamp: Date.now() });

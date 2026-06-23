@@ -71,6 +71,7 @@ Master Agent  (orchestrator)
 - **Code Limits & Architecture**: Keep all code files under 1200 lines to ensure readability. Always design with a single source of truth, focus on modularity, maintainability, scalability, and adhere to industry best practices.
 - **Exploration & Research**: When performing codebase exploration, investigation, or research, always spawn a subagent to handle the task.
 - **Mandatory Skill Reading**: At the very start of the workflow to solve any user request (such as debugging, testing, QA, refactoring, new feature development, or any other task supported by our comprehensive skills), you MUST identify all relevant skills and read their `SKILL.md` instructions using the `view_file` tool before making plans or taking action.
+- **Terminal Preset Names**: When creating or setting up terminal presets (e.g. via `/terminal init` or by writing to `terminal-presets.json`), preset names (keys in the JSON configuration) MUST be short, simple, lowercase, alphanumeric characters, and may use hyphens or underscores (e.g., `'dev'`, `'build'`, `'start'`, `'test'`). Emojis are strictly prohibited in preset names to ensure they are easy for users to type in the terminal when running `/terminal <preset_name>` or `/terminal preset <preset_name>`.
 
 
 
