@@ -1399,7 +1399,7 @@ export function App({
   }, [lines, subagentsScrollOffset]);
 
   useEffect(() => {
-    const count = [...backgroundTasks.values()].filter((t) => t.isDetachedWindow || !t.hasExited).length;
+    const count = [...backgroundTasks.values()].filter((t) => !t.hasExited).length;
     if (procsScrollOffset >= count && count > 0) {
       setProcsScrollOffset(Math.max(0, count - maxProcsVisible));
     }
@@ -1410,7 +1410,7 @@ export function App({
     const unsubTasks = subscribeToTasks(() => {
       const allTasks = Array.from(backgroundTasks.values());
       setRunningTasksCount(
-        allTasks.filter((t) => t.isDetachedWindow || !t.hasExited).length
+        allTasks.filter((t) => !t.hasExited).length
       );
       allTasks.forEach((task) => {
         if (task.isDetachedWindow) return;
@@ -1436,6 +1436,10 @@ export function App({
               }
             });
           }
+
+          // Clean up completed headless tasks from the Map to prevent memory leaks
+          backgroundTasks.delete(task.id);
+          notifyTasksChanged();
         }
       });
     });

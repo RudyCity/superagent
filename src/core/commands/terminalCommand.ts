@@ -449,9 +449,9 @@ export const terminalCommand: SlashCommand = {
                 task.output.push(closeMsg);
                 try { fsCb.appendFileSync(logPath, closeMsg); } catch { /* ignore */ }
                 try { killProcessTree(proc.pid); } catch { /* ignore */ }
-                backgroundTasks.delete(taskId);
-                notifyTasksChanged();
               }
+              backgroundTasks.delete(taskId);
+              notifyTasksChanged();
             };
             viewerProc.on("close", handleViewerExit);
             viewerProc.on("exit", handleViewerExit);
