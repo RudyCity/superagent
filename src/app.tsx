@@ -11,7 +11,7 @@ import { registry } from "./core/commands/registry.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";
 import { getToolDescription } from "./core/permissions.js";
 import path from "path";
-import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler } from "./core/tools.js";
+import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifyTasksChanged } from "./core/tools.js";
 import { ProcessingIndicator } from "./components/common/LoadingIndicators.js";
 import { ActiveAgentsList } from "./components/active-agents-list.js";
 import { TaskChecklist } from "./components/task-checklist.js";

@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.97] - 2026-06-23
+
+### Added
+- **Completed Tasks Visual Countdown**: Added a visual countdown timer to completed tasks before they are hidden.
+
+### Fixed
+- **Dashboard Background Tasks**: Corrected the running background tasks filter and fixed a process cleanup leak in the dashboard.
+- **Terminal Initialization Wizard**: Recommends relative paths during the workspace initialization.
+- **MSYS & Windows Path Support**: Supported MSYS path formats on Windows and parsed background preset options in the terminal.
+- **Terminal Preset Clean Naming**: Prohibits emojis and enforces clean, simple alphanumeric names for terminal presets to ensure they are easy to type.
+- **Workspace Path Collision**: Resolved workspace path collision when directories share similar sibling prefixes in the session list and during auto-resume.
+
+### Improved
+- **Single-Agent Mode Tooling**: Enabled and enforced `manage_plan` and `manage_tasks` tools for single-agent mode CLI.
+- **System Prompts Optimization**: Optimized system prompts and planning warnings to prevent illegal file modifications and enforce planning/task management tools.
+
+---
+
 ## [1.1.96] - 2026-06-23
 
 ### Fixed
