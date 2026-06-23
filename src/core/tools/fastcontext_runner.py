@@ -125,12 +125,37 @@ def run():
                     self.litellm_model = f"openai/{model}"
 
             async def acall(self, messages, tools):
-                if messages and not isinstance(messages[0], dict):
-                    messages = [m.to_dict(exclude_none=True) for m in messages]
+                cleaned_messages = []
+                for m in messages:
+                    m_dict = m.to_dict(exclude_none=True) if hasattr(m, "to_dict") else dict(m)
+                    role = m_dict.get("role")
+                    cleaned_m = {"role": role}
+                    
+                    if "content" in m_dict:
+                        cleaned_m["content"] = m_dict["content"]
+                        
+                    if role == "assistant":
+                        if "tool_calls" in m_dict:
+                            tcs = []
+                            for tc in m_dict["tool_calls"]:
+                                if hasattr(tc, "model_dump"):
+                                    tcs.append(tc.model_dump())
+                                elif hasattr(tc, "to_dict"):
+                                    tcs.append(tc.to_dict())
+                                elif isinstance(tc, dict):
+                                    tcs.append(tc)
+                            cleaned_m["tool_calls"] = tcs
+                    elif role == "tool":
+                        if "tool_call_id" in m_dict:
+                            cleaned_m["tool_call_id"] = m_dict["tool_call_id"]
+                        if "content" not in cleaned_m:
+                            cleaned_m["content"] = ""
+                            
+                    cleaned_messages.append(cleaned_m)
 
                 call_kw = {
                     "model": self.litellm_model,
-                    "messages": messages,
+                    "messages": cleaned_messages,
                     "max_completion_tokens": self.max_tokens,
                     "temperature": self.temperature,
                     "top_p": self.top_p,
@@ -146,6 +171,16 @@ def run():
 
                 try:
                     response = await litellm.acompletion(**call_kw)
+                    if response is None:
+                        # Serialize safely by stripping api_key
+                        debug_kw = {k: v for k, v in call_kw.items() if k != "api_key"}
+                        sys.stderr.write(f"[DEBUG] call_kw: {json.dumps(debug_kw, default=str)}\n")
+                        raise RequestyAPIError("LiteLLM completion returned None response object.")
+
+                    if not hasattr(response, "choices") or not response.choices:
+                        sys.stderr.write(f"[DEBUG] response: {str(response)}\n")
+                        raise RequestyAPIError("LiteLLM completion response has no choices.")
+
                     choice = response.choices[0]
                     content = choice.message.content
                     reasoning = (
@@ -180,6 +215,8 @@ def run():
                         model=self.model, usage=usage,
                     )
                 except Exception as e:
+                    # Print full exception details to stderr for debugging
+                    sys.stderr.write(f"[DEBUG] Exception in LiteLLM acall: {str(e)}\n")
                     raise RequestyAPIError(str(e)) from e
 
         llm = LiteLLMAdapter(
