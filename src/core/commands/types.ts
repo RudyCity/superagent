@@ -7,6 +7,15 @@ export interface ChatLine {
   timestamp: number;
   /** Nested child lines (e.g. tool_start/tool_end grouped under the parent assistant response) */
   children?: ChatLine[];
+  /**
+   * Merged result from tool_end — patched onto the tool_start child after the tool completes.
+   * When present, the tool_start is rendered as a single merged row showing both input and output.
+   */
+  mergedResult?: {
+    isError: boolean;
+    content: string;
+    description: string;
+  };
 }
 
 export interface SlashCommandContext {

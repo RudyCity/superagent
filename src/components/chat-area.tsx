@@ -329,7 +329,7 @@ function wrapNestedChild(
   const result: WrappedChatLine[] = [];
 
   if (child.type === "tool_start") {
-    const content = child.content.replace(/^⚡ /, "");
+    const content = child.content.replace(/^[⚡📖] /, "");
     const firstLine = content.split("\n")[0];
     const cleanDescRaw = firstLine.replace(/^Detail:\s*/i, "").trim();
     const minimizedDesc = minimizePathInDescription(cleanDescRaw);
@@ -337,52 +337,136 @@ function wrapNestedChild(
 
     const isAskQuestion = cleanDescRaw.startsWith("Asking user:");
     const questionText = isAskQuestion ? cleanDescRaw.replace(/^Asking user:\s*/i, "").trim() : "";
+    const merged = child.mergedResult;
 
     if (isCollapsed) {
-      const node = isAskQuestion ? (
-        <Box flexDirection="row">
-          <Text color="yellow">
-            {indent}<Text bold color="yellow">↳ ❓ Question: </Text><Text color="yellow">{questionText}</Text>
-          </Text>
-        </Box>
-      ) : (
-        <Box flexDirection="row">
-          <Text color="yellow">
-            {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
-          </Text>
-        </Box>
-      );
-      result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
-    } else {
-      const contentLines = content.split("\n");
-      for (let idx = 0; idx < contentLines.length; idx++) {
-        const l = contentLines[idx];
-        const isFirstLine = idx === 0;
-        
-        const subLines = wrapTextForDisplay(
-          isFirstLine ? l.replace(/^(Detail|⚡ Detail):\s*/i, "").trim() : l,
-          chatWidth - 14
-        );
-        for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
-          const subLine = subLines[sIdx];
-          const isFirstSub = isFirstLine && sIdx === 0;
-          
+      // ── Collapsed with merged result (tool completed) ──────────────
+      if (merged) {
+        const statusIcon = merged.isError ? "✗" : "✓";
+        const statusLabel = merged.isError ? "failed" : "done";
+        const statusColor = merged.isError ? "red" : "green";
+        const mergedDesc = minimizePathInDescription(merged.description);
+        const displayDesc = mergedDesc.length > 55 ? mergedDesc.slice(0, 52) + "..." : mergedDesc;
+        if (isAskQuestion) {
+          const outputLine = merged.content.split("\n").find(l => l.startsWith("Output:"));
+          const answerText = outputLine ? outputLine.substring("Output:".length).trim() : "";
           const node = (
             <Box flexDirection="row">
-              <Text color="yellow">
-                {indent}{isFirstSub ? "▼ ⚙️ " : "    "}
+              <Text color={statusColor}>
+                {indent}<Text bold color={statusColor}>{statusIcon} ❓ </Text><Text color="yellow">{questionText}</Text><Text bold color={statusColor}> → </Text><Text color={statusColor}>{answerText || "N/A"}</Text> <Text dimColor italic>(click to expand)</Text>
               </Text>
-              {isFirstSub ? (
-                <Text color="yellow">
-                  {subLine}
-                  <Text dimColor italic> (click to collapse)</Text>
-                </Text>
-              ) : (
-                <Text bold color="white">{subLine}</Text>
-              )}
             </Box>
           );
           result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+        } else {
+          const node = (
+            <Box flexDirection="row">
+              <Text color="yellow">
+                {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{displayDesc}</Text>
+                <Text bold color={statusColor}> {statusIcon} {statusLabel}</Text>
+                <Text dimColor italic>  (click to expand)</Text>
+              </Text>
+            </Box>
+          );
+          result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+        }
+      } else {
+        // ── Collapsed, tool still running ────────────────────────────
+        const node = isAskQuestion ? (
+          <Box flexDirection="row">
+            <Text color="yellow">
+              {indent}<Text bold color="yellow">↳ ❓ Question: </Text><Text color="yellow">{questionText}</Text>
+            </Text>
+          </Box>
+        ) : (
+          <Box flexDirection="row">
+            <Text color="yellow">
+              {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
+            </Text>
+          </Box>
+        );
+        result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+      }
+    } else {
+      // ── Expanded: Input block + divider + Output block ─────────────
+      const inputLines = content.split("\n");
+      const mergedOutputLines = merged ? merged.content.split("\n") : [];
+      const mergedColor = merged?.isError ? "red" : "green";
+      const mergedIcon = merged?.isError ? "✗" : "✓";
+
+      // Header row
+      const headerNode = (
+        <Box flexDirection="row">
+          <Text color="yellow">{indent}{"▼ ⚙️ "}</Text>
+          <Text color="yellow">{cleanDesc}</Text>
+          {merged && <Text bold color={mergedColor}> {mergedIcon}</Text>}
+          <Text dimColor italic> (click to collapse)</Text>
+        </Box>
+      );
+      result.push({ node: headerNode, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isHeader: true, isCollapsible: true });
+
+      // Input lines (skip line 0, already in header)
+      for (let idx = 1; idx < inputLines.length; idx++) {
+        const l = inputLines[idx];
+        const subLines = wrapTextForDisplay(l, chatWidth - 14);
+        for (const subLine of subLines) {
+          const node = (
+            <Box flexDirection="row">
+              <Text color="yellow">{indent}{"    "}</Text>
+              <Text bold color="white">{subLine}</Text>
+            </Box>
+          );
+          result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+        }
+      }
+
+      // Divider + Output (only if merged result exists)
+      if (merged) {
+        const dividerNode = (
+          <Box flexDirection="row">
+            <Text color={mergedColor}>{indent}{"    "}{"─".repeat(30)}</Text>
+          </Box>
+        );
+        result.push({ node: dividerNode, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isSeparator: true, isCollapsible: true });
+
+        for (const l of mergedOutputLines) {
+          if (l.startsWith("Output:") || l.startsWith("Detail:")) {
+            const labelType = l.startsWith("Output:") ? "Output: " : "Detail: ";
+            const rest = l.substring(labelType.length);
+            const subLines = wrapTextForDisplay(rest, chatWidth - 14 - labelType.length);
+            for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
+              const sub = subLines[sIdx];
+              const isFirstSub = sIdx === 0;
+              const node = (
+                <Box flexDirection="row">
+                  <Text color={mergedColor}>{indent}{"    "}</Text>
+                  {isFirstSub ? (
+                    <Text>
+                      <Text bold color={merged.isError ? "cyan" : "gray"} dimColor={!merged.isError}>{labelType}</Text>
+                      <Text dimColor>{sub}</Text>
+                    </Text>
+                  ) : (
+                    <Text>
+                      {" ".repeat(labelType.length)}
+                      <Text dimColor>{sub}</Text>
+                    </Text>
+                  )}
+                </Box>
+              );
+              result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+            }
+          } else {
+            const subLines = wrapTextForDisplay(l, chatWidth - 14);
+            for (const subLine of subLines) {
+              const node = (
+                <Box flexDirection="row">
+                  <Text color={mergedColor}>{indent}{"    "}</Text>
+                  <Text color={merged.isError ? "white" : "gray"} dimColor={!merged.isError}>{subLine}</Text>
+                </Box>
+              );
+              result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+            }
+          }
         }
       }
     }

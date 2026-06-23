@@ -188,42 +188,36 @@ export function App({
   const [expandedLines, setExpandedLines] = useState<Set<number>>(new Set());
   // Expanded children: Map<parentLineIndex, Set<childIndex>>
   const [expandedChildren, setExpandedChildren] = useState<Map<number, Set<number>>>(new Map());
-  const processedCollapseRef = useRef(0);
+
 
   // Smart collapse: auto-collapse completed tool calls, keep active ones expanded
   // Now handles nested children (tool events are children of assistant lines)
   useEffect(() => {
-    if (lines.length > processedCollapseRef.current) {
-      setExpandedChildren(prev => {
-        const next = new Map(prev);
-        for (let i = processedCollapseRef.current; i < lines.length; i++) {
-          const line = lines[i];
-          if (line.type === "assistant" && line.children && line.children.length > 0) {
-            const childSet = new Set(next.get(i) || []);
-            for (let c = 0; c < line.children.length; c++) {
-              const child = line.children[c];
-              if (child.type === "tool_start" && isExecutingTool) {
-                // Active tool starts stay expanded
+    setExpandedChildren(prev => {
+      const next = new Map(prev);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.type === "assistant" && line.children && line.children.length > 0) {
+          const childSet = new Set(next.get(i) || []);
+          for (let c = 0; c < line.children.length; c++) {
+            const child = line.children[c];
+            if (child.type === "tool_start") {
+              if (child.mergedResult) {
+                // Tool completed — auto-collapse to merged single row
+                childSet.delete(c);
+              } else if (isExecutingTool) {
+                // Tool still running — keep expanded so user sees live progress
                 childSet.add(c);
-              } else if (child.type === "tool_end") {
-                // Auto-collapse the matching tool_start child
-                for (let j = c - 1; j >= 0; j--) {
-                  if (line.children[j].type === "tool_start") {
-                    childSet.delete(j);
-                    break;
-                  }
-                }
-                // tool_end collapsed by default
               }
             }
-            next.set(i, childSet);
           }
+          next.set(i, childSet);
         }
-        return next;
-      });
-      processedCollapseRef.current = lines.length;
-    }
+      }
+      return next;
+    });
   }, [lines, isExecutingTool]);
+
 
   const toggleLineExpand = useCallback((index: number) => {
     setExpandedLines(prev => {
@@ -282,6 +276,38 @@ export function App({
       return [...prev, child];
     });
   }, []);
+
+  /**
+   * Patch the most recent tool_start child with a mergedResult (from tool_end).
+   * This avoids adding a separate tool_end child, keeping the display as a single merged row.
+   */
+  const patchLastToolStart = useCallback((result: { isError: boolean; content: string; description: string }) => {
+    setLines((prev) => {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].type === "assistant") {
+          const children = prev[i].children;
+          if (children && children.length > 0) {
+            // Find the last tool_start child
+            for (let c = children.length - 1; c >= 0; c--) {
+              if (children[c].type === "tool_start") {
+                const updated = [...prev];
+                const parent = { ...updated[i] };
+                const updatedChildren = [...children];
+                updatedChildren[c] = { ...updatedChildren[c], mergedResult: result };
+                parent.children = updatedChildren;
+                updated[i] = parent;
+                return updated;
+              }
+            }
+          }
+          break;
+        }
+      }
+      return prev;
+    });
+  }, []);
+
+
 
   const scrollChat = useCallback((direction: "up" | "down", amount = 1) => {
     setScrollOffset((prev) => {
@@ -1085,17 +1111,18 @@ export function App({
               customTitleEnd = `[SKILL] Loaded instructions for: ${skillName}`;
             }
           }
-          const statusPrefix = r.isError ? `${prefixEmojiEnd} Failed -` : `${prefixEmojiEnd} Completed -`;
           const resultContent = r.isError
-            ? `${statusPrefix} ${customTitleEnd}\nDetail: ${r.result}`
-            : `${statusPrefix} ${customTitleEnd}\nOutput: ${r.result.slice(0, 500)}${r.result.length > 500 ? "..." : ""}`;
-          addToolChild({
-            type: "tool_end",
+            ? `Detail: ${r.result}`
+            : `Output: ${r.result.slice(0, 500)}${r.result.length > 500 ? "..." : ""}`;
+          // Patch the matching tool_start child with the result — no separate tool_end child needed
+          patchLastToolStart({
+            isError: !!r.isError,
             content: resultContent,
-            timestamp: Date.now(),
+            description: customTitleEnd,
           });
           break;
         }
+
         case "error":
           if (streamTimeoutRef.current) {
             clearTimeout(streamTimeoutRef.current);

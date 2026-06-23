@@ -451,15 +451,46 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
   };
 
    if (child.type === "tool_start") {
-    const content = child.content.replace(/^⚡ /, "");
+    const content = child.content.replace(/^[⚡📖] /, "");
     const firstLine = content.split("\n")[0];
     const cleanDescRaw = firstLine.replace(/^Detail:\s*/i, "").trim();
     const minimizedDesc = minimizePathInDescription(cleanDescRaw);
     const cleanDesc = minimizedDesc.length > 60 ? minimizedDesc.slice(0, 57) + "..." : minimizedDesc;
     const isAskQuestion = cleanDescRaw.startsWith("Asking user:");
     const questionText = isAskQuestion ? cleanDescRaw.replace(/^Asking user:\s*/i, "").trim() : "";
+    const merged = child.mergedResult;
 
     if (isCollapsed) {
+      // ── Collapsed with merged result (tool completed) ──────────────
+      if (merged) {
+        const statusIcon = merged.isError ? "✗" : "✓";
+        const statusLabel = merged.isError ? "failed" : "done";
+        const statusColor = merged.isError ? "red" : "green";
+        const mergedDesc = minimizePathInDescription(merged.description);
+        const displayDesc = mergedDesc.length > 55 ? mergedDesc.slice(0, 52) + "..." : mergedDesc;
+        if (isAskQuestion) {
+          // For ask_question, show question + answer inline
+          const outputLine = merged.content.split("\n").find(l => l.startsWith("Output:"));
+          const answerText = outputLine ? outputLine.substring("Output:".length).trim() : "";
+          return (
+            <Box key={`child-${childIdx}`} flexDirection="column">
+              <Text color={statusColor}>
+                {indent}<Text bold color={statusColor}>{statusIcon} ❓ </Text><Text color="yellow">{questionText}</Text><Text bold color={statusColor}> → </Text><Text color={statusColor}>{answerText || "N/A"}</Text> <Text dimColor italic>(click to expand)</Text>
+              </Text>
+            </Box>
+          );
+        }
+        return (
+          <Box key={`child-${childIdx}`} flexDirection="column">
+            <Text color="yellow">
+              {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{displayDesc}</Text>
+              <Text bold color={statusColor}> {statusIcon} {statusLabel}</Text>
+              <Text dimColor italic>  (click to expand)</Text>
+            </Text>
+          </Box>
+        );
+      }
+      // ── Collapsed, tool still running ────────────────────────────
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
           {isAskQuestion ? (
@@ -474,30 +505,71 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
         </Box>
       );
     }
+
+    // ── Expanded view: Input block + divider + Output block ──────────
+    const inputLines = content.split("\n");
+    const mergedOutputLines = merged ? merged.content.split("\n") : [];
+    const mergedColor = merged?.isError ? "red" : "green";
+    const mergedIcon = merged?.isError ? "✗" : "✓";
+
     return (
       <Box key={`child-${childIdx}`} flexDirection="column">
-        {content.split("\n").map((l, idx) => {
-          const isFirstLine = idx === 0;
+        {/* Header */}
+        <Box flexDirection="row">
+          <Text color="yellow">
+            {indent}{"▼ ⚙️ "}
+          </Text>
+          <Text color="yellow">
+            {cleanDesc}
+          </Text>
+          {merged && (
+            <Text bold color={mergedColor}> {mergedIcon}</Text>
+          )}
+          <Text dimColor italic> (click to collapse)</Text>
+        </Box>
+        {/* Input lines */}
+        {inputLines.map((l, idx) => {
+          if (idx === 0) return null; // skip first line (already shown in header)
           return (
-            <Box key={idx} flexDirection="row">
-              <Text color="yellow">
-                {indent}{isFirstLine ? "▼ ⚙️ " : "    "}
-              </Text>
-              {isFirstLine ? (
-                <Text color="yellow">
-                  {l.replace(/^(Detail|⚡ Detail):\s*/i, "").trim()}
-                  <Text dimColor italic> (click to collapse)</Text>
-                </Text>
-              ) : (
-                <Text bold color="white">{l}</Text>
-              )}
+            <Box key={`in-${idx}`} flexDirection="row">
+              <Text color="yellow">{indent}{"    "}</Text>
+              <Text bold color="white">{l}</Text>
             </Box>
           );
         })}
+        {/* Divider + Output (only when merged result exists) */}
+        {merged && (
+          <>
+            <Box flexDirection="row">
+              <Text color={mergedColor}>{indent}{"    "}{"─".repeat(30)}</Text>
+            </Box>
+            {mergedOutputLines.map((l, idx) => {
+              if (l.startsWith("Output:") || l.startsWith("Detail:")) {
+                const labelType = l.startsWith("Output:") ? "Output: " : "Detail: ";
+                const rest = l.substring(labelType.length);
+                return (
+                  <Box key={`out-${idx}`} flexDirection="row">
+                    <Text color={mergedColor}>{indent}{"    "}</Text>
+                    <Text bold color={merged.isError ? "cyan" : "gray"} dimColor={!merged.isError}>{labelType}</Text>
+                    <Text dimColor>{rest}</Text>
+                  </Box>
+                );
+              }
+              return (
+                <Box key={`out-${idx}`} flexDirection="row">
+                  <Text color={mergedColor}>{indent}{"    "}</Text>
+                  <Text color={merged.isError ? "white" : "gray"} dimColor={!merged.isError}>{l}</Text>
+                </Box>
+              );
+            })}
+          </>
+        )}
       </Box>
     );
   }
 
+  // tool_end children are no longer produced by new code, but kept for backward compatibility
+  // with any persisted chat history that may still have them
   if (child.type === "tool_end") {
     const isError = child.content.startsWith("✗") || child.content.startsWith("🚨");
     const contentText = child.content.substring(2);
@@ -576,6 +648,7 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
     </Box>
   );
 }
+
 
 interface ChatLineComponentProps {
   line: ChatLine;
