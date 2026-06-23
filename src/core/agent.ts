@@ -659,7 +659,9 @@ If none of the options are suitable, still pick the closest one.`;
     const maxContinues = isGoalMode ? 10 : 3;
 
     let baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt;
-    if (this.customSystemPrompt) {
+    // Always inject agent skills for main tiers (single, master, superagent)
+    // Previously only injected when customSystemPrompt was set (subagents) — now universal
+    if (this.tier === "single" || this.tier === "master" || this.tier === "superagent" || this.customSystemPrompt) {
       const skillsPrompt = loadAgentSkills();
       if (skillsPrompt && !baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
         baseSystemPrompt += "\n\n" + skillsPrompt;
@@ -847,7 +849,7 @@ COMPULSORY SUBAGENT RULES:
 
 SUBAGENT DISPATCH PATTERN (follow this every time):
   Step 1 — Analyze: understand what the user wants.
-  Step 2 — Plan: identify independent subtasks.
+  Step 2 — Plan: identify independent subtasks (and which skills are relevant).
   Step 3 — Spawn: invoke subagents for each subtask (parallel if independent).
   Step 4 — Integrate: collect results, synthesize, respond to user.
 
@@ -858,7 +860,18 @@ WHEN YOU MUST SPAWN A SUBAGENT (non-exhaustive):
 - Any web search or documentation lookup
 - Any task that would take more than 2 of your own steps to complete
 
-DO NOT do any of the above yourself. Delegate everything you can.` : "";
+DO NOT do any of the above yourself. Delegate everything you can.
+
+SKILL USAGE — MANDATORY:
+You have access to INSTALLED AGENT SKILLS listed above. You MUST use them.
+BEFORE starting any task, identify which skill(s) are relevant and read their SKILL.md file using the view_file tool.
+Skill categories to always check:
+- Debugging/investigation → 'systematic-debugging', 'root-cause-tracing', 'diagnosing-bugs'
+- New feature/development → 'writing-plans', 'subagent-driven-development', 'test-driven-development-tdd'
+- Code review → 'requesting-code-review', 'code-review-reception'
+- Finishing work → 'finishing-a-development-branch', 'verification-before-completion'
+- Research/exploration → 'dispatching-parallel-agents'
+DO NOT skip skill reading. Instruct your subagents to also read and follow the relevant SKILL.md.` : "";
 
         const systemPrompt = `${baseSystemPrompt}
 
