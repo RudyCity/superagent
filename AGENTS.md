@@ -70,7 +70,7 @@ Master Agent  (orchestrator)
 - **Commit Final Changes**: Every final change or completed task/feature must be staged and committed to the git repository.
 - **Code Limits & Architecture**: Keep all code files under 1200 lines to ensure readability. Always design with a single source of truth, focus on modularity, maintainability, scalability, and adhere to industry best practices.
 - **Exploration & Research**: When performing codebase exploration, investigation, or research, always spawn a subagent to handle the task.
-- **Mandatory Skill Reading**: At the very start of the workflow to solve any user request (such as debugging, testing, QA, refactoring, or new feature development), you MUST identify all relevant skills and read their `SKILL.md` instructions using the `view_file` tool before making plans or taking action.
+- **Mandatory Skill Reading**: At the very start of the workflow to solve any user request (such as debugging, testing, QA, refactoring, new feature development, or any other task supported by our comprehensive skills), you MUST identify all relevant skills and read their `SKILL.md` instructions using the `view_file` tool before making plans or taking action.
 
 
 
