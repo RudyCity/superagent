@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.86] - 2026-06-23
+
+### Fixed
+- **Terminal History Clear in Single Mode**: Pass `clearLines` in slash command context to correctly clear terminal history in Single Mode.
+- **LiteLLM Message Sanitization**: Sanitize input messages and handle `None` response objects and empty choices in LiteLLM `acall` for FastContext.
+
+---
+
+## [1.1.85] - 2026-06-23
+
+### Added
+- **Input History Clearing**: Clear input history log on `/new` and `/clear` commands.
+
+### Improved
+- **Robust Model Fallback Chain**: Implement a full robust subagent fallback chain and custom provider fallback in model resolution.
+- **Plan Approval UI**: Refined the plan approval dialog UI layout.
+
+### Fixed
+- **FastContext Parameters**: Drop unsupported LiteLLM parameters (like `top_p` etc.) via `drop_params=True`.
+- **Custom Provider Model Prefixing**: Prefix custom provider models with `openai/` for proper LiteLLM routing.
+
+---
+
 ## [1.1.84] - 2026-06-23
 
 ### Added
