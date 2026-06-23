@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.96] - 2026-06-23
+
+### Fixed
+- **AI Stream Abort on Wizard Cancellation**: Cancelling a wizard with ESC or Ctrl+C now properly aborts the in-flight AI stream instead of leaving it running. Added an `abortController` abort hook in both `useKeyboardHandler.ts` and `useDashboardKeyboard.ts`.
+
+---
+
 ## [1.1.95] - 2026-06-23
 
 ### Security
