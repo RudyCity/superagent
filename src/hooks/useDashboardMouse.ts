@@ -352,36 +352,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
                   targetIndex < total &&
                   options[targetIndex] !== "(no results — try different search)"
                 ) {
-                  if (activeWizard.isMultiSelect) {
-                    setWizardSelectedSet((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(targetIndex)) {
-                        next.delete(targetIndex);
-                      } else {
-                        next.add(targetIndex);
-                      }
-                      return next;
-                    });
-                  } else {
-                    const selectedOption = options[targetIndex];
-                    if (selectedOption === "Custom...") {
-                      setWizardSelectedIndex(targetIndex);
-                      setActiveWizard({
-                        type: "question",
-                        step: 2,
-                        data: { question: pendingQuestion?.question || "" },
-                      });
-                      setWizardOptions([]);
-                      setWizardSelectedIndex(0);
-                      setQuery("");
-                    } else {
-                      setWizardSelectedIndex(targetIndex);
-                      // Submit immediately for non-plan_approve wizards
-                      if (activeWizard.type !== "plan_approve") {
-                        handleWizardSubmit(selectedOption);
-                      }
-                    }
-                  }
+                  setWizardSelectedIndex(targetIndex);
                 }
                 return; // Handled wizard option click
               }

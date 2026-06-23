@@ -294,10 +294,6 @@ export function useMouseScroll(
                     const idx = start + (y - optStartRow);
                     if (idx >= 0 && idx < total) {
                       ctx.setWizardSelectedIndex?.(idx);
-                      const selectedOption = options[idx];
-                      if (selectedOption) {
-                        ctx.handleWizardSubmit?.(selectedOption);
-                      }
                     }
                   }
                 }
