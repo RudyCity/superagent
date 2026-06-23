@@ -659,9 +659,10 @@ If none of the options are suitable, still pick the closest one.`;
     const maxContinues = isGoalMode ? 10 : 3;
 
     let baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt;
-    // Always inject agent skills for main tiers (single, master, superagent)
-    // Previously only injected when customSystemPrompt was set (subagents) — now universal
-    if (this.tier === "single" || this.tier === "master" || this.tier === "superagent" || this.customSystemPrompt) {
+    // config.systemPrompt (from getSystemPrompt() in base.ts) already includes skills for main tiers.
+    // We only need to inject skills when using a customSystemPrompt (subagents spawned with custom prompts
+    // that bypass getSystemPrompt), to ensure they also see the installed skills list.
+    if (this.customSystemPrompt) {
       const skillsPrompt = loadAgentSkills();
       if (skillsPrompt && !baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
         baseSystemPrompt += "\n\n" + skillsPrompt;

@@ -227,7 +227,7 @@ export const invokeSubagentTool: Tool = {
     // Pick the restricted toolset and prompt (dynamic import to avoid circular dep with toolsets.ts)
     const { subagentToolsets, defaultSubagentToolset } = await import("./toolsets.js");
     const { getSubagentSystemPrompt } = await import("../prompts.js");
-    const resolvedPrompt = `${getSubagentSystemPrompt(typeName, subType.systemPrompt)}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
+    const resolvedPrompt = `${await getSubagentSystemPrompt(typeName, subType.systemPrompt)}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
     const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
 
     const agentInstance = new Agent(
@@ -509,7 +509,7 @@ export const sendMessageTool: Tool = {
       const { subagentToolsets, defaultSubagentToolset } = await import("./toolsets.js");
       const { getSubagentSystemPrompt } = await import("../prompts.js");
       const subType = subagentTypes.get(typeName);
-      const systemPrompt = `${getSubagentSystemPrompt(typeName, subType?.systemPrompt || "")}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
+      const systemPrompt = `${await getSubagentSystemPrompt(typeName, subType?.systemPrompt || "")}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
       const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
 
       const { Agent } = await import("../agent.js");

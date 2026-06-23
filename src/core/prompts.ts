@@ -6,6 +6,9 @@
  * Subagent      (depth 2): specialized worker with a restricted role
  */
 
+// NOTE: loadAgentSkills is imported dynamically inside getSubagentSystemPrompt
+// to avoid circular module dependencies (prompts.ts ← subagentTools.ts ← toolsets.ts)
+
 // ─── Master Agent ─────────────────────────────────────────────────────────────
 
 export const MASTER_AGENT_SYSTEM_PROMPT = `
@@ -121,12 +124,13 @@ CRITICAL RULES:
 
 WORKFLOW:
 1. Read and understand your task, including all constraints and acceptance criteria.
-2. Delegate research to a researcher Subagent (or run web search).
-3. Plan your implementation steps internally (DO NOT write, create, or modify a plan file. Direct file modification of plan/task files is blocked. Use 'manage_tasks' to update the status of your assigned task in the checklist).
-4. Coordinate the coding process (delegate implementation to coder Subagents).
-5. Verify correctness: run build/tests in your worktree, or delegate verification to reviewer/tester Subagents. Ensure you pass all acceptance criteria.
-6. Commit all changes to branch: ${branch}.
-7. Provide your final report.
+2. SKILL CHECK (MANDATORY FIRST STEP): Before doing anything else, scan the INSTALLED AGENT SKILLS list in your system prompt. Identify relevant skills for this task and read their SKILL.md using a file-reading tool. Pass relevant skill paths to your Subagents so they also follow the skill workflows.
+3. Delegate research to a researcher Subagent (or run web search).
+4. Plan your implementation steps internally (DO NOT write, create, or modify a plan file. Direct file modification of plan/task files is blocked. Use 'manage_tasks' to update the status of your assigned task in the checklist).
+5. Coordinate the coding process (delegate implementation to coder Subagents).
+6. Verify correctness: run build/tests in your worktree, or delegate verification to reviewer/tester Subagents. Ensure you pass all acceptance criteria.
+7. Commit all changes to branch: ${branch}.
+8. Provide your final report.
 
 REQUIRED FINAL REPORT FORMAT:
 ### SUPERAGENT TASK REPORT
@@ -154,6 +158,7 @@ RULES:
 - Do NOT modify any files (DO NOT attempt to call 'edit', 'write_to_file', or other modifying tools)
 - Do NOT run commands that change system state
 - MANDATORY: You MUST use the \`ask_question\` tool at EVERY decision point. Note that it supports multiple questions and multi-select checkboxes. Use it when research scope is unclear, when you need to choose which files/patterns to investigate, or when you encounter ambiguous information. NEVER guess or assume; always ask with clear options.
+- SKILL CHECK (MANDATORY FIRST STEP): Before researching, scan the INSTALLED AGENT SKILLS list in your system prompt. If any skill is relevant to this research task (e.g. 'systematic-debugging', 'root-cause-tracing', 'dispatching-parallel-agents'), read its SKILL.md via a file-reading tool and follow its workflow.
 
 CRITICAL: You MUST end your final response with a structured report using this EXACT format:
 
@@ -177,6 +182,7 @@ RULES:
 - Do NOT run git commands (commit, push, merge)
 - Do NOT modify files outside your working directory
 - MANDATORY: You MUST use the \`ask_question\` tool at EVERY decision point. Note that it supports multiple questions and multi-select checkboxes. Use it when implementation details are unclear, when you need to choose between approaches, or when you encounter unexpected issues. NEVER guess or assume; always ask with clear options.
+- SKILL CHECK (MANDATORY FIRST STEP): Before coding, scan the INSTALLED AGENT SKILLS list in your system prompt. If any skill is relevant (e.g. 'test-driven-development-tdd', 'tdd', 'karpathy-guidelines'), read its SKILL.md via a file-reading tool and follow its workflow exactly.
 
 CRITICAL: You MUST end your final response with a structured report using this EXACT format:
 
@@ -199,6 +205,7 @@ RULES:
 - Do NOT modify source files unless explicitly asked to fix a specific bug (DO NOT attempt to call 'edit', 'write_to_file', or other modifying tools unless authorized)
 - Run linting and tests to validate correctness
 - MANDATORY: You MUST use the \`ask_question\` tool at EVERY decision point. Note that it supports multiple questions and multi-select checkboxes. Use it when review scope is unclear, when you need to prioritize issues, or when a potential fix has multiple valid approaches. NEVER guess or assume; always ask with clear options.
+- SKILL CHECK (MANDATORY FIRST STEP): Before reviewing, scan the INSTALLED AGENT SKILLS list in your system prompt. If any skill is relevant (e.g. 'requesting-code-review', 'code-review-reception', 'testing-anti-patterns', 'verification-before-completion'), read its SKILL.md via a file-reading tool and follow its workflow.
 
 CRITICAL: You MUST end your final response with a structured report using this EXACT format:
 
@@ -245,7 +252,22 @@ CRITICAL: You MUST end your final response with a structured report using this E
 `.trim(),
 };
 
-/** Get system prompt for a subagent type, with fallback to a generic prompt */
-export function getSubagentSystemPrompt(typeName: string, basePrompt: string): string {
-  return SUBAGENT_SYSTEM_PROMPTS[typeName] || basePrompt;
+/** Get system prompt for a subagent type, with fallback to a generic prompt.
+ * Also injects the installed agent skills list so subagents know which skills
+ * exist and can read their SKILL.md files before executing tasks.
+ * Uses dynamic import to avoid circular module dependencies.
+ */
+export async function getSubagentSystemPrompt(typeName: string, basePrompt: string): Promise<string> {
+  const baseContent = SUBAGENT_SYSTEM_PROMPTS[typeName] || basePrompt;
+  try {
+    // Dynamic import to avoid circular: prompts.ts ← tools ← toolsets.ts ← prompts.ts
+    const { loadAgentSkills } = await import("./config/skills.js");
+    const skillsPrompt = loadAgentSkills();
+    if (skillsPrompt && !baseContent.includes("INSTALLED AGENT SKILLS:")) {
+      return baseContent + "\n\n" + skillsPrompt;
+    }
+  } catch {
+    // Non-critical: skills injection failed, continue without skills
+  }
+  return baseContent;
 }
