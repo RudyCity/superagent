@@ -645,7 +645,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
           {capped.truncated && (
             <Box flexDirection="row">
               <Text color="blue">│    </Text>
-              <Text color="yellow">... [response panjang dipotong; klik untuk buka scroll view, mouse scroll / ↑↓] ...</Text>
+              <Text color="yellow">... [long response truncated; click to open scroll view, mouse scroll / ↑↓] ...</Text>
             </Box>
           )}
           {children.length > 0 && children.map((child, childIdx) => {

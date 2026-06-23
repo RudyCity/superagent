@@ -538,7 +538,7 @@ export function wrapChatLineToLines({
         const noticeNode = (
           <Box flexDirection="row">
             <Text color="blue">│    </Text>
-            <Text color="yellow">... [response panjang dipotong; klik untuk buka scroll view, mouse scroll / ↑↓] ...</Text>
+            <Text color="yellow">... [long response truncated; click to open scroll view, mouse scroll / ↑↓] ...</Text>
           </Box>
         );
         result.push({ node: noticeNode, lineIndex, type: "assistant", isTruncated: true });
