@@ -153,6 +153,8 @@ export function App({
   const [activeModel, setActiveModel] = useState(() => getEffectiveMasterModel("single") || getDefaultModel());
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
   const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string }[]>([]);
+  const [rawCompletedHistory, setRawCompletedHistory] = useState<{ status: string; text: string }[]>([]);
+  const historyTimestampsRef = useRef<Map<string, number>>(new Map());
   const [focusMode, setFocusMode] = useState<"input" | "history" | "checklist" | "superagents" | "subagents" | "procs" | "chat">("input");
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
 
@@ -891,14 +893,14 @@ export function App({
         try {
           const history = await readTaskHistory(taskPath);
           if (!active) return;
-          setCompletedHistory(history);
+          setRawCompletedHistory(history);
         } catch {
-          if (active) setCompletedHistory([]);
+          if (active) setRawCompletedHistory([]);
         }
       } catch (err: any) {
         if (active) {
           setChecklistTasks([]);
-          setCompletedHistory([]);
+          setRawCompletedHistory([]);
         }
       }
     };
@@ -908,7 +910,7 @@ export function App({
       intervalId = setInterval(check, 2000);
     } else {
       setChecklistTasks([]);
-      setCompletedHistory([]);
+      setRawCompletedHistory([]);
     }
 
     return () => {
@@ -916,6 +918,57 @@ export function App({
       if (intervalId) clearInterval(intervalId);
     };
   }, [planState]);
+
+  // Synchronize rawCompletedHistory with completedHistory using a 15-second auto-hide decay
+  useEffect(() => {
+    if (planState !== "APPROVED" || rawCompletedHistory.length === 0) {
+      historyTimestampsRef.current.clear();
+      setCompletedHistory([]);
+      return;
+    }
+
+    const now = Date.now();
+    // 1. Record timestamps for new items in rawCompletedHistory
+    const currentTexts = new Set(rawCompletedHistory.map(t => t.text));
+    for (const task of rawCompletedHistory) {
+      if (!historyTimestampsRef.current.has(task.text)) {
+        historyTimestampsRef.current.set(task.text, now);
+      }
+    }
+
+    // 2. Clean up timestamps for tasks no longer in rawCompletedHistory
+    for (const text of historyTimestampsRef.current.keys()) {
+      if (!currentTexts.has(text)) {
+        historyTimestampsRef.current.delete(text);
+      }
+    }
+
+    // 3. Define a function to compute filtered history
+    const updateFilteredHistory = () => {
+      const currentTime = Date.now();
+      const filtered = rawCompletedHistory.filter(task => {
+        const firstSeen = historyTimestampsRef.current.get(task.text);
+        if (!firstSeen) return false;
+        return (currentTime - firstSeen) < 15000;
+      });
+
+      // Update state if the content changed
+      setCompletedHistory(prev => {
+        if (prev.length !== filtered.length || prev.some((t, i) => t.text !== filtered[i].text)) {
+          return filtered;
+        }
+        return prev;
+      });
+    };
+
+    // Run immediately
+    updateFilteredHistory();
+
+    // 4. Set up an interval to tick every 1 second and filter out expired items
+    const interval = setInterval(updateFilteredHistory, 1000);
+
+    return () => clearInterval(interval);
+  }, [rawCompletedHistory, planState]);
 
   // Handle events and inits
   const handleEvent = useCallback(

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { execSync } from "child_process";
 import { Box, Text, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
@@ -217,6 +217,8 @@ export function MultiAgentDashboard({
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
   const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string }[]>([]);
+  const [rawCompletedHistory, setRawCompletedHistory] = useState<{ status: string; text: string }[]>([]);
+  const historyTimestampsRef = useRef<Map<string, number>>(new Map());
 
   const [checklistScrollOffset, setChecklistScrollOffset] = useState(0);
   const [agentsScrollOffset, setAgentsScrollOffset] = useState(0);
@@ -310,9 +312,9 @@ export function MultiAgentDashboard({
         try {
           const history = await readTaskHistory(taskPath);
           if (!active) return;
-          setCompletedHistory(history);
+          setRawCompletedHistory(history);
         } catch {
-          if (active) setCompletedHistory([]);
+          if (active) setRawCompletedHistory([]);
         }
       } catch (err: any) {
         if (agent) {
@@ -320,7 +322,7 @@ export function MultiAgentDashboard({
         }
         if (active) {
           setChecklistTasks([]);
-          setCompletedHistory([]);
+          setRawCompletedHistory([]);
         }
       }
     };
@@ -330,7 +332,7 @@ export function MultiAgentDashboard({
       intervalId = setInterval(check, 2000);
     } else {
       setChecklistTasks([]);
-      setCompletedHistory([]);
+      setRawCompletedHistory([]);
     }
 
     return () => {
@@ -338,6 +340,57 @@ export function MultiAgentDashboard({
       if (intervalId) clearInterval(intervalId);
     };
   }, [planState, agent]);
+
+  // Synchronize rawCompletedHistory with completedHistory using a 15-second auto-hide decay
+  useEffect(() => {
+    if (planState !== "APPROVED" || rawCompletedHistory.length === 0) {
+      historyTimestampsRef.current.clear();
+      setCompletedHistory([]);
+      return;
+    }
+
+    const now = Date.now();
+    // 1. Record timestamps for new items in rawCompletedHistory
+    const currentTexts = new Set(rawCompletedHistory.map(t => t.text));
+    for (const task of rawCompletedHistory) {
+      if (!historyTimestampsRef.current.has(task.text)) {
+        historyTimestampsRef.current.set(task.text, now);
+      }
+    }
+
+    // 2. Clean up timestamps for tasks no longer in rawCompletedHistory
+    for (const text of historyTimestampsRef.current.keys()) {
+      if (!currentTexts.has(text)) {
+        historyTimestampsRef.current.delete(text);
+      }
+    }
+
+    // 3. Define a function to compute filtered history
+    const updateFilteredHistory = () => {
+      const currentTime = Date.now();
+      const filtered = rawCompletedHistory.filter(task => {
+        const firstSeen = historyTimestampsRef.current.get(task.text);
+        if (!firstSeen) return false;
+        return (currentTime - firstSeen) < 15000;
+      });
+
+      // Update state if the content changed
+      setCompletedHistory(prev => {
+        if (prev.length !== filtered.length || prev.some((t, i) => t.text !== filtered[i].text)) {
+          return filtered;
+        }
+        return prev;
+      });
+    };
+
+    // Run immediately
+    updateFilteredHistory();
+
+    // 4. Set up an interval to tick every 1 second and filter out expired items
+    const interval = setInterval(updateFilteredHistory, 1000);
+
+    return () => clearInterval(interval);
+  }, [rawCompletedHistory, planState]);
 
   // Register the interactive question handler
   useEffect(() => {

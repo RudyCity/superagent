@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.89] - 2026-06-23
+
+### Added
+- **Completed Tasks Auto-Hide**: Implemented 15-second decay timer to auto-hide archived completed tasks from "Previously Completed" section.
+
+---
+
 ## [1.1.88] - 2026-06-23
 
 ### Improved
