@@ -6,6 +6,7 @@ import { filterSuggestions } from "../utils/text.js";
 import { getInstalledSkills } from "../core/config.js";
 import type { Checkpoint } from "../core/checkpoints.js";
 import type { ToolCall } from "../core/conversation.js";
+import type { QuestionItem } from "../core/agent.js";
 
 export interface WizardPanelsProps {
   activeWizard: {
@@ -13,6 +14,9 @@ export interface WizardPanelsProps {
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;
+    questions?: QuestionItem[];
+    currentQuestionIndex?: number;
+    answers?: string[];
   } | null;
   wizardOptions: string[];
   wizardSelectedIndex: number;
@@ -25,7 +29,7 @@ export interface WizardPanelsProps {
   pendingQuestion: {
     question: string;
     options: string[];
-    resolve: (value: string) => void;
+    resolve: (value: any) => void;
   } | null;
   planState: string;
   planUrl: string;
@@ -38,6 +42,15 @@ export interface WizardPanelsProps {
   focus?: "plan" | "actions";
   scrollOffset?: number;
   onScrollChange?: (val: number) => void;
+}
+
+function getTruncatedLabel(text: string): string {
+  const clean = text.replace(/^[❓\s?]+|[?\s❓]+$/g, "").trim();
+  const words = clean.split(/\s+/);
+  if (words.length <= 3) {
+    return clean;
+  }
+  return words.slice(0, 3).join(" ") + "...";
 }
 
 export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps) {
@@ -99,15 +112,54 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
         )}
 
         {activeWizard && activeWizard.type === "question" && pendingQuestion && (
-          <WizardDialog
-            title={activeWizard.step === 2 ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):" : (activeWizard.isMultiSelect ? "❓ QUESTION FROM AGENT (Arrows: navigate, Space: select, Enter: submit):" : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):")}
-            description={pendingQuestion.question}
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-            isMultiSelect={activeWizard.isMultiSelect}
-            selectedSet={wizardSelectedSet}
-          />
+          <Box flexDirection="column">
+            {activeWizard.questions && activeWizard.currentQuestionIndex !== undefined && (
+              <Box flexDirection="row" flexWrap="wrap" marginBottom={1}>
+                {activeWizard.questions.map((q, idx) => {
+                  const num = idx + 1;
+                  const label = getTruncatedLabel(q.question);
+                  const isPassed = idx < (activeWizard.currentQuestionIndex || 0);
+                  const isActive = idx === activeWizard.currentQuestionIndex;
+                  if (isPassed) {
+                    const ans = activeWizard.answers?.[idx] || "";
+                    const displayAns = ans ? ` (${ans.length > 10 ? ans.slice(0, 8) + "..." : ans})` : "";
+                    return (
+                      <Box key={idx} marginRight={2}>
+                        <Text color="green" dimColor>
+                          [✔ {num}. {label}{displayAns}]
+                        </Text>
+                      </Box>
+                    );
+                  } else if (isActive) {
+                    return (
+                      <Box key={idx} marginRight={2}>
+                        <Text color="cyan" bold>
+                          ❯ {num}. {label}
+                        </Text>
+                      </Box>
+                    );
+                  } else {
+                    return (
+                      <Box key={idx} marginRight={2}>
+                        <Text color="gray" dimColor>
+                          ({num}. {label})
+                        </Text>
+                      </Box>
+                    );
+                  }
+                })}
+              </Box>
+            )}
+            <WizardDialog
+              title={activeWizard.step === 2 ? "❓ ENTER CUSTOM ANSWER (Type and press Enter):" : (activeWizard.isMultiSelect ? "❓ QUESTION FROM AGENT (Arrows: navigate, Space: select, Enter: submit):" : "❓ QUESTION FROM AGENT (Use Arrow Keys Up/Down & Enter):")}
+              description={pendingQuestion.question}
+              borderColor="cyan"
+              options={wizardOptions}
+              selectedIndex={wizardSelectedIndex}
+              isMultiSelect={activeWizard.isMultiSelect}
+              selectedSet={wizardSelectedSet}
+            />
+          </Box>
         )}
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 1 && wizardOptions.length > 0 && (

@@ -355,6 +355,75 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         return;
       }
       if (key.escape) {
+        if (activeWizard && activeWizard.type === "question" && activeWizard.questions && activeWizard.currentQuestionIndex !== undefined && activeWizard.currentQuestionIndex > 0) {
+          const prevIndex = activeWizard.currentQuestionIndex - 1;
+          const prevQ = activeWizard.questions[prevIndex];
+          const hasOptions = Array.isArray(prevQ.options) && prevQ.options.length > 0;
+          const allOptions = hasOptions ? [...prevQ.options, "Custom..."] : [];
+          
+          if (pendingQuestion) {
+            setPendingQuestion({
+              question: prevQ.question,
+              options: allOptions,
+              resolve: pendingQuestion.resolve,
+            });
+          }
+          
+          setWizardOptions(allOptions);
+          
+          const prevAns = activeWizard.answers?.[prevIndex] || "";
+          if (prevQ.isMultiSelect) {
+            const prevAnsList = prevAns.split(", ").map((x: string) => x.trim());
+            const newSet = new Set<number>();
+            allOptions.forEach((opt, idx) => {
+              if (prevAnsList.includes(opt)) {
+                newSet.add(idx);
+              }
+            });
+            setWizardSelectedSet(newSet);
+            setWizardSelectedIndex(0);
+            setActiveWizard({
+              ...activeWizard,
+              step: 1,
+              currentQuestionIndex: prevIndex,
+              isMultiSelect: prevQ.isMultiSelect,
+            });
+          } else {
+            const optionIdx = prevQ.options.indexOf(prevAns);
+            if (optionIdx >= 0) {
+              setWizardSelectedIndex(optionIdx);
+              setWizardSelectedSet(new Set());
+              setActiveWizard({
+                ...activeWizard,
+                step: 1,
+                currentQuestionIndex: prevIndex,
+                isMultiSelect: prevQ.isMultiSelect,
+              });
+            } else if (prevAns !== "") {
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+              setWizardSelectedSet(new Set());
+              setQuery(prevAns);
+              setActiveWizard({
+                ...activeWizard,
+                step: 2,
+                currentQuestionIndex: prevIndex,
+                isMultiSelect: prevQ.isMultiSelect,
+              });
+            } else {
+              setWizardSelectedIndex(0);
+              setWizardSelectedSet(new Set());
+              setActiveWizard({
+                ...activeWizard,
+                step: hasOptions ? 1 : 2,
+                currentQuestionIndex: prevIndex,
+                isMultiSelect: prevQ.isMultiSelect,
+              });
+            }
+          }
+          return;
+        }
+
         // plan_approve step 2: Escape goes back to step 1
         if (activeWizard && activeWizard.type === "plan_approve" && activeWizard.step === 2) {
           setWizardOptions([...PLAN_APPROVAL_OPTIONS]);

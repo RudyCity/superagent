@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ToolCall } from "../core/conversation.js";
-import type { Agent } from "../core/agent.js";
+import type { Agent, QuestionItem } from "../core/agent.js";
 import type { Checkpoint } from "../core/checkpoints.js";
 
 // Import sub-wizards
@@ -15,6 +15,9 @@ export interface WizardSubmitContext {
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;
+    questions?: QuestionItem[];
+    currentQuestionIndex?: number;
+    answers?: string[];
   } | null;
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
   wizardOptions: string[];
@@ -41,7 +44,7 @@ export interface WizardSubmitContext {
   pendingQuestion: {
     question: string;
     options: string[];
-    resolve: (value: string) => void;
+    resolve: (value: any) => void;
   } | null;
   setPendingQuestion: React.Dispatch<React.SetStateAction<any>>;
   wizardIsLoadingModels: boolean;
@@ -59,7 +62,9 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     setWizardOptions,
     wizardSelectedIndex,
     setWizardSelectedIndex,
+    setWizardSelectedSet,
     addLine,
+    setInput,
     setIsProcessing,
     setPlanState,
     agentRef,
@@ -161,6 +166,91 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     }
 
     if (activeWizard.type === "question") {
+      const qList = activeWizard.questions;
+      const currIdx = activeWizard.currentQuestionIndex;
+      if (qList && currIdx !== undefined) {
+        const updatedAnswers = [...(activeWizard.answers || [])];
+        updatedAnswers[currIdx] = value;
+        
+        addLine({
+          type: "system",
+          content: `❓ Answered: "${value}"`,
+          timestamp: now,
+        });
+        
+        const nextIdx = currIdx + 1;
+        if (nextIdx < qList.length) {
+          const nextQ = qList[nextIdx];
+          const hasOptions = Array.isArray(nextQ.options) && nextQ.options.length > 0;
+          const allOptions = hasOptions ? [...nextQ.options, "Custom..."] : [];
+          if (pendingQuestion) {
+            setPendingQuestion({
+              question: nextQ.question,
+              options: allOptions,
+              resolve: pendingQuestion.resolve,
+            });
+          }
+          setWizardOptions(allOptions);
+          
+          const nextSavedAns = updatedAnswers[nextIdx] || "";
+          if (nextQ.isMultiSelect) {
+            const nextAnsList = nextSavedAns.split(", ").map(x => x.trim());
+            const newSet = new Set<number>();
+            allOptions.forEach((opt, idx) => {
+              if (nextAnsList.includes(opt)) {
+                newSet.add(idx);
+              }
+            });
+            setWizardSelectedSet(newSet);
+            setWizardSelectedIndex(0);
+          } else {
+            const optionIdx = nextQ.options.indexOf(nextSavedAns);
+            if (optionIdx >= 0) {
+              setWizardSelectedIndex(optionIdx);
+            } else {
+              setWizardSelectedIndex(0);
+            }
+            setWizardSelectedSet(new Set());
+          }
+          
+          setInput("");
+          
+          const optionIdx = nextQ.options.indexOf(nextSavedAns);
+          const isCustomAnswer = nextSavedAns !== "" && optionIdx < 0;
+          
+          if (isCustomAnswer && !nextQ.isMultiSelect) {
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setInput(nextSavedAns);
+            setActiveWizard({
+              ...activeWizard,
+              step: 2,
+              currentQuestionIndex: nextIdx,
+              answers: updatedAnswers,
+              isMultiSelect: nextQ.isMultiSelect,
+            });
+          } else {
+            setActiveWizard({
+              ...activeWizard,
+              step: hasOptions ? 1 : 2,
+              currentQuestionIndex: nextIdx,
+              answers: updatedAnswers,
+              isMultiSelect: nextQ.isMultiSelect,
+            });
+          }
+        } else {
+          if (pendingQuestion) {
+            pendingQuestion.resolve(updatedAnswers);
+            setPendingQuestion(null);
+          }
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setWizardSelectedSet(new Set());
+        }
+        return;
+      }
+
       if (pendingQuestion) {
         pendingQuestion.resolve(value);
         addLine({
@@ -190,6 +280,8 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     setActiveWizard,
     setWizardOptions,
     setWizardSelectedIndex,
+    setWizardSelectedSet,
+    setInput,
     pendingQuestion,
     setPendingQuestion,
   ]);

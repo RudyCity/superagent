@@ -339,7 +339,7 @@ export const invokeSuperagentTool: Tool = {
         return !isDestructive;
       },
       // Question handler: route to Master Agent LLM for answering
-      async (question, options) => {
+      async (question, options = []) => {
         const master = getMasterAgent();
         if (master && typeof (master as any).answerQuestionAsMaster === "function") {
           appendMasterLog(`[QUESTION] Superagent "${role}" asks: ${question} | Options: ${options.join(", ")}`);
@@ -1065,7 +1065,7 @@ export const sendMessageToSuperagentTool: Tool = {
           const isDestructive = /(rm\s+-rf\s+[/~]|git\s+reset\s+--hard|git\s+clean\s+-fd|mkfs|dd\s+if=)/i.test(cmd);
           return !isDestructive;
         },
-        async (question, options) => {
+        async (question, options = []) => {
           const master = getMasterAgent();
           if (master && typeof (master as any).answerQuestionAsMaster === "function") {
             appendMasterLog(`[QUESTION] Superagent "${role}" asks: ${question} | Options: ${options.join(", ")}`);

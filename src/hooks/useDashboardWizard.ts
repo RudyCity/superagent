@@ -2661,29 +2661,103 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setCheckpointsList([]);
       }
     } else if (activeWizard.type === "question") {
-      if (activeWizard.step === 1) {
-        const selectedOption = value;
-        if (selectedOption === "Custom...") {
-          setActiveWizard({
-            type: "question",
-            step: 2,
-            data: { question: pendingQuestion?.question || "" },
-          });
+      if (activeWizard.step === 1 && value === "Custom...") {
+        setActiveWizard({
+          ...activeWizard,
+          step: 2,
+          data: { question: pendingQuestion?.question || "" },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setQuery("");
+        return;
+      }
+
+      const qList = activeWizard.questions;
+      const currIdx = activeWizard.currentQuestionIndex;
+      if (qList && currIdx !== undefined) {
+        const updatedAnswers = [...(activeWizard.answers || [])];
+        updatedAnswers[currIdx] = value;
+
+        setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${value}"`].slice(-500));
+
+        const nextIdx = currIdx + 1;
+        if (nextIdx < qList.length) {
+          const nextQ = qList[nextIdx];
+          const hasOptions = Array.isArray(nextQ.options) && nextQ.options.length > 0;
+          const allOptions = hasOptions ? [...nextQ.options, "Custom..."] : [];
+          if (pendingQuestion) {
+            setPendingQuestion({
+              question: nextQ.question,
+              options: allOptions,
+              resolve: pendingQuestion.resolve,
+            });
+          }
+          setWizardOptions(allOptions);
+
+          const nextSavedAns = updatedAnswers[nextIdx] || "";
+          if (nextQ.isMultiSelect) {
+            const nextAnsList = nextSavedAns.split(", ").map((x: string) => x.trim());
+            const newSet = new Set<number>();
+            allOptions.forEach((opt, idx) => {
+              if (nextAnsList.includes(opt)) {
+                newSet.add(idx);
+              }
+            });
+            setWizardSelectedSet(newSet);
+            setWizardSelectedIndex(0);
+          } else {
+            const optionIdx = nextQ.options.indexOf(nextSavedAns);
+            if (optionIdx >= 0) {
+              setWizardSelectedIndex(optionIdx);
+            } else {
+              setWizardSelectedIndex(0);
+            }
+            setWizardSelectedSet(new Set());
+          }
+
+          setQuery("");
+
+          const optionIdx = nextQ.options.indexOf(nextSavedAns);
+          const isCustomAnswer = nextSavedAns !== "" && optionIdx < 0;
+
+          if (isCustomAnswer && !nextQ.isMultiSelect) {
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setQuery(nextSavedAns);
+            setActiveWizard({
+              ...activeWizard,
+              step: 2,
+              currentQuestionIndex: nextIdx,
+              answers: updatedAnswers,
+              isMultiSelect: nextQ.isMultiSelect,
+            });
+          } else {
+            setActiveWizard({
+              ...activeWizard,
+              step: hasOptions ? 1 : 2,
+              currentQuestionIndex: nextIdx,
+              answers: updatedAnswers,
+              isMultiSelect: nextQ.isMultiSelect,
+            });
+          }
+        } else {
+          if (pendingQuestion) {
+            pendingQuestion.resolve(updatedAnswers);
+            setPendingQuestion(null);
+          }
+          setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);
+          setWizardSelectedSet(new Set());
           setQuery("");
-          return;
         }
+        return;
+      }
 
-        if (pendingQuestion) {
-          pendingQuestion.resolve(selectedOption);
-          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${selectedOption}"`].slice(-500));
-        }
-      } else {
-        if (pendingQuestion) {
-          pendingQuestion.resolve(value);
-          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${value}"`].slice(-500));
-        }
+      if (pendingQuestion) {
+        pendingQuestion.resolve(value);
+        setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${value}"`].slice(-500));
       }
 
       setActiveWizard(null);
@@ -2691,6 +2765,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       setWizardSelectedIndex(0);
       setWizardSelectedSet(new Set());
       setPendingQuestion(null);
+      setQuery("");
     } else if (activeWizard.type === "plan_approve") {
       // Step 2: custom feedback — send to agent for revision
       if (activeWizard.step === 2) {
@@ -2782,6 +2857,89 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       if (activeWizard.type === "question" && activeWizard.isMultiSelect) {
         const selectedList = Array.from(wizardSelectedSet).map(idx => wizardOptions[idx]).filter(Boolean);
         const answer = selectedList.join(", ");
+
+        const qList = activeWizard.questions;
+        const currIdx = activeWizard.currentQuestionIndex;
+        if (qList && currIdx !== undefined) {
+          const updatedAnswers = [...(activeWizard.answers || [])];
+          updatedAnswers[currIdx] = answer;
+
+          setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${answer}"`].slice(-500));
+
+          const nextIdx = currIdx + 1;
+          if (nextIdx < qList.length) {
+            const nextQ = qList[nextIdx];
+            const hasOptions = Array.isArray(nextQ.options) && nextQ.options.length > 0;
+            const allOptions = hasOptions ? [...nextQ.options, "Custom..."] : [];
+            if (pendingQuestion) {
+              setPendingQuestion({
+                question: nextQ.question,
+                options: allOptions,
+                resolve: pendingQuestion.resolve,
+              });
+            }
+            setWizardOptions(allOptions);
+
+            const nextSavedAns = updatedAnswers[nextIdx] || "";
+            if (nextQ.isMultiSelect) {
+              const nextAnsList = nextSavedAns.split(", ").map((x: string) => x.trim());
+              const newSet = new Set<number>();
+              allOptions.forEach((opt, idx) => {
+                if (nextAnsList.includes(opt)) {
+                  newSet.add(idx);
+                }
+              });
+              setWizardSelectedSet(newSet);
+              setWizardSelectedIndex(0);
+            } else {
+              const optionIdx = nextQ.options.indexOf(nextSavedAns);
+              if (optionIdx >= 0) {
+                setWizardSelectedIndex(optionIdx);
+              } else {
+                setWizardSelectedIndex(0);
+              }
+              setWizardSelectedSet(new Set());
+            }
+
+            setQuery("");
+
+            const optionIdx = nextQ.options.indexOf(nextSavedAns);
+            const isCustomAnswer = nextSavedAns !== "" && optionIdx < 0;
+
+            if (isCustomAnswer && !nextQ.isMultiSelect) {
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+              setQuery(nextSavedAns);
+              setActiveWizard({
+                ...activeWizard,
+                step: 2,
+                currentQuestionIndex: nextIdx,
+                answers: updatedAnswers,
+                isMultiSelect: nextQ.isMultiSelect,
+              });
+            } else {
+              setActiveWizard({
+                ...activeWizard,
+                step: hasOptions ? 1 : 2,
+                currentQuestionIndex: nextIdx,
+                answers: updatedAnswers,
+                isMultiSelect: nextQ.isMultiSelect,
+              });
+            }
+          } else {
+            if (pendingQuestion) {
+              pendingQuestion.resolve(updatedAnswers);
+              setPendingQuestion(null);
+            }
+            setActiveWizard(null);
+            setWizardOptions([]);
+            setWizardSelectedIndex(0);
+            setWizardSelectedSet(new Set());
+            setQuery("");
+          }
+          return;
+        }
+
         if (pendingQuestion) {
           pendingQuestion.resolve(answer);
           setMasterLogs((prev) => [...prev, `[MASTER] ❓ Answered: "${answer}"`].slice(-500));

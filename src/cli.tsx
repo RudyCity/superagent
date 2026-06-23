@@ -324,8 +324,12 @@ if (process.stdin.isTTY) {
     },
     async (question, options) => {
       console.log(`\n❓ Question in non-TTY: ${question}`);
-      console.log(`Auto-selecting first option: "${options[0]}"`);
-      return options[0];
+      if (Array.isArray(question)) {
+        return question.map(q => q.options?.[0] ?? "");
+      }
+      const firstOpt = options?.[0] ?? "";
+      console.log(`Auto-selecting first option: "${firstOpt}"`);
+      return firstOpt;
     }
   );
   agent.tier = "single";

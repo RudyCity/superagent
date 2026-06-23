@@ -1007,6 +1007,31 @@ for (const tc of toolCalls) {
                 };
               });
 
+              if (normalizedQuestions.length === 1) {
+                try {
+                  const q = normalizedQuestions[0];
+                  const selected = await this.onQuestion(q.question, q.options, q.isMultiSelect);
+                  const toolResult: ToolResult = {
+                    toolCallId: tc.id,
+                    name: tc.name,
+                    result: `User selected option: "${selected}"`,
+                  };
+                  toolResults.push(toolResult);
+                  this.onEvent({ type: "tool_end", toolResult, description });
+                  continue;
+                } catch (err: any) {
+                  const toolResult: ToolResult = {
+                    toolCallId: tc.id,
+                    name: tc.name,
+                    result: `Error getting user answer: ${err.message}`,
+                    isError: true,
+                  };
+                  toolResults.push(toolResult);
+                  this.onEvent({ type: "tool_end", toolResult, description });
+                  continue;
+                }
+              }
+
               try {
                 const selected = await this.onQuestion(normalizedQuestions);
                 const toolResult: ToolResult = {

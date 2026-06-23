@@ -9,7 +9,7 @@ import { getToolDescription } from "../core/permissions.js";
 import { registerSubagentType, allTools, backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged } from "../core/tools.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ToolCall } from "../core/conversation.js";
-import type { Agent } from "../core/agent.js";
+import type { Agent, QuestionItem } from "../core/agent.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 
 function formatArgs(args: string | Record<string, any>): string {
@@ -31,6 +31,9 @@ export interface KeyboardHandlerContext {
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;
+    questions?: QuestionItem[];
+    currentQuestionIndex?: number;
+    answers?: string[];
   } | null;
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
   wizardOptions: string[];
@@ -84,7 +87,7 @@ export interface KeyboardHandlerContext {
   pendingQuestion: {
     question: string;
     options: string[];
-    resolve: (value: string) => void;
+    resolve: (value: any) => void;
   } | null;
   setPendingQuestion: React.Dispatch<React.SetStateAction<any>>;
   handleWizardSubmit: (value: string) => void;
@@ -848,6 +851,90 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           if (activeWizard.isMultiSelect) {
             const selectedList = Array.from(wizardSelectedSet).map(idx => wizardOptions[idx]).filter(Boolean);
             const answer = selectedList.join(", ");
+            
+            const qList = activeWizard.questions;
+            const currIdx = activeWizard.currentQuestionIndex;
+            if (qList && currIdx !== undefined && pendingQuestion) {
+              const updatedAnswers = [...(activeWizard.answers || [])];
+              updatedAnswers[currIdx] = answer;
+              
+              addLine({
+                type: "system",
+                content: `❓ Answered: "${answer}"`,
+                timestamp: Date.now(),
+              });
+              
+              const nextIdx = currIdx + 1;
+              if (nextIdx < qList.length) {
+                const nextQ = qList[nextIdx];
+                const hasOptions = Array.isArray(nextQ.options) && nextQ.options.length > 0;
+                const allOptions = hasOptions ? [...nextQ.options, "Custom..."] : [];
+                setPendingQuestion({
+                  question: nextQ.question,
+                  options: allOptions,
+                  resolve: pendingQuestion.resolve,
+                });
+                setWizardOptions(allOptions);
+                
+                const nextSavedAns = updatedAnswers[nextIdx] || "";
+                if (nextQ.isMultiSelect) {
+                  const nextAnsList = nextSavedAns.split(", ").map((x: string) => x.trim());
+                  const newSet = new Set<number>();
+                  allOptions.forEach((opt, idx) => {
+                    if (nextAnsList.includes(opt)) {
+                      newSet.add(idx);
+                    }
+                  });
+                  setWizardSelectedSet(newSet);
+                  setWizardSelectedIndex(0);
+                } else {
+                  const optionIdx = nextQ.options.indexOf(nextSavedAns);
+                  if (optionIdx >= 0) {
+                    setWizardSelectedIndex(optionIdx);
+                  } else {
+                    setWizardSelectedIndex(0);
+                  }
+                  setWizardSelectedSet(new Set());
+                }
+                
+                setInput("");
+                
+                const optionIdx = nextQ.options.indexOf(nextSavedAns);
+                const isCustomAnswer = nextSavedAns !== "" && optionIdx < 0;
+                
+                if (isCustomAnswer && !nextQ.isMultiSelect) {
+                  setWizardOptions([]);
+                  setWizardSelectedIndex(0);
+                  setInput(nextSavedAns);
+                  setActiveWizard({
+                    ...activeWizard,
+                    step: 2,
+                    currentQuestionIndex: nextIdx,
+                    answers: updatedAnswers,
+                    isMultiSelect: nextQ.isMultiSelect,
+                  });
+                } else {
+                  setActiveWizard({
+                    ...activeWizard,
+                    step: hasOptions ? 1 : 2,
+                    currentQuestionIndex: nextIdx,
+                    answers: updatedAnswers,
+                    isMultiSelect: nextQ.isMultiSelect,
+                  });
+                }
+              } else {
+                if (pendingQuestion) {
+                  pendingQuestion.resolve(updatedAnswers);
+                  setPendingQuestion(null);
+                }
+                setActiveWizard(null);
+                setWizardOptions([]);
+                setWizardSelectedIndex(0);
+                setWizardSelectedSet(new Set());
+              }
+              return;
+            }
+
             if (pendingQuestion) {
               pendingQuestion.resolve(answer);
               addLine({
@@ -867,15 +954,99 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           if (pendingQuestion) {
             if (selectedOption === "Custom...") {
               setActiveWizard({
-                type: "question",
+                ...activeWizard,
                 step: 2,
-                data: { question: pendingQuestion.question },
+                data: { question: pendingQuestion?.question || "" },
               });
               setWizardOptions([]);
               setWizardSelectedIndex(0);
               setInput("");
               return;
             }
+            
+            const qList = activeWizard.questions;
+            const currIdx = activeWizard.currentQuestionIndex;
+            if (qList && currIdx !== undefined && pendingQuestion) {
+              const updatedAnswers = [...(activeWizard.answers || [])];
+              updatedAnswers[currIdx] = selectedOption;
+              
+              addLine({
+                type: "system",
+                content: `❓ Answered: "${selectedOption}"`,
+                timestamp: Date.now(),
+              });
+              
+              const nextIdx = currIdx + 1;
+              if (nextIdx < qList.length) {
+                const nextQ = qList[nextIdx];
+                const hasOptions = Array.isArray(nextQ.options) && nextQ.options.length > 0;
+                const allOptions = hasOptions ? [...nextQ.options, "Custom..."] : [];
+                setPendingQuestion({
+                  question: nextQ.question,
+                  options: allOptions,
+                  resolve: pendingQuestion.resolve,
+                });
+                setWizardOptions(allOptions);
+                
+                const nextSavedAns = updatedAnswers[nextIdx] || "";
+                if (nextQ.isMultiSelect) {
+                  const nextAnsList = nextSavedAns.split(", ").map((x: string) => x.trim());
+                  const newSet = new Set<number>();
+                  allOptions.forEach((opt, idx) => {
+                    if (nextAnsList.includes(opt)) {
+                      newSet.add(idx);
+                    }
+                  });
+                  setWizardSelectedSet(newSet);
+                  setWizardSelectedIndex(0);
+                } else {
+                  const optionIdx = nextQ.options.indexOf(nextSavedAns);
+                  if (optionIdx >= 0) {
+                    setWizardSelectedIndex(optionIdx);
+                  } else {
+                    setWizardSelectedIndex(0);
+                  }
+                  setWizardSelectedSet(new Set());
+                }
+                
+                setInput("");
+                
+                const optionIdx = nextQ.options.indexOf(nextSavedAns);
+                const isCustomAnswer = nextSavedAns !== "" && optionIdx < 0;
+                
+                if (isCustomAnswer && !nextQ.isMultiSelect) {
+                  setWizardOptions([]);
+                  setWizardSelectedIndex(0);
+                  setInput(nextSavedAns);
+                  setActiveWizard({
+                    ...activeWizard,
+                    step: 2,
+                    currentQuestionIndex: nextIdx,
+                    answers: updatedAnswers,
+                    isMultiSelect: nextQ.isMultiSelect,
+                  });
+                } else {
+                  setActiveWizard({
+                    ...activeWizard,
+                    step: hasOptions ? 1 : 2,
+                    currentQuestionIndex: nextIdx,
+                    answers: updatedAnswers,
+                    isMultiSelect: nextQ.isMultiSelect,
+                  });
+                }
+              } else {
+                if (pendingQuestion) {
+                  pendingQuestion.resolve(updatedAnswers);
+                  setPendingQuestion(null);
+                }
+                setActiveWizard(null);
+                setWizardOptions([]);
+                setWizardSelectedIndex(0);
+                setWizardSelectedSet(new Set());
+              }
+              return;
+            }
+
             pendingQuestion.resolve(selectedOption);
             addLine({
               type: "system",
@@ -1293,6 +1464,75 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       if (scrollOffset > 0) {
         setScrollOffset(0);
       } else if (activeWizard) {
+        if (activeWizard.type === "question" && activeWizard.questions && activeWizard.currentQuestionIndex !== undefined && activeWizard.currentQuestionIndex > 0) {
+          const prevIndex = activeWizard.currentQuestionIndex - 1;
+          const prevQ = activeWizard.questions[prevIndex];
+          const hasOptions = Array.isArray(prevQ.options) && prevQ.options.length > 0;
+          const allOptions = hasOptions ? [...prevQ.options, "Custom..."] : [];
+          
+          if (pendingQuestion) {
+            setPendingQuestion({
+              question: prevQ.question,
+              options: allOptions,
+              resolve: pendingQuestion.resolve,
+            });
+          }
+          
+          setWizardOptions(allOptions);
+          
+          const prevAns = activeWizard.answers?.[prevIndex] || "";
+          if (prevQ.isMultiSelect) {
+            const prevAnsList = prevAns.split(", ").map(x => x.trim());
+            const newSet = new Set<number>();
+            allOptions.forEach((opt, idx) => {
+              if (prevAnsList.includes(opt)) {
+                newSet.add(idx);
+              }
+            });
+            setWizardSelectedSet(newSet);
+            setWizardSelectedIndex(0);
+            setActiveWizard({
+              ...activeWizard,
+              step: 1,
+              currentQuestionIndex: prevIndex,
+              isMultiSelect: prevQ.isMultiSelect,
+            });
+          } else {
+            const optionIdx = prevQ.options.indexOf(prevAns);
+            if (optionIdx >= 0) {
+              setWizardSelectedIndex(optionIdx);
+              setWizardSelectedSet(new Set());
+              setActiveWizard({
+                ...activeWizard,
+                step: 1,
+                currentQuestionIndex: prevIndex,
+                isMultiSelect: prevQ.isMultiSelect,
+              });
+            } else if (prevAns !== "") {
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+              setWizardSelectedSet(new Set());
+              setInput(prevAns);
+              setActiveWizard({
+                ...activeWizard,
+                step: 2,
+                currentQuestionIndex: prevIndex,
+                isMultiSelect: prevQ.isMultiSelect,
+              });
+            } else {
+              setWizardSelectedIndex(0);
+              setWizardSelectedSet(new Set());
+              setActiveWizard({
+                ...activeWizard,
+                step: hasOptions ? 1 : 2,
+                currentQuestionIndex: prevIndex,
+                isMultiSelect: prevQ.isMultiSelect,
+              });
+            }
+          }
+          return;
+        }
+
         if (activeWizard.type === "model" && activeWizard.step !== 1) {
           if (activeWizard.step === 50) {
             handleWizardSubmit("back");

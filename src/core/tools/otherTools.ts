@@ -83,16 +83,32 @@ export const askQuestionTool: Tool = {
             answers.push("Error: No handler");
           }
         }
-        return answers;
+        return JSON.stringify(answers);
       }
 
       // Master / Single tier — forward to activeQuestionHandler directly passing the array of questions
+      if (normalizedQuestions.length === 1) {
+        if (!handler) {
+          return "Error: ask_question must be executed interactively. No question handler is registered.";
+        }
+        try {
+          const q = normalizedQuestions[0];
+          const result = await handler(q.question, q.options, q.isMultiSelect);
+          return `User selected option: "${result}"`;
+        } catch (err: any) {
+          return `Error getting user answer: ${err.message}`;
+        }
+      }
+
       if (!handler) {
         return "Error: ask_question must be executed interactively. No question handler is registered.";
       }
       try {
         const result = await handler(normalizedQuestions);
-        return result;
+        if (Array.isArray(result)) {
+          return JSON.stringify(result);
+        }
+        return String(result);
       } catch (err: any) {
         return `Error getting user answer: ${err.message}`;
       }
