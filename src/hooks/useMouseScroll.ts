@@ -266,15 +266,6 @@ export function useMouseScroll(
                   ctx.setActiveWizard?.((curr: any) => curr ? { ...curr, data: { ...curr.data, focus: "actions" } } : null);
                   const idx = y - optStartRow;
                   ctx.setWizardSelectedIndex?.(idx);
-                  
-                  // Submit immediately
-                  if (idx === 0) {
-                    ctx.handleWizardSubmit?.("approve");
-                  } else if (idx === 1) {
-                    ctx.handleWizardSubmit?.("reject");
-                  } else if (idx === 2) {
-                    ctx.setActiveWizard?.({ ...ctx.activeWizard, step: 2 });
-                  }
                 }
               } else if (ctx.activeWizard) {
                 // Clicking on options for any other WizardDialog

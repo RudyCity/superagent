@@ -376,17 +376,8 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
                       setQuery("");
                     } else {
                       setWizardSelectedIndex(targetIndex);
-                      // Submit immediately
-                      if (activeWizard.type === "plan_approve") {
-                        if (targetIndex === 0) {
-                          handleWizardSubmit("approve");
-                        } else if (targetIndex === 1) {
-                          handleWizardSubmit("reject");
-                        } else if (targetIndex === 2) {
-                          setWizardOptions([]);
-                          setActiveWizard({ ...activeWizard, step: 2 });
-                        }
-                      } else {
+                      // Submit immediately for non-plan_approve wizards
+                      if (activeWizard.type !== "plan_approve") {
                         handleWizardSubmit(selectedOption);
                       }
                     }
