@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.91] - 2026-06-23
+
+### Added
+- **Skills Search & Provider Prefixing**: Added search filters and provider prefixing to the skills wizard listing.
+- **Dynamic Skill Authors**: Resolved skill authors dynamically using a registry-backed `skills-lock.json` to properly attribute bulk-added skills.
+
+### Improved
+- **AI-Delegated `/install` Command**: Delegated the `/install` slash command execution directly to the AI agent, with a local shell fallback and automatic non-interactive `-y` confirmation.
+- **Author Attribution**: Accurately attributed standard superpowers-skills to `obra`, `typescript-advanced-types` to `wshobson`, and `agent-browser` to `vercel-labs`.
+
+### Fixed
+- **Skills Clean Up**: Retained only local and Andrej Karpathy's coding guidelines skills in the repository.
+- **Compilation & Frontmatter Parsing**: Fixed compilation issue in the keyboard handler and refined the frontmatter parser to match indented metadata authors.
+
+---
+
 ## [1.1.90] - 2026-06-23
 
 ### Fixed
