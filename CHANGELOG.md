@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.95] - 2026-06-23
+
+### Security
+- **`.env*` File Protection**: `.env`, `.env.local`, `.env.production`, `.env-staging`, and similar files inside the workspace are now strictly protected from any agent tool access (file reads/writes, grep, shell commands) without explicit user permission. Detection covers both file path arguments and shell command strings (`cat .env`, `cp .env`, etc.) via the regex `/(?:^|[\\/])\.env([._\-][^\/]*)?$/i`.
+- **`model-config.json` Per-Access Enforcement**: `model-config.json` access is now always evaluated before the session-level permission flag, so it can no longer be bypassed by granting "Allow for This Session" out-of-bounds access. The permission dialog for `model-config.json` shows a 2-option (Allow/Deny) set with no session option, and the keyboard handler now correctly treats the last option as Deny regardless of list length.
+
+---
+
 ## [1.1.94] - 2026-06-23
 
 ### Security
