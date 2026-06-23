@@ -833,15 +833,43 @@ This ensures the ACTIVE TASK CHECKLIST stays up-to-date with the current work.`;
           } catch { /* non-critical */ }
         }
 
+        // ── Single-mode subagent directive ──────────────────────────────────
+        const singleModeSubagentDirective = this.tier === "single" ? `
+
+SUBAGENT WORKFLOW — MANDATORY FOR SINGLE MODE:
+You operate in single-agent mode but you MUST leverage subagents aggressively. Your role is to ORCHESTRATE, not to do everything yourself.
+
+COMPULSORY SUBAGENT RULES:
+1. RESEARCH tasks (exploring codebase, reading docs, searching web) → ALWAYS spawn a 'researcher' subagent. Never do research inline.
+2. IMPLEMENTATION tasks (writing code, editing files) → spawn a 'coder' subagent. You coordinate, not code.
+3. REVIEW tasks (checking correctness, testing, validating) → spawn a 'reviewer' subagent after each implementation.
+4. COMPLEX requests → immediately break into parallel subtasks and spawn multiple subagents concurrently.
+
+SUBAGENT DISPATCH PATTERN (follow this every time):
+  Step 1 — Analyze: understand what the user wants.
+  Step 2 — Plan: identify independent subtasks.
+  Step 3 — Spawn: invoke subagents for each subtask (parallel if independent).
+  Step 4 — Integrate: collect results, synthesize, respond to user.
+
+WHEN YOU MUST SPAWN A SUBAGENT (non-exhaustive):
+- Any codebase investigation or file reading beyond a single quick lookup
+- Any multi-file editing or feature implementation
+- Any test run or build verification
+- Any web search or documentation lookup
+- Any task that would take more than 2 of your own steps to complete
+
+DO NOT do any of the above yourself. Delegate everything you can.` : "";
+
         const systemPrompt = `${baseSystemPrompt}
 
 CRITICAL TASK EXECUTION CONTEXT:
 - You are running with a strict step limit of ${maxIterations} agent iterations per request.
 - Current Step: ${currentStep} of ${maxIterations}.
-- Be highly efficient. If the task is complex, requires multiple steps, or involves extensive research/coding across different components, DO NOT try to do everything in a single sequential thread.
-- Instead, immediately plan and delegate subtasks to specialized subagents (e.g., 'researcher', 'coder', 'reviewer') via 'invoke_subagent' to run tasks in parallel.
-- Spawning subagents is the recommended way to solve large tasks within the iteration limit. Ensure you check subagent statuses and integrate their results.
-${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${goalModeAddendum}${guidelinesText}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}${processNotice}${pinnedKnowledgeNotice}`;
+- Be highly efficient. DO NOT try to do everything in a single sequential thread.
+- MANDATORY: For any task that is complex, multi-step, or touches multiple files/components — you MUST spawn subagents via 'invoke_subagent'. Doing it yourself is forbidden for such tasks.
+- Spawn subagents in parallel whenever tasks are independent. This is the primary way to complete large tasks within the iteration limit.
+- After spawning, wait for results, integrate them, and report back to the user.
+${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}${processNotice}${pinnedKnowledgeNotice}`;
 
         let textContent = "";
         const toolCalls: ToolCall[] = [];
