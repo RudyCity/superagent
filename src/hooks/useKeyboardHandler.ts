@@ -1349,83 +1349,125 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
       } else if (activeWizard.type === "skills" && wizardOptions.length > 0) {
-        if (key.upArrow) {
-          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
-          return;
-        }
-        if (key.downArrow) {
-          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
-          return;
-        }
-        if (key.return) {
-          if (activeWizard.step === 1) {
-            setActiveWizard({
-              type: "skills",
-              step: 2,
-              data: { skillIndex: String(wizardSelectedIndex) },
+        if (activeWizard.step === 1) {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+
+          if (key.upArrow) {
+            setWizardSelectedIndex((prev) => {
+              const currentMax = Math.max(0, filteredOptions.length - 1);
+              const clampedPrev = Math.min(prev, currentMax);
+              return Math.max(0, clampedPrev - 1);
             });
-            setWizardOptions([
-              "✓ Use / Activate Skill",
-              "ℹ View Details",
-              "← Back to List",
-            ]);
-            setWizardSelectedIndex(0);
             return;
           }
-
-          const skillIndex = parseInt(activeWizard.data.skillIndex || "0", 10);
-          const skillsList = getInstalledSkills();
-          const chosen = skillsList[skillIndex];
-          if (!chosen) return;
-
-          if (wizardSelectedIndex === 0) {
-            const now = Date.now();
-            const slug = chosen.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-            addLine({
-              type: "user",
-              content: `❯ /skill-${slug}`,
-              timestamp: now,
+          if (key.downArrow) {
+            setWizardSelectedIndex((prev) => {
+              const currentMax = Math.max(0, filteredOptions.length - 1);
+              const clampedPrev = Math.min(prev, currentMax);
+              return Math.min(currentMax, clampedPrev + 1);
             });
-            addLine({
-              type: "system",
-              content: `Activating skill "${chosen.name}"...\nInstruction path: ${chosen.path}`,
-              timestamp: now,
-            });
-            setIsProcessing(true);
-            agentRef.current?.sendMessage(
-              `I would like you to use the following skill: "${chosen.name}".\nPlease read its instruction file at "${chosen.path}" using a file read tool first, and then help me with my request based on its instructions.`
-            ).catch((err: any) => {
-              addLine({ type: "error", content: `Skill activation error: ${err.message}`, timestamp: Date.now() });
-            });
-
-            setActiveWizard(null);
-            setWizardOptions([]);
-            setWizardSelectedIndex(0);
-          } else if (wizardSelectedIndex === 1) {
-            const now = Date.now();
-            const detailLines = [
-              "┌───[ 📂 INSTALLED AGENT SKILLS ]",
-              `│  • Name        : ${chosen.name}`,
-              `│    Description : ${chosen.description}`,
-              `│    Path        : ${chosen.path}`,
-              "└──────────────────────────────────────────────",
-            ];
-            addLine({
-              type: "system",
-              content: detailLines.join("\n"),
-              timestamp: now,
-            });
-          } else {
-            const options = skillsList.map((s) => `• ${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`);
-            setActiveWizard({
-              type: "skills",
-              step: 1,
-              data: {},
-            });
-            setWizardOptions(options);
-            setWizardSelectedIndex(skillIndex);
+            return;
           }
-          return;
+          if (key.return) {
+            const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+            const selectedOption = filteredOptions[clampedIndex];
+            if (!selectedOption || selectedOption === "(no results)") return;
+
+            // Find the original skill index
+            const skillsList = getInstalledSkills();
+            const originalIndex = skillsList.findIndex((s) => {
+              const provider = s.author || "obra";
+              return selectedOption.startsWith(`• ${provider}/${s.name}`);
+            });
+
+            if (originalIndex !== -1) {
+              setActiveWizard({
+                type: "skills",
+                step: 2,
+                data: { skillIndex: String(originalIndex) },
+              });
+              setWizardOptions([
+                "✓ Use / Activate Skill",
+                "ℹ View Details",
+                "← Back to List",
+              ]);
+              setWizardSelectedIndex(0);
+              setInput(""); // Clear search input query
+            }
+            return;
+          }
+        } else {
+          // step === 2 logic:
+          if (key.upArrow) {
+            setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+            return;
+          }
+          if (key.downArrow) {
+            setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+            return;
+          }
+          if (key.return) {
+            const skillIndex = parseInt(activeWizard.data.skillIndex || "0", 10);
+            const skillsList = getInstalledSkills();
+            const chosen = skillsList[skillIndex];
+            if (!chosen) return;
+
+            if (wizardSelectedIndex === 0) {
+              const now = Date.now();
+              const slug = chosen.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+              addLine({
+                type: "user",
+                content: `❯ /skill-${slug}`,
+                timestamp: now,
+              });
+              addLine({
+                type: "system",
+                content: `Activating skill "${chosen.name}"...\nInstruction path: ${chosen.path}`,
+                timestamp: now,
+              });
+              setIsProcessing(true);
+              agentRef.current?.sendMessage(
+                `I would like you to use the following skill: "${chosen.name}".\nPlease read its instruction file at "${chosen.path}" using a file read tool first, and then help me with my request based on its instructions.`
+              ).catch((err: any) => {
+                addLine({ type: "error", content: `Skill activation error: ${err.message}`, timestamp: Date.now() });
+              });
+
+              setActiveWizard(null);
+              setWizardOptions([]);
+              setWizardSelectedIndex(0);
+            } else if (wizardSelectedIndex === 1) {
+              const now = Date.now();
+              const provider = chosen.author || "obra";
+              const detailLines = [
+                "┌───[ 📂 INSTALLED AGENT SKILLS ]",
+                `│  • Name        : ${provider}/${chosen.name}`,
+                `│    Description : ${chosen.description}`,
+                `│    Path        : ${chosen.path}`,
+                "└──────────────────────────────────────────────",
+              ];
+              addLine({
+                type: "system",
+                content: detailLines.join("\n"),
+                timestamp: now,
+              });
+            } else {
+              const options = skillsList.map((s) => {
+                const provider = s.author || "obra";
+                return `• ${provider}/${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`;
+              });
+              setActiveWizard({
+                type: "skills",
+                step: 1,
+                data: {},
+              });
+              setWizardOptions(options);
+              setWizardSelectedIndex(skillIndex);
+            }
+            return;
+          }
         }
       }
     }
@@ -1548,7 +1590,10 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         } else if (activeWizard.type === "skills" && activeWizard.step === 2) {
           const skillsList = getInstalledSkills();
-          const options = skillsList.map((s) => `• ${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`);
+          const options = skillsList.map((s) => {
+            const provider = s.author || "obra";
+            return `• ${provider}/${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`;
+          });
           const skillIndex = parseInt(activeWizard.data.skillIndex || "0", 10);
           setActiveWizard({
             type: "skills",
@@ -1557,6 +1602,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           });
           setWizardOptions(options);
           setWizardSelectedIndex(skillIndex);
+          setInput(""); // Clear input when returning to search
           return;
         } else if (activeWizard.type === "login") {
           if (activeWizard.step === 2) {

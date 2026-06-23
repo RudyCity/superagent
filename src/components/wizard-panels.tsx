@@ -612,23 +612,44 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
 
         {activeWizard && activeWizard.type === "skills" && wizardOptions.length > 0 && (() => {
           const installedSkills = getInstalledSkills();
-          const chosenSkill = installedSkills[parseInt(activeWizard.data.skillIndex || "0", 10)];
-          const skillTitle = activeWizard.step === 2
-            ? `📂 SKILL ACTION — Select action for skill: "${chosenSkill?.name || ""}" (↑/↓ Navigate, Enter: Select):`
-            : "📂 INSTALLED AGENT SKILLS — Select skill (↑/↓ Navigate, Enter: Choose, Esc: Cancel):";
-          const skillDesc = activeWizard.step === 2
-            ? "Choose whether to activate this skill for the agent or view its location details:"
-            : "List of installed agent capabilities:";
-          return (
-            <WizardDialog
-              title={skillTitle}
-              description={skillDesc}
-              borderColor="cyan"
-              options={wizardOptions}
-              selectedIndex={wizardSelectedIndex}
-              maxVisible={10}
-            />
-          );
+          
+          if (activeWizard.step === 2) {
+            const chosenSkill = installedSkills[parseInt(activeWizard.data.skillIndex || "0", 10)];
+            const skillTitle = `📂 SKILL ACTION — Select action for skill: "${chosenSkill?.name || ""}" (↑/↓ Navigate, Enter: Select):`;
+            const skillDesc = "Choose whether to activate this skill for the agent or view its location details:";
+            return (
+              <WizardDialog
+                title={skillTitle}
+                description={skillDesc}
+                borderColor="cyan"
+                options={wizardOptions}
+                selectedIndex={wizardSelectedIndex}
+                maxVisible={10}
+              />
+            );
+          } else {
+            const searchQuery = input.trim();
+            const filteredOptions = searchQuery
+              ? filterSuggestions(wizardOptions, searchQuery)
+              : wizardOptions;
+            const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+            
+            const skillTitle = searchQuery
+              ? `📂 INSTALLED AGENT SKILLS — 🔍 "${searchQuery}" (${filteredOptions.length}/${wizardOptions.length} results):`
+              : "📂 INSTALLED AGENT SKILLS — Select skill (type to filter, ↑/↓ Navigate, Enter: Choose, Esc: Cancel):";
+            const skillDesc = "List of installed agent capabilities:";
+            
+            return (
+              <WizardDialog
+                title={skillTitle}
+                description={skillDesc}
+                borderColor="cyan"
+                options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
+                selectedIndex={clampedIndex}
+                maxVisible={10}
+              />
+            );
+          }
         })()}
 
         {activeWizard && activeWizard.type === "checkpoint" && activeWizard.step === 1 && wizardOptions.length > 0 && (

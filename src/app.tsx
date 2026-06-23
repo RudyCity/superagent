@@ -739,6 +739,10 @@ export function App({
 
   const getWizardPlaceholder = () => {
     if (!activeWizard) return "Type a message or /help...";
+    if (activeWizard.type === "skills") {
+      if (activeWizard.step === 1) return "🔍 Search skills (type to filter, arrows to navigate, Enter to select)...";
+      if (activeWizard.step === 2) return "Select action using arrows and Enter (Esc: Back)...";
+    }
     if (activeWizard.type === "login") {
       if (activeWizard.step === 1) return "Select option using arrows and Enter (Esc: Cancel)...";
       if (activeWizard.step === 2) return "Select provider template using arrows and Enter (Esc: Back)...";
@@ -1581,7 +1585,7 @@ export function App({
     if (activeWizard.type === "plan_approve") return activeWizard.step !== 2;
     if (activeWizard.type === "resume") return true;
     if (activeWizard.type === "checkpoint") return true;
-    if (activeWizard.type === "skills") return true;
+    if (activeWizard.type === "skills") return activeWizard.step !== 1;
     if (activeWizard.type === "question" && activeWizard.step !== 2) return true;
     if (activeWizard.type === "login") {
       // Steps 1,2,6,7,10 = pure selection; Step 8 = selection with search filter (needs input)
