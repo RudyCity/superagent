@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.87] - 2026-06-23
+
+### Added
+- **Horizontal Stepper Tabs for Wizard**: Added horizontal progress tabs to `ask_question` dialog.
+- **Multi-Question Support**: Implemented support for multiple questions inside the agent question handler and wizard.
+
+### Fixed
+- **Plan Approval Clicks & Scrolling**: Fixed option selection clicks and hover-based panel mouse scrolling in terminal UI.
+- **Legacy Test Suite Fixes**: Updated legacy test suites to support multi-question inputs.
+
+---
+
 ## [1.1.86] - 2026-06-23
 
 ### Improved
