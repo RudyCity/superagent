@@ -16,6 +16,7 @@ import {
   isToolCallOutOfBounds,
   isModelConfigAccess,
   isSensitiveEnvFileAccess,
+  normalizeAndCheckSubpath,
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { AsyncLocalStorage } from "async_hooks";
@@ -406,7 +407,8 @@ If none of the options are suitable, still pick the closest one.`;
           const dirs = fs.readdirSync(historyDir);
           const matchedDirs = dirs.filter(d => {
             const nameLower = d.toLowerCase();
-            return nameLower === sanitizedPath.toLowerCase() || nameLower.startsWith(sanitizedPath.toLowerCase() + "_");
+            const cleanNameLower = nameLower.replace(/_\d+$/, "");
+            return cleanNameLower === sanitizedPath.toLowerCase() || cleanNameLower.startsWith(sanitizedPath.toLowerCase() + "_");
           });
 
           if (matchedDirs.length > 0) {
@@ -422,7 +424,26 @@ If none of the options are suitable, still pick the closest one.`;
               return { filePath, mtime };
             }).sort((a, b) => b.mtime - a.mtime);
 
-            return sorted[0].filePath;
+            // Iterate over candidates to find the most recent valid session
+            for (const item of sorted) {
+              try {
+                const content = fs.readFileSync(item.filePath, "utf-8");
+                const parsed = JSON.parse(content);
+                if (parsed && parsed.workingDirectory) {
+                  if (normalizeAndCheckSubpath(parsed.workingDirectory, this.workingDirectory)) {
+                    return item.filePath;
+                  }
+                } else {
+                  // Legacy fallback: check if cleanName is exactly the sanitized path of current workingDirectory
+                  const cleanNameLower = path.basename(item.filePath, ".json").toLowerCase().replace(/_\d+$/, "");
+                  if (cleanNameLower === sanitizedPath.toLowerCase()) {
+                    return item.filePath;
+                  }
+                }
+              } catch {
+                // Ignore and try next candidate
+              }
+            }
           }
         }
       } catch {
@@ -467,7 +488,7 @@ If none of the options are suitable, still pick the closest one.`;
       this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
     }
     process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
-    await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState);
+    await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState, this.workingDirectory);
   }
 
   private getModel() {

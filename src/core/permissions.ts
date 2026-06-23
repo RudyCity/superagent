@@ -50,7 +50,7 @@ function resolveNormalizedPath(fp: string, baseDir?: string): string {
   return baseDir ? path.resolve(baseDir, normalized) : path.resolve(normalized);
 }
 
-function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolean {
+export function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolean {
   let resolvedChild = resolveNormalizedPath(childPath);
   let resolvedParent = resolveNormalizedPath(parentPath);
   if (process.platform === "win32") {

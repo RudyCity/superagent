@@ -2,6 +2,28 @@ import fs from "fs";
 import path from "path";
 import { getGlobalConfigDir } from "./paths.js";
 
+function resolveNormalizedPath(fp: string, baseDir?: string): string {
+  let normalized = fp;
+  if (process.platform === "win32") {
+    if (/^\/[a-zA-Z]\//.test(normalized)) {
+      normalized = normalized[1] + ":" + normalized.slice(2);
+    } else if (/^\/[a-zA-Z]$/.test(normalized)) {
+      normalized = normalized[1] + ":/";
+    }
+  }
+  return baseDir ? path.resolve(baseDir, normalized) : path.resolve(normalized);
+}
+
+function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolean {
+  let resolvedChild = resolveNormalizedPath(childPath);
+  let resolvedParent = resolveNormalizedPath(parentPath);
+  if (process.platform === "win32") {
+    resolvedChild = resolvedChild.toLowerCase();
+    resolvedParent = resolvedParent.toLowerCase();
+  }
+  return resolvedChild.startsWith(resolvedParent + path.sep) || resolvedChild === resolvedParent;
+}
+
 export interface HistorySession {
   filePath: string;
   displayName: string;
@@ -15,6 +37,9 @@ export function listHistorySessions(isMulti = false, crossSession = false): Hist
   const historyDir = path.join(getGlobalConfigDir(), "history", mode);
   if (!fs.existsSync(historyDir)) return [];
 
+  const currentDir = process.cwd();
+  const currentSanitized = currentDir.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+
   let dirs: string[];
   try {
     if (crossSession) {
@@ -22,11 +47,10 @@ export function listHistorySessions(isMulti = false, crossSession = false): Hist
       dirs = fs.readdirSync(historyDir);
     } else {
       // Workspace-scoped: only sessions matching current cwd
-      const currentDir = process.cwd();
-      const currentSanitized = currentDir.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
       dirs = fs.readdirSync(historyDir).filter((d) => {
         const nameLower = d.toLowerCase();
-        return nameLower === currentSanitized || nameLower.startsWith(currentSanitized + "_");
+        const cleanNameLower = nameLower.replace(/_\d+$/, "");
+        return cleanNameLower === currentSanitized || cleanNameLower.startsWith(currentSanitized + "_");
       });
     }
   } catch {
@@ -43,6 +67,23 @@ export function listHistorySessions(isMulti = false, crossSession = false): Hist
       const stat = fs.statSync(filePath);
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(raw);
+
+      // Verify that the session actually belongs to this workspace
+      if (!crossSession) {
+        const sessionCwd = parsed && typeof parsed === "object" ? parsed.workingDirectory : undefined;
+        if (sessionCwd) {
+          if (!normalizeAndCheckSubpath(sessionCwd, currentDir)) {
+            continue;
+          }
+        } else {
+          // Legacy fallback: check if cleanName is exactly the sanitized path of current cwd
+          const cleanNameLower = d.toLowerCase().replace(/_\d+$/, "");
+          if (cleanNameLower !== currentSanitized) {
+            continue;
+          }
+        }
+      }
+
       let messages: Array<{ role: string; content: string; timestamp?: number }> = [];
       if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
         messages = parsed.messages;

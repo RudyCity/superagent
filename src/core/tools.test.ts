@@ -522,10 +522,13 @@ patched line
 
     const mockFilePath = path.join(sessionDir, `${sessionId}.json`);
 
-    const mockContent = [
-      { role: "user", content: "How do we write a database schema?" },
-      { role: "assistant", content: "Use Postgres with Knex migrations." }
-    ];
+    const mockContent = {
+      messages: [
+        { role: "user", content: "How do we write a database schema?" },
+        { role: "assistant", content: "Use Postgres with Knex migrations." }
+      ],
+      workingDirectory: process.cwd()
+    };
 
     await fs.writeFile(mockFilePath, JSON.stringify(mockContent), "utf-8");
 

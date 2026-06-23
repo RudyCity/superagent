@@ -321,7 +321,8 @@ describe("config", () => {
               { role: "user", content: "hello from object" },
               { role: "assistant", content: "hi from object" }
             ],
-            planState: "IDLE"
+            planState: "IDLE",
+            workingDirectory: "D:\\projects\\my-awesome-project\\src"
           });
         }
         // Legacy array format
@@ -347,6 +348,59 @@ describe("config", () => {
         expect(sessions[1].messageCount).toBe(2);
         expect(sessions[1].preview).toBe("hello from object");
         expect(sessions[1].displayName).toBe("hello from object");
+      } finally {
+        spyCwd.mockRestore();
+        spyExistsSync.mockRestore();
+        spyReaddirSync.mockRestore();
+        spyStatSync.mockRestore();
+        spyReadFileSync.mockRestore();
+      }
+    });
+
+    it("should NOT return sibling sessions with similar prefix but different directory (e.g., pomodoro-app vs pomodoro)", () => {
+      const mockCwd = "D:\\projects\\my-awesome-project";
+      const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
+
+      const spyExistsSync = vi.spyOn(fs, "existsSync").mockReturnValue(true);
+
+      const mockDirs = [
+        "D__projects_my_awesome_project_123",
+        "D__projects_my_awesome_project_app_456",
+        "D__projects_my_awesome_project_src_789",
+      ];
+      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(mockDirs as any);
+
+      const spyStatSync = vi.spyOn(fs, "statSync").mockReturnValue({
+        mtime: new Date(),
+      } as any);
+
+      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation((p) => {
+        const filePath = typeof p === "string" ? p : p.toString();
+        if (filePath.includes("my_awesome_project_app")) {
+          return JSON.stringify({
+            messages: [{ role: "user", content: "hello sibling" }],
+            workingDirectory: "D:\\projects\\my-awesome-project-app"
+          });
+        }
+        if (filePath.includes("my_awesome_project_src")) {
+          return JSON.stringify({
+            messages: [{ role: "user", content: "hello sub" }],
+            workingDirectory: "D:\\projects\\my-awesome-project\\src"
+          });
+        }
+        return JSON.stringify({
+          messages: [{ role: "user", content: "hello exact" }],
+          workingDirectory: "D:\\projects\\my-awesome-project"
+        });
+      });
+
+      try {
+        const sessions = listHistorySessions(false, false);
+        expect(sessions.length).toBe(2);
+        const previews = sessions.map(s => s.preview);
+        expect(previews).toContain("hello exact");
+        expect(previews).toContain("hello sub");
+        expect(previews).not.toContain("hello sibling");
       } finally {
         spyCwd.mockRestore();
         spyExistsSync.mockRestore();

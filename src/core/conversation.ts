@@ -75,7 +75,7 @@ export class Conversation {
     }
   }
 
-  async saveToFile(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED"): Promise<void> {
+  async saveToFile(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED", workingDirectory?: string): Promise<void> {
     try {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
 
@@ -103,6 +103,7 @@ export class Conversation {
       const data = {
         messages: this.messages,
         planState,
+        workingDirectory,
         superagents: serializedSuperagents,
         subagents: serializedSubagents,
         historicalSuperagentTokens,
