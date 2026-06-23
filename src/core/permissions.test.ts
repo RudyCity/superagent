@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isDangerousCommand, isPathInWorktree, isSuperagentOutOfBounds } from "./permissions.js";
+import { isDangerousCommand, isPathInWorktree, isSuperagentOutOfBounds, isToolCallOutOfBounds } from "./permissions.js";
 import path from "path";
 
 describe("isDangerousCommand", () => {
@@ -138,3 +138,84 @@ describe("isSuperagentOutOfBounds", () => {
     expect(isSuperagentOutOfBounds(toolCall, worktreePath)).toBe(true);
   });
 });
+
+describe("isToolCallOutOfBounds", () => {
+  const workspacePath = path.resolve("/dummy/workspace");
+
+  it("should allow file access inside workspace", () => {
+    const toolCall = {
+      name: "read",
+      args: { filePath: "src/app.ts" }
+    };
+    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(false);
+  });
+
+  it("should block file access outside workspace and config", () => {
+    const toolCall = {
+      name: "write_to_file",
+      args: { TargetFile: "../escaped.ts", content: "hello" }
+    };
+    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(true);
+  });
+
+  it("should allow read and write tools to target files under global config directory", async () => {
+    const { getRootConfigDir } = await import("./config.js");
+    const configPath = path.resolve(getRootConfigDir(), "settings.json");
+    const toolCall = {
+      name: "write_to_file",
+      args: { TargetFile: configPath, content: "config" }
+    };
+    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(false);
+  });
+
+  it("should detect relative traversals in shell commands", () => {
+    const toolCall = {
+      name: "run_command",
+      args: { command: "mkdir ../outside_dir" }
+    };
+    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(true);
+  });
+
+  it("should detect relative traversals in bash commands", () => {
+    const toolCall = {
+      name: "bash",
+      args: { command: "cd .. && touch test.txt" }
+    };
+    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(true);
+  });
+
+  it("should allow safe shell commands", () => {
+    const toolCall = {
+      name: "run_command",
+      args: { command: "npm install" }
+    };
+    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(false);
+  });
+
+  it("should block absolute paths outside workspace/config in commands", () => {
+    const externalPath = path.resolve("/another/external/path");
+    const toolCall = {
+      name: "run_command",
+      args: { command: `ls ${externalPath}` }
+    };
+    expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(true);
+  });
+
+  it("should allow absolute paths inside workspace/config in commands", async () => {
+    const { getRootConfigDir } = await import("./config.js");
+    const configPath = path.resolve(getRootConfigDir(), "settings.json");
+    const toolCall1 = {
+      name: "run_command",
+      args: { command: `ls ${configPath}` }
+    };
+    expect(isToolCallOutOfBounds(toolCall1, workspacePath)).toBe(false);
+
+    const insidePath = path.resolve(workspacePath, "src/app.ts");
+    const toolCall2 = {
+      name: "run_command",
+      args: { command: `cat ${insidePath}` }
+    };
+    expect(isToolCallOutOfBounds(toolCall2, workspacePath)).toBe(false);
+  });
+});
+

@@ -38,6 +38,16 @@ export function isDangerousCommand(command: string): boolean {
   return DANGEROUS_PATTERNS.some((p) => p.test(command));
 }
 
+function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolean {
+  let resolvedChild = path.resolve(childPath);
+  let resolvedParent = path.resolve(parentPath);
+  if (process.platform === "win32") {
+    resolvedChild = resolvedChild.toLowerCase();
+    resolvedParent = resolvedParent.toLowerCase();
+  }
+  return resolvedChild.startsWith(resolvedParent + path.sep) || resolvedChild === resolvedParent;
+}
+
 /**
  * Checks whether a file path is inside the given worktree directory.
  */
@@ -45,8 +55,7 @@ export function isPathInWorktree(filePath: string, worktreePath: string): boolea
   const resolved = path.isAbsolute(filePath)
     ? path.resolve(filePath)
     : path.resolve(worktreePath, filePath);
-  const worktree = path.resolve(worktreePath);
-  return resolved.startsWith(worktree + path.sep) || resolved === worktree;
+  return normalizeAndCheckSubpath(resolved, worktreePath);
 }
 
 /**
@@ -88,7 +97,7 @@ export function isSuperagentOutOfBounds(
 
     // Allow read-only access to files inside global configuration directory
     if (fileReadingTools.includes(toolCall.name)) {
-      if (resolved.startsWith(rootConfig + path.sep) || resolved === rootConfig) {
+      if (normalizeAndCheckSubpath(resolved, rootConfig)) {
         continue;
       }
     }
@@ -97,6 +106,83 @@ export function isSuperagentOutOfBounds(
   }
   return false;
 }
+
+/**
+ * Returns true if a tool call targets any path outside the active workspace directory,
+ * excluding the global ~/.superagent-r config directory.
+ */
+export function isToolCallOutOfBounds(
+  toolCall: { name: string; args: Record<string, unknown> },
+  workspacePath: string
+): boolean {
+  const candidatePaths = [
+    toolCall.args.filePath,
+    toolCall.args.file_path,
+    toolCall.args.TargetFile,
+    toolCall.args.path,
+    toolCall.args.cwd,
+    toolCall.args.DirectoryPath,
+    toolCall.args.SearchPath,
+    toolCall.args.AbsolutePath,
+  ].filter((v): v is string => typeof v === "string");
+
+  const rootConfig = path.resolve(getRootConfigDir());
+
+  for (const fp of candidatePaths) {
+    const resolved = path.isAbsolute(fp)
+      ? path.resolve(fp)
+      : path.resolve(workspacePath, fp);
+
+    // If it's inside ~/.superagent-r/ or workspacePath, it's allowed without permission
+    if (normalizeAndCheckSubpath(resolved, rootConfig) || normalizeAndCheckSubpath(resolved, workspacePath)) {
+      continue;
+    }
+    return true;
+  }
+
+  // Check shell commands for relative traversals or absolute paths targeting outside workspace/config
+  const shellTools = ["bash", "run_command", "run_background_process"];
+  if (shellTools.includes(toolCall.name)) {
+    const command = (toolCall.args.command ?? toolCall.args.cmd) as string | undefined;
+    if (command && typeof command === "string") {
+      // Check parent directory traversal patterns
+      if (command.includes("..") && (
+        command.includes("../") || 
+        command.includes("..\\") || 
+        command.includes(".. ") || 
+        command.endsWith("..")
+      )) {
+        return true;
+      }
+
+      // Check absolute paths in command
+      const winAbsPathRegex = /(?:[a-zA-Z]:[\\/][^:\s]+)/g;
+      let match;
+      while ((match = winAbsPathRegex.exec(command)) !== null) {
+        const p = match[0];
+        const resolved = path.resolve(p);
+        if (!normalizeAndCheckSubpath(resolved, rootConfig) && !normalizeAndCheckSubpath(resolved, workspacePath)) {
+          return true;
+        }
+      }
+
+      const unixAbsPathRegex = /(?:\s|^)(\/[a-zA-Z0-9_\-\.\/]+)/g;
+      while ((match = unixAbsPathRegex.exec(command)) !== null) {
+        const p = match[1];
+        if (p.startsWith("/dev/") || p === "/dev/null" || p.startsWith("/bin/") || p.startsWith("/usr/bin/")) {
+          continue;
+        }
+        const resolved = path.resolve(p);
+        if (!normalizeAndCheckSubpath(resolved, rootConfig) && !normalizeAndCheckSubpath(resolved, workspacePath)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
 
 
 export function getToolDescription(

@@ -13,7 +13,7 @@ import {
   getToolDescription,
   isDangerousCommand,
   MODIFYING_TOOLS,
-  isSuperagentOutOfBounds,
+  isToolCallOutOfBounds,
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { AsyncLocalStorage } from "async_hooks";
@@ -1390,20 +1390,25 @@ for (const tc of toolCalls) {
             }
           }
 
-          // Superagent out-of-bounds file access check
-          if (this.tier === "superagent" && this.worktreePath) {
-            if (isSuperagentOutOfBounds(tc, this.worktreePath)) {
+          // Out-of-bounds file or command access check for all agent tiers
+          const effectiveWorkspace = this.worktreePath || this.workingDirectory;
+          if (isToolCallOutOfBounds(tc, effectiveWorkspace)) {
+            const approved = await this.onPermission(
+              tc,
+              `Out-of-bounds access detected for tool: ${tc.name}. Requires permission to access files/directories/processes outside the workspace.`
+            );
+            if (!approved) {
               const blocked: ToolResult = {
                 toolCallId: tc.id,
                 name: tc.name,
-                result: `Error: Access denied. As a Superagent you may only access files within your worktree: ${this.worktreePath}`,
+                result: `Error: Access denied. Permission denied to access files/directories/processes outside the workspace directory: ${effectiveWorkspace}`,
                 isError: true,
               };
               try {
                 const { appendToolsErrorLog } = await import("./tools/state.js");
-                appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { worktreePath: this.worktreePath, reason: "superagent_out_of_bounds" });
+                appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { workspace: effectiveWorkspace, reason: "out_of_bounds_denied" });
               } catch {}
-              this.emitViolation("superagent_out_of_bounds", tc.name, `Superagent attempted to access files outside its worktree (${this.worktreePath}).`, "critical", { worktreePath: this.worktreePath });
+              this.emitViolation("out_of_bounds_denied", tc.name, `Access outside workspace denied by user/permission handler.`, "critical", { workspace: effectiveWorkspace });
               toolResults.push(blocked);
               this.onEvent({ type: "tool_end", toolResult: blocked, description });
               continue;
