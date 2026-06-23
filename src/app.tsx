@@ -481,6 +481,9 @@ export function App({
           setContextLimit,
           setActiveModel,
           setInputHistory: setHistory,
+          clearLines: () => {
+            setLines([]);
+          },
         } as any);
         return;
       }
