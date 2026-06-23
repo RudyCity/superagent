@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.93] - 2026-06-23
+
+### Added
+- **Out-of-Bounds Workspace Access Checks**: Enforced directory boundaries for file and command execution tools across all agent tiers to prevent accessing or executing commands outside the workspace/config directory without user permission.
+- **Git Bash Path Normalization on Windows**: Implemented slash-path conversions on Windows platforms for robust boundary checking.
+- **Wizard Permission Prompts UX**: Displayed generic allow/deny wizard options custom-tailored for command execution vs. file/directory access in the permission dialog.
+
+---
+
 ## [1.1.92] - 2026-06-23
 
 ### Added
