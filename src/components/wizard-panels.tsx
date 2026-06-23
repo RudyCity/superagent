@@ -74,9 +74,15 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
       <Box flexDirection="column" marginTop={1}>
         {planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (
           <Box marginBottom={1} flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
-            <Text bold color="yellow">⚠️ PENDING_PLAN: IMPLEMENTATION PLAN REQUIRES APPROVAL</Text>
-            <Text color="yellow">AI model has designed a plan in file: <Text bold color="cyan">{planUrl}</Text></Text>
-            <Text color="yellow">Send any message/feedback to display the plan approval dialog again.</Text>
+            <Box flexDirection="row">
+              <Text bold color="yellow">╔══[ </Text>
+              <Text bold color="yellow">⚡ PLAN</Text>
+              <Text bold color="magenta"> APPROVAL</Text>
+              <Text bold color="red"> REQUIRED</Text>
+              <Text bold color="yellow"> ]══╗</Text>
+            </Box>
+            <Text color="gray">  File: <Text bold color="cyan">{planUrl}</Text></Text>
+            <Text color="gray" dimColor>  Send any message to display the plan approval dialog again.</Text>
           </Box>
         )}
 

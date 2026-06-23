@@ -103,40 +103,54 @@ export function PlanApprovalDialog({
   }
 
   const isPlanFocused = focus === "plan";
-  const titleHint = isPlanFocused
-    ? "Focus: Plan Content - press Right Arrow to focus Actions"
-    : "Focus: Actions - press Left Arrow to scroll Plan";
+  const focusTag = isPlanFocused
+    ? "⬅ Scroll Plan  |  → Focus Actions"
+    : "↑↓ Navigate Actions  |  ← Scroll Plan";
+  const totalLabel = `line ${clampedOffset + 1}–${Math.min(clampedOffset + maxContentHeight, totalLines)} of ${totalLines}`;
 
   // ─── Step 1: plan content + options ───
   return (
     <Box flexDirection="column" marginTop={1}>
-      {/* Title */}
+
+      {/* ══ TOP BANNER ══ */}
       <Box flexDirection="row" width="100%">
-        <Text color={borderColor} wrap="truncate-end">
-          ├───[ <Text bold color={borderColor}>⚠️ PLAN APPROVAL REQUIRED ({titleHint})</Text> ]
-        </Text>
+        <Text bold color="yellow">╔══[ </Text>
+        <Text bold color="yellow">⚡ PLAN</Text>
+        <Text bold color="magenta"> APPROVAL</Text>
+        <Text bold color="red"> REQUIRED</Text>
+        <Text bold color="yellow"> ]══╗</Text>
+      </Box>
+      <Box flexDirection="row" width="100%">
+        <Text bold color="yellow">║  </Text>
+        <Text color="gray">Agent has prepared a plan —</Text>
+        <Text color="white" bold> review and decide before execution proceeds.</Text>
+      </Box>
+      <Box flexDirection="row" width="100%">
+        <Text bold color="yellow">║  </Text>
+        <Text color="gray" dimColor>Focus: </Text>
+        <Text color="cyan" bold>{focusTag}</Text>
+      </Box>
+      <Box flexDirection="row" width="100%">
+        <Text bold color="yellow">╚══[ </Text>
+        <Text color="gray" dimColor>📄 </Text>
+        <Text color="cyan" bold wrap="truncate-end">{planFilePath}</Text>
+        <Text bold color="yellow"> ]</Text>
       </Box>
 
-      {/* File path */}
+      {/* ── Plan Content header ── */}
       <Box flexDirection="row" width="100%">
-        <Text color={borderColor}>│ </Text>
-        <Text color="gray" dimColor wrap="truncate-end">
-          File: <Text color="cyan" bold>{planFilePath}</Text>
-        </Text>
-      </Box>
-
-      {/* Separator */}
-      <Box flexDirection="row" width="100%">
-        <Text color={borderColor}>├─────────────────────────────────── Plan Content ──</Text>
+        <Text color={borderColor}>┌─ </Text>
+        <Text color={borderColor} bold>PLAN CONTENT</Text>
+        <Text color="gray" dimColor> ({totalLabel})</Text>
+        <Text color={borderColor}> ──────────────────────────────────</Text>
       </Box>
 
       {/* Scroll-up indicator */}
       {hasMoreAbove && (
         <Box flexDirection="row" width="100%">
           <Text color={borderColor}>│ </Text>
-          <Text color="yellow" wrap="truncate-end">
-            ▲ ... ({clampedOffset} more lines above — use PgUp/Ctrl+↑ to scroll) ...
-          </Text>
+          <Text color="yellow" bold>▲ {clampedOffset} lines above</Text>
+          <Text color="gray" dimColor>  (PgUp / Ctrl+↑)</Text>
         </Box>
       )}
 
@@ -145,7 +159,7 @@ export function PlanApprovalDialog({
         const wrappedLines = wrapTextForDisplay(line || " ", contentWidth);
         return wrappedLines.map((wl, wIdx) => (
           <Box key={`${clampedOffset + idx}-${wIdx}`} flexDirection="row" width="100%">
-            <Text color={borderColor}>│ </Text>
+            <Text color={borderColor} dimColor>│ </Text>
             <Text color="white" wrap="truncate-end">{wl}</Text>
           </Box>
         ));
@@ -155,15 +169,16 @@ export function PlanApprovalDialog({
       {hasMoreBelow && (
         <Box flexDirection="row" width="100%">
           <Text color={borderColor}>│ </Text>
-          <Text color="yellow" wrap="truncate-end">
-            ▼ ... ({totalLines - clampedOffset - maxContentHeight} more lines below — use PgDn/Ctrl+↓ to scroll) ...
-          </Text>
+          <Text color="yellow" bold>▼ {totalLines - clampedOffset - maxContentHeight} lines below</Text>
+          <Text color="gray" dimColor>  (PgDn / Ctrl+↓)</Text>
         </Box>
       )}
 
-      {/* Separator */}
+      {/* ── Actions header ── */}
       <Box flexDirection="row" width="100%">
-        <Text color={borderColor}>├─────────────────────────────────── Actions ───────</Text>
+        <Text color={borderColor}>├─ </Text>
+        <Text color={borderColor} bold>ACTIONS</Text>
+        <Text color={borderColor}> ──────────────────────────────────────────────────</Text>
       </Box>
 
       {/* Options */}
@@ -172,28 +187,32 @@ export function PlanApprovalDialog({
         return (
           <Box key={opt.label} flexDirection="row" width="100%">
             <Text color={borderColor}>│ </Text>
-            <Box flexDirection="row" flexShrink={1}>
-              <Text
-                color={isSelected ? opt.color : "gray"}
-                bold={isSelected}
-                dimColor={!isSelected}
-                wrap="truncate-end"
-              >
-                {isSelected ? "❯ " : "  "}
-                {opt.emoji} {opt.label}
-              </Text>
-            </Box>
+            {isSelected ? (
+              <>
+                <Text bold color={opt.color}>▶ [</Text>
+                <Text bold color={opt.color}> {opt.emoji} {opt.label} </Text>
+                <Text bold color={opt.color}>]</Text>
+              </>
+            ) : (
+              <Text color="gray" dimColor>  {opt.emoji} {opt.label}</Text>
+            )}
           </Box>
         );
       })}
 
-      {/* Hint */}
+      {/* Footer hint */}
       <Box flexDirection="row" width="100%">
-        <Text color={borderColor}>│ </Text>
-        <Text color="gray" dimColor wrap="truncate-end">
-          ↑/↓ navigate · Enter: select · PgUp/PgDn: scroll plan
-        </Text>
+        <Text color={borderColor}>└─ </Text>
+        <Text color="gray" dimColor>↑↓ </Text>
+        <Text color="white" dimColor>navigate</Text>
+        <Text color="gray" dimColor>  ·  Enter </Text>
+        <Text color="green" dimColor>confirm</Text>
+        <Text color="gray" dimColor>  ·  ←→ </Text>
+        <Text color="cyan" dimColor>switch focus</Text>
+        <Text color="gray" dimColor>  ·  PgUp/PgDn </Text>
+        <Text color="yellow" dimColor>scroll</Text>
       </Box>
+
     </Box>
   );
 }
@@ -216,9 +235,8 @@ export function planApprovalChromeHeight(
     totalLines = 1;
   }
   const visibleContent = Math.min(totalLines, maxContentHeight);
-  lines += 1; // title
-  lines += 1; // file path
-  lines += 1; // separator "Plan Content"
+  lines += 4; // banner: ╔══, ║ desc, ║ focus, ╚══
+  lines += 1; // PLAN CONTENT header
   if (totalLines > maxContentHeight) lines += 1; // scroll-up indicator
   lines += visibleContent;
   if (totalLines > maxContentHeight && totalLines > visibleContent) lines += 1; // scroll-down indicator
