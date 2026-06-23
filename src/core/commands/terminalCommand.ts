@@ -17,6 +17,17 @@ import {
   BackgroundTask 
 } from "../tools.js";
 import { killProcessTree } from "../tools/shellTools.js";
+function normalizeCwd(cwdPath: string): string {
+  if (process.platform === "win32") {
+    const msysMatch = cwdPath.match(/^\/([a-zA-Z])($|\/.*)/);
+    if (msysMatch) {
+      const drive = msysMatch[1].toUpperCase();
+      const rest = msysMatch[2] || "";
+      cwdPath = `${drive}:${rest}`;
+    }
+  }
+  return cwdPath;
+}
 
 // /terminal command
 export const terminalCommand: SlashCommand = {
@@ -157,6 +168,24 @@ export const terminalCommand: SlashCommand = {
 
         let commandStr = bgRaw;
         let bgPresetName = "";
+        let runCwd = cwd;
+        let runEnv = { ...process.env };
+
+        const resolveBgPreset = (val: any, label: string) => {
+          bgPresetName = label;
+          if (typeof val === "object" && val !== null) {
+            commandStr = val.command || "";
+            if (val.cwd) {
+              runCwd = path.resolve(cwd, normalizeCwd(val.cwd));
+            }
+            if (val.env) {
+              runEnv = { ...runEnv, ...val.env };
+            }
+          } else {
+            commandStr = String(val);
+          }
+        };
+
         if (bgRaw.toLowerCase().startsWith("preset ")) {
           const requestedName = bgRaw.slice(7).trim();
           const found = findPreset(presets, requestedName);
@@ -164,15 +193,11 @@ export const terminalCommand: SlashCommand = {
             ctx.addLine({ type: "error", content: `Error: Preset "${requestedName}" not found.`, timestamp: Date.now() });
             return;
           }
-          bgPresetName = getPresetLabel(found.key, found.value);
-          const val = found.value;
-          commandStr = typeof val === "object" && val !== null ? (val.command || JSON.stringify(val)) : String(val);
+          resolveBgPreset(found.value, getPresetLabel(found.key, found.value));
         } else {
           const found = findPreset(presets, bgRaw);
           if (found) {
-            bgPresetName = getPresetLabel(found.key, found.value);
-            const val = found.value;
-            commandStr = typeof val === "object" && val !== null ? (val.command || JSON.stringify(val)) : String(val);
+            resolveBgPreset(found.value, getPresetLabel(found.key, found.value));
           }
         }
 
@@ -202,7 +227,8 @@ export const terminalCommand: SlashCommand = {
 
         const proc = execa(commandStr, {
           shell: shellPath,
-          cwd,
+          cwd: runCwd,
+          env: runEnv,
           reject: false,
           all: true,
         });
@@ -309,7 +335,7 @@ export const terminalCommand: SlashCommand = {
         if (typeof singleCmd === "object" && singleCmd !== null) {
           commandStr = singleCmd.command || "";
           if (singleCmd.cwd) {
-            runCwd = path.resolve(cwd, singleCmd.cwd);
+            runCwd = path.resolve(cwd, normalizeCwd(singleCmd.cwd));
           }
           if (singleCmd.env) {
             runEnv = { ...runEnv, ...singleCmd.env };
