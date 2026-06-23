@@ -52,6 +52,38 @@ export function getInstalledSkills(): LoadedSkill[] {
   const __dirname = path.dirname(__filename);
   const packageRootDir = path.resolve(__dirname, "..", "..", "..");
 
+  // Load skills-lock.json if available to map authors/providers
+  const lockMap = new Map<string, string>();
+  const possibleLockPaths = [
+    path.join(process.cwd(), "skills-lock.json"),
+    path.join(packageRootDir, "skills-lock.json")
+  ];
+  for (const lockPath of possibleLockPaths) {
+    if (fs.existsSync(lockPath)) {
+      try {
+        const lockContent = fs.readFileSync(lockPath, "utf-8");
+        const lockData = JSON.parse(lockContent);
+        if (lockData && lockData.skills) {
+          for (const [k, v] of Object.entries(lockData.skills)) {
+            if (v && typeof v === "object" && "source" in v && typeof v.source === "string") {
+              const sourceStr = v.source as string;
+              const resolvedAuthor = sourceStr.includes("/") ? sourceStr.split("/")[0] : sourceStr;
+              const keyKebab = k.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+              lockMap.set(keyKebab, resolvedAuthor);
+              if ("skillPath" in v && typeof v.skillPath === "string") {
+                const pathBase = path.basename(path.dirname(v.skillPath as string)).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+                lockMap.set(pathBase, resolvedAuthor);
+              }
+            }
+          }
+        }
+        break; // Successfully loaded one
+      } catch (err) {
+        // Ignore JSON or read errors
+      }
+    }
+  }
+
   const searchDirs = [
     path.join(os.homedir(), ".superagent-r", "skills"),
     path.join(process.cwd(), "skills"),
@@ -104,12 +136,9 @@ export function getInstalledSkills(): LoadedSkill[] {
       let description = "No description provided.";
       let author = defaultAuthor;
 
-      if (OBRA_SKILLS.has(folderName)) {
-        author = "obra";
-      }
-
       // Simple frontmatter parser
       const fmMatch = content.match(/^---[\r\n]+([\s\S]*?)[\r\n]+---/);
+      let hasAuthorInFm = false;
       if (fmMatch) {
         const fm = fmMatch[1];
         const nameMatch = fm.match(/^\s*name:\s*(.*)$/m);
@@ -117,11 +146,26 @@ export function getInstalledSkills(): LoadedSkill[] {
         const authorMatch = fm.match(/^\s*(author|provider|owner):\s*(.*)$/m);
         if (nameMatch) name = nameMatch[1].trim();
         if (descMatch) description = descMatch[1].trim();
-        if (authorMatch) author = authorMatch[2].trim();
+        if (authorMatch) {
+          author = authorMatch[2].trim();
+          hasAuthorInFm = true;
+        }
       } else {
         // Fallback to searching first heading
         const headingMatch = content.match(/^#\s*(.*)$/m);
         if (headingMatch) name = headingMatch[1].trim();
+      }
+
+      // Resolve author from lockfile if not specified in frontmatter
+      if (!hasAuthorInFm) {
+        const folderKebab = folderName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        const nameKebab = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        const lockAuthor = lockMap.get(folderKebab) || lockMap.get(nameKebab);
+        if (lockAuthor) {
+          author = lockAuthor;
+        } else if (OBRA_SKILLS.has(folderName)) {
+          author = "obra";
+        }
       }
 
       if (!skills.some(s => s.path === skillMdPath)) {

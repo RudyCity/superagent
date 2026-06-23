@@ -2,7 +2,6 @@
 name: karpathy-guidelines
 description: Behavioral guidelines to reduce common LLM coding mistakes. Use when writing, reviewing, or refactoring code to avoid overcomplication, make surgical changes, surface assumptions, and define verifiable success criteria.
 license: MIT
-author: multica-ai
 ---
 
 # Karpathy Guidelines
@@ -41,18 +40,28 @@ When editing existing code:
 - Don't "improve" adjacent code, comments, or formatting.
 - Don't refactor things that aren't broken.
 - Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it — don't delete it.
+- If you notice unrelated dead code, mention it - don't delete it.
 
-When your changes create dead code, clean it up. Otherwise, leave it.
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
 
 ## 4. Goal-Driven Execution
 
-**Define done before starting. Use tests to verify, not to guess.**
+**Define success criteria. Loop until verified.**
 
-Before coding:
-- Define what "done" looks like in concrete terms.
-- Write a test or verification step first when possible.
-- After implementing, verify against your definition. Don't just hope it works.
-- If the goal shifts during implementation, stop. Restate the new goal. Get confirmation.
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
 
-**The test:** Can someone verify your work succeeded without reading the code? If not, your success criteria aren't concrete enough.
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
