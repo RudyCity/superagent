@@ -18,6 +18,7 @@ import { TaskChecklist } from "./components/task-checklist.js";
 import { HistoryPanel } from "./components/history-panel.js";
 import { execa } from "execa";
 import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences } from "./utils/text.js";
+import { reconstructChatLines } from "./utils/uiHelpers.js";
 import { getTruncatedAssistantIndexes } from "./utils/responseScroll.js";
 import { wrapTextForDisplay } from "./utils/responseScroll.js";
 import type { ChatLine } from "./core/slash-commands.js";
@@ -1277,55 +1278,13 @@ export function App({
       onSessionPath?.(agent.getCurrentHistoryFilePath());
       const msgs = agent.getHistory().getMessages();
       const userInputs: string[] = [];
-      const loadedLines: ChatLine[] = [];
       for (const m of msgs) {
         if (m.role === "user") {
           userInputs.push(m.content);
         }
       }
       if (autoResume) {
-        for (const m of msgs) {
-          if (m.role === "user") {
-            loadedLines.push({
-              type: "user",
-              content: `❯ ${m.content}`,
-              timestamp: m.timestamp,
-            });
-          } else if (m.role === "assistant") {
-            if (m.content) {
-              loadedLines.push({
-                type: "assistant",
-                content: m.content,
-                timestamp: m.timestamp,
-              });
-            }
-            if (m.toolCalls && m.toolCalls.length > 0) {
-              for (const tc of m.toolCalls) {
-                const description = getToolDescription(tc);
-                loadedLines.push({
-                  type: "tool_start",
-                  content: `⚡ ${description}\n   Detail: ${tc.name}(${formatArgs(tc.args)})`,
-                  timestamp: m.timestamp,
-                });
-              }
-            }
-          } else if (m.role === "system") {
-            if (m.content && m.content.startsWith("[ERROR]")) {
-              loadedLines.push({
-                type: "error",
-                content: m.content.replace("[ERROR]", "").trim(),
-                timestamp: m.timestamp,
-              });
-            } else if (m.content) {
-              loadedLines.push({
-                type: "system",
-                content: m.content,
-                timestamp: m.timestamp,
-              });
-            }
-          }
-        }
-        setLines(loadedLines);
+        setLines(reconstructChatLines(msgs));
       } else {
         agent.getHistory().clear();
       }

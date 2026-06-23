@@ -2,6 +2,7 @@ import { useInput } from "ink";
 import path from "path";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getPasteSplit, filterSuggestions, getInsertion } from "../utils/text.js";
+import { reconstructChatLines } from "../utils/uiHelpers.js";
 import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getActiveProviderName, getResolvedModelWithProvider, getTierModel, getEffectiveMasterModel } from "../core/config.js";
 import { getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, deleteCheckpointById, type Checkpoint } from "../core/checkpoints.js";
@@ -1102,24 +1103,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             agentRef.current.loadHistoryFromPath(chosen.filePath)
               .then(() => {
                 const msgs = agentRef.current!.getHistory().getMessages();
-                const loadedLines: ChatLine[] = [];
-                const userInputs: string[] = [];
-                for (const m of msgs) {
-                  if (m.role === "user") {
-                    loadedLines.push({ type: "user", content: `❯ ${m.content}`, timestamp: m.timestamp });
-                    userInputs.push(m.content);
-                  } else if (m.role === "assistant") {
-                    if (m.content) {
-                      loadedLines.push({ type: "assistant", content: m.content, timestamp: m.timestamp });
-                    }
-                    if (m.toolCalls && m.toolCalls.length > 0) {
-                      for (const tc of m.toolCalls) {
-                        const description = getToolDescription(tc);
-                        loadedLines.push({ type: "tool_start", content: `⚡ ${description}\n   Detail: ${tc.name}(${formatArgs(tc.args)})`, timestamp: m.timestamp });
-                      }
-                    }
-                  }
-                }
+                const loadedLines = reconstructChatLines(msgs);
+                const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => m.content);
                 setLines(loadedLines);
                 setHistory(userInputs);
                 if (agentRef.current) setPlanState(agentRef.current.planState);
@@ -1179,16 +1164,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                   if (agentRef.current) {
                     await agentRef.current.loadHistoryFromPath(sessionPath);
                     const msgs = agentRef.current.getHistory().getMessages();
-                    const loadedLines: ChatLine[] = [];
-                    const userInputs: string[] = [];
-                    for (const m of msgs) {
-                      if (m.role === "user") {
-                        loadedLines.push({ type: "user", content: `❯ ${m.content}`, timestamp: m.timestamp });
-                        userInputs.push(m.content);
-                      } else if (m.role === "assistant") {
-                        if (m.content) loadedLines.push({ type: "assistant", content: m.content, timestamp: m.timestamp });
-                      }
-                    }
+                    const loadedLines = reconstructChatLines(msgs);
+                    const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => m.content);
                     setLines(loadedLines);
                     setHistory(userInputs);
                     setPlanState(agentRef.current.planState);
@@ -1244,16 +1221,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 if (agentRef.current) {
                   await agentRef.current.loadHistoryFromPath(sessionPath);
                   const msgs = agentRef.current.getHistory().getMessages();
-                  const loadedLines: ChatLine[] = [];
-                  const userInputs: string[] = [];
-                  for (const m of msgs) {
-                    if (m.role === "user") {
-                      loadedLines.push({ type: "user", content: `❯ ${m.content}`, timestamp: m.timestamp });
-                      userInputs.push(m.content);
-                    } else if (m.role === "assistant") {
-                      if (m.content) loadedLines.push({ type: "assistant", content: m.content, timestamp: m.timestamp });
-                    }
-                  }
+                  const loadedLines = reconstructChatLines(msgs);
+                  const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => m.content);
                   setLines(loadedLines);
                   setHistory(userInputs);
                   setPlanState(agentRef.current.planState);
@@ -1343,16 +1312,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               if (agentRef.current) {
                 await agentRef.current.loadHistoryFromPath(sessionPath);
                 const msgs = agentRef.current.getHistory().getMessages();
-                const loadedLines: ChatLine[] = [];
-                const userInputs: string[] = [];
-                for (const m of msgs) {
-                  if (m.role === "user") {
-                    loadedLines.push({ type: "user", content: `❯ ${m.content}`, timestamp: m.timestamp });
-                    userInputs.push(m.content);
-                  } else if (m.role === "assistant") {
-                    if (m.content) loadedLines.push({ type: "assistant", content: m.content, timestamp: m.timestamp });
-                  }
-                }
+                const loadedLines = reconstructChatLines(msgs);
+                const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => m.content);
                 setLines(loadedLines);
                 setHistory(userInputs);
                 setPlanState(agentRef.current.planState);

@@ -1,3 +1,8 @@
+import type { ChatLine } from "../core/commands/types.js";
+import type { Message, ToolResult } from "../core/conversation.js";
+import { getToolDescription } from "../core/permissions.js";
+import { formatArgs } from "./text.js";
+
 export function stripSgrMouseSequences(value: string): string {
   return value.replace(/(?:\x1b)?\[<\d+;\d+;\d+[Mm]/g, "");
 }
@@ -87,3 +92,91 @@ export function truncateStreamDisplay(text: string, maxLines: number, width: num
   }
   return resultLines.join("\n");
 }
+
+export function reconstructChatLines(msgs: Message[]): ChatLine[] {
+  const loadedLines: ChatLine[] = [];
+
+  // Map to store all tool results by their toolCallId
+  const toolResultsMap = new Map<string, ToolResult>();
+  for (const m of msgs) {
+    if (m.toolResults) {
+      for (const r of m.toolResults) {
+        toolResultsMap.set(r.toolCallId, r);
+      }
+    }
+  }
+
+  for (const m of msgs) {
+    if (m.role === "user") {
+      loadedLines.push({
+        type: "user",
+        content: `❯ ${m.content}`,
+        timestamp: m.timestamp,
+      });
+    } else if (m.role === "system") {
+      if (m.content && m.content.startsWith("[ERROR]")) {
+        loadedLines.push({
+          type: "error",
+          content: m.content.replace("[ERROR]", "").trim(),
+          timestamp: m.timestamp,
+        });
+      } else if (m.content) {
+        loadedLines.push({
+          type: "system",
+          content: m.content,
+          timestamp: m.timestamp,
+        });
+      }
+    } else if (m.role === "assistant") {
+      let assistantLine: ChatLine | null = null;
+      if (m.content) {
+        assistantLine = {
+          type: "assistant",
+          content: m.content,
+          timestamp: m.timestamp,
+          children: [],
+        };
+      } else if (m.toolCalls && m.toolCalls.length > 0) {
+        const desc = getToolDescription(m.toolCalls[0]);
+        assistantLine = {
+          type: "assistant",
+          content: `[SYS] Initiating action: ${desc}...`,
+          timestamp: m.timestamp,
+          children: [],
+        };
+      }
+
+      if (assistantLine) {
+        if (m.toolCalls && m.toolCalls.length > 0) {
+          for (const tc of m.toolCalls) {
+            const description = getToolDescription(tc);
+            assistantLine.children!.push({
+              type: "tool_start",
+              content: `⚡ ${description}\n   Detail: ${tc.name}(${formatArgs(tc.args)})`,
+              timestamp: m.timestamp,
+            });
+
+            const tr = toolResultsMap.get(tc.id);
+            if (tr) {
+              const prefixEmojiEnd = tr.isError ? "✗" : "✓";
+              const statusPrefix = tr.isError ? `${prefixEmojiEnd} Failed -` : `${prefixEmojiEnd} Completed -`;
+              const resultContent = tr.isError
+                ? `${statusPrefix} ${description}\nDetail: ${tr.result}`
+                : `${statusPrefix} ${description}\nOutput: ${tr.result.slice(0, 500)}${tr.result.length > 500 ? "..." : ""}`;
+
+              assistantLine.children!.push({
+                type: "tool_end",
+                content: resultContent,
+                timestamp: m.timestamp,
+              });
+            }
+          }
+        }
+        loadedLines.push(assistantLine);
+      }
+    }
+  }
+
+  return loadedLines;
+}
+
