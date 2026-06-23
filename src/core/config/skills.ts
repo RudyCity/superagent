@@ -70,12 +70,12 @@ export function getInstalledSkills(): LoadedSkill[] {
       let author = defaultAuthor;
 
       // Simple frontmatter parser
-      const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+      const fmMatch = content.match(/^---[\r\n]+([\s\S]*?)[\r\n]+---/);
       if (fmMatch) {
         const fm = fmMatch[1];
-        const nameMatch = fm.match(/^name:\s*(.*)$/m);
-        const descMatch = fm.match(/^description:\s*(.*)$/m);
-        const authorMatch = fm.match(/^(author|provider|owner):\s*(.*)$/m);
+        const nameMatch = fm.match(/^\s*name:\s*(.*)$/m);
+        const descMatch = fm.match(/^\s*description:\s*(.*)$/m);
+        const authorMatch = fm.match(/^\s*(author|provider|owner):\s*(.*)$/m);
         if (nameMatch) name = nameMatch[1].trim();
         if (descMatch) description = descMatch[1].trim();
         if (authorMatch) author = authorMatch[2].trim();
