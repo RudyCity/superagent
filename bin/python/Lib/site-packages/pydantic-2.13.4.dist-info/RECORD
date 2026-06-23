@@ -1,6 +1,7 @@
 pydantic-2.13.4.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
 pydantic-2.13.4.dist-info/METADATA,sha256=0eVsNBJJJRL7a1mp38Jat68qggRYXNe8oABRMCMTM5Q,109397
 pydantic-2.13.4.dist-info/RECORD,,
+pydantic-2.13.4.dist-info/REQUESTED,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0
 pydantic-2.13.4.dist-info/WHEEL,sha256=QccIxa26bgl1E6uMy58deGWi-0aeIkkangHcxk2kWfw,87
 pydantic-2.13.4.dist-info/licenses/LICENSE,sha256=qeGG88oWte74QxjnpwFyE1GgDLe4rjpDlLZ7SeNSnvM,1129
 pydantic/__init__.py,sha256=5iEnJ4wHv1OEzdKQPzaKaZKfO4pSQAC65ODrYI6_S8Y,15812

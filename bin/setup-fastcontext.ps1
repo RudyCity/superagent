@@ -10,7 +10,7 @@
 # After this, no external Python, uv, or system packages are needed.
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
 $BinDir = Join-Path $ProjectRoot "bin"
 $PythonDir = Join-Path $BinDir "python"
 $VendorDir = Join-Path $ProjectRoot "vendor"
@@ -25,13 +25,19 @@ Write-Host ""
 Write-Host "[1/5] Cloning FastContext source..." -ForegroundColor Yellow
 if (Test-Path $FastContextDir) {
     Write-Host "  Already exists at vendor/fastcontext/ - pulling latest..."
+    $OldEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     git -C $FastContextDir pull --ff-only 2>$null
+    $ErrorActionPreference = $OldEAP
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  Pull failed, keeping existing source." -ForegroundColor DarkYellow
     }
 } else {
     New-Item -ItemType Directory -Path $VendorDir -Force | Out-Null
+    $OldEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     git clone https://github.com/microsoft/fastcontext.git $FastContextDir
+    $ErrorActionPreference = $OldEAP
     if ($LASTEXITCODE -ne 0) { throw "Failed to clone FastContext" }
 }
 Write-Host "  Done." -ForegroundColor Green
