@@ -1397,8 +1397,12 @@ for (const tc of toolCalls) {
 
           // Out-of-bounds file or command access check for all agent tiers
           const effectiveWorkspace = this.worktreePath || this.workingDirectory;
-          if (isToolCallOutOfBounds(tc, effectiveWorkspace) && !this.allowSessionOutOfBounds) {
-            const isModelCfg = isModelConfigAccess(tc, effectiveWorkspace);
+          const isModelCfg = isModelConfigAccess(tc, effectiveWorkspace);
+          // model-config.json always requires per-access permission (never bypassed by session flag)
+          const needsPermission = isModelCfg
+            ? true
+            : isToolCallOutOfBounds(tc, effectiveWorkspace) && !this.allowSessionOutOfBounds;
+          if (needsPermission) {
             const permMessage = isModelCfg
               ? `⚠️  Protected file access detected: model-config.json contains your API keys and model presets. Tool "${tc.name}" is attempting to access this file. This requires your explicit permission.`
               : `Out-of-bounds access detected for tool: ${tc.name}. Requires permission to access files/directories/processes outside the workspace.`;
@@ -1406,7 +1410,8 @@ for (const tc of toolCalls) {
               tc,
               permMessage
             );
-            if (approved === "session") {
+            // model-config.json: "Allow for This Session" is not meaningful — treat it as a one-time allow
+            if (!isModelCfg && approved === "session") {
               this.allowSessionOutOfBounds = true;
             } else if (!approved) {
               const blocked: ToolResult = {

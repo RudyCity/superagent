@@ -1169,8 +1169,12 @@ export function App({
   const permissionHandler: PermissionHandler = useCallback(
     (toolCall: ToolCall, description: string) => {
       return new Promise<boolean | "session">((resolve) => {
+        // model-config.json is always protected — no session-level bypass option
+        const isModelCfgAccess = description.includes("model-config.json");
         const isCmd = ["bash", "run_command", "run_background_process"].includes(toolCall.name);
-        const options = isCmd
+        const options = isModelCfgAccess
+          ? ["Allow Access (one-time)", "Deny Access"]
+          : isCmd
           ? ["Allow Command Execution", "Allow for This Session", "Deny Command Execution"]
           : ["Allow File/Directory Access", "Allow for This Session", "Deny File/Directory Access"];
         setPendingPermission({ toolCall, description, resolve });

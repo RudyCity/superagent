@@ -825,7 +825,11 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           let approved: boolean | "session" = false;
           if (wizardSelectedIndex === 0) {
             approved = true;
-          } else if (wizardSelectedIndex === 1) {
+          } else if (wizardSelectedIndex === wizardOptions.length - 1) {
+            // Last option is always Deny
+            approved = false;
+          } else {
+            // Middle option(s): "Allow for This Session"
             approved = "session";
           }
           handlePermissionResponse(approved);
