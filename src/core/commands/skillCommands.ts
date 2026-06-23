@@ -71,7 +71,7 @@ export const skillsCommand: SlashCommand = {
       return;
     }
     const options = skills.map(s => {
-      const provider = s.author || "obra";
+      const provider = s.author || "local";
       return `• ${provider}/${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`;
     });
     ctx.setActiveWizard?.({
