@@ -192,6 +192,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     // This check must be BEFORE focusedResponseIndex and focusMode checks
     // so Ctrl+C always works to cancel the wizard regardless of UI state.
     if (key.ctrl && inputChar === "c" && activeWizard) {
+      const needsAbort = activeWizard.type === "permission" || activeWizard.type === "question" || activeWizard.type === "plan_approve";
       if (pendingPermission) {
         pendingPermission.resolve(false);
         setPendingPermission(null);
@@ -212,6 +213,17 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         content: "Wizard cancelled.",
         timestamp: Date.now(),
       });
+      if (needsAbort) {
+        if (activeWizard.type === "plan_approve") {
+          setPlanState("IDLE");
+          if (agentRef.current) {
+            agentRef.current.planState = "IDLE";
+          }
+        }
+        stopRunningSubagents();
+        agentRef.current?.abort();
+        setIsProcessing(false);
+      }
       return;
     }
 
@@ -1682,6 +1694,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
         }
 
+        const needsAbort = activeWizard.type === "permission" || activeWizard.type === "question" || activeWizard.type === "plan_approve";
         if (pendingPermission) {
           pendingPermission.resolve(false);
           setPendingPermission(null);
@@ -1699,6 +1712,17 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           content: "Wizard cancelled.",
           timestamp: Date.now(),
         });
+        if (needsAbort) {
+          if (activeWizard.type === "plan_approve") {
+            setPlanState("IDLE");
+            if (agentRef.current) {
+              agentRef.current.planState = "IDLE";
+            }
+          }
+          stopRunningSubagents();
+          agentRef.current?.abort();
+          setIsProcessing(false);
+        }
       } else if (isProcessing || agentRef.current?.isAgentRunning() || agentRef.current?.wasRunningBeforeAbort) {
         if (stopRunningSubagents() > 0) {
           agentRef.current?.abort();

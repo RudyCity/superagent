@@ -131,6 +131,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
       if (activeWizard) {
+        const needsAbort = activeWizard.type === "question" || activeWizard.type === "plan_approve" || activeWizard.type === "permission";
         setActiveWizard(null);
         setWizardOptions([]);
         setWizardSelectedIndex(0);
@@ -144,6 +145,14 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         }
         if (setMasterLogs) {
           setMasterLogs((prev) => [...prev, "[SYSTEM] Wizard cancelled."].slice(-500));
+        }
+        if (needsAbort) {
+          if (agent && activeWizard.type === "plan_approve") {
+            agent.planState = "IDLE";
+          }
+          stopAllRunningAgents();
+          setIsProcessing(false);
+          setCurrentTask("Idle - Interrupted");
         }
         return;
       }
@@ -508,6 +517,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
           }
         }
 
+        const needsAbort = activeWizard.type === "question" || activeWizard.type === "plan_approve" || activeWizard.type === "permission";
         setActiveWizard(null);
         setWizardOptions([]);
         setWizardSelectedIndex(0);
@@ -518,6 +528,14 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         if (pendingQuestion) {
           pendingQuestion.resolve("");
           setPendingQuestion(null);
+        }
+        if (needsAbort) {
+          if (agent && activeWizard.type === "plan_approve") {
+            agent.planState = "IDLE";
+          }
+          stopAllRunningAgents();
+          setIsProcessing(false);
+          setCurrentTask("Idle - Interrupted");
         }
         return;
       }
