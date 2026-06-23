@@ -243,6 +243,44 @@ export function isModelConfigAccess(
   return false;
 }
 
+/**
+ * Matches any filename that is or starts with ".env" (e.g. .env, .env.local,
+ * .env.production, .env-staging, .env_test, etc.)
+ */
+const ENV_FILE_PATTERN = /(?:^|[\\/])\.env([._\-][^\\/]*)?$/i;
+
+/**
+ * Returns true if a tool call targets a sensitive .env* file inside the workspace.
+ * These files may contain API keys, database credentials, and other secrets.
+ * Unlike out-of-bounds checks, this applies even to paths INSIDE the workspace.
+ */
+export function isSensitiveEnvFileAccess(
+  toolCall: { name: string; args?: Record<string, unknown> }
+): boolean {
+  const args = toolCall.args || {};
+
+  const candidatePaths = [
+    args.filePath, args.file_path, args.TargetFile, args.path,
+    args.AbsolutePath,
+  ].filter((v): v is string => typeof v === "string");
+
+  for (const fp of candidatePaths) {
+    const normalized = fp.replace(/\\/g, "/");
+    if (ENV_FILE_PATTERN.test(normalized)) return true;
+  }
+
+  // Check shell commands for references to .env files
+  const shellTools = ["bash", "run_command", "run_background_process"];
+  if (shellTools.includes(toolCall.name)) {
+    const command = (args.command ?? args.cmd) as string | undefined;
+    if (command && typeof command === "string") {
+      // Match common operations: cat .env, cp .env, source .env, etc.
+      if (ENV_FILE_PATTERN.test(command)) return true;
+    }
+  }
+
+  return false;
+}
 
 export function getToolDescription(
   toolCall: ToolCall

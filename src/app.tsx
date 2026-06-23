@@ -1171,9 +1171,13 @@ export function App({
       return new Promise<boolean | "session">((resolve) => {
         // model-config.json is always protected — no session-level bypass option
         const isModelCfgAccess = description.includes("model-config.json");
+        // .env files are sensitive but can be session-scoped (user might be doing env-related work)
+        const isEnvFileAccess = description.includes(".env file");
         const isCmd = ["bash", "run_command", "run_background_process"].includes(toolCall.name);
         const options = isModelCfgAccess
           ? ["Allow Access (one-time)", "Deny Access"]
+          : isEnvFileAccess
+          ? ["Allow Access (one-time)", "Allow for This Session", "Deny Access"]
           : isCmd
           ? ["Allow Command Execution", "Allow for This Session", "Deny Command Execution"]
           : ["Allow File/Directory Access", "Allow for This Session", "Deny File/Directory Access"];

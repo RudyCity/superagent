@@ -15,6 +15,7 @@ import {
   MODIFYING_TOOLS,
   isToolCallOutOfBounds,
   isModelConfigAccess,
+  isSensitiveEnvFileAccess,
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { AsyncLocalStorage } from "async_hooks";
@@ -99,6 +100,7 @@ export class Agent {
   public goalMaxIterations: number = 200;
   public wasRunningBeforeAbort = false;
   public allowSessionOutOfBounds = false;
+  public allowSessionEnvAccess = false;
   public allowSessionDangerous = false;
   private conversation: Conversation;
   private customSystemPrompt?: string;
@@ -1398,21 +1400,29 @@ for (const tc of toolCalls) {
           // Out-of-bounds file or command access check for all agent tiers
           const effectiveWorkspace = this.worktreePath || this.workingDirectory;
           const isModelCfg = isModelConfigAccess(tc, effectiveWorkspace);
+          const isEnvFile = !isModelCfg && isSensitiveEnvFileAccess(tc);
           // model-config.json always requires per-access permission (never bypassed by session flag)
+          // .env* files require permission unless user already granted session access for env files
           const needsPermission = isModelCfg
             ? true
+            : isEnvFile
+            ? !this.allowSessionEnvAccess
             : isToolCallOutOfBounds(tc, effectiveWorkspace) && !this.allowSessionOutOfBounds;
           if (needsPermission) {
             const permMessage = isModelCfg
               ? `⚠️  Protected file access detected: model-config.json contains your API keys and model presets. Tool "${tc.name}" is attempting to access this file. This requires your explicit permission.`
+              : isEnvFile
+              ? `⚠️  Sensitive file access detected: Tool "${tc.name}" is attempting to access a .env file which may contain API keys, database credentials, or other secrets. This requires your explicit permission.`
               : `Out-of-bounds access detected for tool: ${tc.name}. Requires permission to access files/directories/processes outside the workspace.`;
             const approved = await this.onPermission(
               tc,
               permMessage
             );
             // model-config.json: "Allow for This Session" is not meaningful — treat it as a one-time allow
-            if (!isModelCfg && approved === "session") {
+            if (!isModelCfg && !isEnvFile && approved === "session") {
               this.allowSessionOutOfBounds = true;
+            } else if (!isModelCfg && isEnvFile && approved === "session") {
+              this.allowSessionEnvAccess = true;
             } else if (!approved) {
               const blocked: ToolResult = {
                 toolCallId: tc.id,
