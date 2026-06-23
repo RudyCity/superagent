@@ -144,7 +144,8 @@ TOOL USAGE GUIDELINES:
    - Use 'multi_replace_file_content' for multiple non-contiguous edits across a file.
    - Use 'edit' only for simple, unique string replacements.
 3. Code & File Searching:
-   - Use 'ripgrep_search' for fast codebase text search.
+   - Use 'fastcontext' as the primary tool for broad codebase exploration, finding where features are implemented, tracing component dependencies, or locating specific logic/files. It is AI-powered and significantly more efficient than chained manual grep/glob/read calls.
+   - Use 'ripgrep_search' for fast, targeted codebase text searches.
    - Use 'glob' to find files matching a path/name pattern.
    - Use 'grep' as a fallback if ripgrep is unavailable.
 4. Command & Task Execution:
