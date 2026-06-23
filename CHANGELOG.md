@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.92] - 2026-06-23
+
+### Added
+- **Mandatory Skill Reading Guidelines**: Added and expanded documentation guidelines requiring AI agents to read relevant skill files before planning or execution.
+
+### Fixed
+- **Wizard Key Swallowing**: Prevented focusMode handlers from swallowing keyboard inputs when the active wizard is open.
+
+---
+
 ## [1.1.91] - 2026-06-23
 
 ### Added
