@@ -1,7 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { superagentInstances } from "../core/tools.js";
-import { unicodeStrikethrough } from "../utils/text.js";
 
 interface TaskChecklistProps {
   planState: string;
@@ -117,16 +116,14 @@ export function TaskChecklist({
 
             const connector = "├──";
 
-            const displayText = status === "x"
-              ? unicodeStrikethrough(task.text)
-              : task.text;
+            const isCompleted = status === "x";
 
             return (
               <Box key={idx} flexDirection="row">
                 <Text color={connectorColor}>{connector} </Text>
                 <Text color={connectorColor}>{statusIcon} </Text>
-                <Text color={taskColor}>
-                  {displayText}{displayStatusText}
+                <Text color={taskColor} strikethrough={isCompleted}>
+                  {task.text}{displayStatusText}
                 </Text>
               </Box>
             );
@@ -160,8 +157,8 @@ export function TaskChecklist({
               <Box key={`hist-${index}`} flexDirection="row">
                 <Text color="gray" dimColor>{connector} </Text>
                 <Text color="gray" dimColor>◉ </Text>
-                <Text color="gray" dimColor>
-                  {unicodeStrikethrough(task.text)}
+                <Text color="gray" dimColor strikethrough>
+                  {task.text}
                 </Text>
               </Box>
             );
