@@ -1030,7 +1030,7 @@ export function App({
         case "text":
           streamBufferRef.current = resolveCarriageReturns(streamBufferRef.current + event.content);
           const now = Date.now();
-          if (now - lastStreamUpdateRef.current > 100) {
+          if (now - lastStreamUpdateRef.current > 30) {
             setStreamDisplay(streamBufferRef.current);
             lastStreamUpdateRef.current = now;
             if (streamTimeoutRef.current) {
@@ -1043,7 +1043,7 @@ export function App({
                 setStreamDisplay(streamBufferRef.current);
                 lastStreamUpdateRef.current = Date.now();
                 streamTimeoutRef.current = null;
-              }, 100);
+              }, 30);
             }
           }
           break;

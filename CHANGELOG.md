@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.99] - 2026-06-23
+
+### Improved
+- **Fast Stream Rendering**: Reduced the streaming rendering throttle from `100ms` to `30ms` for much more responsive and faster UI updates when displaying assistant text streams.
+
+---
+
 ## [1.1.98] - 2026-06-23
 
 ### Added
