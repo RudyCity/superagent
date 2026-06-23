@@ -206,6 +206,42 @@ export function isToolCallOutOfBounds(
   return false;
 }
 
+/**
+ * Returns true if a tool call (file or shell) targets model-config.json specifically.
+ * Used to show a more descriptive permission message.
+ */
+export function isModelConfigAccess(
+  toolCall: { name: string; args?: Record<string, unknown> },
+  workspacePath: string
+): boolean {
+  const args = toolCall.args || {};
+  const rootConfig = resolveNormalizedPath(getRootConfigDir());
+  const modelConfigPath = path.join(rootConfig, "model-config.json");
+
+  const candidatePaths = [
+    args.filePath, args.file_path, args.TargetFile, args.path,
+    args.cwd, args.DirectoryPath, args.SearchPath, args.AbsolutePath,
+  ].filter((v): v is string => typeof v === "string");
+
+  for (const fp of candidatePaths) {
+    const isAbs = path.isAbsolute(fp) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(fp));
+    const resolved = isAbs
+      ? resolveNormalizedPath(fp)
+      : resolveNormalizedPath(fp, workspacePath);
+    if (normalizeAndCheckSubpath(resolved, modelConfigPath)) return true;
+  }
+
+  // Also check shell command arguments
+  const shellTools = ["bash", "run_command", "run_background_process"];
+  if (shellTools.includes(toolCall.name)) {
+    const command = (args.command ?? args.cmd) as string | undefined;
+    if (command && typeof command === "string") {
+      if (command.toLowerCase().includes("model-config.json")) return true;
+    }
+  }
+
+  return false;
+}
 
 
 export function getToolDescription(

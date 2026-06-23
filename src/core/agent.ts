@@ -14,6 +14,7 @@ import {
   isDangerousCommand,
   MODIFYING_TOOLS,
   isToolCallOutOfBounds,
+  isModelConfigAccess,
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { AsyncLocalStorage } from "async_hooks";
@@ -1397,9 +1398,13 @@ for (const tc of toolCalls) {
           // Out-of-bounds file or command access check for all agent tiers
           const effectiveWorkspace = this.worktreePath || this.workingDirectory;
           if (isToolCallOutOfBounds(tc, effectiveWorkspace) && !this.allowSessionOutOfBounds) {
+            const isModelCfg = isModelConfigAccess(tc, effectiveWorkspace);
+            const permMessage = isModelCfg
+              ? `⚠️  Protected file access detected: model-config.json contains your API keys and model presets. Tool "${tc.name}" is attempting to access this file. This requires your explicit permission.`
+              : `Out-of-bounds access detected for tool: ${tc.name}. Requires permission to access files/directories/processes outside the workspace.`;
             const approved = await this.onPermission(
               tc,
-              `Out-of-bounds access detected for tool: ${tc.name}. Requires permission to access files/directories/processes outside the workspace.`
+              permMessage
             );
             if (approved === "session") {
               this.allowSessionOutOfBounds = true;
