@@ -40,6 +40,7 @@ const OBRA_SKILLS = new Set([
   "testing-anti-patterns",
   "testing-skills-with-subagents",
   "tracing-knowledge-lineages",
+  "typescript-advanced-types",
   "using-git-worktrees",
   "verification-before-completion",
   "when-stuck-problem-solving-dispatch",
