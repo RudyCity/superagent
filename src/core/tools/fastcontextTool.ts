@@ -250,12 +250,17 @@ export const fastcontextTool: Tool = {
     // Resolve maxTurns: arg → default 8, capped by maxIterations from global settings.
     // maxIterations = 0 means "unlimited" (no cap).
     let maxTurns = (args.maxTurns as number) || 8;
+    let rateLimitRpm = 60;
+    let rateLimitCapacity = 60;
     try {
       const { getSettings } = await import("../config/jsonConfig.js");
-      const { maxIterations } = getSettings();
+      const settings = getSettings();
+      const { maxIterations } = settings;
       if (maxIterations > 0 && maxTurns > maxIterations) {
         maxTurns = maxIterations;
       }
+      rateLimitRpm = settings.rateLimitRpm ?? 60;
+      rateLimitCapacity = settings.rateLimitCapacity ?? 60;
     } catch { /* non-fatal — use computed maxTurns as-is */ }
 
     // Dynamic timeout: 35s per turn, min 60s, max 600s
@@ -340,6 +345,8 @@ export const fastcontextTool: Tool = {
       "--trajectory-path", trajectoryPath,
       "--provider", providerType,
       "--max-file-size-kb", String(maxFileSizeKb),
+      "--rate-limit-rpm", String(rateLimitRpm),
+      "--rate-limit-capacity", String(rateLimitCapacity),
     ];
     if (citation) {
       cliArgs.push("--citation");
@@ -465,7 +472,8 @@ export const fastcontextTool: Tool = {
                 break;
               }
               case "retry": {
-                log(`  ⏳ Retry ${evt.attempt}/${3} in ${evt.wait}s — ${(evt.reason || "").slice(0, 80)}`);
+                const total = evt.total_attempts || 3;
+                log(`  ⏳ Retry ${evt.attempt}/${total} in ${evt.wait}s — ${(evt.reason || "").slice(0, 80)}`);
                 break;
               }
               case "usage": {

@@ -51,6 +51,100 @@ def emit(event: dict):
     print(json.dumps(event, ensure_ascii=False), file=sys.stderr, flush=True)
 
 
+class PythonSharedRateLimiter:
+    def __init__(self, config_dir: str = None):
+        if not config_dir:
+            override = os.environ.get("SUPERAGENT_CONFIG_DIR", "").strip()
+            config_dir = os.path.abspath(override) if override else os.path.join(os.path.expanduser("~"), ".superagent-r")
+        self.state_path = os.path.join(config_dir, "rate_limit_state.json")
+        self.lock_path = os.path.join(config_dir, "rate_limit.lock")
+
+    def _release_lock(self):
+        try:
+            if os.path.exists(self.lock_path):
+                os.remove(self.lock_path)
+        except OSError:
+            pass
+
+    async def _acquire_lock(self):
+        start = time.time()
+        while True:
+            try:
+                fd = os.open(self.lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+                with os.fdopen(fd, 'w') as f:
+                    f.write(str(os.getpid()))
+                return
+            except FileNotFoundError:
+                try:
+                    os.makedirs(os.path.dirname(self.lock_path), exist_ok=True)
+                except OSError:
+                    pass
+            except FileExistsError:
+                try:
+                    mtime = os.path.getmtime(self.lock_path)
+                    if time.time() - mtime > 10.0:
+                        self._release_lock()
+                        continue
+                except OSError:
+                    pass
+            
+            await asyncio.sleep(0.05)
+            if time.time() - start > 15.0:
+                self._release_lock()
+
+    def _read_state(self, capacity: float) -> dict:
+        default_state = {"lastTimestamp": int(time.time() * 1000), "tokensRemaining": capacity}
+        if not os.path.exists(self.state_path):
+            return default_state
+        try:
+            with open(self.state_path, "r", encoding="utf-8") as f:
+                parsed = json.load(f)
+            if not isinstance(parsed.get("lastTimestamp"), (int, float)) or not isinstance(parsed.get("tokensRemaining"), (int, float)):
+                return default_state
+            return parsed
+        except Exception:
+            return default_state
+
+    def _write_state(self, state: dict):
+        try:
+            os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
+            with open(self.state_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+        except Exception:
+            pass
+
+    async def acquire(self, rate_limit_rpm: int, rate_limit_capacity: int, cost: float = 1.0):
+        if rate_limit_rpm <= 0:
+            return
+
+        capacity = float(rate_limit_capacity if rate_limit_capacity > 0 else rate_limit_rpm)
+        refill_rate = float(rate_limit_rpm) / 60000.0
+
+        while True:
+            await self._acquire_lock()
+            try:
+                state = self._read_state(capacity)
+                now = int(time.time() * 1000)
+                elapsed = now - state["lastTimestamp"]
+
+                refilled = elapsed * refill_rate
+                new_tokens = min(capacity, state["tokensRemaining"] + refilled)
+
+                if new_tokens >= cost:
+                    state["tokensRemaining"] = new_tokens - cost
+                    state["lastTimestamp"] = now
+                    self._write_state(state)
+                    self._release_lock()
+                    return
+
+                self._release_lock()
+                wait_time_ms = max(500.0, ((cost - new_tokens) / refill_rate))
+                await asyncio.sleep(wait_time_ms / 1000.0)
+            except Exception as e:
+                self._release_lock()
+                raise e
+
+
 def run():
     parser = argparse.ArgumentParser(description="FastContext runner")
     parser.add_argument("--source-dir", required=True)
@@ -71,6 +165,8 @@ def run():
                         help="Skip files larger than this many KB when reading (default: 512)")
     parser.add_argument("--no-cache", action="store_true",
                         help="Bypass the query result cache")
+    parser.add_argument("--rate-limit-rpm", type=int, default=60)
+    parser.add_argument("--rate-limit-capacity", type=int, default=60)
     args = parser.parse_args()
 
     # Parse exclude patterns
@@ -498,31 +594,35 @@ def run():
     # Wire in our replacement — vendor's sequential .call is never used
     toolset.call = parallel_toolset_call
 
+    rate_limiter = PythonSharedRateLimiter()
+
     # ── LLM call with exponential-backoff retry ───────────────────────────────
     _RETRYABLE_SIGNALS = (
         "rate limit", "429", "timeout", "connection",
         "overloaded", "503", "529", "service unavailable",
         "internalservererror", "openaiexception",  # LiteLLM custom endpoint failures
     )
-    _MAX_LLM_RETRIES = 3
+    _MAX_LLM_RETRIES = 6
 
     async def llm_call_with_retry(messages, tools):
         """Retry transient LLM errors with exponential backoff + jitter."""
         last_err = None
         for attempt in range(_MAX_LLM_RETRIES):
             try:
+                await rate_limiter.acquire(args.rate_limit_rpm, args.rate_limit_capacity)
                 return await llm.acall(messages=messages, tools=tools)
             except RequestyAPIError as exc:
                 last_err = exc
                 err_lower = str(exc).lower()
                 retryable = any(sig in err_lower for sig in _RETRYABLE_SIGNALS)
                 if retryable and attempt < _MAX_LLM_RETRIES - 1:
-                    base_wait = 2 ** attempt          # 1s, 2s, 4s
+                    base_wait = 2 ** attempt          # 1s, 2s, 4s, 8s, 16s, 32s
                     jitter = random.uniform(0.0, 1.0) # 0–1s jitter
                     wait = round(base_wait + jitter, 1)
                     emit({
                         "event": "retry",
                         "attempt": attempt + 1,
+                        "total_attempts": _MAX_LLM_RETRIES,
                         "wait": wait,
                         "reason": str(exc)[:120],
                     })
