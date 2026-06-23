@@ -120,6 +120,7 @@ export function MultiAgentDashboard({
   const [query, setQuery] = useState("");
   const [lastTabPrefix, setLastTabPrefix] = useState<string | null>(null);
   const [masterLogs, setMasterLogs] = useState<string[]>(["[MASTER] System initialised. Ready for tasks."]);
+  const logQueueRef = useRef<string[]>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [tempInput, setTempInput] = useState("");
@@ -581,48 +582,57 @@ export function MultiAgentDashboard({
 
   // Register the agent event log handler on mount
   useEffect(() => {
-    registerLogHandler((rawMsg) => {
-      // Normalize \r\n -> \n, then strip bare \r to prevent cursor-to-col-0 bleed
-      const msg = rawMsg.replace(/\r\n/g, "\n").replace(/\r/g, "");
+    const intervalId = setInterval(() => {
+      if (logQueueRef.current.length === 0) return;
+      const msgs = [...logQueueRef.current];
+      logQueueRef.current = [];
 
       setMasterLogs((prev) => {
-        if (prev.length === 0) return [msg];
-        
-        const isTag = (line: string) => {
-          const trimmed = line.trim();
-          return (
-            trimmed.startsWith("[USER]") ||
-            trimmed.startsWith("[MASTER]") ||
-            trimmed.startsWith("[AGENT]") ||
-            trimmed.startsWith("[TOOL START]") ||
-            trimmed.startsWith("[TOOL END]") ||
-            trimmed.startsWith("[ERROR]") ||
-            trimmed.startsWith("[AUTO-APPROVE]") ||
-            trimmed.startsWith("[QUESTION]")
-          );
-        };
+        let current = [...prev];
+        for (const rawMsg of msgs) {
+          const msg = rawMsg.replace(/\r\n/g, "\n").replace(/\r/g, "");
+          if (current.length === 0) {
+            current = [msg];
+            continue;
+          }
 
-        const lastIdx = prev.length - 1;
-        const last = prev[lastIdx];
-        
-        if (msg.startsWith("[AGENT]") && last.startsWith("[AGENT]")) {
-          const updated = [...prev];
-          // Strip only the tag prefix — preserve the raw token content including leading spaces
-          const cleanMsg = msg.replace(/^\[AGENT\]/, "");
-          // Append directly: streaming chunks already carry their own spacing/newlines
-          updated[lastIdx] = last + cleanMsg;
-          return updated.slice(-500);
-        }
+          const isTag = (line: string) => {
+            const trimmed = line.trim();
+            return (
+              trimmed.startsWith("[USER]") ||
+              trimmed.startsWith("[MASTER]") ||
+              trimmed.startsWith("[AGENT]") ||
+              trimmed.startsWith("[TOOL START]") ||
+              trimmed.startsWith("[TOOL END]") ||
+              trimmed.startsWith("[ERROR]") ||
+              trimmed.startsWith("[AUTO-APPROVE]") ||
+              trimmed.startsWith("[QUESTION]")
+            );
+          };
 
-        if (!isTag(msg) && !isTag(last)) {
-          const updated = [...prev];
-          updated[lastIdx] = last + "\n" + msg;
-          return updated.slice(-500);
+          const lastIdx = current.length - 1;
+          const last = current[lastIdx];
+
+          if (msg.startsWith("[AGENT]") && last.startsWith("[AGENT]")) {
+            const cleanMsg = msg.replace(/^\[AGENT\]/, "");
+            current[lastIdx] = last + cleanMsg;
+          } else if (!isTag(msg) && !isTag(last)) {
+            current[lastIdx] = last + "\n" + msg;
+          } else {
+            current.push(msg);
+          }
         }
-        
-        return [...prev, msg].slice(-500);
+        return current.slice(-500);
       });
+    }, 30);
+
+    registerLogHandler((rawMsg) => {
+      logQueueRef.current.push(rawMsg);
     });
+
+    return () => {
+      clearInterval(intervalId);
+    };
   }, [registerLogHandler]);
 
   // Register the agent event handler on mount

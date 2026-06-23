@@ -111,11 +111,29 @@ export function useDashboardSessions(
 
     update();
 
-    const unsubSubagents = subscribeToSubagents(update);
-    const unsubSuperagents = subscribeToSuperagents(update);
-    const unsubTasks = subscribeToTasks(update);
+    let timer: NodeJS.Timeout | null = null;
+    let pending = false;
+    const throttledUpdate = () => {
+      if (timer) {
+        pending = true;
+        return;
+      }
+      update();
+      timer = setTimeout(() => {
+        timer = null;
+        if (pending) {
+          pending = false;
+          throttledUpdate();
+        }
+      }, 30);
+    };
+
+    const unsubSubagents = subscribeToSubagents(throttledUpdate);
+    const unsubSuperagents = subscribeToSuperagents(throttledUpdate);
+    const unsubTasks = subscribeToTasks(throttledUpdate);
 
     return () => {
+      if (timer) clearTimeout(timer);
       unsubSubagents();
       unsubSuperagents();
       unsubTasks();

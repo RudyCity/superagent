@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.100] - 2026-06-23
+
+### Improved
+- **Throttled Dashboard Updates**: Implemented log buffering and state update throttling (every `30ms`) in the multi-agent dashboard UI and session hook to prevent performance drops and lag during high-frequency token streaming.
+
+---
+
 ## [1.1.99] - 2026-06-23
 
 ### Improved
