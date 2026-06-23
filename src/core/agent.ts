@@ -86,7 +86,7 @@ function isRetryableError(err: unknown): boolean {
   let statusCode: number | undefined;
 
   if (err instanceof Error) {
-    if (err.name === "AbortError") return false;
+    if (err.name === "AbortError" || err.message.toLowerCase().includes("aborted") || err.message.toLowerCase().includes("abort")) return false;
     msg = err.message;
     statusCode = (err as any).statusCode || (err as any).status;
   } else if (typeof err === "object") {
@@ -1031,6 +1031,11 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               });
 
               for await (const delta of result.fullStream) {
+                if (this.abortController?.signal.aborted) {
+                  const err = new Error("AbortError");
+                  err.name = "AbortError";
+                  throw err;
+                }
                 if (delta.type === "text-delta") {
                   textContent += delta.textDelta;
                   this.onEvent({ type: "text", content: delta.textDelta });

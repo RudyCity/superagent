@@ -671,6 +671,12 @@ export function MultiAgentDashboard({
           setToolStartTime(null);
           setTimeLeft(null);
           setIsProcessing(false);
+          setCurrentTask((prev) => {
+            if (prev.toLowerCase().includes("interrupted") || prev.toLowerCase().includes("error")) {
+              return prev;
+            }
+            return "Idle";
+          });
         }
       });
     }

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.101] - 2026-06-23
+
+### Fixed
+- **Instant Stream Interruptions**: Added explicit abort checks at the start of each text stream chunk iteration in the agent loop. Resolved edge cases where the LLM response stream failed to stop immediately when the user pressed Ctrl+C or Escape.
+- **Dashboard Reset on Interruption**: Automatically set the dashboard's current task status to `"Idle"` or `"Idle - Interrupted"` upon master agent done/abort events.
+
+---
+
 ## [1.1.100] - 2026-06-23
 
 ### Improved
