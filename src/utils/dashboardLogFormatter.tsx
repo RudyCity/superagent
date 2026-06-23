@@ -17,6 +17,8 @@ interface LogGroup {
   groupIndex?: number;
   /** Nesting level: 0 = top-level, 1 = nested under parent agent message */
   nestLevel?: number;
+  /** Merged result from TOOL:OK/FAIL patched onto the preceding TOOL:START group */
+  mergedResult?: { isError: boolean; lines: string[] };
 }
 
 /** Labels that are collapsible in the multi-agent log view */
@@ -295,6 +297,31 @@ export function computeWrappedLogs(
     }
   }
 
+  // Merge TOOL:START + TOOL:OK/FAIL pairs into a single group
+  // The result group is absorbed into the start group as mergedResult, then removed
+  const mergedGroups: LogGroup[] = [];
+  for (let gi = 0; gi < groups.length; gi++) {
+    const g = groups[gi];
+    const isStart = g.label === "🔧 TOOL START";
+    const next = groups[gi + 1];
+    if (
+      isStart &&
+      next &&
+      !next.isBox &&
+      (next.label === "✅ TOOL OK" || next.label === "✅ TOOL DONE" || next.label === "🚨 TOOL FAIL")
+    ) {
+      // Absorb next group as mergedResult on current TOOL:START group
+      const isError = next.label.includes("FAIL");
+      mergedGroups.push({ ...g, mergedResult: { isError, lines: next.rawLines } });
+      gi++; // Skip the TOOL:OK/FAIL group
+    } else {
+      mergedGroups.push(g);
+    }
+  }
+  // Replace groups with merged result
+  groups.length = 0;
+  groups.push(...mergedGroups);
+
   for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
     const group = groups[groupIdx];
     const useTruncate = isHistoryTruncated && !group.parseMarkdown && !group.noTruncate;
@@ -327,6 +354,25 @@ export function computeWrappedLogs(
       if (isTool) {
         const firstContent = group.rawLines[0] || "";
         const isAskQuestion = firstContent.includes("Asking user:");
+
+        // ── Merged TOOL:START+OK/FAIL collapsed as single row ────────
+        if (group.mergedResult && !isAskQuestion) {
+          const merged = group.mergedResult;
+          const statusIcon = merged.isError ? "✗" : "✓";
+          const statusLabel = merged.isError ? "failed" : "done";
+          const statusColor = merged.isError ? "red" : "green";
+          const preview = firstContent.length > 50 ? firstContent.slice(0, 47) + "..." : firstContent;
+          wrappedLines.push(
+            <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>
+              <Text color={group.color} dimColor={group.dimColor} wrap="truncate-end">
+                {nestPrefix}    <Text bold color="cyan">↳ ⚙️ </Text><Text color={group.color}>{preview}</Text>
+                <Text bold color={statusColor}> {statusIcon} {statusLabel}</Text>
+                <Text dimColor italic>  (click to expand)</Text>
+              </Text>
+            </Box>
+          );
+          continue;
+        }
 
         if (isAskQuestion) {
           const isStart = group.label.includes("TOOL START");
@@ -391,18 +437,23 @@ export function computeWrappedLogs(
     const subLinePrefix = nestPrefix + (groupIdx === groups.length - 1 ? "     " : "│    ");
 
     if (isTool) {
-      const icon = group.label.includes("TOOL START") ? "⚙️ " :
-                   group.label.includes("FAIL") ? "✗ " : "✓ ";
+      const merged = group.mergedResult;
+      const mergedColor = merged?.isError ? "red" : "green";
+      const mergedIcon = merged?.isError ? "✗" : "✓";
+      const icon = "\u2699\ufe0f ";
       const firstContent = group.rawLines[0] || "";
       const cleaned = firstContent.replace(/\r\n/g, "\n").replace(/\r/g, "");
       const firstLineText = cleaned.split("\n")[0] || "";
       wrappedLines.push(
         <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
           <Text color={group.color} bold={group.isBold} dimColor={group.dimColor} wrap={useTruncate ? "truncate-end" : undefined}>
-            {nestPrefix}    <Text bold color={group.color}>▼ {icon}</Text><Text color={group.color}>{firstLineText}</Text><Text dimColor italic> (click to collapse)</Text>
+            {nestPrefix}    <Text bold color={group.color}>▼ {icon}</Text><Text color={group.color}>{firstLineText}</Text>
+            {merged && <Text bold color={mergedColor}> {mergedIcon}</Text>}
+            <Text dimColor italic> (click to collapse)</Text>
           </Text>
         </Box>
       );
+      // Render remaining input lines
     } else {
       wrappedLines.push(
         <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
@@ -523,6 +574,33 @@ export function computeWrappedLogs(
       }
     }
 
+    // Render merged output lines (TOOL:OK/FAIL) after the input content
+    if (isTool && group.mergedResult) {
+      const merged = group.mergedResult;
+      const mergedColor = merged.isError ? "red" : "green";
+      const outputSubLinePrefix = subLinePrefix + "    ";
+      // Divider
+      wrappedLines.push(
+        <Box flexDirection="row" key={`log-divider-${groupIdx}`} width={feedWidth}>
+          <Text color={mergedColor} dimColor>{outputSubLinePrefix}{"─".repeat(28)}</Text>
+        </Box>
+      );
+      for (let mi = 0; mi < merged.lines.length; mi++) {
+        const content = merged.lines[mi];
+        const cleanedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
+        const subLines = wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - 18));
+        for (let i = 0; i < subLines.length; i++) {
+          const lineText = subLines[i];
+          wrappedLines.push(
+            <Box flexDirection="row" key={`log-merged-${groupIdx}-${mi}-${i}`} width={feedWidth}>
+              <Text color={mergedColor} dimColor={!merged.isError}>{outputSubLinePrefix}</Text>
+              <Text color={merged.isError ? "white" : "gray"} dimColor={!merged.isError} wrap={useTruncate ? "truncate-end" : undefined}>{lineText}</Text>
+            </Box>
+          );
+        }
+      }
+    }
+
     const nextGroup = groups[groupIdx + 1];
     const nextIsNested = nextGroup && (nextGroup.nestLevel || 0) > 0;
     if (groupIdx < groups.length - 1 && !nextIsNested) {
@@ -533,6 +611,7 @@ export function computeWrappedLogs(
       );
     }
   }
+
 
   return wrappedLines;
 }
