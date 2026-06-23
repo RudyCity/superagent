@@ -37,7 +37,7 @@ export type AgentEvent =
 export type PermissionHandler = (
   toolCall: ToolCall,
   description: string
-) => Promise<boolean>;
+) => Promise<boolean | "session">;
 
 export interface QuestionItem {
   question: string;
@@ -97,6 +97,8 @@ export class Agent {
   public goalMode: string | null = null;
   public goalMaxIterations: number = 200;
   public wasRunningBeforeAbort = false;
+  public allowSessionOutOfBounds = false;
+  public allowSessionDangerous = false;
   private conversation: Conversation;
   private customSystemPrompt?: string;
   /** Custom tool list for this agent (tier-specific). Undefined = use allTools. */
@@ -1369,9 +1371,11 @@ for (const tc of toolCalls) {
               }
             }
 
-            if (isDangerousCommand(tc.args.command as string)) {
+            if (isDangerousCommand(tc.args.command as string) && !this.allowSessionDangerous) {
               const approved = await this.onPermission(tc, description);
-              if (!approved) {
+              if (approved === "session") {
+                this.allowSessionDangerous = true;
+              } else if (!approved) {
                 const denied: ToolResult = {
                   toolCallId: tc.id,
                   name: tc.name,
@@ -1392,12 +1396,14 @@ for (const tc of toolCalls) {
 
           // Out-of-bounds file or command access check for all agent tiers
           const effectiveWorkspace = this.worktreePath || this.workingDirectory;
-          if (isToolCallOutOfBounds(tc, effectiveWorkspace)) {
+          if (isToolCallOutOfBounds(tc, effectiveWorkspace) && !this.allowSessionOutOfBounds) {
             const approved = await this.onPermission(
               tc,
               `Out-of-bounds access detected for tool: ${tc.name}. Requires permission to access files/directories/processes outside the workspace.`
             );
-            if (!approved) {
+            if (approved === "session") {
+              this.allowSessionOutOfBounds = true;
+            } else if (!approved) {
               const blocked: ToolResult = {
                 toolCallId: tc.id,
                 name: tc.name,

@@ -150,6 +150,13 @@ describe("isToolCallOutOfBounds", () => {
     expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(false);
   });
 
+  it("should handle missing args property defensively", () => {
+    const toolCall = {
+      name: "read"
+    };
+    expect(isToolCallOutOfBounds(toolCall as any, workspacePath)).toBe(false);
+  });
+
   it("should block file access outside workspace and config", () => {
     const toolCall = {
       name: "write_to_file",

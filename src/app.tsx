@@ -81,7 +81,7 @@ export function App({
   const [pendingPermission, setPendingPermission] = useState<{
     toolCall: ToolCall;
     description: string;
-    resolve: (value: boolean) => void;
+    resolve: (value: boolean | "session") => void;
   } | null>(null);
 
   const [pendingQuestion, setPendingQuestion] = useState<{
@@ -367,12 +367,18 @@ export function App({
   }, [addLine, lines, terminalHeight, terminalWidth]);
 
   const handlePermissionResponse = useCallback(
-    (approved: boolean) => {
+    (approved: boolean | "session") => {
       if (pendingPermission) {
         pendingPermission.resolve(approved);
+        let content = "✗ Permission denied";
+        if (approved === "session") {
+          content = "✓ Permission granted (this session)";
+        } else if (approved === true) {
+          content = "✓ Permission granted";
+        }
         addLine({
           type: "system",
-          content: approved ? "✓ Permission granted" : "✗ Permission denied",
+          content,
           timestamp: Date.now(),
         });
         setPendingPermission(null);
@@ -1162,11 +1168,11 @@ export function App({
 
   const permissionHandler: PermissionHandler = useCallback(
     (toolCall: ToolCall, description: string) => {
-      return new Promise<boolean>((resolve) => {
+      return new Promise<boolean | "session">((resolve) => {
         const isCmd = ["bash", "run_command", "run_background_process"].includes(toolCall.name);
         const options = isCmd
-          ? ["Allow Command Execution", "Deny Command Execution"]
-          : ["Allow File/Directory Access", "Deny File/Directory Access"];
+          ? ["Allow Command Execution", "Allow for This Session", "Deny Command Execution"]
+          : ["Allow File/Directory Access", "Allow for This Session", "Deny File/Directory Access"];
         setPendingPermission({ toolCall, description, resolve });
         setWizardOptions(options);
         setWizardSelectedIndex(0);

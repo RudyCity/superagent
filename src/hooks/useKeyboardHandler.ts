@@ -92,7 +92,7 @@ export interface KeyboardHandlerContext {
   setPendingQuestion: React.Dispatch<React.SetStateAction<any>>;
   handleWizardSubmit: (value: string) => void;
   handleSubmit: (value: string) => void;
-  handlePermissionResponse: (approved: boolean) => void;
+  handlePermissionResponse: (approved: boolean | "session") => void;
   openLatestTruncatedResponse: () => boolean;
   stopRunningSubagents: () => number;
   scrollChat: (direction: "up" | "down", amount?: number) => void;
@@ -822,7 +822,12 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.return) {
-          const approved = wizardSelectedIndex === 0;
+          let approved: boolean | "session" = false;
+          if (wizardSelectedIndex === 0) {
+            approved = true;
+          } else if (wizardSelectedIndex === 1) {
+            approved = "session";
+          }
           handlePermissionResponse(approved);
           return;
         }
@@ -1833,6 +1838,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         handlePermissionResponse(true);
       } else if (inputChar === "n" || inputChar === "N") {
         handlePermissionResponse(false);
+      } else if (inputChar === "s" || inputChar === "S") {
+        handlePermissionResponse("session");
       }
     },
     { isActive: activeWizard?.type === "permission" }

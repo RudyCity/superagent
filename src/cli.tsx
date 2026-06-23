@@ -116,6 +116,33 @@ import { masterToolset } from "./core/tools/toolsets.js";
 import { registerQuestionHandler, addMasterTokens, subscribeToMasterLogs, registerMasterAgent } from "./core/tools/index.js";
 
 if (process.stdin.isTTY) {
+  // Confirm directory trust before starting the application
+  const currentDir = path.resolve(process.cwd());
+  const confirmTrust = async (dir: string): Promise<boolean> => {
+    const { TrustPrompt } = await import("./components/trust-prompt.js");
+    return new Promise<boolean>((resolve) => {
+      const { unmount } = render(
+        React.createElement(TrustPrompt, {
+          directoryPath: dir,
+          onAccept: () => {
+            unmount();
+            resolve(true);
+          },
+          onReject: () => {
+            unmount();
+            resolve(false);
+          }
+        })
+      );
+    });
+  };
+
+  const trusted = await confirmTrust(currentDir);
+  if (!trusted) {
+    console.log("\n❌ Project folder not trusted. Exiting superagent.\n");
+    process.exit(1);
+  }
+
   const resumeIndex = process.argv.findIndex(arg => arg === "--resume" || arg === "-r");
   let resumeVal: string | undefined = undefined;
   if (resumeIndex !== -1 && resumeIndex + 1 < process.argv.length) {
