@@ -14,16 +14,36 @@ export interface LoadedSkill {
 const OBRA_SKILLS = new Set([
   "brainstorming-ideas-into-designs",
   "code-review-reception",
+  "collision-zone-thinking",
+  "condition-based-waiting",
+  "defense-in-depth-validation",
   "dispatching-parallel-agents",
   "executing-plans",
+  "find-skills",
   "finishing-a-development-branch",
+  "gardening-skills-wiki",
+  "getting-started-with-skills",
+  "inversion-exercise",
+  "meta-pattern-recognition",
+  "preserving-productive-tensions",
+  "pulling-updates-from-skills-repository",
+  "remembering-conversations",
   "requesting-code-review",
+  "root-cause-tracing",
+  "scale-game",
+  "sharing-skills",
+  "simplification-cascades",
   "subagent-driven-development",
   "systematic-debugging",
   "test-driven-development-tdd",
+  "testing-anti-patterns",
+  "testing-skills-with-subagents",
+  "tracing-knowledge-lineages",
   "using-git-worktrees",
   "verification-before-completion",
-  "writing-plans"
+  "when-stuck-problem-solving-dispatch",
+  "writing-plans",
+  "writing-skills"
 ]);
 
 export function getInstalledSkills(): LoadedSkill[] {
