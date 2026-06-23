@@ -24,6 +24,29 @@ function visibleLength(str: string): number {
   return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").length;
 }
 
+function renderBoldTargetText(text: string): React.ReactNode {
+  const regex = /(5\.\s+Struktur\s+Direktori\s+Tools|Struktur\s+Direktori\s+Tools)/gi;
+  if (!regex.test(text)) {
+    return text;
+  }
+  regex.lastIndex = 0;
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (regex.test(part)) {
+          return (
+            <Text key={index} bold color="yellow">
+              {part}
+            </Text>
+          );
+        }
+        return part;
+      })}
+    </>
+  );
+}
+
 export function renderInlineMarkdown(text: string, defaultColor: string = "white"): React.ReactNode {
   const parsedElements: React.ReactNode[] = [];
   let currentText = text;
@@ -77,12 +100,12 @@ export function renderInlineMarkdown(text: string, defaultColor: string = "white
     }
 
     if (tokenType === "none" || minIdx === -1) {
-      parsedElements.push(<Text key={parsedElements.length} color={defaultColor}>{currentText}</Text>);
+      parsedElements.push(<Text key={parsedElements.length} color={defaultColor}>{renderBoldTargetText(currentText)}</Text>);
       break;
     }
 
     if (minIdx > 0) {
-      parsedElements.push(<Text key={parsedElements.length} color={defaultColor}>{currentText.slice(0, minIdx)}</Text>);
+      parsedElements.push(<Text key={parsedElements.length} color={defaultColor}>{renderBoldTargetText(currentText.slice(0, minIdx))}</Text>);
     }
 
     currentText = currentText.slice(minIdx);
@@ -475,7 +498,7 @@ export function wrapChatLineToLines({
         const node = (
           <Box flexDirection="row">
             <Text color="cyan">│    </Text>
-            <Text>{subLine}</Text>
+            <Text>{renderBoldTargetText(subLine)}</Text>
           </Box>
         );
         result.push({ node, lineIndex, type: "user" });

@@ -30,6 +30,39 @@ function WizardSpinner({ color }: { color: string }) {
   return <Text color={color as any} bold>{frames[frame]}</Text>;
 }
 
+const DIALOG_COLORS = ["red", "yellow", "green", "blue", "magenta", "cyan"];
+
+export function renderDialogBodyText(text: string): React.ReactNode {
+  const regex = /(5\.\s+Struktur\s+Direktori\s+Tools|Struktur\s+Direktori\s+Tools)/gi;
+  if (!regex.test(text)) {
+    return text;
+  }
+
+  regex.lastIndex = 0;
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (regex.test(part)) {
+          return (
+            <React.Fragment key={index}>
+              {part.split("").map((char, charIdx) => {
+                const color = DIALOG_COLORS[charIdx % DIALOG_COLORS.length];
+                return (
+                  <Text key={charIdx} bold color={color as any}>
+                    {char}
+                  </Text>
+                );
+              })}
+            </React.Fragment>
+          );
+        }
+        return part;
+      })}
+    </>
+  );
+}
+
 export function WizardDialog({
   title,
   description,
@@ -73,7 +106,7 @@ export function WizardDialog({
       {/* Top border connecting to the timeline */}
       <Box flexDirection="row" width="100%">
         <Text color={borderColor} wrap="truncate-end">
-          ├───[ <Text bold color={borderColor}>{title}</Text> ]
+          ├───[ <Text bold color={borderColor}>{renderDialogBodyText(title)}</Text> ]
         </Text>
       </Box>
 
@@ -87,7 +120,7 @@ export function WizardDialog({
             {descLines.map((line, idx) => (
               <Box key={idx} flexDirection="row" width="100%">
                 <Text color={borderColor}>│ </Text>
-                <Text color="white">{line}</Text>
+                <Text color="white">{renderDialogBodyText(line)}</Text>
               </Box>
             ))}
             <Box flexDirection="row">
@@ -148,7 +181,7 @@ export function WizardDialog({
             <Text color={borderColor}>│ </Text>
             <Box flexDirection="row" flexShrink={1}>
               <Text color={isSelected ? borderColor : "gray"} bold={isSelected} wrap="truncate-end">
-                {isSelected ? "❯ " : "  "} {checkPrefix}{optStr}
+                {isSelected ? "❯ " : "  "} {checkPrefix}{renderDialogBodyText(optStr)}
               </Text>
             </Box>
           </Box>

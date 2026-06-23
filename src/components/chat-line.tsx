@@ -30,6 +30,29 @@ export function truncateStreamDisplay(text: string, maxLines: number, width: num
   return resultLines.join("\n");
 }
 
+function renderBoldTargetText(text: string): React.ReactNode {
+  const regex = /(5\.\s+Struktur\s+Direktori\s+Tools|Struktur\s+Direktori\s+Tools)/gi;
+  if (!regex.test(text)) {
+    return text;
+  }
+  regex.lastIndex = 0;
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (regex.test(part)) {
+          return (
+            <Text key={index} bold color="yellow">
+              {part}
+            </Text>
+          );
+        }
+        return part;
+      })}
+    </>
+  );
+}
+
 export function renderMarkdown(content: string, themeColor: string = "blue", showCursor: boolean = false): React.ReactNode {
   const cleanContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
   const rawLines = cleanContent.split("\n");
@@ -259,12 +282,12 @@ export function renderMarkdown(content: string, themeColor: string = "blue", sho
           }
 
           if (tokenType === "none" || minIdx === -1) {
-            parsedElements.push(<Text key={parsedElements.length}>{currentText}</Text>);
+            parsedElements.push(<Text key={parsedElements.length}>{renderBoldTargetText(currentText)}</Text>);
             break;
           }
 
           if (minIdx > 0) {
-            parsedElements.push(<Text key={parsedElements.length}>{currentText.slice(0, minIdx)}</Text>);
+            parsedElements.push(<Text key={parsedElements.length}>{renderBoldTargetText(currentText.slice(0, minIdx))}</Text>);
           }
 
           currentText = currentText.slice(minIdx);
@@ -599,7 +622,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
           {content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
               <Text color="cyan">│    </Text>
-              <Text>{l}</Text>
+              <Text>{renderBoldTargetText(l)}</Text>
             </Box>
           ))}
           <Box flexDirection="row">
