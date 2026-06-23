@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.90] - 2026-06-23
+
+### Fixed
+- **Wizard Option Clicks**: Modified wizard options mouse click to only highlight/select the index instead of submitting.
+- **Wizard Key Navigation**: Allowed return, backspace, and delete keys when paste is active in wizard inputs.
+
+---
+
 ## [1.1.89] - 2026-06-23
 
 ### Added
