@@ -1376,10 +1376,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             const selectedOption = filteredOptions[clampedIndex];
             if (!selectedOption || selectedOption === "(no results)") return;
 
-            // Find the original skill index
             const skillsList = getInstalledSkills();
             const originalIndex = skillsList.findIndex((s) => {
-              const provider = s.author || "obra";
+              const provider = s.author || "local";
               return selectedOption.startsWith(`• ${provider}/${s.name}`);
             });
 
@@ -1440,7 +1439,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               setWizardSelectedIndex(0);
             } else if (wizardSelectedIndex === 1) {
               const now = Date.now();
-              const provider = chosen.author || "obra";
+              const provider = chosen.author || "local";
               const detailLines = [
                 "┌───[ 📂 INSTALLED AGENT SKILLS ]",
                 `│  • Name        : ${provider}/${chosen.name}`,
@@ -1455,7 +1454,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               });
             } else {
               const options = skillsList.map((s) => {
-                const provider = s.author || "obra";
+                const provider = s.author || "local";
                 return `• ${provider}/${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`;
               });
               setActiveWizard({
@@ -1591,7 +1590,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         } else if (activeWizard.type === "skills" && activeWizard.step === 2) {
           const skillsList = getInstalledSkills();
           const options = skillsList.map((s) => {
-            const provider = s.author || "obra";
+            const provider = s.author || "local";
             return `• ${provider}/${s.name} - ${s.description.slice(0, 50)}${s.description.length > 50 ? "..." : ""}`;
           });
           const skillIndex = parseInt(activeWizard.data.skillIndex || "0", 10);
