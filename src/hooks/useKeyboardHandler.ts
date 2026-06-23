@@ -77,7 +77,7 @@ export interface KeyboardHandlerContext {
   terminalHeight: number;
   terminalWidth: number;
   checklistTasks: { status: string; text: string }[];
-  completedHistory?: { status: string; text: string }[];
+  completedHistory?: { status: string; text: string; remainingSeconds?: number }[];
   agentRef: React.MutableRefObject<Agent | null>;
   pendingPermission: {
     toolCall: ToolCall;

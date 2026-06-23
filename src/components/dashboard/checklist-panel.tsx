@@ -9,7 +9,7 @@ interface ChecklistPanelProps {
   maxChecklistVisible: number;
   agent: any;
   superagentInstances: any;
-  completedHistory?: { status: string; text: string }[];
+  completedHistory?: { status: string; text: string; remainingSeconds?: number }[];
 }
 
 const MAX_HISTORY_VISIBLE = 3;
@@ -155,12 +155,16 @@ export function ChecklistPanel({
           {/* History task list (dimmed, compact) */}
           {historyToShow.map((task, index) => {
             const connector = "├──";
+            const timeText = task.remainingSeconds !== undefined ? ` (${task.remainingSeconds}s)` : "";
             return (
               <Box key={`hist-${index}`} flexDirection="row">
                 <Text color="gray" dimColor>{connector} </Text>
                 <Text color="gray" dimColor>◉ </Text>
                 <Text color="gray" dimColor strikethrough>
                   {task.text}
+                </Text>
+                <Text color="gray" dimColor>
+                  {timeText}
                 </Text>
               </Box>
             );

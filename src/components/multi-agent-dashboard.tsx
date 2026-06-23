@@ -216,7 +216,7 @@ export function MultiAgentDashboard({
   const [worktreeCount, setWorktreeCount] = useState<number>(0);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
-  const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string }[]>([]);
+  const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string; remainingSeconds?: number }[]>([]);
   const [rawCompletedHistory, setRawCompletedHistory] = useState<{ status: string; text: string }[]>([]);
   const historyTimestampsRef = useRef<Map<string, number>>(new Map());
 
@@ -368,15 +368,23 @@ export function MultiAgentDashboard({
     // 3. Define a function to compute filtered history
     const updateFilteredHistory = () => {
       const currentTime = Date.now();
-      const filtered = rawCompletedHistory.filter(task => {
-        const firstSeen = historyTimestampsRef.current.get(task.text);
-        if (!firstSeen) return false;
-        return (currentTime - firstSeen) < 15000;
-      });
+      const filtered = rawCompletedHistory
+        .map(task => {
+          const firstSeen = historyTimestampsRef.current.get(task.text);
+          if (!firstSeen) return null;
+          const elapsed = currentTime - firstSeen;
+          const remainingSeconds = Math.max(0, Math.ceil((15000 - elapsed) / 1000));
+          return { ...task, remainingSeconds };
+        })
+        .filter((task): task is { status: string; text: string; remainingSeconds: number } => {
+          return task !== null && task.remainingSeconds > 0;
+        });
 
-      // Update state if the content changed
+      // Update state if the content or remainingSeconds changed
       setCompletedHistory(prev => {
-        if (prev.length !== filtered.length || prev.some((t, i) => t.text !== filtered[i].text)) {
+        const hasChanged = prev.length !== filtered.length ||
+          prev.some((t, i) => t.text !== filtered[i].text || t.remainingSeconds !== filtered[i].remainingSeconds);
+        if (hasChanged) {
           return filtered;
         }
         return prev;
