@@ -25,6 +25,8 @@ export interface SlashCommandContext {
   setPlanState?: (state: "IDLE" | "PLANNING_PENDING" | "APPROVED") => void;
   setGoalMode?: (val: { goal: string; startedAt: number } | null) => void;
   setIsProcessing?: (val: boolean) => void;
+  /** Clear the arrow-key input history log (used by /new and /clear) */
+  setInputHistory?: (history: string[]) => void;
 }
 
 export interface SlashCommand {

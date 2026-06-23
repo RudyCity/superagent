@@ -99,6 +99,14 @@ export const newCommand: SlashCommand = {
     ctx.setPlanState?.("IDLE");
     ctx.setGoalMode?.(null);
     ctx.clearLines?.();
+
+    // ── 9. Clear arrow-key input history ──────────────────
+    ctx.setInputHistory?.([]);
+    try {
+      const inputHistoryPath = path.join(getGlobalConfigDir(), "input-history.json");
+      await fs.writeFile(inputHistoryPath, "[]", "utf-8");
+    } catch { /* non-fatal */ }
+
     ctx.addLine({ type: "system", content: "✓ New conversation started. History, logs, background tasks, and all state fully cleared.", timestamp: Date.now() });
   }
 };

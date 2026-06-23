@@ -480,6 +480,7 @@ export function App({
           setPlanState,
           setContextLimit,
           setActiveModel,
+          setInputHistory: setHistory,
         } as any);
         return;
       }
