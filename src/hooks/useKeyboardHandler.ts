@@ -215,7 +215,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
-    if (focusedResponseIndex !== null && focusedResponseIndex !== undefined) {
+    if (focusedResponseIndex !== null && focusedResponseIndex !== undefined && !activeWizard) {
       const width = Math.max(20, terminalWidth - 6);
       const maxLines = Math.max(8, Math.min(18, Math.floor(terminalHeight * 0.45)));
       const truncatedIndexes = getTruncatedAssistantIndexes(lines || [], maxLines, width);
@@ -249,7 +249,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
-    if (focusMode === "checklist") {
+    if (focusMode === "checklist" && !activeWizard) {
       if (key.upArrow) {
         setChecklistScrollOffset((prev) => Math.max(0, prev - 1));
         return;
@@ -268,7 +268,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
-    if (focusMode === "superagents") {
+    if (focusMode === "superagents" && !activeWizard) {
       if (key.upArrow) {
         setSuperagentsScrollOffset((prev) => Math.max(0, prev - 1));
         return;
@@ -288,7 +288,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
-    if (focusMode === "subagents") {
+    if (focusMode === "subagents" && !activeWizard) {
       if (key.upArrow) {
         setSubagentsScrollOffset((prev) => Math.max(0, prev - 1));
         return;
@@ -308,7 +308,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
-    if (focusMode === "procs") {
+    if (focusMode === "procs" && !activeWizard) {
       if (key.upArrow) {
         setProcsScrollOffset((prev) => Math.max(0, prev - 1));
         return;
@@ -328,7 +328,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
-    if (focusMode === "chat") {
+    if (focusMode === "chat" && !activeWizard) {
       if (key.upArrow) {
         scrollChat("up");
         return;
@@ -345,7 +345,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
-    if (key.ctrl && inputChar === "h") {
+    if (key.ctrl && inputChar === "h" && !activeWizard) {
       setFocusMode((prev: any) => {
         const next = prev === "input" ? "history" : "input";
         if (next === "history") {
@@ -358,7 +358,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     // Ctrl+T: Toggle checklist focus mode
-    if (key.ctrl && inputChar === "t") {
+    if (key.ctrl && inputChar === "t" && !activeWizard) {
       if (planState === "APPROVED" && (checklistTasks.length > 0 || completedHistory.length > 0)) {
         setFocusMode((prev: any) => (prev === "checklist" ? "input" : "checklist"));
       }
@@ -398,7 +398,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
-    if (focusMode === "history") {
+    if (focusMode === "history" && !activeWizard) {
       const uniqueHistory = Array.from(new Set(history));
       if (key.upArrow) {
         setHistorySelectedIndex((prev) => Math.max(0, prev - 1));

@@ -156,6 +156,14 @@ export function App({
   const [rawCompletedHistory, setRawCompletedHistory] = useState<{ status: string; text: string }[]>([]);
   const historyTimestampsRef = useRef<Map<string, number>>(new Map());
   const [focusMode, setFocusMode] = useState<"input" | "history" | "checklist" | "superagents" | "subagents" | "procs" | "chat">("input");
+
+  // Automatically focus the input area when any wizard is active
+  useEffect(() => {
+    if (activeWizard) {
+      setFocusMode("input");
+    }
+  }, [activeWizard]);
+
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
 
   const [checklistScrollOffset, setChecklistScrollOffset] = useState(0);
