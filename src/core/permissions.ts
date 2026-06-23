@@ -111,8 +111,10 @@ export function isSuperagentOutOfBounds(
       : resolveNormalizedPath(fp, worktreePath);
 
     // Allow read-only access to files inside global configuration directory
+    // BUT model-config.json is strictly protected and requires permission confirmation
     if (fileReadingTools.includes(toolCall.name)) {
-      if (normalizeAndCheckSubpath(resolved, rootConfig)) {
+      const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
+      if (normalizeAndCheckSubpath(resolved, rootConfig) && !isModelConfig) {
         continue;
       }
     }
@@ -151,7 +153,9 @@ export function isToolCallOutOfBounds(
       : resolveNormalizedPath(fp, workspacePath);
 
     // If it's inside ~/.superagent-r/ or workspacePath, it's allowed without permission
-    if (normalizeAndCheckSubpath(resolved, rootConfig) || normalizeAndCheckSubpath(resolved, workspacePath)) {
+    // BUT model-config.json is strictly protected and requires permission confirmation
+    const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
+    if ((normalizeAndCheckSubpath(resolved, rootConfig) && !isModelConfig) || normalizeAndCheckSubpath(resolved, workspacePath)) {
       continue;
     }
     return true;
@@ -178,7 +182,8 @@ export function isToolCallOutOfBounds(
       while ((match = winAbsPathRegex.exec(command)) !== null) {
         const p = match[0];
         const resolved = resolveNormalizedPath(p);
-        if (!normalizeAndCheckSubpath(resolved, rootConfig) && !normalizeAndCheckSubpath(resolved, workspacePath)) {
+        const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
+        if ((!normalizeAndCheckSubpath(resolved, rootConfig) || isModelConfig) && !normalizeAndCheckSubpath(resolved, workspacePath)) {
           return true;
         }
       }
@@ -190,7 +195,8 @@ export function isToolCallOutOfBounds(
           continue;
         }
         const resolved = resolveNormalizedPath(p);
-        if (!normalizeAndCheckSubpath(resolved, rootConfig) && !normalizeAndCheckSubpath(resolved, workspacePath)) {
+        const isModelConfig = normalizeAndCheckSubpath(resolved, path.join(rootConfig, "model-config.json"));
+        if ((!normalizeAndCheckSubpath(resolved, rootConfig) || isModelConfig) && !normalizeAndCheckSubpath(resolved, workspacePath)) {
           return true;
         }
       }

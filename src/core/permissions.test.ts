@@ -224,5 +224,31 @@ describe("isToolCallOutOfBounds", () => {
     };
     expect(isToolCallOutOfBounds(toolCall2, workspacePath)).toBe(false);
   });
+
+  it("should block access to model-config.json specifically, even though it is inside global config directory", async () => {
+    const { getRootConfigDir } = await import("./config.js");
+    const modelConfigPath = path.resolve(getRootConfigDir(), "model-config.json");
+    
+    // File read tool targeting model-config.json
+    const readToolCall = {
+      name: "read",
+      args: { filePath: modelConfigPath }
+    };
+    expect(isToolCallOutOfBounds(readToolCall, workspacePath)).toBe(true);
+
+    // File write tool targeting model-config.json
+    const writeToolCall = {
+      name: "write_to_file",
+      args: { TargetFile: modelConfigPath, content: "{}" }
+    };
+    expect(isToolCallOutOfBounds(writeToolCall, workspacePath)).toBe(true);
+
+    // Shell command targeting model-config.json
+    const commandToolCall = {
+      name: "run_command",
+      args: { command: `cat ${modelConfigPath}` }
+    };
+    expect(isToolCallOutOfBounds(commandToolCall, workspacePath)).toBe(true);
+  });
 });
 
