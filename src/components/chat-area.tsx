@@ -335,8 +335,17 @@ function wrapNestedChild(
     const minimizedDesc = minimizePathInDescription(cleanDescRaw);
     const cleanDesc = minimizedDesc.length > 60 ? minimizedDesc.slice(0, 57) + "..." : minimizedDesc;
 
+    const isAskQuestion = cleanDescRaw.startsWith("Asking user:");
+    const questionText = isAskQuestion ? cleanDescRaw.replace(/^Asking user:\s*/i, "").trim() : "";
+
     if (isCollapsed) {
-      const node = (
+      const node = isAskQuestion ? (
+        <Box flexDirection="row">
+          <Text color="yellow">
+            {indent}<Text bold color="yellow">↳ ❓ Question: </Text><Text color="yellow">{questionText}</Text>
+          </Text>
+        </Box>
+      ) : (
         <Box flexDirection="row">
           <Text color="yellow">
             {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
@@ -386,8 +395,22 @@ function wrapNestedChild(
     const minimizedDesc = minimizePathInDescription(cleanDescRaw);
     const cleanDesc = minimizedDesc.length > 60 ? minimizedDesc.slice(0, 57) + "..." : minimizedDesc;
 
+    const isAskQuestion = cleanDescRaw.startsWith("Asking user:");
+    const questionText = isAskQuestion ? cleanDescRaw.replace(/^Asking user:\s*/i, "").trim() : "";
+
     if (isCollapsed) {
-      const node = (
+      const node = isAskQuestion ? (() => {
+        const lines = contentText.split("\n");
+        const outputLine = lines.find(l => l.startsWith("Output:"));
+        const answerText = outputLine ? outputLine.substring("Output:".length).trim() : "";
+        return (
+          <Box flexDirection="row">
+            <Text color={themeColor}>
+              {indent}<Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text bold color={themeColor}>Question: </Text><Text color={themeColor}>{questionText}</Text><Text bold color={themeColor}> | Answer: </Text><Text color={themeColor}>{answerText || "N/A"}</Text>
+            </Text>
+          </Box>
+        );
+      })() : (
         <Box flexDirection="row">
           <Text color={themeColor}>
             {indent}<Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text color={themeColor}>{cleanDesc}</Text> <Text dimColor italic>{isError ? "(click to view error)" : "(click to view output)"}</Text>

@@ -325,9 +325,38 @@ export function computeWrappedLogs(
 
     if (groupIsCollapsed) {
       if (isTool) {
+        const firstContent = group.rawLines[0] || "";
+        const isAskQuestion = firstContent.includes("Asking user:");
+
+        if (isAskQuestion) {
+          const isStart = group.label.includes("TOOL START");
+          const isError = group.label.includes("FAIL");
+          if (isStart) {
+            const question = firstContent.replace(/^⚡\s*Asking user:\s*/i, "").replace(/^Asking user:\s*/i, "").trim();
+            wrappedLines.push(
+              <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>
+                <Text color={group.color} dimColor={group.dimColor} wrap="truncate-end">
+                  {nestPrefix}    <Text bold color={group.color}>↳ ❓ Question: </Text><Text color={group.color}>{question}</Text>
+                </Text>
+              </Box>
+            );
+          } else {
+            const question = firstContent.replace(/^[✓✗]\s*(Completed|Failed)\s*-\s*Asking user:\s*/i, "").replace(/^Asking user:\s*/i, "").trim();
+            const outputLine = group.rawLines.find(l => l.trim().startsWith("Output:"));
+            const answer = outputLine ? outputLine.replace(/^\s*Output:\s*/i, "").trim() : "";
+            wrappedLines.push(
+              <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>
+                <Text color={group.color} dimColor={group.dimColor} wrap="truncate-end">
+                  {nestPrefix}    <Text bold color={group.color}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text bold color={group.color}>Question: </Text><Text color={group.color}>{question}</Text><Text bold color={group.color}> | Answer: </Text><Text color={group.color}>{answer || "N/A"}</Text>
+                </Text>
+              </Box>
+            );
+          }
+          continue;
+        }
+
         const icon = group.label.includes("TOOL START") ? "⚙️ " :
                      group.label.includes("FAIL") ? "✗ " : "✓ ";
-        const firstContent = group.rawLines[0] || "";
         const preview = firstContent.length > 50 ? firstContent.slice(0, 47) + "..." : firstContent;
         wrappedLines.push(
           <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>

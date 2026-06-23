@@ -456,12 +456,21 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
     const cleanDescRaw = firstLine.replace(/^Detail:\s*/i, "").trim();
     const minimizedDesc = minimizePathInDescription(cleanDescRaw);
     const cleanDesc = minimizedDesc.length > 60 ? minimizedDesc.slice(0, 57) + "..." : minimizedDesc;
+    const isAskQuestion = cleanDescRaw.startsWith("Asking user:");
+    const questionText = isAskQuestion ? cleanDescRaw.replace(/^Asking user:\s*/i, "").trim() : "";
+
     if (isCollapsed) {
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
-          <Text color="yellow">
-            {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
-          </Text>
+          {isAskQuestion ? (
+            <Text color="yellow">
+              {indent}<Text bold color="yellow">↳ ❓ Question: </Text><Text color="yellow">{questionText}</Text>
+            </Text>
+          ) : (
+            <Text color="yellow">
+              {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
+            </Text>
+          )}
         </Box>
       );
     }
@@ -498,12 +507,26 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
     const minimizedDesc = minimizePathInDescription(cleanDescRaw);
     const cleanDesc = minimizedDesc.length > 60 ? minimizedDesc.slice(0, 57) + "..." : minimizedDesc;
 
+    const isAskQuestion = cleanDescRaw.startsWith("Asking user:");
+    const questionText = isAskQuestion ? cleanDescRaw.replace(/^Asking user:\s*/i, "").trim() : "";
+
     if (isCollapsed) {
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
-          <Text color={themeColor}>
-            {indent}<Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text color={themeColor}>{cleanDesc}</Text> <Text dimColor italic>{isError ? "(click to view error)" : "(click to view output)"}</Text>
-          </Text>
+          {isAskQuestion ? (() => {
+            const lines = contentText.split("\n");
+            const outputLine = lines.find(l => l.startsWith("Output:"));
+            const answerText = outputLine ? outputLine.substring("Output:".length).trim() : "";
+            return (
+              <Text color={themeColor}>
+                {indent}<Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text bold color={themeColor}>Question: </Text><Text color={themeColor}>{questionText}</Text><Text bold color={themeColor}> | Answer: </Text><Text color={themeColor}>{answerText || "N/A"}</Text>
+              </Text>
+            );
+          })() : (
+            <Text color={themeColor}>
+              {indent}<Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text color={themeColor}>{cleanDesc}</Text> <Text dimColor italic>{isError ? "(click to view error)" : "(click to view output)"}</Text>
+            </Text>
+          )}
         </Box>
       );
     }
