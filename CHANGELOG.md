@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [1.1.86] - 2026-06-23
 
+### Improved
+- **Wizard Dialog Body Text Formatting**: Added `renderDialogBodyText` helper to format and color specific Indonesian text ("Struktur Direktori Tools") with vibrant theme colors.
+
 ### Fixed
 - **Terminal History Clear in Single Mode**: Pass `clearLines` in slash command context to correctly clear terminal history in Single Mode.
 - **LiteLLM Message Sanitization**: Sanitize input messages and handle `None` response objects and empty choices in LiteLLM `acall` for FastContext.
