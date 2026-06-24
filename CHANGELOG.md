@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.10] - 2026-06-24
+
+### Improved
+- **Compaction & Summarization Strategy Enhancements**:
+  - **Truncation Guard**: Truncate formatted past chat history to a maximum of 80,000 characters before sending it to the LLM to prevent context window overflow and costly retry loops.
+  - **Dynamic Abort Signal Propagation**: Properly propagate abort signals to LLM summarization calls for responsive cancellation.
+  - **Improved Cost Estimation**: Fixed token/cost estimation inside `SummarizationStrategy` by counting using `contentToString()` instead of direct length on message content.
+- **TencentDB Memory Strategy Enhancements**:
+  - **Folder-based Hashed Session Keys**: Use a stable 8-character hash of the project path for the TencentDB session key, preventing session collisions between projects with the same folder name.
+  - **Compaction Watermark Resume**: Lazily load `lastCapturedTimestamp` from the persistent compaction history on startup to accurately resume log capturing from the last processed message.
+  - **L0 Log Safety**: Re-enabled `await` on `addConversation` during L0 capture to ensure transactional persistence.
+  - **Dynamic Atomic Search Limit**: Automatically scale the `limit` for atomic memory searches based on the token budget.
+  - **Watermark Auditing**: Persist `lastCapturedTimestamp` as metadata in the compaction event logs.
+- **Setup Cleanup**:
+  - Cleaned up settings check in `tencentdbSetup.ts` to rely solely on CLI arguments instead of `process.env.SUPERAGENT_MULTI` to determine the model mode.
+
+---
+
 ## [1.2.9] - 2026-06-24
 
 ### Added
