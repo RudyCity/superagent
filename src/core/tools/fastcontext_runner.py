@@ -42,6 +42,47 @@ try:
     import logging as _logging
     _logging.getLogger("litellm").setLevel(_logging.ERROR)
     _HAS_LITELLM = True
+
+    # Apply monkeypatch to handle cases where provider returns an empty 'choices' list (e.g. on moderation filter)
+    # which otherwise causes LiteLLM to raise "provider returned a response with no 'choices'" and hang in retry loops.
+    try:
+        from litellm.litellm_core_utils.llm_response_utils import convert_dict_to_response
+        orig_convert = convert_dict_to_response.convert_to_model_response_object
+        
+        def patched_convert(*args, **kwargs):
+            response_object = kwargs.get("response_object") or (args[0] if args else None)
+            was_moderated = False
+            original_choices_empty = False
+            
+            if isinstance(response_object, dict):
+                if "moderation" in response_object:
+                    was_moderated = True
+                if "choices" in response_object and not response_object["choices"]:
+                    original_choices_empty = True
+                    response_object["choices"] = [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": ""
+                        },
+                        "finish_reason": "stop"
+                    }]
+            
+            res = orig_convert(*args, **kwargs)
+            if res is not None:
+                if was_moderated:
+                    res._was_moderated = True
+                if original_choices_empty:
+                    res._original_choices_empty = True
+            return res
+            
+        convert_dict_to_response.convert_to_model_response_object = patched_convert
+        import litellm.utils
+        if hasattr(litellm.utils, "convert_to_model_response_object"):
+            litellm.utils.convert_to_model_response_object = patched_convert
+    except Exception as e:
+        sys.stderr.write(f"[DEBUG] Failed to apply LiteLLM monkeypatch: {e}\n")
+
 except ImportError:
     _HAS_LITELLM = False
 
@@ -274,6 +315,16 @@ def run():
                         debug_kw = {k: v for k, v in call_kw.items() if k != "api_key"}
                         sys.stderr.write(f"[DEBUG] call_kw: {json.dumps(debug_kw, default=str)}\n")
                         raise RequestyAPIError("LiteLLM completion returned None response object.")
+
+                    # Check if response was moderated or originally had empty choices
+                    if getattr(response, "_was_moderated", False) or getattr(response, "_original_choices_empty", False):
+                        moderation = getattr(response, "moderation", None)
+                        if moderation:
+                            sys.stderr.write(f"[DEBUG] Response blocked by provider moderation: {json.dumps(moderation, ensure_ascii=False)}\n")
+                            raise RequestyAPIError(f"Content blocked by provider moderation: {json.dumps(moderation, ensure_ascii=False)}")
+                        else:
+                            sys.stderr.write(f"[DEBUG] Provider returned empty choices: {str(response)}\n")
+                            raise RequestyAPIError("LiteLLM completion response has empty choices (possible moderation or empty completion).")
 
                     if not hasattr(response, "choices") or not response.choices:
                         sys.stderr.write(f"[DEBUG] response: {str(response)}\n")
