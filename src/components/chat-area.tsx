@@ -1027,7 +1027,9 @@ export function computeWrappedLines({
   // 1. Process all completed lines
   for (let idx = 0; idx < lines.length; idx++) {
     const isFirst = idx === 0;
-    const isCollapsed = isCollapsibleType(lines[idx].type) && !expandedLines.has(idx);
+    const isCollapsed = lines[idx].type === "error"
+      ? expandedLines.has(idx)
+      : (isCollapsibleType(lines[idx].type) && !expandedLines.has(idx));
     const childSet = expandedChildren.get(idx) || new Set<number>();
 
     const wrapped = wrapChatLineToLines({
