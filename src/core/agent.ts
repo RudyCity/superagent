@@ -723,6 +723,7 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
   }
 
   private async runAgentLoop(): Promise<void> {
+    const signal = this.abortController?.signal;
     const isGoalMode = !!this.goalMode;
     const defaultMax = getSettings().maxIterations || 50;
     const maxIterations = isGoalMode ? this.goalMaxIterations : defaultMax;
@@ -801,7 +802,7 @@ CRITICAL GOAL MODE RULES:
 
     try {
       for (let i = 0; i < maxIterations; i++) {
-        if (this.abortController?.signal.aborted) {
+        if (signal?.aborted) {
           const err = new Error("AbortError");
           err.name = "AbortError";
           throw err;
@@ -837,7 +838,7 @@ CRITICAL GOAL MODE RULES:
           }
         }
 
-        await this.compactHistoryIfNeeded();
+        await this.compactHistoryIfNeeded(signal);
         const messages = this.buildMessages();
         // Use tier-specific toolset if provided, otherwise use the appropriate tier-default toolset dynamically
         let toolsToUse = this.customTools;
@@ -1042,7 +1043,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   ])
                 ),
                 maxSteps: 1,
-                abortSignal: this.abortController?.signal,
+                abortSignal: signal,
               });
 
               textContent = result.text || "";
@@ -1102,7 +1103,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               }
               const msg = formatError(err);
               this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
-              await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
+              await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1), signal);
             } finally {
               if (concurrencyAcquired) {
                 concurrencyLimiter.release();
@@ -1141,11 +1142,11 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   ])
                 ),
                 maxSteps: 1,
-                abortSignal: this.abortController?.signal,
+                abortSignal: signal,
               });
 
               for await (const delta of result.fullStream) {
-                if (this.abortController?.signal.aborted) {
+                if (signal?.aborted) {
                   const err = new Error("AbortError");
                   err.name = "AbortError";
                   throw err;
@@ -1219,7 +1220,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               }
               const msg = formatError(err);
               this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
-              await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1));
+              await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1), signal);
             } finally {
               if (concurrencyAcquired) {
                 concurrencyLimiter.release();
@@ -1251,7 +1252,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
         const toolResults: ToolResult[] = [];
 
 for (const tc of toolCalls) {
-          if (this.abortController?.signal.aborted) {
+          if (signal?.aborted) {
             const err = new Error("AbortError");
             err.name = "AbortError";
             throw err;
@@ -1742,9 +1743,9 @@ for (const tc of toolCalls) {
           const toolResult = await executeToolCall(
             tc,
             effectiveCwd,
-            this.abortController?.signal
+            signal
           );
-          if (this.abortController?.signal.aborted) {
+          if (signal?.aborted) {
             const err = new Error("AbortError");
             err.name = "AbortError";
             throw err;
@@ -1915,16 +1916,16 @@ for (const tc of toolCalls) {
     return coreMessages;
   }
 
-  async compactHistoryIfNeeded(): Promise<void> {
+  async compactHistoryIfNeeded(signal?: AbortSignal): Promise<void> {
     await this.ensureContextManager();
     const contextManager = this.conversation.getContextManager();
 
     if (contextManager) {
-      await this.contextManagerCompact();
+      await this.contextManagerCompact(signal);
       return;
     }
 
-    await this.legacyCompactHistory();
+    await this.legacyCompactHistory(signal);
   }
 
   private async ensureContextManager(): Promise<void> {
@@ -1939,8 +1940,11 @@ for (const tc of toolCalls) {
     }
   }
 
-  private async contextManagerCompact(): Promise<void> {
+  private async contextManagerCompact(signal?: AbortSignal): Promise<void> {
     const contextManager = this.conversation.getContextManager()!;
+    if (signal) {
+      await this.conversation.updateContextManagerLLM(this.getModel(), signal);
+    }
     const messages = this.conversation.getMessages();
     const decision = contextManager.shouldCompact(messages);
 
@@ -1966,11 +1970,11 @@ for (const tc of toolCalls) {
     } catch (error) {
       console.error("ContextManager compaction failed:", error);
       this.writeToLogFile("ERROR", `ContextManager compaction failed: ${(error as Error).message}`);
-      await this.legacyCompactHistory();
+      await this.legacyCompactHistory(signal);
     }
   }
 
-  private async legacyCompactHistory(): Promise<void> {
+  private async legacyCompactHistory(signal?: AbortSignal): Promise<void> {
     const modelLimit = getContextWindowLimit(this.config.model);
     const maxHistoryTokens = Math.floor(modelLimit * 0.5);
 
@@ -1979,7 +1983,7 @@ for (const tc of toolCalls) {
       if (allMsgs.length > 20) {
         const toSummarize = allMsgs.slice(0, 20);
         try {
-          const summary = await this.summarizeMessages(toSummarize);
+          const summary = await this.summarizeMessages(toSummarize, signal);
           this.conversation.replaceOldMessagesWithSummary(20, summary);
           await this.saveHistory();
         } catch (err) {
@@ -1994,7 +1998,7 @@ for (const tc of toolCalls) {
     }
   }
 
-  private async summarizeMessages(messages: any[]): Promise<string> {
+  private async summarizeMessages(messages: any[], signal?: AbortSignal): Promise<string> {
     const formatted = messages.map(m => {
       const role = m.role.toUpperCase();
       let details = m.content || "";
@@ -2034,7 +2038,7 @@ ${formatted}`;
           model: this.getModel(),
           system: "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
           prompt,
-          abortSignal: this.abortController?.signal,
+          abortSignal: signal,
         });
         break;
       } catch (err: unknown) {
@@ -2045,7 +2049,7 @@ ${formatted}`;
         if (attempt > maxRetries) {
           throw err;
         }
-        const summarySignal = this.abortController?.signal;
+        const summarySignal = signal;
         await new Promise<void>((resolve, reject) => {
           if (summarySignal?.aborted) {
             const err = new Error("The operation was aborted.");
@@ -2077,9 +2081,8 @@ ${formatted}`;
     return result.text || "(empty summary)";
   }
 
-  private async delayWithCountdown(attempt: number, delayMs: number): Promise<void> {
+  private async delayWithCountdown(attempt: number, delayMs: number, signal?: AbortSignal): Promise<void> {
     const delaySec = Math.ceil(delayMs / 1000);
-    const signal = this.abortController?.signal;
     for (let sec = delaySec; sec > 0; sec--) {
       if (signal?.aborted) {
         const err = new Error("The operation was aborted.");
