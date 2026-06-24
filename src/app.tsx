@@ -851,6 +851,7 @@ export function App({
         "/setting-tencentdb off",
         "/setting-tencentdb status",
         "/setting-tencentdb show-bg-procs",
+        "/setting-tencentdb hide-bg-procs",
       ];
       return filterSuggestions(tdbSuggestions, currentInput);
     }

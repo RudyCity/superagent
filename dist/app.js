@@ -738,6 +738,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 "/setting-tencentdb off",
                 "/setting-tencentdb status",
                 "/setting-tencentdb show-bg-procs",
+                "/setting-tencentdb hide-bg-procs",
             ];
             return filterSuggestions(tdbSuggestions, currentInput);
         }

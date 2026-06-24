@@ -145,7 +145,7 @@ export const helpCommand = {
                 "  /setting-streaming <on|off> - Enable or disable streaming",
                 "  /setting-context-limit <number> - Set context window limit (0 = auto)",
                 "  /setting-max-iterations <number> - Set max agent iterations",
-                "  /setting-tencentdb <on|off|status|show-bg-procs> [gatewayUrl] - Configure TencentDB Memory Gateway",
+                "  /setting-tencentdb <on|off|status|show-bg-procs|hide-bg-procs> [gatewayUrl] - Configure TencentDB Memory Gateway",
                 "  /help     - Show this help",
                 "  /quit     - Exit the app",
                 "",

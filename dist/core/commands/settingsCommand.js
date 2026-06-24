@@ -36,7 +36,7 @@ export const settingsCommand = {
                 "  /setting-streaming <on|off>",
                 "  /setting-context-limit <number>",
                 "  /setting-max-iterations <number>",
-                "  /setting-tencentdb <on|off|status|show-bg-procs> [gatewayUrl]"
+                "  /setting-tencentdb <on|off|status|show-bg-procs|hide-bg-procs> [gatewayUrl]"
             ].join("\n"),
             timestamp: Date.now(),
         });
@@ -391,19 +391,76 @@ export const settingTencentdbCommand = {
             return;
         }
         if (mode === "show-bg-procs") {
-            const { backgroundTasks } = await import("../tools/index.js");
-            const task = backgroundTasks.get("tencentdb-gateway");
+            const { backgroundTasks, savePersistedTasks, notifyTasksChanged } = await import("../tools/index.js");
+            let task = backgroundTasks.get("tencentdb-gateway");
+            // If task is not registered, let's check if the gateway is actually running on port 8420
+            if (!task) {
+                let pid = null;
+                try {
+                    const execAsync = promisify(exec);
+                    const cmdStr = process.platform === "win32"
+                        ? `powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort 8420 -ErrorAction SilentlyContinue).OwningProcess"`
+                        : `lsof -t -i:8420`;
+                    const { stdout } = await execAsync(cmdStr);
+                    const parsed = parseInt(stdout.trim(), 10);
+                    if (!isNaN(parsed) && parsed > 0) {
+                        pid = parsed;
+                    }
+                }
+                catch { }
+                if (pid) {
+                    // Re-create the background task
+                    task = {
+                        id: "tencentdb-gateway",
+                        command: "npx tsx src/gateway/server.ts (TencentDB Gateway)",
+                        process: {
+                            pid,
+                            killed: false,
+                            stdin: null,
+                        },
+                        output: [],
+                        logPath: path.join(os.homedir(), ".superagent-r", "tencentdb-memory", "logs", "gateway.log"),
+                        hasExited: false,
+                    };
+                    // Try to read log file outputs
+                    if (task.logPath && fs.existsSync(task.logPath)) {
+                        try {
+                            const logs = fs.readFileSync(task.logPath, "utf-8");
+                            task.output = logs.split("\n").map(l => l + "\n").slice(-1000);
+                        }
+                        catch { }
+                    }
+                    backgroundTasks.set("tencentdb-gateway", task);
+                    savePersistedTasks();
+                    notifyTasksChanged();
+                }
+            }
             if (!task) {
                 ctx.addLine({
                     type: "system",
                     content: [
                         "┌───[ 🧠 TENCENTDB BG PROCESS ]",
-                        "│ • Status      : NOT SPAWNED (no background task entry)",
+                        "│ • Status      : NOT SPAWNED (no background task entry and port 8420 is offline)",
                         "└─────────────────────────────────",
                     ].join("\n"),
                     timestamp: now,
                 });
                 return;
+            }
+            // If it is registered but was marked as exited, let's verify if the process is actually still alive!
+            if (task.hasExited && task.process?.pid) {
+                let isAlive = false;
+                try {
+                    process.kill(task.process.pid, 0);
+                    isAlive = true;
+                }
+                catch { }
+                if (isAlive) {
+                    task.hasExited = false;
+                    task.exitCode = undefined;
+                    savePersistedTasks();
+                    notifyTasksChanged();
+                }
             }
             const isAlive = !task.hasExited;
             const pid = task.process?.pid || "unknown";
@@ -434,12 +491,33 @@ export const settingTencentdbCommand = {
             });
             return;
         }
-        if (!mode || (mode !== "on" && mode !== "off" && mode !== "status" && mode !== "show-bg-procs")) {
+        if (mode === "hide-bg-procs") {
+            const { backgroundTasks, savePersistedTasks, notifyTasksChanged } = await import("../tools/index.js");
+            if (backgroundTasks.has("tencentdb-gateway")) {
+                backgroundTasks.delete("tencentdb-gateway");
+                savePersistedTasks();
+                notifyTasksChanged();
+                ctx.addLine({
+                    type: "system",
+                    content: "✓ TencentDB Memory Gateway process hidden from the active processes panel (it is still running in the background).",
+                    timestamp: now,
+                });
+            }
+            else {
+                ctx.addLine({
+                    type: "system",
+                    content: "✓ TencentDB Memory Gateway process is already hidden from the active processes panel.",
+                    timestamp: now,
+                });
+            }
+            return;
+        }
+        if (!mode || (mode !== "on" && mode !== "off" && mode !== "status" && mode !== "show-bg-procs" && mode !== "hide-bg-procs")) {
             const s = getSettings();
             ctx.addLine({
                 type: "system",
                 content: [
-                    "Usage: /setting-tencentdb <on|off|status|show-bg-procs> [gatewayUrl]",
+                    "Usage: /setting-tencentdb <on|off|status|show-bg-procs|hide-bg-procs> [gatewayUrl]",
                     `Current value: ${s.enableTencentdbMemory ? "on (ENABLED)" : "off (DISABLED)"}`,
                     `Gateway URL  : ${s.tencentdbGatewayUrl}`,
                     "",
@@ -447,6 +525,7 @@ export const settingTencentdbCommand = {
                     "  off            — disable TencentDB memory and stop local gateway",
                     "  status         — live connectivity check to the gateway",
                     "  show-bg-procs  — show the background gateway process details and logs",
+                    "  hide-bg-procs  — hide the background gateway process from active processes panel",
                 ].join("\n"),
                 timestamp: now,
             });

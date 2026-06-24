@@ -587,6 +587,23 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(getSettings().rateLimitCapacity).toBe(15);
     expect(addedLines[addedLines.length - 1].content).toContain("Rate limit capacity set to: 15");
   });
+
+  it("should support /setting-tencentdb command variants including hide-bg-procs and show-bg-procs", async () => {
+    // Show usage when empty or invalid
+    await handleSlashCommand("/setting-tencentdb", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-tencentdb");
+
+    await handleSlashCommand("/setting-tencentdb invalid", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-tencentdb");
+
+    // hide-bg-procs variant
+    await handleSlashCommand("/setting-tencentdb hide-bg-procs", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("TencentDB Memory Gateway process is already hidden");
+
+    // show-bg-procs variant
+    await handleSlashCommand("/setting-tencentdb show-bg-procs", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("TENCENTDB BG PROCESS");
+  });
 });
 
 describe("Slash Command: /worktree", () => {
