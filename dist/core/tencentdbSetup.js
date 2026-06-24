@@ -156,6 +156,32 @@ export async function runTencentdbSetup() {
             },
         });
         child.unref();
+        // Register as a background process so it shows in the process list
+        try {
+            const { backgroundTasks, savePersistedTasks, notifyTasksChanged } = await import("./tools/index.js");
+            backgroundTasks.set("tencentdb-gateway", {
+                id: "tencentdb-gateway",
+                command: "npx tsx src/gateway/server.ts (TencentDB Gateway)",
+                process: child,
+                output: [],
+                logPath: path.join(globalDataDir, "logs", "gateway.log"),
+                hasExited: false,
+            });
+            savePersistedTasks();
+            notifyTasksChanged();
+            child.on("close", (code) => {
+                const task = backgroundTasks.get("tencentdb-gateway");
+                if (task) {
+                    task.hasExited = true;
+                    task.exitCode = code ?? undefined;
+                    savePersistedTasks();
+                    notifyTasksChanged();
+                }
+            });
+        }
+        catch (importErr) {
+            // Ignore background registration errors if tools module is not initialized yet
+        }
     }
     catch (globalErr) {
         console.warn(`[TencentDB] Unhandled error during startup setup: ${globalErr.message}`);

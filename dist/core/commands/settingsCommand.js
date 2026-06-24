@@ -390,18 +390,63 @@ export const settingTencentdbCommand = {
             }
             return;
         }
-        if (!mode || (mode !== "on" && mode !== "off")) {
+        if (mode === "show-bg-procs") {
+            const { backgroundTasks } = await import("../tools/index.js");
+            const task = backgroundTasks.get("tencentdb-gateway");
+            if (!task) {
+                ctx.addLine({
+                    type: "system",
+                    content: [
+                        "┌───[ 🧠 TENCENTDB BG PROCESS ]",
+                        "│ • Status      : NOT SPAWNED (no background task entry)",
+                        "└─────────────────────────────────",
+                    ].join("\n"),
+                    timestamp: now,
+                });
+                return;
+            }
+            const isAlive = !task.hasExited;
+            const pid = task.process?.pid || "unknown";
+            const logPath = task.logPath || "unknown";
+            let tailLines = [];
+            if (logPath && fs.existsSync(logPath)) {
+                try {
+                    const logs = fs.readFileSync(logPath, "utf-8");
+                    tailLines = logs.split("\n").filter(Boolean).slice(-10);
+                }
+                catch { }
+            }
+            ctx.addLine({
+                type: "system",
+                content: [
+                    "┌───[ 🧠 TENCENTDB BG PROCESS ]",
+                    `│ • ID          : ${task.id}`,
+                    `│ • Status      : ${isAlive ? "✅ RUNNING" : "❌ EXITED"}`,
+                    `│ • PID         : ${pid}`,
+                    `│ • Log Path    : ${logPath}`,
+                    `│ • Command     : ${task.command}`,
+                    "│",
+                    "│ • Recent Output Logs (last 10 lines):",
+                    ...tailLines.map(line => `│   ${line}`),
+                    "└─────────────────────────────────",
+                ].join("\n"),
+                timestamp: now,
+            });
+            return;
+        }
+        if (!mode || (mode !== "on" && mode !== "off" && mode !== "status" && mode !== "show-bg-procs")) {
             const s = getSettings();
             ctx.addLine({
                 type: "system",
                 content: [
-                    "Usage: /setting-tencentdb <on|off|status> [gatewayUrl]",
+                    "Usage: /setting-tencentdb <on|off|status|show-bg-procs> [gatewayUrl]",
                     `Current value: ${s.enableTencentdbMemory ? "on (ENABLED)" : "off (DISABLED)"}`,
                     `Gateway URL  : ${s.tencentdbGatewayUrl}`,
                     "",
-                    "  on [url]  — enable TencentDB memory (auto-starts gateway)",
-                    "  off       — disable TencentDB memory and stop local gateway",
-                    "  status    — live connectivity check to the gateway",
+                    "  on [url]       — enable TencentDB memory (auto-starts gateway)",
+                    "  off            — disable TencentDB memory and stop local gateway",
+                    "  status         — live connectivity check to the gateway",
+                    "  show-bg-procs  — show the background gateway process details and logs",
                 ].join("\n"),
                 timestamp: now,
             });
@@ -572,6 +617,26 @@ export const settingTencentdbCommand = {
                             },
                         });
                         child.unref();
+                        const { backgroundTasks, savePersistedTasks, notifyTasksChanged } = await import("../tools/index.js");
+                        backgroundTasks.set("tencentdb-gateway", {
+                            id: "tencentdb-gateway",
+                            command: "npx tsx src/gateway/server.ts (TencentDB Gateway)",
+                            process: child,
+                            output: [],
+                            logPath: path.join(globalDataDir, "logs", "gateway.log"),
+                            hasExited: false,
+                        });
+                        savePersistedTasks();
+                        notifyTasksChanged();
+                        child.on("close", (code) => {
+                            const task = backgroundTasks.get("tencentdb-gateway");
+                            if (task) {
+                                task.hasExited = true;
+                                task.exitCode = code ?? undefined;
+                                savePersistedTasks();
+                                notifyTasksChanged();
+                            }
+                        });
                         ctx.addLine({
                             type: "system",
                             content: `⚡ Waiting for gateway to initialize...`,
@@ -627,6 +692,14 @@ export const settingTencentdbCommand = {
                     }
                     else {
                         await execAsync("lsof -t -i:8420 | xargs kill -9 2>/dev/null || true");
+                    }
+                    const { backgroundTasks, savePersistedTasks, notifyTasksChanged } = await import("../tools/index.js");
+                    const task = backgroundTasks.get("tencentdb-gateway");
+                    if (task) {
+                        task.hasExited = true;
+                        task.exitCode = 9;
+                        savePersistedTasks();
+                        notifyTasksChanged();
                     }
                     ctx.addLine({
                         type: "system",
