@@ -17,8 +17,8 @@
  *  9. Ctrl+V (paste) triggers clipboard image check via onPasteImage callback.
  */
 
-import React, { useState, useEffect } from "react";
-import { Text, useInput } from "ink";
+import React, { useState, useEffect, useRef } from "react";
+import { Text, useInput, useStdin } from "ink";
 import chalk from "chalk";
 import type { ImageAttachment } from "../utils/imageUtils.js";
 import { isImageFilePath } from "../utils/imageUtils.js";
@@ -57,6 +57,20 @@ export default function ChatTextInput({
   const [cursorOffset, setCursorOffset] = useState(
     (originalValue || "").length
   );
+
+  const { stdin } = useStdin();
+  const lastRawKeyRef = useRef("");
+
+  useEffect(() => {
+    if (!stdin) return;
+    const handleData = (data: Buffer) => {
+      lastRawKeyRef.current = data.toString();
+    };
+    stdin.on("data", handleData);
+    return () => {
+      stdin.off("data", handleData);
+    };
+  }, [stdin]);
 
   // Keep cursorOffset within bounds when value changes externally.
   useEffect(() => {
@@ -156,6 +170,13 @@ export default function ChatTextInput({
       let nextCursorOffset = cursorOffset;
       let nextValue = originalValue;
 
+      const isBackspace =
+        key.backspace ||
+        (key.delete &&
+          (lastRawKeyRef.current === "\x7f" ||
+            lastRawKeyRef.current === "\x1b\x7f"));
+      const isDelete = key.delete && !isBackspace;
+
       if (key.leftArrow) {
         if (showCursor) {
           nextCursorOffset = Math.max(0, cursorOffset - 1);
@@ -164,7 +185,7 @@ export default function ChatTextInput({
         if (showCursor) {
           nextCursorOffset = Math.min(originalValue.length, cursorOffset + 1);
         }
-      } else if (key.backspace) {
+      } else if (isBackspace) {
         // ── Backspace: delete character BEFORE cursor ──────────────────────
         if (cursorOffset > 0) {
           nextValue =
@@ -172,7 +193,7 @@ export default function ChatTextInput({
             originalValue.slice(cursorOffset);
           nextCursorOffset = cursorOffset - 1;
         }
-      } else if (key.delete) {
+      } else if (isDelete) {
         // ── Delete (forward): delete character AFTER cursor ────────────────
         if (cursorOffset < originalValue.length) {
           nextValue =
