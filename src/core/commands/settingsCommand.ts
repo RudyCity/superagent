@@ -19,6 +19,8 @@ export const settingsCommand: SlashCommand = {
         `│ • Streaming          : ${s.disableStreaming ? "DISABLED" : "ENABLED"}`,
         `│ • Context Window     : ${s.contextWindowLimit > 0 ? `${s.contextWindowLimit} tokens` : "auto (model default)"}`,
         `│ • Max Iterations     : ${s.maxIterations}`,
+        `│ • TencentDB Memory   : ${s.enableTencentdbMemory ? "ENABLED" : "DISABLED"}`,
+        `│ • TencentDB Gateway  : ${s.tencentdbGatewayUrl}`,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",
@@ -27,7 +29,8 @@ export const settingsCommand: SlashCommand = {
         "  /setting-capacity <number>",
         "  /setting-streaming <on|off>",
         "  /setting-context-limit <number>",
-        "  /setting-max-iterations <number>"
+        "  /setting-max-iterations <number>",
+        "  /setting-tencentdb <on|off> [gatewayUrl]"
       ].join("\n"),
       timestamp: Date.now(),
     });
@@ -304,6 +307,56 @@ export const settingMaxIterationsCommand: SlashCommand = {
   }
 };
 
+// /setting-tencentdb command
+export const settingTencentdbCommand: SlashCommand = {
+  name: "setting-tencentdb",
+  description: "Configure TencentDB memory strategy and gateway URL",
+  execute(args, ctx) {
+    const now = Date.now();
+    const parts = args.trim().split(/\s+/);
+    const mode = parts[0]?.toLowerCase();
+    const url = parts[1];
+
+    if (!mode || (mode !== "on" && mode !== "off")) {
+      const s = getSettings();
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-tencentdb <on|off> [gatewayUrl]\nCurrent value: ${s.enableTencentdbMemory ? "on (ENABLED)" : "off (DISABLED)"}\nGateway URL  : ${s.tencentdbGatewayUrl}`,
+        timestamp: now,
+      });
+      return;
+    }
+
+    try {
+      const updates: Partial<any> = {
+        enableTencentdbMemory: mode === "on",
+      };
+      if (url) {
+        updates.tencentdbGatewayUrl = url;
+      }
+
+      updateSettings(updates);
+      
+      let msg = `✓ TencentDB memory strategy set to: ${mode === "on" ? "on (ENABLED)" : "off (DISABLED)"}`;
+      if (url) {
+        msg += `\n✓ Gateway URL set to: ${url}`;
+      }
+      
+      ctx.addLine({
+        type: "system",
+        content: msg,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
 registry.register(settingsCommand);
 registry.register(settingConcurrencyCommand);
 registry.register(settingRpmCommand);
@@ -311,3 +364,4 @@ registry.register(settingCapacityCommand);
 registry.register(settingStreamingCommand);
 registry.register(settingContextLimitCommand);
 registry.register(settingMaxIterationsCommand);
+registry.register(settingTencentdbCommand);
