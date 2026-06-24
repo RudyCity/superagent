@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.3] - 2026-06-24
+
+### Added
+- **Interactive Foreground Commands (TTY Piping)**: Added interactive foreground command execution and `!` shortcut in the terminal interface (`runInteractiveProcess`).
+- **Background Tasks Completed Tracking**: Added `completedAt` timestamp tracking and cleanup for background tasks.
+
+### Fixed
+- **Persistent Background Tasks Registry**: Implemented a persistent registry for cross-process synchronization of background tasks.
+- **TTY Piping Refinements**: Refined signatures and returned a promise from terminal execution.
+- **Implementation Plan Headings Validation**: Relaxed implementation plan heading regex checks for validation flexibility.
+- **Checkpoint Wizard Key Handling**: Scoped checkpoint wizard step 1 key handler so it does not intercept step 2 inputs.
+
+---
+
 ## [1.2.2] - 2026-06-24
 
 ### Fixed
