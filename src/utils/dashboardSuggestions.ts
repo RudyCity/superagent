@@ -160,9 +160,19 @@ export function getDashboardSuggestions(query: string): string[] {
     ];
     return filterSuggestions(possibilities, query);
   }
-  
+
+  if (mainCommand === "/setting-tencentdb") {
+    const possibilities = [
+      "/setting-tencentdb on",
+      "/setting-tencentdb off",
+      "/setting-tencentdb status",
+    ];
+    return filterSuggestions(possibilities, query);
+  }
+
   return [];
 }
+
 
 export function getSuggestionDescriptions(): Record<string, string> {
   const desc: Record<string, string> = { ...BUILTIN_DESCRIPTIONS };

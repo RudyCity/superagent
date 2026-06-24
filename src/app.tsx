@@ -834,6 +834,15 @@ export function App({
       return filterSuggestions(shSuggestions, currentInput);
     }
 
+    if (mainCommand === "/setting-tencentdb") {
+      const tdbSuggestions = [
+        "/setting-tencentdb on",
+        "/setting-tencentdb off",
+        "/setting-tencentdb status",
+      ];
+      return filterSuggestions(tdbSuggestions, currentInput);
+    }
+
     return [];
   };
 
