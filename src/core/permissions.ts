@@ -347,6 +347,28 @@ export function getToolDescription(
       return `Running Android CLI command: android ${s(args.command)}`;
     case "ask_question":
       return `Asking user: ${s(args.question)}`;
+    case "manage_superagents":
+      return `Managing Superagents (${s(args.action)})`;
+    case "define_superagent":
+      return `Defining Superagent: ${s(args.name)}`;
+    case "send_message_to_superagent":
+      return `Sending message to Superagent "${s(args.name)}"`;
+    case "git_worktree":
+      return `Running git worktree action: ${s(args.action)}`;
+    case "search_history":
+      return `Searching history for: ${s(args.query)}`;
+    case "load_pinned_session":
+      return `Loading pinned session: ${s(args.sessionId)}`;
+    case "search_pinned_knowledge":
+      return `Searching pinned knowledge: ${s(args.query)}`;
+    case "manage_tasks":
+      return `Managing tasks (${s(args.action)})`;
+    case "list_peer_superagents":
+      return `Listing peer superagents`;
+    case "manage_plan":
+      return `Managing plan (${s(args.action)})`;
+    case "fastcontext":
+      return `Analyzing context with fastcontext`;
     default:
       return `Running tool ${toolCall.name} with parameters ${JSON.stringify(args)}`;
   }

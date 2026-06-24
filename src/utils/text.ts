@@ -11,7 +11,7 @@ export function formatArgs(args: Record<string, unknown>): string {
   const entries = Object.entries(args);
   if (entries.length === 0) return "{}";
   const parts = entries.map(([k, v]) => {
-    const val = typeof v === "string" ? v : JSON.stringify(v);
+    const val = JSON.stringify(v);
     const truncated = val.length > 60 ? val.slice(0, 60) + "..." : val;
     return `${k}: ${truncated}`;
   });
