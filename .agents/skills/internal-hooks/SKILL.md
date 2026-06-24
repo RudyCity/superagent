@@ -75,6 +75,8 @@ console.log("Hook executed successfully! Args:", JSON.stringify(args));
 ## Commands Reference
 - **Initialize hook project**: `/ih init <namahook>`
 - **Run local development loop**: `/ih dev <namahook>` (Runs `dev` script in `package.json` with `test-payload.json` input)
+- **Select active hooks**: `/ih active` (Opens a checklist dialog with multi-select checkboxes to choose which hooks to activate)
+
 
 ## Best Practices
 - Print clean output to `stdout` representing the result returned to the agent.
