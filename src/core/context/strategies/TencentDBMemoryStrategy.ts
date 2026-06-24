@@ -14,6 +14,9 @@ import path from "path";
 export class TencentDBMemoryStrategy implements CompactionStrategy {
   name = "tencentdb-memory";
   private historyFilePath?: string;
+  private lastCapturedTimestamp = 0;
+  private lastConnectAttempt = 0;
+  private gatewayOffline = false;
 
   constructor(config?: { historyFilePath?: string }) {
     this.historyFilePath = config?.historyFilePath;
@@ -28,10 +31,17 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
     messages: Message[],
     options: CompactionOptions
   ): Promise<CompactionResult> {
+    const now = Date.now();
     const settings = getSettings();
     const endpoint = settings.tencentdbGatewayUrl || "http://127.0.0.1:8420";
     const apiKey = settings.tencentdbGatewayApiKey || "sk-xxxx";
     const serviceId = settings.tencentdbServiceId || "default";
+
+    // Silent fallback if gateway is known to be offline (cooldown for 5 minutes)
+    if (this.gatewayOffline && now - this.lastConnectAttempt < 5 * 60 * 1000) {
+      const fallback = new SummarizationStrategy();
+      return fallback.execute(messages, options);
+    }
 
     const client = new MemoryClient({
       endpoint,
@@ -43,9 +53,9 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
     const sessionKey = historyPath ? path.basename(historyPath, path.extname(historyPath)) : "default-session";
 
     try {
-      // 1. Capture user/assistant messages to L0
+      // 1. Capture user/assistant messages to L0 incrementally
       const newMessages = messages
-        .filter((m) => m.role === "user" || m.role === "assistant")
+        .filter((m) => (m.role === "user" || m.role === "assistant") && m.timestamp > this.lastCapturedTimestamp)
         .map((m) => ({
           role: m.role as "user" | "assistant",
           content: m.content,
@@ -57,6 +67,12 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
           session_id: sessionKey,
           messages: newMessages,
         });
+        
+        // Update watermark cursor to the latest timestamp among processed messages
+        const maxTs = Math.max(...messages.map((m) => m.timestamp || 0));
+        if (maxTs > this.lastCapturedTimestamp) {
+          this.lastCapturedTimestamp = maxTs;
+        }
       }
 
       // 2. Recall long-term memories
@@ -74,6 +90,9 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
       const l1Items = searchResult.status === "fulfilled" ? (searchResult.value?.items ?? []) : [];
       const personaContent = persona.status === "fulfilled" && persona.value ? persona.value.content : null;
       const sceneEntries = scenarios.status === "fulfilled" && scenarios.value ? (scenarios.value.entries ?? []) : [];
+
+      // Reset offline status on success
+      this.gatewayOffline = false;
 
       // 3. Format the recalled memories
       const formattedMemories: string[] = [];
@@ -128,7 +147,12 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
         },
       };
     } catch (error) {
-      console.warn("TencentDBMemoryStrategy failed, falling back to SummarizationStrategy:", error);
+      this.lastConnectAttempt = Date.now();
+      if (!this.gatewayOffline) {
+        console.warn("TencentDBMemoryStrategy gateway connection failed, falling back to SummarizationStrategy. Offline cooldown active for 5m. Error:", (error as Error).message);
+        this.gatewayOffline = true;
+      }
+      
       // Fallback to SummarizationStrategy
       const fallback = new SummarizationStrategy();
       return fallback.execute(messages, options);
