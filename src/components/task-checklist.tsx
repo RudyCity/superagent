@@ -44,6 +44,15 @@ export function TaskChecklist({
   const historyToShow = completedHistory.slice(-MAX_HISTORY_VISIBLE);
   const hiddenHistoryCount = completedHistory.length - historyToShow.length;
 
+  // Find the maximum remaining seconds for the countdown header
+  const maxRemaining = historyToShow.reduce((max, t) => {
+    if (t.remainingSeconds !== undefined && (max === undefined || t.remainingSeconds > max)) {
+      return t.remainingSeconds;
+    }
+    return max;
+  }, undefined as number | undefined);
+  const headerTimeText = maxRemaining !== undefined ? ` ~ Hide in (${maxRemaining}s)` : "";
+
   return (
     <Box
       flexDirection="column"
@@ -137,7 +146,7 @@ export function TaskChecklist({
           {/* History header */}
           <Box flexDirection="row" marginBottom={0}>
             <Text bold color="gray" dimColor>
-              ✓ PREVIOUSLY COMPLETED ({completedHistory.length} tasks)
+              ✓ PREVIOUSLY COMPLETED ({completedHistory.length} tasks){headerTimeText}
             </Text>
           </Box>
 
@@ -153,16 +162,12 @@ export function TaskChecklist({
           {/* History task list (dimmed, compact) */}
           {historyToShow.map((task, index) => {
             const connector = "├──";
-            const timeText = task.remainingSeconds !== undefined ? ` (${task.remainingSeconds}s)` : "";
             return (
               <Box key={`hist-${index}`} flexDirection="row">
                 <Text color="gray" dimColor>{connector} </Text>
                 <Text color="gray" dimColor>◉ </Text>
                 <Text color="gray" dimColor strikethrough>
                   {task.text}
-                </Text>
-                <Text color="gray" dimColor>
-                  {timeText}
                 </Text>
               </Box>
             );
