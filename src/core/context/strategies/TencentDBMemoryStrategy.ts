@@ -63,16 +63,18 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
         }));
 
       if (newMessages.length > 0) {
-        await client.addConversation({
+        // Fire-and-forget: don't block compaction on L0 capture
+        const maxTs = Math.max(...messages.map((m) => m.timestamp || 0));
+        client.addConversation({
           session_id: sessionKey,
           messages: newMessages,
+        }).then(() => {
+          if (maxTs > this.lastCapturedTimestamp) {
+            this.lastCapturedTimestamp = maxTs;
+          }
+        }).catch((err: Error) => {
+          console.warn("[TencentDB] addConversation failed silently:", err.message);
         });
-        
-        // Update watermark cursor to the latest timestamp among processed messages
-        const maxTs = Math.max(...messages.map((m) => m.timestamp || 0));
-        if (maxTs > this.lastCapturedTimestamp) {
-          this.lastCapturedTimestamp = maxTs;
-        }
       }
 
       // 2. Recall long-term memories
@@ -122,7 +124,7 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
       const summaryText = formattedMemories.join("\n").trim();
 
       // 4. Construct compacted messages
-      const preserveRecent = options.preserveRecent || 10;
+      const preserveRecent = options.preserveRecent || 20;
       let keepIndex = Math.max(0, messages.length - preserveRecent);
       while (keepIndex < messages.length && messages[keepIndex]?.role === "tool") {
         keepIndex++;
@@ -161,7 +163,7 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
 
   estimateCost(messages: Message[]): CompactionCost {
     const inputTokens = messages.reduce(
-      (sum, m) => sum + Math.ceil(m.content.length / 4),
+      (sum, m) => sum + Math.ceil(contentToString(m.content).length / 4),
       0
     );
     return {

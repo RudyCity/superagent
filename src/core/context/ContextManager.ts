@@ -305,7 +305,7 @@ export class ContextManager {
     const responseBuffer = 8000;
     const toolCallBuffer = 10000;
     const threshold = modelLimit - responseBuffer - toolCallBuffer;
-    return Math.min(threshold, modelLimit * 0.7);
+    return Math.min(threshold, modelLimit * 0.75);
   }
 
   private selectStrategy(messages: Message[]): CompactionStrategy {
