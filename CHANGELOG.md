@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.4] - 2026-06-24
+
+### Fixed
+- **Empty Model Output Handling**: Classified empty model output as a non-retryable error to prevent infinite retry loops.
+- **Background Agent Loop Leak**: Resolved background agent loop execution leak after ESC/abort to prevent ghost processes.
+
+---
+
 ## [1.2.3] - 2026-06-24
 
 ### Added
