@@ -150,26 +150,34 @@ export function reconstructChatLines(msgs: Message[]): ChatLine[] {
         if (m.toolCalls && m.toolCalls.length > 0) {
           for (const tc of m.toolCalls) {
             const description = getToolDescription(tc);
-            assistantLine.children!.push({
+            const toolStartChild: ChatLine = {
               type: "tool_start",
               content: `⚡ ${description}\n   Detail: ${tc.name}(${formatArgs(tc.args)})`,
               timestamp: m.timestamp,
-            });
+            };
 
             const tr = toolResultsMap.get(tc.id);
             if (tr) {
-              const prefixEmojiEnd = tr.isError ? "✗" : "✓";
-              const statusPrefix = tr.isError ? `${prefixEmojiEnd} Failed -` : `${prefixEmojiEnd} Completed -`;
+              let customTitleEnd = description;
+              if (tc.name === "read" && typeof tc.args?.filePath === "string") {
+                const filePath = tc.args.filePath;
+                if (filePath.includes("skills") && filePath.endsWith("SKILL.md")) {
+                  const parts = filePath.replace(/\\/g, "/").split("/");
+                  const skillName = parts[parts.length - 2] || "unknown";
+                  customTitleEnd = `[SKILL] Loaded instructions for: ${skillName}`;
+                }
+              }
               const resultContent = tr.isError
-                ? `${statusPrefix} ${description}\nDetail: ${tr.result}`
-                : `${statusPrefix} ${description}\nOutput: ${tr.result.slice(0, 500)}${tr.result.length > 500 ? "..." : ""}`;
+                ? `Detail: ${tr.result}`
+                : `Output: ${tr.result.slice(0, 500)}${tr.result.length > 500 ? "..." : ""}`;
 
-              assistantLine.children!.push({
-                type: "tool_end",
+              toolStartChild.mergedResult = {
+                isError: !!tr.isError,
                 content: resultContent,
-                timestamp: m.timestamp,
-              });
+                description: customTitleEnd,
+              };
             }
+            assistantLine.children!.push(toolStartChild);
           }
         }
         loadedLines.push(assistantLine);
