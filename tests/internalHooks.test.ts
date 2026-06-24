@@ -131,4 +131,37 @@ describe("Internal Hooks Feature", () => {
     // Clean up question handler
     registerQuestionHandler(null);
   });
+
+  it("should execute /ih active subcommand, handle cancel, and not modify active hooks list", async () => {
+    const { registerQuestionHandler } = await import("../src/core/tools/state.js");
+    const { saveActiveHooksForProject, getActiveHooksForProject } = await import("../src/core/tools/dynamicHooks.js");
+    
+    // 1. Pre-set active hooks to ["test-hook"]
+    saveActiveHooksForProject(tempDir, ["test-hook"]);
+
+    // 2. Register mock interactive question handler that returns "__CANCEL__"
+    registerQuestionHandler(async (question, options, isMultiSelect, initialCheckedIndices) => {
+      expect(isMultiSelect).toBe(true);
+      expect(initialCheckedIndices).toEqual([0]); // since we saved ["test-hook"]
+      return "__CANCEL__";
+    });
+
+    const lines: ChatLine[] = [];
+    const mockCtx: SlashCommandContext = {
+      addLine: (line) => lines.push(line),
+      exit: () => {},
+      agent: null,
+    };
+
+    await internalHooksCommand.execute("active", mockCtx);
+
+    // Verify output shows cancel message
+    expect(lines.some(l => l.type === "system" && l.content.includes("Active hooks selection cancelled"))).toBe(true);
+
+    // Verify it is NOT modified (still ["test-hook"])
+    expect(getActiveHooksForProject(tempDir)).toEqual(["test-hook"]);
+
+    // Clean up question handler
+    registerQuestionHandler(null);
+  });
 });

@@ -205,7 +205,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         setPendingPermission(null);
       }
       if (pendingQuestion) {
-        pendingQuestion.resolve("");
+        pendingQuestion.resolve("__CANCEL__");
         setPendingQuestion(null);
       }
       setActiveWizard(null);
@@ -1667,7 +1667,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           setPendingPermission(null);
         }
         if (pendingQuestion) {
-          pendingQuestion.resolve("");
+          pendingQuestion.resolve("__CANCEL__");
           setPendingQuestion(null);
         }
         setActiveWizard(null);

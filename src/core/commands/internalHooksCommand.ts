@@ -308,6 +308,15 @@ console.log("Active Workspace CWD:", process.cwd());
           initialCheckedIndices
         );
 
+        if (answer === "__CANCEL__") {
+          ctx.addLine({
+            type: "system",
+            content: "Active hooks selection cancelled.",
+            timestamp: Date.now(),
+          });
+          return;
+        }
+
         // Parse response
         const selectedOptions = typeof answer === "string" 
           ? answer.split(", ").map(x => x.trim()).filter(Boolean)

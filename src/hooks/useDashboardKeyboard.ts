@@ -144,7 +144,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         setWizardIsLoadingModels(false);
         setQuery("");
         if (pendingQuestion) {
-          pendingQuestion.resolve("");
+          pendingQuestion.resolve("__CANCEL__");
           setPendingQuestion(null);
         }
         if (setMasterLogs) {
@@ -530,7 +530,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         setWizardIsLoadingModels(false);
         setQuery("");
         if (pendingQuestion) {
-          pendingQuestion.resolve("");
+          pendingQuestion.resolve("__CANCEL__");
           setPendingQuestion(null);
         }
         if (needsAbort) {
