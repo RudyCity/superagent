@@ -106,10 +106,59 @@ console.log("Active Workspace CWD:", process.cwd());
           exampleParam: "hello world"
         };
 
+        const todayDate = new Date().toISOString().split("T")[0];
+
+        const readmeMd = `# ${hookName}
+
+Custom internal hook tool for ${hookName}.
+
+## Description
+[Describe what this hook does and how the AI agent should use it.]
+
+## File Structure
+- \`hook.json\`: Tool definition, parameters, slash commands, and event hooks registration.
+- \`package.json\`: Script triggers and dependency management.
+- \`index.js\`: Script execution entrypoint.
+- \`test-payload.json\`: Stdin payload for testing command \`/ih dev ${hookName}\` locally.
+- \`README.md\`: Documentation for the hook.
+- \`CHANGELOG.md\`: Version and change history logs.
+
+## Usage
+Run \`/ih dev ${hookName}\` inside the main project directory to test this hook locally.
+`;
+
+        const changelogMd = `# Changelog
+
+All notable changes to the \`${hookName}\` hook will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] - ${todayDate}
+
+### Added
+- Initial release of the \`${hookName}\` internal hook.
+`;
+
         await fs.writeFile(path.join(hookDir, "hook.json"), JSON.stringify(hookJson, null, 2), "utf-8");
         await fs.writeFile(path.join(hookDir, "package.json"), JSON.stringify(packageJson, null, 2), "utf-8");
         await fs.writeFile(path.join(hookDir, "index.js"), indexJs, "utf-8");
         await fs.writeFile(path.join(hookDir, "test-payload.json"), JSON.stringify(testPayloadJson, null, 2), "utf-8");
+        await fs.writeFile(path.join(hookDir, "README.md"), readmeMd, "utf-8");
+        await fs.writeFile(path.join(hookDir, "CHANGELOG.md"), changelogMd, "utf-8");
+
+        // Git initialize inside hook directory
+        let gitInitSuccess = false;
+        try {
+          await execa("git", ["init"], { cwd: hookDir });
+          gitInitSuccess = true;
+        } catch (gitErr: any) {
+          ctx.addLine({
+            type: "system",
+            content: `⚠ Warning: Failed to initialize Git repository in internal-hooks/${hookName}: ${gitErr.message}`,
+            timestamp: Date.now(),
+          });
+        }
 
         // Auto-activate the new hook if there's already a configured list
         const activeHooks = getActiveHooksForProject(process.cwd());
@@ -130,7 +179,7 @@ console.log("Active Workspace CWD:", process.cwd());
 
         ctx.addLine({
           type: "system",
-          content: `✓ Successfully initialized internal hook project workspace!\nCreated directory: internal-hooks/${hookName}/\nFiles created:\n  - hook.json (Tool definition & inputs)\n  - package.json (Sub-project settings)\n  - index.js (Execution script entrypoint)\n  - test-payload.json (Mock inputs for dev testing)\n\nYou can now edit these files and run "/ih dev ${hookName}" to test it!`,
+          content: `✓ Successfully initialized internal hook project workspace!\nCreated directory: internal-hooks/${hookName}/\nFiles created:\n  - hook.json (Tool definition & inputs)\n  - package.json (Sub-project settings)\n  - index.js (Execution script entrypoint)\n  - test-payload.json (Mock inputs for dev testing)\n  - README.md (Hook documentation)\n  - CHANGELOG.md (Hook release notes)\n\n${gitInitSuccess ? "✓ Initialized clean Git repository in hook directory.\n" : ""}You can now edit these files and run "/ih dev ${hookName}" to test it!`,
           timestamp: Date.now(),
         });
       } catch (err: any) {

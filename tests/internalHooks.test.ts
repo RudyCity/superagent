@@ -40,6 +40,9 @@ describe("Internal Hooks Feature", () => {
     expect(fsSync.existsSync(path.join(hookDir, "package.json"))).toBe(true);
     expect(fsSync.existsSync(path.join(hookDir, "index.js"))).toBe(true);
     expect(fsSync.existsSync(path.join(hookDir, "test-payload.json"))).toBe(true);
+    expect(fsSync.existsSync(path.join(hookDir, "README.md"))).toBe(true);
+    expect(fsSync.existsSync(path.join(hookDir, "CHANGELOG.md"))).toBe(true);
+    expect(fsSync.existsSync(path.join(hookDir, ".git"))).toBe(true);
 
     // Verify content of hook.json
     const hookJson = JSON.parse(await fs.readFile(path.join(hookDir, "hook.json"), "utf-8"));

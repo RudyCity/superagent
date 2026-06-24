@@ -18,7 +18,7 @@ Internal Hooks are custom user-defined scripts placed in subdirectories under `i
 ---
 
 ## Hook File Structure
-Every hook must be placed in a subdirectory: `internal-hooks/<hook_name>/`. The structure can contain the following:
+Every hook must be placed in a subdirectory: `internal-hooks/<hook_name>/`. The structure MUST contain the following:
 
 ```
 internal-hooks/<hook_name>/
@@ -26,10 +26,18 @@ internal-hooks/<hook_name>/
 ├── package.json          # Dependency and script management
 ├── index.js              # Entrypoint script executing logic
 ├── test-payload.json     # Stdin mock argument payload for local dev loop testing
+├── README.md             # [Mandatory] Hook documentation
+├── CHANGELOG.md          # [Mandatory] Hook release notes
 └── skills/               # [Optional] Dynamic agent skills directory
     └── <my-custom-skill>/
         └── SKILL.md      # Skill markdown documentation for agent instruction
 ```
+
+### Mandatory Setup Requirements
+All internal hooks are strictly required to have:
+1. **README.md**: Clear documentation explaining the hook's features, input arguments, environment variables, outputs, and how it behaves.
+2. **CHANGELOG.md**: A semantic versioning changelog following the *Keep a Changelog* format, tracking all versions, improvements, bug fixes, and breaking changes.
+3. **Git Initialization**: The hook subdirectory must be initialized as its own local Git repository (`git init`). This is done automatically by `/ih init <hook_name>`, which scaffolds the mandatory files and configures git.
 
 ### 1. `hook.json` Configuration
 Defines the dynamic tools, custom slash commands, and event hooks.
@@ -139,3 +147,4 @@ Hooks are loaded and activated on a per-project basis. There are three ways hook
 - **Errors**: Run error messages to `stderr` and terminate with a non-zero exit code (`process.exit(1)`) to indicate failures.
 - **Interactive Guards**: Avoid interactive CLI prompts since agent tools and event hooks run headlessly in the background.
 - **Environment Variables**: Access the hook directory using `process.env.SUPERAGENT_HOOK_DIR`, the active workspace directory using `process.env.SUPERAGENT_CWD`, and the lifecycle event type via `process.env.SUPERAGENT_EVENT` (for event hooks).
+- **Mandatory Documentation & Versioning**: Ensure all hook workspaces are initialized as Git repositories and contain both a `README.md` and a `CHANGELOG.md` to track usage instructions and history.
