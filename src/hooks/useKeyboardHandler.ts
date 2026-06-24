@@ -1116,7 +1116,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
           return;
         }
-      } else if (activeWizard.type === "checkpoint" && wizardOptions.length > 0) {
+      } else if (activeWizard.type === "checkpoint" && activeWizard.step === 1 && wizardOptions.length > 0) {
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
