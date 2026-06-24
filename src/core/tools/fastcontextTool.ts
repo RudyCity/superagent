@@ -332,6 +332,15 @@ export const fastcontextTool: Tool = {
       }
     } catch {}
 
+    let workspaceFingerprint = "";
+    try {
+      const { agentLocalStorage } = await import("../agent.js");
+      const activeAgent = agentLocalStorage.getStore();
+      if (activeAgent?.workspaceCache?.fingerprint) {
+        workspaceFingerprint = activeAgent.workspaceCache.fingerprint;
+      }
+    } catch {}
+
     // ── 3. Build CLI args — ALL credentials as flags, ZERO env vars ──
     const cliArgs = [
       RUNNER_SCRIPT,
@@ -356,6 +365,9 @@ export const fastcontextTool: Tool = {
     }
     if (noCache) {
       cliArgs.push("--no-cache");
+    }
+    if (workspaceFingerprint) {
+      cliArgs.push("--workspace-fingerprint", workspaceFingerprint);
     }
 
     let abortHandler: (() => void) | undefined;

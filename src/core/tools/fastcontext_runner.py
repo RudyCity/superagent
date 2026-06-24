@@ -165,6 +165,8 @@ def run():
                         help="Skip files larger than this many KB when reading (default: 512)")
     parser.add_argument("--no-cache", action="store_true",
                         help="Bypass the query result cache")
+    parser.add_argument("--workspace-fingerprint", required=False, default="",
+                        help="Current workspace fingerprint to invalidate query cache on change")
     parser.add_argument("--rate-limit-rpm", type=int, default=60)
     parser.add_argument("--rate-limit-capacity", type=int, default=60)
     args = parser.parse_args()
@@ -327,10 +329,11 @@ def run():
     _CACHE_TTL_S = 3600  # 1 hour
 
     def _cache_key() -> str:
-        """SHA-256 hash of query + model + exclude + citation + maxTurns."""
+        """SHA-256 hash of query + model + exclude + citation + maxTurns + workspaceFingerprint."""
         raw = "|".join([
             args.query, args.model, args.exclude,
             str(args.citation), str(args.max_turns),
+            args.workspace_fingerprint,
         ])
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
