@@ -30,6 +30,10 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-concurrency": "Set LLM concurrency limit (0 or 1)",
   "/setting-rpm": "Set rate limit RPM",
   "/setting-capacity": "Set rate limit capacity",
+  "/setting-streaming": "Enable or disable streaming (on or off)",
+  "/setting-context-limit": "Set custom context window limit (0 = auto)",
+  "/setting-max-iterations": "Set max agent loop iterations",
+  "/setting-tencentdb": "Configure TencentDB memory strategy and gateway URL",
 };
 
 export function getDashboardSuggestions(query: string): string[] {
