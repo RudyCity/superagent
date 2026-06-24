@@ -256,10 +256,12 @@ Model configuration (`model-config.json`) uses atomic write operations to preven
 
 ### 8. TencentDB Memory Gateway Integration & Auto-Setup
 Superagent provides deep, local-first integration with the **TencentDB Agent Memory** gateway server:
-- **Zero-Config Self-Healing Startup**: When `enableTencentdbMemory` is set to `true`, launching Superagent triggers a fully asynchronous, non-blocking check. If the gateway is offline, it automatically clones the repository, installs all dependencies via `npm install`, and spawns the server in the background as a detached process on port 8420. The startup logic runs asynchronously in the background so it never blocks or slows down CLI boot.
+- **Zero-Config Self-Healing Startup**: When `enableTencentdbMemory` is set to `true`, launching Superagent triggers a fully asynchronous, non-blocking check. If the gateway is offline, it automatically clones the repository, installs all dependencies, and spawns the server in the background as a detached process on port 8420. The startup logic runs asynchronously in the background so it never blocks or slows down CLI boot.
+- **Strict Tag v1.0.0 Pinning**: To guarantee compatibility, the repository is automatically checked out to stable release tag `v1.0.0`. If the version mismatch is detected, existing `node_modules` are automatically cleaned up to force a fresh reinstall.
+- **Windows Postinstall Bypass**: Dependency installation automatically uses `--ignore-scripts` to bypass problematic pre/postinstall build steps on Windows, ensuring out-of-the-box support without external build toolchains.
 - **Global Storage Isolation**: The database file and all extracted memories are stored globally under `~/.superagent-r/tencentdb-memory/vectors.db`, keeping the active workspace clean and sharing your memories across all projects you work on.
 - **Dynamic Preset & Provider Resolution**: Decoupled LLM configuration by querying `getTierModelWithProvider()` for a dedicated `"memory"` or `"tencentdb"` tier preset (configured via `/model`). If set, the gateway inherits its specific provider's API key, base URL, and model. If no specific memory preset is found, it falls back to the active provider and master model, injecting them into the gateway's environment variables (`TDAI_LLM_API_KEY`, `TDAI_LLM_BASE_URL`, `TDAI_LLM_MODEL`).
-- **Clean Process Teardown**: Deactivating via `/setting-tencentdb off` automatically terminates the local gateway process running on port 8420 to free up system resources.
+- **Clean Process Teardown & Monitoring**: Deactivating via `/setting-tencentdb off` automatically terminates the local gateway process running on port 8420 to free up system resources. You can inspect the status and details of the background gateway process with `/setting-tencentdb show-bg-procs`.
 
 ---
 
@@ -401,6 +403,7 @@ Superagent supports a wide range of slash commands within the terminal chat to m
 ### Provider & Model Settings
 - **`/login`**: Opens a visual wizard to add API credentials, switch active providers, or list configured providers. You can also log in directly via `/login <key>` or `/login custom <base_url> <key>`.
 - **`/model <name>`**: Switches the active Large Language Model (e.g., `/model openai/gpt-4o` or `/model google/gemini-2.5-flash`). Running without arguments prints the active model name.
+- **`/setting-tencentdb`**: Configures the local TencentDB Agent Memory gateway. Subcommands: `/setting-tencentdb on` (activates memory and spawns gateway), `/setting-tencentdb off` (deactivates memory and stops gateway), `/setting-tencentdb status` (checks connection health and offline status), and `/setting-tencentdb show-bg-procs` (lists active gateway background processes).
 
 ---
 

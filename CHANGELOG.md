@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.8] - 2026-06-24
+
+### Added
+- **Background Processes Command**: Added `/setting-tencentdb show-bg-procs` slash command to inspect background TencentDB memory gateway processes.
+- **Settings Auto-complete & Help Update**: Registered `show-bg-procs` sub-options in `/help` and tab completion.
+
+### Fixed
+- **Terminal Input Backspace Fix**: Resolved input backspace and delete keypress issues under certain terminals by correctly parsing `\x7f` and `\x1b\x7f` backspace sequences.
+- **TencentDB Gateway Tag Pinning**: Enforced locking the gateway repository version to tag `v1.0.0` with automatic cleanup of obsolete `node_modules` during version changes.
+- **Windows Postinstall Workaround**: Bypassed problematic pre/postinstall lifecycle scripts during dependency installation on Windows by using `--ignore-scripts`.
+
+### Improved
+- **Background Tasks Lifecycle**: Integrated the background TencentDB gateway process into the persistent CLI `backgroundTasks` registry for unified process visibility.
+
+---
+
 ## [1.2.7] - 2026-06-24
 
 ### Added
