@@ -1,10 +1,12 @@
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 import fg from "fast-glob";
 import { execa } from "execa";
 import { Tool } from "./types.js";
 import { normalizeForMatching, verifySyntax } from "./helpers.js";
 import { getLocalRgPath, isRgInstalledGlobally, ensureRgInstalled } from "../androidSetup.js";
+import { getWorkspaceCachePath } from "../workspaceDiscovery.js";
 
 
 function buildEditSummary(before: string, after: string, filePath: string, existedBefore = true): string {
@@ -366,12 +368,33 @@ export const globTool: Tool = {
     const limit = (args.limit as number) || 500;
 
     try {
-      const files = await fg(pattern, {
-        cwd: searchPath,
-        absolute: false,
-        onlyFiles: true,
-        ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
-      });
+      let files: string[] | null = null;
+      try {
+        const cachePath = getWorkspaceCachePath(searchPath);
+        if (fsSync.existsSync(cachePath)) {
+          const cacheContent = fsSync.readFileSync(cachePath, "utf-8");
+          const cache = JSON.parse(cacheContent);
+          if (cache && Array.isArray(cache.fileList)) {
+            const picomatchModule = await import("picomatch") as any;
+            const picomatch = picomatchModule.default;
+            const isMatch = picomatch(pattern);
+            // Perform in-memory glob filtering using picomatch utility
+            files = cache.fileList.filter((file: string) => isMatch(file));
+          }
+        }
+      } catch (cacheErr) {
+        // Fallback to disk if cache read fails
+      }
+
+      if (files === null) {
+        files = await fg(pattern, {
+          cwd: searchPath,
+          absolute: false,
+          onlyFiles: true,
+          ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
+        });
+      }
+
       if (files.length === 0) return "No files found.";
       const sliced = files.slice(0, limit);
       const output = sliced.join("\n");
