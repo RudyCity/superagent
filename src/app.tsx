@@ -509,6 +509,32 @@ export function App({
       setHistoryIndex(-1);
       setScrollOffset(0);
 
+      const runInteractiveProcess = async (command: string, cwd: string, env?: Record<string, string>) => {
+        const wasRaw = process.stdin.isRaw;
+        if (wasRaw) {
+          process.stdin.setRawMode(false);
+        }
+        process.stdin.pause();
+
+        let exitCode = 0;
+        try {
+          const { execSync } = await import("child_process");
+          execSync(command, {
+            cwd,
+            env: { ...process.env, ...env },
+            stdio: "inherit",
+          });
+        } catch (err: any) {
+          exitCode = err.status ?? 1;
+        }
+
+        process.stdin.resume();
+        if (wasRaw) {
+          process.stdin.setRawMode(true);
+        }
+        return exitCode;
+      };
+
       if (trimmed.startsWith("/")) {
         await handleSlashCommand(trimmed, {
           addLine,
@@ -530,6 +556,34 @@ export function App({
           clearLines: () => {
             setLines([]);
           },
+          runInteractiveProcess,
+        } as any);
+        return;
+      }
+
+      if (trimmed.startsWith("!")) {
+        const cmdVal = trimmed.slice(1).trim();
+        await handleSlashCommand(`/terminal ${cmdVal}`, {
+          addLine,
+          exit,
+          agent: agentRef.current,
+          setActiveWizard: (w: any) => {
+            setActiveWizard(w);
+          },
+          setWizardOptions,
+          setWizardSelectedIndex,
+          setCheckpointsList,
+          setIsProcessing,
+          setLines,
+          setHistory,
+          setPlanState,
+          setContextLimit,
+          setActiveModel,
+          setInputHistory: setHistory,
+          clearLines: () => {
+            setLines([]);
+          },
+          runInteractiveProcess,
         } as any);
         return;
       }
