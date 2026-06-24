@@ -2,7 +2,7 @@ import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
 import { getSettings, updateSettings, getContextWindowLimit, getEffectiveMasterModel } from "../config.js";
 import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts";
-import { getConfiguredProviders } from "../config/providers.js";
+import { getConfiguredProviders, getTierModelWithProvider } from "../config/providers.js";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -468,10 +468,37 @@ export const settingTencentdbCommand: SlashCommand = {
           const errLog = fs.openSync(path.join(logDir, "gateway.err"), "a");
 
           const providers = getConfiguredProviders();
-          const activeProvider = providers.find((p) => p.isActive) || providers[0];
+          const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+          const modelMode = isMulti ? "multi" : "single";
+          
+          // Resolve memory-specific tier model/provider from presets, if any
+          const resolvedTier = getTierModelWithProvider(modelMode, "memory") || getTierModelWithProvider(modelMode, "tencentdb") || "";
+          
+          let providerId = "";
+          let llmModel = "";
+          if (resolvedTier.includes("@")) {
+            const atIdx = resolvedTier.indexOf("@");
+            providerId = resolvedTier.substring(0, atIdx);
+            llmModel = resolvedTier.substring(atIdx + 1);
+          } else if (resolvedTier) {
+            llmModel = resolvedTier;
+          }
+
+          // Resolve active provider profile based on providerId or fallback to active
+          let activeProvider = providers.find((p) => p.isActive) || providers[0];
+          if (providerId) {
+            const specificProvider = providers.find((p) => p.id === providerId);
+            if (specificProvider) {
+              activeProvider = specificProvider;
+            }
+          }
+
           const llmApiKey = activeProvider?.apiKey || "";
           const llmBaseUrl = activeProvider?.baseUrl || "";
-          const llmModel = getEffectiveMasterModel("auto") || "gpt-4o";
+          
+          if (!llmModel) {
+            llmModel = getEffectiveMasterModel("auto") || "gpt-4o";
+          }
 
           try {
             const child = spawn("npx", ["tsx", "src/gateway/server.ts"], {
