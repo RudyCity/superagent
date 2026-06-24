@@ -118,6 +118,14 @@ If an active hook contains a `skills/` subdirectory, any skill bundles nested in
 
 ---
 
+## Activating Hooks
+Hooks are loaded and activated on a per-project basis. There are three ways hooks can be activated:
+1. **Auto-Activation upon Initialization**: When you initialize a new hook using `/ih init <hook_name>`, it is automatically added to the active list for the current project.
+2. **Interactive Selection via CLI**: Run `/ih active` in the terminal to open an interactive multi-select checkbox list. Checked hooks are activated, and unchecked hooks are deactivated.
+3. **Persisted Configuration**: The active status of hooks is stored inside the global settings file `~/.superagent-r/model-config.json` under the `activeHooks` object, keyed by the project's absolute folder path. To activate a hook programmatically, add its directory name to the array mapping for your project path.
+
+---
+
 ## Commands Reference
 - **Initialize hook project**: `/ih init <hook_name>`
 - **Run local development loop**: `/ih dev <hook_name>` (Runs the `dev` script in `package.json` with `test-payload.json` piped as stdin)
