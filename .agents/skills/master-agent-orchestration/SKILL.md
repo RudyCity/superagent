@@ -52,6 +52,25 @@ The **Master Agent (depth 0)** acts as the central orchestrator and coordinator.
 
 ---
 
+## Planning & Task Management for Master Agent
+
+As a Master Agent, you are restricted from directly modifying codebase files and must delegate all feature implementations. Therefore, your implementation plans and task checklists must focus strictly on orchestration.
+
+### 📝 Plan & Task Checklist Requirements
+* **Orchestration Focus**: Plans must specify the roles, git branch names, and feature tasks for each Superagent to be spawned (e.g. `feat/auth-ui`), rather than listing direct line-level edits to codebase files.
+* **Format & Tooling**: Use the `manage_plan` tool with `action: "create"` to write your implementation plan and automatically synchronize checklist tasks to `task.md` / `_task.md`.
+* **Validation Templates**: The plan must strictly match one of the three template structures (Full, Quick, or Refactor) defined in the `@superagent-planning` skill.
+
+### ⚙️ Auto-Injection Safeguards
+The `manage_plan` tool contains automatic safeguards for Master Agent plans:
+1. **Delegation Note Injection**: If the plan lacks delegation/worktree references, the tool automatically appends a delegation note.
+2. **Orchestration Tasks Injection**: If the task checklist in the plan lacks orchestration tasks, the tool automatically injects three mandatory tasks:
+   - `Spawn Superagents for parallel task execution`
+   - `Monitor Superagent progress and await completion`
+   - `Merge Superagent branches into main codebase`
+
+---
+
 ## Critical Architecture Rules & Constraints
 
 ### ⚠️ Preventing Circular Dependencies
