@@ -509,7 +509,7 @@ export function App({
       setHistoryIndex(-1);
       setScrollOffset(0);
 
-      const runInteractiveProcess = async (command: string, cwd: string, env?: Record<string, string>) => {
+      const runInteractiveProcess = async (command: string, cwd: string, env?: Record<string, string | undefined>) => {
         const wasRaw = process.stdin.isRaw;
         if (wasRaw) {
           process.stdin.setRawMode(false);

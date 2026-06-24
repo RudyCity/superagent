@@ -346,6 +346,21 @@ export const terminalCommand: SlashCommand = {
 
         if (!commandStr) return;
 
+        if (ctx.runInteractiveProcess) {
+          ctx.addLine({
+            type: "system",
+            content: `🖥️ Executing in-place terminal command: "${commandStr}" (cwd: ${runCwd})`,
+            timestamp: Date.now()
+          });
+          const exitCode = await ctx.runInteractiveProcess(commandStr, runCwd, runEnv);
+          ctx.addLine({
+            type: "system",
+            content: `✓ Process finished with exit code ${exitCode}.`,
+            timestamp: Date.now()
+          });
+          return;
+        }
+
         const taskId = `term-${Math.random().toString(36).substring(2, 9)}`;
         const windowLabel = labelOverride || presetName || commandStr.split(" ")[0];
 
