@@ -230,6 +230,17 @@ describe("Superagent Proposed Enhancements Tests", () => {
       expect(checkPlanStructure(refactorPlan)).toBe(true);
     });
 
+    it("should validate plans with relaxed variations of headings", () => {
+      const relaxedFullPlan = `# Title\n## Changes\n## Verification\n## Tests\n## Manual Testing`;
+      expect(checkPlanStructure(relaxedFullPlan)).toBe(true);
+
+      const relaxedQuickPlan = `# Title\n## Changes`;
+      expect(checkPlanStructure(relaxedQuickPlan)).toBe(true);
+
+      const relaxedRefactorPlan = `# Title\n## Changes\n## Design`;
+      expect(checkPlanStructure(relaxedRefactorPlan)).toBe(true);
+    });
+
     it("should reject plans that match no templates", () => {
       const invalidPlan = `# Title\n## Wrong Header`;
       expect(checkPlanStructure(invalidPlan)).toBe(false);
