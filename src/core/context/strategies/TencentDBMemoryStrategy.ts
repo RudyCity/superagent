@@ -23,8 +23,8 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
   }
 
   canHandle(context: CompactionContext): boolean {
-    // We can handle if there are messages to process
-    return context.messages.length > 5;
+    const settings = getSettings();
+    return !!settings.enableTencentdbMemory && context.messages.length > 5;
   }
 
   async execute(

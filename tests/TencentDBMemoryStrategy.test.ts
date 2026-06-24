@@ -20,6 +20,17 @@ vi.mock("@tencentdb-agent-memory/memory-sdk-ts", () => {
   };
 });
 
+vi.mock("../src/core/config.js", () => {
+  return {
+    getSettings: () => ({
+      tencentdbGatewayUrl: "http://127.0.0.1:8420",
+      tencentdbGatewayApiKey: "sk-xxxx",
+      tencentdbServiceId: "default",
+      enableTencentdbMemory: true,
+    }),
+  };
+});
+
 describe("TencentDBMemoryStrategy", () => {
   it("should define strategy interface", () => {
     const strategy = new TencentDBMemoryStrategy();

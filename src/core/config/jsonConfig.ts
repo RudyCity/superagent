@@ -49,6 +49,7 @@ export interface SystemSettings {
   tencentdbGatewayUrl?: string;
   tencentdbGatewayApiKey?: string;
   tencentdbServiceId?: string;
+  enableTencentdbMemory?: boolean;
 }
 
 export interface GlobalModelConfig {
@@ -713,6 +714,7 @@ export function getSettings(): SystemSettings {
     tencentdbGatewayUrl: s.tencentdbGatewayUrl ?? "http://127.0.0.1:8420",
     tencentdbGatewayApiKey: s.tencentdbGatewayApiKey ?? "sk-xxxx",
     tencentdbServiceId: s.tencentdbServiceId ?? "default",
+    enableTencentdbMemory: s.enableTencentdbMemory ?? false,
   };
 }
 
