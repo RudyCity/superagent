@@ -1,5 +1,5 @@
 diff --git a/node_modules/ink-text-input/build/index.js b/node_modules/ink-text-input/build/index.js
-index ada7cdc..ffead6c 100644
+index ada7cdc..410c6e2 100644
 --- a/node_modules/ink-text-input/build/index.js
 +++ b/node_modules/ink-text-input/build/index.js
 @@ -13,7 +13,7 @@ function TextInput({ value: originalValue, placeholder = '', focus = true, mask,
@@ -11,7 +11,33 @@ index ada7cdc..ffead6c 100644
                  return {
                      cursorOffset: newValue.length,
                      cursorWidth: 0,
-@@ -90,11 +90,11 @@ function TextInput({ value: originalValue, placeholder = '', focus = true, mask,
+@@ -72,7 +72,8 @@ function TextInput({ value: originalValue, placeholder = '', focus = true, mask,
+                 nextCursorOffset++;
+             }
+         }
+-        else if (key.backspace || key.delete) {
++        else if (key.backspace) {
++            // Backspace: delete character BEFORE the cursor
+             if (cursorOffset > 0) {
+                 nextValue =
+                     originalValue.slice(0, cursorOffset - 1) +
+@@ -80,6 +81,15 @@ function TextInput({ value: originalValue, placeholder = '', focus = true, mask,
+                 nextCursorOffset--;
+             }
+         }
++        else if (key.delete) {
++            // Delete (forward-delete): delete character AFTER the cursor
++            if (cursorOffset < originalValue.length) {
++                nextValue =
++                    originalValue.slice(0, cursorOffset) +
++                        originalValue.slice(cursorOffset + 1, originalValue.length);
++                // nextCursorOffset stays the same — cursor doesn't move
++            }
++        }
+         else {
+             nextValue =
+                 originalValue.slice(0, cursorOffset) +
+@@ -90,11 +100,11 @@ function TextInput({ value: originalValue, placeholder = '', focus = true, mask,
                  nextCursorWidth = input.length;
              }
          }

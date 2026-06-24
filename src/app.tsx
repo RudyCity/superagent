@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Box, Text, useApp } from "ink";
-import TextInput from "ink-text-input";
+import ChatTextInput from "./components/ChatTextInput.js";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler, QuestionItem } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
@@ -2073,7 +2073,7 @@ export function App({
                     );
                   }
                   return (
-                    <TextInput
+                    <ChatTextInput
                       focus={focusMode === "input"}
                       value={input}
                       onChange={handleInputChange}
