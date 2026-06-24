@@ -19,7 +19,7 @@ import { registry } from "./core/commands/registry.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";
 import { getToolDescription } from "./core/permissions.js";
 import path from "path";
-import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifyTasksChanged } from "./core/tools.js";
+import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, registerMasterAgent, notifyTasksChanged } from "./core/tools.js";
 import { ProcessingIndicator } from "./components/common/LoadingIndicators.js";
 import { ActiveAgentsList } from "./components/active-agents-list.js";
 import { TaskChecklist } from "./components/task-checklist.js";
@@ -1393,6 +1393,7 @@ export function App({
     const agent = new Agent(handleEvent, permissionHandler, questionHandler);
     agent.tier = "single";
     agentRef.current = agent;
+    registerMasterAgent(agent);
 
     const handleSigint = () => {
       if (stopRunningSubagents() > 0) {
@@ -1471,6 +1472,7 @@ export function App({
     return () => {
       process.off("SIGINT", handleSigint);
       registerQuestionHandler(null);
+      registerMasterAgent(null);
     };
   }, [handleEvent, permissionHandler, questionHandler, exit, autoResume, initialPrompt, stopRunningSubagents, onSessionPath]);
 

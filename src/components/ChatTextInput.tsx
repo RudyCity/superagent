@@ -112,7 +112,7 @@ export default function ChatTextInput({
       if (
         key.upArrow ||
         key.downArrow ||
-        (key.ctrl && input === "c") ||
+        (key.ctrl && (input === "c" || input === "\x03")) ||
         key.tab ||
         (key.shift && key.tab)
       ) {

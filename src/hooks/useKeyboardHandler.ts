@@ -192,10 +192,13 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
 
   const handlerRef = useRef<(inputChar: string, key: any) => void>();
   handlerRef.current = (inputChar, key) => {
+    const isEscape = !!(key?.escape || inputChar === "\x1b" || inputChar === "\u001b");
+    const isCtrlC = !!(key?.ctrl && (inputChar === "c" || inputChar === "\x03"));
+
     // Ctrl+C when wizard is active: always cancel wizard first, never exit app.
     // This check must be BEFORE focusedResponseIndex and focusMode checks
     // so Ctrl+C always works to cancel the wizard regardless of UI state.
-    if (key.ctrl && inputChar === "c" && activeWizard) {
+    if (isCtrlC && activeWizard) {
       const needsAbort = activeWizard.type === "permission" || activeWizard.type === "question" || activeWizard.type === "plan_approve";
       if (pendingPermission) {
         pendingPermission.resolve(false);
@@ -241,7 +244,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       const focusWindowHeight = Math.max(5, terminalHeight - 13);
       const maxOffset = Math.max(0, responseLines.length - focusWindowHeight);
 
-      if (key.escape) {
+      if (isEscape) {
         setFocusedResponseIndex(null);
         setFocusedResponseOffset(0);
         return;
@@ -277,7 +280,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         });
         return;
       }
-      if (key.escape) {
+      if (isEscape) {
         setFocusMode("input");
         return;
       }
@@ -297,7 +300,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         });
         return;
       }
-      if (key.escape) {
+      if (isEscape) {
         setFocusMode("input");
         return;
       }
@@ -317,7 +320,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         });
         return;
       }
-      if (key.escape) {
+      if (isEscape) {
         setFocusMode("input");
         return;
       }
@@ -337,7 +340,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         });
         return;
       }
-      if (key.escape) {
+      if (isEscape) {
         setFocusMode("input");
         return;
       }
@@ -353,7 +356,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         scrollChat("down");
         return;
       }
-      if (key.escape) {
+      if (isEscape) {
         setScrollOffset(0);
         setFocusMode("input");
         return;
@@ -431,7 +434,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         setFocusMode("input");
         return;
       }
-      if (key.escape) {
+      if (isEscape) {
         setFocusMode("input");
         return;
       }
@@ -787,7 +790,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       } else if (activeWizard.type === "plan_approve") {
         if (activeWizard.step === 2) {
           // Step 2: custom feedback input — Escape goes back to step 1
-          if (key.escape) {
+          if (isEscape) {
             setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
             setActiveWizard({ ...activeWizard, step: 1 });
             return;
@@ -1456,7 +1459,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       }
     }
 
-    if (key.ctrl && inputChar === "c") {
+    if (isCtrlC) {
       // Note: wizard-active case already handled at top of useInput callback
       if (stopRunningSubagents() > 0) {
         agentRef.current?.abort();
@@ -1486,7 +1489,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       }
     }
 
-    if (key.escape) {
+    if (isEscape) {
       if (scrollOffset > 0) {
         setScrollOffset(0);
       } else if (activeWizard) {
@@ -1728,7 +1731,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       }
     }
 
-    if (key.escape) {
+    if (isEscape) {
       if (isPasteActive) {
         setInput("");
         setIsPasted(false);

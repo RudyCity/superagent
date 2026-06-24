@@ -130,7 +130,10 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
 
   const handlerRef = React.useRef<(input: string, key: any) => void>();
   handlerRef.current = (input, key) => {
-    if (key.ctrl && input === "c") {
+    const isEscape = !!(key?.escape || input === "\x1b" || input === "\u001b");
+    const isCtrlC = !!(key?.ctrl && (input === "c" || input === "\x03"));
+
+    if (isCtrlC) {
       if (activeWizard) {
         const needsAbort = activeWizard.type === "question" || activeWizard.type === "plan_approve" || activeWizard.type === "permission";
         setActiveWizard(null);
@@ -235,7 +238,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
       }
     }
 
-    if (key.escape) {
+    if (isEscape) {
       if (isPasteActive) {
         setQuery("");
         setIsPasted(false);
@@ -245,7 +248,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     }
 
     // ESC: stop all running agents regardless of focus area
-    if (key.escape && !activeWizard) {
+    if (isEscape && !activeWizard) {
       const stopped = stopAllRunningAgents();
       if (stopped > 0) {
         setCurrentTask("Idle - Interrupted");
@@ -254,7 +257,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
       }
     }
 
-    if (key.escape) {
+    if (isEscape) {
       if (!activeWizard && focusArea === "input") {
         setQuery("");
         setHistoryIndex(-1);
@@ -364,7 +367,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         });
         return;
       }
-      if (key.escape) {
+      if (isEscape) {
         if (activeWizard && activeWizard.type === "question" && activeWizard.questions && activeWizard.currentQuestionIndex !== undefined && activeWizard.currentQuestionIndex > 0) {
           const prevIndex = activeWizard.currentQuestionIndex - 1;
           const prevQ = activeWizard.questions[prevIndex];
@@ -600,7 +603,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         setSelectedIndex((prev) => (prev < sessions.length - 1 ? prev + 1 : 0));
       } else if (key.return) {
         setFocusArea("logs");
-      } else if (key.escape) {
+      } else if (isEscape) {
         setFocusArea("input");
       } else if (input >= "1" && input <= "9") {
         const targetIndex = parseInt(input, 10) - 1;
@@ -616,7 +619,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         });
       } else if (key.downArrow) {
         setLogScrollOffset((prev) => Math.max(0, prev - 1));
-      } else if (key.escape) {
+      } else if (isEscape) {
         setLogScrollOffset(0);
         setFocusArea("list");
       }
@@ -628,7 +631,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
           const maxScroll = Math.max(0, checklistTasks.length - maxChecklistVisible);
           return Math.min(prev + 1, maxScroll);
         });
-      } else if (key.escape) {
+      } else if (isEscape) {
         setFocusArea("input");
       }
     } else if (focusArea === "agents") {
@@ -640,7 +643,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
           const maxScroll = Math.max(0, runningAgents.length - maxAgentsVisible);
           return Math.min(prev + 1, maxScroll);
         });
-      } else if (key.escape) {
+      } else if (isEscape) {
         setFocusArea("input");
       }
     } else if (focusArea === "procs") {
@@ -652,7 +655,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
           const maxScroll = Math.max(0, runningProcs.length - maxProcsVisible);
           return Math.min(prev + 1, maxScroll);
         });
-      } else if (key.escape) {
+      } else if (isEscape) {
         setFocusArea("input");
       }
     }
