@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2026-06-24
+
+### Fixed
+- **History View Tool Merging**: Fixed `reconstructChatLines` to properly merge `tool_start` and `tool_end` in the history view.
+- **Model Config Lock Contention**: Resolved `model-config.json` corruption and lock contention under concurrent test runs.
+
+### Improved
+- **Text Streaming Performance**: Removed text streaming throttling and dashboard update delays.
+- **Error Reporting**: Expanded error logs and error reports by default.
+
+---
+
 ## [1.2.1] - 2026-06-24
 
 ### Added
