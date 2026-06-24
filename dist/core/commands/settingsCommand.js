@@ -36,7 +36,7 @@ export const settingsCommand = {
                 "  /setting-streaming <on|off>",
                 "  /setting-context-limit <number>",
                 "  /setting-max-iterations <number>",
-                "  /setting-tencentdb <on|off> [gatewayUrl]"
+                "  /setting-tencentdb <on|off|status> [gatewayUrl]"
             ].join("\n"),
             timestamp: Date.now(),
         });
@@ -321,11 +321,88 @@ export const settingTencentdbCommand = {
         const parts = args.trim().split(/\s+/);
         const mode = parts[0]?.toLowerCase();
         const url = parts[1];
+        // --- status subcommand: live connection health check ---
+        if (mode === "status") {
+            const s = getSettings();
+            const endpoint = s.tencentdbGatewayUrl || "http://127.0.0.1:8420";
+            const configState = s.enableTencentdbMemory ? "on (ENABLED)" : "off (DISABLED)";
+            ctx.addLine({
+                type: "system",
+                content: [
+                    "┌───[ 🧠 TENCENTDB MEMORY STATUS ]",
+                    `│ • Config State  : ${configState}`,
+                    `│ • Gateway URL   : ${endpoint}`,
+                    "│ • Connectivity  : checking...",
+                    "└─────────────────────────────────",
+                ].join("\n"),
+                timestamp: now,
+            });
+            const client = new MemoryClient({
+                endpoint,
+                apiKey: s.tencentdbGatewayApiKey || "sk-xxxx",
+                serviceId: s.tencentdbServiceId || "default",
+            });
+            const pingStart = Date.now();
+            let online = false;
+            let latencyMs = 0;
+            let errorMsg = "";
+            try {
+                const checkPromise = client.listScenarios({});
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Connection timed out after 3s")), 3000));
+                await Promise.race([checkPromise, timeoutPromise]);
+                latencyMs = Date.now() - pingStart;
+                online = true;
+            }
+            catch (err) {
+                latencyMs = Date.now() - pingStart;
+                errorMsg = err?.message || "Unknown error";
+            }
+            const globalDataDir = path.join(os.homedir(), ".superagent-r", "tencentdb-memory");
+            const dbPath = path.join(globalDataDir, "vectors.db");
+            const dbExists = fs.existsSync(dbPath);
+            if (online) {
+                ctx.addLine({
+                    type: "system",
+                    content: [
+                        "┌───[ 🧠 TENCENTDB MEMORY STATUS ]",
+                        `│ • Config State  : ${configState}`,
+                        `│ • Gateway URL   : ${endpoint}`,
+                        `│ • Connectivity  : ✅ ONLINE (${latencyMs}ms)`,
+                        `│ • Vector DB     : ${dbExists ? `✅ exists  (~/.superagent-r/tencentdb-memory/vectors.db)` : "⚠️  not found yet"}`,
+                        "└─────────────────────────────────",
+                    ].join("\n"),
+                    timestamp: Date.now(),
+                });
+            }
+            else {
+                ctx.addLine({
+                    type: "system",
+                    content: [
+                        "┌───[ 🧠 TENCENTDB MEMORY STATUS ]",
+                        `│ • Config State  : ${configState}`,
+                        `│ • Gateway URL   : ${endpoint}`,
+                        `│ • Connectivity  : ❌ OFFLINE — ${errorMsg}`,
+                        `│ • Hint          : Run /setting-tencentdb on to start the gateway`,
+                        "└─────────────────────────────────",
+                    ].join("\n"),
+                    timestamp: Date.now(),
+                });
+            }
+            return;
+        }
         if (!mode || (mode !== "on" && mode !== "off")) {
             const s = getSettings();
             ctx.addLine({
                 type: "system",
-                content: `Usage: /setting-tencentdb <on|off> [gatewayUrl]\nCurrent value: ${s.enableTencentdbMemory ? "on (ENABLED)" : "off (DISABLED)"}\nGateway URL  : ${s.tencentdbGatewayUrl}`,
+                content: [
+                    "Usage: /setting-tencentdb <on|off|status> [gatewayUrl]",
+                    `Current value: ${s.enableTencentdbMemory ? "on (ENABLED)" : "off (DISABLED)"}`,
+                    `Gateway URL  : ${s.tencentdbGatewayUrl}`,
+                    "",
+                    "  on [url]  — enable TencentDB memory (auto-starts gateway)",
+                    "  off       — disable TencentDB memory and stop local gateway",
+                    "  status    — live connectivity check to the gateway",
+                ].join("\n"),
                 timestamp: now,
             });
             return;

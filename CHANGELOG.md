@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.7] - 2026-06-24
+
+### Added
+- **TencentDB Gateway Status Check**: Added a live connection health check and status reporting via the `/setting-tencentdb status` command.
+- **Live Connection Health Footer**: Added real-time connection status check for the local TencentDB gateway directly in the UI footer.
+- **Settings Auto-complete & Help**: Integrated settings command configurations (like `/setting-tencentdb`) into `/help` output and autocomplete suggestions.
+
+### Fixed
+- **TencentDB Setup Robustness**: Prevented duplicate git clone issues when `vendor/tencentdb-memory` already exists.
+- **Streaming Interruption**: Resolved streaming cancellation/interruption issues on ESC and Ctrl+C with robust key detection.
+
+### Improved
+- **Conversation History Performance**: Optimized performance for large conversation histories through TokenTracker caching, linear pruning, UI viewport line wrapping, and TTL caching for history sessions.
+
+---
+
 ## [1.2.6] - 2026-06-24
 
 ### Added
