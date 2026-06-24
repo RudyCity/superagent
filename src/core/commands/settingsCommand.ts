@@ -2,6 +2,13 @@ import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
 import { getSettings, updateSettings, getContextWindowLimit, getEffectiveMasterModel } from "../config.js";
 import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts";
+import { getConfiguredProviders } from "../config/providers.js";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { exec, spawn } from "child_process";
+import { promisify } from "util";
+import { fileURLToPath } from "url";
 
 // /settings command — show all settings from JSON config
 export const settingsCommand: SlashCommand = {
@@ -361,7 +368,7 @@ export const settingTencentdbCommand: SlashCommand = {
         let online = false;
         try {
           const checkPromise = client.listScenarios({});
-          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 2000));
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1000));
           await Promise.race([checkPromise, timeoutPromise]);
           online = true;
         } catch (err) {
@@ -377,9 +384,151 @@ export const settingTencentdbCommand: SlashCommand = {
         } else {
           ctx.addLine({
             type: "system",
-            content: `⚠️ Warning: Gateway is currently offline or unreachable at ${endpoint}.\nPlease ensure the TencentDB Memory Gateway process is running.`,
+            content: `⚠️ Gateway is offline at ${endpoint}. Initiating automatic local setup...`,
             timestamp: Date.now(),
           });
+
+          const __filename = fileURLToPath(import.meta.url);
+          const __dirname = path.dirname(__filename);
+          const projectRoot = path.resolve(__dirname, "..", "..", "..");
+          const vendorDir = path.join(projectRoot, "vendor");
+          const gatewayDir = path.join(vendorDir, "tencentdb-memory");
+
+          // 1. Clone if not exists
+          if (!fs.existsSync(gatewayDir) || !fs.existsSync(path.join(gatewayDir, "package.json"))) {
+            ctx.addLine({
+              type: "system",
+              content: `⚡ Cloning TencentDB Memory Gateway into vendor/tencentdb-memory...`,
+              timestamp: Date.now(),
+            });
+            fs.mkdirSync(vendorDir, { recursive: true });
+            
+            try {
+              const execAsync = promisify(exec);
+              await execAsync("git clone https://github.com/TencentCloud/TencentDB-Agent-Memory.git tencentdb-memory", {
+                cwd: vendorDir,
+              });
+              ctx.addLine({
+                type: "system",
+                content: `✓ Repository successfully cloned.`,
+                timestamp: Date.now(),
+              });
+            } catch (cloneErr: any) {
+              ctx.addLine({
+                type: "error",
+                content: `Failed to clone repository: ${cloneErr.message}`,
+                timestamp: Date.now(),
+              });
+              return;
+            }
+          }
+
+          // 2. Install dependencies if node_modules not exists
+          const nodeModulesDir = path.join(gatewayDir, "node_modules");
+          if (!fs.existsSync(nodeModulesDir)) {
+            ctx.addLine({
+              type: "system",
+              content: `⚡ Installing gateway dependencies (npm install)...`,
+              timestamp: Date.now(),
+            });
+
+            try {
+              const execAsync = promisify(exec);
+              await execAsync("npm install --no-audit --no-fund", {
+                cwd: gatewayDir,
+              });
+              ctx.addLine({
+                type: "system",
+                content: `✓ Dependencies successfully installed.`,
+                timestamp: Date.now(),
+              });
+            } catch (installErr: any) {
+              ctx.addLine({
+                type: "error",
+                content: `Failed to install dependencies: ${installErr.message}`,
+                timestamp: Date.now(),
+              });
+              return;
+            }
+          }
+
+          // 3. Start the gateway in the background
+          ctx.addLine({
+            type: "system",
+            content: `⚡ Starting TencentDB Memory Gateway in the background...`,
+            timestamp: Date.now(),
+          });
+
+          const globalDataDir = path.join(os.homedir(), ".superagent-r", "tencentdb-memory");
+          fs.mkdirSync(globalDataDir, { recursive: true });
+          const logDir = path.join(globalDataDir, "logs");
+          fs.mkdirSync(logDir, { recursive: true });
+
+          const outLog = fs.openSync(path.join(logDir, "gateway.log"), "a");
+          const errLog = fs.openSync(path.join(logDir, "gateway.err"), "a");
+
+          const providers = getConfiguredProviders();
+          const activeProvider = providers.find((p) => p.isActive) || providers[0];
+          const llmApiKey = activeProvider?.apiKey || "";
+          const llmBaseUrl = activeProvider?.baseUrl || "";
+          const llmModel = getEffectiveMasterModel("auto") || "gpt-4o";
+
+          try {
+            const child = spawn("npx", ["tsx", "src/gateway/server.ts"], {
+              cwd: gatewayDir,
+              detached: true,
+              shell: true,
+              stdio: ["ignore", outLog, errLog],
+              env: {
+                ...process.env,
+                TDAI_DATA_DIR: globalDataDir,
+                TDAI_LLM_API_KEY: llmApiKey,
+                TDAI_LLM_BASE_URL: llmBaseUrl,
+                TDAI_LLM_MODEL: llmModel,
+                MEMORY_TENCENTDB_GATEWAY_PORT: "8420",
+              },
+            });
+            child.unref();
+
+            ctx.addLine({
+              type: "system",
+              content: `⚡ Waiting for gateway to initialize...`,
+              timestamp: Date.now(),
+            });
+
+            // Wait 3 seconds and verify connection
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+
+            let verifyOnline = false;
+            try {
+              const checkPromise = client.listScenarios({});
+              const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 2000));
+              await Promise.race([checkPromise, timeoutPromise]);
+              verifyOnline = true;
+            } catch (err) {
+              // still offline
+            }
+
+            if (verifyOnline) {
+              ctx.addLine({
+                type: "system",
+                content: `✓ TencentDB Memory Gateway successfully started and connected!\n  Database path: ~/.superagent-r/tencentdb-memory/vectors.db`,
+                timestamp: Date.now(),
+              });
+            } else {
+              ctx.addLine({
+                type: "system",
+                content: `⚠️ Gateway process started in the background, but verification timed out.\n  Check error logs at: ~/.superagent-r/tencentdb-memory/logs/gateway.err`,
+                timestamp: Date.now(),
+              });
+            }
+          } catch (spawnErr: any) {
+            ctx.addLine({
+              type: "error",
+              content: `Failed to start gateway process: ${spawnErr.message}`,
+              timestamp: Date.now(),
+            });
+          }
         }
       } else {
         ctx.addLine({
@@ -387,6 +536,23 @@ export const settingTencentdbCommand: SlashCommand = {
           content: msg,
           timestamp: now,
         });
+
+        // Kill the process on port 8420 to clean up
+        try {
+          const execAsync = promisify(exec);
+          if (process.platform === "win32") {
+            await execAsync(`powershell -NoProfile -Command "Get-Process -Id (Get-NetTCPConnection -LocalPort 8420 -ErrorAction SilentlyContinue).OwningProcess -ErrorAction SilentlyContinue | Stop-Process -Force"`);
+          } else {
+            await execAsync("lsof -t -i:8420 | xargs kill -9 2>/dev/null || true");
+          }
+          ctx.addLine({
+            type: "system",
+            content: `✓ Stopped local TencentDB Memory Gateway server on port 8420.`,
+            timestamp: Date.now(),
+          });
+        } catch (err) {
+          // ignore error if port already free
+        }
       }
     } catch (err: any) {
       ctx.addLine({
