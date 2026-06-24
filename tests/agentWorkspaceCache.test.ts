@@ -118,6 +118,7 @@ describe("Agent Workspace Cache Integration", () => {
       undefined,
       testWorkspaceDir
     );
+    agent.disableWorkspaceDiscovery = false;
 
     // Send a message to start the loop
     await agent.sendMessage("Hello agent");
@@ -163,6 +164,7 @@ describe("Agent Workspace Cache Integration", () => {
       undefined,
       testWorkspaceDir
     );
+    agent.disableWorkspaceDiscovery = false;
 
     await agent.sendMessage("Hello agent");
 

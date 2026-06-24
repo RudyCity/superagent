@@ -179,6 +179,7 @@ export class Agent {
   public allowSessionEnvAccess = false;
   public allowSessionDangerous = false;
   public workspaceCache: any = null;
+  public disableWorkspaceDiscovery: boolean = !!process.env.VITEST;
   private conversation: Conversation;
   private customSystemPrompt?: string;
   /** Custom tool list for this agent (tier-specific). Undefined = use allTools. */
@@ -741,7 +742,7 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
     }
 
     // Run workspace discovery and load/update cache if not already done for this session
-    if (!this.workspaceCache) {
+    if (!this.workspaceCache && !this.disableWorkspaceDiscovery) {
       try {
         const { discoverWorkspace } = await import("./workspaceDiscovery.js");
         const { isIdentical, cache } = await discoverWorkspace(this.workingDirectory);

@@ -9,7 +9,7 @@ import React from "react";
 import { render } from "ink";
 import { App } from "./app.js";
 
-import { getConfig } from "./core/config.js";
+import { getConfig, isPathTrusted, addTrustedPath } from "./core/config.js";
 import { backgroundTasks, killProcessTree } from "./core/tools/index.js";
 import { subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
 
@@ -119,6 +119,9 @@ if (process.stdin.isTTY) {
   // Confirm directory trust before starting the application
   const currentDir = path.resolve(process.cwd());
   const confirmTrust = async (dir: string): Promise<boolean> => {
+    if (isPathTrusted(dir)) {
+      return true;
+    }
     const { TrustPrompt } = await import("./components/trust-prompt.js");
     return new Promise<boolean>((resolve) => {
       const { unmount } = render(
@@ -126,6 +129,7 @@ if (process.stdin.isTTY) {
           directoryPath: dir,
           onAccept: () => {
             unmount();
+            addTrustedPath(dir);
             resolve(true);
           },
           onReject: () => {
