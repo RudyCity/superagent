@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { execSync } from "child_process";
 import { Box, Text, useInput, useApp } from "ink";
-import TextInput from "ink-text-input";
+import ChatTextInput from "./ChatTextInput.js";
 import fs from "fs/promises";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
@@ -1329,7 +1329,7 @@ export function MultiAgentDashboard({
                   );
                 }
                 return (
-                  <TextInput
+                  <ChatTextInput
                     value={query}
                     onChange={handleQueryChange}
                     onSubmit={handleQuerySubmit}
