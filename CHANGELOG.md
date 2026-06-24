@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-06-24
+
+### Added
+- **Dynamic Workspace Fingerprinting**: Integrated workspace fingerprint in fastcontext cache key for dynamic invalidation.
+
+### Fixed
+- **Model Config Write Race Conditions**: Resolved model config deletion and corruption issues due to write race conditions.
+- **Tool Arguments Formatting**: Formatted tool arguments and added custom descriptions for all tools in `getToolDescription`.
+
+### Improved
+- **Tasks Countdown Visibility**: Displayed completed tasks countdown in header only.
+
+---
+
 ## [1.2.0] - 2026-06-24
 
 ### Added
