@@ -5,7 +5,7 @@ import {
   CompactionOptions,
   CompactionCost,
 } from "../CompactionStrategy.js";
-import { Message } from "../../conversation.js";
+import { Message, contentToString } from "../../conversation.js";
 
 export class PruningStrategy implements CompactionStrategy {
   name = "pruning";
@@ -62,7 +62,7 @@ export class PruningStrategy implements CompactionStrategy {
     const assistantMessages = messages.filter((m) => m.role === "assistant");
 
     const fileMatches = messages
-      .flatMap((m) => m.content.match(/[\w.-]+(?:\/|\\)[\w.-]+(?:\.\w+)?/g) || [])
+      .flatMap((m) => contentToString(m.content).match(/[\w.-]+(?:\/|\\)[\w.-]+(?:\.\w+)?/g) || [])
       .filter((v, i, a) => a.indexOf(v) === i)
       .slice(0, 10);
 

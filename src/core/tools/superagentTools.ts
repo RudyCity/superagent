@@ -22,6 +22,7 @@ import {
 import { agentLocalStorage } from "../agent.js";
 import { MasterAgent } from "../masterAgent.js";
 import { ensureGitIgnore, pruneWorktrees } from "../workspaceIsolation.js";
+import { contentToString } from "../conversation.js";
 
 const SUPERAGENT_REPORT_INSTRUCTION = `
 When you have completed your task, provide a final report formatted exactly as:
@@ -411,7 +412,7 @@ export const invokeSuperagentTool: Tool = {
         // Capture final report from last assistant message
         const msgs = agentInstance.getHistory().getMessages();
         const lastMsg = [...msgs].reverse().find((m) => m.role === "assistant");
-        const result = lastMsg?.content ?? "(no report)";
+        const result = lastMsg ? contentToString(lastMsg.content) : "(no report)";
 
         // Run pre-merge verification in worktree directory with Auto-Debugging retries
         let retries = 3;

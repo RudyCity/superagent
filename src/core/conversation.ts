@@ -15,9 +15,25 @@ import {
 } from "./tools/state.js";
 import type { ContextManager, ContextManagerConfig, PinnedMessage } from "./context/index.js";
 
+export type TextPart = { type: "text"; text: string };
+export type ImagePart = { type: "image"; image: string; mimeType: string }; // image is base64 string
+export type MessageContent = string | Array<TextPart | ImagePart>;
+
+/**
+ * Convert MessageContent to a plain string.
+ * Used by legacy code paths that work only with strings (display, summarization, token counting).
+ * Image parts are represented as "[image]" placeholders.
+ */
+export function contentToString(content: MessageContent): string {
+  if (typeof content === "string") return content;
+  return content
+    .map((p) => (p.type === "text" ? p.text : "[image]"))
+    .join(" ");
+}
+
 export interface Message {
   role: "user" | "assistant" | "system" | "tool";
-  content: string;
+  content: MessageContent;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   timestamp: number;
@@ -236,7 +252,7 @@ export class Conversation {
     }
   }
 
-  addUserMessage(content: string): void {
+  addUserMessage(content: MessageContent): void {
     this.addMessage({
       role: "user",
       content,
@@ -270,7 +286,9 @@ export class Conversation {
       .filter((m) => m.role !== "system")
       .map((m) => ({
         role: m.role as "user" | "assistant",
-        content: m.content,
+        content: typeof m.content === "string"
+          ? m.content
+          : m.content.map(p => p.type === "text" ? p.text : "[image]").join(" "),
       }));
   }
 
@@ -340,7 +358,12 @@ export class Conversation {
     }
 
     return this.messages.reduce(
-      (sum, m) => sum + Math.ceil(m.content.length / 4),
+      (sum, m) => {
+        const text = typeof m.content === "string"
+          ? m.content
+          : m.content.map(p => p.type === "text" ? p.text : "").join("");
+        return sum + Math.ceil(text.length / 4);
+      },
       0
     );
   }

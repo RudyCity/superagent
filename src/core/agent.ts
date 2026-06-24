@@ -19,6 +19,7 @@ import {
   normalizeAndCheckSubpath,
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
+import { contentToString } from "./conversation.js";
 import { AsyncLocalStorage } from "async_hooks";
 import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./taskChecklist.js";
 import { createCheckpoint } from "./checkpoints.js";
@@ -574,13 +575,13 @@ If none of the options are suitable, still pick the closest one.`;
     return getModelInstanceForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
   }
 
-  async sendMessage(userInput: string): Promise<void> {
+  async sendMessage(userInput: string | import("./conversation.js").MessageContent): Promise<void> {
     if (this.isRunning) {
       // Queue the message instead of dropping it silently.
       // This handles the race condition where the user approves a plan
       // while the agent loop is still finishing its current iteration.
-      this.pendingMessage = userInput;
-      this.writeToLogFile("INFO", `Message queued (agent is running): "${userInput.substring(0, 80)}..."`);
+      this.pendingMessage = typeof userInput === "string" ? userInput : "[multimodal message]";
+      this.writeToLogFile("INFO", `Message queued (agent is running): "${typeof userInput === "string" ? userInput.substring(0, 80) : "[multimodal]"}..."`);
       return;
     }
 
@@ -612,7 +613,8 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
           this.isSimpleTask = true;
           this.planState = "APPROVED";
           
-          const lowerInput = userInput.toLowerCase();
+          const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
+          const lowerInput = userInputText.toLowerCase();
           const words = lowerInput.split(/[^a-zA-Z0-9'’]+/).filter(Boolean);
           const preApprovalWords = getSettings().simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
           const hasPreApproval = preApprovalWords.some(word => {
@@ -634,7 +636,7 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
     this.abortController = new AbortController();
 
     this.writeToLogFile("INFO", `Agent execution started (tier: ${this.tier}, depth: ${this.delegationDepth}, isMultiAgent: ${this.isMultiAgent}, workingDirectory: ${this.workingDirectory}, worktreePath: ${this.worktreePath})`);
-    this.writeToLogFile("INFO", `Received user message: "${userInput}"`);
+    this.writeToLogFile("INFO", `Received user message: "${typeof userInput === "string" ? userInput : "[multimodal message]"}"`);
 
     this.conversation.addUserMessage(userInput);
     await this.compactHistoryIfNeeded();
@@ -1835,9 +1837,19 @@ for (const tc of toolCalls) {
       if (m.role === "system") continue;
 
       if (m.role === "user") {
+        // Map MessageContent (string | Part[]) to Vercel AI SDK CoreMessage format
+        const sdkContent: string | Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> =
+          typeof m.content === "string"
+            ? m.content
+            : (m.content as any[]).map((p: any) => {
+                if (p.type === "image") {
+                  return { type: "image" as const, image: p.image, mimeType: p.mimeType };
+                }
+                return { type: "text" as const, text: p.text };
+              });
         coreMessages.push({
           role: "user",
-          content: m.content,
+          content: sdkContent as any,
         });
       } else if (m.role === "assistant") {
         const hasToolCalls = m.toolCalls && m.toolCalls.length > 0;
@@ -1848,7 +1860,7 @@ for (const tc of toolCalls) {
           > = [];
 
           if (m.content) {
-            contentParts.push({ type: "text", text: m.content });
+            contentParts.push({ type: "text", text: contentToString(m.content) });
           }
 
           for (const tc of m.toolCalls!) {
@@ -1867,7 +1879,7 @@ for (const tc of toolCalls) {
         } else {
           coreMessages.push({
             role: "assistant",
-            content: m.content,
+            content: contentToString(m.content),
           });
         }
       } else if (m.role === "tool") {

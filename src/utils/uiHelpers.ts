@@ -1,5 +1,6 @@
 import type { ChatLine } from "../core/commands/types.js";
 import type { Message, ToolResult } from "../core/conversation.js";
+import { contentToString } from "../core/conversation.js";
 import { getToolDescription } from "../core/permissions.js";
 import { formatArgs } from "./text.js";
 
@@ -107,32 +108,33 @@ export function reconstructChatLines(msgs: Message[]): ChatLine[] {
   }
 
   for (const m of msgs) {
+    const stringContent = m.content ? contentToString(m.content) : "";
     if (m.role === "user") {
       loadedLines.push({
         type: "user",
-        content: `❯ ${m.content}`,
+        content: `❯ ${stringContent}`,
         timestamp: m.timestamp,
       });
     } else if (m.role === "system") {
-      if (m.content && m.content.startsWith("[ERROR]")) {
+      if (stringContent && stringContent.startsWith("[ERROR]")) {
         loadedLines.push({
           type: "error",
-          content: m.content.replace("[ERROR]", "").trim(),
+          content: stringContent.replace("[ERROR]", "").trim(),
           timestamp: m.timestamp,
         });
-      } else if (m.content) {
+      } else if (stringContent) {
         loadedLines.push({
           type: "system",
-          content: m.content,
+          content: stringContent,
           timestamp: m.timestamp,
         });
       }
     } else if (m.role === "assistant") {
       let assistantLine: ChatLine | null = null;
-      if (m.content) {
+      if (stringContent) {
         assistantLine = {
           type: "assistant",
-          content: m.content,
+          content: stringContent,
           timestamp: m.timestamp,
           children: [],
         };

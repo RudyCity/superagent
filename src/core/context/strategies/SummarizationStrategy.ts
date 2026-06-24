@@ -5,7 +5,7 @@ import {
   CompactionOptions,
   CompactionCost,
 } from "../CompactionStrategy.js";
-import { Message } from "../../conversation.js";
+import { Message, contentToString } from "../../conversation.js";
 import { generateText } from "ai";
 
 export interface SummarizationConfig {
@@ -141,11 +141,11 @@ ${formatted}`;
     const userMessages = messages.filter((m) => m.role === "user");
     const assistantMessages = messages.filter((m) => m.role === "assistant");
     const errorMessages = messages.filter((m) =>
-      /error|failed|exception/i.test(m.content)
+      /error|failed|exception/i.test(contentToString(m.content))
     );
 
     const fileMatches = messages
-      .flatMap((m) => m.content.match(/[\w.-]+(?:\/|\\)[\w.-]+(?:\.\w+)?/g) || [])
+      .flatMap((m) => contentToString(m.content).match(/[\w.-]+(?:\/|\\)[\w.-]+(?:\.\w+)?/g) || [])
       .filter((v, i, a) => a.indexOf(v) === i)
       .slice(0, 10);
 
