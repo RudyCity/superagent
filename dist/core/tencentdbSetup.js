@@ -54,12 +54,21 @@ export async function runTencentdbSetup() {
         // Gateway is offline, let's start it!
         const vendorDir = path.join(PROJECT_ROOT, "vendor");
         const gatewayDir = path.join(vendorDir, "tencentdb-memory");
-        // 2. Clone only if directory does not exist yet (avoid re-cloning an existing repo)
+        // 2. Clone or checkout tag v1.0.0
+        let packageJsonVersion = "";
+        const gatewayPkgPath = path.join(gatewayDir, "package.json");
+        if (fs.existsSync(gatewayPkgPath)) {
+            try {
+                const pkg = JSON.parse(fs.readFileSync(gatewayPkgPath, "utf8"));
+                packageJsonVersion = pkg.version;
+            }
+            catch (e) { }
+        }
         if (!fs.existsSync(gatewayDir) || !fs.existsSync(path.join(gatewayDir, ".git"))) {
             fs.mkdirSync(vendorDir, { recursive: true });
             try {
                 const execAsync = promisify(exec);
-                await execAsync("git clone https://github.com/TencentCloud/TencentDB-Agent-Memory.git tencentdb-memory", {
+                await execAsync("git clone -b v1.0.0 https://github.com/TencentCloud/TencentDB-Agent-Memory.git tencentdb-memory", {
                     cwd: vendorDir,
                 });
             }
@@ -68,12 +77,27 @@ export async function runTencentdbSetup() {
                 return;
             }
         }
+        else if (packageJsonVersion !== "1.0.0") {
+            try {
+                const execAsync = promisify(exec);
+                await execAsync("git fetch --tags", { cwd: gatewayDir });
+                await execAsync("git checkout v1.0.0", { cwd: gatewayDir });
+                // Remove node_modules if version changed to force a clean reinstall
+                const nodeModulesDir = path.join(gatewayDir, "node_modules");
+                if (fs.existsSync(nodeModulesDir)) {
+                    fs.rmSync(nodeModulesDir, { recursive: true, force: true });
+                }
+            }
+            catch (checkoutErr) {
+                console.warn(`[TencentDB] Failed to switch gateway repository to v1.0.0: ${checkoutErr.message}`);
+            }
+        }
         // 3. Install dependencies if missing
         const nodeModulesDir = path.join(gatewayDir, "node_modules");
         if (!fs.existsSync(nodeModulesDir)) {
             try {
                 const execAsync = promisify(exec);
-                await execAsync("npm install --no-audit --no-fund", {
+                await execAsync("npm install --no-audit --no-fund --ignore-scripts", {
                     cwd: gatewayDir,
                 });
             }

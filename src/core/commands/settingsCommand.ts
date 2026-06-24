@@ -517,7 +517,7 @@ export const settingTencentdbCommand: SlashCommand = {
 
             try {
               const execAsync = promisify(exec);
-              await execAsync("npm install --no-audit --no-fund", {
+              await execAsync("npm install --no-audit --no-fund --ignore-scripts", {
                 cwd: gatewayDir,
               });
               ctx.addLine({
