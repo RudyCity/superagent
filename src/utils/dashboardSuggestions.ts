@@ -6,8 +6,8 @@ import { registry } from "../core/commands/registry.js";
 import { backgroundTasks } from "../core/tools.js";
 
 const BUILTIN_DESCRIPTIONS: Record<string, string> = {
-  "/internal-hooks": "Initialize or run a local development loop for custom internal hook tools",
-  "/ih": "Initialize or run a local development loop for custom internal hook tools",
+  "/internal-hooks": "Manage custom internal hook tools — init, dev, or select active hooks",
+  "/ih": "Manage custom internal hook tools — init, dev, or select active hooks",
   "/model": "Switch active LLM model or configure per-tier models",
   "/login": "Add API credentials or switch active provider",
   "/resume": "Resume a previous session from history",
@@ -178,20 +178,23 @@ export function getDashboardSuggestions(query: string): string[] {
 
   if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
     const subSuggestions = [`${parts[0]} init`, `${parts[0]} dev`, `${parts[0]} active`];
-    if (parts.length === 2) {
-      return filterSuggestions(subSuggestions, query);
+    if (parts.length === 1) {
+      return subSuggestions;
     }
-    if (parts.length >= 3 && parts[1].toLowerCase() === "dev") {
+    const sub = parts[1]?.toLowerCase();
+    if (sub === "dev" || sub === "init") {
       const hooksRoot = path.join(process.cwd(), "internal-hooks");
       let hookDirs: string[] = [];
       if (fs.existsSync(hooksRoot)) {
         try {
           hookDirs = fs.readdirSync(hooksRoot, { withFileTypes: true })
             .filter(item => item.isDirectory())
-            .map(item => `${parts[0]} dev ${item.name}`);
+            .map(item => `${parts[0]} ${sub} ${item.name}`);
         } catch {}
       }
-      return filterSuggestions(hookDirs, query);
+      if (hookDirs.length > 0) {
+        return filterSuggestions(hookDirs, query);
+      }
     }
     return filterSuggestions(subSuggestions, query);
   }
