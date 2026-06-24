@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.12] - 2026-06-25
+
+### Improved
+- **Hook Workspace Privacy & Isolation**:
+  - Configured git ignore rules in `internal-hooks` to exclude all custom hook scripts and configurations except `.gitignore`, ensuring custom scripts are kept private and not committed to public repositories.
+  - Ignored `node_modules/` and log files inside `internal-hooks` to keep the workspace clean.
+- **Hook Documentation**:
+  - Added detailed instructions on how to activate custom internal hooks to `SKILL.md`.
+
+---
+
 ## [1.2.11] - 2026-06-25
 
 ### Added
