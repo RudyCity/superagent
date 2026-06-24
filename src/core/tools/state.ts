@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { getGlobalConfigDir, ensureGlobalConfigDir } from "../config.js";
+import { getGlobalConfigDir, ensureGlobalConfigDir, getRootConfigDir } from "../config.js";
 import { 
   BackgroundTask, 
   TaskChangeListener, 
@@ -18,6 +18,199 @@ export const taskChangeListeners = new Set<TaskChangeListener>();
 export const activeOutputListeners = new Set<ActiveOutputListener>();
 export let activeToolOutput = "";
 
+interface PersistedTask {
+  id: string;
+  command: string;
+  pid: number;
+  logPath?: string;
+  isDetachedWindow?: boolean;
+  windowLabel?: string;
+  autoRetry?: boolean;
+  onExit?: string;
+  hasExited: boolean;
+  exitCode?: number | null;
+}
+
+function acquireTasksLockSync(lockPath: string): boolean {
+  const start = Date.now();
+  const timeoutMs = 2000;
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const fd = fs.openSync(lockPath, "wx");
+      fs.writeFileSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      return true;
+    } catch (err: any) {
+      if (err.code === "ENOENT") {
+        try {
+          fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+        } catch {}
+      }
+      // Simple sleep/retry
+      const sab = new SharedArrayBuffer(4);
+      const int32 = new Int32Array(sab);
+      try { Atomics.wait(int32, 0, 0, 50); } catch {
+        const end = Date.now() + 50;
+        while (Date.now() < end) {}
+      }
+    }
+  }
+  return false;
+}
+
+function releaseTasksLockSync(lockPath: string) {
+  try {
+    if (fs.existsSync(lockPath)) {
+      fs.unlinkSync(lockPath);
+    }
+  } catch {}
+}
+
+export function savePersistedTasks(): void {
+  const rootDir = getRootConfigDir();
+  if (!rootDir) return;
+  const tasksFilePath = path.join(rootDir, "background-tasks.json");
+  const lockPath = tasksFilePath + ".lock";
+
+  if (!acquireTasksLockSync(lockPath)) {
+    return;
+  }
+
+  try {
+    const list: PersistedTask[] = [];
+    for (const [id, task] of backgroundTasks.entries()) {
+      list.push({
+        id: task.id,
+        command: task.command,
+        pid: task.process?.pid || 0,
+        logPath: task.logPath,
+        isDetachedWindow: task.isDetachedWindow,
+        windowLabel: task.windowLabel,
+        autoRetry: task.autoRetry,
+        onExit: task.onExit,
+        hasExited: !!task.hasExited,
+        exitCode: task.exitCode,
+      });
+    }
+    fs.writeFileSync(tasksFilePath, JSON.stringify(list, null, 2), "utf-8");
+  } catch (err) {
+    // Ignore errors
+  } finally {
+    releaseTasksLockSync(lockPath);
+  }
+}
+
+// Global flag to prevent re-entrant calls to loadAndSyncPersistedTasks
+let isSyncing = false;
+
+export function loadAndSyncPersistedTasks(): void {
+  if (isSyncing) return;
+  isSyncing = true;
+
+  try {
+    const rootDir = getRootConfigDir();
+    if (!rootDir) return;
+    const tasksFilePath = path.join(rootDir, "background-tasks.json");
+    if (!fs.existsSync(tasksFilePath)) {
+      return;
+    }
+
+    const lockPath = tasksFilePath + ".lock";
+    if (!acquireTasksLockSync(lockPath)) {
+      return;
+    }
+
+    try {
+      const content = fs.readFileSync(tasksFilePath, "utf-8");
+      const list = JSON.parse(content) as PersistedTask[];
+      let changed = false;
+
+      for (const item of list) {
+        let isAlive = false;
+        if (item.pid > 0) {
+          try {
+            process.kill(item.pid, 0);
+            isAlive = true;
+          } catch (e: any) {
+            isAlive = (e.code === "EPERM");
+          }
+        }
+
+        const hasExited = !isAlive;
+        const exitCode = hasExited ? (item.exitCode ?? -1) : null;
+
+        const existing = backgroundTasks.get(item.id);
+        if (existing) {
+          if (existing.hasExited !== hasExited) {
+            existing.hasExited = hasExited;
+            existing.exitCode = exitCode;
+            changed = true;
+          }
+        } else {
+          const restoredTask: BackgroundTask = {
+            id: item.id,
+            command: item.command,
+            process: {
+              pid: item.pid,
+              killed: hasExited,
+              stdin: null,
+            },
+            output: [],
+            logPath: item.logPath,
+            hasExited,
+            exitCode,
+            isDetachedWindow: item.isDetachedWindow,
+            windowLabel: item.windowLabel,
+            autoRetry: item.autoRetry,
+            onExit: item.onExit,
+          };
+          if (item.logPath && fs.existsSync(item.logPath)) {
+            try {
+              const logs = fs.readFileSync(item.logPath, "utf-8");
+              restoredTask.output = logs.split("\n").map(l => l + "\n").slice(-1000);
+            } catch {}
+          }
+          backgroundTasks.set(item.id, restoredTask);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        const updatedList: PersistedTask[] = [];
+        for (const [id, task] of backgroundTasks.entries()) {
+          updatedList.push({
+            id: task.id,
+            command: task.command,
+            pid: task.process?.pid || 0,
+            logPath: task.logPath,
+            isDetachedWindow: task.isDetachedWindow,
+            windowLabel: task.windowLabel,
+            autoRetry: task.autoRetry,
+            onExit: task.onExit,
+            hasExited: !!task.hasExited,
+            exitCode: task.exitCode,
+          });
+        }
+        fs.writeFileSync(tasksFilePath, JSON.stringify(updatedList, null, 2), "utf-8");
+      }
+
+      if (changed) {
+        setTimeout(() => {
+          for (const listener of taskChangeListeners) {
+            listener();
+          }
+        }, 0);
+      }
+    } catch (err) {
+      // Ignore errors
+    } finally {
+      releaseTasksLockSync(lockPath);
+    }
+  } finally {
+    isSyncing = false;
+  }
+}
+
 export function subscribeToTasks(listener: TaskChangeListener) {
   taskChangeListeners.add(listener);
   return () => {
@@ -26,6 +219,9 @@ export function subscribeToTasks(listener: TaskChangeListener) {
 }
 
 export function notifyTasksChanged() {
+  if (!isSyncing) {
+    savePersistedTasks();
+  }
   for (const listener of taskChangeListeners) {
     listener();
   }
@@ -235,3 +431,9 @@ export function cleanupStaleInstances(): void {
 
 // Run cleanup every 5 minutes
 setInterval(cleanupStaleInstances, 5 * 60 * 1000).unref();
+
+// Initial load and periodic synchronization of background tasks
+try {
+  loadAndSyncPersistedTasks();
+  setInterval(loadAndSyncPersistedTasks, 3000).unref();
+} catch {}
