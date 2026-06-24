@@ -394,8 +394,8 @@ export const settingTencentdbCommand: SlashCommand = {
           const vendorDir = path.join(projectRoot, "vendor");
           const gatewayDir = path.join(vendorDir, "tencentdb-memory");
 
-          // 1. Clone if not exists
-          if (!fs.existsSync(gatewayDir) || !fs.existsSync(path.join(gatewayDir, "package.json"))) {
+          // 1. Clone only if directory does not exist yet (avoid re-cloning an existing repo)
+          if (!fs.existsSync(gatewayDir) || !fs.existsSync(path.join(gatewayDir, ".git"))) {
             ctx.addLine({
               type: "system",
               content: `⚡ Cloning TencentDB Memory Gateway into vendor/tencentdb-memory...`,

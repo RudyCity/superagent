@@ -62,8 +62,8 @@ export async function runTencentdbSetup(): Promise<void> {
     const vendorDir = path.join(PROJECT_ROOT, "vendor");
     const gatewayDir = path.join(vendorDir, "tencentdb-memory");
 
-    // 2. Clone if missing
-    if (!fs.existsSync(gatewayDir) || !fs.existsSync(path.join(gatewayDir, "package.json"))) {
+    // 2. Clone only if directory does not exist yet (avoid re-cloning an existing repo)
+    if (!fs.existsSync(gatewayDir) || !fs.existsSync(path.join(gatewayDir, ".git"))) {
       fs.mkdirSync(vendorDir, { recursive: true });
       try {
         const execAsync = promisify(exec);
