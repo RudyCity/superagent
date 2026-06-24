@@ -24,11 +24,12 @@ import { ensureGlobalConfigDir } from "../src/core/config/paths";
 describe("Provider Credential Resolution Fixes", () => {
   let originalProcessEnv: NodeJS.ProcessEnv;
 
-  const configPath = getModelConfigPath();
-  const presetsPath = getCustomPresetsPath();
+  let configPath: string;
+  let presetsPath: string;
 
   beforeEach(() => {
     originalProcessEnv = { ...process.env };
+    delete process.env.SUPERAGENT_CONFIG_DIR;
     
     // Bersihkan folder temp
     if (fs.existsSync(tempHome)) {
@@ -36,6 +37,9 @@ describe("Provider Credential Resolution Fixes", () => {
     }
     ensureGlobalConfigDir();
     clearModelConfigCache();
+
+    configPath = getModelConfigPath();
+    presetsPath = getCustomPresetsPath();
   });
 
   afterEach(() => {

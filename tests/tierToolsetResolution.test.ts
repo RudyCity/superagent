@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import os from "os";
+import path from "path";
+import fs from "fs";
 import { Agent } from "../src/core/agent.js";
 import { streamText } from "ai";
 import * as configModule from "../src/core/config.js";
@@ -7,6 +10,9 @@ import {
   superagentToolset,
   subagentToolsets,
 } from "../src/core/tools/toolsets.js";
+
+const tempHome = path.join(process.cwd(), "tests", "temp-home-tier-toolset");
+vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
 // Mock configuration partially
 vi.mock("../src/core/config.js", async (importOriginal) => {
@@ -35,10 +41,19 @@ vi.mock("ai", async (importOriginal) => {
 
 describe("Agent - Tier-Specific Default Toolset Resolution", () => {
   beforeEach(() => {
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
     vi.restoreAllMocks();
     vi.clearAllMocks();
     // Speed up tests by skipping actual countdown delay
     vi.spyOn(Agent.prototype as any, "delayWithCountdown").mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
   });
 
   it("should resolve masterToolset for master tier agent", async () => {

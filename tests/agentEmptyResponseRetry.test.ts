@@ -1,4 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import os from "os";
+import path from "path";
+import fs from "fs";
+
+const tempHome = path.join(process.cwd(), "tests", "temp-home-empty-retry");
+vi.spyOn(os, "homedir").mockReturnValue(tempHome);
+
 import { Agent } from "../src/core/agent.js";
 import { streamText, generateText } from "ai";
 import * as configModule from "../src/core/config.js";
@@ -33,6 +40,9 @@ describe("Agent - Empty Response Retry", () => {
   let delaySpy: any;
 
   beforeEach(() => {
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
     vi.restoreAllMocks();
     vi.clearAllMocks();
     // Speed up tests by skipping the actual countdown delay
@@ -40,6 +50,9 @@ describe("Agent - Empty Response Retry", () => {
   });
 
   afterEach(() => {
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
     delaySpy.mockRestore();
   });
 

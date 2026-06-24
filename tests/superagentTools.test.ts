@@ -1,6 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
+const originalExistsSync = fs.existsSync;
+const originalMkdirSync = fs.mkdirSync;
 import { execa } from "execa";
+
+function mockExistsSyncFalse() {
+  vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+    const pStr = String(p);
+    if (pStr.includes("worktrees") || pStr.includes("node_modules")) {
+      return false;
+    }
+    return originalExistsSync(p);
+  });
+}
+
+function mockMkdirSync() {
+  vi.spyOn(fs, "mkdirSync").mockImplementation((p, options) => {
+    const pStr = String(p);
+    if (pStr.includes("worktrees") || pStr.includes("node_modules")) {
+      return undefined as any;
+    }
+    return originalMkdirSync(p, options);
+  });
+}
 
 // Mock Agent and agentLocalStorage completely before any imports
 vi.mock("../src/core/agent.js", () => {
@@ -93,8 +115,8 @@ describe("superagentTools", () => {
     it("should successfully invoke superagent in background and register the instance", async () => {
       const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
       
-      vi.spyOn(fs, "existsSync").mockReturnValue(false);
-      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+      mockExistsSyncFalse();
+      mockMkdirSync();
 
       const result = await agentLocalStorage.run(parentAgent, () => {
         return invokeSuperagentTool.execute(
@@ -118,8 +140,8 @@ describe("superagentTools", () => {
     it("should successfully run and wait for superagent if wait is true", async () => {
       const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
       
-      vi.spyOn(fs, "existsSync").mockReturnValue(false);
-      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+      mockExistsSyncFalse();
+      mockMkdirSync();
 
       const result = await agentLocalStorage.run(parentAgent, () => {
         return invokeSuperagentTool.execute(
@@ -137,8 +159,8 @@ describe("superagentTools", () => {
     it("should inject active peer superagents context into system prompt when calling invoke_superagent", async () => {
       const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
 
-      vi.spyOn(fs, "existsSync").mockReturnValue(false);
-      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+      mockExistsSyncFalse();
+      mockMkdirSync();
 
       // Pre-populate an active peer superagent instance
       superagentInstances.set("peer-session-123", {
@@ -177,8 +199,8 @@ describe("superagentTools", () => {
     it("should set planState to APPROVED on spawned agent (stateless executor)", async () => {
       const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
 
-      vi.spyOn(fs, "existsSync").mockReturnValue(false);
-      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+      mockExistsSyncFalse();
+      mockMkdirSync();
 
       await agentLocalStorage.run(parentAgent, () => {
         return invokeSuperagentTool.execute(
@@ -203,8 +225,8 @@ describe("superagentTools", () => {
     it("should create worktree from baseBranch when specified", async () => {
       const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
 
-      vi.spyOn(fs, "existsSync").mockReturnValue(false);
-      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+      mockExistsSyncFalse();
+      mockMkdirSync();
 
       await agentLocalStorage.run(parentAgent, () => {
         return invokeSuperagentTool.execute(
@@ -227,8 +249,8 @@ describe("superagentTools", () => {
     it("should skip worktree creation in patch mode and use parent cwd", async () => {
       const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
 
-      vi.spyOn(fs, "existsSync").mockReturnValue(false);
-      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+      mockExistsSyncFalse();
+      mockMkdirSync();
       vi.mocked(execa).mockClear();
       vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
 
@@ -327,7 +349,13 @@ describe("superagentTools", () => {
         tokenUsage: { prompt: 0, completion: 0 }
       });
 
-      vi.spyOn(fs, "existsSync").mockReturnValue(true);
+      vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+        const pStr = String(p);
+        if (pStr.includes("worktree")) {
+          return true;
+        }
+        return originalExistsSync(p);
+      });
 
       const result = await agentLocalStorage.run(parentAgent, () => {
         return mergeSuperagentsTool.execute({ cleanupWorktrees: true }, process.cwd());
@@ -567,8 +595,8 @@ describe("superagentTools", () => {
         systemPrompt: "Work hard and smart."
       });
 
-      vi.spyOn(fs, "existsSync").mockReturnValue(false);
-      vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+      mockExistsSyncFalse();
+      mockMkdirSync();
 
       const result = await agentLocalStorage.run(parentAgent, () => {
         return invokeSuperagentTool.execute(
@@ -704,7 +732,13 @@ describe("superagentTools", () => {
         logs: []
       });
 
-      vi.spyOn(fs, "existsSync").mockReturnValue(true);
+      vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+        const pStr = String(p);
+        if (pStr.includes("path-to-kill")) {
+          return true;
+        }
+        return originalExistsSync(p);
+      });
       const mockRmSync = vi.spyOn(fs, "rmSync").mockImplementation(() => undefined);
       
       // Force execa mock to throw on git worktree remove
@@ -734,8 +768,10 @@ describe("superagentTools", () => {
       const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
 
       vi.spyOn(fs, "existsSync").mockImplementation((filePath) => {
-        if (filePath.toString().endsWith("package.json")) return true;
-        return false;
+        const pStr = filePath.toString();
+        if (pStr.endsWith("package.json")) return true;
+        if (pStr.includes("worktrees") || pStr.includes("node_modules")) return false;
+        return originalExistsSync(filePath);
       });
       vi.spyOn(fs, "readFileSync").mockImplementation((filePath) => {
         if (filePath.toString().endsWith("package.json")) {

@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { execa } from "execa";
+import { threadId } from "worker_threads";
 import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir } from "./paths.js";
 
 export interface ProviderProfile {
@@ -152,6 +153,120 @@ function safeMtimeMs(p: string): number {
   }
 }
 
+let localLockCount = 0;
+
+function getLockPath(configPath: string): string {
+  const isVitest = typeof process.env.VITEST !== "undefined";
+  const useLockSuffix = isVitest && !process.env.SUPERAGENT_TEST_NO_LOCK_SUFFIX;
+  return configPath + ".lock" + (useLockSuffix ? `-${threadId}-${process.pid}` : "");
+}
+
+function sleepSync(ms: number): void {
+  try {
+    const sab = new SharedArrayBuffer(4);
+    const int32 = new Int32Array(sab);
+    Atomics.wait(int32, 0, 0, ms);
+  } catch (e) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { /* busy wait fallback */ }
+  }
+}
+
+function acquireLockSync(lockPath: string, timeoutMs: number = 5000): boolean {
+  if (localLockCount > 0) {
+    localLockCount++;
+    return true;
+  }
+
+  const start = Date.now();
+  const lockTTL = 5000; // 5 seconds
+  let attempt = 0;
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const fd = fs.openSync(lockPath, "wx");
+      fs.writeFileSync(fd, `${process.pid}:${threadId}:${Date.now()}`);
+      fs.closeSync(fd);
+      localLockCount = 1;
+      return true;
+    } catch (err: any) {
+      if (err.code === "ENOENT") {
+        try {
+          fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+          continue; // Retry immediately after directory creation
+        } catch {}
+      }
+      if (err.code === "EEXIST") {
+        try {
+          const content = fs.readFileSync(lockPath, "utf-8").trim();
+          const parts = content.split(":");
+          const lockPid = parseInt(parts[0], 10);
+          const lockThreadId = parseInt(parts[1], 10);
+          const lockTime = parseInt(parts[2], 10);
+
+          if (!isNaN(lockPid) && !isNaN(lockThreadId) && lockPid === process.pid && lockThreadId === threadId) {
+            localLockCount = 1;
+            return true;
+          }
+
+          let isStale = isNaN(lockTime) || isNaN(lockPid) || isNaN(lockThreadId) || (Date.now() - lockTime) > lockTTL;
+
+          if (!isStale && !isNaN(lockPid) && lockPid !== process.pid) {
+            try {
+              process.kill(lockPid, 0);
+            } catch (e: any) {
+              if (e.code === "ESRCH") {
+                isStale = true; // Clean up locks held by dead/exited processes instantly
+              }
+            }
+          }
+
+          if (isStale) {
+            try {
+              fs.unlinkSync(lockPath);
+            } catch {}
+            // Retry immediately
+            continue;
+          }
+        } catch {
+          // stats/read failed, maybe lock deleted or being written
+        }
+      }
+
+      const delay = Math.min(50 + attempt * 20 + Math.random() * 20, 150);
+      if (err.code !== "EEXIST") {
+        console.error(`[LOCK DEBUG] Failed to acquire lock at ${lockPath}: ${err.code} - ${err.message}`);
+      }
+      sleepSync(delay);
+      attempt++;
+    }
+  }
+
+  try {
+    const content = fs.existsSync(lockPath) ? fs.readFileSync(lockPath, "utf-8").trim() : "(does not exist)";
+    console.error(`[LOCK TIMEOUT DIAGNOSTICS] lockPath: ${lockPath} | currentPid: ${process.pid} | currentThreadId: ${threadId} | localLockCount: ${localLockCount} | lockFileContent: ${content}`);
+  } catch (diagErr: any) {
+    console.error(`[LOCK TIMEOUT DIAGNOSTICS ERR] failed to read diagnostics: ${diagErr.message}`);
+  }
+
+  return false;
+}
+
+function releaseLockSync(lockPath: string): void {
+  if (localLockCount > 1) {
+    localLockCount--;
+    return;
+  }
+  localLockCount = 0;
+  try {
+    if (fs.existsSync(lockPath)) {
+      fs.unlinkSync(lockPath);
+    }
+  } catch {
+    // Ignore errors on release
+  }
+}
+
 export function clearModelConfigCache(): void {
   cachedConfig = null;
   cachedConfigMtimeMs = -1;
@@ -169,154 +284,174 @@ export function loadModelConfig(): GlobalModelConfig {
     }
   }
 
-  let lastError: any = null;
-  const maxLoadAttempts = 5;
-  for (let attempt = 0; attempt < maxLoadAttempts; attempt++) {
-    try {
-      if (fs.existsSync(configPath)) {
-        const data = fs.readFileSync(configPath, "utf-8");
-        if (!data || data.trim() === "") {
-          throw new Error("Config file is empty or blank");
-        }
-        const parsed = JSON.parse(data);
-        // Basic migrations/fallback validation
-        if (!parsed?.providers) {
-          // File exists but the providers field is missing/invalid. Back up before touching it.
-          try {
-            const backupPath = configPath + ".corrupt-" + Date.now();
-            fs.copyFileSync(configPath, backupPath);
-            console.warn(`model-config.json had invalid providers field. Backed up to: ${backupPath}`);
-          } catch {}
-          // Try to recover real providers (with their API keys) from the newest backup
-          // that still has them, so we don't silently destroy the user's credentials.
-          const recoveredProviders = recoverProvidersFromBackups(configPath);
-          const fallbackConfig: GlobalModelConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-          if (recoveredProviders && recoveredProviders.length > 0) {
-            fallbackConfig.providers = recoveredProviders;
-            console.warn(`[WARNING] model-config.json providers were invalid. Recovered ${recoveredProviders.length} provider profile(s) from a backup.`);
+  ensureGlobalConfigDir();
+  const lockPath = getLockPath(configPath);
+  const hasLock = acquireLockSync(lockPath);
+  if (!hasLock) {
+    console.warn(`[WARNING] Could not acquire lock to read model-config.json, proceeding without lock`);
+  }
+
+  try {
+    let lastError: any = null;
+    const maxLoadAttempts = 5;
+    for (let attempt = 0; attempt < maxLoadAttempts; attempt++) {
+      try {
+        if (fs.existsSync(configPath)) {
+          const data = fs.readFileSync(configPath, "utf-8");
+          if (!data || data.trim() === "") {
+            throw new Error("Config file is empty or blank");
+          }
+          const parsed = JSON.parse(data);
+          // Basic migrations/fallback validation
+          if (!parsed?.providers) {
+            // File exists but the providers field is missing/invalid. Back up before touching it.
+            try {
+              const backupPath = configPath + ".corrupt-" + Date.now();
+              fs.copyFileSync(configPath, backupPath);
+              console.warn(`model-config.json had invalid providers field. Backed up to: ${backupPath}`);
+            } catch {}
+            // Try to recover real providers (with their API keys) from the newest backup
+            // that still has them, so we don't silently destroy the user's credentials.
+            const recoveredProviders = recoverProvidersFromBackups(configPath);
+            const fallbackConfig: GlobalModelConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+            if (recoveredProviders && recoveredProviders.length > 0) {
+              fallbackConfig.providers = recoveredProviders;
+              console.warn(`[WARNING] model-config.json providers were invalid. Recovered ${recoveredProviders.length} provider profile(s) from a backup.`);
+            } else {
+              console.warn(`[WARNING] model-config.json providers were invalid and no backup with providers was found. Reset to defaults. Re-add credentials with /login.`);
+            }
+            if (parsed?.presets) {
+              fallbackConfig.presets = parsed.presets;
+            }
+            if (parsed?.activePresetId) {
+              fallbackConfig.activePresetId = parsed.activePresetId;
+            }
+            if (parsed?.settings) {
+              fallbackConfig.settings = parsed.settings;
+            }
+            cachedConfig = fallbackConfig;
+            // saveModelConfig refreshes cachedConfigMtimeMs after writing.
+            saveModelConfig(fallbackConfig);
           } else {
-            console.warn(`[WARNING] model-config.json providers were invalid and no backup with providers was found. Reset to defaults. Re-add credentials with /login.`);
-          }
-          if (parsed?.presets) {
-            fallbackConfig.presets = parsed.presets;
-          }
-          if (parsed?.activePresetId) {
-            fallbackConfig.activePresetId = parsed.activePresetId;
-          }
-          if (parsed?.settings) {
-            fallbackConfig.settings = parsed.settings;
-          }
-          cachedConfig = fallbackConfig;
-          // saveModelConfig refreshes cachedConfigMtimeMs after writing.
-          saveModelConfig(fallbackConfig);
-        } else {
-          // Validate and repair missing presets / activePresetId (e.g. from older app versions)
-          if (!parsed.presets || !parsed.presets.multi || !parsed.presets.single) {
-            parsed.presets = JSON.parse(JSON.stringify(DEFAULT_CONFIG.presets));
-          }
-          if (!parsed.activePresetId || !parsed.activePresetId.multi || !parsed.activePresetId.single) {
-            parsed.activePresetId = JSON.parse(JSON.stringify(DEFAULT_CONFIG.activePresetId));
-          }
+            // Validate and repair missing presets / activePresetId (e.g. from older app versions)
+            if (!parsed.presets || !parsed.presets.multi || !parsed.presets.single) {
+              parsed.presets = JSON.parse(JSON.stringify(DEFAULT_CONFIG.presets));
+            }
+            if (!parsed.activePresetId || !parsed.activePresetId.multi || !parsed.activePresetId.single) {
+              parsed.activePresetId = JSON.parse(JSON.stringify(DEFAULT_CONFIG.activePresetId));
+            }
 
-          // Repair stale providerProfileIds: if a preset references a non-existent provider,
-          // replace it with a valid provider that has an API key (or the first provider).
-          const providerIds = new Set((parsed.providers || []).map((p: any) => p.id));
-          const firstProviderWithKey = (parsed.providers || []).find(
-            (p: any) => p.apiKey && p.apiKey.trim() !== ""
-          );
-          const fallbackProviderId = firstProviderWithKey?.id || parsed.providers?.[0]?.id || "";
+            // Repair stale providerProfileIds: if a preset references a non-existent provider,
+            // replace it with a valid provider that has an API key (or the first provider).
+            const providerIds = new Set((parsed.providers || []).map((p: any) => p.id));
+            const firstProviderWithKey = (parsed.providers || []).find(
+              (p: any) => p.apiKey && p.apiKey.trim() !== ""
+            );
+            const fallbackProviderId = firstProviderWithKey?.id || parsed.providers?.[0]?.id || "";
 
-          if (fallbackProviderId) {
-            let repaired = false;
-            for (const mode of ["multi", "single"] as const) {
-              const presetsList = parsed.presets?.[mode] as any[] | undefined;
-              if (!presetsList) continue;
-              for (const preset of presetsList) {
-                if (!preset?.models) continue;
-                const models = preset.models;
-                const tierKeys = ["master", "superagent", "subagentDefault"];
-                for (const key of tierKeys) {
-                  if (models[key]?.providerProfileId && !providerIds.has(models[key].providerProfileId)) {
-                    models[key].providerProfileId = fallbackProviderId;
-                    repaired = true;
-                  }
-                }
-                if (models.subagentDetails) {
-                  for (const subKey of Object.keys(models.subagentDetails)) {
-                    if (models.subagentDetails[subKey]?.providerProfileId && !providerIds.has(models.subagentDetails[subKey].providerProfileId)) {
-                      models.subagentDetails[subKey].providerProfileId = fallbackProviderId;
+            if (fallbackProviderId) {
+              let repaired = false;
+              for (const mode of ["multi", "single"] as const) {
+                const presetsList = parsed.presets?.[mode] as any[] | undefined;
+                if (!presetsList) continue;
+                for (const preset of presetsList) {
+                  if (!preset?.models) continue;
+                  const models = preset.models;
+                  const tierKeys = ["master", "superagent", "subagentDefault"];
+                  for (const key of tierKeys) {
+                    if (models[key]?.providerProfileId && !providerIds.has(models[key].providerProfileId)) {
+                      models[key].providerProfileId = fallbackProviderId;
                       repaired = true;
+                    }
+                  }
+                  if (models.subagentDetails) {
+                    for (const subKey of Object.keys(models.subagentDetails)) {
+                      if (models.subagentDetails[subKey]?.providerProfileId && !providerIds.has(models.subagentDetails[subKey].providerProfileId)) {
+                        models.subagentDetails[subKey].providerProfileId = fallbackProviderId;
+                        repaired = true;
+                      }
                     }
                   }
                 }
               }
-            }
-            if (repaired) {
-              try {
-                writeConfigAtomically(configPath, parsed);
-              } catch {
-                // Ignore repair write errors
+              if (repaired) {
+                try {
+                  writeConfigAtomically(configPath, parsed);
+                } catch {
+                  // Ignore repair write errors
+                }
               }
             }
+
+            cachedConfig = parsed;
+            cachedConfigMtimeMs = safeMtimeMs(configPath);
           }
-
-          cachedConfig = parsed;
-          cachedConfigMtimeMs = safeMtimeMs(configPath);
+          return cachedConfig!;
+        } else {
+          // File doesn't exist yet. Since we successfully acquired the lock and it's not
+          // being written by another process, it simply doesn't exist. Break early to
+          // avoid unnecessary sleep/retry delay loops.
+          break;
         }
-        return cachedConfig!;
-      } else {
-        // File doesn't exist yet, wait if there are attempts remaining in case of write-rename race
+      } catch (error: any) {
+        lastError = error;
         if (attempt < maxLoadAttempts - 1) {
-          throw new Error("Config file does not exist on disk");
+          // Wait and retry
+          const waitMs = (attempt + 1) * 50;
+          sleepSync(waitMs);
+          continue;
         }
       }
-    } catch (error: any) {
-      lastError = error;
-      if (attempt < maxLoadAttempts - 1) {
-        // Wait and retry
-        const waitMs = (attempt + 1) * 50;
-        const end = Date.now() + waitMs;
-        while (Date.now() < end) { /* busy wait */ }
-        continue;
+    }
+
+    if (lastError) {
+      console.error("Error reading model-config.json after retries:", lastError);
+    }
+
+    const fileExists = fs.existsSync(configPath);
+
+    // Back up the corrupted file before overwriting with defaults
+    if (fileExists) {
+      try {
+        const backupPath = configPath + ".corrupt-" + Date.now();
+        fs.copyFileSync(configPath, backupPath);
+        console.warn(`model-config.json was corrupted. Backed up to: ${backupPath}`);
+      } catch {}
+    }
+
+    // Attempt config-level recovery from backups
+    const recoveredConfig = recoverConfigFromBackups(configPath);
+    if (recoveredConfig) {
+      console.warn(`[WARNING] model-config.json recovered from a backup.`);
+      cachedConfig = recoveredConfig;
+      if (!fileExists) {
+        saveModelConfig(recoveredConfig);
       }
+      return cachedConfig;
     }
-  }
 
-  if (lastError) {
-    console.error("Error reading model-config.json after retries:", lastError);
-  }
-
-  // Back up the corrupted file before overwriting with defaults
-  try {
-    if (fs.existsSync(configPath)) {
-      const backupPath = configPath + ".corrupt-" + Date.now();
-      fs.copyFileSync(configPath, backupPath);
-      console.warn(`model-config.json was corrupted. Backed up to: ${backupPath}`);
+    // Fallback to default — do NOT set cachedConfig until save succeeds
+    const defaultConfig: GlobalModelConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    if (!fileExists) {
+      const saveResult = saveModelConfig(defaultConfig);
+      if (saveResult) {
+        cachedConfig = defaultConfig;
+      } else {
+        // Save failed (e.g. directory creation failed). Set cache anyway so the app
+        // can still function in-memory, but log a critical warning.
+        cachedConfig = defaultConfig;
+        cachedConfigMtimeMs = -1;
+        console.error("CRITICAL: Failed to persist model-config.json to disk. Credentials will be lost on restart. Check permissions for: " + getRootConfigDir());
+      }
+    } else {
+      console.warn("[WARNING] model-config.json exists but is unreadable/corrupt. Falling back to defaults in-memory to prevent overwriting user config.");
+      cachedConfig = defaultConfig;
+      cachedConfigMtimeMs = -1;
     }
-  } catch {}
-
-  // Attempt config-level recovery from backups
-  const recoveredConfig = recoverConfigFromBackups(configPath);
-  if (recoveredConfig) {
-    console.warn(`[WARNING] model-config.json recovered from a backup.`);
-    cachedConfig = recoveredConfig;
-    saveModelConfig(recoveredConfig);
-    return cachedConfig;
+    return cachedConfig!;
+  } finally {
+    releaseLockSync(lockPath);
   }
-
-  // Fallback to default — do NOT set cachedConfig until save succeeds
-  const defaultConfig: GlobalModelConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-  const saveResult = saveModelConfig(defaultConfig);
-  if (saveResult) {
-    cachedConfig = defaultConfig;
-  } else {
-    // Save failed (e.g. directory creation failed). Set cache anyway so the app
-    // can still function in-memory, but log a critical warning.
-    cachedConfig = defaultConfig;
-    cachedConfigMtimeMs = -1;
-    console.error("CRITICAL: Failed to persist model-config.json to disk. Credentials will be lost on restart. Check permissions for: " + getRootConfigDir());
-  }
-  return cachedConfig!;
 }
 
 /**
@@ -489,8 +624,7 @@ function writeConfigAtomically(configPath: string, config: GlobalModelConfig): v
           }
         } catch {}
         const waitMs = (attempt + 1) * 50;
-        const end = Date.now() + waitMs;
-        while (Date.now() < end) { /* busy wait — short duration */ }
+        sleepSync(waitMs);
         continue;
       }
       try { fs.unlinkSync(tmpPath); } catch {}
@@ -505,9 +639,15 @@ export function saveModelConfig(
 ): boolean {
   const { mergeProviders = true, mergePresets = true } = options;
   const configPath = getModelConfigPath();
-  try {
-    ensureGlobalConfigDir();
+  ensureGlobalConfigDir();
+  const lockPath = getLockPath(configPath);
+  const hasLock = acquireLockSync(lockPath);
+  if (!hasLock) {
+    console.error("CRITICAL: Could not acquire lock to save model-config.json");
+    return false;
+  }
 
+  try {
     // Guard against stale-snapshot overwrites: if another process added providers or
     // presets since this config was loaded, preserve them instead of clobbering the file.
     if (mergeProviders && Array.isArray(config.providers)) {
@@ -525,6 +665,8 @@ export function saveModelConfig(
   } catch (error) {
     console.error("Error writing model-config.json:", error);
     return false;
+  } finally {
+    releaseLockSync(lockPath);
   }
 }
 

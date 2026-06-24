@@ -10,6 +10,7 @@ describe("Peer Coordination and Awareness Tests", () => {
   const tempDir = path.resolve(process.cwd(), "tests/temp-peer-test");
 
   beforeEach(async () => {
+    delete process.env.SUPERAGENT_CONFIG_DIR;
     await fs.mkdir(tempDir, { recursive: true });
     vi.restoreAllMocks();
     vi.spyOn(os, "homedir").mockReturnValue(tempDir);

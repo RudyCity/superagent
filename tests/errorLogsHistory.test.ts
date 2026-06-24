@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 import os from "os";
+
+const tempHome = path.join(process.cwd(), "tests", "temp-home-error-logs");
+vi.spyOn(os, "homedir").mockReturnValue(tempHome);
+
 import { Agent } from "../src/core/agent.js";
 import { Conversation } from "../src/core/conversation.js";
 import { superagentInstances, subagentInstances } from "../src/core/tools/state.js";
@@ -11,6 +16,9 @@ describe("Error Logs Persistence and Restoration", () => {
   let tempFilePath: string;
 
   beforeEach(async () => {
+    if (fsSync.existsSync(tempHome)) {
+      fsSync.rmSync(tempHome, { recursive: true, force: true });
+    }
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-error-test-"));
     tempFilePath = path.join(tempDir, "session.json");
     superagentInstances.clear();
@@ -23,6 +31,11 @@ describe("Error Logs Persistence and Restoration", () => {
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
     } catch {}
+    if (fsSync.existsSync(tempHome)) {
+      try {
+        fsSync.rmSync(tempHome, { recursive: true, force: true });
+      } catch {}
+    }
   });
 
   it("should record stream/runtime errors to conversation history as [ERROR] system messages", async () => {
