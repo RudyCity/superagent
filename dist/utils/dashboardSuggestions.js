@@ -165,7 +165,7 @@ export function getDashboardSuggestions(query) {
         return filterSuggestions(possibilities, query);
     }
     if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
-        const subSuggestions = [`${parts[0]} init`, `${parts[0]} dev`, `${parts[0]} active`];
+        const subSuggestions = [`${parts[0]} init`, `${parts[0]} dev`, `${parts[0]} list`, `${parts[0]} active`];
         if (parts.length === 1) {
             return subSuggestions;
         }

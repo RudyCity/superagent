@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.13] - 2026-06-25
+
+### Added
+- **Internal Hooks System Expansion**:
+  - **Scaffolding Requirements**: Made `README.md`, `CHANGELOG.md` and Git repository initialization (`git init`) mandatory when scaffolding new internal hooks.
+  - **Automatic Dependency Installation**: Automatically run package manager dependency installation (`npm install`) when scaffolding a hook.
+  - **Watcher Hot-Reload**: Added a file watcher to dynamically reload internal hooks on file edits.
+  - **Telemetry Logging**: Integrated execution time telemetry logging for hooks.
+  - **List Subcommand**: Added the `/ih list` command to display all discovered internal hooks and their registration status.
+
+---
+
 ## [1.2.12] - 2026-06-25
 
 ### Improved
