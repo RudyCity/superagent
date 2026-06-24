@@ -29,6 +29,7 @@ interface PersistedTask {
   onExit?: string;
   hasExited: boolean;
   exitCode?: number | null;
+  completedAt?: number;
 }
 
 function acquireTasksLockSync(lockPath: string): boolean {
@@ -79,6 +80,9 @@ export function savePersistedTasks(): void {
   try {
     const list: PersistedTask[] = [];
     for (const [id, task] of backgroundTasks.entries()) {
+      if (task.hasExited && !task.completedAt) {
+        task.completedAt = Date.now();
+      }
       list.push({
         id: task.id,
         command: task.command,
@@ -90,6 +94,7 @@ export function savePersistedTasks(): void {
         onExit: task.onExit,
         hasExited: !!task.hasExited,
         exitCode: task.exitCode,
+        completedAt: task.completedAt,
       });
     }
     fs.writeFileSync(tasksFilePath, JSON.stringify(list, null, 2), "utf-8");
@@ -138,12 +143,14 @@ export function loadAndSyncPersistedTasks(): void {
 
         const hasExited = !isAlive;
         const exitCode = hasExited ? (item.exitCode ?? -1) : null;
+        const completedAt = hasExited ? (item.completedAt ?? Date.now()) : undefined;
 
         const existing = backgroundTasks.get(item.id);
         if (existing) {
           if (existing.hasExited !== hasExited) {
             existing.hasExited = hasExited;
             existing.exitCode = exitCode;
+            existing.completedAt = completedAt;
             changed = true;
           }
         } else {
@@ -163,6 +170,7 @@ export function loadAndSyncPersistedTasks(): void {
             windowLabel: item.windowLabel,
             autoRetry: item.autoRetry,
             onExit: item.onExit,
+            completedAt,
           };
           if (item.logPath && fs.existsSync(item.logPath)) {
             try {
@@ -189,6 +197,7 @@ export function loadAndSyncPersistedTasks(): void {
             onExit: task.onExit,
             hasExited: !!task.hasExited,
             exitCode: task.exitCode,
+            completedAt: task.completedAt,
           });
         }
         fs.writeFileSync(tasksFilePath, JSON.stringify(updatedList, null, 2), "utf-8");
@@ -426,6 +435,18 @@ export function cleanupStaleInstances(): void {
         subagentInstances.delete(id);
       }
     }
+  }
+  let tasksChanged = false;
+  for (const [id, task] of backgroundTasks.entries()) {
+    if (task.hasExited && task.completedAt) {
+      if (now - task.completedAt > INSTANCE_TTL_MS) {
+        backgroundTasks.delete(id);
+        tasksChanged = true;
+      }
+    }
+  }
+  if (tasksChanged) {
+    notifyTasksChanged();
   }
 }
 
