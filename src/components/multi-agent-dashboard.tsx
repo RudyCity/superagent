@@ -120,7 +120,7 @@ export function MultiAgentDashboard({
   autoResume?: boolean | string;
   registerLogHandler: (handler: (msg: string) => void) => void;
   registerEventHandler?: (handler: (event: any) => void) => void;
-  registerQuestionHandlerRef?: (setter: (q: string | QuestionItem[], opts?: string[], isMultiSelect?: boolean) => Promise<string | string[]>) => void;
+  registerQuestionHandlerRef?: (setter: (q: string | QuestionItem[], opts?: string[], isMultiSelect?: boolean, initialCheckedIndices?: number[]) => Promise<string | string[]>) => void;
 }) {
   const { exit } = useApp();
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -416,7 +416,7 @@ export function MultiAgentDashboard({
   // Register the interactive question handler
   useEffect(() => {
     if (registerQuestionHandlerRef) {
-      registerQuestionHandlerRef(async (question, options, isMultiSelect) => {
+      registerQuestionHandlerRef(async (question, options, isMultiSelect, initialCheckedIndices) => {
         return new Promise<any>((resolve) => {
           if (Array.isArray(question)) {
             const questions = question;
@@ -427,7 +427,7 @@ export function MultiAgentDashboard({
             setPendingQuestion({ question: q0.question, options: allOptions, resolve });
             setWizardOptions(allOptions);
             setWizardSelectedIndex(0);
-            setWizardSelectedSet(new Set());
+            setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
             setActiveWizard({
               type: "question",
               step: hasOptions ? 1 : 2,
@@ -443,7 +443,7 @@ export function MultiAgentDashboard({
             setPendingQuestion({ question, options: allOptions, resolve });
             setWizardOptions(allOptions);
             setWizardSelectedIndex(0);
-            setWizardSelectedSet(new Set());
+            setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
             setActiveWizard({
               type: "question",
               step: hasOptions ? 1 : 2,

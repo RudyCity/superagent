@@ -110,5 +110,7 @@ export interface QuestionItem {
 export type QuestionHandler = (
   question: string | QuestionItem[],
   options?: string[],
-  isMultiSelect?: boolean
+  isMultiSelect?: boolean,
+  initialCheckedIndices?: number[]
 ) => Promise<string | string[]>;
+

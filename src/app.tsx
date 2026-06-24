@@ -796,7 +796,7 @@ export function App({
     }
 
     if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
-      const subSuggestions = [`${mainCommand} init`, `${mainCommand} dev`];
+      const subSuggestions = [`${mainCommand} init`, `${mainCommand} dev`, `${mainCommand} active`];
       if (parts.length === 2) {
         return filterSuggestions(subSuggestions, currentInput);
       }
@@ -1383,7 +1383,7 @@ export function App({
     },
     []
   );  const questionHandler: QuestionHandler = useCallback(
-    (question: string | QuestionItem[], options?: string[], isMultiSelect?: boolean) => {
+    (question: string | QuestionItem[], options?: string[], isMultiSelect?: boolean, initialCheckedIndices?: number[]) => {
       return new Promise<any>((resolve) => {
         if (Array.isArray(question)) {
           const questions = question;
@@ -1394,7 +1394,7 @@ export function App({
           setPendingQuestion({ question: q0.question, options: allOptions, resolve });
           setWizardOptions(allOptions);
           setWizardSelectedIndex(0);
-          setWizardSelectedSet(new Set());
+          setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
           setActiveWizard({
             type: "question",
             step: hasOptions ? 1 : 2,
@@ -1410,7 +1410,7 @@ export function App({
           setPendingQuestion({ question, options: allOptions, resolve });
           setWizardOptions(allOptions);
           setWizardSelectedIndex(0);
-          setWizardSelectedSet(new Set());
+          setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
           setActiveWizard({
             type: "question",
             step: hasOptions ? 1 : 2,

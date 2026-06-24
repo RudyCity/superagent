@@ -170,18 +170,49 @@ registerSubagentType(
   "6. Provide a clear, structured test report detailing passing tests, failures, visual feedback, and browser error logs."
 );
 
-// Load dynamic internal hooks
-try {
-  const dynamicTools = loadDynamicHooks();
-  if (dynamicTools.length > 0) {
-    allTools.push(...dynamicTools);
-    masterToolset.push(...dynamicTools);
-    superagentToolset.push(...dynamicTools);
-    defaultSubagentToolset.push(...dynamicTools);
+let loadedDynamicTools: Tool[] = [];
+
+export function refreshDynamicHooks(): void {
+  // 1. Remove previous dynamic tools from all sets
+  if (loadedDynamicTools.length > 0) {
+    const toRemoveNames = new Set(loadedDynamicTools.map(t => t.name));
+    
+    const filterArray = (arr: any[]) => {
+      for (let i = arr.length - 1; i >= 0; i--) {
+        const item = arr[i];
+        const name = typeof item === "string" ? item : item?.name;
+        if (name && toRemoveNames.has(name)) {
+          arr.splice(i, 1);
+        }
+      }
+    };
+
+    filterArray(allTools);
+    filterArray(masterToolset);
+    filterArray(superagentToolset);
+    filterArray(defaultSubagentToolset);
     for (const key of Object.keys(subagentToolsets)) {
-      subagentToolsets[key].push(...dynamicTools);
+      filterArray(subagentToolsets[key]);
     }
   }
-} catch (err: any) {
-  console.error("[Dynamic Hooks Loader Error]", err.message);
+
+  // 2. Load and add new dynamic tools
+  try {
+    loadedDynamicTools = loadDynamicHooks();
+    if (loadedDynamicTools.length > 0) {
+      allTools.push(...loadedDynamicTools);
+      masterToolset.push(...loadedDynamicTools);
+      superagentToolset.push(...loadedDynamicTools);
+      defaultSubagentToolset.push(...loadedDynamicTools);
+      for (const key of Object.keys(subagentToolsets)) {
+        subagentToolsets[key].push(...loadedDynamicTools);
+      }
+    }
+  } catch (err: any) {
+    console.error("[Dynamic Hooks Loader Error]", err.message);
+  }
 }
+
+// Load dynamic internal hooks on startup
+refreshDynamicHooks();
+

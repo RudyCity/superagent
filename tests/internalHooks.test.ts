@@ -70,4 +70,65 @@ describe("Internal Hooks Feature", () => {
     // Since index.js prints "Hook executed successfully!", verify that was logged as stdout
     expect(lines.some(l => l.content.includes("Hook executed successfully!"))).toBe(true);
   });
+
+  it("should persist active hooks selection in active-hooks.json", async () => {
+    const { saveActiveHooksForProject, getActiveHooksForProject, getAvailableHooks } = await import("../src/core/tools/dynamicHooks.js");
+    
+    const activeList = ["test-hook"];
+    saveActiveHooksForProject(tempDir, activeList);
+
+    const loadedList = getActiveHooksForProject(tempDir);
+    expect(loadedList).toEqual(activeList);
+
+    const available = getAvailableHooks();
+    const testHookMeta = available.find(h => h.dirName === "test-hook");
+    expect(testHookMeta).toBeDefined();
+    expect(testHookMeta?.active).toBe(true);
+  });
+
+  it("should filter loaded dynamic tools based on active state configuration", async () => {
+    const { saveActiveHooksForProject } = await import("../src/core/tools/dynamicHooks.js");
+    
+    // Save empty active hooks configuration (so test-hook is inactive)
+    saveActiveHooksForProject(tempDir, []);
+
+    const tools = loadDynamicHooks();
+    expect(tools.length).toBe(0); // test-hook should be filtered out
+  });
+
+  it("should execute /ih active subcommand, prompt user, and persist selected hooks", async () => {
+    const { registerQuestionHandler } = await import("../src/core/tools/state.js");
+    const { saveActiveHooksForProject } = await import("../src/core/tools/dynamicHooks.js");
+    
+    // 1. Pre-set active hooks to empty
+    saveActiveHooksForProject(tempDir, []);
+
+    // 2. Register mock interactive question handler that returns the matching option
+    registerQuestionHandler(async (question, options, isMultiSelect, initialCheckedIndices) => {
+      expect(isMultiSelect).toBe(true);
+      expect(options.some(o => o.startsWith("test-hook"))).toBe(true);
+      expect(initialCheckedIndices).toEqual([]); // since we saved empty
+      return options.find(o => o.startsWith("test-hook")) || "";
+    });
+
+    const lines: ChatLine[] = [];
+    const mockCtx: SlashCommandContext = {
+      addLine: (line) => lines.push(line),
+      exit: () => {},
+      agent: null,
+    };
+
+    await internalHooksCommand.execute("active", mockCtx);
+
+    // Verify output shows success
+    expect(lines.some(l => l.type === "system" && l.content.includes("Successfully updated active hooks"))).toBe(true);
+    expect(lines.some(l => l.content.includes("Active hooks: test-hook"))).toBe(true);
+
+    // Verify it is actually saved
+    const { getActiveHooksForProject } = await import("../src/core/tools/dynamicHooks.js");
+    expect(getActiveHooksForProject(tempDir)).toEqual(["test-hook"]);
+
+    // Clean up question handler
+    registerQuestionHandler(null);
+  });
 });

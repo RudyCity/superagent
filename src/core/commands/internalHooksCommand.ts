@@ -5,27 +5,29 @@ import { execa } from "execa";
 import { SlashCommand, SlashCommandContext } from "./types.js";
 import { registry } from "./registry.js";
 import { resolveWindowsShell, formatCommandForPowerShell } from "../tools/helpers.js";
+import { getActiveQuestionHandler } from "../tools/state.js";
+import { getAvailableHooks, getActiveHooksForProject, saveActiveHooksForProject } from "../tools/dynamicHooks.js";
 
 export const internalHooksCommand: SlashCommand = {
   name: "internal-hooks",
   aliases: ["ih"],
-  description: "Initialize or run a local development loop for custom internal hook tools.",
+  description: "Initialize, run a local development loop, or toggle active status for custom internal hook tools.",
   async execute(args, ctx) {
     const now = Date.now();
     const parts = args.trim().split(/\s+/).filter(Boolean);
     const subCommand = parts[0]?.toLowerCase();
     const hookName = parts[1];
 
-    if (!subCommand || (subCommand !== "init" && subCommand !== "dev")) {
+    if (!subCommand || (subCommand !== "init" && subCommand !== "dev" && subCommand !== "active")) {
       ctx.addLine({
         type: "error",
-        content: "Usage:\n  /ih init <namahook>  - Scaffold a new internal hook project\n  /ih dev <namahook>   - Run local development/test loop inside hook workspace",
+        content: "Usage:\n  /ih init <namahook>  - Scaffold a new internal hook project\n  /ih dev <namahook>   - Run local development/test loop inside hook workspace\n  /ih active           - Interactively select which hooks to activate",
         timestamp: now,
       });
       return;
     }
 
-    if (!hookName) {
+    if (subCommand !== "active" && !hookName) {
       ctx.addLine({
         type: "error",
         content: `Error: Missing hook name. Usage: /ih ${subCommand} <namahook>`,
@@ -34,7 +36,7 @@ export const internalHooksCommand: SlashCommand = {
       return;
     }
 
-    if (!/^[a-zA-Z0-9_-]+$/.test(hookName)) {
+    if (subCommand !== "active" && !/^[a-zA-Z0-9_-]+$/.test(hookName)) {
       ctx.addLine({
         type: "error",
         content: "Error: Hook name must contain only alphanumeric characters, hyphens, and underscores.",
@@ -43,7 +45,7 @@ export const internalHooksCommand: SlashCommand = {
       return;
     }
 
-    const hookDir = path.join(process.cwd(), "internal-hooks", hookName);
+    const hookDir = hookName ? path.join(process.cwd(), "internal-hooks", hookName) : "";
 
     if (subCommand === "init") {
       ctx.addLine({
@@ -108,6 +110,23 @@ console.log("Active Workspace CWD:", process.cwd());
         await fs.writeFile(path.join(hookDir, "package.json"), JSON.stringify(packageJson, null, 2), "utf-8");
         await fs.writeFile(path.join(hookDir, "index.js"), indexJs, "utf-8");
         await fs.writeFile(path.join(hookDir, "test-payload.json"), JSON.stringify(testPayloadJson, null, 2), "utf-8");
+
+        // Auto-activate the new hook if there's already a configured list
+        const activeHooks = getActiveHooksForProject(process.cwd());
+        if (activeHooks !== null) {
+          if (!activeHooks.includes(hookName)) {
+            activeHooks.push(hookName);
+            saveActiveHooksForProject(process.cwd(), activeHooks);
+          }
+        }
+
+        // Trigger dynamic tools reload so the new hook is loaded immediately
+        try {
+          const { refreshDynamicHooks } = await import("../tools/index.js");
+          refreshDynamicHooks();
+        } catch (reloadErr) {
+          console.error("Failed to hot-reload dynamic hooks:", reloadErr);
+        }
 
         ctx.addLine({
           type: "system",
@@ -237,6 +256,98 @@ console.log("Active Workspace CWD:", process.cwd());
           timestamp: Date.now(),
         });
       }
+      return;
+    }
+
+    if (subCommand === "active") {
+      const hooks = getAvailableHooks();
+      if (hooks.length === 0) {
+        ctx.addLine({
+          type: "system",
+          content: "No internal hooks found. Use `/ih init <namahook>` to create one first.",
+          timestamp: now,
+        });
+        return;
+      }
+
+      const handler = getActiveQuestionHandler();
+      if (!handler) {
+        ctx.addLine({
+          type: "error",
+          content: "Error: No active question handler found to display the selection dialog.",
+          timestamp: now,
+        });
+        return;
+      }
+
+      // Format options: "<dirName> - <description>"
+      const options = hooks.map(h => {
+        const desc = h.description ? ` - ${h.description}` : "";
+        return `${h.dirName}${desc}`;
+      });
+
+      // Find indices of active hooks
+      const initialCheckedIndices: number[] = [];
+      hooks.forEach((h, idx) => {
+        if (h.active) {
+          initialCheckedIndices.push(idx);
+        }
+      });
+
+      try {
+        ctx.addLine({
+          type: "system",
+          content: "Opening active hooks selection dialog...",
+          timestamp: Date.now(),
+        });
+
+        const answer = await handler(
+          "Select which internal hooks you want to activate (Space to check/uncheck, Enter to submit):",
+          options,
+          true,
+          initialCheckedIndices
+        );
+
+        // Parse response
+        const selectedOptions = typeof answer === "string" 
+          ? answer.split(", ").map(x => x.trim()).filter(Boolean)
+          : (Array.isArray(answer) ? answer.map(x => String(x).trim()) : []);
+
+        const activeHooksToSave: string[] = [];
+        for (const opt of selectedOptions) {
+          const match = hooks.find(h => {
+            const desc = h.description ? ` - ${h.description}` : "";
+            return `${h.dirName}${desc}` === opt;
+          });
+          if (match) {
+            activeHooksToSave.push(match.dirName);
+          }
+        }
+
+        // Save selection
+        saveActiveHooksForProject(process.cwd(), activeHooksToSave);
+
+        // Trigger dynamic tools reload
+        try {
+          const { refreshDynamicHooks } = await import("../tools/index.js");
+          refreshDynamicHooks();
+        } catch (reloadErr) {
+          console.error("Failed to hot-reload dynamic hooks:", reloadErr);
+        }
+
+        ctx.addLine({
+          type: "system",
+          content: `✓ Successfully updated active hooks!\nActive hooks: ${activeHooksToSave.length > 0 ? activeHooksToSave.join(", ") : "none"}`,
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to select active hooks: ${err.message}`,
+          timestamp: Date.now(),
+        });
+      }
+      return;
     }
   }
 };
