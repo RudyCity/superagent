@@ -166,6 +166,7 @@ export function getDashboardSuggestions(query: string): string[] {
       "/setting-tencentdb on",
       "/setting-tencentdb off",
       "/setting-tencentdb status",
+      "/setting-tencentdb show-bg-procs",
     ];
     return filterSuggestions(possibilities, query);
   }

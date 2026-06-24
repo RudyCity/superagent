@@ -38,7 +38,7 @@ export const settingsCommand: SlashCommand = {
         "  /setting-streaming <on|off>",
         "  /setting-context-limit <number>",
         "  /setting-max-iterations <number>",
-        "  /setting-tencentdb <on|off|status> [gatewayUrl]"
+        "  /setting-tencentdb <on|off|status|show-bg-procs> [gatewayUrl]"
       ].join("\n"),
       timestamp: Date.now(),
     });
