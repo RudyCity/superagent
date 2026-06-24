@@ -71,7 +71,7 @@ describe("Internal Hooks Feature", () => {
     expect(lines.some(l => l.content.includes("Hook executed successfully!"))).toBe(true);
   });
 
-  it("should persist active hooks selection in active-hooks.json", async () => {
+  it("should persist active hooks selection in model-config.json", async () => {
     const { saveActiveHooksForProject, getActiveHooksForProject, getAvailableHooks } = await import("../src/core/tools/dynamicHooks.js");
     
     const activeList = ["test-hook"];

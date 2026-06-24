@@ -3,7 +3,7 @@ import path from "path";
 import { execa } from "execa";
 import { Tool } from "./types.js";
 import { resolveWindowsShell, formatCommandForPowerShell } from "./helpers.js";
-import { getRootConfigDir } from "../config/paths.js";
+import { loadModelConfig, mutateModelConfig } from "../config/jsonConfig.js";
 
 export interface HookMetadata {
   name: string;
@@ -12,46 +12,29 @@ export interface HookMetadata {
   active: boolean;
 }
 
-export function getActiveHooksConfigPath(): string {
-  return path.join(getRootConfigDir(), "active-hooks.json");
-}
-
 export function getActiveHooksForProject(projectPath: string): string[] | null {
-  const configPath = getActiveHooksConfigPath();
-  if (!fs.existsSync(configPath)) {
-    return null;
-  }
   try {
-    const data = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    const active = data[projectPath];
+    const config = loadModelConfig();
+    const active = config.activeHooks?.[projectPath];
     if (Array.isArray(active)) {
       return active;
     }
   } catch (err) {
-    console.error(`[Dynamic Hooks] Failed to read active hooks config:`, err);
+    console.error(`[Dynamic Hooks] Failed to read active hooks config from model-config.json:`, err);
   }
   return null;
 }
 
 export function saveActiveHooksForProject(projectPath: string, activeHooks: string[]): void {
-  const configPath = getActiveHooksConfigPath();
-  let data: Record<string, string[]> = {};
-  if (fs.existsSync(configPath)) {
-    try {
-      data = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    } catch (err) {
-      console.error(`[Dynamic Hooks] Failed to parse active hooks config:`, err);
-    }
-  }
-  data[projectPath] = activeHooks;
   try {
-    const rootDir = getRootConfigDir();
-    if (!fs.existsSync(rootDir)) {
-      fs.mkdirSync(rootDir, { recursive: true });
-    }
-    fs.writeFileSync(configPath, JSON.stringify(data, null, 2), "utf-8");
+    mutateModelConfig((config) => {
+      if (!config.activeHooks) {
+        config.activeHooks = {};
+      }
+      config.activeHooks[projectPath] = activeHooks;
+    });
   } catch (err) {
-    console.error(`[Dynamic Hooks] Failed to save active hooks config:`, err);
+    console.error(`[Dynamic Hooks] Failed to save active hooks config to model-config.json:`, err);
   }
 }
 

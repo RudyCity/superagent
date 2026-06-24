@@ -64,6 +64,7 @@ export interface GlobalModelConfig {
   };
   settings?: SystemSettings;
   trustedDirectories?: string[];
+  activeHooks?: Record<string, string[]>;
 }
 
 const DEFAULT_CONFIG: GlobalModelConfig = {
