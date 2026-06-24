@@ -1,5 +1,12 @@
 import { Tool } from "./types.js";
 import { registerSubagentType } from "./state.js";
+import {
+  masterToolset,
+  superagentToolset,
+  subagentToolsets,
+  defaultSubagentToolset
+} from "./toolsets.js";
+import { loadDynamicHooks } from "./dynamicHooks.js";
 
 import { 
   readTool, 
@@ -162,3 +169,19 @@ registerSubagentType(
   "5. Perform visual UI/UX checks (design taste): analyze screenshots to check visual alignment, spacing, typography, responsiveness, styling inconsistencies, and overall design aesthetics to ensure a high-quality, premium visual feel.\n" +
   "6. Provide a clear, structured test report detailing passing tests, failures, visual feedback, and browser error logs."
 );
+
+// Load dynamic internal hooks
+try {
+  const dynamicTools = loadDynamicHooks();
+  if (dynamicTools.length > 0) {
+    allTools.push(...dynamicTools);
+    masterToolset.push(...dynamicTools);
+    superagentToolset.push(...dynamicTools);
+    defaultSubagentToolset.push(...dynamicTools);
+    for (const key of Object.keys(subagentToolsets)) {
+      subagentToolsets[key].push(...dynamicTools);
+    }
+  }
+} catch (err: any) {
+  console.error("[Dynamic Hooks Loader Error]", err.message);
+}

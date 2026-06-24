@@ -14,6 +14,7 @@ import {
   type ImageAttachment,
 } from "./utils/imageUtils.js";
 import fs from "fs/promises";
+import fsSync from "fs";
 import { handleSlashCommand, getDefaultModel } from "./core/slash-commands.js";
 import { registry } from "./core/commands/registry.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";
@@ -792,6 +793,26 @@ export function App({
         `${mainCommand} preset`
       ];
       return filterSuggestions(terminalSuggestions, currentInput);
+    }
+
+    if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
+      const subSuggestions = [`${mainCommand} init`, `${mainCommand} dev`];
+      if (parts.length === 2) {
+        return filterSuggestions(subSuggestions, currentInput);
+      }
+      if (parts.length >= 3 && parts[1].toLowerCase() === "dev") {
+        const hooksRoot = path.join(process.cwd(), "internal-hooks");
+        let hookDirs: string[] = [];
+        if (fsSync.existsSync(hooksRoot)) {
+          try {
+            hookDirs = fsSync.readdirSync(hooksRoot, { withFileTypes: true })
+              .filter(item => item.isDirectory())
+              .map(item => `${mainCommand} dev ${item.name}`);
+          } catch {}
+        }
+        return filterSuggestions(hookDirs, currentInput);
+      }
+      return filterSuggestions(subSuggestions, currentInput);
     }
 
     if (mainCommand === "/model") {
