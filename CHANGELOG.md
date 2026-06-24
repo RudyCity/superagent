@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.103] - 2026-06-24
+## [1.2.0] - 2026-06-24
 
 ### Added
 - **Smart Workspace Discovery Cache**: Added dynamic workspace change detection on subsequent agent loop iterations and automatic updating of the cache.
