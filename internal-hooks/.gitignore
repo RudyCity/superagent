@@ -1,0 +1,10 @@
+# Ignore node_modules inside custom dynamic hooks
+**/node_modules/
+
+# Ignore local environment config files
+**/.env
+**/.env.*
+
+# Ignore log files
+**/*.log
+**/logs/
