@@ -46,6 +46,10 @@ export interface SystemSettings {
   maxIterations: number;
   simpleTaskFileThreshold?: number;
   simpleTaskKeywords?: string[];
+  tencentdbGatewayUrl?: string;
+  tencentdbGatewayApiKey?: string;
+  tencentdbServiceId?: string;
+  enableTencentdbMemory?: boolean;
 }
 
 export interface GlobalModelConfig {
@@ -707,6 +711,10 @@ export function getSettings(): SystemSettings {
     maxIterations: s.maxIterations ?? 50,
     simpleTaskFileThreshold: s.simpleTaskFileThreshold ?? 3,
     simpleTaskKeywords: s.simpleTaskKeywords ?? ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
+    tencentdbGatewayUrl: s.tencentdbGatewayUrl ?? "http://127.0.0.1:8420",
+    tencentdbGatewayApiKey: s.tencentdbGatewayApiKey ?? "sk-xxxx",
+    tencentdbServiceId: s.tencentdbServiceId ?? "default",
+    enableTencentdbMemory: s.enableTencentdbMemory ?? false,
   };
 }
 

@@ -108,6 +108,10 @@ Examples:
 import { runFastContextSetup } from "./core/fastcontextSetup.js";
 runFastContextSetup();
 
+// Auto-setup TencentDB Memory Gateway if enabled
+import { runTencentdbSetup } from "./core/tencentdbSetup.js";
+runTencentdbSetup().catch(() => {});
+
 import readline from "readline";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";

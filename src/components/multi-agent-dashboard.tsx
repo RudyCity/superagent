@@ -39,7 +39,8 @@ import {
   getRootConfigDir,
   getModelPresets,
   applyModelPreset,
-  getEffectiveMasterModel
+  getEffectiveMasterModel,
+  getSettings
 } from "../core/config.js";
 import { contentToString } from "../core/conversation.js";
 import ImageAttachmentBar from "./ImageAttachmentBar.js";
@@ -1415,6 +1416,7 @@ export function MultiAgentDashboard({
         activeWizard={activeWizard}
         wizardOptions={wizardOptions}
         focusArea={focusArea}
+        enableTencentdbMemory={getSettings().enableTencentdbMemory}
       />
     </Box>
   );

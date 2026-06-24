@@ -43,6 +43,12 @@ import {
   sendMessageToSuperagentTool,
 } from "./superagentTools.js";
 
+import {
+  tdaiMemorySearchTool,
+  tdaiConversationSearchTool,
+  tdaiReadCosTool,
+} from "./tencentdbMemoryTools.js";
+
 import { 
   askQuestionTool, 
   scheduleTool, 
@@ -97,6 +103,9 @@ export const allTools: Tool[] = [
   listPeerSuperagentsTool,
   managePlanTool,
   fastcontextTool,
+  tdaiMemorySearchTool,
+  tdaiConversationSearchTool,
+  tdaiReadCosTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {

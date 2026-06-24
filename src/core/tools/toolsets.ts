@@ -56,6 +56,12 @@ import {
   sendMessageToSuperagentTool,
 } from "./superagentTools.js";
 
+import {
+  tdaiMemorySearchTool,
+  tdaiConversationSearchTool,
+  tdaiReadCosTool,
+} from "./tencentdbMemoryTools.js";
+
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Focused on orchestration. Does NOT write code itself.
 export const masterToolset: Tool[] = [
@@ -84,6 +90,9 @@ export const masterToolset: Tool[] = [
   multiReplaceFileContentTool, // for planning files
   runCommandTool,        // for running validation / test commands
   bashTool,              // for running validation / test commands
+  tdaiMemorySearchTool,
+  tdaiConversationSearchTool,
+  tdaiReadCosTool,
 ];
 
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
@@ -121,6 +130,9 @@ export const superagentToolset: Tool[] = [
   searchPinnedKnowledgeTool,
   screenshotTool,
   androidCliTool,
+  tdaiMemorySearchTool,
+  tdaiConversationSearchTool,
+  tdaiReadCosTool,
 ];
 
 // ─── Subagent Toolsets (depth 2) — keyed by type name ───────────────────────
@@ -137,6 +149,9 @@ export const subagentToolsets: Record<string, Tool[]> = {
     loadPinnedSessionTool,
     searchPinnedKnowledgeTool,
     askQuestionTool,
+    tdaiMemorySearchTool,
+    tdaiConversationSearchTool,
+    tdaiReadCosTool,
   ],
 
   coder: [
@@ -154,6 +169,9 @@ export const subagentToolsets: Record<string, Tool[]> = {
     bashTool,
     webSearchTool,
     askQuestionTool,
+    tdaiMemorySearchTool,
+    tdaiConversationSearchTool,
+    tdaiReadCosTool,
   ],
 
   reviewer: [
@@ -166,6 +184,9 @@ export const subagentToolsets: Record<string, Tool[]> = {
     bashTool,
     webSearchTool,
     askQuestionTool,
+    tdaiMemorySearchTool,
+    tdaiConversationSearchTool,
+    tdaiReadCosTool,
   ],
 
   "manual-tester": [
@@ -179,6 +200,9 @@ export const subagentToolsets: Record<string, Tool[]> = {
     screenshotTool,
     webSearchTool,
     askQuestionTool,
+    tdaiMemorySearchTool,
+    tdaiConversationSearchTool,
+    tdaiReadCosTool,
   ],
 };
 
@@ -194,4 +218,7 @@ export const defaultSubagentToolset: Tool[] = [
   runCommandTool,
   bashTool,
   askQuestionTool,
+  tdaiMemorySearchTool,
+  tdaiConversationSearchTool,
+  tdaiReadCosTool,
 ];
