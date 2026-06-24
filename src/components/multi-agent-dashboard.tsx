@@ -624,7 +624,7 @@ export function MultiAgentDashboard({
         }
         return current.slice(-500);
       });
-    }, 30);
+    }, 0);
 
     registerLogHandler((rawMsg) => {
       logQueueRef.current.push(rawMsg);

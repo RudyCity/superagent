@@ -1029,22 +1029,11 @@ export function App({
       switch (event.type) {
         case "text":
           streamBufferRef.current = resolveCarriageReturns(streamBufferRef.current + event.content);
-          const now = Date.now();
-          if (now - lastStreamUpdateRef.current > 30) {
-            setStreamDisplay(streamBufferRef.current);
-            lastStreamUpdateRef.current = now;
-            if (streamTimeoutRef.current) {
-              clearTimeout(streamTimeoutRef.current);
-              streamTimeoutRef.current = null;
-            }
-          } else {
-            if (!streamTimeoutRef.current) {
-              streamTimeoutRef.current = setTimeout(() => {
-                setStreamDisplay(streamBufferRef.current);
-                lastStreamUpdateRef.current = Date.now();
-                streamTimeoutRef.current = null;
-              }, 30);
-            }
+          setStreamDisplay(streamBufferRef.current);
+          lastStreamUpdateRef.current = Date.now();
+          if (streamTimeoutRef.current) {
+            clearTimeout(streamTimeoutRef.current);
+            streamTimeoutRef.current = null;
           }
           break;
         case "tool_start": {
