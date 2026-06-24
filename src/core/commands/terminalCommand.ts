@@ -586,7 +586,7 @@ export const terminalCommand: SlashCommand = {
       }
     };
 
-    loadPresetsAndRun().catch(err => {
+    return loadPresetsAndRun().catch(err => {
       ctx.addLine({
         type: "error",
         content: `Failed to execute terminal command: ${err.message}`,

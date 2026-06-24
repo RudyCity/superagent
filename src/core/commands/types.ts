@@ -36,7 +36,7 @@ export interface SlashCommandContext {
   setIsProcessing?: (val: boolean) => void;
   /** Clear the arrow-key input history log (used by /new and /clear) */
   setInputHistory?: (history: string[]) => void;
-  runInteractiveProcess?: (command: string, cwd: string, env?: Record<string, string>) => Promise<number>;
+  runInteractiveProcess?: (command: string, cwd: string, env?: Record<string, string | undefined>) => Promise<number>;
 }
 
 export interface SlashCommand {
