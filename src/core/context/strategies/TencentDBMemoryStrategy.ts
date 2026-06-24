@@ -5,7 +5,7 @@ import {
   CompactionOptions,
   CompactionCost,
 } from "../CompactionStrategy.js";
-import { Message } from "../../conversation.js";
+import { Message, contentToString } from "../../conversation.js";
 import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts";
 import { getSettings } from "../../config.js";
 import { SummarizationStrategy } from "./SummarizationStrategy.js";
@@ -58,7 +58,7 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
         .filter((m) => (m.role === "user" || m.role === "assistant") && m.timestamp > this.lastCapturedTimestamp)
         .map((m) => ({
           role: m.role as "user" | "assistant",
-          content: m.content,
+          content: contentToString(m.content),
           timestamp: new Date(m.timestamp || Date.now()).toISOString(),
         }));
 
@@ -78,7 +78,7 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
       // 2. Recall long-term memories
       // We find the last user message to use as the query
       const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-      const query = lastUserMsg ? lastUserMsg.content : "latest coding context";
+      const query = lastUserMsg ? contentToString(lastUserMsg.content) : "latest coding context";
 
       // Parallel requests for L1 memories, L3 persona, and L2 scenarios
       const [searchResult, persona, scenarios] = await Promise.allSettled([
