@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.6] - 2026-06-24
+
+### Added
+- **TencentDB Memory Integration**: Integrated the fully local, 4-tier progressive memory system (`@tencentdb-agent-memory/memory-tencentdb`) as a compaction strategy inside the `ContextManager`. It automatically captures raw turns (L0), extracts atomic facts (L1), groups scenarios (L2), and maintains a unified user profile (L3).
+- **Zero-Config Auto-Setup & Spawning**: Enhanced `/setting-tencentdb on` to automatically clone the gateway repository into `vendor/tencentdb-memory` and run `npm install` if missing, spawning it in the background as a detached process on port 8420.
+- **Asynchronous Startup Self-Healing**: Integrated `runTencentdbSetup()` in `cli.tsx` to automatically run a non-blocking connection check on startup when enabled, spinning the gateway up in the background asynchronously if it is offline.
+- **Dynamic Preset & Provider Resolution**: Configured the background gateway process to resolve memory-specific tier presets from presets (via `/model` for the `"memory"` or `"tencentdb"` tier), falling back to the active provider and master model, and injecting credentials via environment variables (`TDAI_LLM_API_KEY`, etc.).
+- **Global Storage Isolation**: Structured the gateway to store its SQLite database and memory files globally under `~/.superagent-r/tencentdb-memory/vectors.db`, keeping the active workspace clean.
+- **UI & Tools Integration**: Added a visual `🧠 Mem: ON` / `🧠 Mem: OFF` status indicator in the footers of both the terminal UI and multi-agent dashboards. Registered `tdai_memory_search`, `tdai_conversation_search`, and `tdai_read_cos` across all active agent tiers.
+- **Workspace Hygiene**: Added `vendor/tencentdb-memory/` to `.gitignore` to prevent any untracked or node_modules files from polluting git status.
+
+---
+
 ## [1.2.5] - 2026-06-24
 
 ### Added

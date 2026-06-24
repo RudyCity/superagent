@@ -33,6 +33,7 @@ Unlike standard headless execution bots or basic shell wrappers, Superagent is d
 - **Mandatory Interactive Decision Points**: All agent tiers (Master, Superagent, Subagent) are required to use the `ask_question` tool at every decision point — choosing implementations, resolving ambiguity, or selecting approaches — ensuring the AI never guesses or assumes on the user's behalf.
 - **AI-Guided Preset Initialization**: Configure your workspace commands effortlessly. Superagent scans your codebase structure (such as dependencies, packages, and scripts) to automatically recommend, select, and construct terminal command presets with the `/terminal init` wizard.
 - **Multimodal Image Paste & Path Detection**: Drag-and-drop or paste an image file path (like `D:\images\screenshot.png`) directly into the prompt to auto-attach it. Press `Ctrl+V` to automatically capture image binary data from your system clipboard (cross-platform support for Windows, macOS, and Linux). Attached images are rendered in a sleek visual queue above the prompt and transmitted as high-fidelity multimodal inputs to vision-capable models (e.g. Claude 3.5 Sonnet, GPT-4o), with automatic token tracking.
+- **Local-First Agent Long-Term Memory**: Integrates the local **TencentDB Agent Memory** system using a 4-tier progressive memory pipeline (Conversation, Atom, Scenario, Persona). It automatically structures conversation turns into high-density vector databases (`vectors.db` via SQLite vector search) and markdown documents in your user profile (`~/.superagent-r/tencentdb-memory/`). Agents can autonomously call `tdai_memory_search`, `tdai_conversation_search`, and `tdai_read_cos` to recall past decisions, preferences, and solutions cross-session. Setup is fully zero-config: starting the CLI automatically spins up and heals the gateway in the background asynchronously when enabled.
 
 ---
 
@@ -252,6 +253,13 @@ Built into the core agent loop (`agent.ts`), the auto-checkpoint system:
 
 ### 7. Atomic Config Persistence
 Model configuration (`model-config.json`) uses atomic write operations to prevent file corruption. If the process is interrupted (e.g., Ctrl+C), the config file remains intact — writes are first written to a temporary file and then atomically renamed, ensuring zero risk of partial/corrupt state.
+
+### 8. TencentDB Memory Gateway Integration & Auto-Setup
+Superagent provides deep, local-first integration with the **TencentDB Agent Memory** gateway server:
+- **Zero-Config Self-Healing Startup**: When `enableTencentdbMemory` is set to `true`, launching Superagent triggers a fully asynchronous, non-blocking check. If the gateway is offline, it automatically clones the repository, installs all dependencies via `npm install`, and spawns the server in the background as a detached process on port 8420. The startup logic runs asynchronously in the background so it never blocks or slows down CLI boot.
+- **Global Storage Isolation**: The database file and all extracted memories are stored globally under `~/.superagent-r/tencentdb-memory/vectors.db`, keeping the active workspace clean and sharing your memories across all projects you work on.
+- **Dynamic Preset & Provider Resolution**: Decoupled LLM configuration by querying `getTierModelWithProvider()` for a dedicated `"memory"` or `"tencentdb"` tier preset (configured via `/model`). If set, the gateway inherits its specific provider's API key, base URL, and model. If no specific memory preset is found, it falls back to the active provider and master model, injecting them into the gateway's environment variables (`TDAI_LLM_API_KEY`, `TDAI_LLM_BASE_URL`, `TDAI_LLM_MODEL`).
+- **Clean Process Teardown**: Deactivating via `/setting-tencentdb off` automatically terminates the local gateway process running on port 8420 to free up system resources.
 
 ---
 
