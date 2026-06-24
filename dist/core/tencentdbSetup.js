@@ -145,6 +145,7 @@ export async function runTencentdbSetup() {
             cwd: gatewayDir,
             detached: true,
             shell: true,
+            windowsHide: true,
             stdio: ["ignore", outLog, errLog],
             env: {
                 ...process.env,
