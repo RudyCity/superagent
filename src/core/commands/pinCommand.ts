@@ -2,6 +2,7 @@ import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
 import type { AgentTag, PinnedMessage } from "../context/ContextManager.js";
 import { addToKnowledge, removeKnowledgeByPin, updateKnowledgeTag } from "../pinnedKnowledge.js";
+import { contentToString } from "../conversation.js";
 
 /** Build an AgentTag from the current agent context */
 function buildAgentTag(agent: any): AgentTag {
@@ -132,7 +133,7 @@ export const pinCommand: SlashCommand = {
         }
 
         // Build clean preview
-        let rawContent = msg.content || "";
+        let rawContent = contentToString(msg.content || "");
         rawContent = rawContent.replace(/\r?\n/g, " ").trim();
         if (rawContent.length === 0) {
           if (msg.toolCalls && msg.toolCalls.length > 0) {
@@ -387,10 +388,11 @@ export const pinCommand: SlashCommand = {
           const msgId = `${i}:${msg.role}:${msg.timestamp}`;
           const agentTag = buildAgentTag(agent);
 
+          const stringContent = contentToString(msg.content);
           cm.addPinnedMessage(msgId, {
             id: msgId,
             role: msg.role,
-            content: msg.content,
+            content: stringContent,
             timestamp: msg.timestamp,
             pinnedAt: now,
             originalIndex: i,
@@ -403,16 +405,16 @@ export const pinCommand: SlashCommand = {
           try {
             const sessionPath = agent.getCurrentHistoryFilePath();
             addToKnowledge(
-              { id: msgId, role: msg.role, content: msg.content, timestamp: msg.timestamp, pinnedAt: now, originalIndex: i, agentTag, toolCalls: msg.toolCalls, toolResults: msg.toolResults },
+              { id: msgId, role: msg.role, content: stringContent, timestamp: msg.timestamp, pinnedAt: now, originalIndex: i, agentTag, toolCalls: msg.toolCalls, toolResults: msg.toolResults },
               sessionPath,
               agent.workingDirectory
             );
           } catch { /* non-critical */ }
 
-          const preview = buildPreview(msg.content, 80);
+          const preview = buildPreview(stringContent, 80);
           ctx.addLine({
             type: "system",
-            content: `✓ Pinned message [${i}] ${formatAgentTag(agentTag)}: ${preview}\n  Full content stored (${msg.content.length.toLocaleString()} chars). Added to global knowledge. Use /pin list to view.`,
+            content: `✓ Pinned message [${i}] ${formatAgentTag(agentTag)}: ${preview}\n  Full content stored (${stringContent.length.toLocaleString()} chars). Added to global knowledge. Use /pin list to view.`,
             timestamp: now,
           });
           return;
@@ -505,10 +507,11 @@ export const pinCommand: SlashCommand = {
     const msgId = `${idx}:${msg.role}:${msg.timestamp}`;
     const agentTag = buildAgentTag(agent);
 
+    const stringContent = contentToString(msg.content);
     cm.addPinnedMessage(msgId, {
       id: msgId,
       role: msg.role,
-      content: msg.content,
+      content: stringContent,
       timestamp: msg.timestamp,
       pinnedAt: now,
       originalIndex: idx,
@@ -521,16 +524,16 @@ export const pinCommand: SlashCommand = {
     try {
       const sessionPath = agent.getCurrentHistoryFilePath();
       addToKnowledge(
-        { id: msgId, role: msg.role, content: msg.content, timestamp: msg.timestamp, pinnedAt: now, originalIndex: idx, agentTag, toolCalls: msg.toolCalls, toolResults: msg.toolResults },
+        { id: msgId, role: msg.role, content: stringContent, timestamp: msg.timestamp, pinnedAt: now, originalIndex: idx, agentTag, toolCalls: msg.toolCalls, toolResults: msg.toolResults },
         sessionPath,
         agent.workingDirectory
       );
     } catch { /* non-critical */ }
 
-    const preview = buildPreview(msg.content, 80);
+    const preview = buildPreview(stringContent, 80);
     ctx.addLine({
       type: "system",
-      content: `✓ Pinned message [${idx}] (${msg.role}) ${formatAgentTag(agentTag)}: ${preview}\n  Full content stored (${msg.content.length.toLocaleString()} chars). Added to global knowledge. Use /pin list to view.`,
+      content: `✓ Pinned message [${idx}] (${msg.role}) ${formatAgentTag(agentTag)}: ${preview}\n  Full content stored (${stringContent.length.toLocaleString()} chars). Added to global knowledge. Use /pin list to view.`,
       timestamp: now,
     });
   },

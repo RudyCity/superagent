@@ -41,6 +41,7 @@ import {
   applyModelPreset,
   getEffectiveMasterModel
 } from "../core/config.js";
+import { contentToString } from "../core/conversation.js";
 
 import { 
   filterSuggestions, 
@@ -493,21 +494,22 @@ export function MultiAgentDashboard({
         const userInputs: string[] = [];
         const loadedLogs: string[] = [];
         for (const m of msgs) {
-          if (m.role === "user" && m.content) {
-            const content = m.content.trim();
-            if (content) {
-              userInputs.push(content);
+          const stringContent = m.content ? contentToString(m.content) : "";
+          if (m.role === "user") {
+            const trimmedContent = stringContent.trim();
+            if (trimmedContent) {
+              userInputs.push(trimmedContent);
             }
-            loadedLogs.push(`[USER] ${m.content}`);
+            loadedLogs.push(`[USER] ${stringContent}`);
           } else if (m.role === "assistant") {
-            if (m.content) {
-              loadedLogs.push(`[AGENT] ${m.content}`);
+            if (stringContent) {
+              loadedLogs.push(`[AGENT] ${stringContent}`);
             }
           } else if (m.role === "system") {
-            if (m.content && m.content.startsWith("[ERROR]")) {
-              loadedLogs.push(m.content);
-            } else if (m.content) {
-              loadedLogs.push(`[MASTER] ${m.content}`);
+            if (stringContent && stringContent.startsWith("[ERROR]")) {
+              loadedLogs.push(stringContent);
+            } else if (stringContent) {
+              loadedLogs.push(`[MASTER] ${stringContent}`);
             }
           }
         }

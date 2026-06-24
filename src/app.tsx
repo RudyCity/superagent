@@ -5,6 +5,14 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler, QuestionItem } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
 import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel } from "./core/config.js";
+import { type MessageContent, contentToString } from "./core/conversation.js";
+import ImageAttachmentBar from "./components/ImageAttachmentBar.js";
+import {
+  readImageFromPath,
+  readImageFromClipboard,
+  attachmentToImagePart,
+  type ImageAttachment,
+} from "./utils/imageUtils.js";
 import fs from "fs/promises";
 import { handleSlashCommand, getDefaultModel } from "./core/slash-commands.js";
 import { registry } from "./core/commands/registry.js";
@@ -75,6 +83,7 @@ export function App({
   const [isPasted, setIsPasted] = useState(false);
   const [pastePrefixLength, setPastePrefixLength] = useState(0);
   const [pasteSuffixLength, setPasteSuffixLength] = useState(0);
+  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExecutingTool, setIsExecutingTool] = useState(false);
   const [streamDisplay, setStreamDisplay] = useState("");
@@ -492,7 +501,7 @@ export function App({
         return;
       }
 
-      if (!trimmed) return;
+      if (!trimmed && attachments.length === 0) return;
 
       setHistory((prev) => {
         if (prev.length > 0 && prev[prev.length - 1] === trimmed) {
@@ -588,9 +597,13 @@ export function App({
         return;
       }
 
+      // Build display label (text only, images shown via attachment bar)
+      const displayText = trimmed || (attachments.length > 0 ? `[${attachments.length} image${attachments.length > 1 ? "s" : ""}]` : "");
       addLine({
         type: "user",
-        content: `❯ ${trimmed}`,
+        content: attachments.length > 0
+          ? `❯ ${displayText} 📎×${attachments.length}`
+          : `❯ ${trimmed}`,
         timestamp: Date.now(),
       });
 
@@ -606,7 +619,21 @@ export function App({
       setIsProcessing(true);
       streamBufferRef.current = "";
       setStreamDisplay("");
-      await agentRef.current?.sendMessage(trimmed);
+
+      // Build MessageContent — plain string or multimodal array
+      let messageContent: MessageContent = trimmed;
+      if (attachments.length > 0) {
+        const parts: import("./core/conversation.js").MessageContent = [
+          ...(trimmed ? [{ type: "text" as const, text: trimmed }] : []),
+          ...attachments.map(attachmentToImagePart),
+        ];
+        messageContent = parts;
+      }
+
+      // Clear attachments before sending
+      setAttachments([]);
+
+      await agentRef.current?.sendMessage(messageContent);
       if (agentRef.current) {
         const nextState = agentRef.current.planState;
         setPlanState(nextState);
@@ -624,7 +651,7 @@ export function App({
         }
       }
     },
-    [isProcessing, activeWizard, handleWizardSubmit, addLine, exit, wizardSelectedIndex, wizardOptions]
+    [isProcessing, activeWizard, handleWizardSubmit, addLine, exit, wizardSelectedIndex, wizardOptions, attachments]
   );
 
   const installedSkills = getInstalledSkills();
@@ -632,6 +659,47 @@ export function App({
     const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     return `/skill-${slug}`;
   });
+
+  // ── Image attachment handlers ─────────────────────────────────────────────
+
+  const handleAttachImage = useCallback(async (filePath: string) => {
+    try {
+      const attachment = await readImageFromPath(filePath);
+      setAttachments((prev) => [...prev, attachment]);
+    } catch (err: any) {
+      addLine({
+        type: "system",
+        content: `Could not attach image: ${err.message}`,
+        timestamp: Date.now(),
+      });
+    }
+  }, [addLine]);
+
+  const handlePasteImage = useCallback(async () => {
+    try {
+      const attachment = await readImageFromClipboard();
+      if (attachment) {
+        setAttachments((prev) => [...prev, attachment]);
+        addLine({
+          type: "system",
+          content: `📎 Clipboard image attached: ${attachment.filename}`,
+          timestamp: Date.now(),
+        });
+      }
+      // If null — clipboard had no image, normal text paste proceeds through stdin
+    } catch {
+      // Silently ignore — clipboard had no image
+    }
+  }, [addLine]);
+
+  const handleRemoveLastAttachment = useCallback(() => {
+    setAttachments((prev) => prev.slice(0, -1));
+  }, []);
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
 
   const commands = [
     ...new Set(
@@ -1358,7 +1426,7 @@ export function App({
       const userInputs: string[] = [];
       for (const m of msgs) {
         if (m.role === "user") {
-          userInputs.push(m.content);
+          userInputs.push(contentToString(m.content));
         }
       }
       if (autoResume) {
@@ -2073,13 +2141,26 @@ export function App({
                     );
                   }
                   return (
-                    <ChatTextInput
-                      focus={focusMode === "input"}
-                      value={input}
-                      onChange={handleInputChange}
-                      onSubmit={handleSubmit}
-                      placeholder={getWizardPlaceholder()}
-                    />
+                    <Box flexDirection="column">
+                      {attachments.length > 0 && (
+                        <ImageAttachmentBar
+                          attachments={attachments}
+                          onRemove={handleRemoveAttachment}
+                          focused={focusMode === "input"}
+                        />
+                      )}
+                      <ChatTextInput
+                        focus={focusMode === "input"}
+                        value={input}
+                        onChange={handleInputChange}
+                        onSubmit={handleSubmit}
+                        placeholder={getWizardPlaceholder()}
+                        onAttachImage={handleAttachImage}
+                        onPasteImage={handlePasteImage}
+                        onRemoveLastAttachment={handleRemoveLastAttachment}
+                        attachmentCount={attachments.length}
+                      />
+                    </Box>
                   );
                 })()}
               </Box>

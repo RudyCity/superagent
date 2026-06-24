@@ -57,50 +57,7 @@ describe("Agent - Empty Response Retry", () => {
   });
 
   describe("Streaming Mode (disableStreaming: false)", () => {
-    it("should retry on empty response and succeed when a subsequent response is valid", async () => {
-      const onEvent = vi.fn();
-      const onPermission = vi.fn().mockResolvedValue(true);
-      const onQuestion = vi.fn();
-
-      const agent = new Agent(onEvent, onPermission, onQuestion);
-      agent.tier = "master";
-      agent.planState = "APPROVED";
-
-      let callCount = 0;
-
-      vi.mocked(streamText).mockImplementation(() => {
-        callCount++;
-        const currentCall = callCount;
-        return {
-          fullStream: (async function* () {
-            if (currentCall === 1) {
-              // First call yields empty response
-              yield { type: "text-delta", textDelta: "" };
-            } else {
-              // Second call yields valid response
-              yield { type: "text-delta", textDelta: "Hello!" };
-            }
-          })(),
-          usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
-        } as any;
-      });
-
-      await agent.sendMessage("test message");
-
-      // Verify that streamText was called twice (initial + 1 retry)
-      expect(streamText).toHaveBeenCalledTimes(2);
-      expect(delaySpy).toHaveBeenCalledTimes(1);
-
-      // Verify agent successfully saved message and sent text event
-      const textEvent = onEvent.mock.calls.find((call) => call[0].type === "text" && call[0].content === "Hello!");
-      expect(textEvent).toBeDefined();
-
-      // No error event should be dispatched since it recovered
-      const errorEvent = onEvent.mock.calls.find((call) => call[0].type === "error");
-      expect(errorEvent).toBeUndefined();
-    });
-
-    it("should retry up to maxRetries and fail with formatted error when all responses are empty", async () => {
+    it("should fail immediately without retries when receiving an empty response", async () => {
       const onEvent = vi.fn();
       const onPermission = vi.fn().mockResolvedValue(true);
       const onQuestion = vi.fn();
@@ -120,14 +77,14 @@ describe("Agent - Empty Response Retry", () => {
 
       await agent.sendMessage("test message");
 
-      // maxRetries is 10, so total attempts is 11 (1 initial + 10 retries)
-      expect(streamText).toHaveBeenCalledTimes(11);
-      expect(delaySpy).toHaveBeenCalledTimes(10);
+      // Verify streamText was called only once (0 retries)
+      expect(streamText).toHaveBeenCalledTimes(1);
+      expect(delaySpy).toHaveBeenCalledTimes(0);
 
-      // Verify error event is sent with formatted message
+      // Verify error event is sent with fatal error formatted message
       const errorEvent = onEvent.mock.calls.find((call) => call[0].type === "error");
       expect(errorEvent).toBeDefined();
-      expect(errorEvent[0].message).toContain("Stream error after 10 retries: Empty response from model. Check your endpoint/model config.");
+      expect(errorEvent[0].message).toContain("Fatal error: Empty response from model. Check your endpoint/model config.");
     });
 
     it("should fail immediately without retries when encountering a non-retryable authentication error", async () => {
@@ -168,52 +125,7 @@ describe("Agent - Empty Response Retry", () => {
       });
     });
 
-    it("should retry on empty response and succeed when a subsequent response is valid", async () => {
-      const onEvent = vi.fn();
-      const onPermission = vi.fn().mockResolvedValue(true);
-      const onQuestion = vi.fn();
-
-      const agent = new Agent(onEvent, onPermission, onQuestion);
-      agent.tier = "master";
-      agent.planState = "APPROVED";
-
-      let callCount = 0;
-
-      vi.mocked(generateText).mockImplementation(async () => {
-        callCount++;
-        if (callCount === 1) {
-          return {
-            text: "",
-            toolCalls: [],
-            finishReason: "stop",
-            usage: { promptTokens: 10, completionTokens: 10 },
-          } as any;
-        } else {
-          return {
-            text: "Hello from generateText!",
-            toolCalls: [],
-            finishReason: "stop",
-            usage: { promptTokens: 10, completionTokens: 10 },
-          } as any;
-        }
-      });
-
-      await agent.sendMessage("test message");
-
-      // Verify that generateText was called twice (initial + 1 retry)
-      expect(generateText).toHaveBeenCalledTimes(2);
-      expect(delaySpy).toHaveBeenCalledTimes(1);
-
-      // Verify agent successfully saved message and sent text event
-      const textEvent = onEvent.mock.calls.find((call) => call[0].type === "text" && call[0].content === "Hello from generateText!");
-      expect(textEvent).toBeDefined();
-
-      // No error event should be dispatched since it recovered
-      const errorEvent = onEvent.mock.calls.find((call) => call[0].type === "error");
-      expect(errorEvent).toBeUndefined();
-    });
-
-    it("should retry up to maxRetries and fail with formatted error when all responses are empty", async () => {
+    it("should fail immediately without retries when receiving an empty response", async () => {
       const onEvent = vi.fn();
       const onPermission = vi.fn().mockResolvedValue(true);
       const onQuestion = vi.fn();
@@ -233,14 +145,14 @@ describe("Agent - Empty Response Retry", () => {
 
       await agent.sendMessage("test message");
 
-      // maxRetries is 10, so total attempts is 11 (1 initial + 10 retries)
-      expect(generateText).toHaveBeenCalledTimes(11);
-      expect(delaySpy).toHaveBeenCalledTimes(10);
+      // Verify generateText was called only once (0 retries)
+      expect(generateText).toHaveBeenCalledTimes(1);
+      expect(delaySpy).toHaveBeenCalledTimes(0);
 
-      // Verify error event is sent with formatted message
+      // Verify error event is sent with fatal error formatted message
       const errorEvent = onEvent.mock.calls.find((call) => call[0].type === "error");
       expect(errorEvent).toBeDefined();
-      expect(errorEvent[0].message).toContain("Generate text failed after 10 retries: Empty response from model. Check your endpoint/model config.");
+      expect(errorEvent[0].message).toContain("Fatal error: Empty response from model. Check your endpoint/model config.");
     });
 
     it("should fail immediately without retries when encountering a non-retryable authentication error", async () => {

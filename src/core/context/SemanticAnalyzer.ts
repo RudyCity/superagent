@@ -1,4 +1,9 @@
-import { Message } from "../conversation";
+import { Message, MessageContent } from "../conversation";
+
+/** Extract plain text from a MessageContent (string or parts array) */
+function contentText(c: MessageContent): string {
+  return typeof c === "string" ? c : c.map(p => p.type === "text" ? p.text : "").join("");
+}
 
 export interface SemanticChunk {
   messages: Message[];
@@ -28,8 +33,8 @@ export class SemanticAnalyzer {
       }
 
       // Signal 2: File path change
-      const prevFiles = this.extractFilePaths(prev.content);
-      const currFiles = this.extractFilePaths(curr.content);
+      const prevFiles = this.extractFilePaths(contentText(prev.content));
+      const currFiles = this.extractFilePaths(contentText(curr.content));
       if (prevFiles.length > 0 && currFiles.length > 0) {
         const overlap = prevFiles.filter((f) => currFiles.includes(f)).length;
         if (overlap === 0) {
@@ -97,7 +102,7 @@ export class SemanticAnalyzer {
         keyPoints.push({
           messageIndex: i,
           type,
-          content: msg.content.substring(0, 200),
+          content: contentText(msg.content).substring(0, 200),
         });
       }
     }
@@ -119,7 +124,7 @@ export class SemanticAnalyzer {
       /the (?:best|right) (?:approach|solution|way)/i,
       /conclusion:/i,
     ];
-    return patterns.some((p) => p.test(message.content));
+    return patterns.some((p) => p.test(contentText(message.content)));
   }
 
   private containsArchitectureChoice(message: Message): boolean {
@@ -129,23 +134,23 @@ export class SemanticAnalyzer {
       /we'll (?:structure|organize)/i,
       /component (?:structure|hierarchy)/i,
     ];
-    return patterns.some((p) => p.test(message.content));
+    return patterns.some((p) => p.test(contentText(message.content)));
   }
 
   private containsUserRequirement(message: Message): boolean {
     return (
       message.role === "user" &&
-      (/i (?:need|want|require)/i.test(message.content) ||
-        /please (?:add|implement|create)/i.test(message.content))
+      (/i (?:need|want|require)/i.test(contentText(message.content)) ||
+        /please (?:add|implement|create)/i.test(contentText(message.content)))
     );
   }
 
   private containsErrorMessage(message: Message): boolean {
-    return /error|failed|exception|warning/i.test(message.content);
+    return /error|failed|exception|warning/i.test(contentText(message.content));
   }
 
   private containsFilePath(message: Message): boolean {
-    return this.extractFilePaths(message.content).length > 0;
+    return this.extractFilePaths(contentText(message.content)).length > 0;
   }
 
   private isRoutineToolCall(message: Message): boolean {
@@ -157,6 +162,7 @@ export class SemanticAnalyzer {
   }
 
   private isVerboseOutput(message: Message): boolean {
-    return message.content.length > 2000 && message.content.split("\n").length > 50;
+    const text = contentText(message.content);
+    return text.length > 2000 && text.split("\n").length > 50;
   }
 }

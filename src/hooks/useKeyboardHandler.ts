@@ -11,6 +11,7 @@ import { getToolDescription } from "../core/permissions.js";
 import { registerSubagentType, allTools, backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged } from "../core/tools.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ToolCall } from "../core/conversation.js";
+import { contentToString } from "../core/conversation.js";
 import type { Agent, QuestionItem } from "../core/agent.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 
@@ -1106,7 +1107,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               .then(() => {
                 const msgs = agentRef.current!.getHistory().getMessages();
                 const loadedLines = reconstructChatLines(msgs);
-                const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => m.content);
+                const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
                 setLines(loadedLines);
                 setHistory(userInputs);
                 if (agentRef.current) setPlanState(agentRef.current.planState);
@@ -1167,7 +1168,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                     await agentRef.current.loadHistoryFromPath(sessionPath);
                     const msgs = agentRef.current.getHistory().getMessages();
                     const loadedLines = reconstructChatLines(msgs);
-                    const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => m.content);
+                    const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
                     setLines(loadedLines);
                     setHistory(userInputs);
                     setPlanState(agentRef.current.planState);
@@ -1224,7 +1225,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                   await agentRef.current.loadHistoryFromPath(sessionPath);
                   const msgs = agentRef.current.getHistory().getMessages();
                   const loadedLines = reconstructChatLines(msgs);
-                  const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => m.content);
+                  const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
                   setLines(loadedLines);
                   setHistory(userInputs);
                   setPlanState(agentRef.current.planState);
@@ -1315,7 +1316,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 await agentRef.current.loadHistoryFromPath(sessionPath);
                 const msgs = agentRef.current.getHistory().getMessages();
                 const loadedLines = reconstructChatLines(msgs);
-                const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => m.content);
+                const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
                 setLines(loadedLines);
                 setHistory(userInputs);
                 setPlanState(agentRef.current.planState);

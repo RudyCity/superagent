@@ -1,4 +1,4 @@
-import { Message } from "../conversation";
+import { Message, MessageContent } from "../conversation";
 
 export interface TokenBreakdown {
   systemPrompt: number;
@@ -43,7 +43,7 @@ export class TokenTracker {
       return this.cache.get(hash)!;
     }
 
-    let tokens = this.countText(message.content);
+    let tokens = this.countContent(message.content);
 
     if (message.toolCalls) {
       for (const call of message.toolCalls) {
@@ -69,9 +69,9 @@ export class TokenTracker {
 
     for (const msg of messages) {
       if (msg.role === "system") {
-        systemPrompt += this.countText(msg.content);
+        systemPrompt += this.countContent(msg.content);
       } else {
-        messagesTokens += this.countText(msg.content);
+        messagesTokens += this.countContent(msg.content);
       }
 
       if (msg.toolCalls) {
@@ -108,6 +108,23 @@ export class TokenTracker {
     return breakdown;
   }
 
+  private countContent(content: MessageContent): number {
+    if (!content) return 0;
+    if (typeof content === "string") {
+      return this.countText(content);
+    }
+    let tokens = 0;
+    for (const part of content) {
+      if (part.type === "text") {
+        tokens += this.countText(part.text);
+      } else if (part.type === "image") {
+        // Multi-modal image token overhead (Anthropic is ~1600 tokens)
+        tokens += 1600;
+      }
+    }
+    return tokens;
+  }
+
   private countText(text: string): number {
     if (!text) return 0;
 
@@ -131,6 +148,9 @@ export class TokenTracker {
   }
 
   private hashMessage(message: Message): string {
-    return `${message.role}:${message.content.length}:${message.toolCalls?.length || 0}:${message.toolResults?.length || 0}`;
+    const contentLen = typeof message.content === "string"
+      ? message.content.length
+      : message.content.reduce((n, p) => n + (p.type === "text" ? p.text.length : 0), 0);
+    return `${message.role}:${contentLen}:${message.toolCalls?.length || 0}:${message.toolResults?.length || 0}`;
   }
 }
