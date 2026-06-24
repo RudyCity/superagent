@@ -186,7 +186,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
   const maxChecklistVisible = 3;
   const maxSuperagentsVisible = 2;
   const maxSubagentsVisible = 3;
-  const maxProcsVisible = 5;
+  const maxProcsVisible = 3;
 
   useInput((inputChar, key) => {
     // Ctrl+C when wizard is active: always cancel wizard first, never exit app.

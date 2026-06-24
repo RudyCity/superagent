@@ -128,7 +128,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
             const runningTasksCount = [...backgroundTasks.values()]
               .filter((t) => t.isDetachedWindow || !t.hasExited).length;
             const maxAgentsVisible = 3;
-            const maxProcsVisible = 5;
+            const maxProcsVisible = 3;
 
             let wizardHeight = 0;
             if (activeWizard) {
@@ -422,7 +422,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
             const runningTasksCount = [...backgroundTasks.values()]
               .filter((t) => t.isDetachedWindow || !t.hasExited).length;
             const maxAgentsVisible = 3;
-            const maxProcsVisible = 5;
+            const maxProcsVisible = 3;
 
             let wizardHeight = 0;
             if (activeWizard) {

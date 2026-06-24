@@ -197,7 +197,11 @@ export function useMouseScroll(
           // Handle header clicks → toggle collapse
           if (name.endsWith("_header")) {
             const sectionName = name.replace("_header", "");
-            ctx.toggleCollapse(sectionName);
+            if (sectionName === "procs") {
+              ctx.setFocusMode("procs");
+            } else {
+              ctx.toggleCollapse(sectionName);
+            }
             continue;
           }
 

@@ -1676,9 +1676,7 @@ export function App({
         : 1 + Math.min(runningSubagentsCount, maxSubagentsVisible);
     }
     if (runningTasksCount > 0) {
-      liveListHeight += collapsedSections.procs
-        ? 1
-        : 1 + Math.min(runningTasksCount, maxProcsVisible);
+      liveListHeight += 1 + Math.min(runningTasksCount, maxProcsVisible);
     }
   }
   chromeHeight += liveListHeight;
@@ -1705,9 +1703,7 @@ export function App({
       : 1 + Math.min(runningSubagentsCount, maxSubagentsVisible);
   }
   if (runningTasksCount > 0) {
-    procSectionHeight = collapsedSections.procs
-      ? 1
-      : 1 + Math.min(runningTasksCount, maxProcsVisible);
+    procSectionHeight = 1 + Math.min(runningTasksCount, maxProcsVisible);
   }
   const totalAgentsHeight = saSectionHeight + subSectionHeight + procSectionHeight;
 
