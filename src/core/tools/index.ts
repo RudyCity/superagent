@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { Tool } from "./types.js";
 import { registerSubagentType } from "./state.js";
 import {
@@ -171,6 +173,7 @@ registerSubagentType(
 );
 
 let loadedDynamicTools: Tool[] = [];
+let watcher: fs.FSWatcher | null = null;
 
 export function refreshDynamicHooks(): void {
   // 1. Remove previous dynamic tools from all sets
@@ -210,6 +213,22 @@ export function refreshDynamicHooks(): void {
     }
   } catch (err: any) {
     console.error("[Dynamic Hooks Loader Error]", err.message);
+  }
+
+  // 3. Setup file watcher for hot-reloading (skip in Vitest to avoid open handle warnings)
+  if (!watcher && !process.env.VITEST) {
+    try {
+      const hooksRoot = path.join(process.cwd(), "internal-hooks");
+      if (fs.existsSync(hooksRoot)) {
+        watcher = fs.watch(hooksRoot, { recursive: true }, (eventType, filename) => {
+          if (filename && (filename.endsWith("hook.json") || filename.includes("hook.json"))) {
+            refreshDynamicHooks();
+          }
+        });
+      }
+    } catch (err) {
+      // Ignore
+    }
   }
 }
 

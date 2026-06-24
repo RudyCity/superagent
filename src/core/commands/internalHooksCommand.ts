@@ -18,16 +18,16 @@ export const internalHooksCommand: SlashCommand = {
     const subCommand = parts[0]?.toLowerCase();
     const hookName = parts[1];
 
-    if (!subCommand || (subCommand !== "init" && subCommand !== "dev" && subCommand !== "active")) {
+    if (!subCommand || (subCommand !== "init" && subCommand !== "dev" && subCommand !== "active" && subCommand !== "list")) {
       ctx.addLine({
         type: "error",
-        content: "Usage:\n  /ih init <namahook>  - Scaffold a new internal hook project\n  /ih dev <namahook>   - Run local development/test loop inside hook workspace\n  /ih active           - Interactively select which hooks to activate",
+        content: "Usage:\n  /ih init <namahook>  - Scaffold a new internal hook project\n  /ih dev <namahook>   - Run local development/test loop inside hook workspace\n  /ih list             - List all discovered internal hooks and their status\n  /ih active           - Interactively select which hooks to activate",
         timestamp: now,
       });
       return;
     }
 
-    if (subCommand !== "active" && !hookName) {
+    if (subCommand !== "active" && subCommand !== "list" && !hookName) {
       ctx.addLine({
         type: "error",
         content: `Error: Missing hook name. Usage: /ih ${subCommand} <namahook>`,
@@ -36,7 +36,7 @@ export const internalHooksCommand: SlashCommand = {
       return;
     }
 
-    if (subCommand !== "active" && !/^[a-zA-Z0-9_-]+$/.test(hookName)) {
+    if (subCommand !== "active" && subCommand !== "list" && !/^[a-zA-Z0-9_-]+$/.test(hookName)) {
       ctx.addLine({
         type: "error",
         content: "Error: Hook name must contain only alphanumeric characters, hyphens, and underscores.",
@@ -160,6 +160,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
           });
         }
 
+        // Run npm install inside hook directory to bootstrap dependencies (skip in Vitest to save test run time)
+        let npmInstallSuccess = false;
+        if (!process.env.VITEST) {
+          try {
+            ctx.addLine({
+              type: "system",
+              content: "Running npm install to bootstrap dependencies...",
+              timestamp: Date.now(),
+            });
+            await execa("npm", ["install"], { cwd: hookDir });
+            npmInstallSuccess = true;
+          } catch (npmErr: any) {
+            ctx.addLine({
+              type: "system",
+              content: `⚠ Warning: Failed to run npm install in internal-hooks/${hookName}: ${npmErr.message}`,
+              timestamp: Date.now(),
+            });
+          }
+        } else {
+          npmInstallSuccess = true;
+        }
+
         // Auto-activate the new hook if there's already a configured list
         const activeHooks = getActiveHooksForProject(process.cwd());
         if (activeHooks !== null) {
@@ -179,7 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
         ctx.addLine({
           type: "system",
-          content: `✓ Successfully initialized internal hook project workspace!\nCreated directory: internal-hooks/${hookName}/\nFiles created:\n  - hook.json (Tool definition & inputs)\n  - package.json (Sub-project settings)\n  - index.js (Execution script entrypoint)\n  - test-payload.json (Mock inputs for dev testing)\n  - README.md (Hook documentation)\n  - CHANGELOG.md (Hook release notes)\n\n${gitInitSuccess ? "✓ Initialized clean Git repository in hook directory.\n" : ""}You can now edit these files and run "/ih dev ${hookName}" to test it!`,
+          content: `✓ Successfully initialized internal hook project workspace!\nCreated directory: internal-hooks/${hookName}/\nFiles created:\n  - hook.json (Tool definition & inputs)\n  - package.json (Sub-project settings)\n  - index.js (Execution script entrypoint)\n  - test-payload.json (Mock inputs for dev testing)\n  - README.md (Hook documentation)\n  - CHANGELOG.md (Hook release notes)\n\n${gitInitSuccess ? "✓ Initialized clean Git repository in hook directory.\n" : ""}${npmInstallSuccess && !process.env.VITEST ? "✓ Installed project dependencies.\n" : ""}You can now edit these files and run "/ih dev ${hookName}" to test it!`,
           timestamp: Date.now(),
         });
       } catch (err: any) {
@@ -305,6 +327,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
           timestamp: Date.now(),
         });
       }
+      return;
+    }
+
+    if (subCommand === "list") {
+      const hooks = getAvailableHooks();
+      if (hooks.length === 0) {
+        ctx.addLine({
+          type: "system",
+          content: "No internal hooks found. Use `/ih init <namahook>` to create one first.",
+          timestamp: now,
+        });
+        return;
+      }
+
+      let content = "Discovered Internal Hooks:\n\n";
+      for (const hook of hooks) {
+        const status = hook.active ? "🟢 Active" : "🔴 Inactive";
+        
+        let details = "";
+        const hookDir = path.join(process.cwd(), "internal-hooks", hook.dirName);
+        const configPath = path.join(hookDir, "hook.json");
+        try {
+          const configContent = fsSync.readFileSync(configPath, "utf-8");
+          const config = JSON.parse(configContent);
+          const hasTool = !!config.name && !!config.description;
+          const slashCmds = config.slash_commands || config.slashCommands || [];
+          const eventHooks = config.event_hooks || config.hooks || [];
+          const features: string[] = [];
+          if (hasTool) features.push("Tool AI");
+          if (slashCmds.length > 0) features.push(`Slash Commands (${slashCmds.map((c: any) => `/${c.name}`).join(", ")})`);
+          if (eventHooks.length > 0) features.push(`Event Hooks (${eventHooks.map((e: any) => e.event).join(", ")})`);
+          
+          const skillsDir = path.join(hookDir, "skills");
+          if (fsSync.existsSync(skillsDir) && fsSync.statSync(skillsDir).isDirectory()) {
+            features.push("Dynamic Skills");
+          }
+          details = features.length > 0 ? ` [Exposes: ${features.join(", ")}]` : " [No features exposed]";
+        } catch {}
+
+        content += `- **${hook.name}** (in \`internal-hooks/${hook.dirName}\`)\n  State: ${status}${details}\n\n`;
+      }
+      ctx.addLine({
+        type: "system",
+        content: content.trim(),
+        timestamp: Date.now(),
+      });
       return;
     }
 

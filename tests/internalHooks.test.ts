@@ -248,4 +248,73 @@ Dynamic hook skill body
     expect(dynamicSkill).toBeDefined();
     expect(dynamicSkill?.description).toBe("Dynamic hook skill description");
   });
+
+  it("should list discovered hooks and their exposed features on /ih list", async () => {
+    const hookDir = path.join(tempDir, "internal-hooks", "test-hook");
+    // Write hook.json with all capabilities to ensure they are reported
+    const hookJson = {
+      name: "test-hook",
+      description: "Custom internal hook tool description",
+      command: "node index.js",
+      slash_commands: [
+        {
+          name: "hook-test-cmd",
+          command: "node index.js --test"
+        }
+      ],
+      event_hooks: [
+        {
+          event: "pre_tool",
+          command: "node index.js --pre-tool"
+        }
+      ]
+    };
+    await fs.writeFile(path.join(hookDir, "hook.json"), JSON.stringify(hookJson, null, 2));
+
+    const lines: ChatLine[] = [];
+    const mockCtx: SlashCommandContext = {
+      addLine: (line) => lines.push(line),
+      exit: () => {},
+      agent: null,
+    };
+
+    await internalHooksCommand.execute("list", mockCtx);
+
+    const listLine = lines.find(l => l.content.includes("Discovered Internal Hooks"));
+    expect(listLine).toBeDefined();
+    expect(listLine?.content).toContain("test-hook");
+    expect(listLine?.content).toContain("Active");
+    expect(listLine?.content).toContain("Exposes: Tool AI, Slash Commands (/hook-test-cmd), Event Hooks (pre_tool), Dynamic Skills");
+  });
+
+  it("should write telemetry logs to hooks.log upon execution", async () => {
+    const logFile = path.join(tempDir, "internal-hooks", "hooks.log");
+    
+    // Clear log if exists
+    if (fsSync.existsSync(logFile)) {
+      await fs.unlink(logFile);
+    }
+
+    // Write a dummy index.js inside the tempDir so node index.js runs successfully
+    await fs.writeFile(path.join(tempDir, "index.js"), "console.log('Mock success');");
+
+    // 1. Trigger command execution (slash command execute)
+    const { registry } = await import("../src/core/commands/registry.js");
+    const command = registry.get("hook-test-cmd");
+    expect(command).toBeDefined();
+    
+    const lines: ChatLine[] = [];
+    const mockCtx: SlashCommandContext = {
+      addLine: (line) => lines.push(line),
+      exit: () => {},
+      agent: null,
+    };
+    await command?.execute("", mockCtx);
+
+    // Verify hooks.log exists and contains log entries
+    expect(fsSync.existsSync(logFile)).toBe(true);
+    const logs = await fs.readFile(logFile, "utf-8");
+    expect(logs).toContain("[COMMAND: /hook-test-cmd]");
+    expect(logs).toContain("STATUS: SUCCESS");
+  });
 });

@@ -161,6 +161,7 @@ export const helpCommand: SlashCommand = {
         "  /ih       - Manage custom internal hook tools (alias: /internal-hooks)",
         "              /ih init <name>  - Scaffold a new hook project",
         "              /ih dev <name>   - Run the hook's dev script with test-payload.json input",
+        "              /ih list         - List all discovered internal hooks and their status",
         "              /ih active       - Select which hooks to activate via checkbox dialog",
         "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
         "  /model    - Set or list active AI models (e.g. /model openai/gpt-4o)",

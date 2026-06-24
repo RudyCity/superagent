@@ -161,6 +161,7 @@ export function loadDynamicHooks(): Tool[] {
                       timestamp: Date.now()
                     });
 
+                    const startTime = Date.now();
                     try {
                       const result = await execa(finalCommand, {
                         shell: shellPath,
@@ -173,6 +174,18 @@ export function loadDynamicHooks(): Tool[] {
                         },
                         reject: true,
                       });
+                      const duration = Date.now() - startTime;
+                      const logFile = path.join(process.cwd(), "internal-hooks", "hooks.log");
+                      const timestamp = new Date().toISOString();
+                      const logEntry = `[${timestamp}] [COMMAND: /${cmdName}] [HOOK: ${toolName}] [STATUS: SUCCESS] [DURATION: ${duration}ms]
+Arguments: ${args || "(none)"}
+Stdout:
+${result.stdout || "(none)"}
+Stderr:
+${result.stderr || "(none)"}
+--------------------------------------------------------------------------------\n`;
+                      try { fs.appendFileSync(logFile, logEntry, "utf-8"); } catch {}
+
                       if (result.stdout.trim()) {
                         ctx.addLine({
                           type: "system",
@@ -181,9 +194,19 @@ export function loadDynamicHooks(): Tool[] {
                         });
                       }
                     } catch (err: any) {
+                      const duration = Date.now() - startTime;
                       const stderrOutput = err.stderr ? err.stderr.trim() : "";
                       const stdoutOutput = err.stdout ? err.stdout.trim() : "";
                       const errorMsg = stderrOutput || stdoutOutput || err.message;
+                      
+                      const logFile = path.join(process.cwd(), "internal-hooks", "hooks.log");
+                      const timestamp = new Date().toISOString();
+                      const logEntry = `[${timestamp}] [COMMAND: /${cmdName}] [HOOK: ${toolName}] [STATUS: FAILED (exit code ${err.exitCode || 1})] [DURATION: ${duration}ms]
+Arguments: ${args || "(none)"}
+Error: ${errorMsg}
+--------------------------------------------------------------------------------\n`;
+                      try { fs.appendFileSync(logFile, logEntry, "utf-8"); } catch {}
+
                       ctx.addLine({
                         type: "error",
                         content: `[Hook Command Error] ${errorMsg}`,
@@ -216,6 +239,7 @@ export function loadDynamicHooks(): Tool[] {
 
                 const argsJson = JSON.stringify(args);
 
+                const startTime = Date.now();
                 try {
                   const result = await execa(finalCommand, {
                     shell: shellPath,
@@ -229,12 +253,33 @@ export function loadDynamicHooks(): Tool[] {
                     input: argsJson, // pipe parameters to stdin
                     reject: true,
                   });
+                  const duration = Date.now() - startTime;
+                  const logFile = path.join(process.cwd(), "internal-hooks", "hooks.log");
+                  const timestamp = new Date().toISOString();
+                  const logEntry = `[${timestamp}] [TOOL: ${toolName}] [STATUS: SUCCESS] [DURATION: ${duration}ms]
+Args: ${argsJson}
+Stdout:
+${result.stdout || "(none)"}
+Stderr:
+${result.stderr || "(none)"}
+--------------------------------------------------------------------------------\n`;
+                  try { fs.appendFileSync(logFile, logEntry, "utf-8"); } catch {}
 
                   return result.stdout.trim();
                 } catch (err: any) {
+                  const duration = Date.now() - startTime;
                   const stderrOutput = err.stderr ? err.stderr.trim() : "";
                   const stdoutOutput = err.stdout ? err.stdout.trim() : "";
                   const errorMsg = stderrOutput || stdoutOutput || err.message;
+
+                  const logFile = path.join(process.cwd(), "internal-hooks", "hooks.log");
+                  const timestamp = new Date().toISOString();
+                  const logEntry = `[${timestamp}] [TOOL: ${toolName}] [STATUS: FAILED (exit code ${err.exitCode || 1})] [DURATION: ${duration}ms]
+Args: ${argsJson}
+Error: ${errorMsg}
+--------------------------------------------------------------------------------\n`;
+                  try { fs.appendFileSync(logFile, logEntry, "utf-8"); } catch {}
+
                   throw new Error(`[Hook Execution Error] ${errorMsg}`);
                 }
               }
@@ -294,7 +339,8 @@ export async function runEventHooks(
                     }
                   }
 
-                  await execa(finalCommand, {
+                  const startTime = Date.now();
+                  const result = await execa(finalCommand, {
                     shell: shellPath,
                     cwd: process.cwd(),
                     env: {
@@ -307,6 +353,21 @@ export async function runEventHooks(
                     input: JSON.stringify(contextData),
                     reject: false,
                   });
+                  const duration = Date.now() - startTime;
+                  
+                  const logFile = path.join(process.cwd(), "internal-hooks", "hooks.log");
+                  const timestamp = new Date().toISOString();
+                  const status = result.failed ? `FAILED (exit code ${result.exitCode})` : "SUCCESS";
+                  const logEntry = `[${timestamp}] [EVENT: ${event}] [HOOK: ${item.name}] [STATUS: ${status}] [DURATION: ${duration}ms]
+Command: ${finalCommand}
+Stdout:
+${result.stdout || "(none)"}
+Stderr:
+${result.stderr || "(none)"}
+--------------------------------------------------------------------------------\n`;
+                  try {
+                    fs.appendFileSync(logFile, logEntry, "utf-8");
+                  } catch (logErr) {}
                 }
               }
             }
