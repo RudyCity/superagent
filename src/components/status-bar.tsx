@@ -16,7 +16,7 @@ export interface StatusBarProps {
   worktreeCount: number;
   lastSpeed: number | null;
   formatCompactNumber: (val: number) => string;
-  enableTencentdbMemory?: boolean;
+  tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
 }
 
 export function StatusBar(props: StatusBarProps) {
@@ -35,7 +35,7 @@ export function StatusBar(props: StatusBarProps) {
     worktreeCount,
     lastSpeed,
     formatCompactNumber,
-    enableTencentdbMemory,
+    tencentdbStatus,
   } = props;
 
   return (
@@ -59,9 +59,16 @@ export function StatusBar(props: StatusBarProps) {
             <Text color="gray"> • </Text>
             <Text color="blue">Sub: {runningSubagentsCount}</Text>
             <Text color="gray"> │ </Text>
-            {enableTencentdbMemory ? (
+            {tencentdbStatus === "online" && (
               <Text color="magenta" bold>🧠 Mem: ON</Text>
-            ) : (
+            )}
+            {tencentdbStatus === "offline" && (
+              <Text color="red" bold>🧠 Mem: OFFLINE</Text>
+            )}
+            {tencentdbStatus === "checking" && (
+              <Text color="yellow" bold>🧠 Mem: CHECKING</Text>
+            )}
+            {(tencentdbStatus === "disabled" || !tencentdbStatus) && (
               <Text color="gray" dimColor>🧠 Mem: OFF</Text>
             )}
           </Text>

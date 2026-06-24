@@ -40,6 +40,7 @@ import { ChatArea, computeWrappedLines } from "./components/chat-area.js";
 import { useWizardSubmit } from "./hooks/useWizardSubmit.js";
 import { useKeyboardHandler } from "./hooks/useKeyboardHandler.js";
 import { useMouseScroll, type SectionBoundary, type ChatLinePosition } from "./hooks/useMouseScroll.js";
+import { useTencentdbStatus } from "./hooks/useTencentdbStatus.js";
 
 export { stripSgrMouseSequences } from "./utils/text.js";
 
@@ -140,6 +141,7 @@ export function App({
   const [runningSuperagentsCount, setRunningSuperagentsCount] = useState(0);
   
   const [goalMode, setGoalMode] = useState<{ goal: string; startedAt: number } | null>(null);
+  const tencentdbStatus = useTencentdbStatus();
   const [toolTimeout, setToolTimeout] = useState<number | null>(null);
   const [toolStartTime, setToolStartTime] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
@@ -2198,7 +2200,7 @@ export function App({
         worktreeCount={worktreeCount}
         lastSpeed={lastSpeed}
         formatCompactNumber={formatCompactNumber}
-        enableTencentdbMemory={getSettings().enableTencentdbMemory}
+        tencentdbStatus={tencentdbStatus}
       />
     </Box>
   );

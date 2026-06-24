@@ -20,7 +20,7 @@ export interface DashboardStatusBarProps {
   activeWizard: any;
   wizardOptions: string[];
   focusArea: string;
-  enableTencentdbMemory?: boolean;
+  tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
 }
 
 export function DashboardStatusBar({
@@ -41,7 +41,7 @@ export function DashboardStatusBar({
   activeWizard,
   wizardOptions,
   focusArea,
-  enableTencentdbMemory,
+  tencentdbStatus,
 }: DashboardStatusBarProps) {
   const subagentTokens = Array.from(subagentInstances.values()).reduce(
     (acc: number, i: any) => acc + (i.tokenUsage?.prompt || 0) + (i.tokenUsage?.completion || 0),
@@ -84,9 +84,16 @@ export function DashboardStatusBar({
             <Text color="gray"> • </Text>
             <Text color="blue" bold>Sub: {runningSubagentsCount}</Text>
             <Text color="gray"> │ </Text>
-            {enableTencentdbMemory ? (
+            {tencentdbStatus === "online" && (
               <Text color="magenta" bold>🧠 Mem: ON</Text>
-            ) : (
+            )}
+            {tencentdbStatus === "offline" && (
+              <Text color="red" bold>🧠 Mem: OFFLINE</Text>
+            )}
+            {tencentdbStatus === "checking" && (
+              <Text color="yellow" bold>🧠 Mem: CHECKING</Text>
+            )}
+            {(tencentdbStatus === "disabled" || !tencentdbStatus) && (
               <Text color="gray" dimColor>🧠 Mem: OFF</Text>
             )}
           </Text>
