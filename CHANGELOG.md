@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.9] - 2026-06-24
+
+### Added
+- **Internal Hooks System**: Introduced a fully extensible custom tool framework allowing users to register their own executable scripts as first-class agent tools directly within any project.
+  - **`/ih init <name>`** (alias: `/internal-hooks init <name>`): Scaffolds a new hook project workspace under `internal-hooks/<name>/` with `hook.json` (tool schema), `package.json`, `index.js` (entrypoint), and `test-payload.json` (dev fixture). Newly created hooks are automatically activated and hot-reloaded into the agent's live toolset.
+  - **`/ih dev <name>`**: Runs the hook locally using its configured `dev` script (or `command` fallback), piping `test-payload.json` as stdin. Supports both interactive and non-interactive execution paths with stdout/stderr capture and timing output.
+  - **`/ih active`**: Opens an interactive multi-select checkbox dialog listing all discovered hooks. Uses the existing question-handler system for consistent UX. The selected active set is persisted per-project inside `~/.superagent-r/model-config.json` (`activeHooks` key) and hot-reloaded immediately.
+- **Dynamic Hook Loading (`dynamicHooks.ts`)**: Hooks under `internal-hooks/` are discovered and loaded on startup via `loadDynamicHooks()` and refreshed on-demand via `refreshDynamicHooks()`. Supports per-project active-state filtering so inactive hooks are silently skipped.
+- **Autocomplete Support for `/ih`**: Full tab-autocomplete for `/ih`, `/ih init`, `/ih dev`, and `/ih active`. Both `/ih init` and `/ih dev` dynamically suggest discovered hook names from `internal-hooks/`.
+- **Internal Hooks Skill Guide**: Added skill documentation at `.agents/skills/internal-hooks/SKILL.md` describing the hook file structure, commands, and best practices for script authorship.
+
+### Improved
+- **`/help` now documents `/ih`**: The in-app `/help` output now includes the full `/ih` subcommand reference (`init`, `dev`, `active`) so users can discover the feature without leaving the terminal.
+- **Autocomplete descriptions updated**: `/ih` and `/internal-hooks` descriptions in `dashboardSuggestions.ts` now accurately reflect all three subcommands.
+
+---
+
 ## [1.2.8] - 2026-06-24
 
 ### Added

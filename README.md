@@ -34,6 +34,7 @@ Unlike standard headless execution bots or basic shell wrappers, Superagent is d
 - **AI-Guided Preset Initialization**: Configure your workspace commands effortlessly. Superagent scans your codebase structure (such as dependencies, packages, and scripts) to automatically recommend, select, and construct terminal command presets with the `/terminal init` wizard.
 - **Multimodal Image Paste & Path Detection**: Drag-and-drop or paste an image file path (like `D:\images\screenshot.png`) directly into the prompt to auto-attach it. Press `Ctrl+V` to automatically capture image binary data from your system clipboard (cross-platform support for Windows, macOS, and Linux). Attached images are rendered in a sleek visual queue above the prompt and transmitted as high-fidelity multimodal inputs to vision-capable models (e.g. Claude 3.5 Sonnet, GPT-4o), with automatic token tracking.
 - **Local-First Agent Long-Term Memory**: Integrates the local **TencentDB Agent Memory** system using a 4-tier progressive memory pipeline (Conversation, Atom, Scenario, Persona). It automatically structures conversation turns into high-density vector databases (`vectors.db` via SQLite vector search) and markdown documents in your user profile (`~/.superagent-r/tencentdb-memory/`). Agents can autonomously call `tdai_memory_search`, `tdai_conversation_search`, and `tdai_read_cos` to recall past decisions, preferences, and solutions cross-session. Setup is fully zero-config: starting the CLI automatically spins up and heals the gateway in the background asynchronously when enabled.
+- **Internal Hooks — Custom Agent Tools**: Extend Superagent's toolset with your own executable scripts directly from your project. Place a script in `internal-hooks/<name>/` with a `hook.json` schema definition and an `index.js` entrypoint. Hooks are auto-discovered on startup and registered as first-class agent tools. Use `/ih init <name>` to scaffold the project, `/ih dev <name>` to run and test it locally, and `/ih active` to pick which hooks are active via an interactive multi-select checkbox dialog. Active selections are persisted per-project in `~/.superagent-r/model-config.json`.
 
 ---
 
@@ -73,6 +74,7 @@ superagent/
 │   │       ├── superagentTools.ts # Superagent orchestration tools (master tier)
 │   │       ├── fastcontextTool.ts # FastContext AI-powered repo explorer tool
 │   │       ├── fastcontext_runner.py # Python wrapper for FastContext CLI
+│   │       ├── dynamicHooks.ts    # Internal hook discovery, loading, and active state
 │   │       └── networkTools.ts    # Web content fetch and browser integration
 │   └── components/                # React Ink components (visual stats, wizards)
 ├── vendor/
@@ -399,6 +401,11 @@ Superagent supports a wide range of slash commands within the terminal chat to m
 ### Skills & Plugins
 - **`/skills`**: Displays a visual wizard containing all currently installed automation templates and guidelines.
 - **`/install <owner/repo>`**: Installs new automated developer *skills* directly from remote repositories via `npx skills add`.
+
+### Internal Hooks
+- **`/ih init <name>`** (alias: **`/internal-hooks init <name>`**): Scaffolds a new internal hook project workspace under `internal-hooks/<name>/`, creating `hook.json` (tool schema), `package.json`, `index.js` (entrypoint), and `test-payload.json` (dev test fixture). The new hook is automatically activated and hot-reloaded into the agent's toolset.
+- **`/ih dev <name>`**: Runs the hook's `dev` script (from `package.json`) or falls back to the `command` field in `hook.json`, piping `test-payload.json` as stdin. Ideal for rapid local iteration.
+- **`/ih active`**: Opens an interactive multi-select checkbox dialog listing all discovered hooks. Space to check/uncheck, Enter to confirm. The selected set is saved per-project in `~/.superagent-r/model-config.json` and takes effect immediately.
 
 ### Provider & Model Settings
 - **`/login`**: Opens a visual wizard to add API credentials, switch active providers, or list configured providers. You can also log in directly via `/login <key>` or `/login custom <base_url> <key>`.
