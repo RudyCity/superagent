@@ -741,34 +741,6 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
       }
     }
 
-    // Run workspace discovery and load/update cache if not already done for this session
-    if (!this.workspaceCache && !this.disableWorkspaceDiscovery) {
-      try {
-        const { discoverWorkspace } = await import("./workspaceDiscovery.js");
-        const { isIdentical, cache } = await discoverWorkspace(this.workingDirectory);
-        this.workspaceCache = cache;
-        if (isIdentical) {
-          this.onEvent({
-            type: "text",
-            content: `\n[SYS] Workspace identical to previous session. Using cached context.\n`,
-          });
-        } else {
-          this.onEvent({
-            type: "text",
-            content: `\n[SYS] Workspace scanned and cached.\n`,
-          });
-        }
-      } catch (err: any) {
-        this.writeToLogFile("WARN", `Workspace discovery failed: ${err.message}`);
-      }
-    }
-
-    if (this.workspaceCache) {
-      try {
-        const { injectWorkspaceOverview } = await import("./workspaceDiscovery.js");
-        baseSystemPrompt = injectWorkspaceOverview(baseSystemPrompt, this.workspaceCache);
-      } catch {}
-    }
 
     // Load scratchpad content if it exists
     let scratchpadText = "";
@@ -834,6 +806,37 @@ CRITICAL GOAL MODE RULES:
           err.name = "AbortError";
           throw err;
         }
+
+        // Run workspace discovery and load/update cache if workspace files changed
+        if (!this.disableWorkspaceDiscovery) {
+          try {
+            const { discoverWorkspace } = await import("./workspaceDiscovery.js");
+            const { isIdentical, cache } = await discoverWorkspace(this.workingDirectory);
+            const wasFirstRun = !this.workspaceCache;
+            this.workspaceCache = cache;
+            if (wasFirstRun) {
+              if (isIdentical) {
+                this.onEvent({
+                  type: "text",
+                  content: `\n[SYS] Workspace identical to previous session. Using cached context.\n`,
+                });
+              } else {
+                this.onEvent({
+                  type: "text",
+                  content: `\n[SYS] Workspace scanned and cached.\n`,
+                });
+              }
+            } else if (!isIdentical) {
+              this.onEvent({
+                type: "text",
+                content: `\n[SYS] Workspace changes detected. Updated cache.\n`,
+              });
+            }
+          } catch (err: any) {
+            this.writeToLogFile("WARN", `Workspace discovery failed: ${err.message}`);
+          }
+        }
+
         await this.compactHistoryIfNeeded();
         const messages = this.buildMessages();
         // Use tier-specific toolset if provided, otherwise use the appropriate tier-default toolset dynamically
@@ -988,7 +991,15 @@ After all subagents finish, you MUST perform this verification loop before consi
 3. IF GAPS FOUND → spawn a fix subagent (coder or reviewer) to address them. Do NOT report completion with known gaps.
 4. ONLY report completion when you have concrete evidence (build pass, test pass, acceptance criteria met).` : "";
 
-        const systemPrompt = `${baseSystemPrompt}
+        let activeSystemPrompt = baseSystemPrompt;
+        if (this.workspaceCache) {
+          try {
+            const { injectWorkspaceOverview } = await import("./workspaceDiscovery.js");
+            activeSystemPrompt = injectWorkspaceOverview(baseSystemPrompt, this.workspaceCache);
+          } catch {}
+        }
+
+        const systemPrompt = `${activeSystemPrompt}
 
 CRITICAL TASK EXECUTION CONTEXT:
 - You are running with a strict step limit of ${maxIterations} agent iterations per request.

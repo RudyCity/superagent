@@ -174,4 +174,88 @@ describe("Agent Workspace Cache Integration", () => {
     const sysLogs = events.filter(e => e.type === "text" && (e.content.includes("changed") || e.content.includes("scanned")));
     expect(sysLogs.length).toBeGreaterThan(0);
   });
+
+  it("should detect workspace changes and update cache on subsequent loop iterations", async () => {
+    let callCount = 0;
+    
+    // First call returns initial cache, second call returns changed workspace cache
+    const discoverSpy = vi.spyOn(workspaceDiscovery, "discoverWorkspace").mockImplementation(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          isIdentical: false,
+          cache: {
+            workspaceDir: testWorkspaceDir,
+            fingerprint: "initial-111",
+            fileList: ["agents.md"],
+            files: {},
+            lastScanTime: Date.now()
+          }
+        };
+      } else {
+        return {
+          isIdentical: false,
+          cache: {
+            workspaceDir: testWorkspaceDir,
+            fingerprint: "changed-222",
+            fileList: ["agents.md", "src/new-file.ts"],
+            files: {},
+            lastScanTime: Date.now()
+          }
+        };
+      }
+    });
+
+    const events: any[] = [];
+    const onEvent = (e: any) => events.push(e);
+    const onPermission = async () => true;
+    const onQuestion = async () => "yes";
+
+    const agent = new Agent(
+      onEvent,
+      onPermission,
+      onQuestion,
+      undefined,
+      undefined,
+      testWorkspaceDir
+    );
+    agent.disableWorkspaceDiscovery = false;
+
+    // Mock streamText to yield a tool call, causing multiple iterations in the agent loop
+    const aiModule = await import("ai");
+    const streamTextMock = vi.mocked(aiModule.streamText);
+    let streamCallCount = 0;
+    streamTextMock.mockImplementation((options: any) => {
+      streamCallCount++;
+      const mockStream = (async function* () {
+        if (streamCallCount === 1) {
+          yield {
+            type: "tool-call",
+            toolCallId: "call-1",
+            toolName: "glob",
+            args: { pattern: "src/**/*.ts" }
+          };
+        } else {
+          yield { type: "text-delta", textDelta: "Done." };
+        }
+      })();
+      return {
+        fullStream: mockStream,
+        usage: Promise.resolve({ promptTokens: 50, completionTokens: 10 })
+      } as any;
+    });
+
+    // Mock glob tool execution
+    const { globTool } = await import("../src/core/tools/systemTools.js");
+    const globSpy = vi.spyOn(globTool, "execute").mockResolvedValue("mocked glob result");
+
+    await agent.sendMessage("Run something");
+
+    // The agent loop should have run twice (since first turn yielded a tool call)
+    expect(discoverSpy).toHaveBeenCalledTimes(2);
+
+    // Verify it printed change detection message on the second iteration
+    const changeLogs = events.filter(e => e.type === "text" && e.content.includes("changes detected"));
+    expect(changeLogs.length).toBeGreaterThan(0);
+  });
 });

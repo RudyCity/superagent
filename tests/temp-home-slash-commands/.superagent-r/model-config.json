@@ -20,6 +20,7 @@
       "y"
     ]
   },
+  "trustedDirectories": [],
   "providers": [
     {
       "id": "default-anthropic",

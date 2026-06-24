@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.103] - 2026-06-24
+
+### Added
+- **Smart Workspace Discovery Cache**: Added dynamic workspace change detection on subsequent agent loop iterations and automatic updating of the cache.
+- **Automatic Git Worktree Trusting**: Configured automatic git trusted directories configuration (`safe.directory`) for superagent git worktrees to prevent dubious ownership warnings.
+- **Show Only Agent Name in Chat Headers**: Simplified the terminal UI layout by displaying only the agent name in cognitive node headers.
+
+---
+
 ## [1.1.102] - 2026-06-24
 
 ### Added
