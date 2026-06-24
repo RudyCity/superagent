@@ -20,6 +20,7 @@ export interface DashboardStatusBarProps {
   activeWizard: any;
   wizardOptions: string[];
   focusArea: string;
+  enableTencentdbMemory?: boolean;
 }
 
 export function DashboardStatusBar({
@@ -40,6 +41,7 @@ export function DashboardStatusBar({
   activeWizard,
   wizardOptions,
   focusArea,
+  enableTencentdbMemory,
 }: DashboardStatusBarProps) {
   const subagentTokens = Array.from(subagentInstances.values()).reduce(
     (acc: number, i: any) => acc + (i.tokenUsage?.prompt || 0) + (i.tokenUsage?.completion || 0),
@@ -81,6 +83,12 @@ export function DashboardStatusBar({
             <Text color="yellow" bold>Proc: {runningTasksCount}</Text>
             <Text color="gray"> • </Text>
             <Text color="blue" bold>Sub: {runningSubagentsCount}</Text>
+            <Text color="gray"> │ </Text>
+            {enableTencentdbMemory ? (
+              <Text color="magenta" bold>🧠 Mem: ON</Text>
+            ) : (
+              <Text color="gray" dimColor>🧠 Mem: OFF</Text>
+            )}
           </Text>
         </Box>
       </Box>

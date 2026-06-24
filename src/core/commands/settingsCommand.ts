@@ -1,6 +1,7 @@
 import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
 import { getSettings, updateSettings, getContextWindowLimit, getEffectiveMasterModel } from "../config.js";
+import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts";
 
 // /settings command — show all settings from JSON config
 export const settingsCommand: SlashCommand = {
@@ -311,7 +312,7 @@ export const settingMaxIterationsCommand: SlashCommand = {
 export const settingTencentdbCommand: SlashCommand = {
   name: "setting-tencentdb",
   description: "Configure TencentDB memory strategy and gateway URL",
-  execute(args, ctx) {
+  async execute(args, ctx) {
     const now = Date.now();
     const parts = args.trim().split(/\s+/);
     const mode = parts[0]?.toLowerCase();
@@ -342,11 +343,51 @@ export const settingTencentdbCommand: SlashCommand = {
         msg += `\n✓ Gateway URL set to: ${url}`;
       }
       
-      ctx.addLine({
-        type: "system",
-        content: msg,
-        timestamp: now,
-      });
+      if (mode === "on") {
+        const s = getSettings();
+        const endpoint = url || s.tencentdbGatewayUrl || "http://127.0.0.1:8420";
+        const client = new MemoryClient({
+          endpoint,
+          apiKey: s.tencentdbGatewayApiKey || "sk-xxxx",
+          serviceId: s.tencentdbServiceId || "default",
+        });
+
+        ctx.addLine({
+          type: "system",
+          content: `${msg}\n⚡ Verifying connection to TencentDB Memory Gateway...`,
+          timestamp: now,
+        });
+
+        let online = false;
+        try {
+          const checkPromise = client.listScenarios({});
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 2000));
+          await Promise.race([checkPromise, timeoutPromise]);
+          online = true;
+        } catch (err) {
+          // gateway is offline
+        }
+
+        if (online) {
+          ctx.addLine({
+            type: "system",
+            content: `✓ Connection established! Gateway is online at ${endpoint}.`,
+            timestamp: Date.now(),
+          });
+        } else {
+          ctx.addLine({
+            type: "system",
+            content: `⚠️ Warning: Gateway is currently offline or unreachable at ${endpoint}.\nPlease ensure the TencentDB Memory Gateway process is running.`,
+            timestamp: Date.now(),
+          });
+        }
+      } else {
+        ctx.addLine({
+          type: "system",
+          content: msg,
+          timestamp: now,
+        });
+      }
     } catch (err: any) {
       ctx.addLine({
         type: "error",
