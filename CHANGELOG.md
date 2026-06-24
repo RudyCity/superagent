@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.102] - 2026-06-24
+
+### Added
+- **Smart Workspace Discovery**: Implemented fast workspace fingerprint hashing (MD5 hash of sorted file paths, sizes, and timestamps) and startup cache persistence under `~/.superagent-r/workspace-caches/` to bypass redundant codebase scanning.
+- **Glob Cache Interception**: Configured `globTool` to intercept searches and perform in-memory pattern matching using `picomatch` against the cached file list on cache hits, bypassing disk lookup latency.
+- **Workspace Prompts Injection**: Dynamically injected the cached codebase files overview and project specifications directly into the agent's system prompt at startup to provide instant context and avoid initial discovery tool calls.
+- **Picomatch Typings**: Added TypeScript type declarations for the `picomatch` module to ensure compiler type safety.
+
+---
+
 ## [1.1.101] - 2026-06-23
 
 ### Fixed
