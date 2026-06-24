@@ -42,6 +42,13 @@ import {
   getEffectiveMasterModel
 } from "../core/config.js";
 import { contentToString } from "../core/conversation.js";
+import ImageAttachmentBar from "./ImageAttachmentBar.js";
+import {
+  readImageFromPath,
+  readImageFromClipboard,
+  attachmentToImagePart,
+  type ImageAttachment,
+} from "../utils/imageUtils.js";
 
 import { 
   filterSuggestions, 
@@ -128,6 +135,7 @@ export function MultiAgentDashboard({
   const [isPasted, setIsPasted] = useState(false);
   const [pastePrefixLength, setPastePrefixLength] = useState(0);
   const [pasteSuffixLength, setPasteSuffixLength] = useState(0);
+  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [activeModel, setActiveModel] = useState(() => {
     return getEffectiveMasterModel("auto") || getDefaultModel();
   });
@@ -684,7 +692,36 @@ export function MultiAgentDashboard({
     }
   }, [registerEventHandler]);
 
-    const { handleWizardSubmit, handleQuerySubmit } = useDashboardWizard({
+  const handleAttachImage = useCallback(async (filePath: string) => {
+    try {
+      const attachment = await readImageFromPath(filePath);
+      setAttachments((prev) => [...prev, attachment]);
+    } catch (err: any) {
+      setMasterLogs((prev) => [...prev, `[SYSTEM] Could not attach image: ${err.message}`].slice(-500));
+    }
+  }, []);
+
+  const handlePasteImage = useCallback(async () => {
+    try {
+      const attachment = await readImageFromClipboard();
+      if (attachment) {
+        setAttachments((prev) => [...prev, attachment]);
+        setMasterLogs((prev) => [...prev, `[SYSTEM] 📎 Clipboard image attached: ${attachment.filename}`].slice(-500));
+      }
+    } catch {
+      // Silently ignore
+    }
+  }, []);
+
+  const handleRemoveLastAttachment = useCallback(() => {
+    setAttachments((prev) => prev.slice(0, -1));
+  }, []);
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  const { handleWizardSubmit, handleQuerySubmit } = useDashboardWizard({
     agent,
     exit,
     query,
@@ -730,6 +767,8 @@ export function MultiAgentDashboard({
     setCachedSessions,
     isProcessing,
     setIsProcessing,
+    attachments,
+    setAttachments,
   });
 
 
@@ -1331,12 +1370,25 @@ export function MultiAgentDashboard({
                   );
                 }
                 return (
-                  <ChatTextInput
-                    value={query}
-                    onChange={handleQueryChange}
-                    onSubmit={handleQuerySubmit}
-                    focus={focusArea === "input" && !isProcessing}
-                  />
+                  <Box flexDirection="column">
+                    {attachments.length > 0 && (
+                      <ImageAttachmentBar
+                        attachments={attachments}
+                        onRemove={handleRemoveAttachment}
+                        focused={focusArea === "input" && !isProcessing}
+                      />
+                    )}
+                    <ChatTextInput
+                      value={query}
+                      onChange={handleQueryChange}
+                      onSubmit={handleQuerySubmit}
+                      focus={focusArea === "input" && !isProcessing}
+                      onAttachImage={handleAttachImage}
+                      onPasteImage={handlePasteImage}
+                      onRemoveLastAttachment={handleRemoveLastAttachment}
+                      attachmentCount={attachments.length}
+                    />
+                  </Box>
                 );
               })()}
             </Box>

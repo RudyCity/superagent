@@ -42,6 +42,7 @@ import type { Agent } from "../core/agent.js";
 import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage } from "../core/loginWizardLogic.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 import { contentToString } from "../core/conversation.js";
+import { attachmentToImagePart, type ImageAttachment } from "../utils/imageUtils.js";
 
 export interface DashboardWizardContext {
   agent: Agent;
@@ -89,6 +90,8 @@ export interface DashboardWizardContext {
   setCachedSessions: React.Dispatch<React.SetStateAction<any[]>>;
   isProcessing: boolean;
   setIsProcessing: React.Dispatch<React.SetStateAction<boolean>>;
+  attachments: ImageAttachment[];
+  setAttachments: React.Dispatch<React.SetStateAction<ImageAttachment[]>>;
 }
 
 export function useDashboardWizard(ctx: DashboardWizardContext) {
@@ -129,6 +132,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
     setCachedSessions,
     isProcessing,
     setIsProcessing,
+    attachments,
+    setAttachments,
   } = ctx;
 
   const isMulti = agent.isMultiAgent;
@@ -2990,17 +2995,19 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       return;
     }
 
-    if (!cleanVal) return;
+    if (!cleanVal && attachments.length === 0) return;
 
-    setHistory((prev) => {
-      if (prev.length > 0 && prev[prev.length - 1] === cleanVal) {
-        return prev;
-      }
-      const next = [...prev, cleanVal].slice(-200);
-      fs.writeFile(HISTORY_FILE, JSON.stringify(next, null, 2), "utf8").catch(() => {});
-      return next;
-    });
-    setHistoryIndex(-1);
+    if (cleanVal) {
+      setHistory((prev) => {
+        if (prev.length > 0 && prev[prev.length - 1] === cleanVal) {
+          return prev;
+        }
+        const next = [...prev, cleanVal].slice(-200);
+        fs.writeFile(HISTORY_FILE, JSON.stringify(next, null, 2), "utf8").catch(() => {});
+        return next;
+      });
+      setHistoryIndex(-1);
+    }
 
     const commandInput = cleanVal.startsWith("!") ? `/terminal ${cleanVal.slice(1).trim()}` : cleanVal;
 
@@ -3079,15 +3086,28 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       return;
     }
 
-    setMasterLogs((prev) => [...prev, `[USER] ${commandInput}`].slice(-500));
+    const displayText = commandInput || (attachments.length > 0 ? `[${attachments.length} image${attachments.length > 1 ? "s" : ""}]` : "");
+    const displayLine = attachments.length > 0 ? `${displayText} 📎×${attachments.length}` : commandInput;
+    setMasterLogs((prev) => [...prev, `[USER] ${displayLine}`].slice(-500));
     setQuery("");
-    setCurrentTask(commandInput);
+    setCurrentTask(displayLine);
 
     setIsProcessing(true);
-    agent.sendMessage(commandInput)
+
+    let messageContent: import("../core/conversation.js").MessageContent = commandInput;
+    if (attachments.length > 0) {
+      const parts: import("../core/conversation.js").MessageContent = [
+        ...(commandInput ? [{ type: "text" as const, text: commandInput }] : []),
+        ...attachments.map(attachmentToImagePart),
+      ];
+      messageContent = parts;
+    }
+    setAttachments([]);
+
+    agent.sendMessage(messageContent)
       .then(() => {
         setIsProcessing(false);
-        setCurrentTask(`Idle - Completed: ${commandInput}`);
+        setCurrentTask(`Idle - Completed: ${displayText}`);
       })
       .catch((err) => {
         setIsProcessing(false);
@@ -3122,6 +3142,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     HISTORY_FILE,
     handleWizardSubmit,
     setIsProcessing,
+    attachments,
+    setAttachments,
   ]);
 
   return {
