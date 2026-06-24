@@ -41,6 +41,8 @@ export interface SystemSettings {
   disableStreaming: boolean;
   contextWindowLimit: number;
   maxIterations: number;
+  simpleTaskFileThreshold?: number;
+  simpleTaskKeywords?: string[];
 }
 
 export interface GlobalModelConfig {
@@ -64,6 +66,8 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     disableStreaming: false,
     contextWindowLimit: 0,
     maxIterations: 50,
+    simpleTaskFileThreshold: 3,
+    simpleTaskKeywords: ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
   },
   providers: [
     {
@@ -478,6 +482,8 @@ export function getSettings(): SystemSettings {
     disableStreaming: s.disableStreaming ?? false,
     contextWindowLimit: s.contextWindowLimit ?? 0,
     maxIterations: s.maxIterations ?? 50,
+    simpleTaskFileThreshold: s.simpleTaskFileThreshold ?? 3,
+    simpleTaskKeywords: s.simpleTaskKeywords ?? ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
   };
 }
 

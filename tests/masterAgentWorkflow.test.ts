@@ -189,7 +189,7 @@ describe("Master Agent Workflow & Guardrails", () => {
     expect(toolEndEvent[0].toolResult.isError).toBeUndefined(); // should not be an error
   });
 
-  it("should block Master Agent from writing a shallow plan and report missing sections", async () => {
+  it("should NOT block Master Agent from writing a shallow plan", async () => {
     const onEvent = vi.fn();
     const onPermission = vi.fn().mockResolvedValue(true);
     const onQuestion = vi.fn();
@@ -258,11 +258,7 @@ describe("Master Agent Workflow & Guardrails", () => {
 
     const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
     expect(toolEndEvent).toBeDefined();
-    expect(toolEndEvent[0].toolResult.isError).toBe(true);
-    expect(toolEndEvent[0].toolResult.result).toContain("The implementation plan is invalid or lacks deep structure");
-    expect(toolEndEvent[0].toolResult.result).toContain("Verification Plan section");
-    expect(toolEndEvent[0].toolResult.result).toContain("Automated Tests sub-section");
-    expect(toolEndEvent[0].toolResult.result).toContain("Manual Verification sub-section");
+    expect(toolEndEvent[0].toolResult.isError).toBeUndefined();
   });
 
   it("should auto-create task file and NOT block when task tracking file is missing", async () => {

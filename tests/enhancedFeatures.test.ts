@@ -20,6 +20,35 @@ vi.mock("execa", () => {
   };
 });
 
+// Mock net and http for health check tests
+vi.mock("net", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("net")>();
+  const mockFn = vi.fn();
+  (globalThis as any).mockNet = mockFn;
+  return {
+    ...actual,
+    createConnection: mockFn,
+    default: {
+      ...actual.default,
+      createConnection: mockFn,
+    },
+  };
+});
+
+vi.mock("http", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("http")>();
+  const mockFn = vi.fn();
+  (globalThis as any).mockHttp = mockFn;
+  return {
+    ...actual,
+    get: mockFn,
+    default: {
+      ...actual.default,
+      get: mockFn,
+    },
+  };
+});
+
 // Mock ai SDK
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -55,6 +84,14 @@ describe("Superagent Proposed Enhancements Tests", () => {
   });
 
   afterEach(() => {
+    for (const task of backgroundTasks.values()) {
+      if (task.process && typeof task.process.kill === "function") {
+        try {
+          task.process.kill();
+        } catch {}
+      }
+    }
+    backgroundTasks.clear();
     fs.rmSync(testConfigDir, { recursive: true, force: true });
     process.env = originalEnv;
   });
@@ -148,6 +185,32 @@ describe("Superagent Proposed Enhancements Tests", () => {
       expect(onQuestion).toHaveBeenCalled();
       expect(onQuestion.mock.calls[0][0]).toContain("cli.tsx");
       expect(agent.simpleTaskApproved).toBe(true);
+    });
+
+    it("should respect simple task threshold and keywords settings", async () => {
+      vi.mocked(generateText).mockResolvedValue({
+        text: "yes",
+        finishReason: "stop",
+        usage: { promptTokens: 10, completionTokens: 10 },
+      } as any);
+
+      // Change settings dynamically
+      vi.spyOn(configModule, "getSettings").mockReturnValue({
+        simpleTaskFileThreshold: 5,
+        simpleTaskKeywords: ["jalan", "mulai"],
+      } as any);
+
+      const onEvent = vi.fn();
+      const onPermission = vi.fn().mockResolvedValue(true);
+      const onQuestion = vi.fn();
+      const agent = new Agent(onEvent, onPermission, onQuestion);
+      agent.planState = "IDLE";
+      vi.spyOn(agent as any, "runAgentLoop").mockResolvedValue(undefined);
+
+      await agent.sendMessage("mulai perbaikan ini");
+
+      expect(agent.isSimpleTask).toBe(true);
+      expect(agent.simpleTaskApproved).toBe(true); // 'mulai' is in the custom keywords list
     });
   });
 
@@ -272,6 +335,172 @@ describe("Superagent Proposed Enhancements Tests", () => {
       expect(res).toContain("Background process finished successfully immediately");
 
       vi.useRealTimers();
+    });
+
+    it("should fail health check if port ping fails", async () => {
+      // Mock execa to return a running process (does not exit)
+      (globalThis as any).mockExeca.mockImplementation(() => {
+        return {
+          all: { on: vi.fn() },
+          on: vi.fn(),
+          kill: vi.fn(),
+        };
+      });
+
+      // Mock net.createConnection to return a mock socket that emits error
+      const mockSocket = new (await import("events")).EventEmitter() as any;
+      mockSocket.end = vi.fn();
+      mockSocket.destroy = vi.fn();
+      mockSocket.on("error", () => {}); // Prevent unhandled throw
+      (globalThis as any).mockNet.mockImplementation(() => {
+        setTimeout(() => {
+          mockSocket.emit("error", new Error("port closed"));
+        }, 10);
+        return mockSocket;
+      });
+
+      vi.useFakeTimers();
+      (globalThis as any).mockNet.mockClear();
+
+      const promise = runBackgroundProcessTool.execute({
+        command: "tsc",
+        healthCheckPort: 9999,
+      }, process.cwd());
+
+      // Wait for net.createConnection to be called, with safety limit
+      let ticks1 = 0;
+      while ((globalThis as any).mockNet.mock.calls.length === 0 && ticks1 < 100) {
+        await Promise.resolve();
+        ticks1++;
+      }
+
+      // Fast forward time to elapse the health check wait
+      await vi.advanceTimersByTimeAsync(6000);
+
+      const res = await promise;
+      expect(res).toContain("failed health check");
+      vi.useRealTimers();
+    });
+
+    it("should pass health check if port ping succeeds", async () => {
+      // Mock execa to return a running process (does not exit)
+      (globalThis as any).mockExeca.mockImplementation(() => {
+        return {
+          all: { on: vi.fn() },
+          on: vi.fn(),
+          kill: vi.fn(),
+        };
+      });
+
+      // Mock net.createConnection to return a mock socket that emits connect
+      const mockSocket = new (await import("events")).EventEmitter() as any;
+      mockSocket.end = vi.fn();
+      mockSocket.destroy = vi.fn();
+      (globalThis as any).mockNet.mockImplementation(() => {
+        setTimeout(() => {
+          mockSocket.emit("connect");
+        }, 10);
+        return mockSocket;
+      });
+
+      vi.useFakeTimers();
+      (globalThis as any).mockNet.mockClear();
+
+      const promise = runBackgroundProcessTool.execute({
+        command: "tsc",
+        healthCheckPort: 3000,
+      }, process.cwd());
+
+      // Wait for net.createConnection to be called, with safety limit
+      let ticks2 = 0;
+      while ((globalThis as any).mockNet.mock.calls.length === 0 && ticks2 < 100) {
+        await Promise.resolve();
+        ticks2++;
+      }
+
+      // Fast forward
+      await vi.advanceTimersByTimeAsync(3000);
+
+      const res = await promise;
+      expect(res).toContain("Started background process");
+      vi.useRealTimers();
+    });
+
+    it("should retry health check with lockfile-based package manager fallback", async () => {
+      // Mock fs.existsSync to simulate pnpm-lock.yaml presence
+      const originalExistsSync = fs.existsSync;
+      vi.spyOn(fs, "existsSync").mockImplementation((p: any) => {
+        if (typeof p === "string" && p.includes("pnpm-lock.yaml")) {
+          return true;
+        }
+        return originalExistsSync(p);
+      });
+
+      (globalThis as any).mockExeca.mockImplementation((cmd: string) => {
+        const isPnpm = cmd.startsWith("pnpm dlx");
+        return {
+          all: { on: vi.fn() },
+          on: vi.fn((event, cb) => {
+            if (event === "close") {
+              cb(isPnpm ? 0 : 1);
+            }
+          }),
+        };
+      });
+
+      vi.useFakeTimers();
+
+      const promise = runBackgroundProcessTool.execute({
+        command: "tsc",
+        autoRetry: true,
+      }, process.cwd());
+
+      // First health check (failed) and second health check (retry)
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      const res = await promise;
+      expect(res).toContain("Background process finished successfully immediately");
+      expect((globalThis as any).mockExeca).toHaveBeenCalledWith("pnpm dlx tsc", expect.any(Object));
+
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+  });
+
+  describe("5. Subagent Timeout Execution", () => {
+    it("should abort subagent execution when timeout limit is exceeded", async () => {
+      vi.useFakeTimers();
+
+      const onEvent = vi.fn();
+      const onPermission = vi.fn().mockResolvedValue(true);
+      const onQuestion = vi.fn();
+      const agent = new Agent(onEvent, onPermission, onQuestion);
+      agent.planState = "APPROVED";
+
+      const { defineSubagentTool } = await import("../src/core/tools/subagentTools.js");
+      await defineSubagentTool.execute({ name: "researcher-timeout", description: "desc", systemPrompt: "system" }, process.cwd());
+
+      vi.spyOn(Agent.prototype, "sendMessage").mockImplementation(async () => {
+        // Infinite promise to simulate hang
+        return new Promise(() => {});
+      });
+
+      const promise = invokeSubagentTool.execute({
+        typeName: "researcher-timeout",
+        role: "researcher",
+        prompt: "do research",
+        mode: "inline",
+        timeoutMs: 1000,
+      }, process.cwd());
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const res = await promise;
+      expect(res).toContain("Timeout: Subagent execution exceeded 1000ms limit.");
+      
+      vi.useRealTimers();
+      vi.restoreAllMocks();
     });
   });
 });

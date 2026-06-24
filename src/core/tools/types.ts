@@ -20,6 +20,8 @@ export interface BackgroundTask {
   isDetachedWindow?: boolean;
   /** Human-readable label for the window (preset name or first word of cmd) */
   windowLabel?: string;
+  autoRetry?: boolean;
+  onExit?: string;
 }
 
 export type TaskChangeListener = () => void;

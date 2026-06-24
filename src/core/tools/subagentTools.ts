@@ -127,6 +127,15 @@ export const invokeSubagentTool: Tool = {
         type: "boolean",
         description: "Whether to wait synchronously for the subagent to finish and return its final report/output. Defaults to true.",
       },
+      mode: {
+        type: "string",
+        enum: ["inline", "background"],
+        description: "The execution mode: 'inline' (run synchronously and wait for completion) or 'background' (run asynchronously). If omitted, falls back to the 'wait' parameter.",
+      },
+      timeoutMs: {
+        type: "integer",
+        description: "Timeout in milliseconds for inline execution. If execution exceeds this limit, the subagent is aborted.",
+      },
     },
     required: ["typeName", "role", "prompt"],
   },
@@ -134,7 +143,13 @@ export const invokeSubagentTool: Tool = {
     const typeName = args.typeName as string;
     const role = args.role as string;
     const prompt = args.prompt as string;
-    const wait = args.wait !== false;
+    const mode = args.mode as "inline" | "background" | undefined;
+    let wait = args.wait !== false;
+    if (mode === "inline") {
+      wait = true;
+    } else if (mode === "background") {
+      wait = false;
+    }
 
     const parentAgent = agentLocalStorage.getStore();
     let parentId = "master";
@@ -371,9 +386,24 @@ export const invokeSubagentTool: Tool = {
     notifySubagentsChanged();
     appendMasterLog(`[INFO] Spawning Subagent "${typeName}" (Role: ${role}) [ID: ${subagentId}]...`);
 
+    const timeoutMs = args.timeoutMs as number | undefined;
     if (wait) {
       try {
-        await agentInstance.sendMessage(prompt);
+        if (timeoutMs !== undefined && timeoutMs > 0) {
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            const timer = setTimeout(() => {
+              (agentInstance as any).abortController?.abort();
+              reject(new Error(`Timeout: Subagent execution exceeded ${timeoutMs}ms limit.`));
+            }, timeoutMs);
+            timer.unref?.();
+          });
+          await Promise.race([
+            agentInstance.sendMessage(prompt),
+            timeoutPromise
+          ]);
+        } else {
+          await agentInstance.sendMessage(prompt);
+        }
         closeThinkingNode();
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";

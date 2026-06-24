@@ -68,7 +68,7 @@ We must spawn a Superagent.
       expect(result).toContain("Error: The 'planContent' parameter is required");
     });
 
-    it("should fail when plan headers are missing", async () => {
+    it("should succeed even when plan headers are missing", async () => {
       const mockAgent = {
         tier: "superagent",
         getPlanFilePath: () => customPlanPath,
@@ -79,9 +79,9 @@ We must spawn a Superagent.
       await agentLocalStorage.run(mockAgent, async () => {
         const invalidPlan = `# Title only`;
         const result = await managePlanTool.execute({ action: "create", planContent: invalidPlan }, tempDir);
-        expect(result).toContain("Error: The implementation plan is invalid or lacks deep structure");
-        expect(result).toContain("Proposed Changes section");
-        expect(result).toContain("Verification Plan section");
+        expect(result).toContain("Successfully created implementation plan");
+        const exists = await fs.stat(customPlanPath).then(() => true).catch(() => false);
+        expect(exists).toBe(true);
       });
     });
 

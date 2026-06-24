@@ -56,7 +56,7 @@ vi.mock("execa", () => {
       const mockPromise: any = Promise.resolve(mockResult);
       mockPromise.on = vi.fn().mockImplementation((event, callback) => {
         if (event === "close") {
-          const delay = (typeof cmd === "string" && cmd.includes("sleep")) ? 3000 : 10;
+          const delay = (typeof cmd === "string" && cmd.includes("sleep")) ? 10000 : 10;
           const code = (typeof cmd === "string" && cmd.includes("invalid_command")) ? 127 : 0;
           setTimeout(() => callback(code), delay);
         }

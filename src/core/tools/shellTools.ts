@@ -367,6 +367,52 @@ export const runCommandTool: Tool = {
   },
 };
 
+import http from "http";
+import url from "url";
+
+async function pingPort(port: number, host: string = "localhost"): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port, host, timeout: 1000 });
+    socket.on("connect", () => {
+      socket.end();
+      resolve(true);
+    });
+    socket.on("error", () => {
+      resolve(false);
+    });
+    socket.on("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
+}
+
+async function pingHttp(targetUrl: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = url.parse(targetUrl);
+      const req = http.get({
+        hostname: parsed.hostname || "localhost",
+        port: parsed.port ? Number(parsed.port) : (parsed.protocol === "https:" ? 443 : 80),
+        path: parsed.path || "/",
+        timeout: 1000,
+      }, (res) => {
+        res.resume();
+        resolve(true);
+      });
+      req.on("error", () => {
+        resolve(false);
+      });
+      req.on("timeout", () => {
+        req.destroy();
+        resolve(false);
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 export const runBackgroundProcessTool: Tool = {
   name: "run_background_process",
   description: "Run a shell command in the background. Returns a process ID.",
@@ -381,6 +427,22 @@ export const runBackgroundProcessTool: Tool = {
         type: "string",
         description: "Optional working directory to run the command in (relative to current directory or absolute)",
       },
+      autoRetry: {
+        type: "boolean",
+        description: "Automatically prefix with package runner and retry if the command fails during health check",
+      },
+      onExit: {
+        type: "string",
+        description: "Lifecycle action on exit, e.g. 'restart'",
+      },
+      healthCheckUrl: {
+        type: "string",
+        description: "Optional HTTP URL (e.g. 'http://localhost:3000') to check if the process is healthy during start/retry.",
+      },
+      healthCheckPort: {
+        type: "integer",
+        description: "Optional TCP port number to check if the process is healthy during start/retry.",
+      },
     },
     required: ["command"],
   },
@@ -389,21 +451,21 @@ export const runBackgroundProcessTool: Tool = {
     if (!rawCommand || typeof rawCommand !== "string" || rawCommand.trim() === "") {
       return "Error: Missing required parameter 'command'. Provide the command to run in the background.";
     }
-    let command = normalizeGitPaths(rawCommand);
     const targetCwd = args.cwd 
       ? path.resolve(cwd, args.cwd as string)
       : cwd;
 
-    command = await adjustCommandPorts(command);
+    const autoRetry = !!args.autoRetry;
+    const onExit = args.onExit as string | undefined;
+
+    let commandToRun = normalizeGitPaths(rawCommand);
 
     let shellPath: string | boolean = true;
     if (process.platform === "win32") {
       const resolved = resolveWindowsShell();
       shellPath = resolved.shellPath;
-      if (!resolved.isBash) {
-        command = formatCommandForPowerShell(command);
-      }
     }
+
     const taskId = Math.random().toString(36).substring(2, 9);
     let sessionPath = process.env.SUPERAGENT_SESSION_PATH;
     try {
@@ -429,30 +491,60 @@ export const runBackgroundProcessTool: Tool = {
       // Ignore write errors
     }
 
-    try {
-      const proc = execa(command, {
+    let currentProc: any = null;
+    let hasExited = false;
+    let exitCode: number | null = null;
+    let restartAttempts = 0;
+    const maxRestarts = 5;
+    let task: any = undefined;
+
+    const startProcess = async () => {
+      hasExited = false;
+      exitCode = null;
+
+      let finalCommand = await adjustCommandPorts(commandToRun);
+      if (process.platform === "win32") {
+        const resolved = resolveWindowsShell();
+        if (!resolved.isBash) {
+          finalCommand = formatCommandForPowerShell(finalCommand);
+        }
+      }
+
+      currentProc = execa(finalCommand, {
         shell: shellPath,
         cwd: targetCwd,
         reject: false,
         all: true,
       });
 
-      const task: BackgroundTask = {
-        id: taskId,
-        command,
-        process: proc,
-        output: [],
-        logPath,
-      };
+      let currentTask: BackgroundTask;
+      if (!task) {
+        currentTask = {
+          id: taskId,
+          command: commandToRun,
+          process: currentProc,
+          output: [],
+          logPath,
+          autoRetry,
+          onExit,
+        };
+        task = currentTask;
+        backgroundTasks.set(taskId, task);
+      } else {
+        task.process = currentProc;
+        task.command = commandToRun;
+        task.hasExited = false;
+        task.exitCode = undefined;
+        currentTask = task;
+      }
 
-      backgroundTasks.set(taskId, task);
       notifyTasksChanged();
 
-      proc.all?.on("data", (data) => {
+      currentProc.all?.on("data", (data: any) => {
         const text = data.toString();
-        task.output.push(text);
-        if (task.output.length > 1000) {
-          task.output.shift();
+        currentTask.output.push(text);
+        if (currentTask.output.length > 1000) {
+          currentTask.output.shift();
         }
         try {
           fs.appendFileSync(logPath, text);
@@ -461,31 +553,137 @@ export const runBackgroundProcessTool: Tool = {
         }
       });
 
-      let hasExited = false;
-      let exitCode: number | null = null;
-
-      proc.on("close", (code) => {
+      currentProc.on("close", async (code: number | null) => {
         hasExited = true;
         exitCode = code;
-        task.hasExited = true;
-        task.exitCode = code;
+        currentTask.hasExited = true;
+        currentTask.exitCode = code;
         const exitMsg = `\n[Process exited with code ${code}]`;
-        task.output.push(exitMsg);
+        currentTask.output.push(exitMsg);
         try {
           fs.appendFileSync(logPath, exitMsg);
         } catch {
           // ignore
         }
         notifyTasksChanged();
-      });
 
-      // Settle time wait of 2000ms
-      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+        if (code !== 0 && code !== null) {
+          if (onExit === "restart" && restartAttempts < maxRestarts) {
+            restartAttempts++;
+            const restartMsg = `\n[System: Restarting background process (attempt ${restartAttempts}/${maxRestarts})...]\n`;
+            currentTask.output.push(restartMsg);
+            try {
+              fs.appendFileSync(logPath, restartMsg);
+            } catch {}
+            startProcess();
+            return;
+          }
+
+          try {
+            const { agentLocalStorage } = await import("../agent.js");
+            const activeAgent = agentLocalStorage.getStore();
+            if (activeAgent && typeof activeAgent.getHistory === "function") {
+              activeAgent.getHistory().addMessage({
+                role: "system",
+                content: `[NOTIFICATION] Background process "${taskId}" (${commandToRun}) exited unexpectedly with code ${code}.`,
+                timestamp: Date.now(),
+              });
+              await activeAgent.saveHistory();
+            }
+          } catch (err) {
+            // Ignored
+          }
+        }
+      });
+    };
+
+    let fallbackPrefix = "npx";
+    if (fs.existsSync(path.join(targetCwd, "pnpm-lock.yaml"))) {
+      fallbackPrefix = "pnpm dlx";
+    } else if (fs.existsSync(path.join(targetCwd, "yarn.lock"))) {
+      fallbackPrefix = "yarn dlx";
+    } else if (fs.existsSync(path.join(targetCwd, "bun.lockb")) || fs.existsSync(path.join(targetCwd, "bun.lock"))) {
+      fallbackPrefix = "bunx";
+    }
+
+    const waitForHealth = async (): Promise<boolean> => {
+      let elapsedMs = 0;
+      const checkInterval = 100;
+      const timeoutMs = (args.healthCheckUrl || args.healthCheckPort) ? 3000 : 2000;
+      
+      while (elapsedMs < timeoutMs) {
+        if (hasExited) {
+          return exitCode === 0;
+        }
+        
+        if (args.healthCheckUrl || args.healthCheckPort) {
+          let healthPassed = true;
+          if (args.healthCheckUrl) {
+            healthPassed = await pingHttp(args.healthCheckUrl as string);
+          } else if (args.healthCheckPort) {
+            healthPassed = await pingPort(Number(args.healthCheckPort));
+          }
+
+          if (healthPassed) {
+            return true;
+          }
+        }
+
+        await new Promise<void>((resolve) => setTimeout(resolve, checkInterval));
+        elapsedMs += checkInterval;
+      }
+      return !(args.healthCheckUrl || args.healthCheckPort);
+    };
+
+    try {
+      await startProcess();
+
+      let isHealthy = await waitForHealth();
+
+      if (!isHealthy) {
+        const trimmedLower = commandToRun.trim().toLowerCase();
+        const hasPrefix = trimmedLower.startsWith("npx") || trimmedLower.startsWith("pnpm") || trimmedLower.startsWith("yarn") || trimmedLower.startsWith("bun");
+        if (autoRetry && !hasPrefix) {
+          if (currentProc && !hasExited) {
+            currentProc.kill("SIGKILL");
+          }
+          commandToRun = `${fallbackPrefix} ${commandToRun}`;
+          const retryMsg = `\n[System: Process failed health check. Retrying with '${fallbackPrefix}' prefix...]\n`;
+          try {
+            fs.appendFileSync(logPath, retryMsg);
+          } catch {}
+          
+          await startProcess();
+
+          isHealthy = await waitForHealth();
+        }
+      }
+
+      if (!isHealthy) {
+        if (hasExited) {
+          backgroundTasks.delete(taskId);
+          notifyTasksChanged();
+          const logs = (task?.output || []).join("");
+          const formattedLogs = formatAndTruncateOutput(logs, 20, logPath);
+          if (args.healthCheckUrl || args.healthCheckPort) {
+            return `Error: Background process failed health check (exited with code ${exitCode}).\nLogs:\n${formattedLogs}`;
+          } else {
+            return `Error: Background process failed instantly (exit code ${exitCode}).\nLogs:\n${formattedLogs}`;
+          }
+        } else {
+          if (currentProc && typeof currentProc.kill === "function" && !hasExited) {
+            currentProc.kill("SIGKILL");
+          }
+          backgroundTasks.delete(taskId);
+          notifyTasksChanged();
+          return `Error: Background process failed health check (did not become healthy on URL/port within 3s).`;
+        }
+      }
 
       if (hasExited) {
         backgroundTasks.delete(taskId);
         notifyTasksChanged();
-        const logs = task.output.join("");
+        const logs = (task?.output || []).join("");
         const formattedLogs = formatAndTruncateOutput(logs, 20, logPath);
         if (exitCode !== 0) {
           return `Error: Background process failed instantly (exit code ${exitCode}).\nLogs:\n${formattedLogs}`;

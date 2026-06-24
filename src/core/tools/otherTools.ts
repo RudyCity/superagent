@@ -1137,10 +1137,7 @@ export const managePlanTool: Tool = {
           return "Error: The 'planContent' parameter is required for the 'create' action.";
         }
 
-        const { missing: missingHeaders, content: enhancedPlanContent } = validatePlan(planContentInput);
-        if (missingHeaders.length > 0) {
-          return `Error: The implementation plan is invalid or lacks deep structure. A valid global plan must include:\n${missingHeaders.map(m => `- ${m}`).join("\n")}\n\nPlease rewrite the plan with all required sections and headers included.`;
-        }
+        const { content: enhancedPlanContent } = validatePlan(planContentInput);
 
         // Write implementation plan (may have been enhanced with delegation note)
         await fs.mkdir(path.dirname(planPath), { recursive: true });

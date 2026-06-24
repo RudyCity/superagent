@@ -583,8 +583,9 @@ If none of the options are suitable, still pick the closest one.`;
     if (this.planState === "IDLE" && (!process.env.VITEST || process.env.SUPERAGENT_TEST_SIMPLE_TASK === "true")) {
       try {
         const model = this.getModel();
+        const threshold = getSettings().simpleTaskFileThreshold ?? 3;
         const classificationPrompt = `You are a helper that classifies if a user request is a "simple task".
-A request is a "simple task" if it expects modification or creation of fewer than 3 files and does NOT introduce any new architecture, major system changes, or complex orchestration.
+A request is a "simple task" if it expects modification or creation of fewer than ${threshold} files and does NOT introduce any new architecture, major system changes, or complex orchestration.
 For example, simple refactorings, adding single simple functions, modifying specific existing logic, or fixing a simple bug are simple tasks.
 
 User request: "${userInput}"
@@ -609,7 +610,7 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
           
           const lowerInput = userInput.toLowerCase();
           const words = lowerInput.split(/[^a-zA-Z0-9'’]+/).filter(Boolean);
-          const preApprovalWords = ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
+          const preApprovalWords = getSettings().simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
           const hasPreApproval = preApprovalWords.some(word => {
             if (word.includes(' ')) {
               return lowerInput.includes(word);

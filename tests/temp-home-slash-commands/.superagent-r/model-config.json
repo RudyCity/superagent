@@ -5,7 +5,20 @@
     "rateLimitCapacity": 15,
     "disableStreaming": false,
     "contextWindowLimit": 0,
-    "maxIterations": 50
+    "maxIterations": 50,
+    "simpleTaskFileThreshold": 3,
+    "simpleTaskKeywords": [
+      "lanjut",
+      "coba",
+      "go ahead",
+      "proceed",
+      "try",
+      "run",
+      "execute",
+      "ok",
+      "yes",
+      "y"
+    ]
   },
   "providers": [
     {
