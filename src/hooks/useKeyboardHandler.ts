@@ -193,7 +193,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
   const handlerRef = useRef<(inputChar: string, key: any) => void>();
   handlerRef.current = (inputChar, key) => {
     const isEscape = !!(key?.escape || inputChar === "\x1b" || inputChar === "\u001b");
-    const isCtrlC = !!(key?.ctrl && (inputChar === "c" || inputChar === "\x03"));
+    const isCtrlC = !!(inputChar === "\x03" || (key?.ctrl && inputChar === "c"));
 
     // Ctrl+C when wizard is active: always cancel wizard first, never exit app.
     // This check must be BEFORE focusedResponseIndex and focusMode checks

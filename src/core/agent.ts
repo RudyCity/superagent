@@ -1176,6 +1176,12 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 }
               }
 
+              if (signal?.aborted) {
+                const err = new Error("AbortError");
+                err.name = "AbortError";
+                throw err;
+              }
+
               try {
                 const usage = await result.usage;
                 const durationMs = Date.now() - startTime;

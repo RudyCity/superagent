@@ -131,7 +131,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
   const handlerRef = React.useRef<(input: string, key: any) => void>();
   handlerRef.current = (input, key) => {
     const isEscape = !!(key?.escape || input === "\x1b" || input === "\u001b");
-    const isCtrlC = !!(key?.ctrl && (input === "c" || input === "\x03"));
+    const isCtrlC = !!(input === "\x03" || (key?.ctrl && input === "c"));
 
     if (isCtrlC) {
       if (activeWizard) {
