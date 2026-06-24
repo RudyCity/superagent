@@ -124,7 +124,8 @@ export class ContextManager {
 
   async compact(
     messages: Message[],
-    strategy?: CompactionStrategy
+    strategy?: CompactionStrategy,
+    abortSignal?: AbortSignal
   ): Promise<CompactionResult> {
     this.setState("CHECKING");
 
@@ -144,6 +145,7 @@ export class ContextManager {
       const result = await selectedStrategy.execute(messages, {
         tokenBudget: this.calculateThreshold(),
         pinnedMessageIds: new Set(this.pinnedMessages.keys()),
+        abortSignal,
       });
 
       this.setState("VALIDATING");
@@ -154,7 +156,7 @@ export class ContextManager {
         result.messages
       ).total;
 
-      this.history.record({
+      await this.history.record({
         id: this.generateId(),
         timestamp: Date.now(),
         strategy: selectedStrategy.name,

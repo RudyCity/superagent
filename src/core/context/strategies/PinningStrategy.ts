@@ -5,7 +5,7 @@ import {
   CompactionOptions,
   CompactionCost,
 } from "../CompactionStrategy.js";
-import { Message } from "../../conversation.js";
+import { Message, contentToString } from "../../conversation.js";
 
 export class PinningStrategy implements CompactionStrategy {
   name = "pinning";
@@ -24,12 +24,15 @@ export class PinningStrategy implements CompactionStrategy {
     const pinned: Array<{ index: number; msg: Message }> = [];
     const unpinned: Message[] = [];
 
-    // Use index-based ID format: "${index}:${role}:${timestamp}"
-    // This matches the format used by pinCommand when pinning messages
+    // Use stable content-based IDs: role:timestamp:contentPrefix
+    // These survive compaction (unlike index-based IDs which shift after pruning).
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
-      const id = `${i}:${msg.role}:${msg.timestamp}`;
-      if (pinnedIds.has(id)) {
+      const contentPrefix = contentToString(msg.content).slice(0, 64);
+      const stableId = `${msg.role}:${msg.timestamp}:${contentPrefix}`;
+      // Also try legacy index-based ID for backward compatibility
+      const legacyId = `${i}:${msg.role}:${msg.timestamp}`;
+      if (pinnedIds.has(stableId) || pinnedIds.has(legacyId)) {
         pinned.push({ index: i, msg });
       } else {
         unpinned.push(msg);
@@ -43,7 +46,7 @@ export class PinningStrategy implements CompactionStrategy {
     const toSummarize = unpinned.slice(0, keepIndex);
     const toKeep = unpinned.slice(keepIndex);
 
-    const summary = `[Summary of ${toSummarize.length} unpinned messages]: Context preserved`;
+    const summary = this.buildPruneSummary(toSummarize);
 
     const summaryMessage: Message = {
       role: "user",
@@ -76,7 +79,7 @@ export class PinningStrategy implements CompactionStrategy {
 
   estimateCost(messages: Message[]): CompactionCost {
     const inputTokens = messages.reduce(
-      (sum, m) => sum + Math.ceil(m.content.length / 4),
+      (sum, m) => sum + Math.ceil(contentToString(m.content).length / 4),
       0
     );
     return {
@@ -84,5 +87,42 @@ export class PinningStrategy implements CompactionStrategy {
       time: 2000,
       apiCalls: 1,
     };
+  }
+
+  /**
+   * Build an informative summary of pruned messages by extracting
+   * file paths, tool names, and error keywords — so the agent still
+   * has context about what was removed.
+   */
+  private buildPruneSummary(messages: Message[]): string {
+    if (messages.length === 0) return "No messages pruned.";
+
+    const filePaths = new Set<string>();
+    const toolNames = new Set<string>();
+    const errorKeywords: string[] = [];
+
+    for (const m of messages) {
+      const text = contentToString(m.content);
+      // Extract file paths
+      const fps = text.match(/(?:[\/\\]|\b)[\w.-]+(?:[\/\\])[\w.-]+(?:\.\w+)?/g) || [];
+      fps.forEach((f) => filePaths.add(f));
+      // Extract tool names
+      (m.toolCalls || []).forEach((tc) => toolNames.add(tc.name));
+      // Extract error mentions (first 120 chars of match)
+      const errorMatch = text.match(/(?:error|failed|exception)[^\n]{0,120}/i);
+      if (errorMatch) errorKeywords.push(errorMatch[0].trim());
+    }
+
+    const parts: string[] = [
+      `[Pruned ${messages.length} unpinned messages from context.]`,
+    ];
+    if (filePaths.size > 0)
+      parts.push(`Files referenced: ${[...filePaths].slice(0, 8).join(", ")}.`);
+    if (toolNames.size > 0)
+      parts.push(`Tools used: ${[...toolNames].join(", ")}.`);
+    if (errorKeywords.length > 0)
+      parts.push(`Errors noted: ${errorKeywords.slice(0, 3).join(" | ")}.`);
+
+    return parts.join(" ");
   }
 }

@@ -1980,7 +1980,7 @@ for (const tc of toolCalls) {
         `Context compaction triggered: ${decision.reason} (strategy: ${decision.recommendedStrategy?.name || "auto"})`
       );
 
-      const result = await contextManager.compact(messages);
+      const result = await contextManager.compact(messages, undefined, signal);
 
       this.conversation.replaceMessages(result.messages);
       await this.saveHistory();

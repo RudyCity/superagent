@@ -10,6 +10,7 @@ import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts";
 import { getSettings } from "../../config.js";
 import { SummarizationStrategy } from "./SummarizationStrategy.js";
 import path from "path";
+import { createHash } from "crypto";
 
 export class TencentDBMemoryStrategy implements CompactionStrategy {
   name = "tencentdb-memory";
@@ -50,7 +51,37 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
     });
 
     const historyPath = this.historyFilePath || "";
-    const sessionKey = historyPath ? path.basename(historyPath, path.extname(historyPath)) : "default-session";
+    // Use a stable 8-char hash of the full path so different projects never
+    // share the same TencentDB session key (even if filenames are identical).
+    const keySource = historyPath || process.cwd();
+    const sessionKey = createHash("sha1").update(keySource).digest("hex").slice(0, 8);
+
+    // Lazily load lastCapturedTimestamp from persisted compaction history
+    if (this.lastCapturedTimestamp === 0 && historyPath) {
+      try {
+        const fs = await import("fs/promises");
+        const fileData = await fs.readFile(historyPath, "utf-8");
+        const events = JSON.parse(fileData);
+        if (Array.isArray(events)) {
+          const tdbEvents = events.filter(
+            (e: any) =>
+              e.strategy === "tencentdb-memory" ||
+              e.metadata?.strategy === "tencentdb-memory"
+          );
+          let maxWatermark = 0;
+          for (const e of tdbEvents) {
+            const watermark =
+              e.metadata?.lastCapturedTimestamp || e.lastCapturedTimestamp || 0;
+            if (watermark > maxWatermark) {
+              maxWatermark = watermark;
+            }
+          }
+          this.lastCapturedTimestamp = maxWatermark;
+        }
+      } catch (e) {
+        // Ignore file read/parse errors
+      }
+    }
 
     try {
       // 1. Capture user/assistant messages to L0 incrementally
@@ -63,18 +94,14 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
         }));
 
       if (newMessages.length > 0) {
-        // Fire-and-forget: don't block compaction on L0 capture
-        const maxTs = Math.max(...messages.map((m) => m.timestamp || 0));
-        client.addConversation({
+        await client.addConversation({
           session_id: sessionKey,
           messages: newMessages,
-        }).then(() => {
-          if (maxTs > this.lastCapturedTimestamp) {
-            this.lastCapturedTimestamp = maxTs;
-          }
-        }).catch((err: Error) => {
-          console.warn("[TencentDB] addConversation failed silently:", err.message);
         });
+        const maxTs = Math.max(...messages.map((m) => m.timestamp || 0));
+        if (maxTs > this.lastCapturedTimestamp) {
+          this.lastCapturedTimestamp = maxTs;
+        }
       }
 
       // 2. Recall long-term memories
@@ -84,7 +111,7 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
 
       // Parallel requests for L1 memories, L3 persona, and L2 scenarios
       const [searchResult, persona, scenarios] = await Promise.allSettled([
-        client.searchAtomic({ query, limit: options.tokenBudget ? Math.min(5, Math.ceil(options.tokenBudget / 1000)) : 5 }),
+        client.searchAtomic({ query, limit: Math.min(10, Math.ceil((options.tokenBudget || 8000) / 2000)) }),
         client.readCore(),
         client.listScenarios({}),
       ]);
@@ -146,6 +173,7 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
           messagesBefore: messages.length,
           messagesAfter: result.length,
           summary: summaryText || "No prior memories recalled.",
+          lastCapturedTimestamp: this.lastCapturedTimestamp,
         },
       };
     } catch (error) {

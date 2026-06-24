@@ -34,6 +34,7 @@ export class SummarizationStrategy implements CompactionStrategy {
     options: CompactionOptions
   ): Promise<CompactionResult> {
     const preserveRecent = options.preserveRecent || 20;
+    const abortSignal = options.abortSignal ?? this.config?.abortSignal;
 
     let keepIndex = Math.max(0, messages.length - preserveRecent);
     while (keepIndex < messages.length && messages[keepIndex]?.role === "tool") {
@@ -44,7 +45,7 @@ export class SummarizationStrategy implements CompactionStrategy {
 
     let summary: string;
     if (this.config?.model) {
-      summary = await this.generateLLMSummary(toSummarize);
+      summary = await this.generateLLMSummary(toSummarize, abortSignal);
     } else {
       summary = this.createHeuristicSummary(toSummarize);
     }
@@ -71,7 +72,7 @@ export class SummarizationStrategy implements CompactionStrategy {
 
   estimateCost(messages: Message[]): CompactionCost {
     const inputTokens = messages.reduce(
-      (sum, m) => sum + Math.ceil(m.content.length / 4),
+      (sum, m) => sum + Math.ceil(contentToString(m.content).length / 4),
       0
     );
     const outputTokens = 500;
@@ -83,17 +84,23 @@ export class SummarizationStrategy implements CompactionStrategy {
     };
   }
 
-  private async generateLLMSummary(messages: Message[]): Promise<string> {
+  private async generateLLMSummary(messages: Message[], abortSignal?: AbortSignal): Promise<string> {
+    const MAX_FORMATTED_CHARS = 80_000;
     const formatted = messages
       .map((m) => {
         const role = m.role.toUpperCase();
-        let details = m.content || "";
+        let details = contentToString(m.content) || "";
         if (m.toolCalls && m.toolCalls.length > 0) {
           details += `\n[Tool Calls]: ${m.toolCalls.map((tc) => tc.name).join(", ")}`;
         }
         return `[${role}]: ${details}`;
       })
       .join("\n\n");
+
+    // Guard: truncate if too large to avoid LLM context overflow + expensive retries
+    const truncated = formatted.length > MAX_FORMATTED_CHARS
+      ? formatted.slice(0, MAX_FORMATTED_CHARS) + "\n[... truncated for brevity ...]"
+      : formatted;
 
     const prompt = `You are a helper system node. Summarize the following past coding assistant chat history turns extremely briefly.
 Identify:
@@ -105,7 +112,7 @@ Keep the summary concise, clear, and direct. Preserve key file paths, function n
 
 ---
 PAST CHAT HISTORY:
-${formatted}`;
+${truncated}`;
 
     let attempt = 0;
     const maxRetries = 3;
@@ -118,7 +125,7 @@ ${formatted}`;
           system:
             "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
           prompt,
-          abortSignal: this.config!.abortSignal,
+          abortSignal: abortSignal ?? this.config!.abortSignal,
         });
         return result.text;
       } catch (err: unknown) {
@@ -130,6 +137,7 @@ ${formatted}`;
           // Fallback to heuristic summary on repeated failure
           return this.createHeuristicSummary(messages);
         }
+        if (abortSignal?.aborted) throw err;
         await new Promise((resolve) =>
           setTimeout(resolve, baseDelay * Math.pow(2, attempt - 1))
         );

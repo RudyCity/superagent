@@ -114,7 +114,7 @@ export async function runTencentdbSetup() {
         const outLog = fs.openSync(path.join(logDir, "gateway.log"), "a");
         const errLog = fs.openSync(path.join(logDir, "gateway.err"), "a");
         const providers = getConfiguredProviders();
-        const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+        const isMulti = process.argv.includes("--multi");
         const modelMode = isMulti ? "multi" : "single";
         // Resolve memory-specific tier model/provider from presets, if any
         const resolvedTier = getTierModelWithProvider(modelMode, "memory") || getTierModelWithProvider(modelMode, "tencentdb") || "";

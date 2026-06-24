@@ -1,4 +1,4 @@
-import { Message, MessageContent } from "../conversation";
+import { Message, MessageContent, contentToString } from "../conversation";
 
 export interface TokenBreakdown {
   systemPrompt: number;
@@ -8,15 +8,28 @@ export interface TokenBreakdown {
   total: number;
 }
 
+const MAX_CACHE_SIZE = 500;
+
+/** Simple LRU eviction: when Map exceeds MAX_CACHE_SIZE, drop the oldest entry. */
+function lruSet<K, V>(map: Map<K, V>, key: K, value: V): void {
+  if (map.size >= MAX_CACHE_SIZE) {
+    const oldest = map.keys().next().value;
+    map.delete(oldest!);
+  }
+  map.set(key, value);
+}
+
 export class TokenTracker {
   private model: string;
   private cache: Map<string, number> = new Map();
   private breakdownCache: Map<string, { content: number; toolCalls: number; toolResults: number }> = new Map();
   private encoder: any = null;
+  /** Resolved once tiktoken is ready (or failed). Await before first count. */
+  private encoderReady: Promise<void>;
 
   constructor(model: string) {
     this.model = model;
-    this.initEncoder();
+    this.encoderReady = this.initEncoder();
   }
 
   private async initEncoder(): Promise<void> {
@@ -26,6 +39,11 @@ export class TokenTracker {
     } catch {
       this.encoder = null;
     }
+  }
+
+  /** Await this before the first token estimate to ensure encoder is loaded. */
+  async ensureEncoder(): Promise<void> {
+    return this.encoderReady;
   }
 
   setModel(model: string): void {
@@ -59,7 +77,7 @@ export class TokenTracker {
       }
     }
 
-    this.cache.set(hash, tokens);
+    lruSet(this.cache, hash, tokens);
     return tokens;
   }
 
@@ -88,7 +106,7 @@ export class TokenTracker {
           }
         }
         cached = { content, toolCalls: tcTokens, toolResults: trTokens };
-        this.breakdownCache.set(hash, cached);
+        lruSet(this.breakdownCache, hash, cached);
       }
 
       if (msg.role === "system") {
@@ -160,10 +178,17 @@ export class TokenTracker {
     return Math.ceil(text.length / ratio);
   }
 
+  /**
+   * Stable hash that includes a content prefix to prevent collisions between
+   * messages sharing the same role, timestamp, and content length but differing
+   * in actual text (e.g., two user messages sent at the same millisecond).
+   */
   private hashMessage(message: Message): string {
-    const contentLen = typeof message.content === "string"
-      ? message.content.length
-      : message.content.reduce((n, p) => n + (p.type === "text" ? p.text.length : 0), 0);
-    return `${message.role}:${contentLen}:${message.timestamp || 0}:${message.toolCalls?.length || 0}:${message.toolResults?.length || 0}`;
+    const text = contentToString(message.content);
+    const contentLen = text.length;
+    // First 64 chars as discriminator — cheap and collision-resistant enough
+    const contentPrefix = text.slice(0, 64).replace(/\s+/g, " ");
+    return `${message.role}:${contentLen}:${message.timestamp || 0}:${message.toolCalls?.length || 0}:${message.toolResults?.length || 0}:${contentPrefix}`;
   }
 }
+

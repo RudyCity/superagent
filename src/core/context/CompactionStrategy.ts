@@ -30,6 +30,8 @@ export interface CompactionOptions {
   preserveRecent?: number;
   customPrompt?: string;
   pinnedMessageIds?: Set<string>;
+  /** Pass AbortSignal so long-running strategies (e.g. LLM summarization) can be cancelled. */
+  abortSignal?: AbortSignal;
 }
 
 export interface CompactionStrategy {

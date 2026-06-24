@@ -1,8 +1,12 @@
+import fs from "fs";
+import path from "path";
 import { filterSuggestions } from "./text.js";
 import { getCachedModelIds, getInstalledSkills, listHistorySessions } from "../core/config.js";
 import { registry } from "../core/commands/registry.js";
 import { backgroundTasks } from "../core/tools.js";
 const BUILTIN_DESCRIPTIONS = {
+    "/internal-hooks": "Manage custom internal hook tools — init, dev, or select active hooks",
+    "/ih": "Manage custom internal hook tools — init, dev, or select active hooks",
     "/model": "Switch active LLM model or configure per-tier models",
     "/login": "Add API credentials or switch active provider",
     "/resume": "Resume a previous session from history",
@@ -159,6 +163,29 @@ export function getDashboardSuggestions(query) {
             "/setting-tencentdb hide-bg-procs",
         ];
         return filterSuggestions(possibilities, query);
+    }
+    if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
+        const subSuggestions = [`${parts[0]} init`, `${parts[0]} dev`, `${parts[0]} active`];
+        if (parts.length === 1) {
+            return subSuggestions;
+        }
+        const sub = parts[1]?.toLowerCase();
+        if (sub === "dev" || sub === "init") {
+            const hooksRoot = path.join(process.cwd(), "internal-hooks");
+            let hookDirs = [];
+            if (fs.existsSync(hooksRoot)) {
+                try {
+                    hookDirs = fs.readdirSync(hooksRoot, { withFileTypes: true })
+                        .filter(item => item.isDirectory())
+                        .map(item => `${parts[0]} ${sub} ${item.name}`);
+                }
+                catch { }
+            }
+            if (hookDirs.length > 0) {
+                return filterSuggestions(hookDirs, query);
+            }
+        }
+        return filterSuggestions(subSuggestions, query);
     }
     return [];
 }

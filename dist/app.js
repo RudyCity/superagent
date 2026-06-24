@@ -8,6 +8,7 @@ import { contentToString } from "./core/conversation.js";
 import ImageAttachmentBar from "./components/ImageAttachmentBar.js";
 import { readImageFromPath, readImageFromClipboard, attachmentToImagePart, } from "./utils/imageUtils.js";
 import fs from "fs/promises";
+import fsSync from "fs";
 import { handleSlashCommand, getDefaultModel } from "./core/slash-commands.js";
 import { registry } from "./core/commands/registry.js";
 import { createCheckpoint } from "./core/checkpoints.js";
@@ -686,6 +687,26 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
             ];
             return filterSuggestions(terminalSuggestions, currentInput);
         }
+        if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
+            const subSuggestions = [`${mainCommand} init`, `${mainCommand} dev`, `${mainCommand} active`];
+            if (parts.length === 2) {
+                return filterSuggestions(subSuggestions, currentInput);
+            }
+            if (parts.length >= 3 && parts[1].toLowerCase() === "dev") {
+                const hooksRoot = path.join(process.cwd(), "internal-hooks");
+                let hookDirs = [];
+                if (fsSync.existsSync(hooksRoot)) {
+                    try {
+                        hookDirs = fsSync.readdirSync(hooksRoot, { withFileTypes: true })
+                            .filter(item => item.isDirectory())
+                            .map(item => `${mainCommand} dev ${item.name}`);
+                    }
+                    catch { }
+                }
+                return filterSuggestions(hookDirs, currentInput);
+            }
+            return filterSuggestions(subSuggestions, currentInput);
+        }
         if (mainCommand === "/model") {
             if (currentInput.startsWith(`${mainCommand} preset`)) {
                 const presetSuggestions = [
@@ -1285,7 +1306,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
             });
         });
     }, []);
-    const questionHandler = useCallback((question, options, isMultiSelect) => {
+    const questionHandler = useCallback((question, options, isMultiSelect, initialCheckedIndices) => {
         return new Promise((resolve) => {
             if (Array.isArray(question)) {
                 const questions = question;
@@ -1296,7 +1317,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 setPendingQuestion({ question: q0.question, options: allOptions, resolve });
                 setWizardOptions(allOptions);
                 setWizardSelectedIndex(0);
-                setWizardSelectedSet(new Set());
+                setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
                 setActiveWizard({
                     type: "question",
                     step: hasOptions ? 1 : 2,
@@ -1313,7 +1334,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 setPendingQuestion({ question, options: allOptions, resolve });
                 setWizardOptions(allOptions);
                 setWizardSelectedIndex(0);
-                setWizardSelectedSet(new Set());
+                setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
                 setActiveWizard({
                     type: "question",
                     step: hasOptions ? 1 : 2,

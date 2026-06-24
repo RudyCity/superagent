@@ -19,17 +19,30 @@ export class CompactionHistory {
   private events: CompactionEvent[] = [];
   private maxHistory = 50;
   private filePath?: string;
+  private isLoaded = false;
+  private loadingPromise: Promise<void>;
 
   constructor(filePath?: string) {
     this.filePath = filePath;
     if (filePath) {
-      this.load().catch(() => {
-        // Ignore load errors - file may not exist yet
-      });
+      this.loadingPromise = this.load()
+        .then(() => {
+          this.isLoaded = true;
+        })
+        .catch(() => {
+          this.isLoaded = true;
+        });
+    } else {
+      this.isLoaded = true;
+      this.loadingPromise = Promise.resolve();
     }
   }
 
-  record(event: CompactionEvent): void {
+  async record(event: CompactionEvent): Promise<void> {
+    if (!this.isLoaded) {
+      await this.loadingPromise;
+    }
+
     this.events.push(event);
 
     if (this.events.length > this.maxHistory) {
