@@ -296,6 +296,10 @@ export class ContextManager {
     return this.tokenTracker.estimateTokensForAll(messages);
   }
 
+  estimateTokens(message: Message): number {
+    return this.tokenTracker.estimateTokens(message);
+  }
+
   private calculateThreshold(): number {
     const modelLimit = this.config.contextWindowLimit;
     const responseBuffer = 8000;

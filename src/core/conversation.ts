@@ -303,16 +303,37 @@ export class Conversation {
     setLastMasterPromptTokens(0);
   }
 
+  getMessageTokenEstimate(m: Message): number {
+    if (this.contextManager) {
+      return this.contextManager.estimateTokens(m);
+    }
+    const text = typeof m.content === "string"
+      ? m.content
+      : m.content.map(p => p.type === "text" ? p.text : "").join("");
+    return Math.ceil(text.length / 4);
+  }
+
   pruneToTokenLimit(maxTokens: number): void {
-    while (this.messages.length > 2 && this.getTokenEstimate() > maxTokens) {
+    let currentTokens = this.getTokenEstimate();
+    if (currentTokens <= maxTokens) return;
+
+    while (this.messages.length > 2 && currentTokens > maxTokens) {
       const first = this.messages[0];
+      const firstTokens = this.getMessageTokenEstimate(first);
+
       if (first.role === "assistant" && first.toolCalls && first.toolCalls.length > 0) {
         this.messages.shift();
+        currentTokens -= firstTokens;
+
         if (this.messages.length > 0 && this.messages[0].role === "tool") {
+          const second = this.messages[0];
+          const secondTokens = this.getMessageTokenEstimate(second);
           this.messages.shift();
+          currentTokens -= secondTokens;
         }
       } else {
         this.messages.shift();
+        currentTokens -= firstTokens;
       }
     }
   }

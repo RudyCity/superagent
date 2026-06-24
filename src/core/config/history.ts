@@ -32,7 +32,21 @@ export interface HistorySession {
   preview: string;
 }
 
+interface HistoryCacheEntry {
+  timestamp: number;
+  data: HistorySession[];
+}
+
+const listCache = new Map<string, HistoryCacheEntry>();
+
 export function listHistorySessions(isMulti = false, crossSession = false): HistorySession[] {
+  const cacheKey = `${isMulti}:${crossSession}:${process.cwd()}`;
+  const now = Date.now();
+  const cached = listCache.get(cacheKey);
+  if (!process.env.VITEST && cached && now - cached.timestamp < 3000) {
+    return cached.data;
+  }
+
   const mode = isMulti ? "multi" : "single";
   const historyDir = path.join(getGlobalConfigDir(), "history", mode);
   if (!fs.existsSync(historyDir)) return [];
@@ -126,5 +140,6 @@ export function listHistorySessions(isMulti = false, crossSession = false): Hist
 
   // Sort by most recently modified first
   sessions.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+  listCache.set(cacheKey, { timestamp: now, data: sessions });
   return sessions;
 }

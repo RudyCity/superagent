@@ -982,6 +982,32 @@ export function wrapChatLineToLines({
   return result;
 }
 
+const lineWrapCache = new Map<string, WrappedChatLine[]>();
+
+function getLineCacheKey(
+  line: ChatLine,
+  idx: number,
+  chatWidth: number,
+  isCollapsed: boolean,
+  childSet: Set<number>,
+  isLastAssistant: boolean
+): string {
+  const childrenKey = line.children
+    ? line.children.map((c, i) => `${c.type}:${c.content.length}:${c.mergedResult ? "m" : "n"}:${childSet.has(i)}`).join("|")
+    : "";
+  return [
+    idx,
+    chatWidth,
+    isCollapsed,
+    isLastAssistant,
+    line.type,
+    line.content.length,
+    line.timestamp,
+    line.mergedResult ? "m" : "n",
+    childrenKey
+  ].join(":");
+}
+
 export function computeWrappedLines({
   lines,
   chatWidth,
@@ -1015,6 +1041,13 @@ export function computeWrappedLines({
 }): WrappedChatLine[] {
   const result: WrappedChatLine[] = [];
 
+  if (lines.length === 0) {
+    lineWrapCache.clear();
+  }
+  if (lineWrapCache.size > 2000) {
+    lineWrapCache.clear();
+  }
+
   const lastAssistantIdx = (() => {
     const shouldRenderStreamNow = isProcessing && streamDisplay && streamDisplay.trim().length > 0;
     if (shouldRenderStreamNow) return -1;
@@ -1031,20 +1064,27 @@ export function computeWrappedLines({
       ? expandedLines.has(idx)
       : (isCollapsibleType(lines[idx].type) && !expandedLines.has(idx));
     const childSet = expandedChildren.get(idx) || new Set<number>();
+    const isLastAssistant = idx === lastAssistantIdx;
 
-    const wrapped = wrapChatLineToLines({
-      line: lines[idx],
-      isFirst,
-      lineIndex: idx,
-      tokensUp,
-      tokensDown,
-      modelName,
-      maxResponseLines: maxAssistantResponseLines,
-      chatWidth,
-      isLastAssistant: idx === lastAssistantIdx,
-      isCollapsed,
-      expandedChildren: childSet,
-    });
+    const cacheKey = getLineCacheKey(lines[idx], idx, chatWidth, isCollapsed, childSet, isLastAssistant);
+    let wrapped = lineWrapCache.get(cacheKey);
+
+    if (!wrapped) {
+      wrapped = wrapChatLineToLines({
+        line: lines[idx],
+        isFirst,
+        lineIndex: idx,
+        tokensUp,
+        tokensDown,
+        modelName,
+        maxResponseLines: maxAssistantResponseLines,
+        chatWidth,
+        isLastAssistant,
+        isCollapsed,
+        expandedChildren: childSet,
+      });
+      lineWrapCache.set(cacheKey, wrapped);
+    }
     result.push(...wrapped);
   }
 

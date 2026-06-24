@@ -11,6 +11,7 @@ export interface TokenBreakdown {
 export class TokenTracker {
   private model: string;
   private cache: Map<string, number> = new Map();
+  private breakdownCache: Map<string, { content: number; toolCalls: number; toolResults: number }> = new Map();
   private encoder: any = null;
 
   constructor(model: string) {
@@ -30,6 +31,7 @@ export class TokenTracker {
   setModel(model: string): void {
     this.model = model;
     this.cache.clear();
+    this.breakdownCache.clear();
   }
 
   getModel(): string {
@@ -68,23 +70,34 @@ export class TokenTracker {
     let toolResults = 0;
 
     for (const msg of messages) {
+      const hash = this.hashMessage(msg);
+      let cached = this.breakdownCache.get(hash);
+
+      if (!cached) {
+        let content = this.countContent(msg.content);
+        let tcTokens = 0;
+        if (msg.toolCalls) {
+          for (const call of msg.toolCalls) {
+            tcTokens += this.countText(JSON.stringify(call.args));
+          }
+        }
+        let trTokens = 0;
+        if (msg.toolResults) {
+          for (const result of msg.toolResults) {
+            trTokens += this.countText(result.result);
+          }
+        }
+        cached = { content, toolCalls: tcTokens, toolResults: trTokens };
+        this.breakdownCache.set(hash, cached);
+      }
+
       if (msg.role === "system") {
-        systemPrompt += this.countContent(msg.content);
+        systemPrompt += cached.content;
       } else {
-        messagesTokens += this.countContent(msg.content);
+        messagesTokens += cached.content;
       }
-
-      if (msg.toolCalls) {
-        for (const call of msg.toolCalls) {
-          toolCalls += this.countText(JSON.stringify(call.args));
-        }
-      }
-
-      if (msg.toolResults) {
-        for (const result of msg.toolResults) {
-          toolResults += this.countText(result.result);
-        }
-      }
+      toolCalls += cached.toolCalls;
+      toolResults += cached.toolResults;
     }
 
     return {
@@ -151,6 +164,6 @@ export class TokenTracker {
     const contentLen = typeof message.content === "string"
       ? message.content.length
       : message.content.reduce((n, p) => n + (p.type === "text" ? p.text.length : 0), 0);
-    return `${message.role}:${contentLen}:${message.toolCalls?.length || 0}:${message.toolResults?.length || 0}`;
+    return `${message.role}:${contentLen}:${message.timestamp || 0}:${message.toolCalls?.length || 0}:${message.toolResults?.length || 0}`;
   }
 }

@@ -79,7 +79,16 @@ export function App({
   initialPrompt?: string;
 }) {
   const { exit } = useApp();
-  const [lines, setLines] = useState<ChatLine[]>([]);
+  const [lines, _setLines] = useState<ChatLine[]>([]);
+  const setLines = useCallback((val: ChatLine[] | ((prev: ChatLine[]) => ChatLine[])) => {
+    _setLines((prev) => {
+      const next = typeof val === "function" ? val(prev) : val;
+      if (next.length > 1000) {
+        return next.slice(-1000);
+      }
+      return next;
+    });
+  }, []);
   const [input, setInput] = useState("");
   const [isPasted, setIsPasted] = useState(false);
   const [pastePrefixLength, setPastePrefixLength] = useState(0);
