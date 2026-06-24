@@ -3,6 +3,7 @@ import { getToolByName } from "./tools.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { getRootConfigDir } from "./config.js";
 import { agentLocalStorage } from "./agent.js";
+import { runEventHooks } from "./tools/dynamicHooks.js";
 
 export const MODIFYING_TOOLS = [
   "write",
@@ -408,7 +409,9 @@ export async function executeToolCall(
   }
 
   try {
+    await runEventHooks("pre_tool", { toolName: toolCall.name, args: toolCall.args, cwd });
     const result = await tool.execute(toolCall.args, cwd, signal);
+    await runEventHooks("post_tool", { toolName: toolCall.name, args: toolCall.args, result, cwd });
     const isError = isErrorLikeToolResult(result);
     if (isError) {
       try {

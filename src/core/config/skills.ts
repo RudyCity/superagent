@@ -93,6 +93,35 @@ export function getInstalledSkills(): LoadedSkill[] {
     path.join(packageRootDir, ".agents", "skills")
   ];
 
+  // Append active internal hooks' skills subdirectories
+  const hooksRoot = path.join(process.cwd(), "internal-hooks");
+  if (fs.existsSync(hooksRoot)) {
+    try {
+      const projectPath = process.cwd();
+      let activeHooks: string[] | null = null;
+      const configMapPath = path.join(os.homedir(), ".superagent-r", "model-config.json");
+      if (fs.existsSync(configMapPath)) {
+        try {
+          const config = JSON.parse(fs.readFileSync(configMapPath, "utf-8"));
+          activeHooks = config.activeHooks?.[projectPath] || null;
+        } catch {}
+      }
+
+      const items = fs.readdirSync(hooksRoot, { withFileTypes: true });
+      for (const item of items) {
+        if (item.isDirectory()) {
+          const isActive = activeHooks === null || activeHooks.includes(item.name);
+          if (isActive) {
+            const hookSkillsDir = path.join(hooksRoot, item.name, "skills");
+            if (fs.existsSync(hookSkillsDir)) {
+              searchDirs.push(hookSkillsDir);
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
   for (const dir of searchDirs) {
     if (fs.existsSync(dir)) {
       try {

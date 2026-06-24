@@ -12,6 +12,18 @@ class CommandRegistry {
     }
   }
 
+  unregister(name: string) {
+    const command = this.commands.get(name.toLowerCase());
+    if (command) {
+      this.commands.delete(name.toLowerCase());
+      if (command.aliases) {
+        for (const alias of command.aliases) {
+          this.commands.delete(alias.toLowerCase());
+        }
+      }
+    }
+  }
+
   get(name: string): SlashCommand | undefined {
     return this.commands.get(name.toLowerCase());
   }

@@ -1,5 +1,6 @@
 import { getInstalledSkills } from "./config.js";
 import { registry, SlashCommandContext, ChatLine } from "./commands/index.js";
+import { runEventHooks } from "./tools/dynamicHooks.js";
 
 export { ChatLine };
 export { 
@@ -17,6 +18,9 @@ export function handleSlashCommand(
   const [name, ...argsArray] = cmd.slice(1).split(" ");
   const args = argsArray.join(" ").trim();
   const now = Date.now();
+
+  // Run pre_command event hooks in background
+  runEventHooks("pre_command", { command: cmd, name, args }).catch(() => {});
 
   let isDirectSkill = false;
   let targetSlug = "";
@@ -48,11 +52,18 @@ export function handleSlashCommand(
         timestamp: now,
       });
       ctx.setIsProcessing?.(true);
-      ctx.agent?.sendMessage(
+      const sendPromise = ctx.agent?.sendMessage(
         `I would like you to use the following skill: "${matchedSkill.name}".\nPlease read its instruction file at "${matchedSkill.path}" using a file read tool first, and then help me with my request based on its instructions.`
-      ).catch((err: any) => {
-        ctx.addLine({ type: "error", content: `Skill activation error: ${err.message}`, timestamp: Date.now() });
-      });
+      );
+      if (sendPromise) {
+        sendPromise.then(() => {
+          runEventHooks("post_command", { command: cmd, name, args }).catch(() => {});
+        }).catch((err: any) => {
+          ctx.addLine({ type: "error", content: `Skill activation error: ${err.message}`, timestamp: Date.now() });
+        });
+      } else {
+        runEventHooks("post_command", { command: cmd, name, args }).catch(() => {});
+      }
     } else {
       ctx.addLine({
         type: "error",
@@ -68,13 +79,17 @@ export function handleSlashCommand(
     try {
       const res = command.execute(args, ctx);
       if (res instanceof Promise) {
-        return res.catch((err: any) => {
+        return res.then(() => {
+          runEventHooks("post_command", { command: cmd, name, args }).catch(() => {});
+        }).catch((err: any) => {
           ctx.addLine({
             type: "error",
             content: `Command execution failed: ${err.message}`,
             timestamp: Date.now(),
           });
         });
+      } else {
+        runEventHooks("post_command", { command: cmd, name, args }).catch(() => {});
       }
     } catch (err: any) {
       ctx.addLine({

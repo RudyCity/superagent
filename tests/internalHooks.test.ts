@@ -164,4 +164,85 @@ describe("Internal Hooks Feature", () => {
     // Clean up question handler
     registerQuestionHandler(null);
   });
+
+  it("should dynamically register custom slash commands from hook.json", async () => {
+    const { saveActiveHooksForProject } = await import("../src/core/tools/dynamicHooks.js");
+    const { registry } = await import("../src/core/commands/registry.js");
+    
+    // Save active hooks list to include our hook
+    saveActiveHooksForProject(tempDir, ["test-hook"]);
+
+    // Write a hook.json with a slash command
+    const hookDir = path.join(tempDir, "internal-hooks", "test-hook");
+    const hookJson = {
+      name: "test-hook",
+      description: "Custom internal hook tool description",
+      command: "node index.js",
+      slash_commands: [
+        {
+          name: "hook-test-cmd",
+          aliases: ["htc"],
+          description: "Hook test command description",
+          command: "node index.js --test"
+        }
+      ]
+    };
+    await fs.writeFile(path.join(hookDir, "hook.json"), JSON.stringify(hookJson, null, 2));
+
+    // Reload hooks (this registers the commands)
+    loadDynamicHooks();
+
+    // Check that command is registered in registry
+    const command = registry.get("hook-test-cmd");
+    expect(command).toBeDefined();
+    expect(command?.name).toBe("hook-test-cmd");
+    expect(command?.description).toBe("Hook test command description");
+    expect(command?.aliases).toEqual(["htc"]);
+  });
+
+  it("should execute pre_tool and post_tool event hooks without throwing", async () => {
+    const { runEventHooks } = await import("../src/core/tools/dynamicHooks.js");
+    const hookDir = path.join(tempDir, "internal-hooks", "test-hook");
+    
+    // Update hook.json with event hooks
+    const hookJson = {
+      name: "test-hook",
+      description: "Custom internal hook tool description",
+      command: "node index.js",
+      event_hooks: [
+        {
+          event: "pre_tool",
+          command: "node index.js --pre-tool-trigger"
+        }
+      ]
+    };
+    await fs.writeFile(path.join(hookDir, "hook.json"), JSON.stringify(hookJson, null, 2));
+
+    // Execute the hook event
+    await expect(
+      runEventHooks("pre_tool", { toolName: "read", args: { filePath: "test.txt" }, cwd: tempDir })
+    ).resolves.not.toThrow();
+  });
+
+  it("should dynamically load skills from active hooks skills subdirectory", async () => {
+    const { getInstalledSkills } = await import("../src/core/config/skills.js");
+    const hookDir = path.join(tempDir, "internal-hooks", "test-hook");
+    const skillDir = path.join(hookDir, "skills", "dynamic-hook-skill");
+    await fs.mkdir(skillDir, { recursive: true });
+
+    // Write a dummy SKILL.md
+    const skillMd = `---
+name: Dynamic Hook Skill
+description: Dynamic hook skill description
+---
+# Dynamic Hook Skill
+Dynamic hook skill body
+`;
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), skillMd);
+
+    const skills = getInstalledSkills();
+    const dynamicSkill = skills.find(s => s.name === "Dynamic Hook Skill");
+    expect(dynamicSkill).toBeDefined();
+    expect(dynamicSkill?.description).toBe("Dynamic hook skill description");
+  });
 });

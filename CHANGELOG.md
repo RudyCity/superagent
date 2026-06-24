@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.11] - 2026-06-25
+
+### Added
+- **Internal Hooks System Expansion**:
+  - **Dynamic Slash Commands (`slash_commands`)**: Custom CLI commands configured inside `hook.json` are now dynamically registered into the CLI command registry, rendering automatically in the auto-complete dashboard suggestion list.
+  - **Event Hooks (`event_hooks`)**: Implemented lifecycle event hooks for `pre_tool`, `post_tool`, `pre_command`, and `post_command`. Stdin pipes JSON metadata representing the event context to hook scripts.
+  - **Dynamic Hook Skills**: Added support for packaging dynamic agent instructions in `skills/` folders directly within hooks. Any subdirectories containing `SKILL.md` files are loaded on startup.
+- **Hook Documentation Update**: Updated `SKILL.md` for `Developing Internal Hooks` detailing the new configurations, triggers, context inputs, and best practices.
+
+---
+
 ## [1.2.10] - 2026-06-24
 
 ### Improved
