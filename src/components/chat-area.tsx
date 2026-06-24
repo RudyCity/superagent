@@ -627,7 +627,7 @@ export function wrapChatLineToLines({
       const headerNode = (
         <Box flexDirection="row">
           <Text color="blue">
-            {isFirst ? "┌" : "├"}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT{modelName ? ` (${modelName})` : ""}</Text><Text dimColor> (▲{formatCompactNumber(tokensUp || 0)} | ▼{formatCompactNumber(tokensDown || 0)})</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
+            {isFirst ? "┌" : "├"}─── [ <Text bold color="blue">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
           </Text>
         </Box>
       );
@@ -1055,7 +1055,7 @@ export function computeWrappedLines({
     const headerNode = (
       <Box flexDirection="row">
         <Text color="blue">
-          {borderPrefix}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (STREAMING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown)})</Text> ]
+          {borderPrefix}─── [ <Text bold color="blue">✦ SUPERAGENT (STREAMING...)</Text> ]
         </Text>
       </Box>
     );
@@ -1070,7 +1070,7 @@ export function computeWrappedLines({
     const headerNode = (
       <Box flexDirection="row">
         <Text color="blue">
-          {borderPrefix}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT (THINKING...)</Text><Text dimColor> (▲{formatCompactNumber(tokensUp)} | ▼{formatCompactNumber(tokensDown)})</Text> ]
+          {borderPrefix}─── [ <Text bold color="blue">✦ SUPERAGENT (THINKING...)</Text> ]
         </Text>
       </Box>
     );

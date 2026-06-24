@@ -735,7 +735,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       return (
         <Box flexDirection="column">
           <Text color="blue">
-            {isFirst ? "┌" : "├"}─── [ <Text bold color="blue">✦ COGNITIVE_NODE: SUPERAGENT{modelName ? ` (${modelName})` : ""}</Text><Text dimColor> (▲{formatCompactNumber(tokensUp || 0)} | ▼{formatCompactNumber(tokensDown || 0)})</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
+            {isFirst ? "┌" : "├"}─── [ <Text bold color="blue">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
           </Text>
           {renderMarkdown(capped.text, "blue")}
           {capped.truncated && (
