@@ -128,7 +128,8 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     setCheckpointsList,
   } = ctx;
 
-  useInput((input, key) => {
+  const handlerRef = React.useRef<(input: string, key: any) => void>();
+  handlerRef.current = (input, key) => {
     if (key.ctrl && input === "c") {
       if (activeWizard) {
         const needsAbort = activeWizard.type === "question" || activeWizard.type === "plan_approve" || activeWizard.type === "permission";
@@ -655,5 +656,11 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         setFocusArea("input");
       }
     }
-  });
+  };
+
+  const stableHandler = React.useCallback((input: string, key: any) => {
+    handlerRef.current?.(input, key);
+  }, []);
+
+  useInput(stableHandler);
 }

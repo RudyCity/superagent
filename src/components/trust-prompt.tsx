@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 
 interface TrustPromptProps {
@@ -10,7 +10,8 @@ interface TrustPromptProps {
 export function TrustPrompt({ directoryPath, onAccept, onReject }: TrustPromptProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  useInput((input, key) => {
+  const handlerRef = useRef<(input: string, key: any) => void>();
+  handlerRef.current = (input, key) => {
     if (key.upArrow || key.leftArrow) {
       setSelectedIndex(0);
     } else if (key.downArrow || key.rightArrow) {
@@ -22,7 +23,13 @@ export function TrustPrompt({ directoryPath, onAccept, onReject }: TrustPromptPr
         onReject();
       }
     }
-  });
+  };
+
+  const stableHandler = useCallback((input: string, key: any) => {
+    handlerRef.current?.(input, key);
+  }, []);
+
+  useInput(stableHandler);
 
   return (
     <Box flexDirection="column" paddingX={2} marginY={1}>

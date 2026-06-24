@@ -1,4 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("react", async (importOriginal) => {
+  const original = await importOriginal<typeof import("react")>();
+  const mocked = {
+    ...original,
+    useRef: (val: any) => ({ current: val }),
+    useCallback: (fn: any) => fn,
+  };
+  return {
+    ...mocked,
+    default: mocked,
+  };
+});
+
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
 import { useDashboardKeyboard } from "../src/hooks/useDashboardKeyboard.js";
 

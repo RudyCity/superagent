@@ -1,4 +1,5 @@
 import { useInput } from "ink";
+import { useRef, useCallback } from "react";
 import path from "path";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getPasteSplit, filterSuggestions, getInsertion } from "../utils/text.js";
@@ -188,7 +189,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
   const maxSubagentsVisible = 3;
   const maxProcsVisible = 3;
 
-  useInput((inputChar, key) => {
+  const handlerRef = useRef<(inputChar: string, key: any) => void>();
+  handlerRef.current = (inputChar, key) => {
     // Ctrl+C when wizard is active: always cancel wizard first, never exit app.
     // This check must be BEFORE focusedResponseIndex and focusMode checks
     // so Ctrl+C always works to cancel the wizard regardless of UI state.
@@ -1818,19 +1820,32 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         }
       }
     }
-  });
+  };
+
+  const stableHandler = useCallback((inputChar: string, key: any) => {
+    handlerRef.current?.(inputChar, key);
+  }, []);
+
+  useInput(stableHandler);
 
   // Small y/n listener for permission wizard
+  const permHandlerRef = useRef<(inputChar: string) => void>();
+  permHandlerRef.current = (inputChar) => {
+    if (inputChar === "y" || inputChar === "Y") {
+      handlePermissionResponse(true);
+    } else if (inputChar === "n" || inputChar === "N") {
+      handlePermissionResponse(false);
+    } else if (inputChar === "s" || inputChar === "S") {
+      handlePermissionResponse("session");
+    }
+  };
+
+  const stablePermHandler = useCallback((inputChar: string, key: any) => {
+    permHandlerRef.current?.(inputChar);
+  }, []);
+
   useInput(
-    (inputChar) => {
-      if (inputChar === "y" || inputChar === "Y") {
-        handlePermissionResponse(true);
-      } else if (inputChar === "n" || inputChar === "N") {
-        handlePermissionResponse(false);
-      } else if (inputChar === "s" || inputChar === "S") {
-        handlePermissionResponse("session");
-      }
-    },
+    stablePermHandler,
     { isActive: activeWizard?.type === "permission" }
   );
 }

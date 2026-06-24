@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import fs from "fs";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
@@ -57,7 +57,8 @@ export function PlanApprovalDialog({
   const totalLines = planLines.length;
 
   // Handle PageUp / PageDown / Arrow keys for plan content scroll
-  useInput((_input, key) => {
+  const handlerRef = useRef<(_input: string, key: any) => void>();
+  handlerRef.current = (_input, key) => {
     if (step !== 1) return;
     const isPlanFocused = focus === "plan";
 
@@ -70,7 +71,13 @@ export function PlanApprovalDialog({
       const maxScroll = Math.max(0, totalLines - maxContentHeight);
       setScrollOffset((prev) => Math.min(maxScroll, prev + amount));
     }
-  });
+  };
+
+  const stableHandler = useCallback((_input: string, key: any) => {
+    handlerRef.current?.(_input, key);
+  }, []);
+
+  useInput(stableHandler);
 
   // Clamp scroll offset if content shrinks
   const maxScroll = Math.max(0, totalLines - maxContentHeight);
