@@ -10,7 +10,10 @@ import {
   savePreset,
   setActivePresetId,
   clearModelConfigCache,
-  updateSettings
+  updateSettings,
+  getTrustedDirectories,
+  addTrustedDirectory,
+  isDirectoryTrusted
 } from "../src/core/config/jsonConfig";
 import { getModelInstanceForTier } from "../src/core/config/models";
 
@@ -154,5 +157,21 @@ describe("JSON-based model-config.json storage", () => {
     expect(config.settings?.concurrencyLimit).toBe(1);
     expect(config.settings?.rateLimitRpm).toBe(100);
     expect(config.settings?.rateLimitCapacity).toBe(150);
+  });
+
+  it("should handle trusted directories operations correctly", () => {
+    // Initial state
+    expect(getTrustedDirectories()).toEqual([]);
+    expect(isDirectoryTrusted("/some/path/project1")).toBe(false);
+
+    // Add a directory
+    addTrustedDirectory("/some/path/project1");
+    expect(getTrustedDirectories()).toContain(path.resolve("/some/path/project1"));
+    expect(isDirectoryTrusted("/some/path/project1")).toBe(true);
+
+    // Add a duplicate directory
+    const initialLen = getTrustedDirectories().length;
+    addTrustedDirectory("/some/path/project1");
+    expect(getTrustedDirectories().length).toBe(initialLen);
   });
 });

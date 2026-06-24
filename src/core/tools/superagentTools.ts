@@ -188,6 +188,13 @@ export const invokeSuperagentTool: Tool = {
         }
       }
 
+      // Ensure the worktree directory is trusted and Git safe.directory is configured
+      if (worktreePath) {
+        const { addTrustedDirectory, ensureDirectoryTrusted } = await import("../config/jsonConfig.js");
+        addTrustedDirectory(worktreePath);
+        await ensureDirectoryTrusted(worktreePath, cwd);
+      }
+
       // Link node_modules to make setup instant and allow test execution
       const rootNodeModules = path.join(cwd, "node_modules");
       const targetNodeModules = path.join(worktreePath, "node_modules");

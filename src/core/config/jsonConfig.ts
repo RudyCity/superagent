@@ -1,4 +1,6 @@
 import fs from "fs";
+import path from "path";
+import { execa } from "execa";
 import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir } from "./paths.js";
 
 export interface ProviderProfile {
@@ -56,6 +58,7 @@ export interface GlobalModelConfig {
     single: string;
   };
   settings?: SystemSettings;
+  trustedDirectories?: string[];
 }
 
 const DEFAULT_CONFIG: GlobalModelConfig = {
@@ -69,6 +72,7 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     simpleTaskFileThreshold: 3,
     simpleTaskKeywords: ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
   },
+  trustedDirectories: [],
   providers: [
     {
       id: "default-anthropic",
@@ -650,5 +654,59 @@ export function getModelInfoForDisplay(isMulti: boolean): {
     subagentDefault: formatModel(models.subagentDefault),
     subagentDetails,
   };
+}
+
+/**
+ * Get the list of all trusted project directories.
+ */
+export function getTrustedDirectories(): string[] {
+  const config = loadModelConfig();
+  return config.trustedDirectories || [];
+}
+
+/**
+ * Add a directory path to the trusted list in configuration.
+ */
+export function addTrustedDirectory(dirPath: string): void {
+  mutateModelConfig((config) => {
+    if (!config.trustedDirectories) {
+      config.trustedDirectories = [];
+    }
+    const resolvedPath = path.resolve(dirPath);
+    if (!config.trustedDirectories.includes(resolvedPath)) {
+      config.trustedDirectories.push(resolvedPath);
+    }
+  });
+}
+
+/**
+ * Check if a directory path is trusted in configuration.
+ */
+export function isDirectoryTrusted(dirPath: string): boolean {
+  const trustedDirs = getTrustedDirectories();
+  const resolvedPath = path.resolve(dirPath);
+  return trustedDirs.includes(resolvedPath);
+}
+
+/**
+ * Ensure a directory is added to Git's global safe.directory configuration
+ * to prevent dubious ownership issues on Windows/multi-user systems.
+ */
+export async function ensureDirectoryTrusted(dirPath: string, cwd: string = process.cwd()): Promise<void> {
+  try {
+    const resolvedPath = path.resolve(dirPath);
+    // Normalize path to use forward slashes for Git config compatibility on Windows
+    const normalizedPath = resolvedPath.replace(/\\/g, "/");
+
+    // Check if it's already in safe.directory to avoid duplicates
+    const { stdout } = await execa("git", ["config", "--global", "--get-all", "safe.directory"], { cwd, reject: false });
+    const safeDirectories = stdout.split(/\r?\n/).map(d => d.trim().replace(/\\/g, "/"));
+
+    if (!safeDirectories.includes(normalizedPath)) {
+      await execa("git", ["config", "--global", "--add", "safe.directory", normalizedPath], { cwd });
+    }
+  } catch (err) {
+    // Ignore config errors
+  }
 }
 

@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { execa } from "execa";
+import { addTrustedDirectory, ensureDirectoryTrusted } from "./config/jsonConfig.js";
 
 /**
  * Ensures the project-local .gitignore ignores the .worktrees directory
@@ -55,6 +56,10 @@ export async function setupWorkspaceForSession(
   await execa("git", ["worktree", "add", workspacePath, "-b", branchName], {
     cwd: process.cwd(),
   });
+
+  // 1.5 Trust the directory and configure Git safe.directory to prevent ownership issues
+  addTrustedDirectory(workspacePath);
+  await ensureDirectoryTrusted(workspacePath);
 
   // 2. Link node_modules to make setup instant
   const rootNodeModules = path.join(process.cwd(), "node_modules");

@@ -9,6 +9,13 @@ vi.mock("execa", () => ({
   execa: vi.fn().mockResolvedValue({ stdout: "" }),
 }));
 
+// Mock config/jsonConfig to avoid file system writes during tests
+vi.mock("../src/core/config/jsonConfig.js", () => ({
+  addTrustedDirectory: vi.fn(),
+  ensureDirectoryTrusted: vi.fn().mockResolvedValue(undefined),
+  isDirectoryTrusted: vi.fn().mockReturnValue(true),
+}));
+
 describe("workspaceIsolation", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -76,6 +83,10 @@ describe("workspaceIsolation", () => {
         ["worktree", "add", expect.stringContaining("session-1"), "-b", "multi-agent/session-1-feature"],
         expect.any(Object)
       );
+
+      const { addTrustedDirectory, ensureDirectoryTrusted } = await import("../src/core/config/jsonConfig.js");
+      expect(addTrustedDirectory).toHaveBeenCalledWith(expect.stringContaining("session-1"));
+      expect(ensureDirectoryTrusted).toHaveBeenCalledWith(expect.stringContaining("session-1"));
 
       expect(spySymlink).toHaveBeenCalled();
       expect(result.branchName).toBe("multi-agent/session-1-feature");

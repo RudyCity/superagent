@@ -9,7 +9,8 @@ import React from "react";
 import { render } from "ink";
 import { App } from "./app.js";
 
-import { getConfig, isPathTrusted, addTrustedPath } from "./core/config.js";
+import { getConfig } from "./core/config.js";
+import { isDirectoryTrusted, addTrustedDirectory, ensureDirectoryTrusted } from "./core/config/jsonConfig.js";
 import { backgroundTasks, killProcessTree } from "./core/tools/index.js";
 import { subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
 
@@ -119,9 +120,6 @@ if (process.stdin.isTTY) {
   // Confirm directory trust before starting the application
   const currentDir = path.resolve(process.cwd());
   const confirmTrust = async (dir: string): Promise<boolean> => {
-    if (isPathTrusted(dir)) {
-      return true;
-    }
     const { TrustPrompt } = await import("./components/trust-prompt.js");
     return new Promise<boolean>((resolve) => {
       const { unmount } = render(
@@ -129,7 +127,6 @@ if (process.stdin.isTTY) {
           directoryPath: dir,
           onAccept: () => {
             unmount();
-            addTrustedPath(dir);
             resolve(true);
           },
           onReject: () => {
@@ -141,10 +138,18 @@ if (process.stdin.isTTY) {
     });
   };
 
-  const trusted = await confirmTrust(currentDir);
-  if (!trusted) {
-    console.log("\n❌ Project folder not trusted. Exiting superagent.\n");
-    process.exit(1);
+  const isTrusted = isDirectoryTrusted(currentDir);
+  if (isTrusted) {
+    // Already trusted, skip prompt and ensure configured in Git
+    await ensureDirectoryTrusted(currentDir);
+  } else {
+    const trusted = await confirmTrust(currentDir);
+    if (!trusted) {
+      console.log("\n❌ Project folder not trusted. Exiting superagent.\n");
+      process.exit(1);
+    }
+    addTrustedDirectory(currentDir);
+    await ensureDirectoryTrusted(currentDir);
   }
 
   const resumeIndex = process.argv.findIndex(arg => arg === "--resume" || arg === "-r");

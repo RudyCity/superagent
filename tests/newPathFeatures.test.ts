@@ -4,13 +4,11 @@ import fsPromises from "fs/promises";
 import path from "path";
 import os from "os";
 
+// Import config and checkpoints functions
 import {
   getGlobalConfigDir,
   ensureGlobalConfigDir,
   listHistorySessions,
-  isPathTrusted,
-  addTrustedPath,
-  getTrustedPaths,
 } from "../src/core/config.js";
 import {
   createCheckpoint,
@@ -260,30 +258,4 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
       expect(fs.existsSync(expectedLogPath)).toBe(true);
     });
   });
-
-  describe("Directory Trust Path", () => {
-    it("should initially not trust a directory", () => {
-      const testDir = path.join(tempHomeDir, "project-a");
-      expect(isPathTrusted(testDir)).toBe(false);
-    });
-
-    it("should trust a directory after calling addTrustedPath", () => {
-      const testDir = path.join(tempHomeDir, "project-b");
-      addTrustedPath(testDir);
-      expect(isPathTrusted(testDir)).toBe(true);
-      expect(getTrustedPaths()).toContain(testDir);
-    });
-
-    it("should be case-insensitive for directory trust", () => {
-      const testDir = path.join(tempHomeDir, "Project-C");
-      addTrustedPath(testDir);
-      
-      const lowercaseDir = testDir.toLowerCase();
-      const uppercaseDir = testDir.toUpperCase();
-      
-      expect(isPathTrusted(lowercaseDir)).toBe(true);
-      expect(isPathTrusted(uppercaseDir)).toBe(true);
-    });
-  });
 });
-
