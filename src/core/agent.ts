@@ -23,6 +23,27 @@ import { AsyncLocalStorage } from "async_hooks";
 import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./taskChecklist.js";
 import { createCheckpoint } from "./checkpoints.js";
 
+export function checkPlanStructure(content: string): boolean {
+  const hasTitle = /^#\s+.+/m.test(content);
+  if (!hasTitle) return false;
+
+  const hasProposedChanges = /##\s+(proposed\s+changes|rencana\s+perubahan)/i.test(content);
+  const hasVerificationPlan = /##\s+(verification\s+plan|rencana\s+verifikasi)/i.test(content);
+  const hasAutomatedTests = /###\s+(automated\s+tests|test\s+otomatis)/i.test(content);
+  const hasManualVerification = /###\s+(manual\s+verification|verifikasi\s+manual|manual\s+testing)/i.test(content);
+  
+  const hasArchitecture = /##\s+(architecture|arsitektur|refactor)/i.test(content);
+
+  // check full template
+  const isFull = hasProposedChanges && hasVerificationPlan && hasAutomatedTests && hasManualVerification;
+  // check quick template
+  const isQuick = hasProposedChanges;
+  // check refactor template
+  const isRefactor = hasProposedChanges && hasArchitecture;
+
+  return isFull || isQuick || isRefactor;
+}
+
 export const agentLocalStorage = new AsyncLocalStorage<Agent>();
 
 export type AgentEvent =
@@ -148,6 +169,8 @@ export class Agent {
   public subagentType?: string;
   public workingDirectory: string;
   public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
+  public isSimpleTask: boolean = false;
+  public simpleTaskApproved: boolean = false;
   public lastSpeed: number | null = null;
   public goalMode: string | null = null;
   public goalMaxIterations: number = 200;
@@ -556,6 +579,52 @@ If none of the options are suitable, still pick the closest one.`;
       this.writeToLogFile("INFO", `Message queued (agent is running): "${userInput.substring(0, 80)}..."`);
       return;
     }
+
+    if (this.planState === "IDLE" && (!process.env.VITEST || process.env.SUPERAGENT_TEST_SIMPLE_TASK === "true")) {
+      try {
+        const model = this.getModel();
+        const classificationPrompt = `You are a helper that classifies if a user request is a "simple task".
+A request is a "simple task" if it expects modification or creation of fewer than 3 files and does NOT introduce any new architecture, major system changes, or complex orchestration.
+For example, simple refactorings, adding single simple functions, modifying specific existing logic, or fixing a simple bug are simple tasks.
+
+User request: "${userInput}"
+
+Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply with nothing else.`;
+
+        const response = await generateText({
+          model,
+          prompt: classificationPrompt,
+        });
+
+        // Track tokens for the classification call
+        try {
+          const { addMasterTokens } = await import("./tools/state.js");
+          addMasterTokens(response.usage?.promptTokens || 0, response.usage?.completionTokens || 0);
+        } catch {}
+
+        const classification = response.text.trim().toLowerCase();
+        if (classification === "yes" || classification.includes("yes")) {
+          this.isSimpleTask = true;
+          this.planState = "APPROVED";
+          
+          const lowerInput = userInput.toLowerCase();
+          const words = lowerInput.split(/[^a-zA-Z0-9'’]+/).filter(Boolean);
+          const preApprovalWords = ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
+          const hasPreApproval = preApprovalWords.some(word => {
+            if (word.includes(' ')) {
+              return lowerInput.includes(word);
+            }
+            return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
+          });
+          if (hasPreApproval) {
+            this.simpleTaskApproved = true;
+          }
+        }
+      } catch (err: any) {
+        this.writeToLogFile("WARN", `Failed to classify user request: ${err.message}`);
+      }
+    }
+
     this.isRunning = true;
     this.abortController = new AbortController();
 
@@ -1317,21 +1386,58 @@ for (const tc of toolCalls) {
             const isTaskFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(taskFilePath).toLowerCase();
             const isWalkthroughFile = filePath && path.resolve(filePath).toLowerCase() === path.resolve(walkthroughFilePath).toLowerCase();
 
-            if (this.tier === "master" && !isPlanFile && !isTaskFile && !isWalkthroughFile) {
-              const blocked: ToolResult = {
-                toolCallId: tc.id,
-                name: tc.name,
-                result: "Error: The Master Agent is restricted from directly modifying source code files in the codebase. You must delegate all code modifications to Superagents by invoking them.",
-                isError: true,
-              };
+            if (this.isSimpleTask && !this.simpleTaskApproved && !isPlanFile && !isTaskFile && !isWalkthroughFile) {
+              const filename = path.basename(filePath);
               try {
-                const { appendToolsErrorLog } = await import("./tools/state.js");
-                appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { filePath, reason: "master_direct_modify_blocked" });
-              } catch {}
-              this.emitViolation("master_direct_modify_blocked", tc.name, "Master Agent attempted to directly modify source code files. Must delegate to Superagents.", "critical", { filePath });
-              toolResults.push(blocked);
-              this.onEvent({ type: "tool_end", toolResult: blocked, description });
-              continue;
+                const selected = await this.onQuestion(
+                  `Agent is about to modify ${filename}. Proceed with modifications?`,
+                  ["Yes", "No"]
+                );
+                if (selected === "Yes") {
+                  this.simpleTaskApproved = true;
+                } else {
+                  const blocked: ToolResult = {
+                    toolCallId: tc.id,
+                    name: tc.name,
+                    result: `Error: User rejected modification of ${filename}.`,
+                    isError: true,
+                  };
+                  toolResults.push(blocked);
+                  this.onEvent({ type: "tool_end", toolResult: blocked, description });
+                  continue;
+                }
+              } catch (err: any) {
+                const blocked: ToolResult = {
+                  toolCallId: tc.id,
+                  name: tc.name,
+                  result: `Error: Modification confirmation failed: ${err.message}`,
+                  isError: true,
+                };
+                toolResults.push(blocked);
+                this.onEvent({ type: "tool_end", toolResult: blocked, description });
+                continue;
+              }
+            }
+
+            if (this.tier === "master" && !isPlanFile && !isTaskFile && !isWalkthroughFile) {
+              if (this.isSimpleTask) {
+                // Bypass the Master Agent direct file modification block
+              } else {
+                const blocked: ToolResult = {
+                  toolCallId: tc.id,
+                  name: tc.name,
+                  result: "Error: The Master Agent is restricted from directly modifying source code files in the codebase. You must delegate all code modifications to Superagents by invoking them.",
+                  isError: true,
+                };
+                try {
+                  const { appendToolsErrorLog } = await import("./tools/state.js");
+                  appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { filePath, reason: "master_direct_modify_blocked" });
+                } catch {}
+                this.emitViolation("master_direct_modify_blocked", tc.name, "Master Agent attempted to directly modify source code files. Must delegate to Superagents.", "critical", { filePath });
+                toolResults.push(blocked);
+                this.onEvent({ type: "tool_end", toolResult: blocked, description });
+                continue;
+              }
             }
 
             if (isPlanFile) {
@@ -1359,19 +1465,6 @@ for (const tc of toolCalls) {
                 planContent = (tc.args.content as string || tc.args.codeContent as string || tc.args.CodeContent as string || "").trim();
               }
 
-              const hasTitle = /^#\s+.+/m.test(planContent);
-              const hasProposedChanges = /##\s+(proposed\s+changes|rencana\s+perubahan)/i.test(planContent);
-              const hasVerificationPlan = /##\s+(verification\s+plan|rencana\s+verifikasi)/i.test(planContent);
-              const hasAutomatedTests = /###\s+(automated\s+tests|test\s+otomatis)/i.test(planContent);
-              const hasManualVerification = /###\s+(manual\s+verification|verifikasi\s+manual|manual\s+testing)/i.test(planContent);
-
-              const missing: string[] = [];
-              if (!hasTitle) missing.push("Main Title (e.g., '# Goal Description')");
-              if (!hasProposedChanges) missing.push("Proposed Changes section ('## Proposed Changes')");
-              if (!hasVerificationPlan) missing.push("Verification Plan section ('## Verification Plan')");
-              if (!hasAutomatedTests) missing.push("Automated Tests sub-section ('### Automated Tests')");
-              if (!hasManualVerification) missing.push("Manual Verification sub-section ('### Manual Verification')");
-
               if (this.tier === "master") {
                 const hasSuperagentOrDelegate = /superagent|spawning|delegate|worktree/i.test(planContent);
                 if (!hasSuperagentOrDelegate) {
@@ -1385,23 +1478,6 @@ for (const tc of toolCalls) {
                   }
                   console.log("[INFO] Auto-injected delegation context into implementation plan");
                 }
-              }
-
-              if (missing.length > 0) {
-                const blocked: ToolResult = {
-                  toolCallId: tc.id,
-                  name: tc.name,
-                  result: `Error: The implementation plan is invalid or lacks deep structure. A valid global plan must include:\n${missing.map(m => `- ${m}`).join("\n")}\n\nPlease rewrite the plan with all required sections and headers included.`,
-                  isError: true,
-                };
-                try {
-                  const { appendToolsErrorLog } = await import("./tools/state.js");
-                  appendToolsErrorLog(this.tier, this.delegationDepth, tc.name, blocked.result, { filePath, reason: "invalid_plan_structure" });
-                } catch {}
-                this.emitViolation("invalid_plan_structure", tc.name, `Implementation plan missing required sections: ${missing.join(", ")}`, "warning", { filePath });
-                toolResults.push(blocked);
-                this.onEvent({ type: "tool_end", toolResult: blocked, description });
-                continue;
               }
 
               if (this.goalMode) {
