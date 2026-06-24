@@ -32,6 +32,7 @@ Unlike standard headless execution bots or basic shell wrappers, Superagent is d
 - **Automatic Checkpointing**: In addition to manual checkpoints, Superagent automatically snapshots your session on every user message and before any destructive tool operation (file writes, deletions, etc.), with a built-in cooldown to avoid excessive snapshots. You always have a safe rollback point without lifting a finger.
 - **Mandatory Interactive Decision Points**: All agent tiers (Master, Superagent, Subagent) are required to use the `ask_question` tool at every decision point — choosing implementations, resolving ambiguity, or selecting approaches — ensuring the AI never guesses or assumes on the user's behalf.
 - **AI-Guided Preset Initialization**: Configure your workspace commands effortlessly. Superagent scans your codebase structure (such as dependencies, packages, and scripts) to automatically recommend, select, and construct terminal command presets with the `/terminal init` wizard.
+- **Multimodal Image Paste & Path Detection**: Drag-and-drop or paste an image file path (like `D:\images\screenshot.png`) directly into the prompt to auto-attach it. Press `Ctrl+V` to automatically capture image binary data from your system clipboard (cross-platform support for Windows, macOS, and Linux). Attached images are rendered in a sleek visual queue above the prompt and transmitted as high-fidelity multimodal inputs to vision-capable models (e.g. Claude 3.5 Sonnet, GPT-4o), with automatic token tracking.
 
 ---
 

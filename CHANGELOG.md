@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.5] - 2026-06-24
+
+### Added
+- **Multimodal Image Paste & Path Detection**: Added native support for image attachments in the terminal. User prompts now accept `MessageContent` (text and image parts) seamlessly mapped to Vercel AI SDK's multimodal payload.
+- **Cross-Platform Clipboard Parsing**: Created a robust platform-native utility (`readImageFromClipboard`) supporting Windows (PowerShell forms), macOS (`pngpaste`/`osascript`), and Linux (`wl-paste`/`xclip`) to automatically extract clipboard image binary data via `Ctrl+V`.
+- **Ink Terminal UI Visual Indicators**: Added `ImageAttachmentBar` rendering in the Ink loop to display attached images and sizes above the input. Enabled `Ctrl+W` in an empty prompt to clear the last attachment.
+- **Universal Dashboard Integration**: Wired the image attachment hook, state, and UI visual indicators into both single-agent mode (`app.tsx`) and multi-agent dashboard mode (`multi-agent-dashboard.tsx`).
+- **Multimodal Token Tracking**: Integrated image token counting overhead (1600 tokens per image) in the live `TokenTracker` display.
+
+---
+
 ## [1.2.4] - 2026-06-24
 
 ### Fixed
