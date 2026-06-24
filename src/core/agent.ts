@@ -178,6 +178,7 @@ export class Agent {
   public allowSessionOutOfBounds = false;
   public allowSessionEnvAccess = false;
   public allowSessionDangerous = false;
+  public workspaceCache: any = null;
   private conversation: Conversation;
   private customSystemPrompt?: string;
   /** Custom tool list for this agent (tier-specific). Undefined = use allTools. */
@@ -739,6 +740,35 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
       }
     }
 
+    // Run workspace discovery and load/update cache if not already done for this session
+    if (!this.workspaceCache) {
+      try {
+        const { discoverWorkspace } = await import("./workspaceDiscovery.js");
+        const { isIdentical, cache } = await discoverWorkspace(this.workingDirectory);
+        this.workspaceCache = cache;
+        if (isIdentical) {
+          this.onEvent({
+            type: "text",
+            content: `\n[SYS] Workspace identical to previous session. Using cached context.\n`,
+          });
+        } else {
+          this.onEvent({
+            type: "text",
+            content: `\n[SYS] Workspace scanned and cached.\n`,
+          });
+        }
+      } catch (err: any) {
+        this.writeToLogFile("WARN", `Workspace discovery failed: ${err.message}`);
+      }
+    }
+
+    if (this.workspaceCache) {
+      try {
+        const { injectWorkspaceOverview } = await import("./workspaceDiscovery.js");
+        baseSystemPrompt = injectWorkspaceOverview(baseSystemPrompt, this.workspaceCache);
+      } catch {}
+    }
+
     // Load scratchpad content if it exists
     let scratchpadText = "";
     try {
@@ -774,10 +804,12 @@ CRITICAL GOAL MODE RULES:
         path.join(process.cwd(), "agents.md"),
         path.join(this.workingDirectory, "agents.md"),
       ];
-      for (const p of searchPaths) {
-        if (fs.existsSync(p)) {
-          guidelinesText += `\n\nPROJECT GUIDELINES (agents.md):\n${fs.readFileSync(p, "utf-8")}\n`;
-          break;
+      if (!this.workspaceCache?.agentsMd) {
+        for (const p of searchPaths) {
+          if (fs.existsSync(p)) {
+            guidelinesText += `\n\nPROJECT GUIDELINES (agents.md):\n${fs.readFileSync(p, "utf-8")}\n`;
+            break;
+          }
         }
       }
       const skillPaths = [
