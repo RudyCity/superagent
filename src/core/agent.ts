@@ -148,7 +148,9 @@ function isRetryableError(err: unknown): boolean {
     msg.includes("payment required") ||
     msg.includes("status 400") ||
     msg.includes("status: 400") ||
-    msg.includes("invalid_request_error")
+    msg.includes("invalid_request_error") ||
+    msg.includes("model output must contain") ||
+    msg.includes("empty response from model")
   ) {
     return false;
   }
