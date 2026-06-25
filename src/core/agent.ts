@@ -1018,6 +1018,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}${processNotice}${pinnedKnowledgeNotice}`;
 
         let textContent = "";
+        let reasoningContent = ""; // DeepSeek R1 thinking tokens — displayed in UI but NOT stored in history
         const toolCalls: ToolCall[] = [];
 
         if (this.config.disableStreaming) {
@@ -1169,9 +1170,13 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                   textContent += delta.textDelta;
                   this.onEvent({ type: "text", content: delta.textDelta });
                 } else if ((delta.type as string) === "reasoning" || (delta.type as string) === "reasoning-delta") {
+                  // DeepSeek R1 and similar models return reasoning/thinking tokens separately.
+                  // These MUST NOT be merged into textContent — doing so causes a 400 error
+                  // from DeepSeek: "reasoning_content in thinking mode must be passed back to the API".
+                  // We track them separately and emit to UI only; they are excluded from conversation history.
                   const reasoningText = (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
                   if (reasoningText) {
-                    textContent += reasoningText;
+                    reasoningContent += reasoningText;
                     this.onEvent({ type: "text", content: reasoningText });
                   }
                 } else if (delta.type === "tool-call") {
@@ -1211,7 +1216,13 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               }
 
               if (!textContent.trim() && toolCalls.length === 0) {
-                throw new Error("Empty response from model");
+                if (reasoningContent.trim()) {
+                  // Reasoning-only response (e.g. DeepSeek-R1 with no final answer text).
+                  // Use the reasoning content as the assistant's response so it is stored in history.
+                  textContent = reasoningContent;
+                } else {
+                  throw new Error("Empty response from model");
+                }
               }
 
               break;
