@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.16] - 2026-06-25
+
+### Added
+- **Whitespace-Insensitive Matching**: Added whitespace-insensitive matching to `multi_replace_file_content` to make tool edits more robust.
+
+### Fixed
+- **CRLF Line Endings Preservation**: Preserved CRLF line endings in file edit tools (`replace_file_content`, `multi_replace_file_content`, `apply_patch`).
+- **Context Usage Tracker**: Prevented context usage tracker from resetting to 0% on model switch.
+- **Shell Command Truncation**: Truncated long shell commands in tool action descriptions for cleaner output.
+
+---
+
 ## [1.2.15] - 2026-06-25
 
 ### Added
