@@ -165,8 +165,14 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                         const child = line.children[c];
                         if (child.type === "tool_start") {
                             if (child.mergedResult) {
-                                // Tool completed — auto-collapse to merged single row
-                                childSet.delete(c);
+                                // manage_tasks (update) — keep expanded by default so checklist progress is always visible
+                                if (child.content && child.content.includes("Managing tasks (update)")) {
+                                    childSet.add(c);
+                                }
+                                else {
+                                    // Tool completed — auto-collapse to merged single row
+                                    childSet.delete(c);
+                                }
                             }
                             else if (isExecutingTool) {
                                 // Tool still running — keep expanded so user sees live progress
