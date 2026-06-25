@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.14] - 2026-06-25
+
+### Added
+- **Exit Confirmation Dialog**:
+  - Added a new `exit_confirm` wizard type to gracefully handle `Ctrl+C` interrupts.
+  - Renders a styled confirmation dialog asking whether the user truly wants to exit.
+  - Implemented full submit handling so users can confirm or cancel the exit action without abrupt termination.
+- **Agent Retry on Empty Response**: The agent now automatically retries up to 3 times with progressive delays (10s, 20s, 50s) when the model returns an empty response, improving resilience against transient API failures.
+- **Updated Static Model Limits**: Refreshed OpenRouter model context window limits to reflect the latest available model specifications.
+
+### Improved
+- **Skills & Documentation**:
+  - Updated `master-agent-orchestration` skill with clearer planning and task management guidelines for the Master Agent tier.
+  - Added new `superagent-planning` skill providing structured guidance on creating valid implementation plans and task checklists.
+
+---
+
 ## [1.2.13] - 2026-06-25
 
 ### Added
