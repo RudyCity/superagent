@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.19] - 2026-06-25
+
+### Fixed
+- **Image Fallback for Non-Vision Models**:
+  - Automatically strip and replace image parts with placeholders when the active model lacks native vision support.
+  - Append base64 image data within the text placeholder fallback, ensuring image context is preserved in text form.
+- **Suggestion Cursor Behavior**:
+  - Fixed autocompletion behavior so that accepting a suggestion snaps the cursor/pointer to the end of the input string and automatically appends a trailing space for unique suggestions.
+
+---
+
 ## [1.2.18] - 2026-06-25
 
 ### Added
