@@ -324,6 +324,31 @@ describe("File tools", () => {
       } catch {}
     }
   });
+
+  it("should match multi_replace_file_content even with trailing whitespace differences", async () => {
+    const wsFile = path.resolve(process.cwd(), "temp_ws_test.txt");
+    try {
+      await fs.writeFile(wsFile, "line A    \nline B \nline C\n", "utf-8");
+      const multiTool = getToolByName("multi_replace_file_content");
+      const result = await multiTool?.execute(
+        {
+          filePath: "temp_ws_test.txt",
+          chunks: [
+            { targetContent: "line A", replacementContent: "line A edited", startLine: 1, endLine: 2 },
+            { targetContent: "line B", replacementContent: "line B edited", startLine: 2, endLine: 3 },
+          ],
+        },
+        process.cwd()
+      );
+      expect(result).toContain("File updated successfully with 2 changes");
+      const data = await fs.readFile(wsFile, "utf-8");
+      expect(data).toBe("line A edited    \nline B edited \nline C\n");
+    } finally {
+      try {
+        await fs.unlink(wsFile);
+      } catch {}
+    }
+  });
 });
 
 describe("Search and Grep tools", () => {

@@ -819,13 +819,43 @@ export const multiReplaceFileContentTool: Tool = {
 
         const sliceOfLines = lines.slice(startLine - 1, endLine);
         const sliceText = sliceOfLines.join("\n");
-        const normalizedTarget = targetContent.replace(/\r\n/g, "\n");
+        const normSliceText = normalizeForMatching(sliceText);
+        const normTargetContent = normalizeForMatching(targetContent);
 
-        if (!sliceText.includes(normalizedTarget)) {
-          return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] for a chunk.`;
+        if (!normSliceText.includes(normTargetContent)) {
+          return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] for a chunk (matching normalized content).`;
         }
 
-        const replacedSlice = sliceText.replace(normalizedTarget, replacementContent);
+        const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
+        let normCharIdx = 0;
+        let origCharIdx = 0;
+        let matchOrigStart = -1;
+        let matchOrigEnd = -1;
+
+        while (origCharIdx < sliceText.length && normCharIdx < normSliceText.length) {
+          if (normCharIdx === matchIndexInNorm) {
+            matchOrigStart = origCharIdx;
+          }
+          if (normCharIdx === matchIndexInNorm + normTargetContent.length) {
+            matchOrigEnd = origCharIdx;
+            break;
+          }
+          const cOrig = sliceText[origCharIdx];
+          if (cOrig === "\r") {
+            origCharIdx++;
+            continue;
+          }
+          origCharIdx++;
+          normCharIdx++;
+        }
+
+        let replacedSlice: string;
+        if (matchOrigStart === -1 || matchOrigEnd === -1) {
+          replacedSlice = sliceText.replace(targetContent, replacementContent);
+        } else {
+          replacedSlice = sliceText.slice(0, matchOrigStart) + replacementContent + sliceText.slice(matchOrigEnd);
+        }
+
         lines = [
           ...lines.slice(0, startLine - 1),
           ...replacedSlice.split(/\r?\n/),
