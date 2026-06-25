@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getPackageRootDir } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
@@ -796,6 +796,7 @@ CRITICAL GOAL MODE RULES:
       const skillPaths = [
         path.join(process.cwd(), ".agents", "skills", "karpathy-guidelines", "SKILL.md"),
         path.join(this.workingDirectory, ".agents", "skills", "karpathy-guidelines", "SKILL.md"),
+        path.join(getPackageRootDir(), ".agents", "skills", "karpathy-guidelines", "SKILL.md"),
       ];
       for (const p of skillPaths) {
         if (fs.existsSync(p)) {

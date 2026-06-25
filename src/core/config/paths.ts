@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { fileURLToPath } from "url";
 
 export function getRootConfigDir(): string {
   const override = process.env.SUPERAGENT_CONFIG_DIR?.trim();
@@ -47,4 +48,10 @@ export function ensureGlobalConfigDir(): void {
 
 export function getModelConfigPath(): string {
   return path.join(getRootConfigDir(), "model-config.json");
+}
+
+export function getPackageRootDir(): string {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  return path.resolve(__dirname, "..", "..", "..");
 }

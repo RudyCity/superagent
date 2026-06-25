@@ -2,7 +2,15 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import os from "os";
-import { getRootConfigDir } from "./paths.js";
+import { getRootConfigDir, getPackageRootDir } from "./paths.js";
+
+export function normalizePath(p: string): string {
+  const resolved = path.resolve(p);
+  if (os.platform() === "win32") {
+    return resolved.toLowerCase().replace(/\\/g, "/");
+  }
+  return resolved.replace(/\\/g, "/");
+}
 
 export interface LoadedSkill {
   name: string;
@@ -48,9 +56,7 @@ const OBRA_SKILLS = new Set([
 
 export function getInstalledSkills(): LoadedSkill[] {
   const skills: LoadedSkill[] = [];
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  const packageRootDir = path.resolve(__dirname, "..", "..", "..");
+  const packageRootDir = getPackageRootDir();
 
   // Load skills-lock.json if available to map authors/providers
   const lockMap = new Map<string, string>();
@@ -84,13 +90,11 @@ export function getInstalledSkills(): LoadedSkill[] {
     }
   }
 
+  // Precedence order: Workspace local (highest) -> Hooks -> Global -> Package default (lowest)
   const searchDirs = [
-    path.join(os.homedir(), ".superagent-r", "skills"),
     path.join(process.cwd(), "skills"),
     path.join(process.cwd(), ".superagent", "skills"),
-    path.join(process.cwd(), ".agents", "skills"),
-    path.join(packageRootDir, "skills"),
-    path.join(packageRootDir, ".agents", "skills")
+    path.join(process.cwd(), ".agents", "skills")
   ];
 
   // Append active internal hooks' skills subdirectories
@@ -121,6 +125,13 @@ export function getInstalledSkills(): LoadedSkill[] {
       }
     } catch {}
   }
+
+  // Append global and package default directories (lowest precedence)
+  searchDirs.push(
+    path.join(os.homedir(), ".superagent-r", "skills"),
+    path.join(packageRootDir, "skills"),
+    path.join(packageRootDir, ".agents", "skills")
+  );
 
   for (const dir of searchDirs) {
     if (fs.existsSync(dir)) {
@@ -197,7 +208,14 @@ export function getInstalledSkills(): LoadedSkill[] {
         }
       }
 
-      if (!skills.some(s => s.path === skillMdPath)) {
+      const normalizedPath = normalizePath(skillMdPath);
+      const hasPathDuplicate = skills.some(s => normalizePath(s.path) === normalizedPath);
+      const hasNameDuplicate = skills.some(
+        s => s.name.toLowerCase() === name.toLowerCase() &&
+             (s.author || "").toLowerCase() === (author || "").toLowerCase()
+      );
+
+      if (!hasPathDuplicate && !hasNameDuplicate) {
         skills.push({
           name,
           description,
