@@ -121,6 +121,7 @@ export function App({
   const streamBufferRef = useRef("");
   const lastStreamUpdateRef = useRef<number>(0);
   const streamTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const deferredStreamTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
@@ -372,6 +373,10 @@ export function App({
     if (streamTimeoutRef.current) {
       clearTimeout(streamTimeoutRef.current);
       streamTimeoutRef.current = null;
+    }
+    if (deferredStreamTimeoutRef.current) {
+      clearTimeout(deferredStreamTimeoutRef.current);
+      deferredStreamTimeoutRef.current = null;
     }
     const content = streamBufferRef.current.trim();
     if (content) {
@@ -1203,15 +1208,34 @@ export function App({
   const handleEvent = useCallback(
     (event: AgentEvent) => {
       switch (event.type) {
-        case "text":
-          streamBufferRef.current = resolveCarriageReturns(streamBufferRef.current + event.content);
-          setStreamDisplay(streamBufferRef.current);
-          lastStreamUpdateRef.current = Date.now();
+        case "text": {
           if (streamTimeoutRef.current) {
             clearTimeout(streamTimeoutRef.current);
             streamTimeoutRef.current = null;
           }
+          streamBufferRef.current = resolveCarriageReturns(streamBufferRef.current + event.content);
+          
+          // Throttle state updates to at most once every 40ms to prevent Ink render overload.
+          const now = Date.now();
+          if (now - lastStreamUpdateRef.current > 40) {
+            setStreamDisplay(streamBufferRef.current);
+            lastStreamUpdateRef.current = now;
+            if (deferredStreamTimeoutRef.current) {
+              clearTimeout(deferredStreamTimeoutRef.current);
+              deferredStreamTimeoutRef.current = null;
+            }
+          } else {
+            // Schedule a deferred update for the trailing characters if not already scheduled.
+            if (!deferredStreamTimeoutRef.current) {
+              deferredStreamTimeoutRef.current = setTimeout(() => {
+                setStreamDisplay(streamBufferRef.current);
+                lastStreamUpdateRef.current = Date.now();
+                deferredStreamTimeoutRef.current = null;
+              }, 40);
+            }
+          }
           break;
+        }
         case "tool_start": {
           if (streamTimeoutRef.current) {
             clearTimeout(streamTimeoutRef.current);
@@ -1321,6 +1345,10 @@ export function App({
           if (streamTimeoutRef.current) {
             clearTimeout(streamTimeoutRef.current);
             streamTimeoutRef.current = null;
+          }
+          if (deferredStreamTimeoutRef.current) {
+            clearTimeout(deferredStreamTimeoutRef.current);
+            deferredStreamTimeoutRef.current = null;
           }
           setIsExecutingTool(false);
           setToolTimeout(null);

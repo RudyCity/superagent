@@ -167,6 +167,8 @@ export function renderInlineMarkdown(text: string, defaultColor: string = "white
   return <>{parsedElements}</>;
 }
 
+const streamLineWrapCache = new Map<string, WrappedChatLine[]>();
+
 export function wrapMarkdownToLines(
   content: string,
   themeColor: string,
@@ -177,11 +179,32 @@ export function wrapMarkdownToLines(
   const rawLines = cleanContent.split("\n");
   const result: WrappedChatLine[] = [];
 
+  if (streamLineWrapCache.size > 10000) {
+    streamLineWrapCache.clear();
+  }
+
   let inCodeBlock = false;
   let codeLanguage = "";
 
   for (let idx = 0; idx < rawLines.length; idx++) {
     const l = rawLines[idx];
+    const isLastLine = idx === rawLines.length - 1;
+    const cacheKey = `${themeColor}_${chatWidth}_${inCodeBlock}_${codeLanguage}_${lineIndex}_${l}`;
+
+    if (!isLastLine) {
+      const cached = streamLineWrapCache.get(cacheKey);
+      if (cached) {
+        const trimmed = l.trim();
+        if (trimmed.startsWith("```")) {
+          inCodeBlock = !inCodeBlock;
+          codeLanguage = trimmed.slice(3).trim();
+        }
+        result.push(...cached);
+        continue;
+      }
+    }
+
+    const lineResult: WrappedChatLine[] = [];
     const trimmed = l.trim();
 
     if (trimmed.startsWith("```")) {
@@ -196,11 +219,8 @@ export function wrapMarkdownToLines(
           </Text>
         </Box>
       );
-      result.push({ node, lineIndex, type: "assistant" });
-      continue;
-    }
-
-    if (inCodeBlock) {
+      lineResult.push({ node, lineIndex, type: "assistant" });
+    } else if (inCodeBlock) {
       const subLines = wrapTextForDisplay(l, chatWidth - 8);
       for (const subLine of subLines) {
         const node = (
@@ -209,12 +229,9 @@ export function wrapMarkdownToLines(
             <Text color="green">{subLine}</Text>
           </Box>
         );
-        result.push({ node, lineIndex, type: "assistant" });
+        lineResult.push({ node, lineIndex, type: "assistant" });
       }
-      continue;
-    }
-
-    if (l.startsWith("# ")) {
+    } else if (l.startsWith("# ")) {
       const subLines = wrapTextForDisplay(l.slice(2), chatWidth - 5);
       for (const subLine of subLines) {
         const node = (
@@ -223,11 +240,9 @@ export function wrapMarkdownToLines(
             <Text bold color="yellow">{subLine}</Text>
           </Box>
         );
-        result.push({ node, lineIndex, type: "assistant" });
+        lineResult.push({ node, lineIndex, type: "assistant" });
       }
-      continue;
-    }
-    if (l.startsWith("## ")) {
+    } else if (l.startsWith("## ")) {
       const subLines = wrapTextForDisplay(l.slice(3), chatWidth - 5);
       for (const subLine of subLines) {
         const node = (
@@ -236,11 +251,9 @@ export function wrapMarkdownToLines(
             <Text bold color="cyan">{subLine}</Text>
           </Box>
         );
-        result.push({ node, lineIndex, type: "assistant" });
+        lineResult.push({ node, lineIndex, type: "assistant" });
       }
-      continue;
-    }
-    if (l.startsWith("### ")) {
+    } else if (l.startsWith("### ")) {
       const subLines = wrapTextForDisplay(l.slice(4), chatWidth - 5);
       for (const subLine of subLines) {
         const node = (
@@ -249,66 +262,70 @@ export function wrapMarkdownToLines(
             <Text bold color="blue">{subLine}</Text>
           </Box>
         );
-        result.push({ node, lineIndex, type: "assistant" });
+        lineResult.push({ node, lineIndex, type: "assistant" });
       }
-      continue;
-    }
-
-    let listPrefix = "";
-    let isSysLine = false;
-    let remainingText = l;
-    if (l.trim().startsWith("[SYS]")) {
-      isSysLine = true;
-      const sysIndex = l.indexOf("[SYS]");
-      listPrefix = l.slice(0, sysIndex);
-      remainingText = l.slice(sysIndex + 5);
-    } else if (l.trim().startsWith("- ")) {
-      const indent = l.indexOf("- ");
-      listPrefix = " ".repeat(indent) + "• ";
-      remainingText = l.slice(indent + 2);
-    } else if (l.trim().startsWith("* ")) {
-      const indent = l.indexOf("* ");
-      listPrefix = " ".repeat(indent) + "• ";
-      remainingText = l.slice(indent + 2);
-    } else if (/^\d+\.\s/.test(l.trim())) {
-      const match = l.match(/^(\s*)(\d+\.\s)(.*)/);
-      if (match) {
-        listPrefix = match[1] + match[2];
-        remainingText = match[3];
+    } else {
+      let listPrefix = "";
+      let isSysLine = false;
+      let remainingText = l;
+      if (l.trim().startsWith("[SYS]")) {
+        isSysLine = true;
+        const sysIndex = l.indexOf("[SYS]");
+        listPrefix = l.slice(0, sysIndex);
+        remainingText = l.slice(sysIndex + 5);
+      } else if (l.trim().startsWith("- ")) {
+        const indent = l.indexOf("- ");
+        listPrefix = " ".repeat(indent) + "• ";
+        remainingText = l.slice(indent + 2);
+      } else if (l.trim().startsWith("* ")) {
+        const indent = l.indexOf("* ");
+        listPrefix = " ".repeat(indent) + "• ";
+        remainingText = l.slice(indent + 2);
+      } else if (/^\d+\.\s/.test(l.trim())) {
+        const match = l.match(/^(\s*)(\d+\.\s)(.*)/);
+        if (match) {
+          listPrefix = match[1] + match[2];
+          remainingText = match[3];
+        }
       }
-    }
 
-    const subLines = wrapTextForDisplay(remainingText, chatWidth - 5 - visibleLength(listPrefix));
-    for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
-      const subLine = subLines[sIdx];
-      const isFirstSubLine = sIdx === 0;
-      
-      const node = (
-        <Box flexDirection="row">
-          <Text color={themeColor}>│    </Text>
-          {isSysLine ? (
-            isFirstSubLine ? (
-              <Text>
-                {listPrefix}
-                <Text bold color="yellow">[SYS]</Text>
-              </Text>
-            ) : (
-              <Text>{" ".repeat(listPrefix.length + 5)}</Text>
-            )
-          ) : listPrefix ? (
-            isFirstSubLine ? (
-              <Text color="blue" bold>{listPrefix}</Text>
-            ) : (
-              <Text>{" ".repeat(listPrefix.length)}</Text>
-            )
-          ) : null}
-          <Box flexShrink={1}>
-            <Text>{renderInlineMarkdown(subLine, "white")}</Text>
+      const subLines = wrapTextForDisplay(remainingText, chatWidth - 5 - visibleLength(listPrefix));
+      for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
+        const subLine = subLines[sIdx];
+        const isFirstSubLine = sIdx === 0;
+        
+        const node = (
+          <Box flexDirection="row">
+            <Text color={themeColor}>│    </Text>
+            {isSysLine ? (
+              isFirstSubLine ? (
+                <Text>
+                  {listPrefix}
+                  <Text bold color="yellow">[SYS]</Text>
+                </Text>
+              ) : (
+                <Text>{" ".repeat(listPrefix.length + 5)}</Text>
+              )
+            ) : listPrefix ? (
+              isFirstSubLine ? (
+                <Text color="blue" bold>{listPrefix}</Text>
+              ) : (
+                <Text>{" ".repeat(listPrefix.length)}</Text>
+              )
+            ) : null}
+            <Box flexShrink={1}>
+              <Text>{renderInlineMarkdown(subLine, "white")}</Text>
+            </Box>
           </Box>
-        </Box>
-      );
-      result.push({ node, lineIndex, type: "assistant" });
+        );
+        lineResult.push({ node, lineIndex, type: "assistant" });
+      }
     }
+
+    if (!isLastLine) {
+      streamLineWrapCache.set(cacheKey, lineResult);
+    }
+    result.push(...lineResult);
   }
 
   return result;

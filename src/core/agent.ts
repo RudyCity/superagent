@@ -1156,8 +1156,12 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               await rateLimiter.acquire(1);
 
               const startTime = Date.now();
+              const modelInstance = this.getModel();
+              const isTest = !!process.env.VITEST;
+              const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
+
               const result = await generateText({
-                model: this.getModel(),
+                model: modelInstance,
                 system: systemPrompt,
                 messages,
                 tools: Object.fromEntries(
@@ -1171,6 +1175,11 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 ),
                 maxSteps: 1,
                 abortSignal: signal,
+                ...(isAnthropic && {
+                  experimental_providerMetadata: {
+                    anthropic: { cacheControl: { type: "ephemeral" } },
+                  },
+                }),
               });
 
               textContent = result.text || "";
@@ -1266,8 +1275,12 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               toolCalls.length = 0;
 
               const startTime = Date.now();
+              const modelInstance = this.getModel();
+              const isTest = !!process.env.VITEST;
+              const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
+
               const result = streamText({
-                model: this.getModel(),
+                model: modelInstance,
                 system: systemPrompt,
                 messages,
                 tools: Object.fromEntries(
@@ -1281,6 +1294,11 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 ),
                 maxSteps: 1,
                 abortSignal: signal,
+                ...(isAnthropic && {
+                  experimental_providerMetadata: {
+                    anthropic: { cacheControl: { type: "ephemeral" } },
+                  },
+                }),
               });
 
               for await (const delta of result.fullStream) {
@@ -2117,6 +2135,45 @@ for (const tc of toolCalls) {
           content: contentParts,
         });
       }
+    }
+
+    try {
+      const modelInstance = this.getModel();
+      const isTest = !!process.env.VITEST;
+      const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
+      if (isAnthropic && coreMessages.length > 0) {
+        for (let i = coreMessages.length - 1; i >= 0; i--) {
+          if (coreMessages[i].role === "user") {
+            const msg = coreMessages[i];
+            if (typeof msg.content === "string") {
+              msg.content = [
+                {
+                  type: "text",
+                  text: msg.content,
+                  experimental_providerMetadata: {
+                    anthropic: { cacheControl: { type: "ephemeral" } },
+                  },
+                },
+              ];
+            } else if (Array.isArray(msg.content)) {
+              for (let j = msg.content.length - 1; j >= 0; j--) {
+                if (msg.content[j].type === "text") {
+                  msg.content[j] = {
+                    ...msg.content[j],
+                    experimental_providerMetadata: {
+                      anthropic: { cacheControl: { type: "ephemeral" } },
+                    },
+                  };
+                  break;
+                }
+              }
+            }
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore errors in injecting cache metadata to ensure robust fallback
     }
 
     return coreMessages;
