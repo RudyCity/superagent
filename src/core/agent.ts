@@ -57,7 +57,8 @@ export type AgentEvent =
   | { type: "permission_required"; toolCall: ToolCall; description: string }
   | { type: "illegal_operation"; violation: ViolationRecord }
   | { type: "token_usage"; promptTokens: number; completionTokens: number; durationMs?: number }
-  | { type: "checkpoint_auto"; name: string; id: string };
+  | { type: "checkpoint_auto"; name: string; id: string }
+  | { type: "tool_progress"; toolCallId: string; message: string };
 
 export type PermissionHandler = (
   toolCall: ToolCall,
@@ -192,7 +193,7 @@ export class Agent {
   private get config() {
     return getConfig();
   }
-  private onEvent: (event: AgentEvent) => void;
+  public onEvent: (event: AgentEvent) => void;
   private onPermission: PermissionHandler;
   private onQuestion: QuestionHandler;
   private abortController: AbortController | null = null;

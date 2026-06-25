@@ -1189,6 +1189,35 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 });
                 break;
             }
+            case "tool_progress": {
+                const { message } = event;
+                setLines((prev) => {
+                    for (let i = prev.length - 1; i >= 0; i--) {
+                        if (prev[i].type === "assistant") {
+                            const children = prev[i].children;
+                            if (children && children.length > 0) {
+                                for (let c = children.length - 1; c >= 0; c--) {
+                                    if (children[c].type === "tool_start" && !children[c].mergedResult) {
+                                        const updated = [...prev];
+                                        const parent = { ...updated[i] };
+                                        const updatedChildren = [...children];
+                                        updatedChildren[c] = {
+                                            ...updatedChildren[c],
+                                            content: updatedChildren[c].content + "\n" + message,
+                                        };
+                                        parent.children = updatedChildren;
+                                        updated[i] = parent;
+                                        return updated;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    return prev;
+                });
+                break;
+            }
             case "tool_end": {
                 setIsExecutingTool(false);
                 setToolTimeout(null);

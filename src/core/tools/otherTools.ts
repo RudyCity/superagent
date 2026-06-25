@@ -501,7 +501,18 @@ export const searchHistoryTool: Tool = {
       const { searchHistory } = await import("../historySearch.js");
       
       const debugLogs: string[] = [];
-      const onDebug = debug ? (msg: string) => debugLogs.push(msg) : undefined;
+      const onDebug = (msg: string) => {
+        if (debug) {
+          debugLogs.push(msg);
+        }
+        if (currentAgent && typeof currentAgent.onEvent === "function") {
+          currentAgent.onEvent({
+            type: "tool_progress",
+            toolCallId: "",
+            message: msg,
+          });
+        }
+      };
       const result = await searchHistory(query, isMulti, crossSession, onDebug);
       if (debug && debugLogs.length > 0) {
         return `[DEBUG LOGS]\n${debugLogs.join("\n")}\n\n${result}`;
