@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.22] - 2026-06-25
+
+### Added
+- **Config Lock Tests**: Added unit tests for `model-config.json` locking, reentrant acquisitions, stale lock overriding, and non-destructive corruption recovery.
+
+---
+
 ## [1.2.21] - 2026-06-25
 
 ### Improved
