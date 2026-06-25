@@ -3048,6 +3048,30 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           .catch(() => {});
       }
 
+      const handleAttachImage = async (filePath: string) => {
+        try {
+          const { readImageFromPath } = await import("../utils/imageUtils.js");
+          const attachment = await readImageFromPath(filePath);
+          setAttachments((prev) => [...prev, attachment]);
+          setMasterLogs((prev) => [...prev, `[SYSTEM] 📎 Image attached: ${attachment.filename}`].slice(-500));
+        } catch (err: any) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Could not attach image: ${err.message}`].slice(-500));
+        }
+      };
+
+      const handlePasteImage = async () => {
+        try {
+          const { readImageFromClipboard } = await import("../utils/imageUtils.js");
+          const attachment = await readImageFromClipboard();
+          if (attachment) {
+            setAttachments((prev) => [...prev, attachment]);
+            setMasterLogs((prev) => [...prev, `[SYSTEM] 📎 Clipboard image attached: ${attachment.filename}`].slice(-500));
+          }
+        } catch (err: any) {
+          setMasterLogs((prev) => [...prev, `[ERROR] Could not paste image: ${err.message}`].slice(-500));
+        }
+      };
+
       handleSlashCommand(commandInput, {
         addLine: (line) => setMasterLogs((prev) => [...prev, `[${line.type.toUpperCase()}] ${line.content}`].slice(-500)),
         exit,
@@ -3070,6 +3094,8 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setGoalMode: () => {},
         setIsProcessing: () => {},
         resumeSession: async () => {},
+        attachImage: handleAttachImage,
+        pasteImage: handlePasteImage,
         resumeFromPath: async (filePath: string) => {
           try {
             await agent.loadHistoryFromPath(filePath);

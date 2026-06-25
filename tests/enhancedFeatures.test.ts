@@ -92,7 +92,14 @@ describe("Superagent Proposed Enhancements Tests", () => {
       }
     }
     backgroundTasks.clear();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(testConfigDir, { recursive: true, force: true });
+    } catch {
+      // Retry once to allow background processes to fully release file locks on Windows
+      try {
+        fs.rmSync(testConfigDir, { recursive: true, force: true });
+      } catch {}
+    }
     process.env = originalEnv;
   });
 

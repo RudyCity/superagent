@@ -585,6 +585,8 @@ export function App({
             setLines([]);
           },
           runInteractiveProcess,
+          attachImage: handleAttachImage,
+          pasteImage: handlePasteImage,
         } as any);
         return;
       }
@@ -612,6 +614,8 @@ export function App({
             setLines([]);
           },
           runInteractiveProcess,
+          attachImage: handleAttachImage,
+          pasteImage: handlePasteImage,
         } as any);
         return;
       }

@@ -154,37 +154,64 @@ export async function readImageFromClipboard(): Promise<ImageAttachment | null> 
 async function readClipboardWindows(): Promise<ImageAttachment | null> {
   const tmpFile = path.join(os.tmpdir(), `superagent-clip-${Date.now()}.png`);
 
-  // PowerShell script: read clipboard image and save as PNG
+  // PowerShell script: read clipboard image or file drop list
   const script = [
     "Add-Type -AssemblyName System.Windows.Forms;",
     "Add-Type -AssemblyName System.Drawing;",
-    "$img = [System.Windows.Forms.Clipboard]::GetImage();",
-    "if ($img -eq $null) { exit 1 };",
-    `$img.Save('${tmpFile}', [System.Drawing.Imaging.ImageFormat]::Png);`,
-    "exit 0",
+    "if ([System.Windows.Forms.Clipboard]::ContainsImage()) {",
+    "  $img = [System.Windows.Forms.Clipboard]::GetImage();",
+    `  $img.Save('${tmpFile}', [System.Drawing.Imaging.ImageFormat]::Png);`,
+    "  Write-Output 'SAVED_RAW';",
+    "  exit 0;",
+    "}",
+    "if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) {",
+    "  $files = [System.Windows.Forms.Clipboard]::GetFileDropList();",
+    "  if ($files.Count -gt 0) {",
+    "    $file = $files[0];",
+    "    $ext = [System.IO.Path]::GetExtension($file).ToLower();",
+    "    if ($ext -eq '.png' -or $ext -eq '.jpg' -or $ext -eq '.jpeg' -or $ext -eq '.gif' -or $ext -eq '.webp' -or $ext -eq '.bmp' -or $ext -eq '.tiff' -or $ext -eq '.tif') {",
+    "      Write-Output \"FILE:$file\";",
+    "      exit 0;",
+    "    }",
+    "  }",
+    "}",
+    "exit 1;",
   ].join(" ");
 
+  let result = "";
   try {
-    await execFileAsync("powershell.exe", [
+    const { stdout } = await execFileAsync("powershell.exe", [
       "-NoProfile", "-NonInteractive", "-Command", script,
     ], { timeout: 8000 });
+    result = stdout.trim();
   } catch {
     return null;
   }
 
-  try {
-    const buf = await fs.readFile(tmpFile);
-    await fs.unlink(tmpFile).catch(() => {});
-    return {
-      id: crypto.randomUUID(),
-      filename: "clipboard.png",
-      mimeType: "image/png",
-      base64Data: buf.toString("base64"),
-      sizeBytes: buf.byteLength,
-    };
-  } catch {
-    return null;
+  if (result === "SAVED_RAW") {
+    try {
+      const buf = await fs.readFile(tmpFile);
+      await fs.unlink(tmpFile).catch(() => {});
+      return {
+        id: crypto.randomUUID(),
+        filename: "clipboard.png",
+        mimeType: "image/png",
+        base64Data: buf.toString("base64"),
+        sizeBytes: buf.byteLength,
+      };
+    } catch {
+      return null;
+    }
+  } else if (result.startsWith("FILE:")) {
+    const filePath = result.slice(5);
+    try {
+      return await readImageFromPath(filePath);
+    } catch {
+      return null;
+    }
   }
+
+  return null;
 }
 
 // ── macOS ────────────────────────────────────────────────────────────────────

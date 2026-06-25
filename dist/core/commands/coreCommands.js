@@ -136,6 +136,8 @@ export const helpCommand = {
                 "              Shortcut: !<command> (e.g. !npm run dev)",
                 "  /skills   - List all installed agent skills and templates",
                 "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",
+                "  /image paste      - Attach an image from the system clipboard",
+                "  /image attach <p> - Attach an image from the specified file path",
                 "  /ih       - Manage custom internal hook tools (alias: /internal-hooks)",
                 "              /ih init <name>  - Scaffold a new hook project",
                 "              /ih dev <name>   - Run the hook's dev script with test-payload.json input",
@@ -400,9 +402,58 @@ export const initCommand = {
         });
     }
 };
+// /image command
+export const imageCommand = {
+    name: "image",
+    description: "Manage prompt image attachments (e.g. /image paste, /image attach <path>)",
+    async execute(args, ctx) {
+        const trimmed = args.trim();
+        if (!trimmed) {
+            ctx.addLine({
+                type: "system",
+                content: [
+                    "Usage:",
+                    "  /image paste        - Attach an image from the system clipboard",
+                    "  /image attach <path> - Attach an image from the specified file path",
+                ].join("\n"),
+                timestamp: Date.now(),
+            });
+            return;
+        }
+        const parts = trimmed.split(/\s+/);
+        const subCommand = parts[0].toLowerCase();
+        const arg = parts.slice(1).join(" ").trim();
+        if (subCommand === "paste") {
+            if (!ctx.pasteImage) {
+                ctx.addLine({ type: "error", content: "Error: pasteImage is not available in this context.", timestamp: Date.now() });
+                return;
+            }
+            await ctx.pasteImage();
+        }
+        else if (subCommand === "attach") {
+            if (!arg) {
+                ctx.addLine({ type: "error", content: "Error: Please specify the image file path. Usage: /image attach <path>", timestamp: Date.now() });
+                return;
+            }
+            if (!ctx.attachImage) {
+                ctx.addLine({ type: "error", content: "Error: attachImage is not available in this context.", timestamp: Date.now() });
+                return;
+            }
+            await ctx.attachImage(arg);
+        }
+        else {
+            ctx.addLine({
+                type: "error",
+                content: `Unknown subcommand: ${subCommand}. Available subcommands: paste, attach`,
+                timestamp: Date.now(),
+            });
+        }
+    }
+};
 // Register core commands
 registry.register(newCommand);
 registry.register(exitCommand);
 registry.register(helpCommand);
 registry.register(initCommand);
+registry.register(imageCommand);
 //# sourceMappingURL=coreCommands.js.map

@@ -499,6 +499,8 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                     setLines([]);
                 },
                 runInteractiveProcess,
+                attachImage: handleAttachImage,
+                pasteImage: handlePasteImage,
             });
             return;
         }
@@ -525,6 +527,8 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                     setLines([]);
                 },
                 runInteractiveProcess,
+                attachImage: handleAttachImage,
+                pasteImage: handlePasteImage,
             });
             return;
         }

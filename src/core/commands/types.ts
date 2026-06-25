@@ -37,6 +37,8 @@ export interface SlashCommandContext {
   /** Clear the arrow-key input history log (used by /new and /clear) */
   setInputHistory?: (history: string[]) => void;
   runInteractiveProcess?: (command: string, cwd: string, env?: Record<string, string | undefined>) => Promise<number>;
+  attachImage?: (filePath: string) => Promise<void>;
+  pasteImage?: () => Promise<void>;
 }
 
 export interface SlashCommand {
