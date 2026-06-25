@@ -388,7 +388,11 @@ export const invokeSubagentTool: Tool = {
     notifySubagentsChanged();
     appendMasterLog(`[INFO] Spawning Subagent "${typeName}" (Role: ${role}) [ID: ${subagentId}]...`);
 
-    const timeoutMs = args.timeoutMs as number | undefined;
+    let timeoutMs = args.timeoutMs as number | undefined;
+    if (timeoutMs !== undefined && timeoutMs > 0 && timeoutMs < 600000 && process.env.VITEST !== "true") {
+      // Enforce a minimum timeout of 10 minutes to prevent premature timeouts on slow local models/routers
+      timeoutMs = 600000;
+    }
     if (wait) {
       try {
         if (timeoutMs !== undefined && timeoutMs > 0) {

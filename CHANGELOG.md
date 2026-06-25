@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.24] - 2026-06-25
+
+### Fixed
+- **Subagent Premature Timeouts**: Enforced a minimum timeout of 10 minutes (`600000` ms) for subagent execution when a lower timeout is requested, preventing premature timeouts on slow local models, slow routers, or very large prompt context sizes. Excluded test environments (`process.env.VITEST`) to preserve unit test behaviors.
+
+---
+
 ## [1.2.23] - 2026-06-25
 
 ### Added
