@@ -125,12 +125,12 @@ export const invokeSubagentTool: Tool = {
       },
       wait: {
         type: "boolean",
-        description: "Whether to wait synchronously for the subagent to finish and return its final report/output. Defaults to true.",
+        description: "Whether to wait synchronously for the subagent to finish and return its final report/output. Defaults to false.",
       },
       mode: {
         type: "string",
         enum: ["inline", "background"],
-        description: "The execution mode: 'inline' (run synchronously and wait for completion) or 'background' (run asynchronously). If omitted, falls back to the 'wait' parameter.",
+        description: "The execution mode: 'inline' (run synchronously and wait for completion) or 'background' (run asynchronously). If omitted, defaults to 'background'.",
       },
       timeoutMs: {
         type: "integer",
@@ -144,11 +144,13 @@ export const invokeSubagentTool: Tool = {
     const role = args.role as string;
     const prompt = args.prompt as string;
     const mode = args.mode as "inline" | "background" | undefined;
-    let wait = args.wait !== false;
+    let wait = false;
     if (mode === "inline") {
       wait = true;
     } else if (mode === "background") {
       wait = false;
+    } else if (args.wait !== undefined) {
+      wait = args.wait === true;
     }
 
     const parentAgent = agentLocalStorage.getStore();
