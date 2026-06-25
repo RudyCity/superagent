@@ -205,3 +205,101 @@ describe("Skills Injection into Agent System Prompts", () => {
   });
 });
 
+
+describe("Skill Preloading Enhancements", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should preload all 8 mandatory skills plus master-agent-orchestration for master tier", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+
+    const masterAgent = new Agent(onEvent, onPermission, onQuestion);
+    masterAgent.tier = "master";
+    masterAgent.planState = "APPROVED";
+
+    const mandatoryKeys = [
+      "karpathy-guidelines",
+      "superagent-planning",
+      "writing-plans",
+      "executing-plans",
+      "track-management",
+      "systematic-debugging",
+      "verification-before-completion",
+      "subagent-driven-development",
+      "master-agent-orchestration",
+    ];
+
+    vi.spyOn(fs, "existsSync").mockImplementation((p: any) => {
+      if (typeof p !== "string") return false;
+      return mandatoryKeys.some((k) => p.includes(k));
+    });
+
+    vi.spyOn(fs, "readFileSync").mockImplementation((p: any) => {
+      if (typeof p !== "string") return "";
+      const key = mandatoryKeys.find((k) => p.includes(k));
+      return key ? `MOCK_CONTENT_FOR_${key.toUpperCase().replace(/-/g, "_")}` : "";
+    });
+
+    let capturedSystemPrompt = "";
+    vi.mocked(streamText).mockImplementation((options) => {
+      capturedSystemPrompt = options.system || "";
+      return {
+        fullStream: (async function* () { yield { type: "text-delta", textDelta: "Done" }; })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    await masterAgent.sendMessage("hello");
+
+    expect(capturedSystemPrompt).toContain("BEHAVIORAL CODING GUIDELINES (karpathy-guidelines):");
+    expect(capturedSystemPrompt).toContain("PLANNING AND TASK GUIDELINES (superagent-planning):");
+    expect(capturedSystemPrompt).toContain("PLAN WRITING GUIDELINES (writing-plans):");
+    expect(capturedSystemPrompt).toContain("PLAN EXECUTION GUIDELINES (executing-plans):");
+    expect(capturedSystemPrompt).toContain("TRACK MANAGEMENT GUIDELINES (track-management):");
+    expect(capturedSystemPrompt).toContain("DEBUGGING GUIDELINES (systematic-debugging):");
+    expect(capturedSystemPrompt).toContain("VERIFICATION GUIDELINES (verification-before-completion):");
+    expect(capturedSystemPrompt).toContain("SUBAGENT DELEGATION GUIDELINES (subagent-driven-development):");
+    expect(capturedSystemPrompt).toContain("MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration):");
+  });
+
+  it("should cache guidelinesText and not re-read SKILL.md files on subsequent sendMessage calls", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.tier = "superagent";
+    agent.planState = "APPROVED";
+
+    const readFileSpy = vi.spyOn(fs, "readFileSync").mockImplementation((p: any) => {
+      if (typeof p === "string" && p.includes("karpathy-guidelines")) return "MOCK_KARPATHY_CONTENT";
+      return "";
+    });
+    vi.spyOn(fs, "existsSync").mockImplementation((p: any) => {
+      return typeof p === "string" && p.includes("karpathy-guidelines");
+    });
+
+    vi.mocked(streamText).mockImplementation(() => {
+      return {
+        fullStream: (async function* () { yield { type: "text-delta", textDelta: "Done" }; })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    await agent.sendMessage("first message");
+    const readCountAfterFirst = readFileSpy.mock.calls.filter(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("karpathy-guidelines")
+    ).length;
+
+    await agent.sendMessage("second message");
+    const readCountAfterSecond = readFileSpy.mock.calls.filter(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("karpathy-guidelines")
+    ).length;
+
+    expect(readCountAfterFirst).toBe(1);
+    expect(readCountAfterSecond).toBe(1);
+  });
+});

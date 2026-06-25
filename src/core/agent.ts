@@ -208,9 +208,114 @@ export class Agent {
   private lastAutoCheckpointAt: number = 0;
   /** Minimum interval between auto-checkpoints in ms */
   private static readonly AUTO_CHECKPOINT_COOLDOWN_MS = 10_000;
+  /** Cached preloaded guidelines (agents.md + mandatory skills) — built once per session */
+  private cachedGuidelinesText: string | null = null;
+  /** Keys of skills that were successfully preloaded into guidelinesText */
+  private preloadedSkillKeys: Set<string> = new Set();
 
   public approvePlan(): void {
     this.planState = "APPROVED";
+  }
+
+  /**
+   * Build and cache the guidelines text (agents.md + mandatory preloaded skills).
+   * Called once per Agent instance lifetime — subsequent calls return the cache.
+   * Each SKILL.md is trimmed to MAX_SKILL_LINES lines to reduce token cost while
+   * preserving the most important instructions at the top of each file.
+   */
+  private static readonly MAX_SKILL_LINES = 300;
+  private static readonly MANDATORY_SKILLS: Array<{ key: string; label: string }> = [
+    { key: "karpathy-guidelines",           label: "BEHAVIORAL CODING GUIDELINES (karpathy-guidelines)" },
+    { key: "superagent-planning",            label: "PLANNING AND TASK GUIDELINES (superagent-planning)" },
+    { key: "writing-plans",                  label: "PLAN WRITING GUIDELINES (writing-plans)" },
+    { key: "executing-plans",                label: "PLAN EXECUTION GUIDELINES (executing-plans)" },
+    { key: "track-management",               label: "TRACK MANAGEMENT GUIDELINES (track-management)" },
+    { key: "systematic-debugging",           label: "DEBUGGING GUIDELINES (systematic-debugging)" },
+    { key: "verification-before-completion", label: "VERIFICATION GUIDELINES (verification-before-completion)" },
+    { key: "subagent-driven-development",    label: "SUBAGENT DELEGATION GUIDELINES (subagent-driven-development)" },
+  ];
+  private static readonly MASTER_ONLY_SKILLS: Array<{ key: string; label: string }> = [
+    { key: "master-agent-orchestration",     label: "MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration)" },
+  ];
+
+  private buildGuidelinesText(): string {
+    if (this.cachedGuidelinesText !== null) {
+      return this.cachedGuidelinesText;
+    }
+
+    let text = "";
+    try {
+      // agents.md: only load from project workspace paths (never global)
+      const searchPaths = [
+        path.join(process.cwd(), "agents.md"),
+        path.join(this.workingDirectory, "agents.md"),
+      ];
+      if (!this.workspaceCache?.agentsMd) {
+        for (const p of searchPaths) {
+          if (fs.existsSync(p)) {
+            text += `\n\nPROJECT GUIDELINES (agents.md):\n${fs.readFileSync(p, "utf-8")}\n`;
+            break;
+          }
+        }
+      }
+
+      // Mandatory preloaded skills (+ master-only for master tier)
+      const targetSkills = [
+        ...Agent.MANDATORY_SKILLS,
+        ...(this.tier === "master" ? Agent.MASTER_ONLY_SKILLS : []),
+      ];
+
+      for (const skill of targetSkills) {
+        const candidatePaths = [
+          path.join(process.cwd(), ".agents", "skills", skill.key, "SKILL.md"),
+          path.join(this.workingDirectory, ".agents", "skills", skill.key, "SKILL.md"),
+          path.join(getPackageRootDir(), ".agents", "skills", skill.key, "SKILL.md"),
+        ];
+        for (const p of candidatePaths) {
+          if (fs.existsSync(p)) {
+            const rawContent = fs.readFileSync(p, "utf-8");
+            // Trim to MAX_SKILL_LINES lines to reduce token cost.
+            // The most critical rules are always at the top of well-structured skill files.
+            const lines = rawContent.split("\n");
+            const trimmed = lines.length > Agent.MAX_SKILL_LINES
+              ? lines.slice(0, Agent.MAX_SKILL_LINES).join("\n") +
+                `\n\n... [truncated — full content at: ${p}]`
+              : rawContent;
+            text += `\n\n${skill.label}:\n${trimmed}\n`;
+            this.preloadedSkillKeys.add(skill.key);
+            break;
+          }
+        }
+      }
+    } catch {
+      // Ignore guideline loading errors — non-critical
+    }
+
+    this.cachedGuidelinesText = text;
+    return text;
+  }
+
+  /**
+   * Mark already-preloaded skill entries in the INSTALLED AGENT SKILLS list.
+   * This prevents the AI from wasting tokens re-reading skill files whose content
+   * is already injected earlier in the same system prompt.
+   */
+  private markPreloadedSkillsInList(skillsPrompt: string): string {
+    if (this.preloadedSkillKeys.size === 0) return skillsPrompt;
+    let result = skillsPrompt;
+    for (const key of this.preloadedSkillKeys) {
+      // Match "Instruction File: <path>" lines containing this skill key in the path
+      const escapedKey = key.replace(/[-]/g, "[-]");
+      const regex = new RegExp(
+        `(Instruction File: [^\\n]*${escapedKey}[^\\n]*)`,
+        "gi"
+      );
+      result = result.replace(
+        regex,
+        `$1 [Content already loaded in context above — no need to re-read]`
+      );
+    }
+    return result;
   }
 
   /**
@@ -739,16 +844,23 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
     const maxContinues = isGoalMode ? 10 : 3;
 
     let baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt;
+
+    // Build (or reuse cached) guidelines text first so that preloadedSkillKeys is
+    // populated before we call markPreloadedSkillsInList below.
+    const guidelinesText = this.buildGuidelinesText();
+
     // config.systemPrompt (from getSystemPrompt() in base.ts) already includes skills for main tiers.
     // We only need to inject skills when using a customSystemPrompt (subagents spawned with custom prompts
     // that bypass getSystemPrompt), to ensure they also see the installed skills list.
     if (this.customSystemPrompt) {
       const skillsPrompt = loadAgentSkills();
       if (skillsPrompt && !baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
-        baseSystemPrompt += "\n\n" + skillsPrompt;
+        // Mark already-preloaded skills in the INSTALLED AGENT SKILLS list to
+        // prevent the AI from re-reading files whose content is already injected.
+        const markedSkillsPrompt = this.markPreloadedSkillsInList(skillsPrompt);
+        baseSystemPrompt += "\n\n" + markedSkillsPrompt;
       }
     }
-
 
     // Load scratchpad content if it exists
     let scratchpadText = "";
@@ -778,50 +890,6 @@ CRITICAL GOAL MODE RULES:
 - At the end of your work, produce a concise GOAL COMPLETION REPORT starting with "GOAL_COMPLETE:" or "GOAL_PARTIAL:" followed by a brief summary of what was achieved.
 `
       : "";
-
-    let guidelinesText = "";
-    try {
-      const searchPaths = [
-        path.join(process.cwd(), "agents.md"),
-        path.join(this.workingDirectory, "agents.md"),
-      ];
-      if (!this.workspaceCache?.agentsMd) {
-        for (const p of searchPaths) {
-          if (fs.existsSync(p)) {
-            guidelinesText += `\n\nPROJECT GUIDELINES (agents.md):\n${fs.readFileSync(p, "utf-8")}\n`;
-            break;
-          }
-        }
-      }
-      const targetSkills = [
-        { key: "karpathy-guidelines", label: "BEHAVIORAL CODING GUIDELINES (karpathy-guidelines)" },
-        { key: "superagent-planning", label: "PLANNING AND TASK GUIDELINES (superagent-planning)" },
-        { key: "writing-plans", label: "PLAN WRITING GUIDELINES (writing-plans)" },
-        { key: "executing-plans", label: "PLAN EXECUTION GUIDELINES (executing-plans)" },
-        { key: "track-management", label: "TRACK MANAGEMENT GUIDELINES (track-management)" },
-      ];
-      if (this.tier === "master") {
-        targetSkills.push({
-          key: "master-agent-orchestration",
-          label: "MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration)"
-        });
-      }
-      for (const skill of targetSkills) {
-        const paths = [
-          path.join(process.cwd(), ".agents", "skills", skill.key, "SKILL.md"),
-          path.join(this.workingDirectory, ".agents", "skills", skill.key, "SKILL.md"),
-          path.join(getPackageRootDir(), ".agents", "skills", skill.key, "SKILL.md"),
-        ];
-        for (const p of paths) {
-          if (fs.existsSync(p)) {
-            guidelinesText += `\n\n${skill.label}:\n${fs.readFileSync(p, "utf-8")}\n`;
-            break;
-          }
-        }
-      }
-    } catch {
-      // Ignore guideline loading errors
-    }
 
     try {
       for (let i = 0; i < maxIterations; i++) {
