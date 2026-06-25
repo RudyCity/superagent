@@ -43,25 +43,28 @@ export const resumeCommand: SlashCommand = {
   }
 };
 
-// /search-history command
 export const searchHistoryCommand: SlashCommand = {
   name: "search-history",
   aliases: ["sh"],
-  description: "Search conversation history. Use --all to search across ALL sessions/projects.",
+  description: "Search conversation history. Use --all to search across ALL sessions/projects. Use --debug to show live AI matching steps.",
   async execute(args, ctx) {
     const now = Date.now();
     if (!args) {
       ctx.addLine({
         type: "error",
-        content: "Usage: /search-history <query-text> [--all]\n\nExamples:\n  /search-history refactor background task\n  /search-history auth login --all    (search ALL sessions cross-project)",
+        content: "Usage: /search-history <query-text> [--all] [--debug]\n\nExamples:\n  /search-history refactor background task\n  /search-history auth login --all --debug    (search ALL sessions with live debug logs)",
         timestamp: now,
       });
       return;
     }
 
-    // Check for --all flag for cross-session search
+    // Check for flags: --all / -a and --debug / -d
     const hasAllFlag = args.includes("--all") || args.includes("-a");
-    const query = args.replace(/--all|-a/g, "").trim();
+    const hasDebugFlag = args.includes("--debug") || args.includes("-d");
+    
+    // Strip flags to get the raw search query
+    const query = args.replace(/\b(--all|-a|--debug|-d)\b/g, "").trim().replace(/\s+/g, " ");
+    
     if (!query) {
       ctx.addLine({
         type: "error",
@@ -77,9 +80,20 @@ export const searchHistoryCommand: SlashCommand = {
       content: `Searching ${scope} for: "${query}"...`,
       timestamp: now,
     });
+    
+    const onDebug = hasDebugFlag
+      ? (msg: string) => {
+          ctx.addLine({
+            type: "system",
+            content: msg,
+            timestamp: Date.now(),
+          });
+        }
+      : undefined;
+
     ctx.setIsProcessing?.(true);
     try {
-      const result = await searchHistory(query, ctx.agent?.isMultiAgent || false, hasAllFlag);
+      const result = await searchHistory(query, ctx.agent?.isMultiAgent || false, hasAllFlag, onDebug);
       ctx.addLine({
         type: "system",
         content: result,

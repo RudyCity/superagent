@@ -169,6 +169,43 @@ describe("historySearch", () => {
       const resultOob = await searchHistory("neural networks", false);
       expect(resultOob).toContain("No semantically relevant conversation history found");
     });
+
+    it("should call onDebug callback with detailed step-by-step logs when provided", async () => {
+      const mockSessions = [
+        {
+          filePath: "/path/to/ai_session_debug.json",
+          displayName: "Debug Session",
+          messageCount: 1,
+          lastModified: new Date("2026-06-25T10:00:00Z"),
+          preview: "Preview",
+        },
+      ];
+
+      vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
+      vi.mocked(configModule.getConfig).mockReturnValue({ apiKey: "valid-api-key" });
+      vi.spyOn(fs, "readFileSync").mockReturnValue(
+        JSON.stringify([
+          { role: "user", content: "Query about deep learning" },
+        ])
+      );
+
+      vi.mocked(generateText)
+        .mockResolvedValueOnce({ text: "[0]" } as any) // Filter prompt
+        .mockResolvedValueOnce({ text: "This session is about deep learning." } as any); // Summary prompt
+
+      const debugLogs: string[] = [];
+      const onDebug = (msg: string) => debugLogs.push(msg);
+
+      await searchHistory("deep learning", false, false, onDebug);
+
+      expect(debugLogs.length).toBeGreaterThan(0);
+      expect(debugLogs.some(log => log.includes("Starting history search"))).toBe(true);
+      expect(debugLogs.some(log => log.includes("Scored 1 session(s)"))).toBe(true);
+      expect(debugLogs.some(log => log.includes("Using model"))).toBe(true);
+      expect(debugLogs.some(log => log.includes("filter prompt to AI"))).toBe(true);
+      expect(debugLogs.some(log => log.includes("AI filter raw output"))).toBe(true);
+      expect(debugLogs.some(log => log.includes("Generating semantic summary"))).toBe(true);
+    });
   });
 
   describe("searchHistoryTool", () => {

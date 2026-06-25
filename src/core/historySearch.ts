@@ -54,8 +54,19 @@ export function cleanTranscriptForLLM(messages: any[]): string {
  * @param isMulti - Whether to search multi-agent sessions
  * @param crossSession - If true, search ALL sessions regardless of working directory
  */
-export async function searchHistory(query: string, isMulti = false, crossSession = false): Promise<string> {
+export async function searchHistory(
+  query: string,
+  isMulti = false,
+  crossSession = false,
+  onDebug?: (msg: string) => void
+): Promise<string> {
+  if (onDebug) {
+    onDebug(`[DEBUG] Starting history search for query: "${query}" (isMulti: ${isMulti}, crossSession: ${crossSession})`);
+  }
   const sessions = listHistorySessions(isMulti, crossSession);
+  if (onDebug) {
+    onDebug(`[DEBUG] Found ${sessions.length} total history sessions.`);
+  }
   if (sessions.length === 0) {
     return crossSession
       ? "No conversation history sessions found across any sessions."
@@ -104,6 +115,14 @@ export async function searchHistory(query: string, isMulti = false, crossSession
       b.session.lastModified.getTime() - a.session.lastModified.getTime()
   );
 
+  if (onDebug) {
+    onDebug(`[DEBUG] Scored ${scoredSessions.length} session(s) using subsequence fuzzy matching:`);
+    for (const item of scoredSessions.slice(0, 5)) {
+      const pct = Math.round(item.score * 100);
+      onDebug(`  - 📁 ${item.session.displayName} (Fuzzy Match: ${pct}%, last modified: ${item.session.lastModified.toISOString()})`);
+    }
+  }
+
   // Generate offline fuzzy search fallback text
   const generateFuzzyFallbackText = () => {
     if (scoredSessions.length === 0) {
@@ -140,11 +159,17 @@ export async function searchHistory(query: string, isMulti = false, crossSession
   const hasApiKey = !!config.apiKey;
 
   if (!hasApiKey) {
+    if (onDebug) {
+      onDebug("[DEBUG] No API key configured. Skipping AI Semantic Search.");
+    }
     return generateFuzzyFallbackText();
   }
 
   try {
     const model = getModelInstance();
+    if (onDebug) {
+      onDebug(`[DEBUG] API key configured. Using model: ${model?.modelId || "unknown"}`);
+    }
 
     // AI Semantic Filtering
     const candidates = scoredSessions.slice(0, 5).map((item, idx) => ({
@@ -154,6 +179,10 @@ export async function searchHistory(query: string, isMulti = false, crossSession
       messageCount: item.session.messageCount,
       lastModified: item.session.lastModified.toISOString(),
     }));
+
+    if (onDebug) {
+      onDebug(`[DEBUG] Top ${candidates.length} candidates for AI semantic filtering:\n${JSON.stringify(candidates, null, 2)}`);
+    }
 
     if (candidates.length === 0) {
       return `No matches found in history for query: "${query}"`;
@@ -168,6 +197,10 @@ ${JSON.stringify(candidates, null, 2)}
 Identify the indices of the sessions (up to 3) that are semantically relevant to the developer's search query.
 Return ONLY a JSON array of numbers representing the relevant session indices. Example: [0, 2]
 If no sessions are relevant, return an empty array: []`;
+
+    if (onDebug) {
+      onDebug(`[DEBUG] Sending filter prompt to AI:\n${filterPrompt}`);
+    }
 
     let concurrencyAcquiredFilter = false;
     let filterResult = "";
@@ -189,8 +222,16 @@ If no sessions are relevant, return an empty array: []`;
       }
     }
 
+    if (onDebug) {
+      onDebug(`[DEBUG] AI filter raw output:\n${filterResult}`);
+    }
+
     const jsonMatch = filterResult.match(/\[\s*\d*\s*(?:,\s*\d*\s*)*\]/);
     const indices: number[] = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+
+    if (onDebug) {
+      onDebug(`[DEBUG] Parsed indices: ${JSON.stringify(indices)}`);
+    }
 
     if (indices.length === 0) {
       return `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
@@ -211,6 +252,11 @@ ${truncatedTranscript}
 
 Please summarize what was discussed, decided, or implemented in this session regarding the query. Be specific, concise, and reference code or actions where appropriate.`;
 
+      if (onDebug) {
+        onDebug(`[DEBUG] Generating semantic summary for "${match.session.displayName}"`);
+        onDebug(`[DEBUG] Sending summary prompt to AI:\n${summaryPrompt}`);
+      }
+
       let concurrencyAcquiredSummary = false;
       let summary = "";
       try {
@@ -229,6 +275,10 @@ Please summarize what was discussed, decided, or implemented in this session reg
         if (concurrencyAcquiredSummary) {
           concurrencyLimiter.release();
         }
+      }
+
+      if (onDebug) {
+        onDebug(`[DEBUG] Raw AI summary output for "${match.session.displayName}":\n${summary}`);
       }
 
       reports.push(`📁 **${match.session.displayName}**\n${summary.trim()}`);

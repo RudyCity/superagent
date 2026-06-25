@@ -468,7 +468,7 @@ export const androidCliTool: Tool = {
 
 export const searchHistoryTool: Tool = {
   name: "search_history",
-  description: "Search conversation history for a query string. By default searches current workspace sessions; set cross_session=true to search ALL sessions across all projects.",
+  description: "Search conversation history for a query string. By default searches current workspace sessions; set cross_session=true to search ALL sessions across all projects. Set debug=true to include verbose matching logs.",
   parameters: {
     type: "object",
     properties: {
@@ -480,6 +480,10 @@ export const searchHistoryTool: Tool = {
         type: "boolean",
         description: "If true, search ALL sessions across all projects/workspaces, not just the current one. Default: false.",
       },
+      debug: {
+        type: "boolean",
+        description: "If true, include verbose step-by-step debug logs of the semantic search matching and prompts. Default: false.",
+      },
     },
     required: ["query"],
   },
@@ -489,12 +493,20 @@ export const searchHistoryTool: Tool = {
       return "Error: query parameter is required.";
     }
     const crossSession = args.cross_session === true;
+    const debug = args.debug === true;
     try {
       const { agentLocalStorage } = await import("../agent.js");
       const currentAgent = agentLocalStorage.getStore();
       const isMulti = currentAgent?.isMultiAgent || false;
       const { searchHistory } = await import("../historySearch.js");
-      return await searchHistory(query, isMulti, crossSession);
+      
+      const debugLogs: string[] = [];
+      const onDebug = debug ? (msg: string) => debugLogs.push(msg) : undefined;
+      const result = await searchHistory(query, isMulti, crossSession, onDebug);
+      if (debug && debugLogs.length > 0) {
+        return `[DEBUG LOGS]\n${debugLogs.join("\n")}\n\n${result}`;
+      }
+      return result;
     } catch (err: any) {
       return `Error searching history: ${err.message}`;
     }
