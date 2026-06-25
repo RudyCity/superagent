@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.15] - 2026-06-25
+
+### Added
+- **Diff Stats on File Edit Results**: Chat view now displays `+N -N` diff statistics on file edit tool results, giving a quick summary of lines added/removed per edit.
+- **Expand manage_tasks (update) by Default**: The `manage_tasks` update action is now automatically expanded in the chat view for better visibility of task progress.
+
+### Fixed
+- **DeepSeek Reasoning Token Separation**: Separated DeepSeek reasoning tokens from the assistant message content to prevent them from being mixed into the main response stream.
+
+---
+
 ## [1.2.14] - 2026-06-25
 
 ### Added
