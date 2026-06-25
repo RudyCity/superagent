@@ -66,6 +66,20 @@ export function useModelWizard(ctx: ModelWizardContext) {
     const presetMode: PresetMode = isMulti ? "multi" : "single";
     const modeLabel = isMulti ? "Multi-Agent" : "Single-Agent";
 
+    /**
+     * Sync the agent's ContextManager with the newly selected model.
+     * Called after setContextLimit() so the ContextManager's internal
+     * model name and threshold stay in sync with the UI state — preventing
+     * the Ctx: display from resetting to 0% after a wizard-based model switch.
+     */
+    const syncContextManagerModel = (modelName: string, limit: number) => {
+      const cm = agentRef?.current?.getContextManager?.();
+      if (cm) {
+        cm.setModel(modelName);
+        cm.setThreshold(limit);
+      }
+    };
+
     const getStep1Options = (): string[] => {
       return [
         `1. Load/Apply Model Preset [${modeLabel}]`,
@@ -903,6 +917,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const limit = getContextWindowLimit(nextActiveModel);
         setContextLimit(limit);
         setActiveModel(nextActiveModel);
+        syncContextManagerModel(nextActiveModel, limit);
 
         let updatedList = `\n\nUpdated Models:\n`;
         if (isSingle) {
@@ -1042,6 +1057,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           const limit = getContextWindowLimit(nextActiveModel);
           setContextLimit(limit);
           setActiveModel(nextActiveModel);
+          syncContextManagerModel(nextActiveModel, limit);
 
           let updatedList = `\n\nUpdated Models:\n`;
           if (isSingle) {
@@ -1523,6 +1539,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           const newLimit = getContextWindowLimit(cleanModel);
           setContextLimit(newLimit);
           setActiveModel(effectiveModel);
+          syncContextManagerModel(cleanModel, newLimit);
           
           let updatedList = `\n\nUpdated Models:\n`;
           if (isMulti) {
@@ -1569,6 +1586,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
               .then(() => {
                 const newLimit = getContextWindowLimit(cleanModelName);
                 setContextLimit(newLimit);
+                syncContextManagerModel(cleanModelName, newLimit);
               })
               .catch(() => {});
           }
@@ -1773,6 +1791,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const newLimit = getContextWindowLimit(cleanModel);
         setContextLimit(newLimit);
         setActiveModel(effectiveModel);
+        syncContextManagerModel(cleanModel, newLimit);
         
         const currentModel = getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel();
         
@@ -1822,6 +1841,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
             .then(() => {
               const newLimit = getContextWindowLimit(cleanModelName);
               setContextLimit(newLimit);
+              syncContextManagerModel(cleanModelName, newLimit);
             })
             .catch(() => {});
         }

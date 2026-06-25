@@ -48,8 +48,9 @@ export class TokenTracker {
 
   setModel(model: string): void {
     this.model = model;
-    this.cache.clear();
-    this.breakdownCache.clear();
+    // Note: caches are intentionally NOT cleared here.
+    // The tiktoken encoder (cl100k_base) is the same for all models,
+    // so existing cached token counts remain valid after a model switch.
   }
 
   getModel(): string {
