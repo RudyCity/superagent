@@ -375,7 +375,7 @@ Superagent supports a wide range of slash commands within the terminal chat to m
 - **`/compact now`**: Forces manual compaction on demand. Displays tokens before/after, tokens saved, and the strategy used (truncation, summarization, or semantic).
 - **`/pin`**: Pin important messages to prevent them from being removed during compaction. Pinned messages store full content, agent tags, and sync to the global knowledge store. Subcommands: `/pin list` (view pinned messages with metadata), `/pin last` (pin the last user message), `/pin unpin <id>` (remove a pin), `/pin view <index>` (view full pinned content), `/pin tag <index> <label>` (tag a pinned message), `/pin list-messages` (show all messages with indexes).
 - **`/knowledge`** (alias: **`/k`**): Browse and search the global pinned knowledge store — important messages pinned across ALL sessions and projects. Subcommands: `/knowledge` (list all entries), `/knowledge <query>` (search), `/knowledge projects` (list projects with pins).
-- **`/search-history <query>`** (alias: **`/sh`**): Search conversation history. Add `--all` flag to search across ALL sessions and projects (e.g., `/search-history auth login --all`).
+- **`/search-history <query>`** (alias: **`/sh`**): Search conversation history. Add `--all` flag to search across ALL sessions and projects (e.g., `/search-history auth login --all`). Add `--debug` flag to display step-by-step logs of the AI semantic matching and summary generation process (e.g., `/search-history auth login --debug`).
 - **`/compaction-history`** (alias: **`/ch`**): View the full audit trail of compaction events with timestamps, strategies used, tokens saved, and messages preserved.
 - **`/quit`** or **`/exit`**: Safely exits the application.
 
