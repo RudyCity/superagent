@@ -1088,14 +1088,16 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               if (err instanceof Error && err.name === "AbortError") {
                 throw err;
               }
-              const isRetryable = isRetryableError(err);
+              const isEmptyResponse = err instanceof Error && err.message === "Empty response from model";
+              const isRetryable = isRetryableError(err) || isEmptyResponse;
+              const currentMaxRetries = isEmptyResponse ? 3 : maxRetries;
               attempt++;
-              if (attempt > maxRetries || !isRetryable) {
+              if (attempt > currentMaxRetries || !isRetryable) {
                 const rawMsg = formatError(err);
                 const msg = rawMsg === "Empty response from model"
                   ? "Empty response from model. Check your endpoint/model config."
                   : rawMsg;
-                const prefixMsg = !isRetryable ? "Fatal error" : `Generate text failed after ${maxRetries} retries`;
+                const prefixMsg = (!isRetryable || isEmptyResponse) ? "Fatal error" : `Generate text failed after ${maxRetries} retries`;
                 const errMsg = `${prefixMsg}: ${msg}`;
                 this.writeToLogFile("MODEL_ERROR", errMsg);
                 this.onEvent({ type: "error", message: errMsg });
@@ -1108,8 +1110,14 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 return;
               }
               const msg = formatError(err);
-              this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
-              await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1), signal);
+              this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${currentMaxRetries}...\n` });
+              let delayMs = baseDelay * Math.pow(2, attempt - 1);
+              if (isEmptyResponse) {
+                if (attempt === 1) delayMs = 10000;
+                else if (attempt === 2) delayMs = 20000;
+                else if (attempt === 3) delayMs = 50000;
+              }
+              await this.delayWithCountdown(attempt, delayMs, signal);
             } finally {
               if (concurrencyAcquired) {
                 concurrencyLimiter.release();
@@ -1211,14 +1219,16 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               if (err instanceof Error && err.name === "AbortError") {
                 throw err;
               }
-              const isRetryable = isRetryableError(err);
+              const isEmptyResponse = err instanceof Error && err.message === "Empty response from model";
+              const isRetryable = isRetryableError(err) || isEmptyResponse;
+              const currentMaxRetries = isEmptyResponse ? 3 : maxRetries;
               attempt++;
-              if (attempt > maxRetries || !isRetryable) {
+              if (attempt > currentMaxRetries || !isRetryable) {
                 const rawMsg = formatError(err);
                 const msg = rawMsg === "Empty response from model"
                   ? "Empty response from model. Check your endpoint/model config."
                   : rawMsg;
-                const prefixMsg = !isRetryable ? "Fatal error" : `Stream error after ${maxRetries} retries`;
+                const prefixMsg = (!isRetryable || isEmptyResponse) ? "Fatal error" : `Stream error after ${maxRetries} retries`;
                 const errMsg = `${prefixMsg}: ${msg}`;
                 this.writeToLogFile("STREAM_ERROR", errMsg);
                 this.onEvent({ type: "error", message: errMsg });
@@ -1231,8 +1241,14 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 return;
               }
               const msg = formatError(err);
-              this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${maxRetries}...\n` });
-              await this.delayWithCountdown(attempt, baseDelay * Math.pow(2, attempt - 1), signal);
+              this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${msg}. Retrying attempt ${attempt}/${currentMaxRetries}...\n` });
+              let delayMs = baseDelay * Math.pow(2, attempt - 1);
+              if (isEmptyResponse) {
+                if (attempt === 1) delayMs = 10000;
+                else if (attempt === 2) delayMs = 20000;
+                else if (attempt === 3) delayMs = 50000;
+              }
+              await this.delayWithCountdown(attempt, delayMs, signal);
             } finally {
               if (concurrencyAcquired) {
                 concurrencyLimiter.release();

@@ -57,7 +57,7 @@ describe("Agent - Empty Response Retry", () => {
   });
 
   describe("Streaming Mode (disableStreaming: false)", () => {
-    it("should fail immediately without retries when receiving an empty response", async () => {
+    it("should retry 3 times with 10s, 20s, and 50s delays when receiving an empty response in streaming mode", async () => {
       const onEvent = vi.fn();
       const onPermission = vi.fn().mockResolvedValue(true);
       const onQuestion = vi.fn();
@@ -77,9 +77,14 @@ describe("Agent - Empty Response Retry", () => {
 
       await agent.sendMessage("test message");
 
-      // Verify streamText was called only once (0 retries)
-      expect(streamText).toHaveBeenCalledTimes(1);
-      expect(delaySpy).toHaveBeenCalledTimes(0);
+      // Verify streamText was called 4 times in total (1 initial + 3 retries)
+      expect(streamText).toHaveBeenCalledTimes(4);
+      
+      // Verify delays were exactly 10s, 20s, and 50s
+      expect(delaySpy).toHaveBeenCalledTimes(3);
+      expect(delaySpy).toHaveBeenNthCalledWith(1, 1, 10000, expect.anything());
+      expect(delaySpy).toHaveBeenNthCalledWith(2, 2, 20000, expect.anything());
+      expect(delaySpy).toHaveBeenNthCalledWith(3, 3, 50000, expect.anything());
 
       // Verify error event is sent with fatal error formatted message
       const errorEvent = onEvent.mock.calls.find((call) => call[0].type === "error");
@@ -125,7 +130,7 @@ describe("Agent - Empty Response Retry", () => {
       });
     });
 
-    it("should fail immediately without retries when receiving an empty response", async () => {
+    it("should retry 3 times with 10s, 20s, and 50s delays when receiving an empty response in non-streaming mode", async () => {
       const onEvent = vi.fn();
       const onPermission = vi.fn().mockResolvedValue(true);
       const onQuestion = vi.fn();
@@ -145,9 +150,14 @@ describe("Agent - Empty Response Retry", () => {
 
       await agent.sendMessage("test message");
 
-      // Verify generateText was called only once (0 retries)
-      expect(generateText).toHaveBeenCalledTimes(1);
-      expect(delaySpy).toHaveBeenCalledTimes(0);
+      // Verify generateText was called 4 times in total (1 initial + 3 retries)
+      expect(generateText).toHaveBeenCalledTimes(4);
+
+      // Verify delays were exactly 10s, 20s, and 50s
+      expect(delaySpy).toHaveBeenCalledTimes(3);
+      expect(delaySpy).toHaveBeenNthCalledWith(1, 1, 10000, expect.anything());
+      expect(delaySpy).toHaveBeenNthCalledWith(2, 2, 20000, expect.anything());
+      expect(delaySpy).toHaveBeenNthCalledWith(3, 3, 50000, expect.anything());
 
       // Verify error event is sent with fatal error formatted message
       const errorEvent = onEvent.mock.calls.find((call) => call[0].type === "error");
