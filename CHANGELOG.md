@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.21] - 2026-06-25
+
+### Improved
+- **Mandatory Skill Preloading — Gap Fixes**:
+  - `markPreloadedSkillsInList` now applies to **all** agent tiers (was incorrectly limited to custom-prompt agents only). Main Master/Superagent/Subagent instances now also get their preloaded skills tagged `[Content already loaded in context above]` in the `INSTALLED AGENT SKILLS` list, preventing redundant re-reads.
+  - Added `trimSkillContent` static helper with frontmatter-aware trimming: YAML `---` blocks are always preserved in full; the `MAX_SKILL_LINES` (300) cap applies only to the body content so skill metadata is never cut off.
+
+---
+
 ## [1.2.20] - 2026-06-25
 
 ### Fixed

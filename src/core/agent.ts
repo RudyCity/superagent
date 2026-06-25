@@ -238,6 +238,41 @@ export class Agent {
     { key: "master-agent-orchestration",     label: "MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration)" },
   ];
 
+  /**
+   * Trim a SKILL.md file's content to MAX_SKILL_LINES lines while always
+   * preserving the YAML frontmatter (--- delimited block at the top, if any).
+   * The line cap applies only to the body — critical metadata is never cut off.
+   */
+  private static trimSkillContent(raw: string, absolutePath: string): string {
+    const lines = raw.split("\n");
+
+    // Detect YAML frontmatter: file starts with "---" and has a closing "---"
+    let frontmatterEnd = 0;
+    if (lines[0]?.trim() === "---") {
+      for (let i = 1; i < lines.length; i++) {
+        if (lines[i]?.trim() === "---") {
+          frontmatterEnd = i + 1; // include the closing ---
+          break;
+        }
+      }
+    }
+
+    const frontmatter = lines.slice(0, frontmatterEnd);
+    const body = lines.slice(frontmatterEnd);
+
+    if (body.length <= Agent.MAX_SKILL_LINES) {
+      return raw; // no trimming needed
+    }
+
+    const trimmedBody = body.slice(0, Agent.MAX_SKILL_LINES);
+    return [
+      ...frontmatter,
+      ...trimmedBody,
+      "",
+      `... [truncated — full content at: ${absolutePath}]`,
+    ].join("\n");
+  }
+
   private buildGuidelinesText(): string {
     if (this.cachedGuidelinesText !== null) {
       return this.cachedGuidelinesText;
@@ -274,13 +309,8 @@ export class Agent {
         for (const p of candidatePaths) {
           if (fs.existsSync(p)) {
             const rawContent = fs.readFileSync(p, "utf-8");
-            // Trim to MAX_SKILL_LINES lines to reduce token cost.
-            // The most critical rules are always at the top of well-structured skill files.
-            const lines = rawContent.split("\n");
-            const trimmed = lines.length > Agent.MAX_SKILL_LINES
-              ? lines.slice(0, Agent.MAX_SKILL_LINES).join("\n") +
-                `\n\n... [truncated — full content at: ${p}]`
-              : rawContent;
+            // Trim body to MAX_SKILL_LINES, preserving YAML frontmatter
+            const trimmed = Agent.trimSkillContent(rawContent, p);
             text += `\n\n${skill.label}:\n${trimmed}\n`;
             this.preloadedSkillKeys.add(skill.key);
             break;
@@ -294,6 +324,7 @@ export class Agent {
     this.cachedGuidelinesText = text;
     return text;
   }
+
 
   /**
    * Mark already-preloaded skill entries in the INSTALLED AGENT SKILLS list.
@@ -843,7 +874,7 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
     // In goal mode, allow many more auto-continues without prompting the user
     const maxContinues = isGoalMode ? 10 : 3;
 
-    let baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt;
+    let baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt || "";
 
     // Build (or reuse cached) guidelines text first so that preloadedSkillKeys is
     // populated before we call markPreloadedSkillsInList below.
@@ -855,11 +886,15 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
     if (this.customSystemPrompt) {
       const skillsPrompt = loadAgentSkills();
       if (skillsPrompt && !baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
-        // Mark already-preloaded skills in the INSTALLED AGENT SKILLS list to
-        // prevent the AI from re-reading files whose content is already injected.
-        const markedSkillsPrompt = this.markPreloadedSkillsInList(skillsPrompt);
-        baseSystemPrompt += "\n\n" + markedSkillsPrompt;
+        baseSystemPrompt += "\n\n" + skillsPrompt;
       }
+    }
+
+    // For ALL agents: mark already-preloaded skills in the INSTALLED AGENT SKILLS list
+    // (which is present either via getSystemPrompt() or injected above for custom prompts)
+    // so the AI knows not to re-read files already injected into the context above.
+    if (baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
+      baseSystemPrompt = this.markPreloadedSkillsInList(baseSystemPrompt);
     }
 
     // Load scratchpad content if it exists
