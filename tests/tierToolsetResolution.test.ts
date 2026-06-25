@@ -69,8 +69,8 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
     vi.mocked(streamText).mockImplementation(({ tools }: any) => {
       toolsPassed = Object.keys(tools || {});
       return {
-        textStream: (async function* () {
-          yield "Test finished";
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Test finished" };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
@@ -96,8 +96,8 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
     vi.mocked(streamText).mockImplementation(({ tools }: any) => {
       toolsPassed = Object.keys(tools || {});
       return {
-        textStream: (async function* () {
-          yield "Test finished";
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Test finished" };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
@@ -123,8 +123,8 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
     vi.mocked(streamText).mockImplementation(({ tools }: any) => {
       toolsPassed = Object.keys(tools || {});
       return {
-        textStream: (async function* () {
-          yield "Test finished";
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Test finished" };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;
@@ -151,8 +151,8 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
     vi.mocked(streamText).mockImplementation(({ tools }: any) => {
       toolsPassed = Object.keys(tools || {});
       return {
-        textStream: (async function* () {
-          yield "Test finished";
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Test finished" };
         })(),
         usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
       } as any;

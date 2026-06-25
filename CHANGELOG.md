@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.20] - 2026-06-25
+
+### Fixed
+- **Skill Path Resolution and Deduplication**:
+  - Normalized agent skill paths to standard slashes and casing (specifically for Windows paths) to prevent duplicate loading.
+  - Prioritized workspace local skills (`.agents/skills/`) and deduplicated duplicate global or source-level skills with identical names and authors.
+- **Master Agent Orchestration**:
+  - Conditionally load the `master-agent-orchestration` skill guidelines only when running in the Master Agent tier to keep prompt sizes efficient for other tiers.
+
+---
+
 ## [1.2.19] - 2026-06-25
 
 ### Fixed

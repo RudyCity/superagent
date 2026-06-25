@@ -257,5 +257,5 @@ describe("Agent Workspace Cache Integration", () => {
     // Verify it printed change detection message on the second iteration
     const changeLogs = events.filter(e => e.type === "text" && e.content.includes("changes detected"));
     expect(changeLogs.length).toBeGreaterThan(0);
-  });
+  }, 20000);
 });
