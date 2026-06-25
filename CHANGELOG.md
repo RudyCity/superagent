@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.17] - 2026-06-25
+
+### Added
+- **Image Attachments Support (`/image`)**:
+  - Added a new `/image` slash command to manage prompt image attachments in the terminal UI.
+  - Supports `/image paste` to attach an image from the system clipboard.
+  - Supports `/image attach <path>` to attach an image from a specified file path.
+  - Added support for detecting and processing file drop list in the clipboard.
+
+---
+
 ## [1.2.16] - 2026-06-25
 
 ### Added
