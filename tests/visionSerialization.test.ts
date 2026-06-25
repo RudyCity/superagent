@@ -82,7 +82,7 @@ describe("Vision Message Serialization", () => {
       { type: "text", text: "Here is an image" },
       {
         type: "text",
-        text: "[Image: (image/png) - not sent because the active model (deepseek-chat) does not support vision/images]"
+        text: "[Image: (image/png) - not sent because the active model (deepseek-chat) does not support vision/images. Base64 Data: data:image/png;base64,base64data]"
       }
     ]);
   });

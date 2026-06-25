@@ -1909,7 +1909,7 @@ for (const tc of toolCalls) {
                   }
                   return {
                     type: "text" as const,
-                    text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images]`
+                    text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/png"};base64,${p.image}]`
                   };
                 }
                 return { type: "text" as const, text: p.text };
