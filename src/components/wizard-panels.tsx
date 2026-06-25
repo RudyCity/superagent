@@ -162,6 +162,16 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           </Box>
         )}
 
+        {activeWizard && activeWizard.type === "exit_confirm" && (
+          <WizardDialog
+            title="⚠️ QUIT SESSION (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
+            description="Are you sure you want to exit? Any running tasks or agents will be aborted."
+            borderColor="red"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 1 && wizardOptions.length > 0 && (
           <WizardDialog
             title="🔑 PROVIDER MANAGER (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
