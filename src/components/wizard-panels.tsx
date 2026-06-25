@@ -10,7 +10,7 @@ import type { QuestionItem } from "../core/agent.js";
 
 export interface WizardPanelsProps {
   activeWizard: {
-    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills";
+    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm";
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;

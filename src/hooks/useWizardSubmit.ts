@@ -12,7 +12,7 @@ import { useGoalWizard } from "./wizard/useGoalWizard.js";
 
 export interface WizardSubmitContext {
   activeWizard: {
-    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills";
+    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm";
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;

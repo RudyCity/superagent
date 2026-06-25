@@ -38,7 +38,7 @@ import { filterSuggestions } from "../utils/text.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint, deleteCheckpointById } from "../core/checkpoints.js";
 import { allTools } from "../core/tools.js";
-import type { Agent } from "../core/agent.js";
+import type { Agent, QuestionItem } from "../core/agent.js";
 import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage } from "../core/loginWizardLogic.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 import { contentToString } from "../core/conversation.js";
@@ -49,7 +49,15 @@ export interface DashboardWizardContext {
   exit: () => void;
   query: string;
   setQuery: React.Dispatch<React.SetStateAction<string>>;
-  activeWizard: any;
+  activeWizard: {
+    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm";
+    step: number;
+    data: Record<string, string>;
+    isMultiSelect?: boolean;
+    questions?: QuestionItem[];
+    currentQuestionIndex?: number;
+    answers?: string[];
+  } | null;
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
   wizardOptions: string[];
   setWizardOptions: React.Dispatch<React.SetStateAction<string[]>>;
