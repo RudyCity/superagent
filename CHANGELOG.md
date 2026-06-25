@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.18] - 2026-06-25
+
+### Added
+- **Live Tool Progress Logging**: Added real-time progress logging inside the `search_history` tool execution block in the terminal UI, displaying matching and summary steps as they occur.
+- **Chat-Line Diff Stats**: Fixed rendering of `+N -N` diff statistics on file-edit tool results in the `chat-line` component to match the central `chat-area` dashboard layout.
+
+---
+
 ## [1.2.17] - 2026-06-25
 
 ### Added
