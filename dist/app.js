@@ -386,6 +386,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
         planState,
         streamBufferRef,
         setStreamDisplay,
+        exit,
     });
     const handleSubmit = useCallback(async (value) => {
         if (isProcessing && !activeWizard)
@@ -397,7 +398,8 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
             setLastTabPrefix(null);
             setHistoryIndex(-1);
             setScrollOffset(0);
-            const isSelectionStep = (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10)) ||
+            const isSelectionStep = (activeWizard.type === "exit_confirm") ||
+                (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10)) ||
                 (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40 || activeWizard.step === 41 || activeWizard.step === 50)) ||
                 (activeWizard.type === "permission") ||
                 (activeWizard.type === "question" && wizardOptions.length > 0);

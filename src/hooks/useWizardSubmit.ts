@@ -53,6 +53,7 @@ export interface WizardSubmitContext {
   planState: string;
   streamBufferRef: React.MutableRefObject<string>;
   setStreamDisplay: React.Dispatch<React.SetStateAction<string>>;
+  exit?: () => void;
 }
 
 export function useWizardSubmit(ctx: WizardSubmitContext) {
@@ -74,6 +75,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     planState,
     streamBufferRef,
     setStreamDisplay,
+    exit,
   } = ctx;
 
   const handleLoginWizard = useLoginWizard(ctx);
@@ -83,6 +85,22 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
   const handleWizardSubmit = useCallback((value: string) => {
     if (!activeWizard) return;
     const now = Date.now();
+
+    if (activeWizard.type === "exit_confirm") {
+      if (value === "Yes, exit") {
+        exit?.();
+      } else {
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        addLine({
+          type: "system",
+          content: "Exit cancelled. Retaining session.",
+          timestamp: now,
+        });
+      }
+      return;
+    }
 
     if (activeWizard.type === "login") {
       handleLoginWizard(value, activeWizard.step, activeWizard.data);
@@ -314,6 +332,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     setInput,
     pendingQuestion,
     setPendingQuestion,
+    exit,
   ]);
 
   return handleWizardSubmit;

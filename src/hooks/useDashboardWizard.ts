@@ -223,6 +223,18 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
     if (!activeWizard) return;
     const now = Date.now();
 
+    if (activeWizard.type === "exit_confirm") {
+      if (value === "Yes, exit") {
+        exit();
+      } else {
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setMasterLogs((prev) => [...prev, "[SYSTEM] Exit cancelled. Retaining session."].slice(-500));
+      }
+      return;
+    }
+
     if (activeWizard.type === "login") {
       if (activeWizard.step === 1) {
         const choice = value.toLowerCase();
@@ -2863,6 +2875,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     setWizardIsLoadingModels,
     cachedSessions,
     setIsProcessing,
+    exit,
   ]);
 
   const handleQuerySubmit = useCallback((val: string) => {
