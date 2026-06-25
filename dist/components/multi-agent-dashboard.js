@@ -1,0 +1,1132 @@
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { execSync } from "child_process";
+import { Box, Text, useApp } from "ink";
+import ChatTextInput from "./ChatTextInput.js";
+import fs from "fs/promises";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { subagentInstances, subscribeToSubagents, superagentInstances, subscribeToSuperagents, backgroundTasks, subscribeToTasks, subscribeToActiveOutput, notifySubagentsChanged, notifySuperagentsChanged, notifyTasksChanged, historicalSuperagentTokens, masterPromptTokens, masterCompletionTokens, lastMasterPromptTokens } from "../core/tools/state.js";
+import { killProcessTree } from "../core/tools/index.js";
+import { wrapTextForDisplay } from "../utils/responseScroll.js";
+import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./plan-approval-dialog.js";
+import path from "path";
+import { getContextWindowLimit, getRootConfigDir, getEffectiveMasterModel } from "../core/config.js";
+import { contentToString } from "../core/conversation.js";
+import ImageAttachmentBar from "./ImageAttachmentBar.js";
+import { readImageFromPath, readImageFromClipboard, } from "../utils/imageUtils.js";
+import { filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences } from "../utils/text.js";
+import { getDefaultModel } from "../core/slash-commands.js";
+import { readChecklistTasks, readTaskHistory } from "../core/taskChecklist.js";
+// Import extracted subcomponents
+import { RegistryPanel } from "./dashboard/registry-panel.js";
+import { InspectorPanel } from "./dashboard/inspector-panel.js";
+import { ChecklistPanel } from "./dashboard/checklist-panel.js";
+import { DashboardWizard } from "./dashboard/dashboard-wizard.js";
+import { ActiveSubagentsPanel } from "./dashboard/active-subagents-panel.js";
+import { ActiveProcessesPanel } from "./dashboard/active-processes-panel.js";
+import { DashboardStatusBar } from "./dashboard/dashboard-status-bar.js";
+import { ProcessingIndicator } from "./common/LoadingIndicators.js";
+// Import hooks
+import { useDashboardWizard } from "../hooks/useDashboardWizard.js";
+import { computeWrappedLogs, computeLogGroupBoundaries } from "../utils/dashboardLogFormatter.js";
+import { getDashboardSuggestions, getSuggestionDescriptions } from "../utils/dashboardSuggestions.js";
+import { useDashboardSessions } from "../hooks/useDashboardSessions.js";
+import { useDashboardMouse } from "../hooks/useDashboardMouse.js";
+import { useDashboardKeyboard } from "../hooks/useDashboardKeyboard.js";
+import { useTencentdbStatus } from "../hooks/useTencentdbStatus.js";
+// Read version from package.json
+const __mdFilename = fileURLToPath(import.meta.url);
+const __mdDirname = path.dirname(__mdFilename);
+let multiVersion = "1.1.0";
+try {
+    const pkgPath = path.join(__mdDirname, "..", "..", "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+    multiVersion = pkg.version;
+}
+catch (e) {
+    // fallback
+}
+export function MultiAgentDashboard({ agent, autoResume = false, registerLogHandler, registerEventHandler, registerQuestionHandlerRef, }) {
+    const { exit } = useApp();
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    const [focusArea, setFocusArea] = useState("input");
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [tick, setTick] = useState(0);
+    const [query, setQuery] = useState("");
+    const [lastTabPrefix, setLastTabPrefix] = useState(null);
+    const [masterLogs, setMasterLogs] = useState(["[MASTER] System initialised. Ready for tasks."]);
+    const logQueueRef = useRef([]);
+    const [history, setHistory] = useState([]);
+    const [historyIndex, setHistoryIndex] = useState(-1);
+    const [tempInput, setTempInput] = useState("");
+    const [isPasted, setIsPasted] = useState(false);
+    const [pastePrefixLength, setPastePrefixLength] = useState(0);
+    const [pasteSuffixLength, setPasteSuffixLength] = useState(0);
+    const [attachments, setAttachments] = useState([]);
+    const [activeModel, setActiveModel] = useState(() => {
+        return getEffectiveMasterModel("auto") || getDefaultModel();
+    });
+    const [lastSpeed, setLastSpeed] = useState(null);
+    const tencentdbStatus = useTencentdbStatus();
+    const [isExecutingTool, setIsExecutingTool] = useState(false);
+    const [activeToolOutput, setActiveToolOutput] = useState("");
+    const [toolTimeout, setToolTimeout] = useState(null);
+    const [toolStartTime, setToolStartTime] = useState(null);
+    const [timeLeft, setTimeLeft] = useState(null);
+    const [executingToolDescription, setExecutingToolDescription] = useState("");
+    const [contextLimit, setContextLimit] = useState(() => {
+        const modelName = getEffectiveMasterModel("auto") || getDefaultModel();
+        let initialLimit = getContextWindowLimit(modelName);
+        if (process.env.CONTEXT_WINDOW_LIMIT) {
+            const parsed = parseInt(process.env.CONTEXT_WINDOW_LIMIT, 10);
+            if (!isNaN(parsed))
+                initialLimit = parsed;
+        }
+        else if (process.env.MAX_CONTEXT_TOKENS) {
+            const parsed = parseInt(process.env.MAX_CONTEXT_TOKENS, 10);
+            if (!isNaN(parsed))
+                initialLimit = parsed;
+        }
+        return initialLimit;
+    });
+    // Persist input history to disk so it survives restarts
+    const HISTORY_FILE = path.join(getRootConfigDir(), "input-history-multi.json");
+    useEffect(() => {
+        fs.readFile(HISTORY_FILE, "utf8").then((raw) => {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+                setHistory(parsed);
+            }
+        }).catch(() => { });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    const [currentTask, setCurrentTask] = useState("Idle - Ready for input");
+    const [gitBranch, setGitBranch] = useState("main");
+    const sessions = useDashboardSessions(currentTask, masterLogs, gitBranch);
+    const [isHistoryTruncated, setIsHistoryTruncated] = useState(true);
+    const [cachedSessions, setCachedSessions] = useState([]);
+    const [activeWizard, setActiveWizard] = useState(null);
+    const [wizardOptions, setWizardOptions] = useState([]);
+    const [wizardSelectedIndex, setWizardSelectedIndex] = useState(0);
+    const [wizardSelectedSet, setWizardSelectedSet] = useState(new Set());
+    const handleQueryChange = useCallback((val) => {
+        const sanitizedVal = stripSgrMouseSequences(val);
+        const lengthDiff = sanitizedVal.length - query.length;
+        const containsNewline = sanitizedVal.includes("\n");
+        if (lengthDiff < 0) {
+            setIsPasted(false);
+        }
+        else if (lengthDiff > 15 || containsNewline) {
+            setIsPasted(true);
+            const { prefix, suffix } = getInsertion(query, sanitizedVal);
+            setPastePrefixLength(prefix.length);
+            setPasteSuffixLength(suffix.length);
+        }
+        else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
+            setIsPasted(false);
+        }
+        setQuery(sanitizedVal);
+        if (lastTabPrefix) {
+            const suggs = getDashboardSuggestions(lastTabPrefix);
+            if (!suggs.includes(sanitizedVal) && sanitizedVal !== lastTabPrefix) {
+                setLastTabPrefix(null);
+            }
+        }
+        if (activeWizard?.type === "model" && wizardOptions.length > 0) {
+            setWizardSelectedIndex(0);
+        }
+    }, [query, activeWizard, wizardOptions, lastTabPrefix]);
+    const [wizardAllOptions, setWizardAllOptions] = useState([]);
+    const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
+    const [pendingQuestion, setPendingQuestion] = useState(null);
+    const [checkpointsList, setCheckpointsList] = useState([]);
+    const [worktreeCount, setWorktreeCount] = useState(0);
+    const [planState, setPlanState] = useState("IDLE");
+    const [checklistTasks, setChecklistTasks] = useState([]);
+    const [completedHistory, setCompletedHistory] = useState([]);
+    const [rawCompletedHistory, setRawCompletedHistory] = useState([]);
+    const historyTimestampsRef = useRef(new Map());
+    const [checklistScrollOffset, setChecklistScrollOffset] = useState(0);
+    const [agentsScrollOffset, setAgentsScrollOffset] = useState(0);
+    const [procsScrollOffset, setProcsScrollOffset] = useState(0);
+    const maxChecklistVisible = 3;
+    const maxAgentsVisible = 3;
+    const maxProcsVisible = 3;
+    // Safeguard scroll offsets when lists shrink
+    useEffect(() => {
+        if (checklistScrollOffset >= checklistTasks.length && checklistTasks.length > 0) {
+            setChecklistScrollOffset(Math.max(0, checklistTasks.length - maxChecklistVisible));
+        }
+    }, [checklistTasks.length, checklistScrollOffset]);
+    useEffect(() => {
+        const runningAgentsCount = [...subagentInstances.values()].filter((s) => s.status === "running").length;
+        if (agentsScrollOffset >= runningAgentsCount && runningAgentsCount > 0) {
+            setAgentsScrollOffset(Math.max(0, runningAgentsCount - maxAgentsVisible));
+        }
+    }, [sessions, agentsScrollOffset]);
+    useEffect(() => {
+        const runningTasksCount = [...backgroundTasks.values()].filter((t) => t.isDetachedWindow || !t.hasExited).length;
+        if (procsScrollOffset >= runningTasksCount && runningTasksCount > 0) {
+            setProcsScrollOffset(Math.max(0, runningTasksCount - maxProcsVisible));
+        }
+    }, [sessions, procsScrollOffset]);
+    // Periodic sync of agent properties (e.g. planState)
+    useEffect(() => {
+        const timer = setInterval(() => {
+            if (agent) {
+                const currentPlanState = agent.planState;
+                setPlanState((prev) => {
+                    if (prev !== currentPlanState) {
+                        // Only open the approval wizard when the agent has finished
+                        // processing (isAgentRunning() === false). This prevents the
+                        // wizard from appearing before the response text has been
+                        // fully printed to the log history.
+                        // Note: planState is always synced (so the PENDING_PLAN banner
+                        // shows), but the wizard opening is deferred.
+                        if (currentPlanState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve") {
+                            if (!agent.isAgentRunning()) {
+                                setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
+                                setWizardSelectedIndex(0);
+                                setActiveWizard({
+                                    type: "plan_approve",
+                                    step: 1,
+                                    data: {},
+                                });
+                            }
+                            // If agent is still running, the wizard will be opened on a
+                            // subsequent poll tick once isAgentRunning() returns false.
+                            // We still update planState so the PENDING_PLAN banner shows.
+                        }
+                        return currentPlanState;
+                    }
+                    // Agent may have stopped since last tick — re-check if wizard
+                    // needs to be opened for an existing PLANNING_PENDING state.
+                    if (currentPlanState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && !agent.isAgentRunning()) {
+                        setWizardOptions([...PLAN_APPROVAL_OPTIONS]);
+                        setWizardSelectedIndex(0);
+                        setActiveWizard({
+                            type: "plan_approve",
+                            step: 1,
+                            data: {},
+                        });
+                    }
+                    return prev;
+                });
+            }
+        }, 250);
+        return () => clearInterval(timer);
+    }, [agent, activeWizard]);
+    useEffect(() => {
+        let active = true;
+        let intervalId = null;
+        const check = async () => {
+            const taskPath = agent ? agent.getTaskFilePath() : null;
+            if (!taskPath)
+                return;
+            try {
+                const result = await readChecklistTasks(taskPath);
+                if (!active)
+                    return;
+                setChecklistTasks(result.tasks);
+                // Also poll the task history file for completed tasks archive
+                try {
+                    const history = await readTaskHistory(taskPath);
+                    if (!active)
+                        return;
+                    setRawCompletedHistory(history);
+                }
+                catch {
+                    if (active)
+                        setRawCompletedHistory([]);
+                }
+            }
+            catch (err) {
+                if (agent) {
+                    agent.writeToLogFile("WARN", `Failed to read task checklist file from path '${taskPath}': ${err.message}`);
+                }
+                if (active) {
+                    setChecklistTasks([]);
+                    setRawCompletedHistory([]);
+                }
+            }
+        };
+        if (planState === "APPROVED") {
+            check();
+            intervalId = setInterval(check, 2000);
+        }
+        else {
+            setChecklistTasks([]);
+            setRawCompletedHistory([]);
+        }
+        return () => {
+            active = false;
+            if (intervalId)
+                clearInterval(intervalId);
+        };
+    }, [planState, agent]);
+    // Synchronize rawCompletedHistory with completedHistory using a 15-second auto-hide decay
+    useEffect(() => {
+        if (planState !== "APPROVED" || rawCompletedHistory.length === 0) {
+            historyTimestampsRef.current.clear();
+            setCompletedHistory([]);
+            return;
+        }
+        const now = Date.now();
+        // 1. Record timestamps for new items in rawCompletedHistory
+        const currentTexts = new Set(rawCompletedHistory.map(t => t.text));
+        for (const task of rawCompletedHistory) {
+            if (!historyTimestampsRef.current.has(task.text)) {
+                historyTimestampsRef.current.set(task.text, now);
+            }
+        }
+        // 2. Clean up timestamps for tasks no longer in rawCompletedHistory
+        for (const text of historyTimestampsRef.current.keys()) {
+            if (!currentTexts.has(text)) {
+                historyTimestampsRef.current.delete(text);
+            }
+        }
+        // 3. Define a function to compute filtered history
+        const updateFilteredHistory = () => {
+            const currentTime = Date.now();
+            const filtered = rawCompletedHistory
+                .map(task => {
+                const firstSeen = historyTimestampsRef.current.get(task.text);
+                if (!firstSeen)
+                    return null;
+                const elapsed = currentTime - firstSeen;
+                const remainingSeconds = Math.max(0, Math.ceil((15000 - elapsed) / 1000));
+                return { ...task, remainingSeconds };
+            })
+                .filter((task) => {
+                return task !== null && task.remainingSeconds > 0;
+            });
+            // Update state if the content or remainingSeconds changed
+            setCompletedHistory(prev => {
+                const hasChanged = prev.length !== filtered.length ||
+                    prev.some((t, i) => t.text !== filtered[i].text || t.remainingSeconds !== filtered[i].remainingSeconds);
+                if (hasChanged) {
+                    return filtered;
+                }
+                return prev;
+            });
+        };
+        // Run immediately
+        updateFilteredHistory();
+        // 4. Set up an interval to tick every 1 second and filter out expired items
+        const interval = setInterval(updateFilteredHistory, 1000);
+        return () => clearInterval(interval);
+    }, [rawCompletedHistory, planState]);
+    // Register the interactive question handler
+    useEffect(() => {
+        if (registerQuestionHandlerRef) {
+            registerQuestionHandlerRef(async (question, options, isMultiSelect, initialCheckedIndices) => {
+                return new Promise((resolve) => {
+                    if (Array.isArray(question)) {
+                        const questions = question;
+                        const answers = new Array(questions.length).fill("");
+                        const q0 = questions[0];
+                        const hasOptions = Array.isArray(q0.options) && q0.options.length > 0;
+                        const allOptions = hasOptions ? [...q0.options, "Custom..."] : [];
+                        setPendingQuestion({ question: q0.question, options: allOptions, resolve });
+                        setWizardOptions(allOptions);
+                        setWizardSelectedIndex(0);
+                        setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
+                        setActiveWizard({
+                            type: "question",
+                            step: hasOptions ? 1 : 2,
+                            data: { question: q0.question },
+                            isMultiSelect: q0.isMultiSelect,
+                            questions,
+                            currentQuestionIndex: 0,
+                            answers,
+                        });
+                    }
+                    else {
+                        const hasOptions = Array.isArray(options) && options.length > 0;
+                        const allOptions = hasOptions ? [...options, "Custom..."] : [];
+                        setPendingQuestion({ question, options: allOptions, resolve });
+                        setWizardOptions(allOptions);
+                        setWizardSelectedIndex(0);
+                        setWizardSelectedSet(initialCheckedIndices ? new Set(initialCheckedIndices) : new Set());
+                        setActiveWizard({
+                            type: "question",
+                            step: hasOptions ? 1 : 2,
+                            data: { question },
+                            isMultiSelect,
+                        });
+                    }
+                });
+            });
+        }
+    }, [registerQuestionHandlerRef]);
+    // Automatically focus the input area when any wizard is active
+    useEffect(() => {
+        if (activeWizard) {
+            setFocusArea("input");
+        }
+    }, [activeWizard]);
+    const suggestions = getDashboardSuggestions(lastTabPrefix || query);
+    const suggestionDescs = getSuggestionDescriptions();
+    useEffect(() => {
+        try {
+            const branch = execSync("git branch --show-current", {
+                encoding: "utf-8",
+                stdio: ["ignore", "pipe", "ignore"],
+            }).trim();
+            if (branch)
+                setGitBranch(branch);
+        }
+        catch { }
+    }, []);
+    useEffect(() => {
+        const updateCount = () => {
+            try {
+                const output = execSync("git worktree list", {
+                    encoding: "utf-8",
+                    stdio: ["ignore", "pipe", "ignore"],
+                }).trim();
+                if (output) {
+                    const lines = output.split("\n").filter(Boolean);
+                    setWorktreeCount(lines.length);
+                }
+                else {
+                    setWorktreeCount(0);
+                }
+            }
+            catch {
+                setWorktreeCount(0);
+            }
+        };
+        updateCount();
+        const timer = setInterval(updateCount, 5000);
+        return () => clearInterval(timer);
+    }, []);
+    useEffect(() => {
+        if (agent) {
+            try {
+                const msgs = agent.getHistory().getMessages();
+                const userInputs = [];
+                const loadedLogs = [];
+                for (const m of msgs) {
+                    const stringContent = m.content ? contentToString(m.content) : "";
+                    if (m.role === "user") {
+                        const trimmedContent = stringContent.trim();
+                        if (trimmedContent) {
+                            userInputs.push(trimmedContent);
+                        }
+                        loadedLogs.push(`[USER] ${stringContent}`);
+                    }
+                    else if (m.role === "assistant") {
+                        if (stringContent) {
+                            loadedLogs.push(`[AGENT] ${stringContent}`);
+                        }
+                    }
+                    else if (m.role === "system") {
+                        if (stringContent && stringContent.startsWith("[ERROR]")) {
+                            loadedLogs.push(stringContent);
+                        }
+                        else if (stringContent) {
+                            loadedLogs.push(`[MASTER] ${stringContent}`);
+                        }
+                    }
+                }
+                if (userInputs.length > 0) {
+                    const uniqueUserInputs = [];
+                    for (const input of userInputs) {
+                        if (uniqueUserInputs.length === 0 || uniqueUserInputs[uniqueUserInputs.length - 1] !== input) {
+                            uniqueUserInputs.push(input);
+                        }
+                    }
+                    setHistory(uniqueUserInputs);
+                }
+                if (loadedLogs.length > 0) {
+                    setMasterLogs(loadedLogs.slice(-500));
+                    setMasterLogs((prev) => [...prev, "[MASTER] Successfully resumed session"].slice(-500));
+                }
+            }
+            catch { }
+        }
+    }, [agent]);
+    const [terminalSize, setTerminalSize] = useState({
+        width: process.stdout.columns || 110,
+        height: process.stdout.rows || 24,
+    });
+    useEffect(() => {
+        const handleResize = () => {
+            console.clear();
+            setTerminalSize({
+                width: process.stdout.columns || 110,
+                height: process.stdout.rows || 24,
+            });
+        };
+        process.stdout.on("resize", handleResize);
+        return () => {
+            process.stdout.off("resize", handleResize);
+        };
+    }, []);
+    // Subscribe to tasks, subagents, and superagents changes to trigger updates/renders
+    useEffect(() => {
+        const unsubTasks = subscribeToTasks(() => setTick((t) => t + 1));
+        const unsubSubagents = subscribeToSubagents(() => setTick((t) => t + 1));
+        const unsubSuperagents = subscribeToSuperagents(() => setTick((t) => t + 1));
+        return () => {
+            unsubTasks();
+            unsubSubagents();
+            unsubSuperagents();
+        };
+    }, []);
+    // Subscribe to active output from tools (master agent logs)
+    useEffect(() => {
+        return subscribeToActiveOutput((output) => {
+            setActiveToolOutput(output);
+        });
+    }, []);
+    useEffect(() => {
+        if (!isExecutingTool || !toolTimeout || !toolStartTime) {
+            return;
+        }
+        const interval = setInterval(() => {
+            const elapsed = Date.now() - toolStartTime;
+            const remaining = Math.max(0, Math.ceil((toolTimeout - elapsed) / 1000));
+            setTimeLeft(remaining);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [isExecutingTool, toolTimeout, toolStartTime]);
+    // Register the agent event log handler on mount
+    useEffect(() => {
+        const intervalId = setInterval(() => {
+            if (logQueueRef.current.length === 0)
+                return;
+            const msgs = [...logQueueRef.current];
+            logQueueRef.current = [];
+            setMasterLogs((prev) => {
+                let current = [...prev];
+                for (const rawMsg of msgs) {
+                    const msg = rawMsg.replace(/\r\n/g, "\n").replace(/\r/g, "");
+                    if (current.length === 0) {
+                        current = [msg];
+                        continue;
+                    }
+                    const isTag = (line) => {
+                        const trimmed = line.trim();
+                        return (trimmed.startsWith("[USER]") ||
+                            trimmed.startsWith("[MASTER]") ||
+                            trimmed.startsWith("[AGENT]") ||
+                            trimmed.startsWith("[TOOL START]") ||
+                            trimmed.startsWith("[TOOL END]") ||
+                            trimmed.startsWith("[ERROR]") ||
+                            trimmed.startsWith("[AUTO-APPROVE]") ||
+                            trimmed.startsWith("[QUESTION]"));
+                    };
+                    const lastIdx = current.length - 1;
+                    const last = current[lastIdx];
+                    if (msg.startsWith("[AGENT]") && last.startsWith("[AGENT]")) {
+                        const cleanMsg = msg.replace(/^\[AGENT\]/, "");
+                        current[lastIdx] = last + cleanMsg;
+                    }
+                    else if (!isTag(msg) && !isTag(last)) {
+                        current[lastIdx] = last + "\n" + msg;
+                    }
+                    else {
+                        current.push(msg);
+                    }
+                }
+                return current.slice(-500);
+            });
+        }, 0);
+        registerLogHandler((rawMsg) => {
+            logQueueRef.current.push(rawMsg);
+        });
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, [registerLogHandler]);
+    // Register the agent event handler on mount
+    useEffect(() => {
+        if (registerEventHandler) {
+            registerEventHandler((event) => {
+                if (event.type === "token_usage") {
+                    if (event.durationMs && event.completionTokens > 0) {
+                        const speed = event.completionTokens / (event.durationMs / 1000);
+                        setLastSpeed(speed);
+                    }
+                }
+                else if (event.type === "tool_start") {
+                    setIsExecutingTool(true);
+                    setExecutingToolDescription(event.description || event.toolCall.name);
+                    const timeoutArg = event.toolCall.args?.timeout;
+                    if (typeof timeoutArg === "number") {
+                        setToolTimeout(timeoutArg);
+                        setToolStartTime(Date.now());
+                        setTimeLeft(Math.ceil(timeoutArg / 1000));
+                    }
+                    else {
+                        setToolTimeout(null);
+                        setToolStartTime(null);
+                        setTimeLeft(null);
+                    }
+                }
+                else if (event.type === "tool_end" || event.type === "error") {
+                    setIsExecutingTool(false);
+                    setToolTimeout(null);
+                    setToolStartTime(null);
+                    setTimeLeft(null);
+                    if (event.type === "error") {
+                        setIsProcessing(false);
+                    }
+                }
+                else if (event.type === "done") {
+                    setIsExecutingTool(false);
+                    setToolTimeout(null);
+                    setToolStartTime(null);
+                    setTimeLeft(null);
+                    setIsProcessing(false);
+                    setCurrentTask((prev) => {
+                        if (prev.toLowerCase().includes("interrupted") || prev.toLowerCase().includes("error")) {
+                            return prev;
+                        }
+                        return "Idle";
+                    });
+                }
+            });
+        }
+    }, [registerEventHandler]);
+    const handleAttachImage = useCallback(async (filePath) => {
+        try {
+            const attachment = await readImageFromPath(filePath);
+            setAttachments((prev) => [...prev, attachment]);
+        }
+        catch (err) {
+            setMasterLogs((prev) => [...prev, `[SYSTEM] Could not attach image: ${err.message}`].slice(-500));
+        }
+    }, []);
+    const handlePasteImage = useCallback(async () => {
+        try {
+            const attachment = await readImageFromClipboard();
+            if (attachment) {
+                setAttachments((prev) => [...prev, attachment]);
+                setMasterLogs((prev) => [...prev, `[SYSTEM] 📎 Clipboard image attached: ${attachment.filename}`].slice(-500));
+            }
+        }
+        catch {
+            // Silently ignore
+        }
+    }, []);
+    const handleRemoveLastAttachment = useCallback(() => {
+        setAttachments((prev) => prev.slice(0, -1));
+    }, []);
+    const handleRemoveAttachment = useCallback((id) => {
+        setAttachments((prev) => prev.filter((a) => a.id !== id));
+    }, []);
+    const { handleWizardSubmit, handleQuerySubmit } = useDashboardWizard({
+        agent,
+        exit,
+        query,
+        setQuery,
+        activeWizard,
+        setActiveWizard,
+        wizardOptions,
+        setWizardOptions,
+        wizardSelectedIndex,
+        setWizardSelectedIndex,
+        wizardSelectedSet,
+        setWizardSelectedSet,
+        masterLogs,
+        setMasterLogs,
+        activeModel,
+        setActiveModel,
+        currentTask,
+        setCurrentTask,
+        history,
+        setHistory,
+        historyIndex,
+        setHistoryIndex,
+        tempInput,
+        setTempInput,
+        planState,
+        setPlanState,
+        pendingQuestion,
+        setPendingQuestion,
+        wizardAllOptions,
+        setWizardAllOptions,
+        wizardIsLoadingModels,
+        setWizardIsLoadingModels,
+        checkpointsList,
+        setCheckpointsList,
+        contextLimit,
+        setContextLimit,
+        isPasted,
+        setIsPasted,
+        pastePrefixLength,
+        pasteSuffixLength,
+        HISTORY_FILE,
+        cachedSessions,
+        setCachedSessions,
+        isProcessing,
+        setIsProcessing,
+        attachments,
+        setAttachments,
+    });
+    const [logScrollOffset, setLogScrollOffset] = useState(0);
+    // Collapsible log groups state (for multi-agent tool/think groups)
+    // Tracks which groups are EXPANDED (all collapsible groups are collapsed by default)
+    const [expandedGroups, setExpandedGroups] = useState(new Set());
+    // Reset expanded groups when switching sessions
+    useEffect(() => {
+        setExpandedGroups(new Set());
+    }, [selectedIndex]);
+    const toggleGroupCollapse = useCallback((groupIndex) => {
+        setExpandedGroups(prev => {
+            const next = new Set(prev);
+            if (next.has(groupIndex)) {
+                next.delete(groupIndex);
+            }
+            else {
+                next.add(groupIndex);
+            }
+            return next;
+        });
+    }, []);
+    // Reset scroll offset when switching sessions
+    useEffect(() => {
+        setLogScrollOffset(0);
+    }, [selectedIndex]);
+    // Adjust selection bounds when sessions length changes
+    useEffect(() => {
+        if (selectedIndex >= sessions.length && sessions.length > 0) {
+            setSelectedIndex(sessions.length - 1);
+        }
+    }, [sessions.length, selectedIndex]);
+    const selectedSession = sessions[selectedIndex] || {
+        id: "N/A",
+        type: "MASTER",
+        task: "No session active",
+        status: "IDLE",
+        tokens: 0,
+        logs: ["No logs available."],
+        branch: "N/A",
+    };
+    const runningTasksCount = [...backgroundTasks.values()]
+        .filter((t) => t.isDetachedWindow || !t.hasExited).length;
+    const runningSubagentsCount = [...subagentInstances.values()]
+        .filter((s) => s.status === "running").length;
+    const activeWTs = [...superagentInstances.values()]
+        .filter((i) => i.status === "running")
+        .map((i) => i.branch);
+    let liveListHeight = 0;
+    if (runningSubagentsCount > 0 || runningTasksCount > 0) {
+        if (runningSubagentsCount > 0) {
+            liveListHeight += 1; // header
+            const agentsCount = Math.min(runningSubagentsCount, maxAgentsVisible);
+            liveListHeight += agentsCount; // Each subagent takes 1 line
+        }
+        if (runningTasksCount > 0) {
+            liveListHeight += 1; // header
+            const procsCount = Math.min(runningTasksCount, maxProcsVisible);
+            liveListHeight += procsCount; // Each task is 1 line
+        }
+    }
+    // Determine if current wizard step is a pure selection step (no text input needed)
+    const isSelectionOnlyStep = (() => {
+        if (!activeWizard)
+            return false;
+        if (activeWizard.type === "permission")
+            return true;
+        if (activeWizard.type === "plan_approve")
+            return activeWizard.step !== 2;
+        if (activeWizard.type === "resume")
+            return true;
+        if (activeWizard.type === "checkpoint")
+            return true;
+        if (activeWizard.type === "skills")
+            return true;
+        if (activeWizard.type === "question" && activeWizard.step !== 2)
+            return true;
+        if (activeWizard.type === "login") {
+            return [1, 2, 6, 7, 10].includes(activeWizard.step);
+        }
+        if (activeWizard.type === "model") {
+            return [1, 2, 3, 4, 22, 23, 25, 30, 32, 33, 35, 40, 41, 50].includes(activeWizard.step);
+        }
+        return false;
+    })();
+    let bottomPromptHeight = isSelectionOnlyStep ? 0 : 1; // Prompt input row (hidden for selection-only steps)
+    if (!isSelectionOnlyStep && focusArea === "input" && query.startsWith("/") && suggestions.length > 0) {
+        const activeDesc = suggestionDescs[query];
+        bottomPromptHeight += activeDesc ? 3 : 2;
+    }
+    let wizardHeight = 0;
+    if (activeWizard) {
+        // Plan approval uses its own dedicated dialog layout
+        if (activeWizard.type === "plan_approve") {
+            const planPath = agent ? path.resolve(agent.getPlanFilePath()) : "";
+            wizardHeight = planApprovalChromeHeight(planPath, activeWizard.step, 10) + 2; // +2 for outer borders
+        }
+        else {
+            const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
+            const maxVis = isModelSelectStep ? 8 : 10;
+            const lc = query.trim();
+            const filteredModels = lc
+                ? filterSuggestions(wizardAllOptions, lc)
+                : wizardAllOptions;
+            const effectiveOptions = isModelSelectStep
+                ? (filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"])
+                : wizardOptions;
+            let start = 0;
+            let end = effectiveOptions.length;
+            if (effectiveOptions.length > maxVis) {
+                start = Math.max(0, wizardSelectedIndex - Math.floor(maxVis / 2));
+                end = start + maxVis;
+                if (end > effectiveOptions.length) {
+                    end = effectiveOptions.length;
+                    start = Math.max(0, end - maxVis);
+                }
+            }
+            const optCount = end - start;
+            const hasAbove = start > 0;
+            const hasBelow = end < effectiveOptions.length;
+            let wizardDescription = "";
+            if (activeWizard.type === "question") {
+                wizardDescription = pendingQuestion?.question || "";
+            }
+            else if (activeWizard.type === "login" && activeWizard.step === 10) {
+                wizardDescription = "Choose a template catalog stack or let AI dynamically design your project details:";
+            }
+            else if (activeWizard.type === "login" && activeWizard.step === 11) {
+                wizardDescription = "Specify the name for this workspace:";
+            }
+            else if (activeWizard.type === "login" && activeWizard.step === 12) {
+                wizardDescription = "Give a one-sentence overview description of this software:";
+            }
+            else if (activeWizard.type === "login" && activeWizard.step === 13) {
+                wizardDescription = "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:";
+            }
+            const descLines = wizardDescription
+                ? wrapTextForDisplay(wizardDescription, Math.max(10, terminalSize.width - 4)).length
+                : 0;
+            const hasLoading = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) && wizardIsLoadingModels;
+            wizardHeight += 1; // Outer top border │
+            wizardHeight += 1; // Title line
+            if (descLines > 0) {
+                wizardHeight += descLines + 1; // Description lines + spacer │
+            }
+            if (hasLoading) {
+                wizardHeight += 2; // Loading spinner + spacer
+            }
+            if (hasAbove) {
+                wizardHeight += 1;
+            }
+            wizardHeight += optCount;
+            if (hasBelow) {
+                wizardHeight += 1;
+            }
+            wizardHeight += 1; // Outer bottom border │
+        } // end else (non-plan_approve wizard)
+    }
+    const statusBarHeight = 5 + (activeWTs.length > 0 ? 1 : 0);
+    const fixedHeight = 5 + statusBarHeight; // 3 (header) + 2 (divider) + statusBarHeight
+    const workspaceHeight = Math.max(10, terminalSize.height - fixedHeight - bottomPromptHeight - liveListHeight - wizardHeight);
+    let checklistHeight = 0;
+    if (planState === "APPROVED" && checklistTasks.length > 0) {
+        const checklistCount = Math.min(checklistTasks.length, maxChecklistVisible);
+        checklistHeight += 1 + checklistCount;
+    }
+    // Account for completed history section height
+    if (planState === "APPROVED" && completedHistory.length > 0) {
+        const historyVisible = Math.min(completedHistory.length, 3);
+        checklistHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
+    }
+    const leftTopHeight = Math.max(5, workspaceHeight - 2 - checklistHeight);
+    const feedWidth = Math.max(10, Math.floor(terminalSize.width * 0.58) - 4);
+    const taskStr = selectedSession.task || "";
+    const normalizedTask = taskStr.replace(/\r\n/g, "\n").replace(/\r/g, "");
+    const taskLines = normalizedTask.split("\n").filter(line => line.trim() !== "");
+    let renderedTaskLinesCount = 0;
+    if (taskLines.length > 0) {
+        if (isHistoryTruncated) {
+            renderedTaskLinesCount = 1;
+        }
+        else {
+            renderedTaskLinesCount = 1; // "Task:" label line
+            for (const line of taskLines) {
+                renderedTaskLinesCount += Math.max(1, Math.ceil(line.length / feedWidth));
+            }
+        }
+    }
+    const logBoxHeight = Math.max(5, workspaceHeight - 3 - (renderedTaskLinesCount || 1));
+    const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
+    const maxActiveLines = Math.max(0, Math.min(8, logBoxHeight - 4));
+    const activeToolLines = (selectedSession.type === "MASTER" && isExecutingTool && activeToolOutput)
+        ? activeToolOutput.trim().split("\n").slice(-maxActiveLines)
+        : [];
+    let executingToolHeight = 0;
+    if (selectedSession.type === "MASTER" && isExecutingTool) {
+        executingToolHeight += 2; // Header border + spinner line
+        if (activeToolLines.length > 0) {
+            executingToolHeight += activeToolLines.length + 1; // Header + lines
+        }
+    }
+    let logsCount = showCursor ? Math.max(1, logBoxHeight - 1) : logBoxHeight;
+    if (selectedSession.type === "MASTER" && isExecutingTool) {
+        logsCount = Math.max(1, logsCount - executingToolHeight);
+    }
+    const wrappedLines = computeWrappedLogs(selectedSession, feedWidth, isHistoryTruncated, expandedGroups);
+    const groupBoundaries = computeLogGroupBoundaries(selectedSession, feedWidth, isHistoryTruncated, expandedGroups);
+    const endIdxLogs = Math.max(0, wrappedLines.length - logScrollOffset);
+    const startIdxLogs = Math.max(0, endIdxLogs - logsCount);
+    const visibleLogs = wrappedLines.slice(startIdxLogs, endIdxLogs);
+    const stopAllRunningAgents = () => {
+        let count = 0;
+        // Abort running subagents
+        for (const inst of subagentInstances.values()) {
+            if (inst.status === "running") {
+                try {
+                    inst.agent.abort();
+                }
+                catch { }
+                inst.status = "completed";
+                inst.result = "[Cancelled by user]";
+                count++;
+            }
+        }
+        // Abort running superagents
+        for (const inst of superagentInstances.values()) {
+            if (inst.status === "running") {
+                try {
+                    inst.agent.abort();
+                }
+                catch { }
+                superagentInstances.set(inst.id, {
+                    ...inst,
+                    status: "error",
+                    result: "[Cancelled by user]",
+                    completedAt: Date.now()
+                });
+                count++;
+            }
+        }
+        // Abort master agent
+        if (agent && agent.isAgentRunning()) {
+            try {
+                agent.abort();
+            }
+            catch { }
+            count++;
+        }
+        // Kill all background processes (shell tasks spawned by agents)
+        for (const [id, task] of backgroundTasks.entries()) {
+            if (!task.hasExited) {
+                try {
+                    killProcessTree(task.process.pid);
+                }
+                catch { }
+                task.hasExited = true;
+                count++;
+            }
+        }
+        if (count > 0) {
+            notifyTasksChanged();
+        }
+        if (count > 0) {
+            notifySubagentsChanged();
+            notifySuperagentsChanged();
+            setMasterLogs((prev) => [...prev, `[SYSTEM] 🛑 Interrupted ${count} running agent(s)/process(es).`].slice(-500));
+        }
+        return count;
+    };
+    useDashboardKeyboard({
+        exit,
+        stopAllRunningAgents,
+        setCurrentTask,
+        setIsHistoryTruncated,
+        query,
+        setQuery,
+        pastePrefixLength,
+        pasteSuffixLength,
+        isPasted,
+        setIsPasted,
+        handleQuerySubmit,
+        activeWizard,
+        setActiveWizard,
+        focusArea,
+        setFocusArea,
+        setLogScrollOffset,
+        history,
+        historyIndex,
+        setHistoryIndex,
+        tempInput,
+        setTempInput,
+        wizardSelectedIndex,
+        setWizardSelectedIndex,
+        wizardAllOptions,
+        wizardOptions,
+        wizardSelectedSet,
+        setWizardSelectedSet,
+        setWizardOptions,
+        setWizardAllOptions,
+        setWizardIsLoadingModels,
+        pendingQuestion,
+        setPendingQuestion,
+        suggestions,
+        planState,
+        checklistTasks,
+        completedHistory,
+        runningSubagentsCount,
+        runningTasksCount,
+        setSelectedIndex,
+        sessions,
+        selectedIndex,
+        wrappedLines,
+        logsCount,
+        setChecklistScrollOffset,
+        maxChecklistVisible,
+        setAgentsScrollOffset,
+        maxAgentsVisible,
+        setProcsScrollOffset,
+        maxProcsVisible,
+        isProcessing,
+        setIsProcessing,
+        setMasterLogs,
+        lastTabPrefix,
+        setLastTabPrefix,
+        agent,
+        checkpointsList,
+        setCheckpointsList,
+    });
+    useDashboardMouse({
+        wrappedLines,
+        logsCount,
+        terminalSize,
+        activeWizard,
+        setActiveWizard,
+        wizardOptions,
+        wizardSelectedIndex,
+        setWizardSelectedIndex,
+        wizardSelectedSet,
+        setWizardSelectedSet,
+        setWizardOptions,
+        pendingQuestion,
+        handleWizardSubmit,
+        query,
+        setQuery,
+        wizardAllOptions,
+        workspaceHeight,
+        leftTopHeight,
+        wizardIsLoadingModels,
+        agent,
+        focusArea,
+        setFocusArea,
+        setLogScrollOffset,
+        setChecklistScrollOffset,
+        setAgentsScrollOffset,
+        setProcsScrollOffset,
+        checklistTasksCount: checklistTasks.length,
+        maxChecklistVisible,
+        agentsCount: runningSubagentsCount,
+        maxAgentsVisible,
+        procsCount: runningTasksCount,
+        maxProcsVisible,
+        startIdxLogs,
+        groupBoundaries,
+        toggleGroupCollapse,
+    });
+    const maxVisibleSessions = Math.max(3, leftTopHeight - 2);
+    let startIdx = 0;
+    if (selectedIndex >= maxVisibleSessions) {
+        startIdx = selectedIndex - maxVisibleSessions + 1;
+    }
+    const visibleSessions = sessions.slice(startIdx, startIdx + maxVisibleSessions);
+    const activeContextUsage = lastMasterPromptTokens;
+    const contextPercentage = contextLimit > 0 ? ((activeContextUsage / contextLimit) * 100).toFixed(2) : "0.00";
+    return (_jsxs(Box, { flexDirection: "column", paddingX: 1, paddingY: 0, width: terminalSize.width, height: terminalSize.height, children: [_jsxs(Box, { flexDirection: "row", justifyContent: "space-between", paddingX: 0, marginBottom: 2, alignItems: "center", children: [_jsx(Box, { flexDirection: "row", alignItems: "center", children: _jsx(Box, { flexDirection: "column", justifyContent: "center", children: _jsxs(Box, { flexDirection: "row", alignItems: "center", children: [_jsx(Text, { color: "red", bold: true, children: "S U P E R" }), _jsx(Text, { color: "white", bold: true, children: "A G E N T" }), _jsx(Text, { color: "gray", children: " \u2502 " }), _jsxs(Text, { color: "yellow", bold: true, children: ["MULTI-AGENT SYSTEM v", multiVersion] }), _jsx(Text, { color: "gray", children: " \u2502 " }), _jsxs(Text, { color: "blue", bold: true, children: ["Branch: ", gitBranch] })] }) }) }), _jsx(Text, { color: "green", bold: true, children: "\u25CF ONLINE" })] }), _jsxs(Box, { flexDirection: "row", height: workspaceHeight, children: [_jsxs(Box, { flexDirection: "column", width: "40%", height: workspaceHeight, children: [_jsx(RegistryPanel, { sessions: sessions, selectedIndex: selectedIndex, focusArea: focusArea, startIdx: startIdx, visibleSessions: visibleSessions, getLatestSuperagentAction: getLatestSuperagentAction, getLatestSubagentAction: getLatestSubagentAction, leftTopHeight: leftTopHeight }), _jsxs(Box, { flexDirection: "column", width: "100%", marginTop: 0, children: [planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (() => {
+                                        const planUrl = "file:///" + path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/");
+                                        return (_jsxs(Box, { marginBottom: 1, flexDirection: "column", borderStyle: "round", borderColor: "yellow", paddingX: 1, children: [_jsx(Text, { bold: true, color: "yellow", children: "\u26A0\uFE0F PENDING_PLAN: IMPLEMENTATION PLAN REQUIRES APPROVAL" }), _jsxs(Text, { color: "yellow", children: ["AI model has designed a plan in file: ", _jsx(Text, { bold: true, color: "cyan", children: planUrl })] }), _jsx(Text, { color: "yellow", children: "Send any message/feedback to display the plan approval dialog again." })] }));
+                                    })(), _jsx(ChecklistPanel, { planState: planState, checklistTasks: checklistTasks, focusArea: focusArea, checklistScrollOffset: checklistScrollOffset, maxChecklistVisible: maxChecklistVisible, agent: agent, superagentInstances: superagentInstances, completedHistory: completedHistory })] })] }), _jsx(Box, { width: "2%" }), _jsx(InspectorPanel, { selectedSession: selectedSession, focusArea: focusArea, logScrollOffset: logScrollOffset, isHistoryTruncated: isHistoryTruncated, feedWidth: feedWidth, logBoxHeight: logBoxHeight, visibleLogs: visibleLogs, isExecutingTool: isExecutingTool, timeLeft: timeLeft, activeToolLines: activeToolLines, workspaceHeight: workspaceHeight })] }), _jsx(Box, { flexDirection: "row", paddingX: 1, marginTop: 1, marginBottom: 0, children: _jsx(Text, { color: "gray", dimColor: true, children: "─".repeat(Math.floor(terminalSize.width * 0.8)) }) }), _jsx(DashboardWizard, { activeWizard: activeWizard, query: query, wizardAllOptions: wizardAllOptions, wizardSelectedIndex: wizardSelectedIndex, wizardIsLoadingModels: wizardIsLoadingModels, wizardOptions: wizardOptions, wizardSelectedSet: wizardSelectedSet, pendingQuestion: pendingQuestion, agent: agent, terminalWidth: terminalSize.width, focus: activeWizard?.data?.focus || "actions", scrollOffset: parseInt(activeWizard?.data?.scrollOffset || "0", 10), onScrollChange: (offset) => setActiveWizard((curr) => curr ? { ...curr, data: { ...curr.data, scrollOffset: String(offset) } } : null) }), (runningSubagentsCount > 0 || runningTasksCount > 0) && (_jsxs(Box, { flexDirection: "column", paddingX: 1, marginBottom: 0, width: "100%", children: [_jsx(ActiveSubagentsPanel, { subagentInstances: subagentInstances, agentsScrollOffset: agentsScrollOffset, maxAgentsVisible: maxAgentsVisible, focusArea: focusArea, getLatestSubagentAction: getLatestSubagentAction }), _jsx(ActiveProcessesPanel, { backgroundTasks: backgroundTasks, procsScrollOffset: procsScrollOffset, maxProcsVisible: maxProcsVisible, focusArea: focusArea, runningSubagentsCount: runningSubagentsCount })] })), !isSelectionOnlyStep && (_jsxs(_Fragment, { children: [focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (_jsxs(Box, { flexDirection: "column", marginBottom: 1, paddingX: 1, children: [_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: "cyan", dimColor: true, children: "\u2502   " }), _jsx(Text, { color: "gray", dimColor: true, children: "Suggestions: " }), suggestions.slice(0, 5).map((s, idx) => (_jsxs(Text, { color: s === query ? "cyan" : "gray", bold: s === query, underline: s === query, children: [s, idx < Math.min(suggestions.length, 5) - 1 ? "  " : ""] }, s))), suggestions.length > 5 && _jsxs(Text, { color: "gray", dimColor: true, children: [" (+", suggestions.length - 5, " more)"] })] }), suggestionDescs[query] && (_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: "cyan", dimColor: true, children: "\u2502   " }), _jsxs(Text, { color: "yellow", dimColor: true, italic: true, children: ["  ", suggestionDescs[query].length > 80 ? suggestionDescs[query].slice(0, 77) + "..." : suggestionDescs[query]] })] }))] })), _jsxs(Box, { flexDirection: "row", marginTop: 0, paddingX: 1, width: "100%", children: [_jsx(Box, { flexShrink: 0, children: _jsx(Text, { bold: true, color: activeWizard ? "blue" : isProcessing ? "gray" : (focusArea === "input" ? "green" : "cyan"), children: activeWizard?.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)
+                                        ? "└──[ MODEL ] ❯ "
+                                        : activeWizard?.type === "model" && (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35)
+                                            ? "└──[ PROFILE ] ❯ "
+                                            : activeWizard?.type === "model" && (activeWizard.step === 2 || activeWizard.step === 23 || activeWizard.step === 33)
+                                                ? "└──[ PROVIDER ] ❯ "
+                                                : activeWizard?.type === "model" && (activeWizard.step === 1 || activeWizard.step === 22 || activeWizard.step === 32)
+                                                    ? "└──[ TIER ] ❯ "
+                                                    : activeWizard?.type === "model" && (activeWizard.step === 4 || activeWizard.step === 30 || activeWizard.step === 40)
+                                                        ? "└──[ PRESET ] ❯ "
+                                                        : activeWizard?.type === "model" && activeWizard.step === 20
+                                                            ? "└──[ PRESET_NAME ] ❯ "
+                                                            : activeWizard?.type === "model" && (activeWizard.step === 21 || activeWizard.step === 31)
+                                                                ? "└──[ PRESET_DESC ] ❯ "
+                                                                : activeWizard?.type === "model" && activeWizard.step === 41
+                                                                    ? "└──[ CONFIRM ] ❯ "
+                                                                    : activeWizard?.type === "model" && activeWizard.step === 50
+                                                                        ? "└──[ CONFIGURE ] ❯ "
+                                                                        : activeWizard?.type === "model" && activeWizard.step === 16
+                                                                            ? "└──[ PROFILE_NAME ] ❯ "
+                                                                            : activeWizard?.type === "model" && activeWizard.step === 17
+                                                                                ? "└──[ BASE_URL ] ❯ "
+                                                                                : activeWizard?.type === "model" && activeWizard.step === 18
+                                                                                    ? "└──[ API_KEY ] ❯ "
+                                                                                    : activeWizard?.type === "login"
+                                                                                        ? `└──[ LOGIN:${activeWizard.step} ] ❯ `
+                                                                                        : activeWizard?.type === "resume"
+                                                                                            ? "└──[ RESUME ] ❯ "
+                                                                                            : activeWizard?.type === "question"
+                                                                                                ? "└──[ ANSWER ] ❯ "
+                                                                                                : activeWizard?.type === "skills"
+                                                                                                    ? `└──[ SKILLS:${activeWizard.step} ] ❯ `
+                                                                                                    : activeWizard?.type === "checkpoint"
+                                                                                                        ? "└──[ CHECKPOINT ] ❯ "
+                                                                                                        : isProcessing
+                                                                                                            ? "└───[ ⚡ PROCESSING ] ❯ "
+                                                                                                            : "└───[ ⚡ PROMPT ] ❯ " }) }), _jsx(Box, { flexGrow: 1, children: isProcessing && !activeWizard ? (_jsx(ProcessingIndicator, { scrollOffset: logScrollOffset })) : (() => {
+                                    const { prefix, inserted, suffix } = getPasteSplit(query, pastePrefixLength, pasteSuffixLength);
+                                    const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
+                                    if (isPasteActive) {
+                                        const lineCount = inserted.split("\n").length;
+                                        return (_jsxs(Box, { flexDirection: "row", children: [prefix ? _jsx(Text, { children: prefix }) : null, _jsxs(Text, { color: "yellow", bold: true, children: ["[Pasted Text: ", inserted.length, " chars, ", lineCount, " lines] "] }), suffix ? _jsx(Text, { children: suffix }) : null, _jsx(Text, { dimColor: true, children: "(Press Enter to send, Esc to clear)" })] }));
+                                    }
+                                    return (_jsxs(Box, { flexDirection: "column", children: [attachments.length > 0 && (_jsx(ImageAttachmentBar, { attachments: attachments, onRemove: handleRemoveAttachment, focused: focusArea === "input" && !isProcessing })), _jsx(ChatTextInput, { value: query, onChange: handleQueryChange, onSubmit: handleQuerySubmit, focus: focusArea === "input" && !isProcessing, onAttachImage: handleAttachImage, onPasteImage: handlePasteImage, onRemoveLastAttachment: handleRemoveLastAttachment, attachmentCount: attachments.length })] }));
+                                })() })] })] })), _jsx(DashboardStatusBar, { activeModel: activeModel, contextPercentage: contextPercentage, activeContextUsage: activeContextUsage, contextLimit: contextLimit, lastSpeed: lastSpeed, masterPromptTokens: masterPromptTokens, masterCompletionTokens: masterCompletionTokens, historicalSuperagentTokens: historicalSuperagentTokens, activeSuperagentsCount: [...superagentInstances.values()].filter(i => i.status === "running").length, subagentInstances: subagentInstances, worktreeCount: worktreeCount, runningTasksCount: runningTasksCount, runningSubagentsCount: runningSubagentsCount, activeWTs: activeWTs, activeWizard: activeWizard, wizardOptions: wizardOptions, focusArea: focusArea, tencentdbStatus: tencentdbStatus })] }));
+}
+function getLatestSubagentAction(logs) {
+    if (!logs || logs.length === 0)
+        return "Initializing...";
+    for (let i = logs.length - 1; i >= 0; i--) {
+        const raw = logs[i].trim();
+        if (raw) {
+            let clean = raw
+                .replace(/^.*?───\[\s*/, "")
+                .replace(/\s*\]$/, "")
+                .replace(/^[│┌├└─\s]+/, "")
+                .trim();
+            clean = clean.replace(/^Description:\s*/i, "");
+            clean = clean.replace(/^Args:\s*/i, "");
+            if (clean) {
+                return clean.length > 80 ? clean.slice(0, 80) + "..." : clean;
+            }
+        }
+    }
+    return "Processing...";
+}
+function getLatestSuperagentAction(logs) {
+    if (!logs || logs.length === 0)
+        return "Initializing...";
+    for (let i = logs.length - 1; i >= 0; i--) {
+        const raw = logs[i].replace(/\r/g, "").trim();
+        if (raw) {
+            let clean = raw
+                .replace(/^\[THINK\]\s*/i, "")
+                .replace(/^\[TOOL:START\]\s*/i, "")
+                .replace(/^\[TOOL:SUCCESS\]\s*/i, "")
+                .replace(/^\[TOOL:FAILED\]\s*/i, "")
+                .replace(/^\[ERROR\]\s*/i, "")
+                .replace(/^[│┌├└─\s]+/, "")
+                .trim();
+            if (clean) {
+                return clean.length > 60 ? clean.slice(0, 60) + "..." : clean;
+            }
+        }
+    }
+    return "Processing...";
+}
+//# sourceMappingURL=multi-agent-dashboard.js.map

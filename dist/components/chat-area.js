@@ -130,87 +130,107 @@ export function renderInlineMarkdown(text, defaultColor = "white") {
     }
     return _jsx(_Fragment, { children: parsedElements });
 }
+const streamLineWrapCache = new Map();
 export function wrapMarkdownToLines(content, themeColor, chatWidth, lineIndex) {
     const cleanContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
     const rawLines = cleanContent.split("\n");
     const result = [];
+    if (streamLineWrapCache.size > 10000) {
+        streamLineWrapCache.clear();
+    }
     let inCodeBlock = false;
     let codeLanguage = "";
     for (let idx = 0; idx < rawLines.length; idx++) {
         const l = rawLines[idx];
+        const isLastLine = idx === rawLines.length - 1;
+        const cacheKey = `${themeColor}_${chatWidth}_${inCodeBlock}_${codeLanguage}_${lineIndex}_${l}`;
+        if (!isLastLine) {
+            const cached = streamLineWrapCache.get(cacheKey);
+            if (cached) {
+                const trimmed = l.trim();
+                if (trimmed.startsWith("```")) {
+                    inCodeBlock = !inCodeBlock;
+                    codeLanguage = trimmed.slice(3).trim();
+                }
+                result.push(...cached);
+                continue;
+            }
+        }
+        const lineResult = [];
         const trimmed = l.trim();
         if (trimmed.startsWith("```")) {
             inCodeBlock = !inCodeBlock;
             codeLanguage = trimmed.slice(3).trim();
             const node = (_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: themeColor, children: "\u2502    " }), _jsx(Text, { color: "gray", italic: true, children: inCodeBlock ? `┌─── [ CODE: ${codeLanguage || "TEXT"} ]` : "└─── [ END CODE ]" })] }));
-            result.push({ node, lineIndex, type: "assistant" });
-            continue;
+            lineResult.push({ node, lineIndex, type: "assistant" });
         }
-        if (inCodeBlock) {
+        else if (inCodeBlock) {
             const subLines = wrapTextForDisplay(l, chatWidth - 8);
             for (const subLine of subLines) {
                 const node = (_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: themeColor, children: "\u2502    \u2502  " }), _jsx(Text, { color: "green", children: subLine })] }));
-                result.push({ node, lineIndex, type: "assistant" });
+                lineResult.push({ node, lineIndex, type: "assistant" });
             }
-            continue;
         }
-        if (l.startsWith("# ")) {
+        else if (l.startsWith("# ")) {
             const subLines = wrapTextForDisplay(l.slice(2), chatWidth - 5);
             for (const subLine of subLines) {
                 const node = (_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: themeColor, children: "\u2502    " }), _jsx(Text, { bold: true, color: "yellow", children: subLine })] }));
-                result.push({ node, lineIndex, type: "assistant" });
+                lineResult.push({ node, lineIndex, type: "assistant" });
             }
-            continue;
         }
-        if (l.startsWith("## ")) {
+        else if (l.startsWith("## ")) {
             const subLines = wrapTextForDisplay(l.slice(3), chatWidth - 5);
             for (const subLine of subLines) {
                 const node = (_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: themeColor, children: "\u2502    " }), _jsx(Text, { bold: true, color: "cyan", children: subLine })] }));
-                result.push({ node, lineIndex, type: "assistant" });
+                lineResult.push({ node, lineIndex, type: "assistant" });
             }
-            continue;
         }
-        if (l.startsWith("### ")) {
+        else if (l.startsWith("### ")) {
             const subLines = wrapTextForDisplay(l.slice(4), chatWidth - 5);
             for (const subLine of subLines) {
                 const node = (_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: themeColor, children: "\u2502    " }), _jsx(Text, { bold: true, color: "blue", children: subLine })] }));
-                result.push({ node, lineIndex, type: "assistant" });
-            }
-            continue;
-        }
-        let listPrefix = "";
-        let isSysLine = false;
-        let remainingText = l;
-        if (l.trim().startsWith("[SYS]")) {
-            isSysLine = true;
-            const sysIndex = l.indexOf("[SYS]");
-            listPrefix = l.slice(0, sysIndex);
-            remainingText = l.slice(sysIndex + 5);
-        }
-        else if (l.trim().startsWith("- ")) {
-            const indent = l.indexOf("- ");
-            listPrefix = " ".repeat(indent) + "• ";
-            remainingText = l.slice(indent + 2);
-        }
-        else if (l.trim().startsWith("* ")) {
-            const indent = l.indexOf("* ");
-            listPrefix = " ".repeat(indent) + "• ";
-            remainingText = l.slice(indent + 2);
-        }
-        else if (/^\d+\.\s/.test(l.trim())) {
-            const match = l.match(/^(\s*)(\d+\.\s)(.*)/);
-            if (match) {
-                listPrefix = match[1] + match[2];
-                remainingText = match[3];
+                lineResult.push({ node, lineIndex, type: "assistant" });
             }
         }
-        const subLines = wrapTextForDisplay(remainingText, chatWidth - 5 - visibleLength(listPrefix));
-        for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
-            const subLine = subLines[sIdx];
-            const isFirstSubLine = sIdx === 0;
-            const node = (_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: themeColor, children: "\u2502    " }), isSysLine ? (isFirstSubLine ? (_jsxs(Text, { children: [listPrefix, _jsx(Text, { bold: true, color: "yellow", children: "[SYS]" })] })) : (_jsx(Text, { children: " ".repeat(listPrefix.length + 5) }))) : listPrefix ? (isFirstSubLine ? (_jsx(Text, { color: "blue", bold: true, children: listPrefix })) : (_jsx(Text, { children: " ".repeat(listPrefix.length) }))) : null, _jsx(Box, { flexShrink: 1, children: _jsx(Text, { children: renderInlineMarkdown(subLine, "white") }) })] }));
-            result.push({ node, lineIndex, type: "assistant" });
+        else {
+            let listPrefix = "";
+            let isSysLine = false;
+            let remainingText = l;
+            if (l.trim().startsWith("[SYS]")) {
+                isSysLine = true;
+                const sysIndex = l.indexOf("[SYS]");
+                listPrefix = l.slice(0, sysIndex);
+                remainingText = l.slice(sysIndex + 5);
+            }
+            else if (l.trim().startsWith("- ")) {
+                const indent = l.indexOf("- ");
+                listPrefix = " ".repeat(indent) + "• ";
+                remainingText = l.slice(indent + 2);
+            }
+            else if (l.trim().startsWith("* ")) {
+                const indent = l.indexOf("* ");
+                listPrefix = " ".repeat(indent) + "• ";
+                remainingText = l.slice(indent + 2);
+            }
+            else if (/^\d+\.\s/.test(l.trim())) {
+                const match = l.match(/^(\s*)(\d+\.\s)(.*)/);
+                if (match) {
+                    listPrefix = match[1] + match[2];
+                    remainingText = match[3];
+                }
+            }
+            const subLines = wrapTextForDisplay(remainingText, chatWidth - 5 - visibleLength(listPrefix));
+            for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
+                const subLine = subLines[sIdx];
+                const isFirstSubLine = sIdx === 0;
+                const node = (_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: themeColor, children: "\u2502    " }), isSysLine ? (isFirstSubLine ? (_jsxs(Text, { children: [listPrefix, _jsx(Text, { bold: true, color: "yellow", children: "[SYS]" })] })) : (_jsx(Text, { children: " ".repeat(listPrefix.length + 5) }))) : listPrefix ? (isFirstSubLine ? (_jsx(Text, { color: "blue", bold: true, children: listPrefix })) : (_jsx(Text, { children: " ".repeat(listPrefix.length) }))) : null, _jsx(Box, { flexShrink: 1, children: _jsx(Text, { children: renderInlineMarkdown(subLine, "white") }) })] }));
+                lineResult.push({ node, lineIndex, type: "assistant" });
+            }
         }
+        if (!isLastLine) {
+            streamLineWrapCache.set(cacheKey, lineResult);
+        }
+        result.push(...lineResult);
     }
     return result;
 }

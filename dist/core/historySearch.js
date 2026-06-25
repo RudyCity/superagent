@@ -1,0 +1,259 @@
+import fs from "fs";
+import { generateText } from "ai";
+import { listHistorySessions, getModelInstance, getConfig, getSettings } from "./config.js";
+import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
+/**
+ * Custom subsequence fuzzy matching and token-based scoring algorithm.
+ * Returns a score between 0.0 (no match) and 1.0 (exact match).
+ */
+export function fuzzyScore(text, query) {
+    const t = text.toLowerCase();
+    const q = query.toLowerCase();
+    if (t.includes(q))
+        return 1.0;
+    const words = q.split(/\s+/).filter(Boolean);
+    if (words.length === 0)
+        return 0;
+    let matches = 0;
+    for (const word of words) {
+        if (t.includes(word)) {
+            matches += 1.0;
+        }
+        else {
+            let qIdx = 0;
+            for (let i = 0; i < t.length; i++) {
+                if (t[i] === word[qIdx]) {
+                    qIdx++;
+                    if (qIdx === word.length)
+                        break;
+                }
+            }
+            if (qIdx === word.length) {
+                matches += 0.5;
+            }
+        }
+    }
+    return matches / words.length;
+}
+/**
+ * Filter out verbose tool output logs to save 90-95% of token context.
+ */
+export function cleanTranscriptForLLM(messages) {
+    return messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => `[${m.role.toUpperCase()}]: ${m.content || ""}`)
+        .join("\n\n");
+}
+/**
+ * Perform a hybrid AI-powered semantic search with an offline fuzzy fallback.
+ * @param query - The search query
+ * @param isMulti - Whether to search multi-agent sessions
+ * @param crossSession - If true, search ALL sessions regardless of working directory
+ */
+export async function searchHistory(query, isMulti = false, crossSession = false, onDebug) {
+    if (onDebug) {
+        onDebug(`[DEBUG] Starting history search for query: "${query}" (isMulti: ${isMulti}, crossSession: ${crossSession})`);
+    }
+    const sessions = listHistorySessions(isMulti, crossSession);
+    if (onDebug) {
+        onDebug(`[DEBUG] Found ${sessions.length} total history sessions.`);
+    }
+    if (sessions.length === 0) {
+        return crossSession
+            ? "No conversation history sessions found across any sessions."
+            : "No conversation history sessions found in the workspace.";
+    }
+    const scoredSessions = [];
+    for (const session of sessions) {
+        try {
+            const raw = fs.readFileSync(session.filePath, "utf-8");
+            const parsed = JSON.parse(raw);
+            let messages;
+            if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+                messages = parsed.messages;
+            }
+            else if (Array.isArray(parsed)) {
+                messages = parsed;
+            }
+            else {
+                continue;
+            }
+            const dialogueText = cleanTranscriptForLLM(messages);
+            const score = fuzzyScore(dialogueText, query);
+            if (score > 0) {
+                scoredSessions.push({
+                    session,
+                    messages,
+                    dialogueText,
+                    score,
+                });
+            }
+        }
+        catch {
+            // Ignore corrupted files
+        }
+    }
+    // Sort: highest score first, then most recently modified first
+    scoredSessions.sort((a, b) => b.score - a.score ||
+        b.session.lastModified.getTime() - a.session.lastModified.getTime());
+    if (onDebug) {
+        onDebug(`[DEBUG] Scored ${scoredSessions.length} session(s) using subsequence fuzzy matching:`);
+        for (const item of scoredSessions.slice(0, 5)) {
+            const pct = Math.round(item.score * 100);
+            onDebug(`  - 📁 ${item.session.displayName} (Fuzzy Match: ${pct}%, last modified: ${item.session.lastModified.toISOString()})`);
+        }
+    }
+    // Generate offline fuzzy search fallback text
+    const generateFuzzyFallbackText = () => {
+        if (scoredSessions.length === 0) {
+            return `No matches found for query: "${query}"`;
+        }
+        const lines = [
+            `[OFFLINE FUZZY SEARCH] Found ${scoredSessions.length} matching session(s) for "${query}":`,
+            "",
+        ];
+        for (const item of scoredSessions.slice(0, 5)) {
+            const pct = Math.round(item.score * 100);
+            lines.push(`📁 ${item.session.displayName} (Match: ${pct}%)`);
+            const queryWords = query.toLowerCase().split(/\s+/).filter(Boolean);
+            const matchedTurns = [];
+            for (const msg of item.messages) {
+                if ((msg.role === "user" || msg.role === "assistant") && typeof msg.content === "string") {
+                    const contentLower = msg.content.toLowerCase();
+                    if (queryWords.some((word) => contentLower.includes(word))) {
+                        const cleaned = msg.content.replace(/\r?\n/g, " ");
+                        const truncated = cleaned.length > 90 ? cleaned.slice(0, 87) + "..." : cleaned;
+                        matchedTurns.push(`      [${msg.role.toUpperCase()}] ${truncated}`);
+                        if (matchedTurns.length >= 3)
+                            break;
+                    }
+                }
+            }
+            lines.push(matchedTurns.join("\n"));
+            lines.push("");
+        }
+        return lines.join("\n").trim();
+    };
+    const config = getConfig();
+    const hasApiKey = !!config.apiKey;
+    if (!hasApiKey) {
+        if (onDebug) {
+            onDebug("[DEBUG] No API key configured. Skipping AI Semantic Search.");
+        }
+        return generateFuzzyFallbackText();
+    }
+    try {
+        const model = getModelInstance();
+        if (onDebug) {
+            onDebug(`[DEBUG] API key configured. Using model: ${model?.modelId || "unknown"}`);
+        }
+        // AI Semantic Filtering
+        const candidates = scoredSessions.slice(0, 5).map((item, idx) => ({
+            index: idx,
+            displayName: item.session.displayName,
+            preview: item.session.preview,
+            messageCount: item.session.messageCount,
+            lastModified: item.session.lastModified.toISOString(),
+        }));
+        if (onDebug) {
+            onDebug(`[DEBUG] Top ${candidates.length} candidates for AI semantic filtering:\n${JSON.stringify(candidates, null, 2)}`);
+        }
+        if (candidates.length === 0) {
+            return `No matches found in history for query: "${query}"`;
+        }
+        const filterPrompt = `You are a developer assistant analyzing past coding session logs.
+The developer is searching for context about: "${query}".
+
+Here is a list of top candidate past conversation sessions:
+${JSON.stringify(candidates, null, 2)}
+
+Identify the indices of the sessions (up to 3) that are semantically relevant to the developer's search query.
+Return ONLY a JSON array of numbers representing the relevant session indices. Example: [0, 2]
+If no sessions are relevant, return an empty array: []`;
+        if (onDebug) {
+            onDebug(`[DEBUG] Sending filter prompt to AI:\n${filterPrompt}`);
+        }
+        let concurrencyAcquiredFilter = false;
+        let filterResult = "";
+        try {
+            if (getSettings().concurrencyLimit === 1) {
+                await concurrencyLimiter.acquire();
+                concurrencyAcquiredFilter = true;
+            }
+            await rateLimiter.acquire(1);
+            const result = await generateText({
+                model,
+                prompt: filterPrompt,
+            });
+            filterResult = result.text;
+        }
+        finally {
+            if (concurrencyAcquiredFilter) {
+                concurrencyLimiter.release();
+            }
+        }
+        if (onDebug) {
+            onDebug(`[DEBUG] AI filter raw output:\n${filterResult}`);
+        }
+        const jsonMatch = filterResult.match(/\[\s*\d*\s*(?:,\s*\d*\s*)*\]/);
+        const indices = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+        if (onDebug) {
+            onDebug(`[DEBUG] Parsed indices: ${JSON.stringify(indices)}`);
+        }
+        if (indices.length === 0) {
+            return `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
+        }
+        const reports = [];
+        for (const idx of indices) {
+            if (idx < 0 || idx >= candidates.length)
+                continue;
+            const match = scoredSessions[idx];
+            const truncatedTranscript = match.dialogueText.slice(-15000);
+            const summaryPrompt = `You are analyzing a past coding session transcript.
+User search query: "${query}"
+Session Name: "${match.session.displayName}"
+
+Here is the dialogue transcript of the session:
+${truncatedTranscript}
+
+Please summarize what was discussed, decided, or implemented in this session regarding the query. Be specific, concise, and reference code or actions where appropriate.`;
+            if (onDebug) {
+                onDebug(`[DEBUG] Generating semantic summary for "${match.session.displayName}"`);
+                onDebug(`[DEBUG] Sending summary prompt to AI:\n${summaryPrompt}`);
+            }
+            let concurrencyAcquiredSummary = false;
+            let summary = "";
+            try {
+                if (getSettings().concurrencyLimit === 1) {
+                    await concurrencyLimiter.acquire();
+                    concurrencyAcquiredSummary = true;
+                }
+                await rateLimiter.acquire(1);
+                const result = await generateText({
+                    model,
+                    prompt: summaryPrompt,
+                });
+                summary = result.text;
+            }
+            finally {
+                if (concurrencyAcquiredSummary) {
+                    concurrencyLimiter.release();
+                }
+            }
+            if (onDebug) {
+                onDebug(`[DEBUG] Raw AI summary output for "${match.session.displayName}":\n${summary}`);
+            }
+            reports.push(`📁 **${match.session.displayName}**\n${summary.trim()}`);
+        }
+        if (reports.length === 0) {
+            return `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
+        }
+        return `[AI SEMANTIC SEARCH] Found relevant history for "${query}":\n\n` + reports.join("\n\n");
+    }
+    catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        const fallback = generateFuzzyFallbackText();
+        return `[AI Search Failed (${errorMsg}) - Falling back to Fuzzy Search]\n\n${fallback}`;
+    }
+}
+//# sourceMappingURL=historySearch.js.map

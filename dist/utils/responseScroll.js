@@ -1,0 +1,76 @@
+export function capDisplayLines(text, maxLines, width) {
+    const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "").replace(/\t/g, "    ");
+    const rawLines = normalized.split("\n");
+    let accumulated = 0;
+    const resultLines = [];
+    for (const line of rawLines) {
+        const wrappedCount = Math.max(1, Math.ceil(line.length / Math.max(1, width)));
+        if (accumulated + wrappedCount > maxLines) {
+            return { text: resultLines.join("\n"), truncated: true };
+        }
+        accumulated += wrappedCount;
+        resultLines.push(line);
+    }
+    return { text, truncated: false };
+}
+export function getTruncatedAssistantIndexes(lines, maxLines, width) {
+    return lines
+        .map((line, index) => ({ line, index }))
+        .filter(({ line }) => line.type === "assistant" && capDisplayLines(line.content, maxLines, width).truncated)
+        .map(({ index }) => index);
+}
+// Strip ANSI/SGR escape codes to get the visible character length of a string
+function visibleLength(str) {
+    // eslint-disable-next-line no-control-regex
+    return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").length;
+}
+export function wrapTextForDisplay(text, width) {
+    const safeWidth = Math.max(10, width);
+    const wrapped = [];
+    // Normalize \r\n -> \n, strip bare \r (defensive: prevents col-0 bleed if \r slips through)
+    // Replace tabs with 4 spaces to avoid layout breaking
+    const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "").replace(/\t/g, "    ");
+    for (const rawLine of normalized.split("\n")) {
+        // Use visible length to avoid splitting inside ANSI escape sequences
+        if (visibleLength(rawLine) <= safeWidth) {
+            wrapped.push(rawLine);
+            continue;
+        }
+        // Walk the string character by character, tracking visible width
+        let lineStart = 0;
+        let visibleCount = 0;
+        let i = 0;
+        while (i < rawLine.length) {
+            // Detect ANSI escape sequence and skip it (count 0 visible chars)
+            // eslint-disable-next-line no-control-regex
+            if (rawLine[i] === "\x1b" && rawLine[i + 1] === "[") {
+                let j = i + 2;
+                while (j < rawLine.length && !/[A-Za-z]/.test(rawLine[j]))
+                    j++;
+                i = j + 1; // skip past the escape sequence
+                continue;
+            }
+            visibleCount++;
+            i++;
+            if (visibleCount >= safeWidth) {
+                wrapped.push(rawLine.slice(lineStart, i));
+                lineStart = i;
+                visibleCount = 0;
+            }
+        }
+        if (lineStart < rawLine.length) {
+            wrapped.push(rawLine.slice(lineStart));
+        }
+    }
+    return wrapped.length > 0 ? wrapped : [""];
+}
+export function renderScrollBar(offset, windowHeight, totalLines) {
+    const width = 10;
+    if (totalLines <= windowHeight)
+        return `[${"■".repeat(width)}]`;
+    const maxOffset = Math.max(1, totalLines - windowHeight);
+    const ratio = offset / maxOffset;
+    const filled = Math.max(1, Math.min(width, Math.round(ratio * (width - 1)) + 1));
+    return `[${"■".repeat(filled)}${"□".repeat(width - filled)}]`;
+}
+//# sourceMappingURL=responseScroll.js.map

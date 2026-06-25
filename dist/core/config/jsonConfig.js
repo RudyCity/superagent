@@ -1,0 +1,854 @@
+import fs from "fs";
+import path from "path";
+import { execa } from "execa";
+import { threadId } from "worker_threads";
+import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir } from "./paths.js";
+const DEFAULT_CONFIG = {
+    settings: {
+        concurrencyLimit: 0,
+        rateLimitRpm: 60,
+        rateLimitCapacity: 60,
+        disableStreaming: false,
+        contextWindowLimit: 0,
+        maxIterations: 50,
+        simpleTaskFileThreshold: 3,
+        simpleTaskKeywords: ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
+    },
+    trustedDirectories: [],
+    providers: [
+        {
+            id: "default-anthropic",
+            name: "Default Anthropic",
+            provider: "anthropic",
+            apiKey: "",
+            baseUrl: "",
+        },
+        {
+            id: "default-openai",
+            name: "Default OpenAI",
+            provider: "openai",
+            apiKey: "",
+            baseUrl: "",
+        }
+    ],
+    presets: {
+        multi: [
+            {
+                id: "default-multi",
+                name: "Default Multi-Agent Setup",
+                description: "Standard configuration using Claude Sonnet and GPT-4o-mini",
+                models: {
+                    master: {
+                        providerProfileId: "default-anthropic",
+                        model: "claude-3-5-sonnet-20241022",
+                    },
+                    superagent: {
+                        providerProfileId: "default-anthropic",
+                        model: "claude-3-5-sonnet-20241022",
+                    },
+                    subagentDefault: {
+                        providerProfileId: "default-openai",
+                        model: "gpt-4o-mini",
+                    },
+                    subagentDetails: {},
+                },
+            },
+        ],
+        single: [
+            {
+                id: "default-single",
+                name: "Default Single-Agent Setup",
+                description: "Standard single-agent setup using Claude Sonnet and GPT-4o-mini",
+                models: {
+                    superagent: {
+                        providerProfileId: "default-anthropic",
+                        model: "claude-3-5-sonnet-20241022",
+                    },
+                    subagentDefault: {
+                        providerProfileId: "default-openai",
+                        model: "gpt-4o-mini",
+                    },
+                    subagentDetails: {},
+                },
+            },
+        ],
+    },
+    activePresetId: {
+        multi: "default-multi",
+        single: "default-single",
+    },
+};
+let cachedConfig = null;
+// Modification time (ms) of the file that produced `cachedConfig`. Used to detect
+// out-of-band writes (a second process / terminal / spawned agent) so we don't keep
+// serving — and worse, re-saving — a stale in-memory snapshot that is missing
+// providers another process added. -1 means "unknown".
+let cachedConfigMtimeMs = -1;
+function safeMtimeMs(p) {
+    try {
+        return fs.statSync(p).mtimeMs;
+    }
+    catch {
+        return -1;
+    }
+}
+let localLockCount = 0;
+function getLockPath(configPath) {
+    const isVitest = typeof process.env.VITEST !== "undefined";
+    const useLockSuffix = isVitest && !process.env.SUPERAGENT_TEST_NO_LOCK_SUFFIX;
+    return configPath + ".lock" + (useLockSuffix ? `-${threadId}-${process.pid}` : "");
+}
+function sleepSync(ms) {
+    try {
+        const sab = new SharedArrayBuffer(4);
+        const int32 = new Int32Array(sab);
+        Atomics.wait(int32, 0, 0, ms);
+    }
+    catch (e) {
+        const end = Date.now() + ms;
+        while (Date.now() < end) { /* busy wait fallback */ }
+    }
+}
+function acquireLockSync(lockPath, timeoutMs = 5000) {
+    if (localLockCount > 0) {
+        localLockCount++;
+        return true;
+    }
+    const start = Date.now();
+    const lockTTL = 5000; // 5 seconds
+    let attempt = 0;
+    while (Date.now() - start < timeoutMs) {
+        try {
+            const fd = fs.openSync(lockPath, "wx");
+            fs.writeFileSync(fd, `${process.pid}:${threadId}:${Date.now()}`);
+            fs.closeSync(fd);
+            localLockCount = 1;
+            return true;
+        }
+        catch (err) {
+            if (err.code === "ENOENT") {
+                try {
+                    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+                    continue; // Retry immediately after directory creation
+                }
+                catch { }
+            }
+            if (err.code === "EEXIST") {
+                try {
+                    const content = fs.readFileSync(lockPath, "utf-8").trim();
+                    const parts = content.split(":");
+                    const lockPid = parseInt(parts[0], 10);
+                    const lockThreadId = parseInt(parts[1], 10);
+                    const lockTime = parseInt(parts[2], 10);
+                    if (!isNaN(lockPid) && !isNaN(lockThreadId) && lockPid === process.pid && lockThreadId === threadId) {
+                        localLockCount = 1;
+                        return true;
+                    }
+                    let isStale = isNaN(lockTime) || isNaN(lockPid) || isNaN(lockThreadId) || (Date.now() - lockTime) > lockTTL;
+                    if (!isStale && !isNaN(lockPid) && lockPid !== process.pid) {
+                        try {
+                            process.kill(lockPid, 0);
+                        }
+                        catch (e) {
+                            if (e.code === "ESRCH") {
+                                isStale = true; // Clean up locks held by dead/exited processes instantly
+                            }
+                        }
+                    }
+                    if (isStale) {
+                        try {
+                            fs.unlinkSync(lockPath);
+                        }
+                        catch { }
+                        // Retry immediately
+                        continue;
+                    }
+                }
+                catch {
+                    // stats/read failed, maybe lock deleted or being written
+                }
+            }
+            const delay = Math.min(50 + attempt * 20 + Math.random() * 20, 150);
+            if (err.code !== "EEXIST") {
+                console.error(`[LOCK DEBUG] Failed to acquire lock at ${lockPath}: ${err.code} - ${err.message}`);
+            }
+            sleepSync(delay);
+            attempt++;
+        }
+    }
+    try {
+        const content = fs.existsSync(lockPath) ? fs.readFileSync(lockPath, "utf-8").trim() : "(does not exist)";
+        console.error(`[LOCK TIMEOUT DIAGNOSTICS] lockPath: ${lockPath} | currentPid: ${process.pid} | currentThreadId: ${threadId} | localLockCount: ${localLockCount} | lockFileContent: ${content}`);
+    }
+    catch (diagErr) {
+        console.error(`[LOCK TIMEOUT DIAGNOSTICS ERR] failed to read diagnostics: ${diagErr.message}`);
+    }
+    return false;
+}
+function releaseLockSync(lockPath) {
+    if (localLockCount > 1) {
+        localLockCount--;
+        return;
+    }
+    localLockCount = 0;
+    try {
+        if (fs.existsSync(lockPath)) {
+            fs.unlinkSync(lockPath);
+        }
+    }
+    catch {
+        // Ignore errors on release
+    }
+}
+export function clearModelConfigCache() {
+    cachedConfig = null;
+    cachedConfigMtimeMs = -1;
+}
+export function loadModelConfig() {
+    const configPath = getModelConfigPath();
+    if (cachedConfig) {
+        // Serve the cache only if the file on disk hasn't changed since we cached it.
+        // If another process rewrote model-config.json, fall through and reload so we
+        // pick up providers/presets we don't know about yet.
+        const diskMtime = safeMtimeMs(configPath);
+        if (diskMtime === -1 || diskMtime === cachedConfigMtimeMs) {
+            return cachedConfig;
+        }
+    }
+    ensureGlobalConfigDir();
+    const lockPath = getLockPath(configPath);
+    const hasLock = acquireLockSync(lockPath);
+    if (!hasLock) {
+        console.warn(`[WARNING] Could not acquire lock to read model-config.json, proceeding without lock`);
+    }
+    try {
+        let lastError = null;
+        const maxLoadAttempts = 5;
+        for (let attempt = 0; attempt < maxLoadAttempts; attempt++) {
+            try {
+                if (fs.existsSync(configPath)) {
+                    const data = fs.readFileSync(configPath, "utf-8");
+                    if (!data || data.trim() === "") {
+                        throw new Error("Config file is empty or blank");
+                    }
+                    const parsed = JSON.parse(data);
+                    // Basic migrations/fallback validation
+                    if (!parsed?.providers) {
+                        // File exists but the providers field is missing/invalid. Back up before touching it.
+                        try {
+                            const backupPath = configPath + ".corrupt-" + Date.now();
+                            fs.copyFileSync(configPath, backupPath);
+                            console.warn(`model-config.json had invalid providers field. Backed up to: ${backupPath}`);
+                        }
+                        catch { }
+                        // Try to recover real providers (with their API keys) from the newest backup
+                        // that still has them, so we don't silently destroy the user's credentials.
+                        const recoveredProviders = recoverProvidersFromBackups(configPath);
+                        const fallbackConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+                        if (recoveredProviders && recoveredProviders.length > 0) {
+                            fallbackConfig.providers = recoveredProviders;
+                            console.warn(`[WARNING] model-config.json providers were invalid. Recovered ${recoveredProviders.length} provider profile(s) from a backup.`);
+                        }
+                        else {
+                            console.warn(`[WARNING] model-config.json providers were invalid and no backup with providers was found. Reset to defaults. Re-add credentials with /login.`);
+                        }
+                        if (parsed?.presets) {
+                            fallbackConfig.presets = parsed.presets;
+                        }
+                        if (parsed?.activePresetId) {
+                            fallbackConfig.activePresetId = parsed.activePresetId;
+                        }
+                        if (parsed?.settings) {
+                            fallbackConfig.settings = parsed.settings;
+                        }
+                        cachedConfig = fallbackConfig;
+                        // saveModelConfig refreshes cachedConfigMtimeMs after writing.
+                        saveModelConfig(fallbackConfig);
+                    }
+                    else {
+                        // Validate and repair missing presets / activePresetId (e.g. from older app versions)
+                        if (!parsed.presets || !parsed.presets.multi || !parsed.presets.single) {
+                            parsed.presets = JSON.parse(JSON.stringify(DEFAULT_CONFIG.presets));
+                        }
+                        if (!parsed.activePresetId || !parsed.activePresetId.multi || !parsed.activePresetId.single) {
+                            parsed.activePresetId = JSON.parse(JSON.stringify(DEFAULT_CONFIG.activePresetId));
+                        }
+                        // Repair stale providerProfileIds: if a preset references a non-existent provider,
+                        // replace it with a valid provider that has an API key (or the first provider).
+                        const providerIds = new Set((parsed.providers || []).map((p) => p.id));
+                        const firstProviderWithKey = (parsed.providers || []).find((p) => p.apiKey && p.apiKey.trim() !== "");
+                        const fallbackProviderId = firstProviderWithKey?.id || parsed.providers?.[0]?.id || "";
+                        if (fallbackProviderId) {
+                            let repaired = false;
+                            for (const mode of ["multi", "single"]) {
+                                const presetsList = parsed.presets?.[mode];
+                                if (!presetsList)
+                                    continue;
+                                for (const preset of presetsList) {
+                                    if (!preset?.models)
+                                        continue;
+                                    const models = preset.models;
+                                    const tierKeys = ["master", "superagent", "subagentDefault"];
+                                    for (const key of tierKeys) {
+                                        if (models[key]?.providerProfileId && !providerIds.has(models[key].providerProfileId)) {
+                                            models[key].providerProfileId = fallbackProviderId;
+                                            repaired = true;
+                                        }
+                                    }
+                                    if (models.subagentDetails) {
+                                        for (const subKey of Object.keys(models.subagentDetails)) {
+                                            if (models.subagentDetails[subKey]?.providerProfileId && !providerIds.has(models.subagentDetails[subKey].providerProfileId)) {
+                                                models.subagentDetails[subKey].providerProfileId = fallbackProviderId;
+                                                repaired = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if (repaired) {
+                                try {
+                                    writeConfigAtomically(configPath, parsed);
+                                }
+                                catch {
+                                    // Ignore repair write errors
+                                }
+                            }
+                        }
+                        cachedConfig = parsed;
+                        cachedConfigMtimeMs = safeMtimeMs(configPath);
+                    }
+                    return cachedConfig;
+                }
+                else {
+                    // File doesn't exist yet. Since we successfully acquired the lock and it's not
+                    // being written by another process, it simply doesn't exist. Break early to
+                    // avoid unnecessary sleep/retry delay loops.
+                    break;
+                }
+            }
+            catch (error) {
+                lastError = error;
+                if (attempt < maxLoadAttempts - 1) {
+                    // Wait and retry
+                    const waitMs = (attempt + 1) * 50;
+                    sleepSync(waitMs);
+                    continue;
+                }
+            }
+        }
+        if (lastError) {
+            console.error("Error reading model-config.json after retries:", lastError);
+        }
+        const fileExists = fs.existsSync(configPath);
+        // Back up the corrupted file before overwriting with defaults
+        if (fileExists) {
+            try {
+                const backupPath = configPath + ".corrupt-" + Date.now();
+                fs.copyFileSync(configPath, backupPath);
+                console.warn(`model-config.json was corrupted. Backed up to: ${backupPath}`);
+            }
+            catch { }
+        }
+        // Attempt config-level recovery from backups
+        const recoveredConfig = recoverConfigFromBackups(configPath);
+        if (recoveredConfig) {
+            console.warn(`[WARNING] model-config.json recovered from a backup.`);
+            cachedConfig = recoveredConfig;
+            if (!fileExists) {
+                saveModelConfig(recoveredConfig);
+            }
+            return cachedConfig;
+        }
+        // Fallback to default — do NOT set cachedConfig until save succeeds
+        const defaultConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+        if (!fileExists) {
+            const saveResult = saveModelConfig(defaultConfig);
+            if (saveResult) {
+                cachedConfig = defaultConfig;
+            }
+            else {
+                // Save failed (e.g. directory creation failed). Set cache anyway so the app
+                // can still function in-memory, but log a critical warning.
+                cachedConfig = defaultConfig;
+                cachedConfigMtimeMs = -1;
+                console.error("CRITICAL: Failed to persist model-config.json to disk. Credentials will be lost on restart. Check permissions for: " + getRootConfigDir());
+            }
+        }
+        else {
+            console.warn("[WARNING] model-config.json exists but is unreadable/corrupt. Falling back to defaults in-memory to prevent overwriting user config.");
+            cachedConfig = defaultConfig;
+            cachedConfigMtimeMs = -1;
+        }
+        return cachedConfig;
+    }
+    finally {
+        releaseLockSync(lockPath);
+    }
+}
+/**
+ * Scan model-config.json backups (.corrupt-* and .tmp) newest-first and return the
+ * first valid config object parsed, so we can recover settings, presets, and providers.
+ */
+function recoverConfigFromBackups(configPath) {
+    try {
+        const dir = configPath.substring(0, Math.max(configPath.lastIndexOf("/"), configPath.lastIndexOf("\\")));
+        const base = configPath.substring(Math.max(configPath.lastIndexOf("/"), configPath.lastIndexOf("\\")) + 1);
+        if (!dir || !fs.existsSync(dir))
+            return null;
+        const candidates = fs
+            .readdirSync(dir)
+            .filter((f) => f.startsWith(base + ".corrupt-"))
+            .map((f) => {
+            const full = dir + "/" + f;
+            return { full, mtime: safeMtimeMs(full) };
+        })
+            .sort((a, b) => b.mtime - a.mtime);
+        for (const c of candidates) {
+            try {
+                const parsed = JSON.parse(fs.readFileSync(c.full, "utf-8"));
+                if (parsed && Array.isArray(parsed.providers) && parsed.providers.length > 0) {
+                    return parsed;
+                }
+            }
+            catch {
+                // Skip unreadable/invalid backup
+            }
+        }
+    }
+    catch {
+        // Ignore recovery errors
+    }
+    return null;
+}
+/**
+ * Scan model-config.json backups (.corrupt-* and .tmp) newest-first and return the
+ * first valid, non-empty providers array found. Used to recover credentials when the
+ * live file's providers field is missing/invalid, so a transient bad write doesn't
+ * permanently destroy the user's API keys.
+ */
+function recoverProvidersFromBackups(configPath) {
+    try {
+        const dir = configPath.substring(0, Math.max(configPath.lastIndexOf("/"), configPath.lastIndexOf("\\")));
+        const base = configPath.substring(Math.max(configPath.lastIndexOf("/"), configPath.lastIndexOf("\\")) + 1);
+        if (!dir || !fs.existsSync(dir))
+            return null;
+        const candidates = fs
+            .readdirSync(dir)
+            .filter((f) => f.startsWith(base + ".corrupt-"))
+            .map((f) => {
+            const full = dir + "/" + f;
+            return { full, mtime: safeMtimeMs(full) };
+        })
+            .sort((a, b) => b.mtime - a.mtime);
+        for (const c of candidates) {
+            try {
+                const parsed = JSON.parse(fs.readFileSync(c.full, "utf-8"));
+                if (Array.isArray(parsed?.providers) && parsed.providers.length > 0) {
+                    return parsed.providers;
+                }
+            }
+            catch {
+                // Skip unreadable/invalid backup
+            }
+        }
+    }
+    catch {
+        // Ignore recovery errors
+    }
+    return null;
+}
+/**
+ * Merge the providers we're about to save with whatever providers currently exist on
+ * disk. Any provider id that exists on disk but is missing from `config` is preserved
+ * (appended), so a stale in-memory snapshot from another process can never silently
+ * delete provider profiles + API keys. Providers present in `config` always win for
+ * matching ids (this is how legitimate updates take effect).
+ *
+ * This is intentionally skipped for explicit deletions (see removeProvider).
+ */
+function mergeProvidersWithDisk(config, configPath) {
+    try {
+        if (!fs.existsSync(configPath))
+            return;
+        const onDisk = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        if (!Array.isArray(onDisk?.providers))
+            return;
+        const inMemoryIds = new Set((config.providers || []).map((p) => p.id));
+        for (const diskProvider of onDisk.providers) {
+            if (diskProvider?.id && !inMemoryIds.has(diskProvider.id)) {
+                config.providers.push(diskProvider);
+            }
+        }
+    }
+    catch {
+        // If the on-disk file is unreadable, fall through and write what we have.
+    }
+}
+/**
+ * Merge the presets we're about to save with whatever presets currently exist on disk.
+ * Any preset id (per mode) that exists on disk but is missing from `config` is preserved,
+ * so a stale in-memory snapshot from another process can never silently delete a preset
+ * the user created in a different process. Presets present in `config` win for matching ids.
+ *
+ * Intentionally skipped for explicit deletions (see deletePreset).
+ */
+function mergePresetsWithDisk(config, configPath) {
+    try {
+        if (!fs.existsSync(configPath))
+            return;
+        const onDisk = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        if (!onDisk?.presets)
+            return;
+        for (const mode of ["multi", "single"]) {
+            const diskList = onDisk.presets?.[mode];
+            if (!Array.isArray(diskList))
+                continue;
+            if (!config.presets)
+                continue;
+            const memList = config.presets[mode];
+            if (!Array.isArray(memList))
+                continue;
+            const memIds = new Set(memList.map((p) => p?.id));
+            for (const diskPreset of diskList) {
+                if (diskPreset?.id && !memIds.has(diskPreset.id)) {
+                    memList.push(diskPreset);
+                }
+            }
+        }
+    }
+    catch {
+        // If the on-disk file is unreadable, fall through and write what we have.
+    }
+}
+function writeConfigAtomically(configPath, config) {
+    ensureGlobalConfigDir();
+    const serialized = JSON.stringify(config, null, 2);
+    const tmpPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmpPath, serialized, "utf-8");
+    const MAX_RETRIES = 5;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            try {
+                // Try direct rename first (atomic on POSIX and generally works on Windows)
+                fs.renameSync(tmpPath, configPath);
+                return;
+            }
+            catch (renameErr) {
+                // Fallback to copyFileSync + unlinkSync on Windows if direct rename fails
+                try {
+                    fs.copyFileSync(tmpPath, configPath);
+                    try {
+                        fs.unlinkSync(tmpPath);
+                    }
+                    catch { }
+                    return;
+                }
+                catch (copyErr) {
+                    // If copy also fails, throw renameErr to let the retry loop handle it
+                    throw renameErr;
+                }
+            }
+        }
+        catch (renameErr) {
+            const canRetry = attempt < MAX_RETRIES && (renameErr?.code === "EPERM" || renameErr?.code === "EBUSY" || renameErr?.code === "ENOENT");
+            if (renameErr?.code === "ENOENT") {
+                try {
+                    ensureGlobalConfigDir();
+                    if (!fs.existsSync(tmpPath)) {
+                        fs.writeFileSync(tmpPath, serialized, "utf-8");
+                    }
+                    fs.copyFileSync(tmpPath, configPath);
+                    try {
+                        fs.unlinkSync(tmpPath);
+                    }
+                    catch { }
+                    return;
+                }
+                catch { }
+            }
+            if (canRetry) {
+                try {
+                    ensureGlobalConfigDir();
+                    if (!fs.existsSync(tmpPath)) {
+                        fs.writeFileSync(tmpPath, serialized, "utf-8");
+                    }
+                }
+                catch { }
+                const waitMs = (attempt + 1) * 50;
+                sleepSync(waitMs);
+                continue;
+            }
+            try {
+                fs.unlinkSync(tmpPath);
+            }
+            catch { }
+            throw renameErr;
+        }
+    }
+}
+export function saveModelConfig(config, options = {}) {
+    const { mergeProviders = true, mergePresets = true } = options;
+    const configPath = getModelConfigPath();
+    ensureGlobalConfigDir();
+    const lockPath = getLockPath(configPath);
+    const hasLock = acquireLockSync(lockPath);
+    if (!hasLock) {
+        console.error("CRITICAL: Could not acquire lock to save model-config.json");
+        return false;
+    }
+    try {
+        // Guard against stale-snapshot overwrites: if another process added providers or
+        // presets since this config was loaded, preserve them instead of clobbering the file.
+        if (mergeProviders && Array.isArray(config.providers)) {
+            mergeProvidersWithDisk(config, configPath);
+        }
+        if (mergePresets && config.presets) {
+            mergePresetsWithDisk(config, configPath);
+        }
+        writeConfigAtomically(configPath, config);
+        cachedConfig = config;
+        cachedConfigMtimeMs = safeMtimeMs(configPath);
+        return true;
+    }
+    catch (error) {
+        console.error("Error writing model-config.json:", error);
+        return false;
+    }
+    finally {
+        releaseLockSync(lockPath);
+    }
+}
+export function getProviders() {
+    return loadModelConfig().providers;
+}
+export function addProvider(profile) {
+    mutateModelConfig((config) => {
+        const index = config.providers.findIndex((p) => p.id === profile.id);
+        if (index !== -1) {
+            config.providers[index] = profile;
+        }
+        else {
+            config.providers.push(profile);
+        }
+    });
+}
+export function removeProvider(id) {
+    // Explicit deletion: bypass provider merge guard so removed provider stays deleted.
+    mutateModelConfig((config) => {
+        config.providers = config.providers.filter((p) => p.id !== id);
+    }, { mergeProviders: false });
+}
+/**
+ * Get system settings with defaults filled in for any missing fields.
+ */
+export function getSettings() {
+    const config = loadModelConfig();
+    const s = config.settings || {};
+    return {
+        concurrencyLimit: s.concurrencyLimit ?? 0,
+        rateLimitRpm: s.rateLimitRpm ?? 60,
+        rateLimitCapacity: s.rateLimitCapacity ?? 60,
+        disableStreaming: s.disableStreaming ?? false,
+        contextWindowLimit: s.contextWindowLimit ?? 0,
+        maxIterations: s.maxIterations ?? 50,
+        simpleTaskFileThreshold: s.simpleTaskFileThreshold ?? 3,
+        simpleTaskKeywords: s.simpleTaskKeywords ?? ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
+        tencentdbGatewayUrl: s.tencentdbGatewayUrl ?? "http://127.0.0.1:8420",
+        tencentdbGatewayApiKey: s.tencentdbGatewayApiKey ?? "sk-xxxx",
+        tencentdbServiceId: s.tencentdbServiceId ?? "default",
+        enableTencentdbMemory: s.enableTencentdbMemory ?? false,
+    };
+}
+/**
+ * Update one or more settings and persist to model-config.json.
+ */
+export function updateSettings(updates) {
+    const config = loadModelConfig();
+    if (!config.settings) {
+        config.settings = { ...DEFAULT_CONFIG.settings };
+    }
+    const nextSettings = { ...config.settings, ...updates };
+    if (JSON.stringify(nextSettings) === JSON.stringify(config.settings)) {
+        return;
+    }
+    config.settings = nextSettings;
+    saveModelConfig(config);
+}
+export function getPresets(mode) {
+    return loadModelConfig().presets[mode];
+}
+/**
+ * Reload latest config from disk, apply a mutation, then persist in one save.
+ * Use this for provider/model/preset writes that would otherwise do read-mutate-save
+ * on a possibly stale cached snapshot.
+ */
+export function mutateModelConfig(mutator, options) {
+    clearModelConfigCache();
+    const config = loadModelConfig();
+    mutator(config);
+    if (!saveModelConfig(config, options)) {
+        throw new Error("Failed to save model config to disk. Check permissions for: " + getRootConfigDir());
+    }
+}
+export function savePreset(mode, preset) {
+    mutateModelConfig((config) => {
+        const presetsList = config.presets[mode];
+        const index = presetsList.findIndex((p) => p.id === preset.id);
+        if (index !== -1) {
+            presetsList[index] = preset;
+        }
+        else {
+            presetsList.push(preset);
+        }
+    });
+}
+export function deletePreset(mode, id) {
+    // Reload from disk first so we delete against the current on-disk preset set.
+    mutateModelConfig((config) => {
+        config.presets[mode] = config.presets[mode].filter((p) => p.id !== id);
+    }, { mergePresets: false });
+}
+export function getActivePresetId(mode) {
+    const config = loadModelConfig();
+    return config.activePresetId?.[mode] || DEFAULT_CONFIG.activePresetId[mode];
+}
+export function setActivePresetId(mode, id) {
+    mutateModelConfig((config) => {
+        config.activePresetId[mode] = id;
+    });
+}
+export function getActivePreset(mode) {
+    const config = loadModelConfig();
+    const activeId = getActivePresetId(mode);
+    const presetsList = config.presets?.[mode];
+    if (presetsList) {
+        const preset = presetsList.find((p) => p.id === activeId);
+        if (preset) {
+            return preset;
+        }
+        // Fallback to the first preset in the list
+        if (presetsList.length > 0) {
+            return presetsList[0];
+        }
+    }
+    // Last resort: return a DEEP COPY of the default to prevent mutating DEFAULT_CONFIG
+    return JSON.parse(JSON.stringify(DEFAULT_CONFIG.presets[mode][0]));
+}
+export function getActiveConfigAudit(overrideMode) {
+    const mode = overrideMode || (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true" ? "multi" : "single");
+    const preset = getActivePreset(mode);
+    let lines = [
+        `│ ✦ Active Preset   : ${preset.name} (${mode}-agent mode)`
+    ];
+    if (mode === "multi") {
+        const m = preset.models;
+        lines.push(`│ ✦ Master Agent    : ${m.master?.providerProfileId || "(default)"} ➔ ${m.master?.model || "(not set)"}`);
+        lines.push(`│ ✦ Superagent      : ${m.superagent?.providerProfileId || "(default)"} ➔ ${m.superagent?.model || "(not set)"}`);
+        lines.push(`│ ✦ Subagent Default: ${m.subagentDefault?.providerProfileId || "(default)"} ➔ ${m.subagentDefault?.model || "(not set)"}`);
+        if (m.subagentDetails && Object.keys(m.subagentDetails).length > 0) {
+            for (const [t, cfg] of Object.entries(m.subagentDetails)) {
+                lines.push(`│ ✦ Subagent (${t}): ${cfg.providerProfileId} ➔ ${cfg.model}`);
+            }
+        }
+    }
+    else {
+        const m = preset.models;
+        lines.push(`│ ✦ Superagent      : ${m.superagent?.providerProfileId || "(default)"} ➔ ${m.superagent?.model || "(not set)"}`);
+        lines.push(`│ ✦ Subagent Default: ${m.subagentDefault?.providerProfileId || "(default)"} ➔ ${m.subagentDefault?.model || "(not set)"}`);
+        if (m.subagentDetails && Object.keys(m.subagentDetails).length > 0) {
+            for (const [t, cfg] of Object.entries(m.subagentDetails)) {
+                lines.push(`│ ✦ Subagent (${t}): ${cfg.providerProfileId} ➔ ${cfg.model}`);
+            }
+        }
+    }
+    return lines.join("\n");
+}
+/**
+ * Get model info for display purposes from JSON config.
+ * Returns formatted model strings for each tier.
+ */
+export function getModelInfoForDisplay(isMulti) {
+    const mode = isMulti ? "multi" : "single";
+    const preset = getActivePreset(mode);
+    const config = loadModelConfig();
+    const models = preset.models || {};
+    // Get active provider from the main tier config
+    const mainTier = isMulti ? models.master : models.superagent;
+    const activeProvider = mainTier?.providerProfileId || "";
+    const formatModel = (tier) => {
+        if (!tier?.model)
+            return "(use default)";
+        if (tier.providerProfileId) {
+            const profile = config.providers.find(p => p.id === tier.providerProfileId);
+            if (profile) {
+                return `${profile.provider}@${tier.model}`;
+            }
+        }
+        return tier.model;
+    };
+    const subagentDetails = {};
+    if (models.subagentDetails) {
+        for (const [type, cfg] of Object.entries(models.subagentDetails)) {
+            if (cfg && typeof cfg === "object" && "model" in cfg) {
+                subagentDetails[type] = formatModel(cfg);
+            }
+        }
+    }
+    return {
+        activeProvider,
+        master: formatModel(models.master),
+        superagent: formatModel(models.superagent),
+        subagentDefault: formatModel(models.subagentDefault),
+        subagentDetails,
+    };
+}
+/**
+ * Get the list of all trusted project directories.
+ */
+export function getTrustedDirectories() {
+    const config = loadModelConfig();
+    return config.trustedDirectories || [];
+}
+/**
+ * Add a directory path to the trusted list in configuration.
+ */
+export function addTrustedDirectory(dirPath) {
+    mutateModelConfig((config) => {
+        if (!config.trustedDirectories) {
+            config.trustedDirectories = [];
+        }
+        const resolvedPath = path.resolve(dirPath);
+        if (!config.trustedDirectories.includes(resolvedPath)) {
+            config.trustedDirectories.push(resolvedPath);
+        }
+    });
+}
+/**
+ * Check if a directory path is trusted in configuration.
+ */
+export function isDirectoryTrusted(dirPath) {
+    const trustedDirs = getTrustedDirectories();
+    const resolvedPath = path.resolve(dirPath);
+    return trustedDirs.includes(resolvedPath);
+}
+/**
+ * Ensure a directory is added to Git's global safe.directory configuration
+ * to prevent dubious ownership issues on Windows/multi-user systems.
+ */
+export async function ensureDirectoryTrusted(dirPath, cwd = process.cwd()) {
+    try {
+        const resolvedPath = path.resolve(dirPath);
+        // Normalize path to use forward slashes for Git config compatibility on Windows
+        const normalizedPath = resolvedPath.replace(/\\/g, "/");
+        // Check if it's already in safe.directory to avoid duplicates
+        const { stdout } = await execa("git", ["config", "--global", "--get-all", "safe.directory"], { cwd, reject: false });
+        const safeDirectories = stdout.split(/\r?\n/).map(d => d.trim().replace(/\\/g, "/"));
+        if (!safeDirectories.includes(normalizedPath)) {
+            await execa("git", ["config", "--global", "--add", "safe.directory", normalizedPath], { cwd });
+        }
+    }
+    catch (err) {
+        // Ignore config errors
+    }
+}
+//# sourceMappingURL=jsonConfig.js.map

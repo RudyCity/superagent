@@ -5,9 +5,115 @@ import { getConfiguredProviders, getTierModelWithProvider } from "../config/prov
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { exec, spawn } from "child_process";
+import { exec } from "child_process";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
+import { spawnTencentdbGateway } from "../tencentdbSetup.js";
+import { execa } from "execa";
+// Active terminal window viewer state for TencentDB
+let activeViewerProcess = null;
+let activeCloseSignalPath = null;
+function showTencentdbWindow(ctx) {
+    const globalDataDir = path.join(os.homedir(), ".superagent-r", "tencentdb-memory");
+    const logDir = path.join(globalDataDir, "logs");
+    const logPath = path.join(logDir, "gateway.log");
+    if (!fs.existsSync(logPath)) {
+        fs.mkdirSync(logDir, { recursive: true });
+        fs.writeFileSync(logPath, "", "utf8");
+    }
+    // If already open and active, do nothing
+    if (activeViewerProcess && activeCloseSignalPath && fs.existsSync(activeCloseSignalPath)) {
+        return;
+    }
+    const taskId = "tencentdb-gateway-viewer";
+    const windowLabel = "TencentDB Memory Gateway Logs";
+    const safeLog = logPath.replace(/\\/g, "\\\\").replace(/'/g, "''");
+    const safeTitle = windowLabel.replace(/"/g, "");
+    const safeCwd = globalDataDir.replace(/"/g, "");
+    const closeSignalPath = path.join(logDir, "tencentdb-gateway-viewer.close");
+    if (fs.existsSync(closeSignalPath)) {
+        try {
+            fs.unlinkSync(closeSignalPath);
+        }
+        catch { }
+    }
+    activeCloseSignalPath = closeSignalPath;
+    try {
+        if (process.platform === "win32") {
+            const safeCloseSignal = closeSignalPath.replace(/\\/g, "\\\\").replace(/'/g, "''");
+            const viewerScript = [
+                `$logPath = '${safeLog}'`,
+                `$closeSignalPath = '${safeCloseSignal}'`,
+                `$lastPos = 0`,
+                `try {`,
+                `  Write-Host "=== ${safeTitle} === (close window or run '/setting-tencentdb hide' to hide)" -ForegroundColor Cyan`,
+                `  Write-Host ''`,
+                `  while ($true) {`,
+                `    if (Test-Path $closeSignalPath) { break }`,
+                `    try {`,
+                `      $bytes = [System.IO.File]::ReadAllBytes($logPath)`,
+                `      if ($bytes.Length -gt $lastPos) {`,
+                `        $chunk = [System.Text.Encoding]::UTF8.GetString($bytes, $lastPos, $bytes.Length - $lastPos)`,
+                `        Write-Host $chunk -NoNewline`,
+                `        $lastPos = $bytes.Length`,
+                `      }`,
+                `    } catch {}`,
+                `    Start-Sleep -Milliseconds 200`,
+                `  }`,
+                `} finally {`,
+                `  try { Remove-Item $MyInvocation.MyCommand.Path -Force } catch {}`,
+                `  try { Remove-Item $closeSignalPath -Force } catch {}`,
+                `}`,
+            ].join("\n");
+            const viewerScriptPath = path.join(logDir, "tencentdb-gateway-viewer.ps1");
+            fs.writeFileSync(viewerScriptPath, viewerScript, "utf8");
+            const viewerProc = execa("cmd.exe", ["/c", `start /wait "${safeTitle}" /D "${safeCwd}" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${viewerScriptPath}"`], { detached: true, stdio: "ignore", windowsVerbatimArguments: true, reject: false });
+            activeViewerProcess = viewerProc;
+            const handleViewerExit = () => {
+                activeViewerProcess = null;
+                activeCloseSignalPath = null;
+                try {
+                    fs.unlinkSync(viewerScriptPath);
+                }
+                catch { }
+                try {
+                    fs.unlinkSync(closeSignalPath);
+                }
+                catch { }
+            };
+            viewerProc.on("close", handleViewerExit);
+            viewerProc.on("exit", handleViewerExit);
+        }
+        else if (process.platform === "darwin") {
+            const script = `tell application "Terminal" to do script "tail -f '${safeLog}'"`;
+            activeViewerProcess = execa("osascript", ["-e", script], { detached: true, stdio: "ignore" });
+            activeViewerProcess.unref();
+        }
+        else {
+            activeViewerProcess = execa("x-terminal-emulator", ["-e", `bash -c "tail -f '${safeLog}'"`], { detached: true, stdio: "ignore", reject: false });
+            activeViewerProcess.unref();
+        }
+    }
+    catch (err) {
+        // ignore
+    }
+}
+function hideTencentdbWindow() {
+    if (activeCloseSignalPath) {
+        try {
+            fs.writeFileSync(activeCloseSignalPath, "close", "utf8");
+        }
+        catch { }
+    }
+    if (activeViewerProcess) {
+        try {
+            activeViewerProcess.kill();
+        }
+        catch { }
+    }
+    activeViewerProcess = null;
+    activeCloseSignalPath = null;
+}
 // /settings command — show all settings from JSON config
 export const settingsCommand = {
     name: "settings",
@@ -36,7 +142,7 @@ export const settingsCommand = {
                 "  /setting-streaming <on|off>",
                 "  /setting-context-limit <number>",
                 "  /setting-max-iterations <number>",
-                "  /setting-tencentdb <on|off|status|show-bg-procs|hide-bg-procs> [gatewayUrl]"
+                "  /setting-tencentdb <on|off|status|show|hide> [gatewayUrl]"
             ].join("\n"),
             timestamp: Date.now(),
         });
@@ -321,6 +427,8 @@ export const settingTencentdbCommand = {
         const parts = args.trim().split(/\s+/);
         const mode = parts[0]?.toLowerCase();
         const url = parts[1];
+        const isShow = mode === "show" || mode === "show-window" || mode === "show-bg-procs";
+        const isHide = mode === "hide" || mode === "hide-window" || mode === "hide-bg-procs";
         // --- status subcommand: live connection health check ---
         if (mode === "status") {
             const s = getSettings();
@@ -390,7 +498,7 @@ export const settingTencentdbCommand = {
             }
             return;
         }
-        if (mode === "show-bg-procs") {
+        if (isShow) {
             const { backgroundTasks, savePersistedTasks, notifyTasksChanged } = await import("../tools/index.js");
             let task = backgroundTasks.get("tencentdb-gateway");
             // If task is not registered, let's check if the gateway is actually running on port 8420
@@ -489,9 +597,12 @@ export const settingTencentdbCommand = {
                 ].join("\n"),
                 timestamp: now,
             });
+            if (isAlive) {
+                showTencentdbWindow(ctx);
+            }
             return;
         }
-        if (mode === "hide-bg-procs") {
+        if (isHide) {
             const { backgroundTasks, savePersistedTasks, notifyTasksChanged } = await import("../tools/index.js");
             if (backgroundTasks.has("tencentdb-gateway")) {
                 backgroundTasks.delete("tencentdb-gateway");
@@ -499,33 +610,34 @@ export const settingTencentdbCommand = {
                 notifyTasksChanged();
                 ctx.addLine({
                     type: "system",
-                    content: "✓ TencentDB Memory Gateway process hidden from the active processes panel (it is still running in the background).",
+                    content: "✓ TencentDB Memory Gateway process hidden and log window closed.",
                     timestamp: now,
                 });
             }
             else {
                 ctx.addLine({
                     type: "system",
-                    content: "✓ TencentDB Memory Gateway process is already hidden from the active processes panel.",
+                    content: "✓ TencentDB Memory Gateway process is already hidden and log window closed.",
                     timestamp: now,
                 });
             }
+            hideTencentdbWindow();
             return;
         }
-        if (!mode || (mode !== "on" && mode !== "off" && mode !== "status" && mode !== "show-bg-procs" && mode !== "hide-bg-procs")) {
+        if (!mode || (mode !== "on" && mode !== "off" && mode !== "status" && mode !== "show-bg-procs" && mode !== "hide-bg-procs" && mode !== "show" && mode !== "hide" && mode !== "show-window" && mode !== "hide-window")) {
             const s = getSettings();
             ctx.addLine({
                 type: "system",
                 content: [
-                    "Usage: /setting-tencentdb <on|off|status|show-bg-procs|hide-bg-procs> [gatewayUrl]",
+                    "Usage: /setting-tencentdb <on|off|status|show|hide> [gatewayUrl]",
                     `Current value: ${s.enableTencentdbMemory ? "on (ENABLED)" : "off (DISABLED)"}`,
                     `Gateway URL  : ${s.tencentdbGatewayUrl}`,
                     "",
                     "  on [url]       — enable TencentDB memory (auto-starts gateway)",
                     "  off            — disable TencentDB memory and stop local gateway",
                     "  status         — live connectivity check to the gateway",
-                    "  show-bg-procs  — show the background gateway process details and logs",
-                    "  hide-bg-procs  — hide the background gateway process from active processes panel",
+                    "  show           — show the background gateway process details and open its terminal window",
+                    "  hide           — hide the gateway process and close its terminal window",
                 ].join("\n"),
                 timestamp: now,
             });
@@ -681,20 +793,14 @@ export const settingTencentdbCommand = {
                         llmModel = getEffectiveMasterModel("auto") || "gpt-4o";
                     }
                     try {
-                        const child = spawn("npx", ["tsx", "src/gateway/server.ts"], {
-                            cwd: gatewayDir,
-                            detached: true,
-                            shell: true,
-                            windowsHide: true,
-                            stdio: ["ignore", outLog, errLog],
-                            env: {
-                                ...process.env,
-                                TDAI_DATA_DIR: globalDataDir,
-                                TDAI_LLM_API_KEY: llmApiKey,
-                                TDAI_LLM_BASE_URL: llmBaseUrl,
-                                TDAI_LLM_MODEL: llmModel,
-                                MEMORY_TENCENTDB_GATEWAY_PORT: "8420",
-                            },
+                        const child = spawnTencentdbGateway({
+                            gatewayDir,
+                            globalDataDir,
+                            llmApiKey,
+                            llmBaseUrl,
+                            llmModel,
+                            outLog,
+                            errLog,
                         });
                         child.unref();
                         const { backgroundTasks, savePersistedTasks, notifyTasksChanged } = await import("../tools/index.js");
@@ -766,6 +872,7 @@ export const settingTencentdbCommand = {
                 });
                 // Kill the process on port 8420 to clean up
                 try {
+                    hideTencentdbWindow();
                     const execAsync = promisify(exec);
                     if (process.platform === "win32") {
                         await execAsync(`powershell -NoProfile -Command "Get-Process -Id (Get-NetTCPConnection -LocalPort 8420 -ErrorAction SilentlyContinue).OwningProcess -ErrorAction SilentlyContinue | Stop-Process -Force"`);

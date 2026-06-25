@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.23] - 2026-06-25
+
+### Added
+- **Streaming Optimizations**: Implemented prompt caching, UI throttling, and line wrap caching to optimize terminal rendering performance.
+- **Overloaded Retry Mechanism**: Added automatic retries for server overloaded/rate-limited errors (503/429) up to 5 times with exponential backoff.
+- **TencentDB Terminal Window Control**: Added show/hide commands for the TencentDB terminal window and made spawning silent.
+
+### Improved
+- **Subagent Execution Mode**: Switched the default execution mode of subagents to background mode.
+
+---
+
 ## [1.2.22] - 2026-06-25
 
 ### Added

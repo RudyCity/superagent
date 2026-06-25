@@ -22,6 +22,42 @@ const __dirname = path.dirname(__filename);
 /** Project root: go up from dist/core/ or src/core/ */
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 /**
+ * Spawns the TencentDB Memory Gateway process completely silently in the background.
+ */
+export function spawnTencentdbGateway(options) {
+    const tsxCli = path.join(options.gatewayDir, "node_modules", "tsx", "dist", "cli.mjs");
+    const env = {
+        ...process.env,
+        TDAI_DATA_DIR: options.globalDataDir,
+        TDAI_LLM_API_KEY: options.llmApiKey,
+        TDAI_LLM_BASE_URL: options.llmBaseUrl,
+        TDAI_LLM_MODEL: options.llmModel,
+        MEMORY_TENCENTDB_GATEWAY_PORT: "8420",
+    };
+    if (fs.existsSync(tsxCli)) {
+        // Run directly via node with shell: false to ensure NO console window on Windows
+        return spawn(process.execPath, [tsxCli, "src/gateway/server.ts"], {
+            cwd: options.gatewayDir,
+            detached: true,
+            shell: false,
+            windowsHide: true,
+            stdio: ["ignore", options.outLog, options.errLog],
+            env,
+        });
+    }
+    else {
+        // Fallback if tsx is not found in local node_modules
+        return spawn(process.platform === "win32" ? "npx.cmd" : "npx", ["tsx", "src/gateway/server.ts"], {
+            cwd: options.gatewayDir,
+            detached: true,
+            shell: false,
+            windowsHide: true,
+            stdio: ["ignore", options.outLog, options.errLog],
+            env,
+        });
+    }
+}
+/**
  * Check and start the TencentDB Memory Gateway if enabled and offline.
  * Non-blocking: runs asynchronously in the background.
  */
@@ -141,20 +177,14 @@ export async function runTencentdbSetup() {
         if (!llmModel) {
             llmModel = getEffectiveMasterModel("auto") || "gpt-4o";
         }
-        const child = spawn("npx", ["tsx", "src/gateway/server.ts"], {
-            cwd: gatewayDir,
-            detached: true,
-            shell: true,
-            windowsHide: true,
-            stdio: ["ignore", outLog, errLog],
-            env: {
-                ...process.env,
-                TDAI_DATA_DIR: globalDataDir,
-                TDAI_LLM_API_KEY: llmApiKey,
-                TDAI_LLM_BASE_URL: llmBaseUrl,
-                TDAI_LLM_MODEL: llmModel,
-                MEMORY_TENCENTDB_GATEWAY_PORT: "8420",
-            },
+        const child = spawnTencentdbGateway({
+            gatewayDir,
+            globalDataDir,
+            llmApiKey,
+            llmBaseUrl,
+            llmModel,
+            outLog,
+            errLog,
         });
         child.unref();
         // Register as a background process so it shows in the process list

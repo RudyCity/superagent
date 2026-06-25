@@ -88,6 +88,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
     const streamBufferRef = useRef("");
     const lastStreamUpdateRef = useRef(0);
     const streamTimeoutRef = useRef(null);
+    const deferredStreamTimeoutRef = useRef(null);
     const [history, setHistory] = useState([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [tempInput, setTempInput] = useState("");
@@ -301,6 +302,10 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
         if (streamTimeoutRef.current) {
             clearTimeout(streamTimeoutRef.current);
             streamTimeoutRef.current = null;
+        }
+        if (deferredStreamTimeoutRef.current) {
+            clearTimeout(deferredStreamTimeoutRef.current);
+            deferredStreamTimeoutRef.current = null;
         }
         const content = streamBufferRef.current.trim();
         if (content) {
@@ -1131,15 +1136,34 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
     // Handle events and inits
     const handleEvent = useCallback((event) => {
         switch (event.type) {
-            case "text":
-                streamBufferRef.current = resolveCarriageReturns(streamBufferRef.current + event.content);
-                setStreamDisplay(streamBufferRef.current);
-                lastStreamUpdateRef.current = Date.now();
+            case "text": {
                 if (streamTimeoutRef.current) {
                     clearTimeout(streamTimeoutRef.current);
                     streamTimeoutRef.current = null;
                 }
+                streamBufferRef.current = resolveCarriageReturns(streamBufferRef.current + event.content);
+                // Throttle state updates to at most once every 40ms to prevent Ink render overload.
+                const now = Date.now();
+                if (now - lastStreamUpdateRef.current > 40) {
+                    setStreamDisplay(streamBufferRef.current);
+                    lastStreamUpdateRef.current = now;
+                    if (deferredStreamTimeoutRef.current) {
+                        clearTimeout(deferredStreamTimeoutRef.current);
+                        deferredStreamTimeoutRef.current = null;
+                    }
+                }
+                else {
+                    // Schedule a deferred update for the trailing characters if not already scheduled.
+                    if (!deferredStreamTimeoutRef.current) {
+                        deferredStreamTimeoutRef.current = setTimeout(() => {
+                            setStreamDisplay(streamBufferRef.current);
+                            lastStreamUpdateRef.current = Date.now();
+                            deferredStreamTimeoutRef.current = null;
+                        }, 40);
+                    }
+                }
                 break;
+            }
             case "tool_start": {
                 if (streamTimeoutRef.current) {
                     clearTimeout(streamTimeoutRef.current);
@@ -1250,6 +1274,10 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 if (streamTimeoutRef.current) {
                     clearTimeout(streamTimeoutRef.current);
                     streamTimeoutRef.current = null;
+                }
+                if (deferredStreamTimeoutRef.current) {
+                    clearTimeout(deferredStreamTimeoutRef.current);
+                    deferredStreamTimeoutRef.current = null;
                 }
                 setIsExecutingTool(false);
                 setToolTimeout(null);
