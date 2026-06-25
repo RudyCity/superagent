@@ -283,6 +283,25 @@ export function isSensitiveEnvFileAccess(
   return false;
 }
 
+/**
+ * Shorten a shell command string to a readable one-liner summary.
+ * Shows the program name + first meaningful argument, truncated to maxLen chars.
+ * Multi-line or chained commands get an ellipsis suffix.
+ */
+function truncateCommand(cmd: string, maxLen = 80): string {
+  // Normalise: collapse all whitespace/newlines to single spaces
+  const flat = cmd.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+  // Check if the original command was multi-line or chained
+  const isMultiPart = /[\n;&&|]/.test(cmd);
+  const truncated = flat.length > maxLen ? flat.slice(0, maxLen - 3) + "..." : flat;
+  // If multi-line / chained, always show ellipsis to signal there's more
+  if (isMultiPart && !truncated.endsWith("...")) {
+    const short = flat.slice(0, maxLen - 3);
+    return short + "...";
+  }
+  return truncated;
+}
+
 export function getToolDescription(
   toolCall: ToolCall
 ): string {
@@ -299,7 +318,7 @@ export function getToolDescription(
     case "edit":
       return `Editing file: ${fp}`;
     case "bash":
-      return `Running command: ${s(args.command ?? args.cmd)}`;
+      return `Running command: ${truncateCommand(s(args.command ?? args.cmd))}`;
     case "glob":
       return `Finding files matching pattern: ${s(args.pattern)}`;
     case "grep":
@@ -311,7 +330,7 @@ export function getToolDescription(
     case "ripgrep_search":
       return `Searching codebase with ripgrep for: ${s(args.pattern)}`;
     case "run_background_process":
-      return `Starting background process: ${s(args.command ?? args.cmd)}${args.cwd ? ` (in ${args.cwd})` : ""}`;
+      return `Starting background process: ${truncateCommand(s(args.command ?? args.cmd))}${args.cwd ? ` (in ${args.cwd})` : ""}`;
     case "write_to_file":
       return `Writing file: ${fp}`;
     case "replace_file_content":
@@ -319,7 +338,7 @@ export function getToolDescription(
     case "multi_replace_file_content":
       return `Replacing multiple blocks in file: ${fp}`;
     case "run_command":
-      return `Running command: ${s(args.command ?? args.cmd)}${args.cwd ? ` (in ${args.cwd})` : ""}`;
+      return `Running command: ${truncateCommand(s(args.command ?? args.cmd))}${args.cwd ? ` (in ${args.cwd})` : ""}`;
     case "manage_background_process":
       return `Managing background process (${s(args.action)}): ${args.processId || ""}`;
     case "schedule":

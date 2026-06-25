@@ -11,6 +11,13 @@ export function formatArgs(args: Record<string, unknown>): string {
   const entries = Object.entries(args);
   if (entries.length === 0) return "{}";
   const parts = entries.map(([k, v]) => {
+    const raw = String(v ?? "");
+    // For command/cmd fields: flatten newlines and truncate to 80 chars
+    if (k === "command" || k === "cmd") {
+      const flat = raw.replace(/\r?\n/g, " ; ").replace(/\s+/g, " ").trim();
+      const truncated = flat.length > 80 ? flat.slice(0, 77) + "..." : flat;
+      return `${k}: ${JSON.stringify(truncated)}`;
+    }
     const val = JSON.stringify(v);
     const truncated = val.length > 60 ? val.slice(0, 60) + "..." : val;
     return `${k}: ${truncated}`;
