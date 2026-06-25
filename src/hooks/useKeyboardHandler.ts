@@ -1471,7 +1471,13 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         setIsProcessing(false);
         return;
       } else {
-        exit();
+        setActiveWizard({
+          type: "exit_confirm",
+          step: 1,
+          data: {},
+        });
+        setWizardOptions(["No, keep working", "Yes, exit"]);
+        setWizardSelectedIndex(0);
       }
     }
 

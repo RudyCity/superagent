@@ -169,7 +169,13 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         setCurrentTask("Idle - Interrupted");
         return;
       }
-      exit();
+      setActiveWizard({
+        type: "exit_confirm",
+        step: 1,
+        data: {},
+      });
+      setWizardOptions(["No, keep working", "Yes, exit"]);
+      setWizardSelectedIndex(0);
       return;
     }
 
