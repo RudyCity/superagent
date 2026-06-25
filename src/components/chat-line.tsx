@@ -480,10 +480,20 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
             </Box>
           );
         }
+        const diffMatch = merged.content.match(/\+(\d+)\s+-(\d+)/);
+        const diffStats = diffMatch
+          ? { added: parseInt(diffMatch[1], 10), removed: parseInt(diffMatch[2], 10) }
+          : null;
         return (
           <Box key={`child-${childIdx}`} flexDirection="column">
             <Text color="yellow">
               {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{displayDesc}</Text>
+              {diffStats && diffStats.added === 0 && diffStats.removed === 0 ? null : diffStats ? (
+                <Text>
+                  <Text bold color="green"> +{diffStats.added}</Text>
+                  <Text bold color="red"> -{diffStats.removed}</Text>
+                </Text>
+              ) : null}
               <Text bold color={statusColor}> {statusIcon} {statusLabel}</Text>
               <Text dimColor italic>  (click to expand)</Text>
             </Text>
@@ -512,6 +522,11 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
     const mergedColor = merged?.isError ? "red" : "green";
     const mergedIcon = merged?.isError ? "✗" : "✓";
 
+    const expandedDiffMatch = merged ? merged.content.match(/\+(\d+)\s+-(\d+)/) : null;
+    const expandedDiffStats = expandedDiffMatch
+      ? { added: parseInt(expandedDiffMatch[1], 10), removed: parseInt(expandedDiffMatch[2], 10) }
+      : null;
+
     return (
       <Box key={`child-${childIdx}`} flexDirection="column">
         {/* Header */}
@@ -524,6 +539,12 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
           </Text>
           {merged && (
             <Text bold color={mergedColor}> {mergedIcon}</Text>
+          )}
+          {expandedDiffStats && !(expandedDiffStats.added === 0 && expandedDiffStats.removed === 0) && (
+            <Text>
+              <Text bold color="green"> +{expandedDiffStats.added}</Text>
+              <Text bold color="red"> -{expandedDiffStats.removed}</Text>
+            </Text>
           )}
           <Text dimColor italic> (click to collapse)</Text>
         </Box>
