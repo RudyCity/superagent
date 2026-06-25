@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
@@ -1866,8 +1866,33 @@ for (const tc of toolCalls) {
     }
   }
 
+  private modelSupportsVision(modelName: string): boolean {
+    if (!modelName) return false;
+    const name = modelName.toLowerCase();
+    
+    // Known vision-supporting models
+    if (name.includes("claude-3")) return true;
+    if (name.includes("gpt-4o")) return true;
+    if (name.includes("gpt-4-vision")) return true;
+    if (name.includes("gemini")) return true;
+    if (name.includes("gemma-3")) return true;
+    if (name.includes("vision")) return true;
+    
+    return false;
+  }
+
   private buildMessages(): CoreMessage[] {
     const coreMessages: CoreMessage[] = [];
+
+    let modelName = "";
+    let supportsVision = true;
+    try {
+      const mode = (this.isMultiAgent && !process.env.SINGLE_AGENT_MODE) ? "multi" : "single";
+      modelName = getTierModel(mode, this.subagentType || this.tier);
+      supportsVision = this.modelSupportsVision(modelName);
+    } catch (e) {
+      // Default to true to keep original behavior if model config loading/resolution fails
+    }
 
     for (const m of this.conversation.getMessages()) {
       if (m.role === "system") continue;
@@ -1879,7 +1904,13 @@ for (const tc of toolCalls) {
             ? m.content
             : (m.content as any[]).map((p: any) => {
                 if (p.type === "image") {
-                  return { type: "image" as const, image: p.image, mimeType: p.mimeType };
+                  if (supportsVision) {
+                    return { type: "image" as const, image: p.image, mimeType: p.mimeType };
+                  }
+                  return {
+                    type: "text" as const,
+                    text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images]`
+                  };
                 }
                 return { type: "text" as const, text: p.text };
               });
