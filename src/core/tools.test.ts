@@ -242,7 +242,7 @@ describe("File tools", () => {
         filePath: "temp_unit_test.txt",
         chunks: [
           { targetContent: "line A", replacementContent: "line A Multi", startLine: 1, endLine: 2 },
-          { targetContent: "line C", replacementContent: "line C Multi", startLine: 1, endLine: 2 },
+          { targetContent: "line C", replacementContent: "line C Multi", startLine: 2, endLine: 4 },
         ],
       },
       process.cwd()
@@ -258,6 +258,71 @@ describe("File tools", () => {
     expect(result).toContain("Warning: Syntax check failed");
     expect(result).toContain("Created: +1 -0");
     await fs.unlink(brokenFile);
+  });
+
+  it("should preserve CRLF line endings in replace_file_content, multi_replace_file_content, and apply_patch", async () => {
+    const crlfFile = path.resolve(process.cwd(), "temp_crlf_test.txt");
+    try {
+      // 1. replace_file_content
+      await fs.writeFile(crlfFile, "line A\r\nline B\r\nline C\r\n", "utf-8");
+      const replaceTool = getToolByName("replace_file_content");
+      const rResult = await replaceTool?.execute(
+        { filePath: "temp_crlf_test.txt", targetContent: "line B", replacementContent: "line B\nline B2", startLine: 1, endLine: 3 },
+        process.cwd()
+      );
+      expect(rResult).toContain("File updated successfully");
+      const rData = await fs.readFile(crlfFile, "utf-8");
+      expect(rData).toBe("line A\r\nline B\r\nline B2\r\nline C\r\n");
+
+      // 2. multi_replace_file_content
+      await fs.writeFile(crlfFile, "line A\r\nline B\r\nline C\r\n", "utf-8");
+      const multiTool = getToolByName("multi_replace_file_content");
+      const mResult = await multiTool?.execute(
+        {
+          filePath: "temp_crlf_test.txt",
+          chunks: [
+            { targetContent: "line A", replacementContent: "line A edited", startLine: 1, endLine: 2 },
+            { targetContent: "line C", replacementContent: "line C edited", startLine: 2, endLine: 3 },
+          ],
+        },
+        process.cwd()
+      );
+      expect(mResult).toContain("File updated successfully with 2 changes");
+      const mData = await fs.readFile(crlfFile, "utf-8");
+      expect(mData).toBe("line A edited\r\nline B\r\nline C edited\r\n");
+
+      // 3. apply_patch (unified diff)
+      await fs.writeFile(crlfFile, "line A\r\nline B\r\nline C\r\n", "utf-8");
+      const patchTool = getToolByName("apply_patch");
+      const pResult1 = await patchTool?.execute(
+        {
+          filePath: "temp_crlf_test.txt",
+          patchContent: "--- a/temp_crlf_test.txt\n+++ b/temp_crlf_test.txt\n@@ -1,3 +1,3 @@\n line A\n-line B\n+line B edited\n line C",
+        },
+        process.cwd()
+      );
+      expect(pResult1).toContain("Patch applied successfully");
+      const pData1 = await fs.readFile(crlfFile, "utf-8");
+      expect(pData1).toBe("line A\r\nline B edited\r\nline C\r\n");
+
+      // 4. apply_patch (search-replace block)
+      await fs.writeFile(crlfFile, "line A\r\nline B\r\nline C\r\n", "utf-8");
+      const pResult2 = await patchTool?.execute(
+        {
+          filePath: "temp_crlf_test.txt",
+          patchContent: "<<<<<<< SEARCH\nline B\n=======\nline B edited search-replace\n>>>>>>> REPLACE",
+        },
+        process.cwd()
+      );
+      expect(pResult2).toContain("Patch applied successfully");
+      const pData2 = await fs.readFile(crlfFile, "utf-8");
+      expect(pData2).toBe("line A\r\nline B edited search-replace\r\nline C\r\n");
+
+    } finally {
+      try {
+        await fs.unlink(crlfFile);
+      } catch {}
+    }
   });
 });
 

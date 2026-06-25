@@ -709,7 +709,7 @@ export const replaceFileContentTool: Tool = {
 
       const newLines = [
         ...lines.slice(0, startLine - 1),
-        replacedSlice,
+        ...replacedSlice.split(/\r?\n/),
         ...lines.slice(endLine),
       ];
 
@@ -806,7 +806,8 @@ export const multiReplaceFileContentTool: Tool = {
 
     try {
       let content = await fs.readFile(filePath, "utf-8");
-      let lines = content.split("\n");
+      const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
+      let lines = content.split(/\r?\n/);
 
       const sortedChunks = [...chunks].sort((a, b) => b.startLine - a.startLine);
 
@@ -818,20 +819,21 @@ export const multiReplaceFileContentTool: Tool = {
 
         const sliceOfLines = lines.slice(startLine - 1, endLine);
         const sliceText = sliceOfLines.join("\n");
+        const normalizedTarget = targetContent.replace(/\r\n/g, "\n");
 
-        if (!sliceText.includes(targetContent)) {
+        if (!sliceText.includes(normalizedTarget)) {
           return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] for a chunk.`;
         }
 
-        const replacedSlice = sliceText.replace(targetContent, replacementContent);
+        const replacedSlice = sliceText.replace(normalizedTarget, replacementContent);
         lines = [
           ...lines.slice(0, startLine - 1),
-          replacedSlice,
+          ...replacedSlice.split(/\r?\n/),
           ...lines.slice(endLine),
         ];
       }
 
-      const nextContent = lines.join("\n");
+      const nextContent = lines.join(originalEnding);
       const summary = buildEditSummary(content, nextContent, filePath);
       if (content === nextContent) {
         return summary;
@@ -875,6 +877,7 @@ export const applyPatchTool: Tool = {
     try {
       const originalContent = await fs.readFile(filePath, "utf-8");
       let content = originalContent;
+      const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
       
       // If it looks like a unified diff
       if (patchContent.includes("@@ ") || patchContent.startsWith("---") || patchContent.startsWith("diff")) {
@@ -954,7 +957,7 @@ export const applyPatchTool: Tool = {
           }
           i++;
         }
-        content = lines.join("\n");
+        content = lines.join(originalEnding);
       } else {
         const lines = patchContent.split(/\r?\n/);
         let targetLines: string[] = [];
@@ -970,8 +973,8 @@ export const applyPatchTool: Tool = {
             replacementLines = [];
           } else if (line.startsWith(">>>>>>>")) {
             mode = "idle";
-            const oldStr = targetLines.join("\n");
-            const newStr = replacementLines.join("\n");
+            const oldStr = targetLines.join(originalEnding);
+            const newStr = replacementLines.join(originalEnding);
             const normContent = normalizeForMatching(content);
             const normOldStr = normalizeForMatching(oldStr);
             if (normContent.includes(normOldStr)) {
