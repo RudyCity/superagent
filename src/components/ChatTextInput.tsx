@@ -58,6 +58,13 @@ export default function ChatTextInput({
     (originalValue || "").length
   );
 
+  const lastSentValueRef = useRef(originalValue || "");
+
+  const handleChange = (val: string) => {
+    lastSentValueRef.current = val;
+    onChange(val);
+  };
+
   const { stdin } = useStdin();
   const lastRawKeyRef = useRef("");
 
@@ -72,12 +79,18 @@ export default function ChatTextInput({
     };
   }, [stdin]);
 
-  // Keep cursorOffset within bounds when value changes externally.
+  // Keep cursorOffset within bounds and snap cursor to end when value changes externally.
   useEffect(() => {
     if (!focus || !showCursor) return;
-    const len = (originalValue || "").length;
-    if (cursorOffset > len) {
+    const currentVal = originalValue || "";
+    const len = currentVal.length;
+    if (currentVal !== lastSentValueRef.current) {
       setCursorOffset(len);
+      lastSentValueRef.current = currentVal;
+    } else {
+      if (cursorOffset > len) {
+        setCursorOffset(len);
+      }
     }
   }, [originalValue, focus, showCursor]);
 
@@ -90,7 +103,7 @@ export default function ChatTextInput({
       // Small delay to debounce rapid onChange calls
       const timer = setTimeout(() => {
         onAttachImage(trimmed);
-        onChange(""); // Clear the input
+        handleChange(""); // Clear the input
       }, 80);
       return () => clearTimeout(timer);
     }
@@ -161,7 +174,7 @@ export default function ChatTextInput({
           const nextValue =
             originalValue.slice(0, pos) + originalValue.slice(cursorOffset);
           setCursorOffset(pos);
-          if (nextValue !== originalValue) onChange(nextValue);
+          if (nextValue !== originalValue) handleChange(nextValue);
           return;
         }
         return;
@@ -232,7 +245,7 @@ export default function ChatTextInput({
       setCursorOffset(nextCursorOffset);
 
       if (nextValue !== originalValue) {
-        onChange(nextValue);
+        handleChange(nextValue);
       }
     },
     { isActive: focus }

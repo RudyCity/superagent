@@ -118,4 +118,51 @@ describe("Tab Suggestion Cycling", () => {
 
     expect(setQueryMock).toHaveBeenCalledWith("/worktrees");
   });
+
+  it("should autocomplete with a trailing space and clear prefix when there is only one suggestion in useKeyboardHandler", () => {
+    const setInputMock = vi.fn();
+    const setLastTabPrefixMock = vi.fn();
+    const suggestions = ["/terminal"];
+
+    useKeyboardHandler({
+      input: "/term",
+      setInput: setInputMock,
+      lastTabPrefix: null,
+      setLastTabPrefix: setLastTabPrefixMock,
+      suggestions,
+      commands: ["/terminal"],
+      isProcessing: false,
+    } as any);
+
+    expect(inputCallbacks.length).toBeGreaterThan(0);
+    const cb = inputCallbacks[0];
+    cb("", { tab: true });
+
+    expect(setInputMock).toHaveBeenCalledWith("/terminal ");
+    expect(setLastTabPrefixMock).toHaveBeenCalledWith(null);
+  });
+
+  it("should autocomplete with a trailing space and clear prefix when there is only one suggestion in useDashboardKeyboard", () => {
+    const setQueryMock = vi.fn();
+    const setLastTabPrefixMock = vi.fn();
+    const suggestions = ["/terminal"];
+
+    useDashboardKeyboard({
+      query: "/term",
+      setQuery: setQueryMock,
+      lastTabPrefix: null,
+      setLastTabPrefix: setLastTabPrefixMock,
+      suggestions,
+      focusArea: "input",
+      isProcessing: false,
+      setIsPasted: vi.fn(),
+    } as any);
+
+    expect(inputCallbacks.length).toBeGreaterThan(0);
+    const cb = inputCallbacks[0];
+    cb("", { tab: true });
+
+    expect(setQueryMock).toHaveBeenCalledWith("/terminal ");
+    expect(setLastTabPrefixMock).toHaveBeenCalledWith(null);
+  });
 });

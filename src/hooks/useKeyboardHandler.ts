@@ -1787,7 +1787,12 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           if (currentMatchIndex !== -1) {
             nextIndex = (currentMatchIndex + 1) % suggestions.length;
           }
-          setInput(suggestions[nextIndex]);
+          if (suggestions.length === 1) {
+            setInput(suggestions[0] + " ");
+            setLastTabPrefix(null);
+          } else {
+            setInput(suggestions[nextIndex]);
+          }
           if (setIsPasted) {
             setIsPasted(false);
           }

@@ -562,7 +562,14 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
           if (currentMatchIndex !== -1) {
             nextIndex = (currentMatchIndex + 1) % suggestions.length;
           }
-          setQuery(suggestions[nextIndex]);
+          if (suggestions.length === 1) {
+            setQuery(suggestions[0] + " ");
+            if (setLastTabPrefix) {
+              setLastTabPrefix(null);
+            }
+          } else {
+            setQuery(suggestions[nextIndex]);
+          }
           setIsPasted(false);
           return;
         }
