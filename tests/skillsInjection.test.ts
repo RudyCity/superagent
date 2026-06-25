@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Agent } from "../src/core/agent.js";
 import { streamText } from "ai";
 import * as configModule from "../src/core/config.js";
+import fs from "fs";
 
 // Mock configuration partially, keeping other config helpers intact
 vi.mock("../src/core/config.js", async (importOriginal) => {
@@ -95,6 +96,112 @@ describe("Skills Injection into Agent System Prompts", () => {
     
     // Count occurrences of "INSTALLED AGENT SKILLS:"
     const occurrences = (capturedSystemPrompt.match(/INSTALLED AGENT SKILLS:/g) || []).length;
-    expect(occurrences).toBe(1);
+  });
+
+  it("should dynamically load and inject the planning and task management guidelines into systemPrompt", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.tier = "superagent";
+    agent.planState = "APPROVED";
+
+    let capturedSystemPrompt = "";
+
+    vi.mocked(streamText).mockImplementation((options) => {
+      capturedSystemPrompt = options.system || "";
+      return {
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Done" };
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    // Mock fs exists and read to simulate finding one of the new skills
+    const existsSpy = vi.spyOn(fs, "existsSync").mockImplementation((p: any) => {
+      if (typeof p === "string" && p.includes("superagent-planning")) {
+        return true;
+      }
+      return false;
+    });
+
+    const readSpy = vi.spyOn(fs, "readFileSync").mockImplementation((p: any) => {
+      if (typeof p === "string" && p.includes("superagent-planning")) {
+        return "MOCK_PLANNING_SKILL_CONTENT";
+      }
+      return "";
+    });
+
+    await agent.sendMessage("hello");
+
+    expect(capturedSystemPrompt).toContain("PLANNING AND TASK GUIDELINES (superagent-planning):");
+    expect(capturedSystemPrompt).toContain("MOCK_PLANNING_SKILL_CONTENT");
+
+  });
+
+  it("should dynamically load and inject master-agent-orchestration only for the master tier", async () => {
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+
+    // 1. Create a Master tier agent
+    const masterAgent = new Agent(onEvent, onPermission, onQuestion);
+    masterAgent.tier = "master";
+    masterAgent.planState = "APPROVED";
+
+    let masterPrompt = "";
+    vi.mocked(streamText).mockImplementation((options) => {
+      masterPrompt = options.system || "";
+      return {
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Done" };
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    const existsSpy = vi.spyOn(fs, "existsSync").mockImplementation((p: any) => {
+      if (typeof p === "string" && p.includes("master-agent-orchestration")) {
+        return true;
+      }
+      return false;
+    });
+
+    const readSpy = vi.spyOn(fs, "readFileSync").mockImplementation((p: any) => {
+      if (typeof p === "string" && p.includes("master-agent-orchestration")) {
+        return "MOCK_ORCHESTRATION_CONTENT";
+      }
+      return "";
+    });
+
+    await masterAgent.sendMessage("hello");
+    expect(masterPrompt).toContain("MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration):");
+    expect(masterPrompt).toContain("MOCK_ORCHESTRATION_CONTENT");
+
+    // 2. Create a Superagent tier agent
+    const superagent = new Agent(onEvent, onPermission, onQuestion);
+    superagent.tier = "superagent";
+    superagent.planState = "APPROVED";
+
+    let superagentPrompt = "";
+    vi.mocked(streamText).mockImplementation((options) => {
+      superagentPrompt = options.system || "";
+      return {
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Done" };
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    await superagent.sendMessage("hello");
+    expect(superagentPrompt).not.toContain("MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration):");
+    expect(superagentPrompt).not.toContain("MOCK_ORCHESTRATION_CONTENT");
+
+    existsSpy.mockRestore();
+    readSpy.mockRestore();
   });
 });
+

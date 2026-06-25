@@ -397,15 +397,23 @@ describe("Agent – tier-specific model resolution", () => {
       fs.mkdirSync(testDir, { recursive: true });
     }
 
-    // Write mock agents.md and mock karpathy-guidelines
+    const originalCwd = process.cwd;
+    process.cwd = () => testDir;
+
+    // Write mock agents.md, mock karpathy-guidelines, and mock superagent-planning
     fs.writeFileSync(path.join(testDir, "agents.md"), "MOCK_AGENTS_GUIDELINES");
+    
     const skillDir = path.join(testDir, ".agents", "skills", "karpathy-guidelines");
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, "SKILL.md"), "MOCK_KARPATHY_GUIDELINES");
 
+    const planningSkillDir = path.join(testDir, ".agents", "skills", "superagent-planning");
+    fs.mkdirSync(planningSkillDir, { recursive: true });
+    fs.writeFileSync(path.join(planningSkillDir, "SKILL.md"), "MOCK_SUPERAGENT_PLANNING");
+
     const agent = new Agent(onEvent, onPermission, onQuestion, "Base Prompt", undefined, testDir);
     
-    // Verify file loading works
+    // Verify file loading works (access config.systemPrompt to trigger loading, should not throw)
     const sysPrompt = (agent as any).config.systemPrompt;
     
     // Clean up files
@@ -413,10 +421,14 @@ describe("Agent – tier-specific model resolution", () => {
       fs.unlinkSync(path.join(testDir, "agents.md"));
       fs.unlinkSync(path.join(skillDir, "SKILL.md"));
       fs.rmdirSync(skillDir);
+      fs.unlinkSync(path.join(planningSkillDir, "SKILL.md"));
+      fs.rmdirSync(planningSkillDir);
       fs.rmdirSync(path.join(testDir, ".agents", "skills"));
       fs.rmdirSync(path.join(testDir, ".agents"));
       fs.rmdirSync(testDir);
     } catch {}
+
+    process.cwd = originalCwd;
   });
 });
 

@@ -793,15 +793,30 @@ CRITICAL GOAL MODE RULES:
           }
         }
       }
-      const skillPaths = [
-        path.join(process.cwd(), ".agents", "skills", "karpathy-guidelines", "SKILL.md"),
-        path.join(this.workingDirectory, ".agents", "skills", "karpathy-guidelines", "SKILL.md"),
-        path.join(getPackageRootDir(), ".agents", "skills", "karpathy-guidelines", "SKILL.md"),
+      const targetSkills = [
+        { key: "karpathy-guidelines", label: "BEHAVIORAL CODING GUIDELINES (karpathy-guidelines)" },
+        { key: "superagent-planning", label: "PLANNING AND TASK GUIDELINES (superagent-planning)" },
+        { key: "writing-plans", label: "PLAN WRITING GUIDELINES (writing-plans)" },
+        { key: "executing-plans", label: "PLAN EXECUTION GUIDELINES (executing-plans)" },
+        { key: "track-management", label: "TRACK MANAGEMENT GUIDELINES (track-management)" },
       ];
-      for (const p of skillPaths) {
-        if (fs.existsSync(p)) {
-          guidelinesText += `\n\nBEHAVIORAL CODING GUIDELINES (karpathy-guidelines):\n${fs.readFileSync(p, "utf-8")}\n`;
-          break;
+      if (this.tier === "master") {
+        targetSkills.push({
+          key: "master-agent-orchestration",
+          label: "MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration)"
+        });
+      }
+      for (const skill of targetSkills) {
+        const paths = [
+          path.join(process.cwd(), ".agents", "skills", skill.key, "SKILL.md"),
+          path.join(this.workingDirectory, ".agents", "skills", skill.key, "SKILL.md"),
+          path.join(getPackageRootDir(), ".agents", "skills", skill.key, "SKILL.md"),
+        ];
+        for (const p of paths) {
+          if (fs.existsSync(p)) {
+            guidelinesText += `\n\n${skill.label}:\n${fs.readFileSync(p, "utf-8")}\n`;
+            break;
+          }
         }
       }
     } catch {
