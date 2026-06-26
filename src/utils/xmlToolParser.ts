@@ -121,6 +121,17 @@ function parseXmlBody(body: string): Record<string, any> {
   return args;
 }
 
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&#96;/g, "`");
+}
+
 function parseXmlValue(valStr: string): any {
   const trimmed = valStr.trim();
   const subTagRegex = /<([^>\s]+)\s*>([\s\S]*?)<\/\1>/g;
@@ -152,5 +163,5 @@ function parseXmlValue(valStr: string): any {
     const num = Number(trimmed);
     if (!isNaN(num)) return num;
   }
-  return trimmed;
+  return decodeHtmlEntities(trimmed);
 }

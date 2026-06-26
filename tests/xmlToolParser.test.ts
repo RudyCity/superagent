@@ -100,4 +100,15 @@ Some introductory text.
     expect(result.toolCalls).toHaveLength(0);
     expect(result.cleanText).toBe(text);
   });
+
+  it("should decode HTML entities in parameter values", () => {
+    const text = `
+<invoke name="run_command">
+  <CommandLine>npm run build &amp;&amp; echo &quot;hello&quot;</CommandLine>
+</invoke>
+`;
+    const result = parseXmlToolCalls(text, toolDefs);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].args.CommandLine).toBe('npm run build && echo "hello"');
+  });
 });
