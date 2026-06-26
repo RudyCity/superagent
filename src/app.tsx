@@ -311,6 +311,7 @@ export function App({
   const [gitBranch, setGitBranch] = useState<string>("");
   const [worktreeCount, setWorktreeCount] = useState<number>(0);
   const [activeDevHook, setActiveDevHook] = useState<string | null>(null);
+  const originalWorkingDirectoryRef = useRef<string>(process.cwd());
 
   const addLine = useCallback((line: ChatLine) => {
     setLines((prev) => [...prev, line]);
@@ -638,6 +639,13 @@ export function App({
           pasteImage: handlePasteImage,
           setActiveDevHook: (name: string | null) => {
             setActiveDevHook(name);
+            if (agentRef.current) {
+              if (name) {
+                agentRef.current.workingDirectory = path.join(originalWorkingDirectoryRef.current, "internal-hooks", name);
+              } else {
+                agentRef.current.workingDirectory = originalWorkingDirectoryRef.current;
+              }
+            }
           },
         } as any);
         return;
@@ -670,6 +678,13 @@ export function App({
           pasteImage: handlePasteImage,
           setActiveDevHook: (name: string | null) => {
             setActiveDevHook(name);
+            if (agentRef.current) {
+              if (name) {
+                agentRef.current.workingDirectory = path.join(originalWorkingDirectoryRef.current, "internal-hooks", name);
+              } else {
+                agentRef.current.workingDirectory = originalWorkingDirectoryRef.current;
+              }
+            }
           },
         } as any);
         return;
