@@ -341,4 +341,21 @@ Dynamic hook skill body
     expect(logs).toContain("[COMMAND: /hook-test-cmd]");
     expect(logs).toContain("STATUS: SUCCESS");
   });
+
+  it("should list available internal hooks on /ih dev without hook name", async () => {
+    const lines: ChatLine[] = [];
+    const mockCtx: SlashCommandContext = {
+      addLine: (line) => lines.push(line),
+      exit: () => {},
+      agent: null,
+    };
+
+    await internalHooksCommand.execute("dev", mockCtx);
+
+    const devListLine = lines.find(l => l.content.includes("Available internal hooks for development"));
+    expect(devListLine).toBeDefined();
+    expect(devListLine?.content).toContain("test-hook");
+    expect(devListLine?.content).toContain("Active");
+    expect(devListLine?.content).toContain("To start development, run:");
+  });
 });

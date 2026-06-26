@@ -27,10 +27,57 @@ export const internalHooksCommand: SlashCommand = {
       return;
     }
 
-    if (subCommand !== "active" && subCommand !== "list" && !hookName) {
+    if (subCommand === "dev" && !hookName) {
+      const hooks = getAvailableHooks();
+      if (hooks.length === 0) {
+        ctx.addLine({
+          type: "system",
+          content: "No internal hooks found. Use `/ih init <namahook>` to create one first.",
+          timestamp: now,
+        });
+        return;
+      }
+
+      let content = "Available internal hooks for development:\n\n";
+      for (const hook of hooks) {
+        const status = hook.active ? "🟢 Active" : "🔴 Inactive";
+        
+        let details = "";
+        const hookDir = path.join(process.cwd(), "internal-hooks", hook.dirName);
+        const configPath = path.join(hookDir, "hook.json");
+        try {
+          const configContent = fsSync.readFileSync(configPath, "utf-8");
+          const config = JSON.parse(configContent);
+          const hasTool = !!config.name && !!config.description;
+          const slashCmds = config.slash_commands || config.slashCommands || [];
+          const eventHooks = config.event_hooks || config.hooks || [];
+          const features: string[] = [];
+          if (hasTool) features.push("Tool AI");
+          if (slashCmds.length > 0) features.push(`Slash Commands (${slashCmds.map((c: any) => `/${c.name}`).join(", ")})`);
+          if (eventHooks.length > 0) features.push(`Event Hooks (${eventHooks.map((e: any) => e.event).join(", ")})`);
+          
+          const skillsDir = path.join(hookDir, "skills");
+          if (fsSync.existsSync(skillsDir) && fsSync.statSync(skillsDir).isDirectory()) {
+            features.push("Dynamic Skills");
+          }
+          details = features.length > 0 ? ` [Exposes: ${features.join(", ")}]` : " [No features exposed]";
+        } catch {}
+
+        content += `- **${hook.name}** (in \`internal-hooks/${hook.dirName}\`)\n  State: ${status}${details}\n\n`;
+      }
+      content += "To start development, run:\n  `/ih dev <namahook>`";
+      ctx.addLine({
+        type: "system",
+        content: content.trim(),
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    if (subCommand === "init" && !hookName) {
       ctx.addLine({
         type: "error",
-        content: `Error: Missing hook name. Usage: /ih ${subCommand} <namahook>`,
+        content: `Error: Missing hook name. Usage: /ih init <namahook>`,
         timestamp: now,
       });
       return;
