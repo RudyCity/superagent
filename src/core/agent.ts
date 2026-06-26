@@ -1441,6 +1441,22 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
             }
           }
         }
+        if (toolCalls.length === 0 && textContent.trim()) {
+          try {
+            const { parseXmlToolCalls } = await import("../utils/xmlToolParser.js");
+            const parsed = parseXmlToolCalls(textContent, toolDefs);
+            if (parsed.toolCalls.length > 0) {
+              this.writeToLogFile(
+                "INFO",
+                `Parsed ${parsed.toolCalls.length} XML tool calls from model response text`
+              );
+              toolCalls.push(...parsed.toolCalls);
+              textContent = parsed.cleanText;
+            }
+          } catch (err: any) {
+            this.writeToLogFile("WARN", `Failed to parse XML tool calls: ${err.message}`);
+          }
+        }
 
         if (toolCalls.length === 0) {
           if (!textContent.trim()) {
