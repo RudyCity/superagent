@@ -315,6 +315,27 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 14 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="🗑️ DELETE PROVIDER — Select provider to remove (↑/↓ Navigate, Enter: Select, Esc: Back):"
+            description="Select a provider to permanently remove:"
+            borderColor="red"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+            maxVisible={10}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 15 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title={`🗑️ CONFIRM DELETE — "${activeWizard.data.providerName || "provider"}" (↑/↓ Navigate, Enter: Confirm):`}
+            description={`Are you sure you want to permanently remove provider "${activeWizard.data.providerName || ""}"? This cannot be undone.`}
+            borderColor="red"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
         {activeWizard && activeWizard.type === "model" && activeWizard.step === 1 && wizardOptions.length > 0 && (
           <WizardDialog
             title="⚙️ SELECT AGENT TIER TO CONFIGURE (Use Arrow Keys Up/Down & Enter):"
