@@ -213,12 +213,14 @@ export function mapNormToOrigIndices(sliceText: string, normSliceText: string): 
     }
 
     if (i < origLines.length - 1) {
+      normToOrigMap.push(origCharOffset + normLine.length);
       let newlineOffset = origLine.length;
       if (sliceText[origCharOffset + newlineOffset] === "\r") {
         newlineOffset++;
       }
-      normToOrigMap.push(origCharOffset + newlineOffset);
       origCharOffset += newlineOffset + 1;
+    } else {
+      normToOrigMap.push(origCharOffset + normLine.length);
     }
   }
   return normToOrigMap;

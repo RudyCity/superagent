@@ -689,9 +689,7 @@ export const replaceFileContentTool: Tool = {
       const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
       const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
       const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
-      const matchOrigEnd = (matchIndexInNorm + normTargetContent.length === normSliceText.length)
-        ? sliceText.length
-        : (normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1);
+      const matchOrigEnd = normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1;
 
       let replacedSlice: string;
       if (matchOrigStart === -1 || matchOrigEnd === -1) {
@@ -822,19 +820,17 @@ export const multiReplaceFileContentTool: Tool = {
       const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
       let lines = content.split(/\r?\n/);
 
-      // Check for overlapping line ranges defensively
-      const sortedForOverlapCheck = [...chunks].sort((a, b) => a.startLine - b.startLine);
-      for (let i = 0; i < sortedForOverlapCheck.length - 1; i++) {
-        const current = sortedForOverlapCheck[i];
-        const next = sortedForOverlapCheck[i + 1];
-        if (current.endLine >= next.startLine) {
-          return `Error: Overlapping line ranges detected between chunks: [${current.startLine}, ${current.endLine}] and [${next.startLine}, ${next.endLine}].`;
-        }
+      interface ResolvedChunk {
+        originalChunk: typeof chunks[0];
+        actualStartLine: number;
+        actualEndLine: number;
+        matchOrigStart: number;
+        matchOrigEnd: number;
+        minSliceText: string;
       }
+      const resolvedChunks: ResolvedChunk[] = [];
 
-      const sortedChunks = [...chunks].sort((a, b) => b.startLine - a.startLine);
-
-      for (const chunk of sortedChunks) {
+      for (const chunk of chunks) {
         const { targetContent, replacementContent, startLine, endLine } = chunk;
         if (startLine < 1 || startLine > lines.length || endLine < startLine || endLine > lines.length) {
           return `Error: Invalid line range [${startLine}, ${endLine}] in chunk. File has ${lines.length} lines.`;
@@ -850,23 +846,79 @@ export const multiReplaceFileContentTool: Tool = {
         }
 
         const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
-        const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
-        const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
-        const matchOrigEnd = (matchIndexInNorm + normTargetContent.length === normSliceText.length)
-          ? sliceText.length
-          : (normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1);
+        let actualStartLine = startLine;
+        let actualEndLine = endLine;
+        let matchOrigStart = -1;
+        let matchOrigEnd = -1;
+        let minSliceText = sliceText;
+
+        if (matchIndexInNorm !== -1) {
+          const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
+          matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+          matchOrigEnd = normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1;
+
+          if (matchOrigStart !== -1 && matchOrigEnd !== -1) {
+            const startLineOffset = sliceText.slice(0, matchOrigStart).split("\n").length - 1;
+            actualStartLine = startLine + startLineOffset;
+
+            const endLineOffset = sliceText.slice(0, matchOrigEnd).split("\n").length - 1;
+            actualEndLine = startLine + endLineOffset;
+
+            const minSliceOfLines = lines.slice(actualStartLine - 1, actualEndLine);
+            minSliceText = minSliceOfLines.join("\n");
+
+            // Recalculate match indices for the minSliceText to ensure correct replacement character offsets
+            const normMinSliceText = normalizeForMatching(minSliceText);
+            const matchIndexInMinNorm = normMinSliceText.indexOf(normTargetContent);
+            if (matchIndexInMinNorm !== -1) {
+              const minNormToOrigMap = mapNormToOrigIndices(minSliceText, normMinSliceText);
+              matchOrigStart = minNormToOrigMap[matchIndexInMinNorm] ?? -1;
+              matchOrigEnd = minNormToOrigMap[matchIndexInMinNorm + normTargetContent.length] ?? -1;
+            } else {
+              matchOrigStart = -1;
+              matchOrigEnd = -1;
+            }
+          }
+        }
+
+        resolvedChunks.push({
+          originalChunk: chunk,
+          actualStartLine,
+          actualEndLine,
+          matchOrigStart,
+          matchOrigEnd,
+          minSliceText,
+        });
+      }
+
+      // Check for overlapping actual line ranges defensively
+      const sortedForOverlapCheck = [...resolvedChunks].sort((a, b) => a.actualStartLine - b.actualStartLine);
+      for (let i = 0; i < sortedForOverlapCheck.length - 1; i++) {
+        const current = sortedForOverlapCheck[i];
+        const next = sortedForOverlapCheck[i + 1];
+        if (current.actualEndLine >= next.actualStartLine) {
+          return `Error: Overlapping line ranges detected between chunks: [${current.originalChunk.startLine}, ${current.originalChunk.endLine}] and [${next.originalChunk.startLine}, ${next.originalChunk.endLine}].`;
+        }
+      }
+
+      // Sort in descending order of actualStartLine to safely apply splices bottom-to-top
+      const sortedChunks = [...resolvedChunks].sort((a, b) => b.actualStartLine - a.actualStartLine);
+
+      for (const resolved of sortedChunks) {
+        const { originalChunk, matchOrigStart, matchOrigEnd, minSliceText, actualStartLine, actualEndLine } = resolved;
+        const { targetContent, replacementContent } = originalChunk;
 
         let replacedSlice: string;
         if (matchOrigStart === -1 || matchOrigEnd === -1) {
-          replacedSlice = sliceText.replace(targetContent, replacementContent);
+          replacedSlice = minSliceText.replace(targetContent, replacementContent);
         } else {
-          replacedSlice = sliceText.slice(0, matchOrigStart) + replacementContent + sliceText.slice(matchOrigEnd);
+          replacedSlice = minSliceText.slice(0, matchOrigStart) + replacementContent + minSliceText.slice(matchOrigEnd);
         }
 
         lines = [
-          ...lines.slice(0, startLine - 1),
+          ...lines.slice(0, actualStartLine - 1),
           ...replacedSlice.split(/\r?\n/),
-          ...lines.slice(endLine),
+          ...lines.slice(actualEndLine),
         ];
       }
 

@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.26] - 2026-06-26
+
+### Added
+- **TencentDB Memory Writes**: Added `tdai_memory_save` and `tdai_conversation_add` tools to support direct memory storage and conversation history updates for TencentDB.
+
+### Fixed
+- **File Replace Tools**: Enhanced file replacement tools with overlap detection, robust index mapping, and fallback search behaviors to prevent incorrect offsets during multiple replacements.
+- **Multi-Replace JSON Parsing**: Improved `multi_replace_file_content` robustness by correctly handling JSON stringified inputs, resolving malformed chunk structures, and preventing undefined property read errors.
+- **Terminal Input Lockup**: Resolved terminal UI freeze/lockup and sluggish typing after pasting large text. Optimized rendering in `ChatTextInput.tsx` with a sliding character window and fixed pasting state transitions in `app.tsx` and `multi-agent-dashboard.tsx`.
+
+### Improved
+- **Token Usage Optimization**: Optimized file reading, searching, and grep tools along with agent workflow architectures to minimize token consumption and lower LLM API costs.
+
+---
+
 ## [1.2.25] - 2026-06-26
 
 ### Added

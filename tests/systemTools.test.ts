@@ -250,7 +250,7 @@ describe("System Tools Optimizations", () => {
         );
         expect(result).toContain("File updated successfully");
         const content = await fs.readFile(tempFilePath, "utf-8");
-        expect(content).toBe("line 1 updated\nline 2\n");
+        expect(content).toBe("line 1 updated   \nline 2\n");
       } finally {
         await fs.unlink(tempFilePath).catch(() => {});
       }

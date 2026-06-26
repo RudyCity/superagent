@@ -188,12 +188,15 @@ export function mapNormToOrigIndices(sliceText, normSliceText) {
             normToOrigMap.push(origCharOffset + col);
         }
         if (i < origLines.length - 1) {
+            normToOrigMap.push(origCharOffset + normLine.length);
             let newlineOffset = origLine.length;
             if (sliceText[origCharOffset + newlineOffset] === "\r") {
                 newlineOffset++;
             }
-            normToOrigMap.push(origCharOffset + newlineOffset);
             origCharOffset += newlineOffset + 1;
+        }
+        else {
+            normToOrigMap.push(origCharOffset + normLine.length);
         }
     }
     return normToOrigMap;
