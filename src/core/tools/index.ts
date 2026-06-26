@@ -56,6 +56,8 @@ import {
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,
   tdaiReadCosTool,
+  tdaiMemorySaveTool,
+  tdaiConversationAddTool,
 } from "./tencentdbMemoryTools.js";
 
 import { 
@@ -115,6 +117,8 @@ export const allTools: Tool[] = [
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,
   tdaiReadCosTool,
+  tdaiMemorySaveTool,
+  tdaiConversationAddTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {
@@ -234,4 +238,3 @@ export function refreshDynamicHooks(): void {
 
 // Load dynamic internal hooks on startup
 refreshDynamicHooks();
-

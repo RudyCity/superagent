@@ -60,6 +60,8 @@ import {
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,
   tdaiReadCosTool,
+  tdaiMemorySaveTool,
+  tdaiConversationAddTool,
 } from "./tencentdbMemoryTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
@@ -93,6 +95,8 @@ export const masterToolset: Tool[] = [
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,
   tdaiReadCosTool,
+  tdaiMemorySaveTool,
+  tdaiConversationAddTool,
 ];
 
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
@@ -133,6 +137,8 @@ export const superagentToolset: Tool[] = [
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,
   tdaiReadCosTool,
+  tdaiMemorySaveTool,
+  tdaiConversationAddTool,
 ];
 
 // ─── Subagent Toolsets (depth 2) — keyed by type name ───────────────────────
@@ -152,6 +158,8 @@ export const subagentToolsets: Record<string, Tool[]> = {
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
+    tdaiMemorySaveTool,
+    tdaiConversationAddTool,
   ],
 
   coder: [
@@ -172,6 +180,8 @@ export const subagentToolsets: Record<string, Tool[]> = {
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
+    tdaiMemorySaveTool,
+    tdaiConversationAddTool,
   ],
 
   reviewer: [
@@ -187,6 +197,8 @@ export const subagentToolsets: Record<string, Tool[]> = {
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
+    tdaiMemorySaveTool,
+    tdaiConversationAddTool,
   ],
 
   "manual-tester": [
@@ -203,6 +215,8 @@ export const subagentToolsets: Record<string, Tool[]> = {
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
+    tdaiMemorySaveTool,
+    tdaiConversationAddTool,
   ],
 };
 
@@ -221,4 +235,6 @@ export const defaultSubagentToolset: Tool[] = [
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,
   tdaiReadCosTool,
+  tdaiMemorySaveTool,
+  tdaiConversationAddTool,
 ];

@@ -16,6 +16,10 @@ function getClient() {
   });
 }
 
+function formatError(err: unknown): string {
+  return (err as Error).message || String(err);
+}
+
 export const tdaiMemorySearchTool: Tool = {
   name: "tdai_memory_search",
   description: "Search through the user's long-term structured memories (L1). Use this to recall specific facts, user preferences, instructions, or context from previous conversations.",
@@ -47,7 +51,7 @@ export const tdaiMemorySearchTool: Tool = {
         .map((item) => `- [${item.type || "memory"}] ${item.content}`)
         .join("\n");
     } catch (err) {
-      return `Memory search failed: ${(err as Error).message}. Make sure the TencentDB memory gateway is running on the configured port.`;
+      return `Memory search failed: ${formatError(err)}. Make sure the TencentDB memory gateway is running on the configured port.`;
     }
   },
 };
@@ -83,7 +87,7 @@ export const tdaiConversationSearchTool: Tool = {
         .map((m) => `[${m.timestamp || "unknown"}] ${m.role}: ${m.content}`)
         .join("\n\n");
     } catch (err) {
-      return `Conversation search failed: ${(err as Error).message}. Make sure the TencentDB memory gateway is running on the configured port.`;
+      return `Conversation search failed: ${formatError(err)}. Make sure the TencentDB memory gateway is running on the configured port.`;
     }
   },
 };
@@ -109,7 +113,83 @@ export const tdaiReadCosTool: Tool = {
       const content = await client.readFile(filePath);
       return `=== File: ${filePath} ===\n\n${content}`;
     } catch (err) {
-      return `Failed to read scenario block file: ${(err as Error).message}. Make sure the path is correct and the gateway is running.`;
+      return `Failed to read scenario block file: ${formatError(err)}. Make sure the path is correct and the gateway is running.`;
+    }
+  },
+};
+
+export const tdaiMemorySaveTool: Tool = {
+  name: "tdai_memory_save",
+  description: "Save a structured atomic memory (L1) to long-term storage. Use to store important facts, user preferences, project context, or decisions that should be remembered across sessions.",
+  parameters: {
+    type: "object",
+    properties: {
+      id: {
+        type: "string",
+        description: "Unique identifier for this memory. Use a semantic ID like 'user-name' or 'project-framework'. Reusing an existing ID overwrites that memory.",
+      },
+      content: {
+        type: "string",
+        description: "The content of the memory to save. Should be a concise factual statement.",
+      },
+      type: {
+        type: "string",
+        description: "Optional type/category for the memory (e.g. 'preference', 'fact', 'context', 'decision').",
+      },
+    },
+    required: ["id", "content"],
+  },
+  async execute(args) {
+    const id = String(args.id || "");
+    const content = String(args.content || "");
+    const type = args.type ? String(args.type) : undefined;
+    const client = getClient();
+
+    try {
+      const res = await client.updateAtomic({ id, content, ...(type ? { background: type } : {}) });
+      return `Memory saved successfully. ID: ${res.id}, updated at: ${res.updated_at}`;
+    } catch (err) {
+      return `Failed to save memory: ${formatError(err)}. Make sure the TencentDB memory gateway is running.`;
+    }
+  },
+};
+
+export const tdaiConversationAddTool: Tool = {
+  name: "tdai_conversation_add",
+  description: "Record a conversation message (L0) into the conversation history store. Use to log exchanges for future context retrieval.",
+  parameters: {
+    type: "object",
+    properties: {
+      session_id: {
+        type: "string",
+        description: "Session identifier to group related messages.",
+      },
+      role: {
+        type: "string",
+        enum: ["user", "assistant", "system"],
+        description: "Who sent the message.",
+      },
+      content: {
+        type: "string",
+        description: "The message content.",
+      },
+    },
+    required: ["session_id", "role", "content"],
+  },
+  async execute(args) {
+    const sessionId = String(args.session_id || "");
+    const role = String(args.role || "") as "user" | "assistant" | "system";
+    const content = String(args.content || "");
+    const client = getClient();
+
+    try {
+      const res = await client.addConversation({
+        session_id: sessionId,
+        messages: [{ role, content, timestamp: new Date().toISOString() }],
+      });
+      return `Conversation message added. Accepted IDs: ${res.accepted_ids.join(", ")}. Total messages in session: ${res.total_count}`;
+    } catch (err) {
+      return `Failed to add conversation message: ${formatError(err)}. Make sure the TencentDB memory gateway is running.`;
     }
   },
 };
