@@ -285,7 +285,16 @@ export function getModelInstanceForString(modelStr: string) {
     throw new Error(`API key is missing or not configured. Please configure it using the /login command.`);
   }
 
-  if (provider === "anthropic" || (provider === "custom" && isAnthropicCompatible(baseUrl || "", modelName))) {
+  // If the resolved provider is "custom", it represents a Custom OpenAI Endpoint (or OpenRouter).
+  // We should only treat it as Anthropic-compatible if the baseUrl explicitly indicates Anthropic (e.g. contains "anthropic").
+  // This allows Custom OpenAI Endpoints to serve Claude models (like claude-sonnet-4-6) via OpenAI-compatible APIs.
+  const isAnthropic = provider === "anthropic" || (
+    provider === "custom" &&
+    isAnthropicCompatible(baseUrl || "", modelName) &&
+    (baseUrl || "").toLowerCase().includes("anthropic")
+  );
+
+  if (isAnthropic) {
     const anthropic = createAnthropic({
       apiKey,
       ...(baseUrl && { baseURL: baseUrl }),

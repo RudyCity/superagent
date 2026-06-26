@@ -441,5 +441,35 @@ describe("Provider Credential Resolution Fixes", () => {
         globalThis.fetch = originalFetch;
       }
     });
+
+    it("should resolve Custom OpenAI Endpoint with a Claude model as OpenAI instance, not Anthropic", () => {
+      addProvider({
+        id: "zyloo-openai",
+        name: "Zyloo OpenAI",
+        provider: "custom",
+        apiKey: "sk-zyloo-key",
+        baseUrl: "https://api.zyloo.io/v1",
+      });
+
+      clearModelConfigCache();
+
+      const modelInstance = getModelInstanceForString("zyloo-openai@claude-sonnet-4-6");
+      expect(modelInstance.provider).toBe("openai.chat");
+    });
+
+    it("should resolve Custom Anthropic Endpoint with a Claude model as Anthropic instance", () => {
+      addProvider({
+        id: "zyloo-anthropic",
+        name: "Zyloo Anthropic",
+        provider: "anthropic",
+        apiKey: "sk-zyloo-key",
+        baseUrl: "https://api.zyloo.io/v1",
+      });
+
+      clearModelConfigCache();
+
+      const modelInstance = getModelInstanceForString("zyloo-anthropic@claude-sonnet-4-6");
+      expect(modelInstance.provider).toBe("anthropic.messages");
+    });
   });
 });
