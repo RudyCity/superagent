@@ -494,7 +494,7 @@ export function App({
 
         const isSelectionStep = 
           (activeWizard.type === "exit_confirm") ||
-          (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10)) ||
+          (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10 || activeWizard.step === 14 || activeWizard.step === 15)) ||
           (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40 || activeWizard.step === 41 || activeWizard.step === 50)) ||
           (activeWizard.type === "permission") ||
           (activeWizard.type === "question" && wizardOptions.length > 0);
@@ -939,6 +939,8 @@ export function App({
       if (activeWizard.step === 11) return "Enter the project name (or press Enter for folder default).";
       if (activeWizard.step === 12) return "Enter a short project description.";
       if (activeWizard.step === 13) return "Describe the project you want to build; AI will create a specification.";
+      if (activeWizard.step === 14) return "Select the provider to remove using arrows and Enter.";
+      if (activeWizard.step === 15) return "Confirm deletion of the selected provider.";
 
     }
     if (activeWizard.type === "model") {
@@ -979,6 +981,8 @@ export function App({
       if (activeWizard.step === 11) return "Enter project name (press Enter for folder default, Esc: Back)...";
       if (activeWizard.step === 12) return "Enter project description (press Enter for default, Esc: Back)...";
       if (activeWizard.step === 13) return "Describe the project (e.g. CLI tool in Rust, Esc: Back)...";
+      if (activeWizard.step === 14) return "Select provider to delete using arrows and Enter (Esc: Back)...";
+      if (activeWizard.step === 15) return "Confirm deletion using arrows and Enter (Esc: Back)...";
     }
     if (activeWizard.type === "model") {
       if (activeWizard.step === 1) return "Select option using arrows and Enter...";

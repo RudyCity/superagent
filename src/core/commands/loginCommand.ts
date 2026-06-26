@@ -24,7 +24,8 @@ export const loginCommand: SlashCommand = {
         });
         ctx.setWizardOptions?.([
           "1. List Configured Providers",
-          "2. Create / Log in to a Provider"
+          "2. Create / Log in to a Provider",
+          "3. Delete / Remove a Provider"
         ]);
         ctx.setWizardSelectedIndex?.(0);
       } else {

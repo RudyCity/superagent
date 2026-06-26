@@ -12,7 +12,8 @@ import {
   getCachedModelIds,
   getEffectiveMasterModel,
   getModelInstanceForString,
-  getSettings
+  getSettings,
+  removeProvider
 } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
@@ -66,6 +67,24 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           "5. Custom Anthropic Endpoint"
         ]);
         setWizardSelectedIndex(0);
+      } else if (choice.includes("delete") || choice.includes("remove") || choice === "3") {
+        const list = getConfiguredProviders();
+        if (list.length > 0) {
+          setActiveWizard({ type: "login", step: 14, data: {} });
+          setWizardOptions(list.map(
+            (p, i) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+          ));
+          setWizardSelectedIndex(0);
+        } else {
+          addLine({
+            type: "system",
+            content: `No providers configured yet.`,
+            timestamp: now,
+          });
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+        }
       } else {
         const list = getConfiguredProviders();
         if (list.length > 0) {
@@ -673,6 +692,62 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       } finally {
         setIsProcessing(false);
       }
+      setActiveWizard(null);
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
+    } else if (step === 14) {
+      // Step 14: Select provider to delete
+      const providers = getConfiguredProviders();
+      const idx = parseInt(value, 10) - 1;
+      const selectedProvider = providers[idx];
+      if (!selectedProvider) {
+        addLine({ type: "error", content: "Invalid provider selection.", timestamp: now });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        return;
+      }
+      setActiveWizard({
+        type: "login",
+        step: 15,
+        data: {
+          providerId: selectedProvider.id,
+          providerName: selectedProvider.name,
+        },
+      });
+      setWizardOptions(["1. Yes, Delete Provider", "2. No (Cancel)"]);
+      setWizardSelectedIndex(0);
+    } else if (step === 15) {
+      // Step 15: Confirm deletion of provider
+      const choice = value.toLowerCase();
+      const confirmDelete = choice.includes("yes") || choice.includes("delete") || choice === "1" || choice.startsWith("1.");
+      
+      const pId = data.providerId || "";
+      const pName = data.providerName || "";
+
+      if (!confirmDelete) {
+        addLine({ type: "system", content: "Deletion cancelled.", timestamp: now });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        return;
+      }
+
+      try {
+        removeProvider(pId);
+        addLine({
+          type: "system",
+          content: `Successfully removed provider: ${pName} (${pId})`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        addLine({
+          type: "error",
+          content: `Failed to remove provider: ${err.message}`,
+          timestamp: now,
+        });
+      }
+
       setActiveWizard(null);
       setWizardOptions([]);
       setWizardSelectedIndex(0);

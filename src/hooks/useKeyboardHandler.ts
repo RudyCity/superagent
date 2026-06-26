@@ -442,7 +442,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (activeWizard) {
-      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10)) {
+      if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10 || activeWizard.step === 14 || activeWizard.step === 15)) {
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           return;
@@ -465,6 +465,21 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               });
               setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint"]);
               setWizardSelectedIndex(0);
+            } else if (selectedOption.includes("Delete / Remove")) {
+              const providers = getProviders().filter((p: any) => p.apiKey && p.apiKey.trim() !== "");
+              if (providers.length === 0) {
+                addLine({ type: "system", content: "No providers configured yet.", timestamp: now });
+                setActiveWizard(null);
+                setWizardOptions([]);
+                setWizardSelectedIndex(0);
+              } else {
+                const providerOptions = providers.map(
+                  (p: any, i: number) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+                );
+                setActiveWizard({ type: "login", step: 14, data: {} });
+                setWizardOptions(providerOptions);
+                setWizardSelectedIndex(0);
+              }
             } else {
               const providers = getProviders().filter((p: any) => p.apiKey && p.apiKey.trim() !== "");
               if (providers.length === 0) {
@@ -524,6 +539,13 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             if (chosenModel) {
               handleWizardSubmit(chosenModel);
             }
+          } else if (activeWizard.step === 14) {
+            // Select provider to delete
+            const idx = wizardSelectedIndex + 1;
+            handleWizardSubmit(String(idx));
+          } else if (activeWizard.step === 15) {
+            // Confirm deletion
+            handleWizardSubmit(selectedOption);
           }
           return;
         }
@@ -1603,7 +1625,24 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           if (activeWizard.step === 2) {
             // Back to step 1: Provider Manager main menu
             setActiveWizard({ type: "login", step: 1, data: {} });
-            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider"]);
+            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider"]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          } else if (activeWizard.step === 14) {
+            // Back to step 1: Provider Manager main menu
+            setActiveWizard({ type: "login", step: 1, data: {} });
+            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider"]);
+            setWizardSelectedIndex(0);
+            setInput("");
+            return;
+          } else if (activeWizard.step === 15) {
+            // Back to step 14: Provider delete list
+            const list = getConfiguredProviders();
+            setActiveWizard({ type: "login", step: 14, data: {} });
+            setWizardOptions(list.map(
+              (p, i) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+            ));
             setWizardSelectedIndex(0);
             setInput("");
             return;
