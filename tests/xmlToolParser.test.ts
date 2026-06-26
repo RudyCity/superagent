@@ -266,5 +266,54 @@ Let me execute these in sequence:
       });
     });
   });
+
+  describe("Robust parsing fallbacks", () => {
+    it("should parse tool_calls blocks with mismatched closing tags (e.g. tool_call closed by tool_calls)", () => {
+      const text = `
+[SYS] Scanning memory for user context on "Rudy"...
+
+<tool_calls>
+<tool_call>
+{"name": "view_file", "arguments": {"AbsolutePath": "/test.txt"}}
+</tool_calls>
+</tool_calls>
+`;
+      const result = parseXmlToolCalls(text, toolDefs);
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls[0].name).toBe("view_file");
+      expect(result.toolCalls[0].args).toEqual({ AbsolutePath: "/test.txt" });
+      expect(result.cleanText).toBe('[SYS] Scanning memory for user context on "Rudy"...');
+    });
+
+    it("should parse tool_calls blocks where tool_call tag is omitted entirely (direct JSON in tool_calls)", () => {
+      const text = `
+<tool_calls>
+{"name": "run_command", "arguments": {"CommandLine": "npm run build"}}
+</tool_calls>
+`;
+      const result = parseXmlToolCalls(text, toolDefs);
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls[0].name).toBe("run_command");
+      expect(result.toolCalls[0].args).toEqual({ CommandLine: "npm run build" });
+      expect(result.cleanText).toBe("");
+    });
+
+    it("should clean up stray/leftover XML tool tags from the cleaned text content", () => {
+      const text = `
+Some intro text.
+</tool_calls>
+Stray closing tag in the middle.
+<tool_call>
+{"name": "view_file", "arguments": {"AbsolutePath": "/test.txt"}}
+</tool_calls>
+Some outro text.
+`;
+      const result = parseXmlToolCalls(text, toolDefs);
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls[0].name).toBe("view_file");
+      expect(result.cleanText).toBe("Some intro text.\n\nStray closing tag in the middle.\n\nSome outro text.");
+    });
+  });
 });
+
 

@@ -49,7 +49,7 @@ export function parseXmlToolCalls(textContent, toolDefs) {
         const blockContent = tcMatch[1];
         const fullBlock = tcMatch[0];
         // Check JSON-based <tool_call>
-        const blockToolCallRegex = /<tool_call\s*>([\s\S]*?)<\/tool_call>/gi;
+        const blockToolCallRegex = /<tool_call\s*>((?:(?!<tool_call\s*>)[\s\S])*?)(?:<\/tool_call>|<\/tool_calls>|$)/gi;
         let singleTcMatch;
         while ((singleTcMatch = blockToolCallRegex.exec(blockContent)) !== null) {
             const rawBody = cleanJsonString(singleTcMatch[1]);
@@ -89,10 +89,39 @@ export function parseXmlToolCalls(textContent, toolDefs) {
                 args,
             });
         }
+        // Fallback: if no tool calls were found, check if the block content itself contains a JSON payload (omitted <tool_call> tag)
+        if (toolCalls.length === 0) {
+            const rawBody = cleanJsonString(blockContent);
+            try {
+                let parsedJson;
+                try {
+                    parsedJson = JSON.parse(rawBody);
+                }
+                catch {
+                    parsedJson = JSON.parse(decodeHtmlEntities(rawBody));
+                }
+                const candidates = Array.isArray(parsedJson) ? parsedJson : [parsedJson];
+                for (const candidate of candidates) {
+                    const name = candidate.name;
+                    let args = candidate.arguments || candidate.args || {};
+                    args = decodeEntitiesRecursive(args);
+                    if (name) {
+                        toolCalls.push({
+                            id: generateId(),
+                            name: name.trim(),
+                            args,
+                        });
+                    }
+                }
+            }
+            catch (err) {
+                // Ignore
+            }
+        }
         cleanText = cleanText.replace(fullBlock, "");
     }
     // Match standalone <tool_call>...</tool_call> blocks that are not wrapped in <tool_calls>
-    const standaloneToolCallRegex = /<tool_call\s*>([\s\S]*?)<\/tool_call>/gi;
+    const standaloneToolCallRegex = /<tool_call\s*>((?:(?!<tool_call\s*>)[\s\S])*?)(?:<\/tool_call>|<\/tool_calls>|$)/gi;
     let standTcMatch;
     while ((standTcMatch = standaloneToolCallRegex.exec(normalizedText)) !== null) {
         const fullBlock = standTcMatch[0];
@@ -183,6 +212,14 @@ export function parseXmlToolCalls(textContent, toolDefs) {
             }
         }
     }
+    // Clean up any leftover/stray XML tool tags
+    cleanText = cleanText
+        .replace(/<\/function_calls\s*>/gi, "")
+        .replace(/<function_calls\s*>/gi, "")
+        .replace(/<\/tool_calls\s*>/gi, "")
+        .replace(/<tool_calls\s*>/gi, "")
+        .replace(/<\/tool_call\s*>/gi, "")
+        .replace(/<tool_call\s*>/gi, "");
     return {
         toolCalls,
         cleanText: cleanText.trim(),
