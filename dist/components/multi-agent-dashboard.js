@@ -126,6 +126,10 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
         else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
             setIsPasted(false);
         }
+        else if (lengthDiff > 0 && lengthDiff <= 15 && !containsNewline) {
+            // Normal typing resumes after paste — clear paste state
+            setIsPasted(false);
+        }
         setQuery(sanitizedVal);
         if (lastTabPrefix) {
             const suggs = getDashboardSuggestions(lastTabPrefix);

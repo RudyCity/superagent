@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readTool, grepTool } from "../src/core/tools/systemTools.js";
+import { readTool, grepTool, multiReplaceFileContentTool } from "../src/core/tools/systemTools.js";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -93,5 +93,108 @@ describe("System Tools Optimizations", () => {
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
+  });
+
+  describe("multi_replace_file_content Robustness", () => {
+    it("should parse chunks when passed as a serialized JSON string array", async () => {
+      const tempFilePath = path.resolve(__dirname, "temp-multi-replace-json-string.txt");
+      await fs.writeFile(tempFilePath, "line 1\nline 2\nline 3\n", "utf-8");
+
+      try {
+        const chunksJsonString = JSON.stringify([
+          {
+            startLine: 1,
+            endLine: 1,
+            targetContent: "line 1",
+            replacementContent: "line 1 updated"
+          },
+          {
+            startLine: 3,
+            endLine: 3,
+            targetContent: "line 3",
+            replacementContent: "line 3 updated"
+          }
+        ]);
+
+        const result = await multiReplaceFileContentTool.execute(
+          { filePath: tempFilePath, chunks: chunksJsonString },
+          process.cwd()
+        );
+
+        expect(result).toContain("File updated successfully");
+        const updatedContent = await fs.readFile(tempFilePath, "utf-8");
+        expect(updatedContent).toBe("line 1 updated\nline 2\nline 3 updated\n");
+      } finally {
+        await fs.unlink(tempFilePath).catch(() => {});
+      }
+    });
+
+    it("should handle single non-array chunk gracefully", async () => {
+      const tempFilePath = path.resolve(__dirname, "temp-multi-replace-single.txt");
+      await fs.writeFile(tempFilePath, "line 1\nline 2\n", "utf-8");
+
+      try {
+        const result = await multiReplaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            chunks: {
+              startLine: 2,
+              endLine: 2,
+              targetContent: "line 2",
+              replacementContent: "line 2 updated"
+            }
+          },
+          process.cwd()
+        );
+
+        expect(result).toContain("File updated successfully");
+        const updatedContent = await fs.readFile(tempFilePath, "utf-8");
+        expect(updatedContent).toBe("line 1\nline 2 updated\n");
+      } finally {
+        await fs.unlink(tempFilePath).catch(() => {});
+      }
+    });
+
+    it("should defensively reject malformed chunks structure instead of throwing unhandled exceptions", async () => {
+      const tempFilePath = path.resolve(__dirname, "temp-multi-replace-malformed.txt");
+      await fs.writeFile(tempFilePath, "line 1\nline 2\n", "utf-8");
+
+      try {
+        // Passing chunk with missing/invalid targetContent (number)
+        const result1 = await multiReplaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            chunks: [
+              {
+                startLine: 1,
+                endLine: 1,
+                targetContent: 123,
+                replacementContent: "new content"
+              }
+            ]
+          },
+          process.cwd()
+        );
+        expect(result1).toContain("Error: Missing or invalid 'targetContent'");
+
+        // Passing chunk with missing targetContent
+        const result2 = await multiReplaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            chunks: [
+              {
+                startLine: 1,
+                endLine: 1,
+                replacementContent: "new content"
+              }
+            ]
+          },
+          process.cwd()
+        );
+        expect(result2).toContain("Error: Missing or invalid 'targetContent'");
+      } finally {
+        await fs.unlink(tempFilePath).catch(() => {});
+      }
+    });
   });
 });

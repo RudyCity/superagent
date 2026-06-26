@@ -836,6 +836,10 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
         else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
             setIsPasted(false);
         }
+        else if (lengthDiff > 0 && lengthDiff <= 15 && !containsNewline) {
+            // Normal typing resumes after paste — clear paste state
+            setIsPasted(false);
+        }
         setInput(sanitizedVal);
         if (lastTabPrefix) {
             const suggs = getSuggestions(lastTabPrefix);

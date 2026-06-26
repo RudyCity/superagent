@@ -91,6 +91,9 @@ export function formatCommandForPowerShell(command: string): string {
 }
 
 export function normalizeForMatching(str: string): string {
+  if (typeof str !== "string") {
+    return "";
+  }
   return str
     .replace(/\r\n/g, "\n")
     .split("\n")

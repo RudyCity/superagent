@@ -305,18 +305,6 @@ CRITICAL: You MUST end your final response with a structured report using this E
  * Uses dynamic import to avoid circular module dependencies.
  */
 export async function getSubagentSystemPrompt(typeName, basePrompt) {
-    const baseContent = SUBAGENT_SYSTEM_PROMPTS[typeName] || basePrompt;
-    try {
-        // Dynamic import to avoid circular: prompts.ts ← tools ← toolsets.ts ← prompts.ts
-        const { loadAgentSkills } = await import("./config/skills.js");
-        const skillsPrompt = loadAgentSkills();
-        if (skillsPrompt && !baseContent.includes("INSTALLED AGENT SKILLS:")) {
-            return baseContent + "\n\n" + skillsPrompt;
-        }
-    }
-    catch {
-        // Non-critical: skills injection failed, continue without skills
-    }
-    return baseContent;
+    return SUBAGENT_SYSTEM_PROMPTS[typeName] || basePrompt;
 }
 //# sourceMappingURL=prompts.js.map

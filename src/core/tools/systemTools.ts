@@ -793,21 +793,41 @@ export const multiReplaceFileContentTool: Tool = {
       startLine: number;
       endLine: number;
     }
-    const rawChunks = args.chunks || args.ReplacementChunks || args.replacementChunks || [];
+    let rawChunks = args.chunks || args.ReplacementChunks || args.replacementChunks || [];
+    if (typeof rawChunks === "string") {
+      try {
+        rawChunks = JSON.parse(rawChunks);
+      } catch (err: any) {
+        return `Error: Invalid 'chunks' parameter. Failed to parse JSON: ${err.message}`;
+      }
+    }
+
     const rawChunksArray = Array.isArray(rawChunks)
       ? rawChunks
       : (rawChunks !== undefined && rawChunks !== null ? [rawChunks] : []);
 
-    const chunks: Chunk[] = rawChunksArray.map((c: any) => {
-      if (!c || typeof c !== "object") return c;
+    const chunks: Chunk[] = [];
+    for (const c of rawChunksArray) {
+      if (!c || typeof c !== "object") {
+        return `Error: Invalid chunk element: expected an object, got ${typeof c}.`;
+      }
+      const targetContent = c.targetContent ?? c.TargetContent;
+      const replacementContent = c.replacementContent ?? c.ReplacementContent;
+      if (typeof targetContent !== "string") {
+        return `Error: Missing or invalid 'targetContent' in chunk. Expected string, got ${typeof targetContent}.`;
+      }
+      if (typeof replacementContent !== "string") {
+        return `Error: Missing or invalid 'replacementContent' in chunk. Expected string, got ${typeof replacementContent}.`;
+      }
       const sl = Math.max(1, Number(c.startLine ?? c.StartLine ?? 0));
-      return {
-        targetContent: c.targetContent ?? c.TargetContent ?? "",
-        replacementContent: c.replacementContent ?? c.ReplacementContent ?? "",
+      const el = Math.max(sl, Number(c.endLine ?? c.EndLine ?? 0));
+      chunks.push({
+        targetContent,
+        replacementContent,
         startLine: sl,
-        endLine: Math.max(sl, Number(c.endLine ?? c.EndLine ?? 0)),
-      };
-    });
+        endLine: el,
+      });
+    }
 
     if (chunks.length === 0) {
       return "Error: No chunks provided or invalid format.";

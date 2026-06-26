@@ -9,7 +9,7 @@ import { webSearchTool, fetchUrlTool } from "./networkTools.js";
 import { fastcontextTool } from "./fastcontextTool.js";
 import { defineSubagentTool, invokeSubagentTool, sendMessageTool, manageSubagentsTool } from "./subagentTools.js";
 import { invokeSuperagentTool, awaitSuperagentsTool, mergeSuperagentsTool, manageSuperagentsTool, defineSuperagentTool, sendMessageToSuperagentTool, } from "./superagentTools.js";
-import { tdaiMemorySearchTool, tdaiConversationSearchTool, tdaiReadCosTool, } from "./tencentdbMemoryTools.js";
+import { tdaiMemorySearchTool, tdaiConversationSearchTool, tdaiReadCosTool, tdaiMemorySaveTool, tdaiConversationAddTool, } from "./tencentdbMemoryTools.js";
 import { askQuestionTool, scheduleTool, gitActionTool, screenshotTool, androidCliTool, searchHistoryTool, loadPinnedSessionTool, searchPinnedKnowledgeTool, manageTasksTool, gitWorktreeTool, listPeerSuperagentsTool, managePlanTool } from "./otherTools.js";
 export const allTools = [
     readTool,
@@ -53,6 +53,8 @@ export const allTools = [
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
+    tdaiMemorySaveTool,
+    tdaiConversationAddTool,
 ];
 export function getToolByName(name) {
     return allTools.find((t) => t.name === name);

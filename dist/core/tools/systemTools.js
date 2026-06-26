@@ -94,7 +94,7 @@ export const readTool = {
             },
             limit: {
                 type: "number",
-                description: "Max lines to read (default 2000)",
+                description: "Max lines to read (default 800)",
             },
         },
         required: ["filePath"],
@@ -105,7 +105,7 @@ export const readTool = {
             return "Error: Missing required parameter 'filePath'. Provide the path to the file to read, e.g. { \"filePath\": \"path/to/file\" }.";
         }
         const offset = Math.max(1, args.offset || 1);
-        const limit = args.limit || 2000;
+        const limit = args.limit || 800;
         try {
             // Check if path is a directory — list contents instead of failing
             const stat = await fs.stat(filePath);
@@ -129,7 +129,12 @@ export const readTool = {
             const content = buffer.toString("utf-8");
             const lines = content.replace(/\r\n/g, "\n").split("\n");
             const sliced = lines.slice(offset - 1, offset - 1 + limit);
-            return sliced.map((line, i) => `${offset + i}: ${line}`).join("\n");
+            const output = sliced.map((line, i) => `${offset + i}: ${line}`).join("\n");
+            if (lines.length > offset - 1 + limit) {
+                const remaining = lines.length - (offset - 1 + limit);
+                return `${output}\n\n... (output truncated, showing ${limit} of ${lines.length} lines. There are ${remaining} more lines. Use the 'offset' and 'limit' parameters to read the rest of the file)`;
+            }
+            return output;
         }
         catch (err) {
             const message = err instanceof Error ? err.message : String(err);
@@ -442,8 +447,11 @@ export const grepTool = {
                     }
                 }));
             }
+            if (results.length > 100) {
+                return results.slice(0, 100).join("\n") + `\n\n... (output truncated, showing 100 of ${results.length} matches. Refine your query/pattern or search path to narrow down results)`;
+            }
             return results.length > 0
-                ? results.slice(0, 100).join("\n")
+                ? results.join("\n")
                 : "No matches found.";
         }
         catch (err) {
@@ -729,21 +737,40 @@ export const multiReplaceFileContentTool = {
         if (!filePath) {
             return "Error: Missing required parameter 'filePath'. Provide the path to the file to edit.";
         }
-        const rawChunks = args.chunks || args.ReplacementChunks || args.replacementChunks || [];
+        let rawChunks = args.chunks || args.ReplacementChunks || args.replacementChunks || [];
+        if (typeof rawChunks === "string") {
+            try {
+                rawChunks = JSON.parse(rawChunks);
+            }
+            catch (err) {
+                return `Error: Invalid 'chunks' parameter. Failed to parse JSON: ${err.message}`;
+            }
+        }
         const rawChunksArray = Array.isArray(rawChunks)
             ? rawChunks
             : (rawChunks !== undefined && rawChunks !== null ? [rawChunks] : []);
-        const chunks = rawChunksArray.map((c) => {
-            if (!c || typeof c !== "object")
-                return c;
+        const chunks = [];
+        for (const c of rawChunksArray) {
+            if (!c || typeof c !== "object") {
+                return `Error: Invalid chunk element: expected an object, got ${typeof c}.`;
+            }
+            const targetContent = c.targetContent ?? c.TargetContent;
+            const replacementContent = c.replacementContent ?? c.ReplacementContent;
+            if (typeof targetContent !== "string") {
+                return `Error: Missing or invalid 'targetContent' in chunk. Expected string, got ${typeof targetContent}.`;
+            }
+            if (typeof replacementContent !== "string") {
+                return `Error: Missing or invalid 'replacementContent' in chunk. Expected string, got ${typeof replacementContent}.`;
+            }
             const sl = Math.max(1, Number(c.startLine ?? c.StartLine ?? 0));
-            return {
-                targetContent: c.targetContent ?? c.TargetContent ?? "",
-                replacementContent: c.replacementContent ?? c.ReplacementContent ?? "",
+            const el = Math.max(sl, Number(c.endLine ?? c.EndLine ?? 0));
+            chunks.push({
+                targetContent,
+                replacementContent,
                 startLine: sl,
-                endLine: Math.max(sl, Number(c.endLine ?? c.EndLine ?? 0)),
-            };
-        });
+                endLine: el,
+            });
+        }
         if (chunks.length === 0) {
             return "Error: No chunks provided or invalid format.";
         }

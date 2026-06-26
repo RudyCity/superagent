@@ -12,7 +12,7 @@ import { fastcontextTool } from "./fastcontextTool.js";
 import { defineSubagentTool, invokeSubagentTool, sendMessageTool, manageSubagentsTool, } from "./subagentTools.js";
 import { askQuestionTool, scheduleTool, gitActionTool, screenshotTool, androidCliTool, searchHistoryTool, loadPinnedSessionTool, searchPinnedKnowledgeTool, gitWorktreeTool, manageTasksTool, listPeerSuperagentsTool, managePlanTool, } from "./otherTools.js";
 import { invokeSuperagentTool, awaitSuperagentsTool, mergeSuperagentsTool, manageSuperagentsTool, defineSuperagentTool, sendMessageToSuperagentTool, } from "./superagentTools.js";
-import { tdaiMemorySearchTool, tdaiConversationSearchTool, tdaiReadCosTool, } from "./tencentdbMemoryTools.js";
+import { tdaiMemorySearchTool, tdaiConversationSearchTool, tdaiReadCosTool, tdaiMemorySaveTool, tdaiConversationAddTool, } from "./tencentdbMemoryTools.js";
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Focused on orchestration. Does NOT write code itself.
 export const masterToolset = [
@@ -44,6 +44,8 @@ export const masterToolset = [
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
+    tdaiMemorySaveTool,
+    tdaiConversationAddTool,
 ];
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
 // Full development toolset. Scoped to own worktree at runtime via permission layer.
@@ -83,6 +85,8 @@ export const superagentToolset = [
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
+    tdaiMemorySaveTool,
+    tdaiConversationAddTool,
 ];
 // ─── Subagent Toolsets (depth 2) — keyed by type name ───────────────────────
 export const subagentToolsets = {
@@ -101,6 +105,8 @@ export const subagentToolsets = {
         tdaiMemorySearchTool,
         tdaiConversationSearchTool,
         tdaiReadCosTool,
+        tdaiMemorySaveTool,
+        tdaiConversationAddTool,
     ],
     coder: [
         readTool,
@@ -120,6 +126,8 @@ export const subagentToolsets = {
         tdaiMemorySearchTool,
         tdaiConversationSearchTool,
         tdaiReadCosTool,
+        tdaiMemorySaveTool,
+        tdaiConversationAddTool,
     ],
     reviewer: [
         readTool,
@@ -134,6 +142,8 @@ export const subagentToolsets = {
         tdaiMemorySearchTool,
         tdaiConversationSearchTool,
         tdaiReadCosTool,
+        tdaiMemorySaveTool,
+        tdaiConversationAddTool,
     ],
     "manual-tester": [
         readTool,
@@ -149,6 +159,8 @@ export const subagentToolsets = {
         tdaiMemorySearchTool,
         tdaiConversationSearchTool,
         tdaiReadCosTool,
+        tdaiMemorySaveTool,
+        tdaiConversationAddTool,
     ],
 };
 /** Fallback toolset for unrecognized subagent types */
@@ -166,5 +178,7 @@ export const defaultSubagentToolset = [
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
+    tdaiMemorySaveTool,
+    tdaiConversationAddTool,
 ];
 //# sourceMappingURL=toolsets.js.map
