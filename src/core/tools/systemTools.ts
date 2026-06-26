@@ -102,7 +102,7 @@ export const readTool: Tool = {
       },
       limit: {
         type: "number",
-        description: "Max lines to read (default 2000)",
+        description: "Max lines to read (default 800)",
       },
     },
     required: ["filePath"],
@@ -113,7 +113,7 @@ export const readTool: Tool = {
       return "Error: Missing required parameter 'filePath'. Provide the path to the file to read, e.g. { \"filePath\": \"path/to/file\" }.";
     }
     const offset = Math.max(1, (args.offset as number) || 1);
-    const limit = (args.limit as number) || 2000;
+    const limit = (args.limit as number) || 800;
 
     try {
       // Check if path is a directory — list contents instead of failing
@@ -141,7 +141,13 @@ export const readTool: Tool = {
       const content = buffer.toString("utf-8");
       const lines = content.replace(/\r\n/g, "\n").split("\n");
       const sliced = lines.slice(offset - 1, offset - 1 + limit);
-      return sliced.map((line, i) => `${offset + i}: ${line}`).join("\n");
+      const output = sliced.map((line, i) => `${offset + i}: ${line}`).join("\n");
+
+      if (lines.length > offset - 1 + limit) {
+        const remaining = lines.length - (offset - 1 + limit);
+        return `${output}\n\n... (output truncated, showing ${limit} of ${lines.length} lines. There are ${remaining} more lines. Use the 'offset' and 'limit' parameters to read the rest of the file)`;
+      }
+      return output;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error reading file: ${message}`;
@@ -474,8 +480,11 @@ export const grepTool: Tool = {
         );
       }
 
+      if (results.length > 100) {
+        return results.slice(0, 100).join("\n") + `\n\n... (output truncated, showing 100 of ${results.length} matches. Refine your query/pattern or search path to narrow down results)`;
+      }
       return results.length > 0
-        ? results.slice(0, 100).join("\n")
+        ? results.join("\n")
         : "No matches found.";
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

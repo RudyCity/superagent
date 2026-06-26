@@ -188,7 +188,8 @@ describe("File tools", () => {
   it("should read a file using readTool and handle binary content check", async () => {
     const tool = getToolByName("read");
     const result = await tool?.execute({ filePath: "temp_unit_test.txt", offset: 1, limit: 2 }, process.cwd());
-    expect(result).toBe("1: line A\n2: line B");
+    expect(result).toContain("1: line A\n2: line B");
+    expect(result).toContain("output truncated");
     
     // Write binary content and verify it fails
     const binaryFile = path.resolve(process.cwd(), "temp_binary_test.bin");

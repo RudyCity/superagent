@@ -170,7 +170,7 @@ export async function discoverWorkspace(
  * Injects a formatted overview of the workspace files and main configs into the system prompt.
  */
 export function injectWorkspaceOverview(systemPrompt: string, cache: WorkspaceCache): string {
-  const maxFileListLength = 500;
+  const maxFileListLength = 100;
   let filesText = cache.fileList.slice(0, maxFileListLength).map((f) => `- ${f}`).join("\n");
   if (cache.fileList.length > maxFileListLength) {
     filesText += `\n- ... and ${cache.fileList.length - maxFileListLength} more files (use search/glob tools to see them)`;
