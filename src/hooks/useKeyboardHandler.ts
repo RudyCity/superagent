@@ -488,9 +488,11 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             const choice = selectedOption.toLowerCase();
             let provider = "";
             if (choice.includes("openrouter")) provider = "openrouter";
+            else if (choice.includes("custom") && choice.includes("anthropic")) provider = "custom-anthropic";
+            else if (choice.includes("custom") && choice.includes("openai")) provider = "custom";
+            else if (choice.includes("custom")) provider = "custom";
             else if (choice.includes("openai")) provider = "openai";
             else if (choice.includes("anthropic")) provider = "anthropic";
-            else if (choice.includes("custom")) provider = "custom";
 
             addLine({
               type: "system",
