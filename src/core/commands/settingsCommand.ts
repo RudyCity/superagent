@@ -781,17 +781,24 @@ export const settingTencentdbCommand: SlashCommand = {
               return;
             }
           }
-          // Sync the patched v2-router.ts from node_modules to vendor/tencentdb-memory
-          const sourceRouterPath = path.join(projectRoot, "node_modules", "@tencentdb-agent-memory", "memory-tencentdb", "src", "gateway", "v2-router.ts");
-          const targetRouterPath = path.join(gatewayDir, "src", "gateway", "v2-router.ts");
-          if (fs.existsSync(sourceRouterPath)) {
+          // Sync patched gateway files from node_modules to vendor/tencentdb-memory
+          const gatewaySrcDir = path.join(projectRoot, "node_modules", "@tencentdb-agent-memory", "memory-tencentdb", "src", "gateway");
+          const gatewayDestDir = path.join(gatewayDir, "src", "gateway");
+          if (fs.existsSync(gatewaySrcDir)) {
             try {
-              fs.mkdirSync(path.dirname(targetRouterPath), { recursive: true });
-              fs.copyFileSync(sourceRouterPath, targetRouterPath);
+              const filesToSync = ["v2-router.ts", "v2-schemas.ts"];
+              for (const file of filesToSync) {
+                const srcPath = path.join(gatewaySrcDir, file);
+                const destPath = path.join(gatewayDestDir, file);
+                if (fs.existsSync(srcPath)) {
+                  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+                  fs.copyFileSync(srcPath, destPath);
+                }
+              }
             } catch (err: any) {
               ctx.addLine({
                 type: "system",
-                content: `⚠️ Failed to sync patched router to gateway: ${err.message}`,
+                content: `⚠️ Failed to sync patched files to gateway: ${err.message}`,
                 timestamp: Date.now(),
               });
             }

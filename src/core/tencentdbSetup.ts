@@ -200,6 +200,25 @@ export async function runTencentdbSetup(): Promise<void> {
       llmModel = getEffectiveMasterModel("auto") || "gpt-4o";
     }
 
+    // Sync patched gateway files from node_modules to vendor/tencentdb-memory before starting
+    const gatewaySrcDir = path.join(PROJECT_ROOT, "node_modules", "@tencentdb-agent-memory", "memory-tencentdb", "src", "gateway");
+    const gatewayDestDir = path.join(gatewayDir, "src", "gateway");
+    if (fs.existsSync(gatewaySrcDir)) {
+      try {
+        const filesToSync = ["v2-router.ts", "v2-schemas.ts"];
+        for (const file of filesToSync) {
+          const srcPath = path.join(gatewaySrcDir, file);
+          const destPath = path.join(gatewayDestDir, file);
+          if (fs.existsSync(srcPath)) {
+            fs.mkdirSync(path.dirname(destPath), { recursive: true });
+            fs.copyFileSync(srcPath, destPath);
+          }
+        }
+      } catch (syncErr: any) {
+        console.warn(`[TencentDB] Failed to sync patched files to gateway: ${syncErr.message}`);
+      }
+    }
+
     const child = spawnTencentdbGateway({
       gatewayDir,
       globalDataDir,

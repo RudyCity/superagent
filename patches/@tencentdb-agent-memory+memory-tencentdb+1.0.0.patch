@@ -10273,3 +10273,41 @@ index 2ba37e4..6c17cd1 100644
    };
  
    const embedding = deps.getEmbedding();
+diff --git a/node_modules/@tencentdb-agent-memory/memory-tencentdb/src/gateway/v2-schemas.ts b/node_modules/@tencentdb-agent-memory/memory-tencentdb/src/gateway/v2-schemas.ts
+index 1865c0b..ae293bd 100644
+--- a/node_modules/@tencentdb-agent-memory/memory-tencentdb/src/gateway/v2-schemas.ts
++++ b/node_modules/@tencentdb-agent-memory/memory-tencentdb/src/gateway/v2-schemas.ts
+@@ -27,7 +27,6 @@ export {
+   conversationQueryDataSchema,
+   conversationDeleteDataSchema,
+   atomicDetailSchema,
+-  atomicUpdateRequestSchema,
+   atomicUpdateDataSchema,
+   atomicDeleteRequestSchema,
+   atomicDeleteDataSchema,
+@@ -90,6 +89,7 @@ import {
+   scenarioWriteRequestSchema as _scenarioWriteRequestSchema,
+   scenarioRmRequestSchema as _scenarioRmRequestSchema,
+   conversationDeleteRequestSchema as _conversationDeleteRequestSchema,
++  atomicUpdateRequestSchema as _atomicUpdateRequestSchema,
+ } from "./generated/schemas.js";
+ 
+ // ============================
+@@ -135,6 +135,17 @@ export const conversationDeleteRequestSchema = z.object({
+ );
+ export type ConversationDeleteRequest = z.infer<typeof conversationDeleteRequestSchema>;
+ 
++// ============================
++// Override: atomic update with upsert support
++// ============================
++
++/** atomicUpdate with optional upsert and type fields. */
++export const atomicUpdateRequestSchema = _atomicUpdateRequestSchema.extend({
++  upsert: z.boolean().optional().describe("When true, creates the record if it doesn't exist (upsert semantics). Default: false."),
++  type: z.string().optional().describe("Memory type/category (used when upsert creates a new record)."),
++});
++export type AtomicUpdateRequest = z.infer<typeof atomicUpdateRequestSchema>;
++
+ // ============================
+ // Generic API Response Envelope
+ // ============================
