@@ -98,11 +98,13 @@ export async function searchHistory(
       : "No conversation history sessions found in the workspace.";
   }
 
+  const config = getConfig();
+
   // Generate cache signature from sessions paths and modification times
   const sig = sessions
     .map((s) => `${s.filePath}:${s.lastModified.getTime()}`)
     .join("|");
-  const cacheKey = `${query}:${isMulti}:${crossSession}`;
+  const cacheKey = `${query}:${isMulti}:${crossSession}:${config.model || ""}:${config.provider || ""}`;
   const cachedEntry = semanticSearchCache.get(cacheKey);
   if (cachedEntry && cachedEntry.sig === sig) {
     if (onDebug) {
@@ -216,7 +218,6 @@ export async function searchHistory(
     return lines.join("\n").trim();
   };
 
-  const config = getConfig();
   const hasApiKey = !!config.apiKey;
 
   if (!hasApiKey) {
