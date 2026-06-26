@@ -184,45 +184,22 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           type: "system",
           content: `Successfully configured provider profile: ${profileName} (${provider})${baseUrlInfo}\nSaved to model-config.json`,
           timestamp: now,
-        });
-
-        // Skip connection test (old step 7) — go directly to model selection (step 8).
-        // The connection will be tested naturally when the user sends a test message in step 9.
-        setWizardIsLoadingModels(true);
-        let models: string[];
-        try {
-          await fetchAndCacheModels();
-        } catch {}
-        if ((provider === "custom" || provider === "custom-anthropic") && effectiveBaseUrl) {
-          const endpointCheck = await checkEndpointCompatibility(effectiveBaseUrl, apiKey);
-          const endpointModels = endpointCheck.models;
-          models = endpointModels.length > 0 ? endpointModels : getModelOptions(provider, getCachedModelIds());
-          if (!endpointCheck.ok && endpointCheck.message) {
-            addLine({
-              type: "system",
-              content: `Custom endpoint warning: ${endpointCheck.message}`,
-              timestamp: Date.now(),
-            });
-          }
-        } else {
-          models = getModelOptions(provider, getCachedModelIds());
-        }
-        setWizardIsLoadingModels(false);
-
+        });        // Transition to connection test confirmation (step 7)
         setActiveWizard({
           type: "login",
-          step: 8,
+          step: 7,
           data: {
             providerId,
             providerName: profileName,
             providerType: provider,
             providerApiKey: apiKey,
             providerBaseUrl: effectiveBaseUrl,
+            fromList: "false",
           },
         });
-        setWizardOptions(models);
+        setWizardOptions(["1. Yes, Test Connection", "2. No"]);
         setWizardSelectedIndex(0);
-        return;
+        setInput("");
       } catch (err: any) {
         addLine({
           type: "error",
@@ -494,33 +471,116 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       });
       // Activate the selected provider in ALL preset tiers (both modes)
       switchActiveProvider(selectedProvider.id);
-      // Skip connection test (old step 7) — go directly to model selection (step 8).
-      setWizardIsLoadingModels(true);
       const selBaseUrl = selectedProvider.baseUrl || "";
       const selApiKey = selectedProvider.apiKey || "";
       const selType = selectedProvider.provider || "";
-      let models: string[];
-      try {
-        await fetchAndCacheModels();
-      } catch {}
-      if (selType === "custom" && selBaseUrl) {
-        const endpointModels = await fetchModelsFromEndpoint(selBaseUrl, selApiKey);
-        models = endpointModels.length > 0 ? endpointModels : getModelOptions(selType, getCachedModelIds());
-      } else {
-        models = getModelOptions(selType, getCachedModelIds());
-      }
-      setWizardIsLoadingModels(false);
       setActiveWizard({
         type: "login",
-        step: 8,
+        step: 7,
         data: {
           providerId: selectedProvider.id,
           providerName: selectedProvider.name,
           providerType: selType,
           providerApiKey: selApiKey,
           providerBaseUrl: selBaseUrl,
+          fromList: "true",
         },
       });
+      setWizardOptions(["1. Yes, Test Connection", "2. No"]);
+      setWizardSelectedIndex(0);
+    } else if (step === 7) {
+      // Step 7: Confirm connection test
+      const choice = value.toLowerCase();
+      const skipTest = choice.includes("tidak") || choice.includes("no") || choice === "2" || choice.startsWith("2.");
+      
+      const pId = data.providerId || "";
+      const pName = data.providerName || "";
+      const pType = data.providerType || "";
+      const pApiKey = data.providerApiKey || "";
+      const pBaseUrl = data.providerBaseUrl || "";
+
+      if (skipTest) {
+        addLine({ type: "system", content: "Connection test skipped.", timestamp: now });
+        setWizardIsLoadingModels(true);
+        let models: string[];
+        try {
+          await fetchAndCacheModels();
+        } catch {}
+        models = getModelOptions(pType, getCachedModelIds());
+        setWizardIsLoadingModels(false);
+
+        setActiveWizard({ type: "login", step: 8, data });
+        setWizardOptions(models);
+        setWizardSelectedIndex(0);
+        return;
+      }
+
+      // Perform connection test
+      addLine({ type: "system", content: `🔄 Testing connection to ${pName}...`, timestamp: now });
+      setWizardIsLoadingModels(true);
+      let testPassed = false;
+      let fetchedModelsList: string[] = [];
+
+      try {
+        if (pType === "custom" || pType === "custom-anthropic") {
+          // Custom providers: test via models endpoint compatibility
+          const endpointCheck = await checkEndpointCompatibility(pBaseUrl, pApiKey);
+          if (endpointCheck.ok) {
+            testPassed = true;
+            fetchedModelsList = endpointCheck.models;
+            addLine({
+              type: "system",
+              content: `✅ Connection successful! Fetched ${fetchedModelsList.length} models from custom endpoint.`,
+              timestamp: Date.now(),
+            });
+          } else {
+            addLine({
+              type: "error",
+              content: `❌ Connection check failed: ${endpointCheck.message || "Unknown endpoint issue"}`,
+              timestamp: Date.now(),
+            });
+          }
+        } else {
+          // Standard providers: test via dummy message
+          const { generateText } = await import("ai");
+          const testModelName = resolveTestModel(pType, pBaseUrl);
+          const testModel = getModelInstanceForString(testModelName);
+          const result = await generateText({
+            model: testModel,
+            prompt: 'Reply with exactly one word: "OK"',
+            maxTokens: 10,
+          });
+          if (result.text.trim()) {
+            testPassed = true;
+            addLine({
+              type: "system",
+              content: `✅ Connection successful! Response: "${result.text.trim()}"`,
+              timestamp: Date.now(),
+            });
+          }
+        }
+      } catch (err: any) {
+        addLine({
+          type: "error",
+          content: `❌ Connection failed: ${err.message || String(err)}`,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Load model options and proceed to step 8
+      try {
+        await fetchAndCacheModels();
+      } catch {}
+
+      let models: string[];
+      if ((pType === "custom" || pType === "custom-anthropic") && testPassed && fetchedModelsList.length > 0) {
+        models = fetchedModelsList;
+      } else {
+        models = getModelOptions(pType, getCachedModelIds());
+      }
+
+      setWizardIsLoadingModels(false);
+      setActiveWizard({ type: "login", step: 8, data });
       setWizardOptions(models);
       setWizardSelectedIndex(0);
     } else if (step === 8) {

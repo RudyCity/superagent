@@ -2,6 +2,7 @@ import React from "react";
 import { useInput } from "ink";
 import { getPasteSplit, filterSuggestions } from "../utils/text.js";
 import { subagentInstances, backgroundTasks } from "../core/tools/state.js";
+import { getProviders } from "../core/config.js";
 import { listCheckpointsForSession } from "../core/checkpoints.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 export function useDashboardKeyboard(ctx) {
@@ -370,6 +371,28 @@ export function useDashboardKeyboard(ctx) {
                             setActiveWizard({ type: "login", step: 3, data: { provider: activeWizard.data.provider } });
                         }
                         setWizardOptions([]);
+                        setWizardSelectedIndex(0);
+                        setQuery("");
+                        return;
+                    }
+                    else if (activeWizard.step === 7) {
+                        if (activeWizard.data.fromList === "true") {
+                            const providers = getProviders().filter(p => p.apiKey && p.apiKey.trim() !== "");
+                            setActiveWizard({ type: "login", step: 6, data: {} });
+                            setWizardOptions(providers.map((p, i) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`));
+                        }
+                        else {
+                            setActiveWizard({
+                                type: "login",
+                                step: 5,
+                                data: {
+                                    provider: activeWizard.data.providerType,
+                                    name: activeWizard.data.providerName,
+                                    baseUrl: activeWizard.data.providerBaseUrl,
+                                }
+                            });
+                            setWizardOptions([]);
+                        }
                         setWizardSelectedIndex(0);
                         setQuery("");
                         return;

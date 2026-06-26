@@ -1476,6 +1476,29 @@ export function useKeyboardHandler(ctx) {
                         setInput("");
                         return;
                     }
+                    else if (activeWizard.step === 7) {
+                        // Back to step 6 (if fromList) or step 5 (new provider)
+                        if (activeWizard.data.fromList === "true") {
+                            const providers = getProviders().filter(p => p.apiKey && p.apiKey.trim() !== "");
+                            setActiveWizard({ type: "login", step: 6, data: {} });
+                            setWizardOptions(providers.map((p, i) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`));
+                        }
+                        else {
+                            setActiveWizard({
+                                type: "login",
+                                step: 5,
+                                data: {
+                                    provider: activeWizard.data.providerType,
+                                    name: activeWizard.data.providerName,
+                                    baseUrl: activeWizard.data.providerBaseUrl,
+                                }
+                            });
+                            setWizardOptions([]);
+                        }
+                        setWizardSelectedIndex(0);
+                        setInput("");
+                        return;
+                    }
                     else if (activeWizard.step === 11) {
                         // Back to step 10: Tech stack selection
                         setActiveWizard({ type: "login", step: 10, data: activeWizard.data });
