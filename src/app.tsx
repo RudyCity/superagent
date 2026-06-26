@@ -68,6 +68,35 @@ function getWizardBorderColor(activeWizard: any): "yellow" | "cyan" | "blue" | "
   }
 }
 
+function cleanXmlForDisplay(text: string): string {
+  let cleaned = text;
+
+  // 1. Remove closed tool calls
+  cleaned = cleaned.replace(/<function_calls\s*>[\s\S]*?<\/function_calls>/gi, "");
+  cleaned = cleaned.replace(/<invoke\s+name="[^"]+"[^>]*>[\s\S]*?<\/invoke>/gi, "");
+
+  const knownTools = [
+    "ask_question", "run_command", "view_file", "write_to_file",
+    "replace_file_content", "multi_replace_file_content", "search_web",
+    "read_url_content", "invoke_subagent", "manage_subagents", "list_dir",
+    "schedule", "manage_task", "ask_permission", "list_permissions"
+  ];
+  for (const tool of knownTools) {
+    const escaped = tool.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+    const regex = new RegExp(`<${escaped}\\s*>([\\s\\S]*?)<\\/${escaped}>`, "gi");
+    cleaned = cleaned.replace(regex, "");
+  }
+
+  // 2. If there's an unclosed tool call at the end, strip it
+  const unclosedRegex = /<(function_calls|invoke|ask_question|run_command|view_file|write_to_file|replace_file_content|multi_replace_file_content|search_web|read_url_content|invoke_subagent|manage_subagents|list_dir|schedule|manage_task|ask_permission|list_permissions)\b[^>]*>[\s\S]*$/i;
+  cleaned = cleaned.replace(unclosedRegex, "");
+
+  // Also strip any partial opening tag at the very end of the string (e.g. "<ask_" or "<invo")
+  cleaned = cleaned.replace(/<[a-zA-Z0-9_]*$/i, "");
+
+  return cleaned;
+}
+
 export function App({
   autoResume = false,
   onHistoryChange,
@@ -378,13 +407,16 @@ export function App({
       clearTimeout(deferredStreamTimeoutRef.current);
       deferredStreamTimeoutRef.current = null;
     }
-    const content = streamBufferRef.current.trim();
-    if (content) {
-      addLine({
-        type: "assistant",
-        content,
-        timestamp: Date.now(),
-      });
+    const rawContent = streamBufferRef.current.trim();
+    if (rawContent) {
+      const content = cleanXmlForDisplay(rawContent).trim();
+      if (content) {
+        addLine({
+          type: "assistant",
+          content,
+          timestamp: Date.now(),
+        });
+      }
     }
     streamBufferRef.current = "";
     setStreamDisplay("");
@@ -1233,7 +1265,7 @@ export function App({
           // Throttle state updates to at most once every 40ms to prevent Ink render overload.
           const now = Date.now();
           if (now - lastStreamUpdateRef.current > 40) {
-            setStreamDisplay(streamBufferRef.current);
+            setStreamDisplay(cleanXmlForDisplay(streamBufferRef.current));
             lastStreamUpdateRef.current = now;
             if (deferredStreamTimeoutRef.current) {
               clearTimeout(deferredStreamTimeoutRef.current);
@@ -1243,7 +1275,7 @@ export function App({
             // Schedule a deferred update for the trailing characters if not already scheduled.
             if (!deferredStreamTimeoutRef.current) {
               deferredStreamTimeoutRef.current = setTimeout(() => {
-                setStreamDisplay(streamBufferRef.current);
+                setStreamDisplay(cleanXmlForDisplay(streamBufferRef.current));
                 lastStreamUpdateRef.current = Date.now();
                 deferredStreamTimeoutRef.current = null;
               }, 40);
