@@ -163,7 +163,7 @@ export const helpCommand: SlashCommand = {
         "  /image attach <p> - Attach an image from the specified file path",
         "  /ih       - Manage custom internal hook tools (alias: /internal-hooks)",
         "              /ih init <name>  - Scaffold a new hook project",
-        "              /ih dev <name>   - Run the hook's dev script with test-payload.json input",
+        "              /ih dev <name>   - Set workspace focus to hook development and run dev loop",
         "              /ih list         - List all discovered internal hooks and their status",
         "              /ih active       - Select which hooks to activate via checkbox dialog",
         "  /login    - Login to a provider (e.g. /login openrouter sk-or-...)",
