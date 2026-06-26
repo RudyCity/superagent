@@ -356,4 +356,26 @@ Dynamic hook skill body
     expect(devListLine?.content).toContain("Active");
     expect(devListLine?.content).toContain("To start development, run:");
   });
+
+  it("should auto-activate the hook on /ih dev if it is not already active", async () => {
+    const { saveActiveHooksForProject, getActiveHooksForProject } = await import("../src/core/tools/dynamicHooks.js");
+    
+    // Deactivate our test-hook by saving an empty list
+    saveActiveHooksForProject(tempDir, []);
+    expect(getActiveHooksForProject(tempDir)).toEqual([]);
+
+    const lines: ChatLine[] = [];
+    const mockCtx: SlashCommandContext = {
+      addLine: (line) => lines.push(line),
+      exit: () => {},
+      agent: null,
+      setActiveDevHook: () => {},
+    };
+
+    // Run `/ih dev test-hook` which should trigger auto-activation
+    await internalHooksCommand.execute("dev test-hook", mockCtx);
+
+    // Verify it is now auto-activated
+    expect(getActiveHooksForProject(tempDir)).toContain("test-hook");
+  });
 });

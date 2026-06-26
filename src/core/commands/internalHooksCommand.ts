@@ -290,6 +290,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         ctx.setActiveDevHook(hookName);
       }
 
+      // Auto-activate the hook being developed if it's not already active
+      const activeHooks = getActiveHooksForProject(process.cwd());
+      if (activeHooks !== null) {
+        if (!activeHooks.includes(hookName)) {
+          activeHooks.push(hookName);
+          saveActiveHooksForProject(process.cwd(), activeHooks);
+
+          // Trigger dynamic tools reload so the hook is loaded immediately
+          try {
+            const { refreshDynamicHooks } = await import("../tools/index.js");
+            refreshDynamicHooks();
+          } catch (reloadErr) {
+            console.error("Failed to hot-reload dynamic hooks:", reloadErr);
+          }
+        }
+      }
+
       ctx.addLine({
         type: "system",
         content: `✓ Workspace focus set to internal hook "${hookName}" for development.`,
