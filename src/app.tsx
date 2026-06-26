@@ -2277,17 +2277,21 @@ export function App({
                           focused={focusMode === "input"}
                         />
                       )}
-                      <ChatTextInput
-                        focus={focusMode === "input"}
-                        value={input}
-                        onChange={handleInputChange}
-                        onSubmit={handleSubmit}
-                        placeholder={getWizardPlaceholder()}
-                        onAttachImage={handleAttachImage}
-                        onPasteImage={handlePasteImage}
-                        onRemoveLastAttachment={handleRemoveLastAttachment}
-                        attachmentCount={attachments.length}
-                      />
+                      {activeWizard?.type === "login" && activeWizard.step === 15 ? (
+                        <Text dimColor>↑/↓ to select, Enter to confirm, Esc to go back</Text>
+                      ) : (
+                        <ChatTextInput
+                          focus={focusMode === "input"}
+                          value={input}
+                          onChange={handleInputChange}
+                          onSubmit={handleSubmit}
+                          placeholder={getWizardPlaceholder()}
+                          onAttachImage={handleAttachImage}
+                          onPasteImage={handlePasteImage}
+                          onRemoveLastAttachment={handleRemoveLastAttachment}
+                          attachmentCount={attachments.length}
+                        />
+                      )}
                     </Box>
                   );
                 })()}

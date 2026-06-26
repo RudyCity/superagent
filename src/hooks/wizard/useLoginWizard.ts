@@ -726,9 +726,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       const pName = data.providerName || "";
 
       if (!confirmDelete) {
-        addLine({ type: "system", content: "Deletion cancelled.", timestamp: now });
-        setActiveWizard(null);
-        setWizardOptions([]);
+        // No (Cancel) → back to step 14 delete list
+        const list = getConfiguredProviders();
+        setActiveWizard({ type: "login", step: 14, data: {} });
+        setWizardOptions(list.map(
+          (p, i) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+        ));
         setWizardSelectedIndex(0);
         return;
       }
@@ -737,7 +740,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         removeProvider(pId);
         addLine({
           type: "system",
-          content: `Successfully removed provider: ${pName} (${pId})`,
+          content: `✅ Provider removed: ${pName}`,
           timestamp: now,
         });
       } catch (err: any) {
@@ -748,9 +751,20 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         });
       }
 
-      setActiveWizard(null);
-      setWizardOptions([]);
-      setWizardSelectedIndex(0);
+      // After deletion: reload list and go back to step 14
+      const remaining = getConfiguredProviders();
+      if (remaining.length > 0) {
+        setActiveWizard({ type: "login", step: 14, data: {} });
+        setWizardOptions(remaining.map(
+          (p, i) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+        ));
+        setWizardSelectedIndex(0);
+      } else {
+        addLine({ type: "system", content: "No more providers to delete.", timestamp: now });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+      }
     }
   }, [
     setActiveWizard,
