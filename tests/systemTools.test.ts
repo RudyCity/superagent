@@ -196,5 +196,65 @@ describe("System Tools Optimizations", () => {
         await fs.unlink(tempFilePath).catch(() => {});
       }
     });
+
+    it("should reject overlapping line ranges defensively", async () => {
+      const tempFilePath = path.resolve(__dirname, "temp-multi-replace-overlap.txt");
+      await fs.writeFile(tempFilePath, "line 1\nline 2\nline 3\nline 4\nline 5\n", "utf-8");
+
+      try {
+        const result = await multiReplaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            chunks: [
+              {
+                startLine: 1,
+                endLine: 3,
+                targetContent: "line 1\nline 2\nline 3",
+                replacementContent: "replaced first"
+              },
+              {
+                startLine: 3,
+                endLine: 5,
+                targetContent: "line 3\nline 4\nline 5",
+                replacementContent: "replaced second"
+              }
+            ]
+          },
+          process.cwd()
+        );
+        expect(result).toContain("Error: Overlapping line ranges detected");
+      } finally {
+        await fs.unlink(tempFilePath).catch(() => {});
+      }
+    });
+
+    it("should correctly map indices and replace content even when lines have trailing whitespace", async () => {
+      const tempFilePath = path.resolve(__dirname, "temp-multi-replace-whitespace.txt");
+      // Line 1 has trailing spaces
+      await fs.writeFile(tempFilePath, "line 1   \nline 2\n", "utf-8");
+
+      try {
+        const result = await multiReplaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            chunks: [
+              {
+                startLine: 1,
+                endLine: 1,
+                targetContent: "line 1",
+                replacementContent: "line 1 updated"
+              }
+            ]
+          },
+          process.cwd()
+        );
+        expect(result).toContain("File updated successfully");
+        const content = await fs.readFile(tempFilePath, "utf-8");
+        expect(content).toBe("line 1 updated\nline 2\n");
+      } finally {
+        await fs.unlink(tempFilePath).catch(() => {});
+      }
+    });
   });
 });
+

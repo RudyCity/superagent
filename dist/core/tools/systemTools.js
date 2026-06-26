@@ -3,7 +3,7 @@ import fsSync from "fs";
 import path from "path";
 import fg from "fast-glob";
 import { execa } from "execa";
-import { normalizeForMatching, verifySyntax } from "./helpers.js";
+import { normalizeForMatching, verifySyntax, mapNormToOrigIndices } from "./helpers.js";
 import { getLocalRgPath, isRgInstalledGlobally, ensureRgInstalled } from "../androidSetup.js";
 import { getWorkspaceCachePath } from "../workspaceDiscovery.js";
 function buildEditSummary(before, after, filePath, existedBefore = true) {
@@ -642,26 +642,11 @@ export const replaceFileContentTool = {
                 return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] (matching normalized content).`;
             }
             const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
-            let normCharIdx = 0;
-            let origCharIdx = 0;
-            let matchOrigStart = -1;
-            let matchOrigEnd = -1;
-            while (origCharIdx < sliceText.length && normCharIdx < normSliceText.length) {
-                if (normCharIdx === matchIndexInNorm) {
-                    matchOrigStart = origCharIdx;
-                }
-                if (normCharIdx === matchIndexInNorm + normTargetContent.length) {
-                    matchOrigEnd = origCharIdx;
-                    break;
-                }
-                const cOrig = sliceText[origCharIdx];
-                if (cOrig === "\r") {
-                    origCharIdx++;
-                    continue;
-                }
-                origCharIdx++;
-                normCharIdx++;
-            }
+            const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
+            const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+            const matchOrigEnd = (matchIndexInNorm + normTargetContent.length === normSliceText.length)
+                ? sliceText.length
+                : (normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1);
             let replacedSlice;
             if (matchOrigStart === -1 || matchOrigEnd === -1) {
                 replacedSlice = sliceText.replace(targetContent, replacementContent);
@@ -778,6 +763,15 @@ export const multiReplaceFileContentTool = {
             let content = await fs.readFile(filePath, "utf-8");
             const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
             let lines = content.split(/\r?\n/);
+            // Check for overlapping line ranges defensively
+            const sortedForOverlapCheck = [...chunks].sort((a, b) => a.startLine - b.startLine);
+            for (let i = 0; i < sortedForOverlapCheck.length - 1; i++) {
+                const current = sortedForOverlapCheck[i];
+                const next = sortedForOverlapCheck[i + 1];
+                if (current.endLine >= next.startLine) {
+                    return `Error: Overlapping line ranges detected between chunks: [${current.startLine}, ${current.endLine}] and [${next.startLine}, ${next.endLine}].`;
+                }
+            }
             const sortedChunks = [...chunks].sort((a, b) => b.startLine - a.startLine);
             for (const chunk of sortedChunks) {
                 const { targetContent, replacementContent, startLine, endLine } = chunk;
@@ -792,26 +786,11 @@ export const multiReplaceFileContentTool = {
                     return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] for a chunk (matching normalized content).`;
                 }
                 const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
-                let normCharIdx = 0;
-                let origCharIdx = 0;
-                let matchOrigStart = -1;
-                let matchOrigEnd = -1;
-                while (origCharIdx < sliceText.length && normCharIdx < normSliceText.length) {
-                    if (normCharIdx === matchIndexInNorm) {
-                        matchOrigStart = origCharIdx;
-                    }
-                    if (normCharIdx === matchIndexInNorm + normTargetContent.length) {
-                        matchOrigEnd = origCharIdx;
-                        break;
-                    }
-                    const cOrig = sliceText[origCharIdx];
-                    if (cOrig === "\r") {
-                        origCharIdx++;
-                        continue;
-                    }
-                    origCharIdx++;
-                    normCharIdx++;
-                }
+                const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
+                const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+                const matchOrigEnd = (matchIndexInNorm + normTargetContent.length === normSliceText.length)
+                    ? sliceText.length
+                    : (normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1);
                 let replacedSlice;
                 if (matchOrigStart === -1 || matchOrigEnd === -1) {
                     replacedSlice = sliceText.replace(targetContent, replacementContent);

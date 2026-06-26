@@ -197,3 +197,30 @@ export function detectInteractivePrompt(text: string): string | null {
   }
   return null;
 }
+
+export function mapNormToOrigIndices(sliceText: string, normSliceText: string): number[] {
+  const origLines = sliceText.split(/\r?\n/);
+  const normLines = normSliceText.split("\n");
+  const normToOrigMap: number[] = [];
+  let origCharOffset = 0;
+
+  for (let i = 0; i < origLines.length; i++) {
+    const origLine = origLines[i];
+    const normLine = normLines[i] ?? "";
+
+    for (let col = 0; col < normLine.length; col++) {
+      normToOrigMap.push(origCharOffset + col);
+    }
+
+    if (i < origLines.length - 1) {
+      let newlineOffset = origLine.length;
+      if (sliceText[origCharOffset + newlineOffset] === "\r") {
+        newlineOffset++;
+      }
+      normToOrigMap.push(origCharOffset + newlineOffset);
+      origCharOffset += newlineOffset + 1;
+    }
+  }
+  return normToOrigMap;
+}
+

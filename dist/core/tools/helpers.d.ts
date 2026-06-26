@@ -17,5 +17,6 @@ export declare function truncateOutput(output: string, maxLines?: number): strin
  */
 export declare function normalizeGitPaths(command: string): string;
 export declare function detectInteractivePrompt(text: string): string | null;
+export declare function mapNormToOrigIndices(sliceText: string, normSliceText: string): number[];
 export {};
 //# sourceMappingURL=helpers.d.ts.map
