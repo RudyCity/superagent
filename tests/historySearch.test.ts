@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { fuzzyScore, searchHistory } from "../src/core/historySearch.js";
+import { fuzzyScore, searchHistory, clearSemanticSearchCache } from "../src/core/historySearch.js";
 import { searchHistoryTool } from "../src/core/tools/otherTools.js";
 import { agentLocalStorage } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
@@ -31,11 +31,13 @@ describe("historySearch", () => {
     vi.restoreAllMocks();
     process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
     clearModelConfigCache();
+    clearSemanticSearchCache();
     fs.rmSync(testConfigDir, { recursive: true, force: true });
   });
 
   afterEach(() => {
     clearModelConfigCache();
+    clearSemanticSearchCache();
     fs.rmSync(testConfigDir, { recursive: true, force: true });
     process.env = originalEnv;
   });
@@ -163,6 +165,7 @@ describe("historySearch", () => {
       expect(result).toContain("This session is about neural networks.");
 
       // 2. Hallucinated out-of-bounds case: AI returns indices that are out of bounds of candidates
+      clearSemanticSearchCache();
       vi.mocked(generateText)
         .mockResolvedValueOnce({ text: "[5]" } as any); // Filter prompt returns out of bounds index (only 1 candidate)
 
@@ -241,6 +244,43 @@ describe("historySearch", () => {
       // Third call - modified timestamp, should re-read file
       const result3 = await searchHistory("Unique query term", false);
       expect(result3).toContain("Cache Session");
+      expect(spyReadFile).toHaveBeenCalledTimes(2);
+    });
+
+    it("should hit the semantic search cache on repeated exact queries when history is unchanged", async () => {
+      const mockSessions = [
+        {
+          filePath: "/path/to/semantic_cache_session.json",
+          displayName: "Semantic Cache Session",
+          messageCount: 1,
+          lastModified: new Date("2026-06-26T10:00:00Z"),
+          preview: "Preview",
+        },
+      ];
+
+      vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
+      const spyReadFile = vi.spyOn(fs.promises, "readFile").mockResolvedValue(
+        JSON.stringify([
+          { role: "user", content: "AI query term" },
+        ])
+      );
+
+      // First call - should read the file and generate fallback
+      const result1 = await searchHistory("AI query term", false);
+      expect(result1).toContain("Semantic Cache Session");
+      expect(spyReadFile).toHaveBeenCalledTimes(1);
+
+      // Second call - should hit the semantic cache directly (no readFile)
+      const result2 = await searchHistory("AI query term", false);
+      expect(result2).toBe(result1);
+      expect(spyReadFile).toHaveBeenCalledTimes(1);
+
+      // Modify the session's lastModified to invalidate cache
+      mockSessions[0].lastModified = new Date("2026-06-26T11:00:00Z");
+
+      // Third call - should re-read because of signature mismatch
+      const result3 = await searchHistory("AI query term", false);
+      expect(result3).toContain("Semantic Cache Session");
       expect(spyReadFile).toHaveBeenCalledTimes(2);
     });
   });

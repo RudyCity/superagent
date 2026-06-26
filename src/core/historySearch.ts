@@ -59,6 +59,20 @@ interface HistorySearchCacheEntry {
 
 const historySearchCache = new Map<string, HistorySearchCacheEntry>();
 
+interface SemanticSearchCacheEntry {
+  sig: string;
+  result: string;
+}
+
+const semanticSearchCache = new Map<string, SemanticSearchCacheEntry>();
+
+/**
+ * Clear the in-memory semantic search cache.
+ */
+export function clearSemanticSearchCache(): void {
+  semanticSearchCache.clear();
+}
+
 /**
  * Perform a hybrid AI-powered semantic search with an offline fuzzy fallback.
  * @param query - The search query
@@ -82,6 +96,19 @@ export async function searchHistory(
     return crossSession
       ? "No conversation history sessions found across any sessions."
       : "No conversation history sessions found in the workspace.";
+  }
+
+  // Generate cache signature from sessions paths and modification times
+  const sig = sessions
+    .map((s) => `${s.filePath}:${s.lastModified.getTime()}`)
+    .join("|");
+  const cacheKey = `${query}:${isMulti}:${crossSession}`;
+  const cachedEntry = semanticSearchCache.get(cacheKey);
+  if (cachedEntry && cachedEntry.sig === sig) {
+    if (onDebug) {
+      onDebug(`[DEBUG] Cache hit for query: "${query}". Returning cached results.`);
+    }
+    return cachedEntry.result;
   }
 
   const scoredSessions: Array<{
@@ -196,7 +223,9 @@ export async function searchHistory(
     if (onDebug) {
       onDebug("[DEBUG] No API key configured. Skipping AI Semantic Search.");
     }
-    return generateFuzzyFallbackText();
+    const fallback = generateFuzzyFallbackText();
+    semanticSearchCache.set(cacheKey, { sig, result: fallback });
+    return fallback;
   }
 
   try {
@@ -205,8 +234,8 @@ export async function searchHistory(
       onDebug(`[DEBUG] API key configured. Using model: ${model?.modelId || "unknown"}`);
     }
 
-    // AI Semantic Filtering
-    const candidates = scoredSessions.slice(0, 5).map((item, idx) => ({
+    // AI Semantic Filtering - Slice increased to 10 for broader pool
+    const candidates = scoredSessions.slice(0, 10).map((item, idx) => ({
       index: idx,
       displayName: item.session.displayName,
       preview: item.session.preview,
@@ -219,7 +248,9 @@ export async function searchHistory(
     }
 
     if (candidates.length === 0) {
-      return `No matches found in history for query: "${query}"`;
+      const emptyResult = `No matches found in history for query: "${query}"`;
+      semanticSearchCache.set(cacheKey, { sig, result: emptyResult });
+      return emptyResult;
     }
 
     const filterPrompt = `You are a developer assistant analyzing past coding session logs.
@@ -268,7 +299,9 @@ If no sessions are relevant, return an empty array: []`;
     }
 
     if (indices.length === 0) {
-      return `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
+      const noSemanticResult = `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
+      semanticSearchCache.set(cacheKey, { sig, result: noSemanticResult });
+      return noSemanticResult;
     }
 
     const reports: string[] = [];
@@ -313,6 +346,7 @@ Please summarize what was discussed, decided, or implemented in this session reg
 
       if (onDebug) {
         onDebug(`[DEBUG] Raw AI summary output for "${match.session.displayName}":\n${summary}`);
+        onDebug(`[PROGRESS] Completed semantic summary for: 📁 ${match.session.displayName}`);
       }
 
       return {
@@ -329,13 +363,18 @@ Please summarize what was discussed, decided, or implemented in this session reg
     }
 
     if (reports.length === 0) {
-      return `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
+      const noSemanticResult = `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
+      semanticSearchCache.set(cacheKey, { sig, result: noSemanticResult });
+      return noSemanticResult;
     }
 
-    return `[AI SEMANTIC SEARCH] Found relevant history for "${query}":\n\n` + reports.join("\n\n");
+    const finalResult = `[AI SEMANTIC SEARCH] Found relevant history for "${query}":\n\n` + reports.join("\n\n");
+    semanticSearchCache.set(cacheKey, { sig, result: finalResult });
+    return finalResult;
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     const fallback = generateFuzzyFallbackText();
-    return `[AI Search Failed (${errorMsg}) - Falling back to Fuzzy Search]\n\n${fallback}`;
+    const errorResult = `[AI Search Failed (${errorMsg}) - Falling back to Fuzzy Search]\n\n${fallback}`;
+    return errorResult;
   }
 }
