@@ -37,8 +37,6 @@ export function spawnTencentdbGateway(options: {
   outLog: number;
   errLog: number;
 }): any {
-  const tsxCli = path.join(options.gatewayDir, "node_modules", "tsx", "dist", "cli.mjs");
-  
   const env = {
     ...process.env,
     TDAI_DATA_DIR: options.globalDataDir,
@@ -48,27 +46,15 @@ export function spawnTencentdbGateway(options: {
     MEMORY_TENCENTDB_GATEWAY_PORT: "8420",
   };
 
-  if (fs.existsSync(tsxCli)) {
-    // Run directly via node with shell: false to ensure NO console window on Windows
-    return spawn(process.execPath, [tsxCli, "src/gateway/server.ts"], {
-      cwd: options.gatewayDir,
-      detached: true,
-      shell: false,
-      windowsHide: true,
-      stdio: ["ignore", options.outLog, options.errLog],
-      env,
-    });
-  } else {
-    // Fallback if tsx is not found in local node_modules
-    return spawn(process.platform === "win32" ? "npx.cmd" : "npx", ["tsx", "src/gateway/server.ts"], {
-      cwd: options.gatewayDir,
-      detached: true,
-      shell: false,
-      windowsHide: true,
-      stdio: ["ignore", options.outLog, options.errLog],
-      env,
-    });
-  }
+  // Run directly via node with --import tsx and shell: false to ensure NO console window is opened on Windows
+  return spawn(process.execPath, ["--import", "tsx", "src/gateway/server.ts"], {
+    cwd: options.gatewayDir,
+    detached: true,
+    shell: false,
+    windowsHide: true,
+    stdio: ["ignore", options.outLog, options.errLog],
+    env,
+  });
 }
 
 /**
