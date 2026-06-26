@@ -14,18 +14,13 @@ debug_creds.mjs
 # Fastcontext
 .fastcontext/
 
-# Vendor folders that shouldn't be in git
-vendor/tencentdb-memory/
-
 # Python caches (but keep bin/ tracked)
 __pycache__/
 *.py[cod]
 *$py.class
 
 # Temp files created by tests
-tests/temp-home-*/
-tests/temp-home-worker-*/
-tests/temp-home-auto-checkpoint/
+tests/temp-*
 
 # Environment files
 .env
