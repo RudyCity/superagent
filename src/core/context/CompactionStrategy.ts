@@ -1,4 +1,4 @@
-import { Message } from "../conversation";
+import { Message } from "../conversation.js";
 
 export interface CompactionContext {
   messages: Message[];

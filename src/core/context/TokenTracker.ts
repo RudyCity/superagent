@@ -1,4 +1,4 @@
-import { Message, MessageContent, contentToString } from "../conversation";
+import { Message, MessageContent, contentToString } from "../conversation.js";
 
 export interface TokenBreakdown {
   systemPrompt: number;

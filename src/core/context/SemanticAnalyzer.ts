@@ -1,4 +1,4 @@
-import { Message, MessageContent } from "../conversation";
+import { Message, MessageContent } from "../conversation.js";
 
 /** Extract plain text from a MessageContent (string or parts array) */
 function contentText(c: MessageContent): string {
