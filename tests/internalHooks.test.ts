@@ -271,6 +271,28 @@ Dynamic hook skill body
     expect(dynamicSkill?.description).toBe("Dynamic hook skill description");
   });
 
+  it("should dynamically load skills from active hooks .agents/skills subdirectory", async () => {
+    const { getInstalledSkills } = await import("../src/core/config/skills.js");
+    const hookDir = path.join(tempDir, "internal-hooks", "test-hook-agents");
+    const skillDir = path.join(hookDir, ".agents", "skills", "dynamic-hook-agents-skill");
+    await fs.mkdir(skillDir, { recursive: true });
+
+    // Write a dummy SKILL.md
+    const skillMd = `---
+name: Dynamic Hook Agents Skill
+description: Dynamic hook agents skill description
+---
+# Dynamic Hook Agents Skill
+Dynamic hook agents skill body
+`;
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), skillMd);
+
+    const skills = getInstalledSkills();
+    const dynamicSkill = skills.find(s => s.name === "Dynamic Hook Agents Skill");
+    expect(dynamicSkill).toBeDefined();
+    expect(dynamicSkill?.description).toBe("Dynamic hook agents skill description");
+  });
+
   it("should list discovered hooks and their exposed features on /ih list", async () => {
     const hookDir = path.join(tempDir, "internal-hooks", "test-hook");
     // Write hook.json with all capabilities to ensure they are reported

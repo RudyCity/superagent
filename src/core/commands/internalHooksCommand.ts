@@ -5,7 +5,7 @@ import { execa } from "execa";
 import { SlashCommand, SlashCommandContext } from "./types.js";
 import { registry } from "./registry.js";
 import { resolveWindowsShell, formatCommandForPowerShell } from "../tools/helpers.js";
-import { getActiveQuestionHandler } from "../tools/state.js";
+import { getActiveQuestionHandler, setActiveDevHookGlobal } from "../tools/state.js";
 import { getAvailableHooks, getActiveHooksForProject, saveActiveHooksForProject } from "../tools/dynamicHooks.js";
 
 export const internalHooksCommand: SlashCommand = {
@@ -56,8 +56,12 @@ export const internalHooksCommand: SlashCommand = {
           if (slashCmds.length > 0) features.push(`Slash Commands (${slashCmds.map((c: any) => `/${c.name}`).join(", ")})`);
           if (eventHooks.length > 0) features.push(`Event Hooks (${eventHooks.map((e: any) => e.event).join(", ")})`);
           
+          const agentsSkillsDir = path.join(hookDir, ".agents", "skills");
           const skillsDir = path.join(hookDir, "skills");
-          if (fsSync.existsSync(skillsDir) && fsSync.statSync(skillsDir).isDirectory()) {
+          if (
+            (fsSync.existsSync(agentsSkillsDir) && fsSync.statSync(agentsSkillsDir).isDirectory()) ||
+            (fsSync.existsSync(skillsDir) && fsSync.statSync(skillsDir).isDirectory())
+          ) {
             features.push("Dynamic Skills");
           }
           details = features.length > 0 ? ` [Exposes: ${features.join(", ")}]` : " [No features exposed]";
@@ -268,13 +272,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       if (isClearKeyword && !hookExists) {
         if (ctx.setActiveDevHook) {
           ctx.setActiveDevHook(null);
-          ctx.addLine({
-            type: "system",
-            content: `✓ Cleared active internal hook development workspace focus.`,
-            timestamp: now,
+        }
+        setActiveDevHookGlobal(null);
+        ctx.addLine({
+          type: "system",
+          content: `✓ Cleared active internal hook development workspace focus.`,
+          timestamp: now,
           });
           return;
-        }
       }
 
       if (!hookExists) {
@@ -289,6 +294,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       if (ctx.setActiveDevHook) {
         ctx.setActiveDevHook(hookName);
       }
+      setActiveDevHookGlobal(hookName);
 
       // Auto-activate the hook being developed if it's not already active
       const activeHooks = getActiveHooksForProject(process.cwd());
@@ -344,8 +350,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
           if (slashCmds.length > 0) features.push(`Slash Commands (${slashCmds.map((c: any) => `/${c.name}`).join(", ")})`);
           if (eventHooks.length > 0) features.push(`Event Hooks (${eventHooks.map((e: any) => e.event).join(", ")})`);
           
+          const agentsSkillsDir = path.join(hookDir, ".agents", "skills");
           const skillsDir = path.join(hookDir, "skills");
-          if (fsSync.existsSync(skillsDir) && fsSync.statSync(skillsDir).isDirectory()) {
+          if (
+            (fsSync.existsSync(agentsSkillsDir) && fsSync.statSync(agentsSkillsDir).isDirectory()) ||
+            (fsSync.existsSync(skillsDir) && fsSync.statSync(skillsDir).isDirectory())
+          ) {
             features.push("Dynamic Skills");
           }
           details = features.length > 0 ? ` [Exposes: ${features.join(", ")}]` : " [No features exposed]";

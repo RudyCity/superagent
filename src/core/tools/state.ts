@@ -336,6 +336,17 @@ export function getMasterAgent(): any {
   return masterAgentRef;
 }
 
+export let activeDevHook: string | null = null;
+
+export function setActiveDevHookGlobal(name: string | null): void {
+  activeDevHook = name;
+}
+
+export function getActiveDevHookGlobal(): string | null {
+  return activeDevHook;
+}
+
+
 // ─── Superagent Instances ────────────────────────────────────────────────────
 
 export const superagentInstances = new Map<string, SuperagentInstance>();

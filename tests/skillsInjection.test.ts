@@ -302,4 +302,40 @@ describe("Skill Preloading Enhancements", () => {
     expect(readCountAfterFirst).toBe(1);
     expect(readCountAfterSecond).toBe(1);
   });
+
+  it("should inject dev hook notice when activeDevHook is set", async () => {
+    const { setActiveDevHookGlobal } = await import("../src/core/tools/state.js");
+    setActiveDevHookGlobal("my-test-hook");
+
+    const onEvent = vi.fn();
+    const onPermission = vi.fn().mockResolvedValue(true);
+    const onQuestion = vi.fn();
+
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    agent.tier = "master";
+    agent.planState = "APPROVED";
+
+    let capturedSystemPrompt = "";
+
+    vi.mocked(streamText).mockImplementation((options) => {
+      capturedSystemPrompt = options.system || "";
+      return {
+        fullStream: (async function* () {
+          yield { type: "text-delta", textDelta: "Done" };
+        })(),
+        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
+      } as any;
+    });
+
+    try {
+      await agent.sendMessage("hello");
+
+      expect(capturedSystemPrompt).toContain("ACTIVE INTERNAL HOOK DEVELOPMENT FOCUS");
+      expect(capturedSystemPrompt).toContain("my-test-hook");
+      expect(capturedSystemPrompt).toContain("internal-hooks/my-test-hook/");
+    } finally {
+      setActiveDevHookGlobal(null);
+    }
+  });
 });
+

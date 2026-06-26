@@ -1151,6 +1151,19 @@ After all subagents finish, you MUST perform this verification loop before consi
           } catch {}
         }
 
+        let devHookNotice = "";
+        try {
+          const { getActiveDevHookGlobal } = await import("./tools/state.js");
+          const activeDevHook = getActiveDevHookGlobal();
+          if (activeDevHook) {
+            devHookNotice = `\n\n🛠️ ACTIVE INTERNAL HOOK DEVELOPMENT FOCUS:
+- You are currently focusing on developing the "${activeDevHook}" internal hook (located in "internal-hooks/${activeDevHook}/").
+- Your primary objective is to implement, refine, or test this specific hook.
+- Prioritize modifications within the "internal-hooks/${activeDevHook}/" directory (such as hook.json, index.js, package.json, README.md, CHANGELOG.md, and .agents/skills/ folders).
+- You can test this hook's execution and verify its behavior locally by calling appropriate terminal commands or using "/ih dev ${activeDevHook}" as reference.`;
+          }
+        } catch {}
+
         // Build static system prompt (cacheable)
         const systemPrompt = `${activeSystemPrompt}
 
@@ -1160,7 +1173,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - MANDATORY: For any task that is complex, multi-step, or touches multiple files/components — you MUST spawn subagents via 'invoke_subagent'. Doing it yourself is forbidden for such tasks.
 - Spawn subagents in parallel whenever tasks are independent. This is the primary way to complete large tasks within the iteration limit.
 - After spawning, wait for results, integrate them, and report back to the user.
-${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}`;
+${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}`;
 
         // Build dynamic context to inject into messages array
         const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]\n- Current Step: ${currentStep} of ${maxIterations}.${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
