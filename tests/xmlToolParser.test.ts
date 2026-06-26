@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseXmlToolCalls } from "../src/utils/xmlToolParser.js";
+import { parseXmlToolCalls, StreamXmlFilter } from "../src/utils/xmlToolParser.js";
 
 describe("xmlToolParser", () => {
   const toolDefs = [
@@ -158,4 +158,47 @@ Let me execute these in sequence:
     expect(result.toolCalls).toHaveLength(1);
     expect(result.toolCalls[0].args.command).toBe('npm run build && echo "hello"');
   });
+
+  describe("StreamXmlFilter", () => {
+    it("should filter out tool calls from stream and emit normal text", () => {
+      let output = "";
+      const filter = new StreamXmlFilter((text) => {
+        output += text;
+      }, toolDefs);
+
+      filter.push("Hello ");
+      filter.push("world! <tool_calls><tool_call>");
+      filter.push('{"name": "run_command", "arguments": {"CommandLine": "npm test"}}');
+      filter.push("</tool_call></tool_calls> and then some more text.");
+      filter.flush();
+
+      expect(output).toBe("Hello world!  and then some more text.");
+    });
+
+    it("should flush remaining buffer on flush() if tool call was cut off", () => {
+      let output = "";
+      const filter = new StreamXmlFilter((text) => {
+        output += text;
+      }, toolDefs);
+
+      filter.push("Start: <tool_call>{\"name\": ");
+      filter.flush();
+
+      expect(output).toBe("Start: <tool_call>{\"name\": ");
+    });
+
+    it("should not filter normal text containing < character if it is not a tool tag", () => {
+      let output = "";
+      const filter = new StreamXmlFilter((text) => {
+        output += text;
+      }, toolDefs);
+
+      filter.push("If x < 5 then ");
+      filter.push("print hello.");
+      filter.flush();
+
+      expect(output).toBe("If x < 5 then print hello.");
+    });
+  });
 });
+

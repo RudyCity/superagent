@@ -263,3 +263,91 @@ function parseXmlValue(valStr: string): any {
   }
   return decodeHtmlEntities(trimmed);
 }
+
+export class StreamXmlFilter {
+  private buffer = "";
+  private onText: (text: string) => void;
+  private toolNames: string[];
+  private activeTags: string[];
+
+  constructor(onText: (text: string) => void, toolDefs: { name: string }[]) {
+    this.onText = onText;
+    this.toolNames = toolDefs.map((t) => t.name);
+    this.activeTags = ["tool_calls", "tool_call", "function_calls", "invoke", ...this.toolNames];
+  }
+
+  push(delta: string) {
+    this.buffer += delta;
+    this.process();
+  }
+
+  flush() {
+    if (this.buffer) {
+      this.onText(this.buffer);
+      this.buffer = "";
+    }
+  }
+
+  private process() {
+    while (true) {
+      const ltIndex = this.buffer.indexOf("<");
+      if (ltIndex === -1) {
+        // No opening bracket, everything currently in buffer can be emitted
+        this.onText(this.buffer);
+        this.buffer = "";
+        break;
+      }
+
+      // We have an opening bracket. Emit everything before it immediately
+      if (ltIndex > 0) {
+        this.onText(this.buffer.substring(0, ltIndex));
+        this.buffer = this.buffer.substring(ltIndex);
+      }
+
+      // Now the buffer starts with '<'.
+      const isClosingTag = this.buffer.startsWith("</");
+      const nameStart = isClosingTag ? 2 : 1;
+
+      let nameEnd = nameStart;
+      while (nameEnd < this.buffer.length) {
+        const char = this.buffer[nameEnd];
+        if (/[a-zA-Z0-9_-]/.test(char)) {
+          nameEnd++;
+        } else {
+          break;
+        }
+      }
+
+      if (nameEnd === this.buffer.length) {
+        // We reached the end of the buffer while reading the tag name.
+        // We must wait for more characters to decide.
+        break;
+      }
+
+      const tagName = this.buffer.substring(nameStart, nameEnd).trim();
+      const isToolTag = this.activeTags.includes(tagName);
+
+      if (isToolTag) {
+        // Yes, it is a tool tag or tool container.
+        // We must buffer this entire tag and its content until we see its matching closing tag.
+        const closingTag = `</${tagName}>`;
+        const closingIndex = this.buffer.indexOf(closingTag);
+        if (closingIndex !== -1) {
+          // Found the closing tag! Discard the entire tag and content from the buffer.
+          this.buffer = this.buffer.substring(closingIndex + closingTag.length);
+          // Loop again to process remaining buffer
+          continue;
+        } else {
+          // Closing tag not found yet, keep buffering everything from '<' onwards.
+          break;
+        }
+      } else {
+        // It's not a tool tag.
+        // Emit the '<' character to advance the parser.
+        this.onText(this.buffer[0]);
+        this.buffer = this.buffer.substring(1);
+      }
+    }
+  }
+}
+

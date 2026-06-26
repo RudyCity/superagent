@@ -1364,6 +1364,14 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 }),
               });
 
+              let xmlFilter: any = null;
+              if (!supportsNativeTools) {
+                const { StreamXmlFilter } = await import("../utils/xmlToolParser.js");
+                xmlFilter = new StreamXmlFilter((text) => {
+                  this.onEvent({ type: "text", content: text });
+                }, toolDefs);
+              }
+
               for await (const delta of result.fullStream) {
                 if (signal?.aborted) {
                   const err = new Error("AbortError");
@@ -1372,7 +1380,11 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 }
                 if (delta.type === "text-delta") {
                   textContent += delta.textDelta;
-                  this.onEvent({ type: "text", content: delta.textDelta });
+                  if (xmlFilter) {
+                    xmlFilter.push(delta.textDelta);
+                  } else {
+                    this.onEvent({ type: "text", content: delta.textDelta });
+                  }
                 } else if ((delta.type as string) === "reasoning" || (delta.type as string) === "reasoning-delta") {
                   // DeepSeek R1 and similar models return reasoning/thinking tokens separately.
                   // These MUST NOT be merged into textContent — doing so causes a 400 error
@@ -1393,6 +1405,10 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                 } else if (delta.type === "error") {
                   throw delta.error instanceof Error ? delta.error : new Error(formatError(delta.error));
                 }
+              }
+
+              if (xmlFilter) {
+                xmlFilter.flush();
               }
 
               if (signal?.aborted) {
