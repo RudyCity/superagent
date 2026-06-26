@@ -77,7 +77,7 @@ describe("historySearch", () => {
 
       vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
 
-      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation((p) => {
+      const spyReadFile = vi.spyOn(fs.promises, "readFile").mockImplementation(async (p) => {
         const pathStr = typeof p === "string" ? p : p.toString();
         if (pathStr.includes("session1")) {
           // Array format
@@ -97,7 +97,7 @@ describe("historySearch", () => {
           });
         }
         throw new Error("File not found");
-      });
+      }) as any;
 
       // Search for "background task"
       const resultBg = await searchHistory("background task", false);
@@ -122,7 +122,7 @@ describe("historySearch", () => {
       ];
 
       vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
-      vi.spyOn(fs, "readFileSync").mockReturnValue(
+      vi.spyOn(fs.promises, "readFile").mockResolvedValue(
         JSON.stringify([
           { role: "user" }, // missing content
           { role: "assistant", content: null }, // non-string content
@@ -147,7 +147,7 @@ describe("historySearch", () => {
 
       vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
       vi.mocked(configModule.getConfig).mockReturnValue({ apiKey: "valid-api-key" });
-      vi.spyOn(fs, "readFileSync").mockReturnValue(
+      vi.spyOn(fs.promises, "readFile").mockResolvedValue(
         JSON.stringify([
           { role: "user", content: "Query about neural networks" },
         ])
@@ -183,7 +183,7 @@ describe("historySearch", () => {
 
       vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
       vi.mocked(configModule.getConfig).mockReturnValue({ apiKey: "valid-api-key" });
-      vi.spyOn(fs, "readFileSync").mockReturnValue(
+      vi.spyOn(fs.promises, "readFile").mockResolvedValue(
         JSON.stringify([
           { role: "user", content: "Query about deep learning" },
         ])
@@ -206,6 +206,43 @@ describe("historySearch", () => {
       expect(debugLogs.some(log => log.includes("AI filter raw output"))).toBe(true);
       expect(debugLogs.some(log => log.includes("Generating semantic summary"))).toBe(true);
     });
+
+    it("should hit the in-memory cache when file is unmodified, and re-read when modified", async () => {
+      const mockSessions = [
+        {
+          filePath: "/path/to/cache_session.json",
+          displayName: "Cache Session",
+          messageCount: 1,
+          lastModified: new Date("2026-06-26T10:00:00Z"),
+          preview: "Preview",
+        },
+      ];
+
+      vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
+      const spyReadFile = vi.spyOn(fs.promises, "readFile").mockResolvedValue(
+        JSON.stringify([
+          { role: "user", content: "Unique query term for caching" },
+        ])
+      );
+
+      // First call - should read from file
+      const result1 = await searchHistory("Unique query term", false);
+      expect(result1).toContain("Cache Session");
+      expect(spyReadFile).toHaveBeenCalledTimes(1);
+
+      // Second call - same lastModified, should hit cache (no readFile)
+      const result2 = await searchHistory("Unique query term", false);
+      expect(result2).toContain("Cache Session");
+      expect(spyReadFile).toHaveBeenCalledTimes(1);
+
+      // Modify the session's lastModified
+      mockSessions[0].lastModified = new Date("2026-06-26T11:00:00Z");
+
+      // Third call - modified timestamp, should re-read file
+      const result3 = await searchHistory("Unique query term", false);
+      expect(result3).toContain("Cache Session");
+      expect(spyReadFile).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe("searchHistoryTool", () => {
@@ -221,7 +258,7 @@ describe("historySearch", () => {
       ];
 
       const listSpy = vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
-      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockReturnValue(
+      const spyReadFile = vi.spyOn(fs.promises, "readFile").mockResolvedValue(
         JSON.stringify([
           { role: "user", content: "Query keyword search" },
         ])

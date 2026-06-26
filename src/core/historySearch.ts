@@ -22,14 +22,17 @@ export function fuzzyScore(text: string, query: string): number {
     if (t.includes(word)) {
       matches += 1.0;
     } else {
-      let qIdx = 0;
-      for (let i = 0; i < t.length; i++) {
-        if (t[i] === word[qIdx]) {
-          qIdx++;
-          if (qIdx === word.length) break;
+      let lastIdx = -1;
+      let possibleMatch = true;
+      for (let j = 0; j < word.length; j++) {
+        const idx = t.indexOf(word[j], lastIdx + 1);
+        if (idx === -1) {
+          possibleMatch = false;
+          break;
         }
+        lastIdx = idx;
       }
-      if (qIdx === word.length) {
+      if (possibleMatch) {
         matches += 0.5;
       }
     }
@@ -47,6 +50,14 @@ export function cleanTranscriptForLLM(messages: any[]): string {
     .map((m) => `[${m.role.toUpperCase()}]: ${m.content || ""}`)
     .join("\n\n");
 }
+
+interface HistorySearchCacheEntry {
+  mtimeMs: number;
+  messages: Array<{ role: string; content: string }>;
+  dialogueText: string;
+}
+
+const historySearchCache = new Map<string, HistorySearchCacheEntry>();
 
 /**
  * Perform a hybrid AI-powered semantic search with an offline fuzzy fallback.
@@ -80,20 +91,41 @@ export async function searchHistory(
     score: number;
   }> = [];
 
-  for (const session of sessions) {
+  const promises = sessions.map(async (session) => {
     try {
-      const raw = fs.readFileSync(session.filePath, "utf-8");
-      const parsed = JSON.parse(raw);
+      const mtimeMs = session.lastModified.getTime();
+      const cached = historySearchCache.get(session.filePath);
+
       let messages: any[];
-      if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
-        messages = parsed.messages;
-      } else if (Array.isArray(parsed)) {
-        messages = parsed;
+      let dialogueText: string;
+
+      if (cached && cached.mtimeMs === mtimeMs) {
+        messages = cached.messages;
+        dialogueText = cached.dialogueText;
       } else {
-        continue;
+        const raw = await fs.promises.readFile(session.filePath, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+          messages = parsed.messages;
+        } else if (Array.isArray(parsed)) {
+          messages = parsed;
+        } else {
+          return;
+        }
+
+        dialogueText = cleanTranscriptForLLM(messages);
+
+        // Cache it, saving only role and content of messages to keep memory low
+        historySearchCache.set(session.filePath, {
+          mtimeMs,
+          messages: messages.map((m) => ({
+            role: m.role,
+            content: typeof m.content === "string" ? m.content : String(m.content || ""),
+          })),
+          dialogueText,
+        });
       }
 
-      const dialogueText = cleanTranscriptForLLM(messages);
       const score = fuzzyScore(dialogueText, query);
       if (score > 0) {
         scoredSessions.push({
@@ -104,9 +136,11 @@ export async function searchHistory(
         });
       }
     } catch {
-      // Ignore corrupted files
+      // Ignore corrupted or missing files
     }
-  }
+  });
+
+  await Promise.all(promises);
 
   // Sort: highest score first, then most recently modified first
   scoredSessions.sort(
