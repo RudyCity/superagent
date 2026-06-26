@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.27] - 2026-06-26
+
+### Added
+- **TencentDB Memory Gateway Enhancements**: Added support for upsert semantics, type mapping, custom priority, and strict type validation in TencentDB memory gateway updates.
+- **Patched Router Startup Copying**: Copy the patched router to the vendor gateway directory on startup to ensure persistence.
+- **Status Bar Focus Display**: Set workspace focus on `/ih dev` command and display the active workspace focus in the status bar footer.
+
+### Fixed
+- **StreamXmlFilter Robustness**: Enhanced `StreamXmlFilter` to be robust against mismatched `tool_call` closing tags.
+
+---
+
 ## [1.2.26] - 2026-06-26
 
 ### Added

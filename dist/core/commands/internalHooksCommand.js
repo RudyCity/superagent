@@ -198,7 +198,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
             return;
         }
         if (subCommand === "dev") {
-            if (!fsSync.existsSync(hookDir) || !fsSync.existsSync(path.join(hookDir, "hook.json"))) {
+            const isClearKeyword = ["off", "stop", "clear", "none"].includes(hookName.toLowerCase());
+            const hookExists = fsSync.existsSync(hookDir) && fsSync.existsSync(path.join(hookDir, "hook.json"));
+            if (isClearKeyword && !hookExists) {
+                if (ctx.setActiveDevHook) {
+                    ctx.setActiveDevHook(null);
+                    ctx.addLine({
+                        type: "system",
+                        content: `✓ Cleared active internal hook development workspace focus.`,
+                        timestamp: now,
+                    });
+                    return;
+                }
+            }
+            if (!hookExists) {
                 ctx.addLine({
                     type: "error",
                     content: `Error: Internal hook "${hookName}" does not exist. Run "/ih init ${hookName}" to create it first.`,
@@ -206,9 +219,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
                 });
                 return;
             }
+            if (ctx.setActiveDevHook) {
+                ctx.setActiveDevHook(hookName);
+            }
             ctx.addLine({
                 type: "system",
-                content: `Entering workspace "internal-hooks/${hookName}" to run dev process...`,
+                content: `✓ Workspace focus set to internal hook "${hookName}" for development.\nEntering workspace "internal-hooks/${hookName}" to run dev process...`,
                 timestamp: now,
             });
             try {

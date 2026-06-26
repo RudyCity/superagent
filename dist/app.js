@@ -244,6 +244,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
     const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
     const [gitBranch, setGitBranch] = useState("");
     const [worktreeCount, setWorktreeCount] = useState(0);
+    const [activeDevHook, setActiveDevHook] = useState(null);
     const addLine = useCallback((line) => {
         setLines((prev) => [...prev, line]);
     }, []);
@@ -544,6 +545,9 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 runInteractiveProcess,
                 attachImage: handleAttachImage,
                 pasteImage: handlePasteImage,
+                setActiveDevHook: (name) => {
+                    setActiveDevHook(name);
+                },
             });
             return;
         }
@@ -572,6 +576,9 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 runInteractiveProcess,
                 attachImage: handleAttachImage,
                 pasteImage: handlePasteImage,
+                setActiveDevHook: (name) => {
+                    setActiveDevHook(name);
+                },
             });
             return;
         }
@@ -2080,6 +2087,6 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                                                         return (_jsxs(Box, { flexDirection: "row", children: [prefix ? _jsx(Text, { children: prefix }) : null, _jsxs(Text, { color: "yellow", bold: true, children: ["[Pasted Text: ", inserted.length, " chars, ", lineCount, " lines] "] }), suffix ? _jsx(Text, { children: suffix }) : null, _jsx(Text, { dimColor: true, children: "(Press Enter to send, Esc to clear)" })] }));
                                                     }
                                                     return (_jsxs(Box, { flexDirection: "column", children: [attachments.length > 0 && (_jsx(ImageAttachmentBar, { attachments: attachments, onRemove: handleRemoveAttachment, focused: focusMode === "input" })), _jsx(ChatTextInput, { focus: focusMode === "input", value: input, onChange: handleInputChange, onSubmit: handleSubmit, placeholder: getWizardPlaceholder(), onAttachImage: handleAttachImage, onPasteImage: handlePasteImage, onRemoveLastAttachment: handleRemoveLastAttachment, attachmentCount: attachments.length })] }));
-                                                })()] })] }))] })] }) }), _jsx(StatusBar, { modelName: activeModel, contextPercentage: contextPercentage, tokensUp: tokensUp, tokensDown: tokensDown, liveStreamTokens: liveStreamTokens, activeContextUsage: activeContextUsage, contextLimit: contextLimit, messageCount: messageCount, runningTasksCount: runningTasksCount, runningSubagentsCount: runningSubagentsCount, gitBranch: gitBranch, worktreeCount: worktreeCount, lastSpeed: lastSpeed, formatCompactNumber: formatCompactNumber, tencentdbStatus: tencentdbStatus })] }));
+                                                })()] })] }))] })] }) }), _jsx(StatusBar, { modelName: activeModel, contextPercentage: contextPercentage, tokensUp: tokensUp, tokensDown: tokensDown, liveStreamTokens: liveStreamTokens, activeContextUsage: activeContextUsage, contextLimit: contextLimit, messageCount: messageCount, runningTasksCount: runningTasksCount, runningSubagentsCount: runningSubagentsCount, gitBranch: gitBranch, worktreeCount: worktreeCount, lastSpeed: lastSpeed, formatCompactNumber: formatCompactNumber, tencentdbStatus: tencentdbStatus, activeDevHook: activeDevHook })] }));
 }
 //# sourceMappingURL=app.js.map
