@@ -116,6 +116,8 @@ export default function ChatTextInput({
   }, [originalValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build displayed value with cursor highlight.
+  // Performance: for very long input, only render a window around cursor position
+  // to avoid O(n) per-char ANSI processing on every keystroke.
   const value = mask ? mask.repeat(originalValue.length) : originalValue;
   let renderedValue = value;
   let renderedPlaceholder = placeholder ? chalk.grey(placeholder) : undefined;
@@ -126,16 +128,39 @@ export default function ChatTextInput({
         ? blinkInverse(placeholder[0]) + chalk.grey(placeholder.slice(1))
         : blinkInverse(" ");
 
-    renderedValue = value.length > 0 ? "" : blinkInverse(" ");
-    let i = 0;
-    for (const char of value) {
-      renderedValue +=
-        i === cursorOffset ? blinkInverse(char) : char;
-      i++;
-    }
-    // Cursor block at end when cursor past last character.
-    if (value.length > 0 && cursorOffset === value.length) {
-      renderedValue += blinkInverse(" ");
+    const DISPLAY_WINDOW = 500; // max chars to render with per-char cursor blink
+    if (value.length > DISPLAY_WINDOW * 2) {
+      // Truncated display: show window around cursor
+      const windowStart = Math.max(0, Math.min(cursorOffset - Math.floor(DISPLAY_WINDOW / 2), value.length - DISPLAY_WINDOW));
+      const windowEnd = Math.min(value.length, windowStart + DISPLAY_WINDOW);
+      const before = value.slice(0, windowStart);
+      const visible = value.slice(windowStart, windowEnd);
+      const after = value.slice(windowEnd);
+      let result = "";
+      if (before.length > 0) result += chalk.grey(`⋯${before.length}⋯`);
+      const localCursor = cursorOffset - windowStart;
+      let i = 0;
+      for (const char of visible) {
+        result += i === localCursor ? blinkInverse(char) : char;
+        i++;
+      }
+      if (after.length > 0) result += chalk.grey(`⋯${after.length}⋯`);
+      if (cursorOffset === value.length) {
+        result += blinkInverse(" ");
+      }
+      renderedValue = result;
+    } else {
+      renderedValue = value.length > 0 ? "" : blinkInverse(" ");
+      let i = 0;
+      for (const char of value) {
+        renderedValue +=
+          i === cursorOffset ? blinkInverse(char) : char;
+        i++;
+      }
+      // Cursor block at end when cursor past last character.
+      if (value.length > 0 && cursorOffset === value.length) {
+        renderedValue += blinkInverse(" ");
+      }
     }
   }
 
