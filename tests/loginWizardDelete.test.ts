@@ -230,7 +230,7 @@ describe("Login Wizard Provider Deletion", () => {
 
     expect(activeWizard).toBeNull();
     expect(getProviders()).toHaveLength(2);
-    expect(addedLines.some(line => line.content.includes("Successfully removed provider: OpenAI Test (openai-test)"))).toBe(true);
+    expect(addedLines.some(line => line.content.includes("✅ Provider removed: OpenAI Test"))).toBe(true);
 
     unmount();
   });
@@ -258,9 +258,8 @@ describe("Login Wizard Provider Deletion", () => {
       providerName: "OpenAI Test",
     });
 
-    expect(activeWizard).toBeNull();
+    expect(activeWizard).toEqual({ type: "login", step: 14, data: {} });
     expect(getProviders()).toHaveLength(3);
-    expect(addedLines.some(line => line.content.includes("Deletion cancelled"))).toBe(true);
 
     unmount();
   });

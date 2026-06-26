@@ -463,7 +463,7 @@ describe("Provider Credential Resolution Fixes", () => {
         name: "Zyloo Anthropic",
         provider: "anthropic",
         apiKey: "sk-zyloo-key",
-        baseUrl: "https://api.zyloo.io/v1",
+        baseUrl: "https://api.custom-anthropic.com/v1",
       });
 
       clearModelConfigCache();
