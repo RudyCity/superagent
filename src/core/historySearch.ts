@@ -272,8 +272,8 @@ If no sessions are relevant, return an empty array: []`;
     }
 
     const reports: string[] = [];
-    for (const idx of indices) {
-      if (idx < 0 || idx >= candidates.length) continue;
+    const summaryPromises = indices.map(async (idx) => {
+      if (idx < 0 || idx >= candidates.length) return null;
       const match = scoredSessions[idx];
 
       const truncatedTranscript = match.dialogueText.slice(-15000);
@@ -315,7 +315,17 @@ Please summarize what was discussed, decided, or implemented in this session reg
         onDebug(`[DEBUG] Raw AI summary output for "${match.session.displayName}":\n${summary}`);
       }
 
-      reports.push(`📁 **${match.session.displayName}**\n${summary.trim()}`);
+      return {
+        displayName: match.session.displayName,
+        summary: summary.trim(),
+      };
+    });
+
+    const summaryResults = await Promise.all(summaryPromises);
+    for (const res of summaryResults) {
+      if (res) {
+        reports.push(`📁 **${res.displayName}**\n${res.summary}`);
+      }
     }
 
     if (reports.length === 0) {
