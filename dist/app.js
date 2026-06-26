@@ -13,7 +13,7 @@ import { handleSlashCommand, getDefaultModel } from "./core/slash-commands.js";
 import { registry } from "./core/commands/registry.js";
 import { createCheckpoint } from "./core/checkpoints.js";
 import path from "path";
-import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, registerMasterAgent, notifyTasksChanged } from "./core/tools.js";
+import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, registerMasterAgent, notifyTasksChanged, setActiveDevHookGlobal } from "./core/tools.js";
 import { ProcessingIndicator } from "./components/common/LoadingIndicators.js";
 import { ActiveAgentsList } from "./components/active-agents-list.js";
 import { TaskChecklist } from "./components/task-checklist.js";
@@ -245,6 +245,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
     const [gitBranch, setGitBranch] = useState("");
     const [worktreeCount, setWorktreeCount] = useState(0);
     const [activeDevHook, setActiveDevHook] = useState(null);
+    const originalWorkingDirectoryRef = useRef(process.cwd());
     const addLine = useCallback((line) => {
         setLines((prev) => [...prev, line]);
     }, []);
@@ -547,6 +548,15 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 pasteImage: handlePasteImage,
                 setActiveDevHook: (name) => {
                     setActiveDevHook(name);
+                    setActiveDevHookGlobal(name);
+                    if (agentRef.current) {
+                        if (name) {
+                            agentRef.current.workingDirectory = path.join(originalWorkingDirectoryRef.current, "internal-hooks", name);
+                        }
+                        else {
+                            agentRef.current.workingDirectory = originalWorkingDirectoryRef.current;
+                        }
+                    }
                 },
             });
             return;
@@ -578,6 +588,15 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 pasteImage: handlePasteImage,
                 setActiveDevHook: (name) => {
                     setActiveDevHook(name);
+                    setActiveDevHookGlobal(name);
+                    if (agentRef.current) {
+                        if (name) {
+                            agentRef.current.workingDirectory = path.join(originalWorkingDirectoryRef.current, "internal-hooks", name);
+                        }
+                        else {
+                            agentRef.current.workingDirectory = originalWorkingDirectoryRef.current;
+                        }
+                    }
                 },
             });
             return;

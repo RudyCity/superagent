@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.29] - 2026-06-27
+
+### Added
+- **Internal Hook Auto-Activation**: Auto-activate the hook on the `/ih dev <name>` command if it is not already active.
+- **Active Hook Prompt Focus**: Load hook-specific skills from `.agents/skills` and dynamically inject active development hook prompt focus.
+
+### Improved
+- **Dynamic Directory Switching**: Dynamically switch the agent's workingDirectory to the active focused hook directory during `/ih dev` command executions.
+
+---
+
 ## [1.2.28] - 2026-06-26
 
 ### Added

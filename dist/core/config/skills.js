@@ -103,6 +103,10 @@ export function getInstalledSkills() {
                 if (item.isDirectory()) {
                     const isActive = activeHooks === null || activeHooks.includes(item.name);
                     if (isActive) {
+                        const hookAgentsSkillsDir = path.join(hooksRoot, item.name, ".agents", "skills");
+                        if (fs.existsSync(hookAgentsSkillsDir)) {
+                            searchDirs.push(hookAgentsSkillsDir);
+                        }
                         const hookSkillsDir = path.join(hooksRoot, item.name, "skills");
                         if (fs.existsSync(hookSkillsDir)) {
                             searchDirs.push(hookSkillsDir);
@@ -219,7 +223,7 @@ export function loadAgentSkills() {
         return "";
     }
     let text = "\n\nINSTALLED AGENT SKILLS & MANDATORY DISCOVERY RULES:\n";
-    text += "CRITICAL DIRECTIVE: At the very beginning of processing the user's request, you MUST proactively scan the list of installed specialized agent skills below. If the task or any subtask involves concepts, workflows, platforms, or tools mentioned in a skill's name or description, you MUST immediately read the corresponding instruction file ('SKILL.md') using a file-reading tool (e.g. view_file) using the EXACT absolute path listed in 'Instruction File:' below BEFORE executing commands, writing code, or proposing plans. DO NOT use relative paths (like '.agents/skills/...') if they do not exist in your workspace; always use the absolute paths from this list. Do NOT attempt to guess the workflow or perform it from memory if a relevant skill exists. Always check for relevant skills first.\n\n";
+    text += "CRITICAL DIRECTIVE: At the very beginning of processing the user's request, you MUST proactively scan the list of installed specialized agent skills below. Note that skills may also be loaded dynamically from active internal hooks (located under `internal-hooks/` or `ih`). If the task or any subtask involves concepts, workflows, platforms, or tools mentioned in a skill's name or description, you MUST immediately read the corresponding instruction file ('SKILL.md') using a file-reading tool (e.g. view_file) using the EXACT absolute path listed in 'Instruction File:' below BEFORE executing commands, writing code, or proposing plans. DO NOT use relative paths (like '.agents/skills/...') if they do not exist in your workspace; always use the absolute paths from this list. Do NOT attempt to guess the workflow or perform it from memory if a relevant skill exists. Always check for relevant skills first.\n\n";
     for (const s of skills) {
         const provider = s.author || "local";
         text += `- **${provider}/${s.name}**: ${s.description}\n  Instruction File: ${s.path}\n`;

@@ -3,8 +3,7 @@ import fsSync from "fs";
 import path from "path";
 import { execa } from "execa";
 import { registry } from "./registry.js";
-import { resolveWindowsShell, formatCommandForPowerShell } from "../tools/helpers.js";
-import { getActiveQuestionHandler } from "../tools/state.js";
+import { getActiveQuestionHandler, setActiveDevHookGlobal } from "../tools/state.js";
 import { getAvailableHooks, getActiveHooksForProject, saveActiveHooksForProject } from "../tools/dynamicHooks.js";
 export const internalHooksCommand = {
     name: "internal-hooks",
@@ -23,10 +22,58 @@ export const internalHooksCommand = {
             });
             return;
         }
-        if (subCommand !== "active" && subCommand !== "list" && !hookName) {
+        if (subCommand === "dev" && !hookName) {
+            const hooks = getAvailableHooks();
+            if (hooks.length === 0) {
+                ctx.addLine({
+                    type: "system",
+                    content: "No internal hooks found. Use `/ih init <namahook>` to create one first.",
+                    timestamp: now,
+                });
+                return;
+            }
+            let content = "Available internal hooks for development:\n\n";
+            for (const hook of hooks) {
+                const status = hook.active ? "🟢 Active" : "🔴 Inactive";
+                let details = "";
+                const hookDir = path.join(process.cwd(), "internal-hooks", hook.dirName);
+                const configPath = path.join(hookDir, "hook.json");
+                try {
+                    const configContent = fsSync.readFileSync(configPath, "utf-8");
+                    const config = JSON.parse(configContent);
+                    const hasTool = !!config.name && !!config.description;
+                    const slashCmds = config.slash_commands || config.slashCommands || [];
+                    const eventHooks = config.event_hooks || config.hooks || [];
+                    const features = [];
+                    if (hasTool)
+                        features.push("Tool AI");
+                    if (slashCmds.length > 0)
+                        features.push(`Slash Commands (${slashCmds.map((c) => `/${c.name}`).join(", ")})`);
+                    if (eventHooks.length > 0)
+                        features.push(`Event Hooks (${eventHooks.map((e) => e.event).join(", ")})`);
+                    const agentsSkillsDir = path.join(hookDir, ".agents", "skills");
+                    const skillsDir = path.join(hookDir, "skills");
+                    if ((fsSync.existsSync(agentsSkillsDir) && fsSync.statSync(agentsSkillsDir).isDirectory()) ||
+                        (fsSync.existsSync(skillsDir) && fsSync.statSync(skillsDir).isDirectory())) {
+                        features.push("Dynamic Skills");
+                    }
+                    details = features.length > 0 ? ` [Exposes: ${features.join(", ")}]` : " [No features exposed]";
+                }
+                catch { }
+                content += `- **${hook.name}** (in \`internal-hooks/${hook.dirName}\`)\n  State: ${status}${details}\n\n`;
+            }
+            content += "To start development, run:\n  `/ih dev <namahook>`";
+            ctx.addLine({
+                type: "system",
+                content: content.trim(),
+                timestamp: Date.now(),
+            });
+            return;
+        }
+        if (subCommand === "init" && !hookName) {
             ctx.addLine({
                 type: "error",
-                content: `Error: Missing hook name. Usage: /ih ${subCommand} <namahook>`,
+                content: `Error: Missing hook name. Usage: /ih init <namahook>`,
                 timestamp: now,
             });
             return;
@@ -203,13 +250,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
             if (isClearKeyword && !hookExists) {
                 if (ctx.setActiveDevHook) {
                     ctx.setActiveDevHook(null);
-                    ctx.addLine({
-                        type: "system",
-                        content: `✓ Cleared active internal hook development workspace focus.`,
-                        timestamp: now,
-                    });
-                    return;
                 }
+                setActiveDevHookGlobal(null);
+                ctx.addLine({
+                    type: "system",
+                    content: `✓ Cleared active internal hook development workspace focus.`,
+                    timestamp: now,
+                });
+                return;
             }
             if (!hookExists) {
                 ctx.addLine({
@@ -222,111 +270,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
             if (ctx.setActiveDevHook) {
                 ctx.setActiveDevHook(hookName);
             }
+            setActiveDevHookGlobal(hookName);
+            // Auto-activate the hook being developed if it's not already active
+            const activeHooks = getActiveHooksForProject(process.cwd());
+            if (activeHooks !== null) {
+                if (!activeHooks.includes(hookName)) {
+                    activeHooks.push(hookName);
+                    saveActiveHooksForProject(process.cwd(), activeHooks);
+                    // Trigger dynamic tools reload so the hook is loaded immediately
+                    try {
+                        const { refreshDynamicHooks } = await import("../tools/index.js");
+                        refreshDynamicHooks();
+                    }
+                    catch (reloadErr) {
+                        console.error("Failed to hot-reload dynamic hooks:", reloadErr);
+                    }
+                }
+            }
             ctx.addLine({
                 type: "system",
-                content: `✓ Workspace focus set to internal hook "${hookName}" for development.\nEntering workspace "internal-hooks/${hookName}" to run dev process...`,
+                content: `✓ Workspace focus set to internal hook "${hookName}" for development.`,
                 timestamp: now,
             });
-            try {
-                // Resolve target run command
-                let runCmd = "node index.js";
-                const pkgJsonPath = path.join(hookDir, "package.json");
-                if (fsSync.existsSync(pkgJsonPath)) {
-                    try {
-                        const pkgData = JSON.parse(await fs.readFile(pkgJsonPath, "utf-8"));
-                        if (pkgData.scripts && pkgData.scripts.dev) {
-                            runCmd = pkgData.scripts.dev;
-                        }
-                    }
-                    catch { }
-                }
-                else {
-                    try {
-                        const hookData = JSON.parse(await fs.readFile(path.join(hookDir, "hook.json"), "utf-8"));
-                        if (hookData.command) {
-                            runCmd = hookData.command.trim();
-                        }
-                    }
-                    catch { }
-                }
-                // Load test payload
-                let payload = {};
-                const testPayloadPath = path.join(hookDir, "test-payload.json");
-                if (fsSync.existsSync(testPayloadPath)) {
-                    try {
-                        payload = JSON.parse(await fs.readFile(testPayloadPath, "utf-8"));
-                    }
-                    catch { }
-                }
-                const argsJson = JSON.stringify(payload);
-                const env = {
-                    ...process.env,
-                    SUPERAGENT_HOOK_DIR: hookDir,
-                    SUPERAGENT_CWD: process.cwd(),
-                    SUPERAGENT_WORKSPACE: process.cwd(),
-                };
-                // Format command for Windows if needed
-                let shellPath = true;
-                let finalCommand = runCmd;
-                if (process.platform === "win32") {
-                    const resolved = resolveWindowsShell();
-                    shellPath = resolved.shellPath;
-                    if (!resolved.isBash) {
-                        finalCommand = formatCommandForPowerShell(finalCommand);
-                    }
-                }
-                const startTime = Date.now();
-                if (ctx.runInteractiveProcess) {
-                    ctx.addLine({
-                        type: "system",
-                        content: `Running interactive command: ${runCmd}\n(Press Ctrl+C to terminate if it is long-running/watching)`,
-                        timestamp: Date.now(),
-                    });
-                    const exitCode = await ctx.runInteractiveProcess(finalCommand, hookDir, env);
-                    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-                    ctx.addLine({
-                        type: "system",
-                        content: `Process exited with code ${exitCode} after ${duration}s.`,
-                        timestamp: Date.now(),
-                    });
-                }
-                else {
-                    ctx.addLine({
-                        type: "system",
-                        content: `Executing dev command: ${runCmd}...`,
-                        timestamp: Date.now(),
-                    });
-                    const result = await execa(finalCommand, {
-                        shell: shellPath,
-                        cwd: hookDir,
-                        env,
-                        input: argsJson,
-                        reject: false,
-                    });
-                    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-                    if (result.failed) {
-                        ctx.addLine({
-                            type: "error",
-                            content: `Execution failed (exit code ${result.exitCode || 1}) in ${duration}s.\nStdout:\n${result.stdout}\nStderr:\n${result.stderr}`,
-                            timestamp: Date.now(),
-                        });
-                    }
-                    else {
-                        ctx.addLine({
-                            type: "system",
-                            content: `✓ Execution succeeded in ${duration}s!\nStdout:\n${result.stdout}\nStderr:\n${result.stderr}`,
-                            timestamp: Date.now(),
-                        });
-                    }
-                }
-            }
-            catch (err) {
-                ctx.addLine({
-                    type: "error",
-                    content: `Dev run failed: ${err.message}`,
-                    timestamp: Date.now(),
-                });
-            }
             return;
         }
         if (subCommand === "list") {
@@ -358,8 +323,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
                         features.push(`Slash Commands (${slashCmds.map((c) => `/${c.name}`).join(", ")})`);
                     if (eventHooks.length > 0)
                         features.push(`Event Hooks (${eventHooks.map((e) => e.event).join(", ")})`);
+                    const agentsSkillsDir = path.join(hookDir, ".agents", "skills");
                     const skillsDir = path.join(hookDir, "skills");
-                    if (fsSync.existsSync(skillsDir) && fsSync.statSync(skillsDir).isDirectory()) {
+                    if ((fsSync.existsSync(agentsSkillsDir) && fsSync.statSync(agentsSkillsDir).isDirectory()) ||
+                        (fsSync.existsSync(skillsDir) && fsSync.statSync(skillsDir).isDirectory())) {
                         features.push("Dynamic Skills");
                     }
                     details = features.length > 0 ? ` [Exposes: ${features.join(", ")}]` : " [No features exposed]";
