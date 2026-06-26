@@ -38,6 +38,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-context-limit": "Set custom context window limit (0 = auto)",
   "/setting-max-iterations": "Set max agent loop iterations",
   "/setting-tencentdb": "Configure TencentDB memory strategy and gateway URL",
+  "/memory": "Manage and inspect TencentDB long-term memory",
 };
 
 export function getDashboardSuggestions(query: string): string[] {
@@ -172,6 +173,18 @@ export function getDashboardSuggestions(query: string): string[] {
       "/setting-tencentdb status",
       "/setting-tencentdb show-bg-procs",
       "/setting-tencentdb hide-bg-procs",
+    ];
+    return filterSuggestions(possibilities, query);
+  }
+
+  if (mainCommand === "/memory") {
+    const possibilities = [
+      "/memory status",
+      "/memory list",
+      "/memory search",
+      "/memory add",
+      "/memory delete",
+      "/memory help",
     ];
     return filterSuggestions(possibilities, query);
   }

@@ -154,6 +154,8 @@ export const helpCommand = {
                 "  /setting-context-limit <number> - Set context window limit (0 = auto)",
                 "  /setting-max-iterations <number> - Set max agent iterations",
                 "  /setting-tencentdb <on|off|status|show-bg-procs|hide-bg-procs> [gatewayUrl] - Configure TencentDB Memory Gateway",
+                "  /memory   - Manage and inspect TencentDB long-term memory",
+                "              Usage: /memory [status|list|search <query>|add <id> <val>|delete <id>|help]",
                 "  /help     - Show this help",
                 "  /quit     - Exit the app",
                 "",
