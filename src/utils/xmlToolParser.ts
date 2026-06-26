@@ -23,6 +23,104 @@ export function parseXmlToolCalls(
 
   const generateId = () => `call_${Math.random().toString(36).substring(2, 15)}`;
 
+  const cleanJsonString = (str: string): string => {
+    let cleaned = str.trim();
+    if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```[a-zA-Z]*\s*/, "");
+      cleaned = cleaned.replace(/\s*```$/, "");
+    }
+    return cleaned.trim();
+  };
+
+  const decodeEntitiesRecursive = (val: any): any => {
+    if (typeof val === "string") {
+      return decodeHtmlEntities(val);
+    }
+    if (Array.isArray(val)) {
+      return val.map(decodeEntitiesRecursive);
+    }
+    if (val && typeof val === "object") {
+      const res: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val)) {
+        res[k] = decodeEntitiesRecursive(v);
+      }
+      return res;
+    }
+    return val;
+  };
+
+  // 0. Match <tool_calls>...</tool_calls> blocks containing JSON-based <tool_call>...</tool_call>
+  const toolCallsRegex = /<tool_calls\s*>([\s\S]*?)<\/tool_calls>/gi;
+  let tcMatch;
+  while ((tcMatch = toolCallsRegex.exec(textContent)) !== null) {
+    const blockContent = tcMatch[1];
+    const fullBlock = tcMatch[0];
+
+    const blockToolCallRegex = /<tool_call\s*>([\s\S]*?)<\/tool_call>/gi;
+    let singleTcMatch;
+    while ((singleTcMatch = blockToolCallRegex.exec(blockContent)) !== null) {
+      const rawBody = cleanJsonString(singleTcMatch[1]);
+      try {
+        let parsedJson;
+        try {
+          parsedJson = JSON.parse(rawBody);
+        } catch {
+          // If direct parse fails, try decoding first
+          parsedJson = JSON.parse(decodeHtmlEntities(rawBody));
+        }
+
+        const name = parsedJson.name;
+        let args = parsedJson.arguments || parsedJson.args || {};
+        args = decodeEntitiesRecursive(args);
+
+        if (name) {
+          toolCalls.push({
+            id: generateId(),
+            name: name.trim(),
+            args,
+          });
+        }
+      } catch (err) {
+        // Ignore or log error
+      }
+    }
+    cleanText = cleanText.replace(fullBlock, "");
+  }
+
+  // Match standalone <tool_call>...</tool_call> blocks that are not wrapped in <tool_calls>
+  const standaloneToolCallRegex = /<tool_call\s*>([\s\S]*?)<\/tool_call>/gi;
+  let standTcMatch;
+  while ((standTcMatch = standaloneToolCallRegex.exec(textContent)) !== null) {
+    const fullBlock = standTcMatch[0];
+    if (cleanText.includes(fullBlock)) {
+      const rawBody = cleanJsonString(standTcMatch[1]);
+      try {
+        let parsedJson;
+        try {
+          parsedJson = JSON.parse(rawBody);
+        } catch {
+          // If direct parse fails, try decoding first
+          parsedJson = JSON.parse(decodeHtmlEntities(rawBody));
+        }
+
+        const name = parsedJson.name;
+        let args = parsedJson.arguments || parsedJson.args || {};
+        args = decodeEntitiesRecursive(args);
+
+        if (name) {
+          toolCalls.push({
+            id: generateId(),
+            name: name.trim(),
+            args,
+          });
+        }
+      } catch (err) {
+        // Ignore
+      }
+      cleanText = cleanText.replace(fullBlock, "");
+    }
+  }
+
   // 1. Match <function_calls>...</function_calls> blocks
   const functionCallsRegex = /<function_calls\s*>([\s\S]*?)<\/function_calls>/gi;
   let fcMatch;

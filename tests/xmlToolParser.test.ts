@@ -111,4 +111,51 @@ Some introductory text.
     expect(result.toolCalls).toHaveLength(1);
     expect(result.toolCalls[0].args.CommandLine).toBe('npm run build && echo "hello"');
   });
+
+  it("should parse tool_calls blocks with JSON tool_call payloads", () => {
+    const text = `
+Let me execute these in sequence:
+<tool_calls>
+<tool_call>
+{"name": "glob", "arguments": {"pattern": "src/core/**/*.ts", "limit": 10}}
+</tool_call>
+<tool_call>
+{"name": "run_command", "args": {"command": "node --version"}}
+</tool_call>
+</tool_calls>
+`;
+    const result = parseXmlToolCalls(text, toolDefs);
+    expect(result.toolCalls).toHaveLength(2);
+    expect(result.toolCalls[0].name).toBe("glob");
+    expect(result.toolCalls[0].args).toEqual({ pattern: "src/core/**/*.ts", limit: 10 });
+    expect(result.toolCalls[1].name).toBe("run_command");
+    expect(result.toolCalls[1].args).toEqual({ command: "node --version" });
+    expect(result.cleanText).toBe("Let me execute these in sequence:");
+  });
+
+  it("should parse standalone tool_call blocks with markdown JSON codeblocks", () => {
+    const text = `
+<tool_call>
+\`\`\`json
+{"name": "view_file", "arguments": {"AbsolutePath": "/test.txt"}}
+\`\`\`
+</tool_call>
+`;
+    const result = parseXmlToolCalls(text, toolDefs);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].name).toBe("view_file");
+    expect(result.toolCalls[0].args).toEqual({ AbsolutePath: "/test.txt" });
+    expect(result.cleanText).toBe("");
+  });
+
+  it("should decode HTML entities inside tool_call JSON payloads", () => {
+    const text = `
+<tool_call>
+{"name": "run_command", "arguments": {"command": "npm run build &amp;&amp; echo &quot;hello&quot;"}}
+</tool_call>
+`;
+    const result = parseXmlToolCalls(text, toolDefs);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].args.command).toBe('npm run build && echo "hello"');
+  });
 });

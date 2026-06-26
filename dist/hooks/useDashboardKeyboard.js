@@ -2,14 +2,14 @@ import React from "react";
 import { useInput } from "ink";
 import { getPasteSplit, filterSuggestions } from "../utils/text.js";
 import { subagentInstances, backgroundTasks } from "../core/tools/state.js";
-import { getProviders } from "../core/config.js";
+import { getConfiguredProviders, getProviders } from "../core/config.js";
 import { listCheckpointsForSession } from "../core/checkpoints.js";
 import { PLAN_APPROVAL_OPTIONS } from "../components/plan-approval-dialog.js";
 export function useDashboardKeyboard(ctx) {
     const { exit, stopAllRunningAgents, setCurrentTask, setIsHistoryTruncated, query, setQuery, pastePrefixLength, pasteSuffixLength, isPasted, setIsPasted, handleQuerySubmit, activeWizard, setActiveWizard, focusArea, setFocusArea, setLogScrollOffset, history, historyIndex, setHistoryIndex, tempInput, setTempInput, wizardSelectedIndex, setWizardSelectedIndex, wizardAllOptions, wizardOptions, wizardSelectedSet, setWizardSelectedSet, setWizardOptions, setWizardAllOptions, setWizardIsLoadingModels, pendingQuestion, setPendingQuestion, suggestions, planState, checklistTasks, completedHistory = [], runningSubagentsCount, runningTasksCount, setSelectedIndex, sessions, selectedIndex, wrappedLines, logsCount, setChecklistScrollOffset, maxChecklistVisible, setAgentsScrollOffset, maxAgentsVisible, setProcsScrollOffset, maxProcsVisible, isProcessing = false, setIsProcessing = () => { }, setMasterLogs, lastTabPrefix = null, setLastTabPrefix, agent, checkpointsList, setCheckpointsList, } = ctx;
     const handlerRef = React.useRef();
     handlerRef.current = (input, key) => {
-        const isEscape = !!(key?.escape || input === "\x1b" || input === "\u001b");
+        const isEscape = !!(key?.escape || ((input === "\x1b" || input === "\u001b") && input.length === 1));
         const isCtrlC = !!(input === "\x03" || (key?.ctrl && input === "c"));
         if (isCtrlC) {
             if (activeWizard) {
@@ -344,7 +344,22 @@ export function useDashboardKeyboard(ctx) {
                 if (activeWizard && activeWizard.type === "login") {
                     if (activeWizard.step === 2) {
                         setActiveWizard({ type: "login", step: 1, data: {} });
-                        setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider"]);
+                        setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider"]);
+                        setWizardSelectedIndex(0);
+                        setQuery("");
+                        return;
+                    }
+                    else if (activeWizard.step === 14) {
+                        setActiveWizard({ type: "login", step: 1, data: {} });
+                        setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider"]);
+                        setWizardSelectedIndex(0);
+                        setQuery("");
+                        return;
+                    }
+                    else if (activeWizard.step === 15) {
+                        const list = getConfiguredProviders();
+                        setActiveWizard({ type: "login", step: 14, data: {} });
+                        setWizardOptions(list.map((p, i) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`));
                         setWizardSelectedIndex(0);
                         setQuery("");
                         return;

@@ -401,7 +401,7 @@ export function wrapChatLineToLines({ line, isFirst, lineIndex, tokensUp, tokens
                 ? { text: line.content, truncated: false }
                 : capDisplayLines(line.content, maxResponseLines || 12, chatWidth || 80);
             const headerNode = (_jsx(Box, { flexDirection: "row", children: _jsxs(Text, { color: "blue", children: [isFirst ? "┌" : "├", "\u2500\u2500\u2500 [ ", _jsx(Text, { bold: true, color: "blue", children: "\u2726 SUPERAGENT" }), " ]", lineIndex !== undefined ? _jsxs(Text, { dimColor: true, children: [" [#", lineIndex, "]"] }) : null] }) }));
-            result.push({ node: headerNode, lineIndex, type: "assistant", isHeader: true });
+            result.push({ node: headerNode, lineIndex, type: "assistant", isHeader: true, isTruncated: capped.truncated });
             const contentLines = wrapMarkdownToLines(capped.text, "blue", chatWidth, lineIndex);
             for (const wrappedContentLine of contentLines) {
                 result.push({
@@ -422,7 +422,7 @@ export function wrapChatLineToLines({ line, isFirst, lineIndex, tokensUp, tokens
                 }
             }
             const separatorNode = (_jsx(Box, { flexDirection: "row", children: _jsx(Text, { color: "blue", children: "\u2502 " }) }));
-            result.push({ node: separatorNode, lineIndex, type: "assistant", isSeparator: true });
+            result.push({ node: separatorNode, lineIndex, type: "assistant", isSeparator: true, isTruncated: capped.truncated });
             break;
         }
         case "tool_start": {
@@ -775,6 +775,12 @@ export const ChatArea = memo(function ChatArea(props) {
             else {
                 if (activePos) {
                     activePos.endRow = y;
+                    if (line.isTruncated) {
+                        activePos.isTruncated = true;
+                    }
+                    if (line.isCollapsible) {
+                        activePos.isCollapsible = true;
+                    }
                 }
             }
         }

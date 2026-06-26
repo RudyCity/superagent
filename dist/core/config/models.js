@@ -215,9 +215,22 @@ export function getModelInstanceForString(modelStr) {
                     }
                 }
                 else if (typeLower === "anthropic") {
-                    provider = "anthropic";
-                    if (!matchedProvider.baseUrl || matchedProvider.baseUrl.trim() === "") {
-                        baseUrl = undefined;
+                    // If the profile has a custom baseUrl that is NOT an official Anthropic endpoint,
+                    // treat it as an OpenAI-compatible (custom) provider. Local servers (e.g. Orbit,
+                    // LiteLLM, OpenCode) use the OpenAI API format and reject the Anthropic SDK headers,
+                    // causing 401 Unauthorized errors.
+                    const isOfficialAnthropic = !matchedProvider.baseUrl ||
+                        matchedProvider.baseUrl.trim() === "" ||
+                        matchedProvider.baseUrl.toLowerCase().includes("anthropic.com");
+                    if (isOfficialAnthropic) {
+                        provider = "anthropic";
+                        if (!matchedProvider.baseUrl || matchedProvider.baseUrl.trim() === "") {
+                            baseUrl = undefined;
+                        }
+                    }
+                    else {
+                        // Custom baseUrl with anthropic provider type → treat as OpenAI-compatible endpoint
+                        provider = "custom";
                     }
                 }
                 else if (typeLower === "custom" || baseUrl) {
@@ -265,7 +278,13 @@ export function getModelInstanceForString(modelStr) {
     if (!isTest && isCloud && isMissingKey) {
         throw new Error(`API key is missing or not configured. Please configure it using the /login command.`);
     }
-    if (provider === "anthropic" || (provider === "custom" && isAnthropicCompatible(baseUrl || "", modelName))) {
+    // If the resolved provider is "custom", it represents a Custom OpenAI Endpoint (or OpenRouter).
+    // We should only treat it as Anthropic-compatible if the baseUrl explicitly indicates Anthropic (e.g. contains "anthropic").
+    // This allows Custom OpenAI Endpoints to serve Claude models (like claude-sonnet-4-6) via OpenAI-compatible APIs.
+    const isAnthropic = provider === "anthropic" || (provider === "custom" &&
+        isAnthropicCompatible(baseUrl || "", modelName) &&
+        (baseUrl || "").toLowerCase().includes("anthropic"));
+    if (isAnthropic) {
         const anthropic = createAnthropic({
             apiKey,
             ...(baseUrl && { baseURL: baseUrl }),

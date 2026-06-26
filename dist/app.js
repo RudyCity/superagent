@@ -57,6 +57,29 @@ function getWizardBorderColor(activeWizard) {
             return "cyan";
     }
 }
+function cleanXmlForDisplay(text) {
+    let cleaned = text;
+    // 1. Remove closed tool calls
+    cleaned = cleaned.replace(/<function_calls\s*>[\s\S]*?<\/function_calls>/gi, "");
+    cleaned = cleaned.replace(/<invoke\s+name="[^"]+"[^>]*>[\s\S]*?<\/invoke>/gi, "");
+    const knownTools = [
+        "ask_question", "run_command", "view_file", "write_to_file",
+        "replace_file_content", "multi_replace_file_content", "search_web",
+        "read_url_content", "invoke_subagent", "manage_subagents", "list_dir",
+        "schedule", "manage_task", "ask_permission", "list_permissions"
+    ];
+    for (const tool of knownTools) {
+        const escaped = tool.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+        const regex = new RegExp(`<${escaped}\\s*>([\\s\\S]*?)<\\/${escaped}>`, "gi");
+        cleaned = cleaned.replace(regex, "");
+    }
+    // 2. If there's an unclosed tool call at the end, strip it
+    const unclosedRegex = /<(function_calls|invoke|ask_question|run_command|view_file|write_to_file|replace_file_content|multi_replace_file_content|search_web|read_url_content|invoke_subagent|manage_subagents|list_dir|schedule|manage_task|ask_permission|list_permissions)\b[^>]*>[\s\S]*$/i;
+    cleaned = cleaned.replace(unclosedRegex, "");
+    // Also strip any partial opening tag at the very end of the string (e.g. "<ask_" or "<invo")
+    cleaned = cleaned.replace(/<[a-zA-Z0-9_]*$/i, "");
+    return cleaned;
+}
 export function App({ autoResume = false, onHistoryChange, onSessionPath, initialPrompt, }) {
     const { exit } = useApp();
     const [lines, _setLines] = useState([]);
@@ -307,13 +330,16 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
             clearTimeout(deferredStreamTimeoutRef.current);
             deferredStreamTimeoutRef.current = null;
         }
-        const content = streamBufferRef.current.trim();
-        if (content) {
-            addLine({
-                type: "assistant",
-                content,
-                timestamp: Date.now(),
-            });
+        const rawContent = streamBufferRef.current.trim();
+        if (rawContent) {
+            const content = cleanXmlForDisplay(rawContent).trim();
+            if (content) {
+                addLine({
+                    type: "assistant",
+                    content,
+                    timestamp: Date.now(),
+                });
+            }
         }
         streamBufferRef.current = "";
         setStreamDisplay("");
@@ -410,7 +436,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
             setHistoryIndex(-1);
             setScrollOffset(0);
             const isSelectionStep = (activeWizard.type === "exit_confirm") ||
-                (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10)) ||
+                (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10 || activeWizard.step === 15)) ||
                 (activeWizard.type === "model" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40 || activeWizard.step === 41 || activeWizard.step === 50)) ||
                 (activeWizard.type === "permission") ||
                 (activeWizard.type === "question" && wizardOptions.length > 0);
@@ -436,6 +462,18 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                         setWizardOptions([]);
                         setActiveWizard({ ...activeWizard, step: 2 });
                     }
+                }
+            }
+            else if (activeWizard.type === "login" && activeWizard.step === 14) {
+                // Step 14: search-select provider to delete
+                const currentInput = (typeof input === "string") ? input.trim() : "";
+                const filteredProviders = currentInput ? filterSuggestions(wizardOptions, currentInput) : wizardOptions;
+                const clampedIdx = Math.min(wizardSelectedIndex, Math.max(0, filteredProviders.length - 1));
+                const chosenProvider = filteredProviders[clampedIdx];
+                if (chosenProvider && chosenProvider !== "(no results)") {
+                    // Find the 1-based index in the original wizardOptions
+                    const origIdx = wizardOptions.indexOf(chosenProvider) + 1;
+                    handleWizardSubmit(String(origIdx));
                 }
             }
             else {
@@ -839,6 +877,10 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 return "Enter a short project description.";
             if (activeWizard.step === 13)
                 return "Describe the project you want to build; AI will create a specification.";
+            if (activeWizard.step === 14)
+                return "Select the provider to remove using arrows and Enter.";
+            if (activeWizard.step === 15)
+                return "Confirm deletion of the selected provider.";
         }
         if (activeWizard.type === "model") {
             if (activeWizard.step === 1)
@@ -900,6 +942,10 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 return "Enter project description (press Enter for default, Esc: Back)...";
             if (activeWizard.step === 13)
                 return "Describe the project (e.g. CLI tool in Rust, Esc: Back)...";
+            if (activeWizard.step === 14)
+                return "Select provider to delete using arrows and Enter (Esc: Back)...";
+            if (activeWizard.step === 15)
+                return "Confirm deletion using arrows and Enter (Esc: Back)...";
         }
         if (activeWizard.type === "model") {
             if (activeWizard.step === 1)
@@ -1145,7 +1191,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                 // Throttle state updates to at most once every 40ms to prevent Ink render overload.
                 const now = Date.now();
                 if (now - lastStreamUpdateRef.current > 40) {
-                    setStreamDisplay(streamBufferRef.current);
+                    setStreamDisplay(cleanXmlForDisplay(streamBufferRef.current));
                     lastStreamUpdateRef.current = now;
                     if (deferredStreamTimeoutRef.current) {
                         clearTimeout(deferredStreamTimeoutRef.current);
@@ -1156,7 +1202,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                     // Schedule a deferred update for the trailing characters if not already scheduled.
                     if (!deferredStreamTimeoutRef.current) {
                         deferredStreamTimeoutRef.current = setTimeout(() => {
-                            setStreamDisplay(streamBufferRef.current);
+                            setStreamDisplay(cleanXmlForDisplay(streamBufferRef.current));
                             lastStreamUpdateRef.current = Date.now();
                             deferredStreamTimeoutRef.current = null;
                         }, 40);
@@ -1739,8 +1785,8 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
         if (activeWizard.type === "question" && activeWizard.step !== 2)
             return true;
         if (activeWizard.type === "login") {
-            // Steps 1,2,6,7,10 = pure selection; Step 8 = selection with search filter (needs input)
-            return [1, 2, 6, 7, 10].includes(activeWizard.step);
+            // Steps 1,2,6,7,10,15 = pure selection; Step 8,14 = selection with search filter (needs input)
+            return [1, 2, 6, 7, 10, 15].includes(activeWizard.step);
         }
         if (activeWizard.type === "model") {
             // Steps 15,24,34 = model search/filter (needs input); others with options are pure selection

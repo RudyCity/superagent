@@ -1,4 +1,4 @@
-import { contentToString } from "../conversation";
+import { contentToString } from "../conversation.js";
 const MAX_CACHE_SIZE = 500;
 /** Simple LRU eviction: when Map exceeds MAX_CACHE_SIZE, drop the oldest entry. */
 function lruSet(map, key, value) {

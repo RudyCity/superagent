@@ -130,7 +130,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
 
   const handlerRef = React.useRef<(input: string, key: any) => void>();
   handlerRef.current = (input, key) => {
-    const isEscape = !!(key?.escape || input === "\x1b" || input === "\u001b");
+    const isEscape = !!(key?.escape || ((input === "\x1b" || input === "\u001b") && input.length === 1));
     const isCtrlC = !!(input === "\x03" || (key?.ctrl && input === "c"));
 
     if (isCtrlC) {
@@ -469,7 +469,22 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         if (activeWizard && activeWizard.type === "login") {
           if (activeWizard.step === 2) {
             setActiveWizard({ type: "login", step: 1, data: {} });
-            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider"]);
+            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider"]);
+            setWizardSelectedIndex(0);
+            setQuery("");
+            return;
+          } else if (activeWizard.step === 14) {
+            setActiveWizard({ type: "login", step: 1, data: {} });
+            setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider"]);
+            setWizardSelectedIndex(0);
+            setQuery("");
+            return;
+          } else if (activeWizard.step === 15) {
+            const list = getConfiguredProviders();
+            setActiveWizard({ type: "login", step: 14, data: {} });
+            setWizardOptions(list.map(
+              (p, i) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+            ));
             setWizardSelectedIndex(0);
             setQuery("");
             return;

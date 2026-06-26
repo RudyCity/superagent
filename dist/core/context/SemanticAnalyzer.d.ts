@@ -1,4 +1,4 @@
-import { Message } from "../conversation";
+import { Message } from "../conversation.js";
 export interface SemanticChunk {
     messages: Message[];
     startIndex: number;

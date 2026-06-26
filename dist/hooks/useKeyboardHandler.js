@@ -27,7 +27,7 @@ export function useKeyboardHandler(ctx) {
     const maxProcsVisible = 3;
     const handlerRef = useRef();
     handlerRef.current = (inputChar, key) => {
-        const isEscape = !!(key?.escape || inputChar === "\x1b" || inputChar === "\u001b");
+        const isEscape = !!(key?.escape || ((inputChar === "\x1b" || inputChar === "\u001b") && inputChar.length === 1));
         const isCtrlC = !!(inputChar === "\x03" || (key?.ctrl && inputChar === "c"));
         // Ctrl+C when wizard is active: always cancel wizard first, never exit app.
         // This check must be BEFORE focusedResponseIndex and focusMode checks
@@ -269,7 +269,7 @@ export function useKeyboardHandler(ctx) {
             return;
         }
         if (activeWizard) {
-            if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10)) {
+            if (activeWizard.type === "login" && (activeWizard.step === 1 || activeWizard.step === 2 || activeWizard.step === 6 || activeWizard.step === 7 || activeWizard.step === 8 || activeWizard.step === 10 || activeWizard.step === 14 || activeWizard.step === 15)) {
                 if (key.upArrow) {
                     setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
                     return;
@@ -292,6 +292,21 @@ export function useKeyboardHandler(ctx) {
                             });
                             setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint"]);
                             setWizardSelectedIndex(0);
+                        }
+                        else if (selectedOption.includes("Delete / Remove")) {
+                            const providers = getProviders().filter((p) => p.apiKey && p.apiKey.trim() !== "");
+                            if (providers.length === 0) {
+                                addLine({ type: "system", content: "No providers configured yet.", timestamp: now });
+                                setActiveWizard(null);
+                                setWizardOptions([]);
+                                setWizardSelectedIndex(0);
+                            }
+                            else {
+                                const providerOptions = providers.map((p, i) => `${i + 1}. ${p.name} [${p.provider}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`);
+                                setActiveWizard({ type: "login", step: 14, data: {} });
+                                setWizardOptions(providerOptions);
+                                setWizardSelectedIndex(0);
+                            }
                         }
                         else {
                             const providers = getProviders().filter((p) => p.apiKey && p.apiKey.trim() !== "");
@@ -360,6 +375,15 @@ export function useKeyboardHandler(ctx) {
                         if (chosenModel) {
                             handleWizardSubmit(chosenModel);
                         }
+                    }
+                    else if (activeWizard.step === 14) {
+                        // Select provider to delete
+                        const idx = wizardSelectedIndex + 1;
+                        handleWizardSubmit(String(idx));
+                    }
+                    else if (activeWizard.step === 15) {
+                        // Confirm deletion
+                        handleWizardSubmit(selectedOption);
                     }
                     return;
                 }
@@ -615,6 +639,36 @@ export function useKeyboardHandler(ctx) {
                     const selectedModel = filteredModels[wizardSelectedIndex] ?? filteredModels[0];
                     if (selectedModel) {
                         handleWizardSubmit(selectedModel);
+                    }
+                    return;
+                }
+            }
+            else if (activeWizard.type === "login" && activeWizard.step === 14 && wizardOptions.length > 0) {
+                const providerSearchQuery = input.trim();
+                const filteredProviders = providerSearchQuery
+                    ? filterSuggestions(wizardOptions, providerSearchQuery)
+                    : wizardOptions;
+                if (key.upArrow) {
+                    setWizardSelectedIndex((prev) => {
+                        const currentMax = Math.max(0, filteredProviders.length - 1);
+                        const clampedPrev = Math.min(prev, currentMax);
+                        return Math.max(0, clampedPrev - 1);
+                    });
+                    return;
+                }
+                if (key.downArrow) {
+                    setWizardSelectedIndex((prev) => {
+                        const currentMax = Math.max(0, filteredProviders.length - 1);
+                        const clampedPrev = Math.min(prev, currentMax);
+                        return Math.min(currentMax, clampedPrev + 1);
+                    });
+                    return;
+                }
+                if (key.return) {
+                    const chosen = filteredProviders[wizardSelectedIndex] ?? filteredProviders[0];
+                    if (chosen && chosen !== "(no results)") {
+                        const origIdx = wizardOptions.indexOf(chosen) + 1;
+                        handleWizardSubmit(String(origIdx));
                     }
                     return;
                 }
@@ -1442,7 +1496,24 @@ export function useKeyboardHandler(ctx) {
                     if (activeWizard.step === 2) {
                         // Back to step 1: Provider Manager main menu
                         setActiveWizard({ type: "login", step: 1, data: {} });
-                        setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider"]);
+                        setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider"]);
+                        setWizardSelectedIndex(0);
+                        setInput("");
+                        return;
+                    }
+                    else if (activeWizard.step === 14) {
+                        // Back to step 1: Provider Manager main menu
+                        setActiveWizard({ type: "login", step: 1, data: {} });
+                        setWizardOptions(["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider"]);
+                        setWizardSelectedIndex(0);
+                        setInput("");
+                        return;
+                    }
+                    else if (activeWizard.step === 15) {
+                        // Back to step 14: Provider delete list
+                        const list = getConfiguredProviders();
+                        setActiveWizard({ type: "login", step: 14, data: {} });
+                        setWizardOptions(list.map((p, i) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`));
                         setWizardSelectedIndex(0);
                         setInput("");
                         return;
