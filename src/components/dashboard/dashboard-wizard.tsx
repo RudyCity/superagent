@@ -187,6 +187,8 @@ export function DashboardWizard({
               activeWizard.type === "login" && activeWizard.step === 11 ? "🛠️ PROJECT INITIALIZATION — Enter Project Name (Type & Enter, Esc: Back):" :
               activeWizard.type === "login" && activeWizard.step === 12 ? "🛠️ PROJECT INITIALIZATION — Enter Project Description (Type & Enter, Esc: Back):" :
               activeWizard.type === "login" && activeWizard.step === 13 ? "🤖 AI PROJECT INITIALIZATION — Describe Project Goal (Type & Enter, Esc: Back):" :
+              activeWizard.type === "login" && activeWizard.step === 14 ? `🗑️ DELETE PROVIDER — ${wizardOptions.length} providers (type to filter, ↑/↓ Navigate, Enter: Select, Esc: Back):` :
+              activeWizard.type === "login" && activeWizard.step === 15 ? `🗑️ CONFIRM DELETE — "${activeWizard.data.providerName || "provider"}" (↑/↓ Navigate, Enter: Confirm, Esc: Back):` :
               `🔑 PROVIDER CREDENTIALS (Step ${activeWizard.step}):`
             }
             description={
@@ -210,6 +212,8 @@ export function DashboardWizard({
               activeWizard.type === "login" && activeWizard.step === 11 ? "Specify the name for this workspace:" :
               activeWizard.type === "login" && activeWizard.step === 12 ? "Give a one-sentence overview description of this software:" :
               activeWizard.type === "login" && activeWizard.step === 13 ? "State what you want to build (e.g. 'A command-line text editor in Rust'). AI will construct agents.md specs:" :
+              activeWizard.type === "login" && activeWizard.step === 14 ? "Select a provider to permanently remove. Type to search/filter:" :
+              activeWizard.type === "login" && activeWizard.step === 15 ? `Are you sure you want to permanently remove "${activeWizard.data.providerName || ""}"? This cannot be undone.` :
               undefined
             }
             borderColor={wizardBorderColor}

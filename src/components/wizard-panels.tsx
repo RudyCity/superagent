@@ -315,16 +315,26 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
-        {activeWizard && activeWizard.type === "login" && activeWizard.step === 14 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title="🗑️ DELETE PROVIDER — Select provider to remove (↑/↓ Navigate, Enter: Select, Esc: Back):"
-            description="Select a provider to permanently remove:"
-            borderColor="red"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-            maxVisible={10}
-          />
-        )}
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 14 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredProviders = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredProviders.length - 1));
+          const searchTitle = searchQuery
+            ? `🗑️ DELETE PROVIDER — 🔍 "${searchQuery}" (${filteredProviders.length}/${wizardOptions.length} results, ↑/↓ Navigate, Enter: Select, Esc: Back):`
+            : `🗑️ DELETE PROVIDER — ${wizardOptions.length} providers (type to filter, ↑/↓ Navigate, Enter: Select, Esc: Back):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              description="Select a provider to permanently remove:"
+              borderColor="red"
+              options={filteredProviders.length > 0 ? filteredProviders : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
 
         {activeWizard && activeWizard.type === "login" && activeWizard.step === 15 && wizardOptions.length > 0 && (
           <WizardDialog

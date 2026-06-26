@@ -811,6 +811,35 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
           return;
         }
+      } else if (activeWizard.type === "login" && activeWizard.step === 14 && wizardOptions.length > 0) {
+        const providerSearchQuery = input.trim();
+        const filteredProviders = providerSearchQuery
+          ? filterSuggestions(wizardOptions, providerSearchQuery)
+          : wizardOptions;
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => {
+            const currentMax = Math.max(0, filteredProviders.length - 1);
+            const clampedPrev = Math.min(prev, currentMax);
+            return Math.max(0, clampedPrev - 1);
+          });
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => {
+            const currentMax = Math.max(0, filteredProviders.length - 1);
+            const clampedPrev = Math.min(prev, currentMax);
+            return Math.min(currentMax, clampedPrev + 1);
+          });
+          return;
+        }
+        if (key.return) {
+          const chosen = filteredProviders[wizardSelectedIndex] ?? filteredProviders[0];
+          if (chosen && chosen !== "(no results)") {
+            const origIdx = wizardOptions.indexOf(chosen) + 1;
+            handleWizardSubmit(String(origIdx));
+          }
+          return;
+        }
       } else if (activeWizard.type === "plan_approve") {
         if (activeWizard.step === 2) {
           // Step 2: custom feedback input — Escape goes back to step 1
