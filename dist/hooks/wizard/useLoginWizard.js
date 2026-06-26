@@ -17,7 +17,13 @@ export function useLoginWizard(ctx) {
                     step: 2,
                     data: {},
                 });
-                setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+                setWizardOptions([
+                    "1. OpenRouter (Recommended)",
+                    "2. OpenAI",
+                    "3. Anthropic",
+                    "4. Custom OpenAI Endpoint",
+                    "5. Custom Anthropic Endpoint"
+                ]);
                 setWizardSelectedIndex(0);
             }
             else {
@@ -67,7 +73,7 @@ export function useLoginWizard(ctx) {
             const provider = data.provider;
             const nameInput = value.trim().replace(/[^a-zA-Z0-9_-]/g, "");
             const profileName = nameInput || provider;
-            if (provider === "custom") {
+            if (provider === "custom" || provider === "custom-anthropic") {
                 addLine({
                     type: "system",
                     content: `Config Name: ${profileName}`,
@@ -121,7 +127,7 @@ export function useLoginWizard(ctx) {
                 addProvider({
                     id: providerId,
                     name: profileName,
-                    provider: provider,
+                    provider: provider === "custom-anthropic" ? "anthropic" : provider,
                     apiKey: apiKey,
                     baseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
                 });
@@ -142,7 +148,7 @@ export function useLoginWizard(ctx) {
                     await fetchAndCacheModels();
                 }
                 catch { }
-                if (provider === "custom" && effectiveBaseUrl) {
+                if ((provider === "custom" || provider === "custom-anthropic") && effectiveBaseUrl) {
                     const endpointCheck = await checkEndpointCompatibility(effectiveBaseUrl, apiKey);
                     const endpointModels = endpointCheck.models;
                     models = endpointModels.length > 0 ? endpointModels : getModelOptions(provider, getCachedModelIds());

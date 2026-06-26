@@ -8,6 +8,7 @@ describe("loginWizardLogic", () => {
       expect(resolveProviderType("2")).toBe("openai");
       expect(resolveProviderType("3")).toBe("anthropic");
       expect(resolveProviderType("4")).toBe("custom");
+      expect(resolveProviderType("5")).toBe("custom-anthropic");
     });
 
     it("resolves name choices case-insensitively", () => {
@@ -15,10 +16,11 @@ describe("loginWizardLogic", () => {
       expect(resolveProviderType("OPENAI")).toBe("openai");
       expect(resolveProviderType("anthropic")).toBe("anthropic");
       expect(resolveProviderType("Custom Endpoint")).toBe("custom");
+      expect(resolveProviderType("Custom Anthropic Endpoint")).toBe("custom-anthropic");
     });
 
     it("returns null for invalid choices", () => {
-      expect(resolveProviderType("5")).toBeNull();
+      expect(resolveProviderType("6")).toBeNull();
       expect(resolveProviderType("foo")).toBeNull();
     });
   });

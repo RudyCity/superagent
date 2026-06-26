@@ -2,11 +2,13 @@ export function resolveProviderType(choice) {
     const lc = choice.toLowerCase();
     if (lc === "1" || lc.includes("openrouter"))
         return "openrouter";
-    if (lc === "2" || lc.includes("openai"))
+    if (lc === "2" || (lc.includes("openai") && !lc.includes("custom")))
         return "openai";
-    if (lc === "3" || lc.includes("anthropic"))
+    if (lc === "3" || (lc.includes("anthropic") && !lc.includes("custom")))
         return "anthropic";
-    if (lc === "4" || lc.includes("custom"))
+    if (lc.includes("custom anthropic") || lc === "5")
+        return "custom-anthropic";
+    if (lc.includes("custom openai") || lc.includes("custom") || lc === "4")
         return "custom";
     return null;
 }
@@ -22,6 +24,7 @@ export function buildProviderOptions(providers) {
 export function getFallbackModels(providerType) {
     switch (providerType) {
         case "anthropic":
+        case "custom-anthropic":
             return [
                 "claude-3-5-sonnet-20241022",
                 "claude-3-5-haiku-20241022",
@@ -36,7 +39,7 @@ export function getFallbackModels(providerType) {
 export function getModelOptions(providerType, cachedModels) {
     const fallback = getFallbackModels(providerType);
     let models = cachedModels.length > 0 ? cachedModels : fallback;
-    if (providerType === "anthropic") {
+    if (providerType === "anthropic" || providerType === "custom-anthropic") {
         const filtered = models.filter((m) => m.includes("claude"));
         models = filtered.length > 0 ? filtered : fallback;
     }
@@ -47,7 +50,7 @@ export function getModelOptions(providerType, cachedModels) {
     return models.slice(0, 15);
 }
 export function resolveTestModel(providerType, baseUrl) {
-    if (providerType === "anthropic")
+    if (providerType === "anthropic" || providerType === "custom-anthropic")
         return "claude-3-haiku-20240307";
     if (providerType === "openrouter" || (baseUrl && baseUrl.includes("openrouter.ai"))) {
         return "openai/gpt-4o-mini";

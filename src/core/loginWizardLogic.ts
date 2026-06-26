@@ -1,4 +1,4 @@
-export type ProviderType = "openrouter" | "openai" | "anthropic" | "custom";
+export type ProviderType = "openrouter" | "openai" | "anthropic" | "custom" | "custom-anthropic";
 
 export interface ConfiguredProvider {
   id: string;
@@ -13,9 +13,10 @@ export interface ConfiguredProvider {
 export function resolveProviderType(choice: string): ProviderType | null {
   const lc = choice.toLowerCase();
   if (lc === "1" || lc.includes("openrouter")) return "openrouter";
-  if (lc === "2" || lc.includes("openai")) return "openai";
-  if (lc === "3" || lc.includes("anthropic")) return "anthropic";
-  if (lc === "4" || lc.includes("custom")) return "custom";
+  if (lc === "2" || (lc.includes("openai") && !lc.includes("custom"))) return "openai";
+  if (lc === "3" || (lc.includes("anthropic") && !lc.includes("custom"))) return "anthropic";
+  if (lc.includes("custom anthropic") || lc === "5") return "custom-anthropic";
+  if (lc.includes("custom openai") || lc.includes("custom") || lc === "4") return "custom";
   return null;
 }
 
@@ -32,6 +33,7 @@ export function buildProviderOptions(providers: ConfiguredProvider[]): string[] 
 export function getFallbackModels(providerType: ProviderType): string[] {
   switch (providerType) {
     case "anthropic":
+    case "custom-anthropic":
       return [
         "claude-3-5-sonnet-20241022",
         "claude-3-5-haiku-20241022",
@@ -47,7 +49,7 @@ export function getFallbackModels(providerType: ProviderType): string[] {
 export function getModelOptions(providerType: string, cachedModels: string[]): string[] {
   const fallback = getFallbackModels(providerType as ProviderType);
   let models = cachedModels.length > 0 ? cachedModels : fallback;
-  if (providerType === "anthropic") {
+  if (providerType === "anthropic" || providerType === "custom-anthropic") {
     const filtered = models.filter((m) => m.includes("claude"));
     models = filtered.length > 0 ? filtered : fallback;
   } else if (providerType === "openai") {
@@ -60,7 +62,7 @@ export function getModelOptions(providerType: string, cachedModels: string[]): s
 }
 
 export function resolveTestModel(providerType: string, baseUrl: string): string {
-  if (providerType === "anthropic") return "claude-3-haiku-20240307";
+  if (providerType === "anthropic" || providerType === "custom-anthropic") return "claude-3-haiku-20240307";
   if (providerType === "openrouter" || (baseUrl && baseUrl.includes("openrouter.ai"))) {
     return "openai/gpt-4o-mini";
   }

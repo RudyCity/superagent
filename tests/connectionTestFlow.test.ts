@@ -32,9 +32,14 @@ describe("loginWizardLogic — pure helper functions", () => {
       expect(resolveProviderType("Custom Endpoint")).toBe("custom");
     });
 
+    it("should resolve custom-anthropic from number or text", () => {
+      expect(resolveProviderType("5")).toBe("custom-anthropic");
+      expect(resolveProviderType("Custom Anthropic Endpoint")).toBe("custom-anthropic");
+    });
+
     it("should return null for invalid input", () => {
       expect(resolveProviderType("invalid")).toBeNull();
-      expect(resolveProviderType("5")).toBeNull();
+      expect(resolveProviderType("6")).toBeNull();
     });
   });
 

@@ -103,7 +103,13 @@ export function useDashboardWizard(ctx) {
                         step: 2,
                         data: {},
                     });
-                    setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+                    setWizardOptions([
+                        "1. OpenRouter (Recommended)",
+                        "2. OpenAI",
+                        "3. Anthropic",
+                        "4. Custom OpenAI Endpoint",
+                        "5. Custom Anthropic Endpoint"
+                    ]);
                     setWizardSelectedIndex(0);
                 }
                 else {
@@ -143,7 +149,7 @@ export function useDashboardWizard(ctx) {
                 const provider = activeWizard.data.provider;
                 const nameInput = value.trim().replace(/[^a-zA-Z0-9_-]/g, "");
                 const profileName = nameInput || provider;
-                if (provider === "custom") {
+                if (provider === "custom" || provider === "custom-anthropic") {
                     setMasterLogs((prev) => [
                         ...prev,
                         `[MASTER] Config Name: ${profileName}`
@@ -195,7 +201,7 @@ export function useDashboardWizard(ctx) {
                     addProvider({
                         id: providerId,
                         name: profileName,
-                        provider: provider,
+                        provider: provider === "custom-anthropic" ? "anthropic" : provider,
                         apiKey: apiKey,
                         baseUrl: baseUrl || (provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
                     });
@@ -215,7 +221,7 @@ export function useDashboardWizard(ctx) {
                         await fetchAndCacheModels();
                     }
                     catch { }
-                    if (provider === "custom" && effectiveBaseUrl) {
+                    if ((provider === "custom" || provider === "custom-anthropic") && effectiveBaseUrl) {
                         const endpointCheck = await checkEndpointCompatibility(effectiveBaseUrl, apiKey);
                         const endpointModels = endpointCheck.models;
                         models = endpointModels.length > 0 ? endpointModels : getModelOptions(provider, getCachedModelIds());
@@ -776,8 +782,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     "1. OpenRouter (Recommended)",
                     "2. OpenAI",
                     "3. Anthropic",
-                    "4. Custom Endpoint",
-                    "5. Not Set (Clear Override)",
+                    "4. Custom OpenAI Endpoint",
+                    "5. Custom Anthropic Endpoint",
+                    "6. Not Set (Clear Override)",
                     "< Back"
                 ]);
                 setWizardSelectedIndex(0);
@@ -808,7 +815,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     setQuery("");
                     return;
                 }
-                if (value.toLowerCase().includes("not set") || value === "5") {
+                if (value.toLowerCase().includes("not set") || value === "6") {
                     const tier = activeWizard.data.tier || "";
                     let targetLabel = "";
                     const cMode = isMulti ? "multi" : "single";
@@ -866,8 +873,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 else if (choice.includes("anthropic") || choice === "3") {
                     providerType = "anthropic";
                 }
-                else if (choice.includes("custom") || choice === "4") {
+                else if (choice.includes("custom openai") || choice === "4") {
                     providerType = "custom";
+                }
+                else if (choice.includes("custom anthropic") || choice === "5") {
+                    providerType = "custom-anthropic";
                 }
                 else {
                     setMasterLogs((prev) => [...prev, `[ERROR] Invalid provider type choice.`].slice(-500));
@@ -898,8 +908,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                         "1. OpenRouter (Recommended)",
                         "2. OpenAI",
                         "3. Anthropic",
-                        "4. Custom Endpoint",
-                        "5. Not Set (Clear Override)",
+                        "4. Custom OpenAI Endpoint",
+                        "5. Custom Anthropic Endpoint",
+                        "6. Not Set (Clear Override)",
                         "< Back"
                     ]);
                     setWizardSelectedIndex(0);
@@ -976,7 +987,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                             .finally(() => setWizardIsLoadingModels(false));
                     }
                 }
-                else if (providerType === "anthropic") {
+                else if (providerType === "anthropic" || providerType === "custom-anthropic") {
                     modelOptions = [
                         "claude-opus-4-5",
                         "claude-sonnet-4-5",
@@ -1028,7 +1039,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 const nameInput = value.trim().replace(/[^a-zA-Z0-9_-]/g, "");
                 const providerType = activeWizard.data.providerType;
                 const profileName = nameInput || providerType;
-                if (providerType === "custom") {
+                if (providerType === "custom" || providerType === "custom-anthropic") {
                     setActiveWizard({
                         type: "model",
                         step: 17,
@@ -1083,7 +1094,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             else if (activeWizard.step === 18) {
                 if (value === "< Back") {
                     const providerType = activeWizard.data.providerType;
-                    if (providerType === "custom") {
+                    if (providerType === "custom" || providerType === "custom-anthropic") {
                         setActiveWizard({
                             type: "model",
                             step: 17,
@@ -1111,7 +1122,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     addProvider({
                         id: newProviderId,
                         name: profileName,
-                        provider: providerType,
+                        provider: providerType === "custom-anthropic" ? "anthropic" : providerType,
                         apiKey: apiKey,
                         baseUrl: baseUrl || (providerType === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
                     });
@@ -1142,7 +1153,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                         await fetchAndCacheModels();
                     }
                     catch { }
-                    if (providerType === "custom" && mwBaseUrl) {
+                    if ((providerType === "custom" || providerType === "custom-anthropic") && mwBaseUrl) {
                         const endpointModels = await fetchModelsFromEndpoint(mwBaseUrl, apiKey);
                         mwModels = endpointModels.length > 0 ? endpointModels : getModelOptions(providerType, getCachedModelIds());
                     }
@@ -1289,8 +1300,14 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                         "claude-3-opus-20240229",
                     ];
                 }
-                else if (returnProviderType === "custom") {
-                    initialModels = [
+                else if (returnProviderType === "custom" || returnProviderType === "custom-anthropic") {
+                    initialModels = returnProviderType === "custom-anthropic" ? [
+                        "claude-opus-4-5",
+                        "claude-sonnet-4-5",
+                        "claude-3-5-sonnet-20241022",
+                        "claude-3-5-haiku-20241022",
+                        "claude-3-opus-20240229",
+                    ] : [
                         "deepseek-chat", "llama-3.3-70b-instruct",
                     ];
                     if (resolvedBaseUrl) {
@@ -1679,8 +1696,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     "1. OpenRouter (Recommended)",
                     "2. OpenAI",
                     "3. Anthropic",
-                    "4. Custom Endpoint",
-                    "5. Not Set (Clear Override)",
+                    "4. Custom OpenAI Endpoint",
+                    "5. Custom Anthropic Endpoint",
+                    "6. Not Set (Clear Override)",
                     "< Back"
                 ]);
                 setWizardSelectedIndex(0);
@@ -1700,7 +1718,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                     setQuery("");
                     return;
                 }
-                if (value.toLowerCase().includes("not set") || value === "5") {
+                if (value.toLowerCase().includes("not set") || value === "6") {
                     const tier = activeWizard.data.tier || "";
                     const presetModels = activeWizard.data.presetModels ? JSON.parse(activeWizard.data.presetModels) : {};
                     if (tier === "master") {
@@ -1768,8 +1786,11 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                 else if (choice.includes("anthropic") || choice === "3") {
                     providerType = "anthropic";
                 }
-                else if (choice.includes("custom") || choice === "4") {
+                else if (choice.includes("custom openai") || choice === "4") {
                     providerType = "custom";
+                }
+                else if (choice.includes("custom anthropic") || choice === "5") {
+                    providerType = "custom-anthropic";
                 }
                 else {
                     setMasterLogs((prev) => [...prev, `[ERROR] Invalid provider type choice.`].slice(-500));
@@ -1802,8 +1823,9 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
                         "1. OpenRouter (Recommended)",
                         "2. OpenAI",
                         "3. Anthropic",
-                        "4. Custom Endpoint",
-                        "5. Not Set (Clear Override)",
+                        "4. Custom OpenAI Endpoint",
+                        "5. Custom Anthropic Endpoint",
+                        "6. Not Set (Clear Override)",
                         "< Back"
                     ]);
                     setWizardSelectedIndex(0);

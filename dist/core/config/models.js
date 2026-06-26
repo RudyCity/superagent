@@ -216,7 +216,9 @@ export function getModelInstanceForString(modelStr) {
                 }
                 else if (typeLower === "anthropic") {
                     provider = "anthropic";
-                    baseUrl = undefined;
+                    if (!matchedProvider.baseUrl || matchedProvider.baseUrl.trim() === "") {
+                        baseUrl = undefined;
+                    }
                 }
                 else if (typeLower === "custom" || baseUrl) {
                     provider = "custom";

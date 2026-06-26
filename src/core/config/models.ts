@@ -233,7 +233,9 @@ export function getModelInstanceForString(modelStr: string) {
           }
         } else if (typeLower === "anthropic") {
           provider = "anthropic";
-          baseUrl = undefined;
+          if (!matchedProvider.baseUrl || matchedProvider.baseUrl.trim() === "") {
+            baseUrl = undefined;
+          }
         } else if (typeLower === "custom" || baseUrl) {
           provider = "custom";
         } else {
