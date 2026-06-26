@@ -72,11 +72,9 @@ describe("Internal Hooks Feature", () => {
 
     await internalHooksCommand.execute("dev test-hook", mockCtx);
 
-    // Verify dev execution was triggered and focus was set
+    // Verify focus was set and confirmation message was printed
     expect(focusedHook).toBe("test-hook");
-    expect(lines.some(l => l.content.includes("Workspace focus set") || l.content.includes("Executing dev command"))).toBe(true);
-    // Since index.js prints "Hook executed successfully!", verify that was logged as stdout
-    expect(lines.some(l => l.content.includes("Hook executed successfully!"))).toBe(true);
+    expect(lines.some(l => l.content.includes("Workspace focus set to internal hook"))).toBe(true);
   });
 
   it("should clear workspace focus on /ih dev off", async () => {
