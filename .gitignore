@@ -11,16 +11,13 @@ nul
 opencode.json
 debug_creds.mjs
 
-# Agent Customizations and Fastcontext
-.agents/
+# Fastcontext
 .fastcontext/
 
 # Vendor folders that shouldn't be in git
 vendor/tencentdb-memory/
 
-# Local python environment dependencies and caches
-bin/python/Lib/site-packages/
-bin/python/.verified
+# Python caches (but keep bin/ tracked)
 __pycache__/
 *.py[cod]
 *$py.class
