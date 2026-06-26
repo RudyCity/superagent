@@ -1245,7 +1245,25 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
 
               textContent = result.text || "";
               if (textContent) {
-                this.onEvent({ type: "text", content: textContent });
+                if (!supportsNativeTools) {
+                  try {
+                    const { parseXmlToolCalls } = await import("../utils/xmlToolParser.js");
+                    const parsed = parseXmlToolCalls(textContent, toolDefs);
+                    if (parsed.toolCalls.length > 0) {
+                      this.writeToLogFile(
+                        "INFO",
+                        `Parsed ${parsed.toolCalls.length} XML tool calls from non-streamed response`
+                      );
+                      toolCalls.push(...parsed.toolCalls);
+                      textContent = parsed.cleanText;
+                    }
+                  } catch (err: any) {
+                    this.writeToLogFile("WARN", `Failed to parse XML tool calls: ${err.message}`);
+                  }
+                }
+                if (textContent) {
+                  this.onEvent({ type: "text", content: textContent });
+                }
               }
               if (result.toolCalls) {
                 for (const tc of result.toolCalls) {
