@@ -250,6 +250,21 @@ Let me execute these in sequence:
         CommandLine: "npm test",
       });
     });
+
+    it("should respect string='true' attribute in parameters to bypass number conversion", () => {
+      const text = `
+<invoke name="run_command">
+  <parameter name="CommandLine" string="true">12345</parameter>
+  <parameter name="WaitMsBeforeAsync" string="false">5000</parameter>
+</invoke>
+`;
+      const result = parseXmlToolCalls(text, toolDefs);
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls[0].args).toEqual({
+        CommandLine: "12345",
+        WaitMsBeforeAsync: 5000,
+      });
+    });
   });
 });
 

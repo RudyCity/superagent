@@ -218,13 +218,17 @@ function parseXmlBody(body: string): Record<string, any> {
   const args: Record<string, any> = {};
 
   // 1. Try to parse <parameter name="paramName">value</parameter>
-  const paramRegex = /<parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/parameter>/gi;
+  const paramRegex = /<parameter\s+name="([^"]+)"([^>]*)>([\s\S]*?)<\/parameter>/gi;
   let match;
   let foundParams = false;
   while ((match = paramRegex.exec(body)) !== null) {
     const name = match[1].trim();
-    const valStr = match[2];
-    args[name] = parseXmlValue(valStr);
+    const attrs = match[2];
+    const valStr = match[3];
+    
+    const isExplicitString = /\bstring\s*=\s*"true"/i.test(attrs) || /\bstring\s*=\s*'true'/i.test(attrs);
+    
+    args[name] = isExplicitString ? decodeHtmlEntities(valStr.trim()) : parseXmlValue(valStr);
     foundParams = true;
   }
 
