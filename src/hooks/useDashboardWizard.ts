@@ -372,7 +372,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
               fromList: "false",
             },
           });
-          setWizardOptions(["1. Yes, Test Connection", "2. No"]);
+          setWizardOptions(["1. Yes, Test Connection", "2. No (Cancel Setup)"]);
           setWizardSelectedIndex(0);
           return;
         } catch (err: any) {
@@ -410,12 +410,12 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             fromList: "true",
           },
         });
-        setWizardOptions(["1. Yes, Test Connection", "2. No"]);
+        setWizardOptions(["1. Yes, Test Connection", "2. No (Cancel Setup)"]);
         setWizardSelectedIndex(0);
       } else if (activeWizard.step === 7) {
         // Step 7: Confirm connection test in Dashboard
         const choice = value.toLowerCase();
-        const skipTest = choice.includes("tidak") || choice.includes("no") || choice === "2" || choice.startsWith("2.");
+        const cancelSetup = choice.includes("tidak") || choice.includes("no") || choice === "2" || choice.startsWith("2.");
         
         const pId = activeWizard.data.providerId || "";
         const pName = activeWizard.data.providerName || "";
@@ -423,18 +423,10 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         const pApiKey = activeWizard.data.providerApiKey || "";
         const pBaseUrl = activeWizard.data.providerBaseUrl || "";
 
-        if (skipTest) {
-          setMasterLogs((prev) => [...prev, `[SYSTEM] Connection test skipped.`].slice(-500));
-          setWizardIsLoadingModels(true);
-          let models: string[];
-          try {
-            await fetchAndCacheModels();
-          } catch {}
-          models = getModelOptions(pType, getCachedModelIds());
-          setWizardIsLoadingModels(false);
-
-          setActiveWizard({ type: "login", step: 8, data: activeWizard.data });
-          setWizardOptions(models);
+        if (cancelSetup) {
+          setMasterLogs((prev) => [...prev, `[SYSTEM] Provider setup cancelled.`].slice(-500));
+          setActiveWizard(null);
+          setWizardOptions([]);
           setWizardSelectedIndex(0);
           return;
         }

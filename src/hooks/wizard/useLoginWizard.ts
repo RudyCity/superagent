@@ -197,7 +197,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
             fromList: "false",
           },
         });
-        setWizardOptions(["1. Yes, Test Connection", "2. No"]);
+        setWizardOptions(["1. Yes, Test Connection", "2. No (Cancel Setup)"]);
         setWizardSelectedIndex(0);
         setInput("");
       } catch (err: any) {
@@ -486,12 +486,12 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           fromList: "true",
         },
       });
-      setWizardOptions(["1. Yes, Test Connection", "2. No"]);
+      setWizardOptions(["1. Yes, Test Connection", "2. No (Cancel Setup)"]);
       setWizardSelectedIndex(0);
     } else if (step === 7) {
       // Step 7: Confirm connection test
       const choice = value.toLowerCase();
-      const skipTest = choice.includes("tidak") || choice.includes("no") || choice === "2" || choice.startsWith("2.");
+      const cancelSetup = choice.includes("tidak") || choice.includes("no") || choice === "2" || choice.startsWith("2.");
       
       const pId = data.providerId || "";
       const pName = data.providerName || "";
@@ -499,18 +499,10 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       const pApiKey = data.providerApiKey || "";
       const pBaseUrl = data.providerBaseUrl || "";
 
-      if (skipTest) {
-        addLine({ type: "system", content: "Connection test skipped.", timestamp: now });
-        setWizardIsLoadingModels(true);
-        let models: string[];
-        try {
-          await fetchAndCacheModels();
-        } catch {}
-        models = getModelOptions(pType, getCachedModelIds());
-        setWizardIsLoadingModels(false);
-
-        setActiveWizard({ type: "login", step: 8, data });
-        setWizardOptions(models);
+      if (cancelSetup) {
+        addLine({ type: "system", content: "Provider setup cancelled.", timestamp: now });
+        setActiveWizard(null);
+        setWizardOptions([]);
         setWizardSelectedIndex(0);
         return;
       }
