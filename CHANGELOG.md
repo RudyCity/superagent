@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.28] - 2026-06-26
+
+### Added
+- **TencentDB Memory Management Command**: Introduced a new `/memory` slash command for real-time TencentDB memory management, configuration, and diagnostics.
+
+### Fixed
+- **TencentDB Gateway Startup**: Configured the `tencentdb-gateway` process to run headlessly using `node --import tsx` on Windows to prevent an intrusive command prompt window from showing.
+- **TencentDB Gateway Synchronization**: Fixed duplicate schema export crashes during `tencentdb-gateway` startup and strengthened patch file synchronization logic.
+
+### Improved
+- **History Search Performance**: Optimized history search via in-memory caching, parallel async I/O, fast fuzzy matching, and concurrent AI-based semantic summarization.
+- **Semantic Search Caching**: Implemented highly responsive semantic search caching with an expanded candidate pool and real-time progress logging, parameterized by model and provider.
+- **TencentDB Memory Sync**: Reduced disk write overhead by optimizing turn-based TencentDB memory syncing to bypass redundant writes, and consolidated memory read/save routines with fast timeouts.
+- **CLI Help & Suggestions**: Integrated the `/memory` command into the global help menus and autocomplete dashboard suggestions, and updated `/ih dev` command documentation.
+
 ## [1.2.27] - 2026-06-26
 
 ### Added
