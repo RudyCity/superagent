@@ -33,7 +33,15 @@ export function useModelWizard(ctx) {
             ];
         };
         const getProfilePickerOptions = (providerType) => {
-            const providers = getProviders().filter(p => p.provider === providerType);
+            const providers = getProviders().filter(p => {
+                if (providerType === "anthropic") {
+                    return p.provider === "anthropic" && !p.baseUrl;
+                }
+                if (providerType === "custom-anthropic") {
+                    return p.provider === "anthropic" && !!p.baseUrl;
+                }
+                return p.provider === providerType;
+            });
             return providers.map(p => {
                 const apiKey = p.apiKey || "";
                 const maskedKey = apiKey
@@ -203,8 +211,9 @@ export function useModelWizard(ctx) {
                         "1. OpenRouter (Recommended)",
                         "2. OpenAI",
                         "3. Anthropic",
-                        "4. Custom Endpoint",
-                        "5. Not Set (Clear Override)",
+                        "4. Custom OpenAI Endpoint",
+                        "5. Custom Anthropic Endpoint",
+                        "6. Not Set (Clear Override)",
                         "< Back"
                     ]);
                 }
@@ -312,8 +321,9 @@ export function useModelWizard(ctx) {
                 "1. OpenRouter (Recommended)",
                 "2. OpenAI",
                 "3. Anthropic",
-                "4. Custom Endpoint",
-                "5. Not Set (Clear Override)",
+                "4. Custom OpenAI Endpoint",
+                "5. Custom Anthropic Endpoint",
+                "6. Not Set (Clear Override)",
                 "< Back"
             ]);
             setWizardSelectedIndex(0);
@@ -376,7 +386,7 @@ export function useModelWizard(ctx) {
                 setInput("");
                 return;
             }
-            if (value.toLowerCase().includes("not set") || value === "5") {
+            if (value.toLowerCase().includes("not set") || value === "5" || value === "6") {
                 const tier = data.tier || "";
                 let targetLabel = "";
                 let didClear = false;
@@ -448,14 +458,17 @@ export function useModelWizard(ctx) {
             if (choice.includes("openrouter") || choice === "1") {
                 providerType = "openrouter";
             }
-            else if (choice.includes("openai") || choice === "2") {
+            else if ((choice.includes("openai") && !choice.includes("custom")) || choice === "2") {
                 providerType = "openai";
             }
-            else if (choice.includes("anthropic") || choice === "3") {
+            else if ((choice.includes("anthropic") && !choice.includes("custom")) || choice === "3") {
                 providerType = "anthropic";
             }
-            else if (choice.includes("custom") || choice === "4") {
+            else if ((choice.includes("custom") && choice.includes("openai")) || choice === "4") {
                 providerType = "custom";
+            }
+            else if ((choice.includes("custom") && choice.includes("anthropic")) || choice === "5") {
+                providerType = "custom-anthropic";
             }
             else {
                 addLine({
@@ -471,7 +484,15 @@ export function useModelWizard(ctx) {
                 data: { ...data, providerType },
             });
             const list = getConfiguredProviders();
-            const matchingProfiles = list.filter(p => p.type === providerType);
+            const matchingProfiles = list.filter(p => {
+                if (providerType === "anthropic") {
+                    return p.type === "anthropic" && !p.baseUrl;
+                }
+                if (providerType === "custom-anthropic") {
+                    return p.type === "anthropic" && !!p.baseUrl;
+                }
+                return p.type === providerType;
+            });
             const profileOptions = formatProviderForPicker(matchingProfiles);
             setWizardOptions([
                 ...profileOptions,
@@ -492,8 +513,9 @@ export function useModelWizard(ctx) {
                     "1. OpenRouter (Recommended)",
                     "2. OpenAI",
                     "3. Anthropic",
-                    "4. Custom Endpoint",
-                    "5. Not Set (Clear Override)",
+                    "4. Custom OpenAI Endpoint",
+                    "5. Custom Anthropic Endpoint",
+                    "6. Not Set (Clear Override)",
                     "< Back"
                 ]);
                 setWizardSelectedIndex(0);
@@ -587,6 +609,31 @@ export function useModelWizard(ctx) {
                     "claude-3-opus-20240229",
                 ];
             }
+            else if (providerType === "custom-anthropic") {
+                initialModels = [
+                    "claude-3-5-sonnet-20241022",
+                    "claude-3-5-haiku-20241022",
+                    "claude-3-opus-20240229",
+                ];
+                if (resolvedBaseUrl) {
+                    setWizardIsLoadingModels(true);
+                    const headers = {};
+                    if (resolvedApiKey)
+                        headers["Authorization"] = `Bearer ${resolvedApiKey}`;
+                    fetch(`${resolvedBaseUrl}/models`, { headers })
+                        .then(async (res) => {
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data && Array.isArray(data.data)) {
+                                const modelsList = data.data.map((m) => m.id);
+                                setWizardOptions([...modelsList, "< Back"]);
+                            }
+                        }
+                    })
+                        .catch(() => { })
+                        .finally(() => setWizardIsLoadingModels(false));
+                }
+            }
             else if (providerType === "custom") {
                 initialModels = [
                     "deepseek-chat", "llama-3.3-70b-instruct",
@@ -628,7 +675,15 @@ export function useModelWizard(ctx) {
                     data: { ...data },
                 });
                 const list = getConfiguredProviders();
-                const matchingProfiles = list.filter(p => p.type === providerType);
+                const matchingProfiles = list.filter(p => {
+                    if (providerType === "anthropic") {
+                        return p.type === "anthropic" && !p.baseUrl;
+                    }
+                    if (providerType === "custom-anthropic") {
+                        return p.type === "anthropic" && !!p.baseUrl;
+                    }
+                    return p.type === providerType;
+                });
                 const profileOptions = formatProviderForPicker(matchingProfiles);
                 setWizardOptions([
                     ...profileOptions,
@@ -642,7 +697,7 @@ export function useModelWizard(ctx) {
             const nameInput = value.trim().replace(/[^a-zA-Z0-9_-]/g, "");
             const providerType = data.providerType;
             const profileName = nameInput || providerType;
-            if (providerType === "custom") {
+            if (providerType === "custom" || providerType === "custom-anthropic") {
                 setActiveWizard({
                     type: "model",
                     step: 7,
@@ -700,7 +755,7 @@ export function useModelWizard(ctx) {
         else if (step === 8) {
             if (value === "< Back") {
                 const providerType = data.providerType;
-                if (providerType === "custom") {
+                if (providerType === "custom" || providerType === "custom-anthropic") {
                     setActiveWizard({
                         type: "model",
                         step: 7,
@@ -728,7 +783,7 @@ export function useModelWizard(ctx) {
                 addProvider({
                     id: newProviderId,
                     name: profileName,
-                    provider: providerType,
+                    provider: providerType === "custom-anthropic" ? "anthropic" : providerType,
                     apiKey: apiKey,
                     baseUrl: baseUrl || (providerType === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
                 });
@@ -802,6 +857,31 @@ export function useModelWizard(ctx) {
                         "claude-3-5-haiku-20241022",
                         "claude-3-opus-20240229",
                     ];
+                }
+                else if (providerType === "custom-anthropic") {
+                    initialModels = [
+                        "claude-3-5-sonnet-20241022",
+                        "claude-3-5-haiku-20241022",
+                        "claude-3-opus-20240229",
+                    ];
+                    if (baseUrl) {
+                        setWizardIsLoadingModels(true);
+                        const headers = {};
+                        if (apiKey)
+                            headers["Authorization"] = `Bearer ${apiKey}`;
+                        fetch(`${baseUrl}/models`, { headers })
+                            .then(async (res) => {
+                            if (res.ok) {
+                                const data = await res.json();
+                                if (data && Array.isArray(data.data)) {
+                                    const modelsList = data.data.map((m) => m.id);
+                                    setWizardOptions([...modelsList, "< Back"]);
+                                }
+                            }
+                        })
+                            .catch(() => { })
+                            .finally(() => setWizardIsLoadingModels(false));
+                    }
                 }
                 else if (providerType === "custom") {
                     initialModels = [
@@ -1097,8 +1177,9 @@ export function useModelWizard(ctx) {
                 "1. OpenRouter (Recommended)",
                 "2. OpenAI",
                 "3. Anthropic",
-                "4. Custom Endpoint",
-                "5. Not Set (Clear Override)",
+                "4. Custom OpenAI Endpoint",
+                "5. Custom Anthropic Endpoint",
+                "6. Not Set (Clear Override)",
                 "< Back"
             ]);
             setWizardSelectedIndex(0);
@@ -1118,7 +1199,7 @@ export function useModelWizard(ctx) {
                 setInput("");
                 return;
             }
-            if (value.toLowerCase().includes("not set") || value === "5") {
+            if (value.toLowerCase().includes("not set") || value === "5" || value === "6") {
                 const tier = data.tier || "";
                 const presetModels = data.presetModels ? JSON.parse(data.presetModels) : {};
                 if (tier === "master") {
@@ -1179,14 +1260,17 @@ export function useModelWizard(ctx) {
             if (choice.includes("openrouter") || choice === "1") {
                 providerType = "openrouter";
             }
-            else if (choice.includes("openai") || choice === "2") {
+            else if ((choice.includes("openai") && !choice.includes("custom")) || choice === "2") {
                 providerType = "openai";
             }
-            else if (choice.includes("anthropic") || choice === "3") {
+            else if ((choice.includes("anthropic") && !choice.includes("custom")) || choice === "3") {
                 providerType = "anthropic";
             }
-            else if (choice.includes("custom") || choice === "4") {
+            else if ((choice.includes("custom") && choice.includes("openai")) || choice === "4") {
                 providerType = "custom";
+            }
+            else if ((choice.includes("custom") && choice.includes("anthropic")) || choice === "5") {
+                providerType = "custom-anthropic";
             }
             else {
                 addLine({
@@ -1223,8 +1307,9 @@ export function useModelWizard(ctx) {
                     "1. OpenRouter (Recommended)",
                     "2. OpenAI",
                     "3. Anthropic",
-                    "4. Custom Endpoint",
-                    "5. Not Set (Clear Override)",
+                    "4. Custom OpenAI Endpoint",
+                    "5. Custom Anthropic Endpoint",
+                    "6. Not Set (Clear Override)",
                     "< Back"
                 ]);
                 setWizardSelectedIndex(0);
@@ -1320,6 +1405,31 @@ export function useModelWizard(ctx) {
                     "claude-3-opus-20240229",
                 ];
             }
+            else if (providerType === "custom-anthropic") {
+                initialModels = [
+                    "claude-3-5-sonnet-20241022",
+                    "claude-3-5-haiku-20241022",
+                    "claude-3-opus-20240229",
+                ];
+                if (resolvedBaseUrl) {
+                    setWizardIsLoadingModels(true);
+                    const headers = {};
+                    if (resolvedApiKey)
+                        headers["Authorization"] = `Bearer ${resolvedApiKey}`;
+                    fetch(`${resolvedBaseUrl}/models`, { headers })
+                        .then(async (res) => {
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data && Array.isArray(data.data)) {
+                                const modelsList = data.data.map((m) => m.id);
+                                setWizardOptions([...modelsList, "< Back"]);
+                            }
+                        }
+                    })
+                        .catch(() => { })
+                        .finally(() => setWizardIsLoadingModels(false));
+                }
+            }
             else if (providerType === "custom") {
                 initialModels = [
                     "deepseek-chat", "llama-3.3-70b-instruct",
@@ -1358,7 +1468,15 @@ export function useModelWizard(ctx) {
                 });
                 const providerType = data.providerType;
                 const list = getConfiguredProviders();
-                const matchingProfiles = list.filter(p => p.type === providerType);
+                const matchingProfiles = list.filter(p => {
+                    if (providerType === "anthropic") {
+                        return p.type === "anthropic" && !p.baseUrl;
+                    }
+                    if (providerType === "custom-anthropic") {
+                        return p.type === "anthropic" && !!p.baseUrl;
+                    }
+                    return p.type === providerType;
+                });
                 const profileOptions = formatProviderForPicker(matchingProfiles);
                 setWizardOptions([
                     ...profileOptions,

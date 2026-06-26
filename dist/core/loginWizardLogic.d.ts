@@ -1,4 +1,4 @@
-export type ProviderType = "openrouter" | "openai" | "anthropic" | "custom";
+export type ProviderType = "openrouter" | "openai" | "anthropic" | "custom" | "custom-anthropic";
 export interface ConfiguredProvider {
     id: string;
     name: string;

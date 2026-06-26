@@ -290,7 +290,7 @@ export function useKeyboardHandler(ctx) {
                                 step: 2,
                                 data: {},
                             });
-                            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+                            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint"]);
                             setWizardSelectedIndex(0);
                         }
                         else {
@@ -1446,7 +1446,7 @@ export function useKeyboardHandler(ctx) {
                     else if (activeWizard.step === 3) {
                         // Back to step 2: Select provider template
                         setActiveWizard({ type: "login", step: 2, data: {} });
-                        setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+                        setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint"]);
                         setWizardSelectedIndex(0);
                         setInput("");
                         return;
@@ -1461,7 +1461,7 @@ export function useKeyboardHandler(ctx) {
                     }
                     else if (activeWizard.step === 5) {
                         // Back to step 4 (custom with baseUrl) or step 3 (non-custom)
-                        if (activeWizard.data.baseUrl) {
+                        if (activeWizard.data.baseUrl || activeWizard.data.provider === "custom" || activeWizard.data.provider === "custom-anthropic") {
                             setActiveWizard({ type: "login", step: 4, data: { provider: activeWizard.data.provider, name: activeWizard.data.name } });
                         }
                         else {

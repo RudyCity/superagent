@@ -350,7 +350,7 @@ export function useDashboardKeyboard(ctx) {
                     }
                     else if (activeWizard.step === 3) {
                         setActiveWizard({ type: "login", step: 2, data: {} });
-                        setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom Endpoint"]);
+                        setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint"]);
                         setWizardSelectedIndex(0);
                         setQuery("");
                         return;
@@ -363,7 +363,7 @@ export function useDashboardKeyboard(ctx) {
                         return;
                     }
                     else if (activeWizard.step === 5) {
-                        if (activeWizard.data.baseUrl) {
+                        if (activeWizard.data.baseUrl || activeWizard.data.provider === "custom" || activeWizard.data.provider === "custom-anthropic") {
                             setActiveWizard({ type: "login", step: 4, data: { provider: activeWizard.data.provider, name: activeWizard.data.name } });
                         }
                         else {
