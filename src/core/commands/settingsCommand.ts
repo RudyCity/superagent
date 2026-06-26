@@ -781,6 +781,21 @@ export const settingTencentdbCommand: SlashCommand = {
               return;
             }
           }
+          // Sync the patched v2-router.ts from node_modules to vendor/tencentdb-memory
+          const sourceRouterPath = path.join(projectRoot, "node_modules", "@tencentdb-agent-memory", "memory-tencentdb", "src", "gateway", "v2-router.ts");
+          const targetRouterPath = path.join(gatewayDir, "src", "gateway", "v2-router.ts");
+          if (fs.existsSync(sourceRouterPath)) {
+            try {
+              fs.mkdirSync(path.dirname(targetRouterPath), { recursive: true });
+              fs.copyFileSync(sourceRouterPath, targetRouterPath);
+            } catch (err: any) {
+              ctx.addLine({
+                type: "system",
+                content: `⚠️ Failed to sync patched router to gateway: ${err.message}`,
+                timestamp: Date.now(),
+              });
+            }
+          }
 
           // 3. Start the gateway in the background
           ctx.addLine({
