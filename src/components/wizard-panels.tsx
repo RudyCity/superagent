@@ -279,6 +279,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
             borderColor="cyan"
             options={wizardOptions}
             selectedIndex={wizardSelectedIndex}
+            isLoading={wizardIsLoadingModels}
           />
         )}
 

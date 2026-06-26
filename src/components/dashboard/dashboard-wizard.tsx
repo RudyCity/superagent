@@ -220,6 +220,7 @@ export function DashboardWizard({
             selectedSet={wizardSelectedSet}
             marginY={0}
             terminalWidth={terminalWidth}
+            isLoading={wizardIsLoadingModels}
           />
         </Box>
       )}
