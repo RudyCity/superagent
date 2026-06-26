@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getPackageRootDir, getModelConnectionDetailsForTier } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
@@ -709,6 +709,7 @@ If none of the options are suitable, still pick the closest one.`;
     }
     process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
     await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState, this.workingDirectory);
+    clearHistoryCache();
   }
 
   private getModel() {

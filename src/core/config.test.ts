@@ -7,7 +7,7 @@ import os from "os";
 const tempHome = path.join(process.cwd(), "tests", "temp-home-config");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset, getModelConnectionDetailsForTier } from "./config.js";
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, clearHistoryCache, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset, getModelConnectionDetailsForTier } from "./config.js";
 import { getModelConfigPath } from "./config/paths.js";
 import { clearModelConfigCache, loadModelConfig, addProvider, saveModelConfig, getProviders, removeProvider } from "./config/jsonConfig.js";
 
@@ -449,6 +449,57 @@ describe("config", () => {
         const multiSessions = listHistorySessions(true);
         expect(multiSessions.length).toBe(1);
         expect(multiSessions[0].filePath).toContain("my_awesome_project_456");
+      } finally {
+        spyCwd.mockRestore();
+        spyExistsSync.mockRestore();
+        spyReaddirSync.mockRestore();
+        spyStatSync.mockRestore();
+        spyReadFileSync.mockRestore();
+      }
+    });
+
+    it("should cache metadata based on mtime and allow clearing history list cache", () => {
+      const mockCwd = "D:\\projects\\my-awesome-project";
+      const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
+      const spyExistsSync = vi.spyOn(fs, "existsSync").mockReturnValue(true);
+      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(["D__projects_my_awesome_project_123"] as any);
+
+      let mtimeValue = new Date(1000);
+      const spyStatSync = vi.spyOn(fs, "statSync").mockImplementation(() => ({
+        mtime: mtimeValue,
+      } as any));
+
+      let readCount = 0;
+      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation(() => {
+        readCount++;
+        return JSON.stringify({
+          messages: [{ role: "user", content: `msg_${readCount}` }],
+        });
+      });
+
+      try {
+        clearHistoryCache();
+
+        // First call: readCount should increment (cache miss)
+        const sessions1 = listHistorySessions();
+        expect(sessions1.length).toBe(1);
+        expect(sessions1[0].preview).toBe("msg_1");
+        expect(readCount).toBe(1);
+
+        // Clear list cache so listHistorySessions runs again, but since mtime is same, it should use metadata cache
+        clearHistoryCache();
+        const sessions2 = listHistorySessions();
+        expect(sessions2.length).toBe(1);
+        expect(sessions2[0].preview).toBe("msg_1"); // still msg_1 from cache
+        expect(readCount).toBe(1); // readFileSync was not called again!
+
+        // Update mtime to simulate file change
+        mtimeValue = new Date(2000);
+        clearHistoryCache();
+        const sessions3 = listHistorySessions();
+        expect(sessions3.length).toBe(1);
+        expect(sessions3[0].preview).toBe("msg_2"); // fresh file read
+        expect(readCount).toBe(2); // readFileSync was called again!
       } finally {
         spyCwd.mockRestore();
         spyExistsSync.mockRestore();
