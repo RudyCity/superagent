@@ -850,7 +850,7 @@ CRITICAL GOAL MODE RULES:
                     }
                 }
                 await this.compactHistoryIfNeeded(signal);
-                const messages = this.buildMessages();
+                let messages = this.buildMessages();
                 // Use tier-specific toolset if provided, otherwise use the appropriate tier-default toolset dynamically
                 let toolsToUse = this.customTools;
                 if (!toolsToUse) {
@@ -1018,6 +1018,35 @@ CRITICAL TASK EXECUTION CONTEXT:
 - Spawn subagents in parallel whenever tasks are independent. This is the primary way to complete large tasks within the iteration limit.
 - After spawning, wait for results, integrate them, and report back to the user.
 ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}${processNotice}${pinnedKnowledgeNotice}`;
+                // ── Pre-flight context window safety check ──────────────────────────
+                // Prevents 400 errors when total request (system + messages + tool schemas)
+                // exceeds the model's context window limit. This catches edge cases where
+                // token estimation differs from the provider's actual counting.
+                {
+                    const modelLimit = getContextWindowLimit(this.config.model);
+                    // Conservative safety margin: 70% of model limit for messages + system,
+                    // leaving ~30% headroom for tool schemas and provider-specific tokenizer
+                    // differences (e.g. cl100k_base vs DeepSeek tokenizer can differ by ~1.5x).
+                    const safetyMax = Math.floor(modelLimit * 0.70);
+                    // Estimate system prompt tokens (conservative ~3 chars/token for code-heavy text)
+                    const estSysTokens = Math.ceil(systemPrompt.length / 3);
+                    const estMsgTokens = this.conversation.getTokenEstimate();
+                    const estTotal = estMsgTokens + estSysTokens;
+                    if (estTotal > safetyMax) {
+                        const overshootPct = Math.round((estTotal / modelLimit) * 100);
+                        this.writeToLogFile("WARN", `Pre-flight context check: estimated ~${estTotal.toLocaleString()} total tokens (${overshootPct}% of ${modelLimit.toLocaleString()} limit). Compact threshold: ${safetyMax.toLocaleString()}. Triggering emergency compaction.`);
+                        await this.compactHistoryIfNeeded(signal);
+                        // Rebuild messages from compacted conversation
+                        messages = this.buildMessages();
+                        const afterEstMsgTokens = this.conversation.getTokenEstimate();
+                        const afterEstTotal = afterEstMsgTokens + estSysTokens;
+                        this.writeToLogFile("INFO", `Post-compaction estimated total: ~${afterEstTotal.toLocaleString()} tokens.`);
+                        // If still over safety limit after compaction, log a critical warning
+                        if (afterEstTotal > safetyMax) {
+                            this.writeToLogFile("ERROR", `Post-compaction total ${afterEstTotal.toLocaleString()} still exceeds safety limit ${safetyMax.toLocaleString()}. Proceeding with risk of provider rejection.`);
+                        }
+                    }
+                }
                 let textContent = "";
                 let reasoningContent = ""; // DeepSeek R1 thinking tokens — displayed in UI but NOT stored in history
                 const toolCalls = [];
@@ -1816,6 +1845,25 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                     timestamp: Date.now(),
                 });
                 await this.saveHistory();
+                // ── Post-iteration compaction check ──────────────────────────────────
+                // Tool results can be large (file reads, command outputs, etc).
+                // Compaction normally runs at the START of the next iteration, but by
+                // then messages may already exceed the model limit. Check immediately
+                // after appending results so compaction has a chance to reduce the
+                // conversation before the next API call.
+                {
+                    const ctxMgr = this.conversation.getContextManager();
+                    if (ctxMgr) {
+                        const postMessages = this.conversation.getMessages();
+                        if (postMessages.length === 0)
+                            continue;
+                        const postDecision = ctxMgr.shouldCompact(postMessages);
+                        if (postDecision.shouldCompact) {
+                            this.writeToLogFile("INFO", `Post-iteration compaction triggered: ${postDecision.reason}`);
+                            await this.compactHistoryIfNeeded(signal);
+                        }
+                    }
+                }
                 // ── Stop the loop as soon as a plan becomes pending approval ──────────
                 // When the model writes a valid implementation plan, planState flips to
                 // PLANNING_PENDING (see the MODIFYING_TOOLS block above). We must break

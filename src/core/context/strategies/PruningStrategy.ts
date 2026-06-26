@@ -4,6 +4,7 @@ import {
   CompactionResult,
   CompactionOptions,
   CompactionCost,
+  tokensForMessages,
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
 
@@ -19,13 +20,26 @@ export class PruningStrategy implements CompactionStrategy {
     options: CompactionOptions
   ): Promise<CompactionResult> {
     const preserveRecent = options.preserveRecent || 20;
+    const tokenBudget = options.tokenBudget || 0;
 
     let keepIndex = Math.max(0, messages.length - preserveRecent);
     while (keepIndex < messages.length && messages[keepIndex]?.role === "tool") {
       keepIndex++;
     }
-    const toPrune = messages.slice(0, keepIndex);
-    const toKeep = messages.slice(keepIndex);
+    let toPrune = messages.slice(0, keepIndex);
+    let toKeep = messages.slice(keepIndex);
+
+    // Enforce token budget: reduce preserved messages if they exceed budget
+    if (tokenBudget > 0) {
+      const summaryOverhead = 500;
+      const keepBudget = Math.floor(tokenBudget * 0.6) - summaryOverhead;
+      let keepTokens = tokensForMessages(toKeep);
+      while (keepTokens > keepBudget && toKeep.length > 0) {
+        const moved = toKeep.shift()!;
+        toPrune.push(moved);
+        keepTokens = tokensForMessages(toKeep);
+      }
+    }
 
     const emergencySummary = this.createEmergencySummary(toPrune);
 

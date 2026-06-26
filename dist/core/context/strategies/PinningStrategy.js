@@ -1,3 +1,4 @@
+import { tokensForMessages, } from "../CompactionStrategy.js";
 import { contentToString } from "../../conversation.js";
 export class PinningStrategy {
     name = "pinning";
@@ -7,6 +8,7 @@ export class PinningStrategy {
     async execute(messages, options) {
         const pinnedIds = options.pinnedMessageIds || new Set();
         const preserveRecent = options.preserveRecent || 20;
+        const tokenBudget = options.tokenBudget || 0;
         const pinned = [];
         const unpinned = [];
         // Use stable content-based IDs: role:timestamp:contentPrefix
@@ -28,8 +30,20 @@ export class PinningStrategy {
         while (keepIndex < unpinned.length && unpinned[keepIndex]?.role === "tool") {
             keepIndex++;
         }
-        const toSummarize = unpinned.slice(0, keepIndex);
-        const toKeep = unpinned.slice(keepIndex);
+        let toSummarize = unpinned.slice(0, keepIndex);
+        let toKeep = unpinned.slice(keepIndex);
+        // Enforce token budget: reduce preserved unpinned messages if they exceed budget
+        if (tokenBudget > 0) {
+            const summaryOverhead = 500;
+            const pinnedTokens = tokensForMessages(pinned.map(p => p.msg));
+            const keepBudget = Math.floor(tokenBudget * 0.6) - summaryOverhead - pinnedTokens;
+            let keepTokens = tokensForMessages(toKeep);
+            while (keepTokens > keepBudget && toKeep.length > 0) {
+                const moved = toKeep.shift();
+                toSummarize.push(moved);
+                keepTokens = tokensForMessages(toKeep);
+            }
+        }
         const summary = this.buildPruneSummary(toSummarize);
         const summaryMessage = {
             role: "user",

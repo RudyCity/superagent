@@ -309,7 +309,20 @@ export class Conversation {
             const text = typeof m.content === "string"
                 ? m.content
                 : m.content.map(p => p.type === "text" ? p.text : "").join("");
-            return sum + Math.ceil(text.length / 4);
+            let total = Math.ceil(text.length / 4);
+            // Include tool call arguments in the estimate (legacy path)
+            if (m.toolCalls) {
+                for (const tc of m.toolCalls) {
+                    total += Math.ceil(JSON.stringify(tc.args).length / 4);
+                }
+            }
+            // Include tool results in the estimate (legacy path)
+            if (m.toolResults) {
+                for (const tr of m.toolResults) {
+                    total += Math.ceil(tr.result.length / 4);
+                }
+            }
+            return sum + total;
         }, 0);
     }
 }

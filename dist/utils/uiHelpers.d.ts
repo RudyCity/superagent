@@ -1,5 +1,14 @@
 import type { ChatLine } from "../core/commands/types.js";
 import type { Message } from "../core/conversation.js";
+/**
+ * Strip SGR-style mouse escape sequences that may leak into text input
+ * when the user clicks on the terminal.
+ *
+ * Handles:
+ *   - SGR format: \x1b[<btn;col;rowM  (or with \x1b stripped by Ink)
+ *   - Variable parameter count: [<0;48;30M, [<0;3;18M
+ *   - Partial/fragmented at end of string: [<0;48;30 (missing terminator)
+ */
 export declare function stripSgrMouseSequences(value: string): string;
 export declare function getInsertion(oldVal: string, newVal: string): {
     prefix: string;

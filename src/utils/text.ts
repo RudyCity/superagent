@@ -81,8 +81,21 @@ export function filterSuggestions(possibilities: string[], input: string): strin
     .map((item) => item.text);
 }
 
+/**
+ * Strip SGR-style mouse escape sequences that may leak into text input
+ * when the user clicks on the terminal.
+ *
+ * Handles:
+ *   - SGR format: \x1b[<btn;col;rowM  (or with \x1b stripped by Ink)
+ *   - Variable parameter count: [<0;48;30M, [<0;3;18M
+ *   - Partial/fragmented at end of string: [<0;48;30 (missing terminator)
+ */
 export function stripSgrMouseSequences(value: string): string {
-  return value.replace(/(?:\x1b)?\[<\d+;\d+;\d+[Mm]/g, "");
+  return value
+    // Full SGR mouse sequences with or without leading ESC
+    .replace(/(?:\x1b)?\[<\d+(?:;\d+)*[Mm]/g, "")
+    // Partial sequences at end of string (data might be fragmented)
+    .replace(/(?:\x1b)?\[<\d+(?:;\d+)*$/gm, "");
 }
 
 export function getInsertion(oldVal: string, newVal: string): { prefix: string; inserted: string; suffix: string } {

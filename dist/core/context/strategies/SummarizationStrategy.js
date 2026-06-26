@@ -1,3 +1,4 @@
+import { tokensForMessages, } from "../CompactionStrategy.js";
 import { contentToString } from "../../conversation.js";
 import { generateText } from "ai";
 export class SummarizationStrategy {
@@ -14,13 +15,26 @@ export class SummarizationStrategy {
     }
     async execute(messages, options) {
         const preserveRecent = options.preserveRecent || 20;
+        const tokenBudget = options.tokenBudget || 0;
         const abortSignal = options.abortSignal ?? this.config?.abortSignal;
         let keepIndex = Math.max(0, messages.length - preserveRecent);
         while (keepIndex < messages.length && messages[keepIndex]?.role === "tool") {
             keepIndex++;
         }
-        const toSummarize = messages.slice(0, keepIndex);
-        const toKeep = messages.slice(keepIndex);
+        let toSummarize = messages.slice(0, keepIndex);
+        let toKeep = messages.slice(keepIndex);
+        // Enforce token budget: reduce preserved messages if they exceed budget
+        if (tokenBudget > 0) {
+            const summaryOverhead = 500; // estimated token budget for the summary message
+            const keepBudget = Math.floor(tokenBudget * 0.6) - summaryOverhead;
+            let keepTokens = tokensForMessages(toKeep);
+            while (keepTokens > keepBudget && toKeep.length > 0) {
+                // Move oldest kept message back to summarize pile
+                const moved = toKeep.shift();
+                toSummarize.push(moved);
+                keepTokens = tokensForMessages(toKeep);
+            }
+        }
         let summary;
         if (this.config?.model) {
             summary = await this.generateLLMSummary(toSummarize, abortSignal);

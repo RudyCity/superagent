@@ -4,6 +4,7 @@ import {
   CompactionResult,
   CompactionOptions,
   CompactionCost,
+  tokensForMessages,
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
 
@@ -20,6 +21,7 @@ export class PinningStrategy implements CompactionStrategy {
   ): Promise<CompactionResult> {
     const pinnedIds = options.pinnedMessageIds || new Set<string>();
     const preserveRecent = options.preserveRecent || 20;
+    const tokenBudget = options.tokenBudget || 0;
 
     const pinned: Array<{ index: number; msg: Message }> = [];
     const unpinned: Message[] = [];
@@ -43,8 +45,21 @@ export class PinningStrategy implements CompactionStrategy {
     while (keepIndex < unpinned.length && unpinned[keepIndex]?.role === "tool") {
       keepIndex++;
     }
-    const toSummarize = unpinned.slice(0, keepIndex);
-    const toKeep = unpinned.slice(keepIndex);
+    let toSummarize = unpinned.slice(0, keepIndex);
+    let toKeep = unpinned.slice(keepIndex);
+
+    // Enforce token budget: reduce preserved unpinned messages if they exceed budget
+    if (tokenBudget > 0) {
+      const summaryOverhead = 500;
+      const pinnedTokens = tokensForMessages(pinned.map(p => p.msg));
+      const keepBudget = Math.floor(tokenBudget * 0.6) - summaryOverhead - pinnedTokens;
+      let keepTokens = tokensForMessages(toKeep);
+      while (keepTokens > keepBudget && toKeep.length > 0) {
+        const moved = toKeep.shift()!;
+        toSummarize.push(moved);
+        keepTokens = tokensForMessages(toKeep);
+      }
+    }
 
     const summary = this.buildPruneSummary(toSummarize);
 

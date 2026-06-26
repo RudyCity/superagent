@@ -41,6 +41,12 @@ type Props = {
   attachmentCount?: number;
 };
 
+const BLINK_ON = "\x1b[5m";
+const BLINK_OFF = "\x1b[25m";
+function blinkInverse(text: string): string {
+  return `${BLINK_ON}\x1b[7m${text}\x1b[27m${BLINK_OFF}`;
+}
+
 export default function ChatTextInput({
   value: originalValue,
   placeholder = "",
@@ -65,19 +71,19 @@ export default function ChatTextInput({
     onChange(val);
   };
 
-  const { stdin } = useStdin();
+  const { internal_eventEmitter } = useStdin();
   const lastRawKeyRef = useRef("");
 
   useEffect(() => {
-    if (!stdin) return;
-    const handleData = (data: Buffer) => {
+    if (!internal_eventEmitter) return;
+    const handleInput = (data: Buffer | string) => {
       lastRawKeyRef.current = data.toString();
     };
-    stdin.on("data", handleData);
+    internal_eventEmitter.on("input", handleInput);
     return () => {
-      stdin.off("data", handleData);
+      internal_eventEmitter.off("input", handleInput);
     };
-  }, [stdin]);
+  }, [internal_eventEmitter]);
 
   // Keep cursorOffset within bounds and snap cursor to end when value changes externally.
   useEffect(() => {
@@ -117,19 +123,19 @@ export default function ChatTextInput({
   if (showCursor && focus) {
     renderedPlaceholder =
       placeholder.length > 0
-        ? chalk.inverse(placeholder[0]) + chalk.grey(placeholder.slice(1))
-        : chalk.inverse(" ");
+        ? blinkInverse(placeholder[0]) + chalk.grey(placeholder.slice(1))
+        : blinkInverse(" ");
 
-    renderedValue = value.length > 0 ? "" : chalk.inverse(" ");
+    renderedValue = value.length > 0 ? "" : blinkInverse(" ");
     let i = 0;
     for (const char of value) {
       renderedValue +=
-        i === cursorOffset ? chalk.inverse(char) : char;
+        i === cursorOffset ? blinkInverse(char) : char;
       i++;
     }
-    // Cursor block at the end when cursor is past last character.
+    // Cursor block at end when cursor past last character.
     if (value.length > 0 && cursorOffset === value.length) {
-      renderedValue += chalk.inverse(" ");
+      renderedValue += blinkInverse(" ");
     }
   }
 
@@ -143,6 +149,11 @@ export default function ChatTextInput({
         key.tab ||
         (key.shift && key.tab)
       ) {
+        return;
+      }
+
+      // ── Strip SGR mouse escape sequences that leak from terminal clicks ──
+      if (/^(?:\x1b)?\[<\d+(?:;\d+)*[Mm]/.test(input)) {
         return;
       }
 
@@ -186,8 +197,9 @@ export default function ChatTextInput({
       const isBackspace =
         key.backspace ||
         (key.delete &&
-          (lastRawKeyRef.current === "\x7f" ||
-            lastRawKeyRef.current === "\x1b\x7f"));
+          (/^[\x7f]+$/.test(lastRawKeyRef.current) ||
+            /^(\x1b\x7f)+$/.test(lastRawKeyRef.current) ||
+            /^\x08+$/.test(lastRawKeyRef.current)));
       const isDelete = key.delete && !isBackspace;
 
       if (key.leftArrow) {
@@ -228,12 +240,34 @@ export default function ChatTextInput({
         nextValue = originalValue.slice(cursorOffset);
         nextCursorOffset = 0;
       } else if (input) {
-        // Regular character insertion at cursor position.
-        nextValue =
-          originalValue.slice(0, cursorOffset) +
-          input +
-          originalValue.slice(cursorOffset);
-        nextCursorOffset = cursorOffset + input.length;
+        // Git Bash may deliver combined \x7f bytes from held-down
+        // backspace repeat. Ink's parseKeypress doesn't match them,
+        // leaving raw bytes as input instead of setting key.delete.
+        if (
+          /^[\x7f\x08]+$/.test(input) ||
+          /^(\x1b\x7f)+$/.test(input)
+        ) {
+          // Treat each control byte as one backspace deletion
+          const deleteCount = [...input].filter(
+            (c) => c === "\x7f" || c === "\x08"
+          ).length;
+          if (cursorOffset >= deleteCount) {
+            nextValue =
+              originalValue.slice(0, cursorOffset - deleteCount) +
+              originalValue.slice(cursorOffset);
+            nextCursorOffset = cursorOffset - deleteCount;
+          } else {
+            nextValue = originalValue.slice(cursorOffset);
+            nextCursorOffset = 0;
+          }
+        } else {
+          // Regular character insertion at cursor position.
+          nextValue =
+            originalValue.slice(0, cursorOffset) +
+            input +
+            originalValue.slice(cursorOffset);
+          nextCursorOffset = cursorOffset + input.length;
+        }
       }
 
       // Clamp cursor.
