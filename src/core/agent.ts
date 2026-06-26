@@ -709,15 +709,17 @@ If none of the options are suitable, still pick the closest one.`;
       this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
     }
     process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
-    await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState, this.workingDirectory);
-    clearHistoryCache();
 
-    // Incrementally sync new messages to TencentDB if enabled
+    // Incrementally sync new messages to TencentDB if enabled before saving to file,
+    // so we can persist the updated lastCapturedTimestamp in a single write.
     try {
       await this.syncConversationToTencentDB();
     } catch (err: any) {
       this.writeToLogFile("WARN", `Failed to incrementally sync conversation to TencentDB: ${err.message}`);
     }
+
+    await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState, this.workingDirectory);
+    clearHistoryCache();
   }
 
   private getModel() {
@@ -2742,8 +2744,6 @@ ${formatted}`;
       const maxTs = Math.max(...messages.map((m) => m.timestamp || 0));
       if (maxTs > lastCaptured) {
         this.conversation.lastCapturedTimestamp = maxTs;
-        // Save history again to persist the updated lastCapturedTimestamp
-        await this.conversation.saveToFile(this.currentHistoryFilePath!, this.planState, this.workingDirectory);
       }
     }
   }
