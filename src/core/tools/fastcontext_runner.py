@@ -292,6 +292,12 @@ def run():
                             
                     cleaned_messages.append(cleaned_m)
 
+                is_anthropic = "anthropic" in self.provider or "claude" in self.model
+                if is_anthropic and len(cleaned_messages) > 0:
+                    if cleaned_messages[0]["role"] == "system":
+                        cleaned_messages[0]["cache_control"] = {"type": "ephemeral"}
+                    cleaned_messages[-1]["cache_control"] = {"type": "ephemeral"}
+
                 call_kw = {
                     "model": self.litellm_model,
                     "messages": cleaned_messages,
@@ -304,6 +310,11 @@ def run():
                 # Pass base_url for providers that need custom endpoints
                 if self.base_url:
                     call_kw["base_url"] = self.base_url
+
+                if is_anthropic:
+                    call_kw["extra_headers"] = {
+                        "anthropic-beta": "prompt-caching-2024-07-31"
+                    }
 
                 if tools:
                     call_kw["tools"] = tools
