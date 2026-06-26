@@ -669,7 +669,7 @@ export function wrapChatLineToLines({
           </Text>
         </Box>
       );
-      result.push({ node: headerNode, lineIndex, type: "assistant", isHeader: true });
+      result.push({ node: headerNode, lineIndex, type: "assistant", isHeader: true, isTruncated: capped.truncated });
 
       const contentLines = wrapMarkdownToLines(capped.text, "blue", chatWidth, lineIndex);
       for (const wrappedContentLine of contentLines) {
@@ -703,7 +703,7 @@ export function wrapChatLineToLines({
           <Text color="blue">│ </Text>
         </Box>
       );
-      result.push({ node: separatorNode, lineIndex, type: "assistant", isSeparator: true });
+      result.push({ node: separatorNode, lineIndex, type: "assistant", isSeparator: true, isTruncated: capped.truncated });
       break;
     }
     case "tool_start": {
@@ -1364,6 +1364,12 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       } else {
         if (activePos) {
           activePos.endRow = y;
+          if (line.isTruncated) {
+            activePos.isTruncated = true;
+          }
+          if (line.isCollapsible) {
+            activePos.isCollapsible = true;
+          }
         }
       }
     }
