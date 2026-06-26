@@ -8,6 +8,10 @@ export declare function fuzzyScore(text: string, query: string): number;
  */
 export declare function cleanTranscriptForLLM(messages: any[]): string;
 /**
+ * Clear the in-memory semantic search cache.
+ */
+export declare function clearSemanticSearchCache(): void;
+/**
  * Perform a hybrid AI-powered semantic search with an offline fuzzy fallback.
  * @param query - The search query
  * @param isMulti - Whether to search multi-agent sessions

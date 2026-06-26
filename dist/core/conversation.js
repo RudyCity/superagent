@@ -18,6 +18,7 @@ export class Conversation {
     maxHistory = 200;
     loadedPlanState;
     contextManager = null;
+    lastCapturedTimestamp = 0;
     /** Pinned messages loaded from file, waiting for ContextManager to be initialized */
     pendingPinnedMessages = null;
     async initContextManager(config) {
@@ -78,6 +79,7 @@ export class Conversation {
                 masterCompletionTokens,
                 lastMasterPromptTokens,
                 pinnedMessages,
+                lastCapturedTimestamp: this.lastCapturedTimestamp,
             };
             await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
         }
@@ -92,6 +94,7 @@ export class Conversation {
             if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
                 this.messages = parsed.messages;
                 this.loadedPlanState = parsed.planState;
+                this.lastCapturedTimestamp = parsed.lastCapturedTimestamp || 0;
                 // Restore historical superagent tokens
                 setHistoricalSuperagentTokens(parsed.historicalSuperagentTokens || 0);
                 setMasterTokens(parsed.masterPromptTokens || 0, parsed.masterCompletionTokens || 0);

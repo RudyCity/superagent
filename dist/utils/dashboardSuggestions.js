@@ -181,6 +181,9 @@ export function getDashboardSuggestions(query) {
                 }
                 catch { }
             }
+            if (sub === "dev") {
+                hookDirs.push(`${parts[0]} ${sub} off`, `${parts[0]} ${sub} stop`, `${parts[0]} ${sub} clear`, `${parts[0]} ${sub} none`);
+            }
             if (hookDirs.length > 0) {
                 return filterSuggestions(hookDirs, query);
             }

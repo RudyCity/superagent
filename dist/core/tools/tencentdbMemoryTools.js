@@ -1,16 +1,7 @@
-import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts";
-import { getSettings } from "../config.js";
+import { getTencentDBClient } from "../tencentdbUtil.js";
 // Helper to get MemoryClient using the active global settings
 function getClient() {
-    const settings = getSettings();
-    const endpoint = settings.tencentdbGatewayUrl || "http://127.0.0.1:8420";
-    const apiKey = settings.tencentdbGatewayApiKey || "sk-xxxx";
-    const serviceId = settings.tencentdbServiceId || "default";
-    return new MemoryClient({
-        endpoint,
-        apiKey,
-        serviceId,
-    });
+    return getTencentDBClient(5000); // 5 seconds timeout for tools
 }
 function formatError(err) {
     return err.message || String(err);

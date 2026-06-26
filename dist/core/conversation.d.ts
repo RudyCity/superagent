@@ -38,6 +38,7 @@ export declare class Conversation {
     private maxHistory;
     loadedPlanState?: "IDLE" | "PLANNING_PENDING" | "APPROVED";
     private contextManager;
+    lastCapturedTimestamp: number;
     /** Pinned messages loaded from file, waiting for ContextManager to be initialized */
     private pendingPinnedMessages;
     initContextManager(config: ContextManagerConfig): Promise<void>;

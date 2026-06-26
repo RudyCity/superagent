@@ -80,8 +80,8 @@ describe("TencentDBMemoryStrategy", () => {
     expect(mockListScenarios).toHaveBeenCalled();
 
     // Verify output structure
-    expect(result.messages.length).toBeLessThanOrEqual(6); // 1 system memory message + 5 preserved
-    expect(result.messages[0].role).toBe("system");
+    expect(result.messages.length).toBeLessThanOrEqual(6); // 1 memory message + 5 preserved
+    expect(result.messages[0].role).toBe("user");
     expect(result.messages[0].content).toContain("[TencentDB Agent Memory Context]");
     expect(result.messages[0].content).toContain("User profile");
     expect(result.messages[0].content).toContain("TypeScript");

@@ -188,6 +188,8 @@ export declare class Agent {
      */
     private autoCheckpoint;
     resetInternalState(): void;
+    private prepopulateTencentDBMemoryContext;
+    private syncConversationToTencentDB;
     getHistory(): Conversation;
     getContextManager(): import("./context/ContextManager.js").ContextManager | null;
     isAgentRunning(): boolean;

@@ -19,7 +19,8 @@ import {
   normalizeAndCheckSubpath,
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
-import { contentToString } from "./conversation.js";
+import { contentToString, Message } from "./conversation.js";
+import { getTencentDBClient, getTencentDBSessionKey } from "./tencentdbUtil.js";
 import { AsyncLocalStorage } from "async_hooks";
 import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./taskChecklist.js";
 import { createCheckpoint } from "./checkpoints.js";
@@ -710,6 +711,13 @@ If none of the options are suitable, still pick the closest one.`;
     process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
     await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState, this.workingDirectory);
     clearHistoryCache();
+
+    // Incrementally sync new messages to TencentDB if enabled
+    try {
+      await this.syncConversationToTencentDB();
+    } catch (err: any) {
+      this.writeToLogFile("WARN", `Failed to incrementally sync conversation to TencentDB: ${err.message}`);
+    }
   }
 
   private getModel() {
@@ -967,6 +975,15 @@ CRITICAL GOAL MODE RULES:
             } catch (err: any) {
               this.writeToLogFile("WARN", `Workspace discovery failed: ${err.message}`);
             }
+          }
+        }
+
+        // On first iteration, prepopulate the TencentDB Memory context if enabled
+        if (i === 0) {
+          try {
+            await this.prepopulateTencentDBMemoryContext();
+          } catch (err: any) {
+            this.writeToLogFile("WARN", `Failed to prepopulate TencentDB Memory context: ${err.message}`);
           }
         }
 
@@ -2624,6 +2641,111 @@ ${formatted}`;
     this.tasksJustArchived = false;
     this.archivedTaskCount = 0;
     this.lastAutoCheckpointAt = 0;
+  }
+
+  private async prepopulateTencentDBMemoryContext(): Promise<void> {
+    const messages = this.conversation.getMessages();
+    // Check if we already have a memory context message in the conversation
+    const hasMemoryContext = messages.some(
+      (m) => m.role === "user" && contentToString(m.content).startsWith("[TencentDB Agent Memory Context]:")
+    );
+    if (hasMemoryContext) return;
+
+    // Fetch the memories
+    const settings = getSettings();
+    if (!settings.enableTencentdbMemory) return;
+
+    const client = getTencentDBClient(2000); // 2s timeout for fast startup check
+
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+    const query = lastUserMsg ? contentToString(lastUserMsg.content) : "latest coding context";
+
+    this.writeToLogFile("INFO", `Pre-populating TencentDB memory context for query: "${query.slice(0, 50)}"...`);
+
+    // Fetch in parallel
+    const [searchResult, persona, scenarios] = await Promise.allSettled([
+      client.searchAtomic({ query, limit: 5 }),
+      client.readCore(),
+      client.listScenarios({}),
+    ]);
+
+    const l1Items = searchResult.status === "fulfilled" ? (searchResult.value?.items ?? []) : [];
+    const personaContent = persona.status === "fulfilled" && persona.value ? persona.value.content : null;
+    const sceneEntries = scenarios.status === "fulfilled" && scenarios.value ? (scenarios.value.entries ?? []) : [];
+
+    if (!personaContent && l1Items.length === 0 && sceneEntries.length === 0) {
+      return; // No memories to inject
+    }
+
+    const formattedMemories: string[] = [];
+
+    if (personaContent) {
+      formattedMemories.push("<user-persona>");
+      formattedMemories.push(personaContent);
+      formattedMemories.push("</user-persona>");
+    }
+
+    if (sceneEntries.length > 0) {
+      formattedMemories.push("\n## 🗺️ Scene Navigation");
+      for (const scene of sceneEntries) {
+        formattedMemories.push(`- \`${scene.path}\``);
+      }
+    }
+
+    if (l1Items.length > 0) {
+      formattedMemories.push("\n<relevant-memories>");
+      for (const item of l1Items) {
+        const typeTag = item.type ? `[${item.type}]` : "";
+        formattedMemories.push(`- ${typeTag} ${item.content}`);
+      }
+      formattedMemories.push("</relevant-memories>");
+    }
+
+    const summaryText = formattedMemories.join("\n").trim();
+    if (!summaryText) return;
+
+    const memoryMessage: Message = {
+      role: "user",
+      content: `[TencentDB Agent Memory Context]:\n${summaryText}`,
+      timestamp: Date.now(),
+    };
+
+    this.conversation.replaceMessages([memoryMessage, ...messages]);
+    this.writeToLogFile("INFO", "TencentDB memory context successfully pre-populated and injected.");
+  }
+
+  private async syncConversationToTencentDB(): Promise<void> {
+    const settings = getSettings();
+    if (!settings.enableTencentdbMemory) return;
+
+    const client = getTencentDBClient(3000); // 3s timeout to prevent CLI hang
+    const historyPath = this.getCurrentHistoryFilePath();
+    const sessionKey = getTencentDBSessionKey(historyPath);
+
+    const messages = this.conversation.getMessages();
+    const lastCaptured = this.conversation.lastCapturedTimestamp || 0;
+
+    const newMessages = messages
+      .filter((m) => (m.role === "user" || m.role === "assistant") && m.timestamp > lastCaptured)
+      .map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: contentToString(m.content),
+        timestamp: new Date(m.timestamp || Date.now()).toISOString(),
+      }));
+
+    if (newMessages.length > 0) {
+      this.writeToLogFile("INFO", `Incrementally syncing ${newMessages.length} new messages to TencentDB (session: ${sessionKey})...`);
+      await client.addConversation({
+        session_id: sessionKey,
+        messages: newMessages,
+      });
+      const maxTs = Math.max(...messages.map((m) => m.timestamp || 0));
+      if (maxTs > lastCaptured) {
+        this.conversation.lastCapturedTimestamp = maxTs;
+        // Save history again to persist the updated lastCapturedTimestamp
+        await this.conversation.saveToFile(this.currentHistoryFilePath!, this.planState, this.workingDirectory);
+      }
+    }
   }
 
   getHistory(): Conversation {

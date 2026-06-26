@@ -1,8 +1,7 @@
 import { contentToString } from "../../conversation.js";
-import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts";
 import { getSettings } from "../../config.js";
 import { SummarizationStrategy } from "./SummarizationStrategy.js";
-import { createHash } from "crypto";
+import { getTencentDBClient, getTencentDBSessionKey } from "../../tencentdbUtil.js";
 export class TencentDBMemoryStrategy {
     name = "tencentdb-memory";
     historyFilePath;
@@ -18,25 +17,14 @@ export class TencentDBMemoryStrategy {
     }
     async execute(messages, options) {
         const now = Date.now();
-        const settings = getSettings();
-        const endpoint = settings.tencentdbGatewayUrl || "http://127.0.0.1:8420";
-        const apiKey = settings.tencentdbGatewayApiKey || "sk-xxxx";
-        const serviceId = settings.tencentdbServiceId || "default";
         // Silent fallback if gateway is known to be offline (cooldown for 5 minutes)
         if (this.gatewayOffline && now - this.lastConnectAttempt < 5 * 60 * 1000) {
             const fallback = new SummarizationStrategy();
             return fallback.execute(messages, options);
         }
-        const client = new MemoryClient({
-            endpoint,
-            apiKey,
-            serviceId,
-        });
+        const client = getTencentDBClient(3000); // 3s timeout to prevent CLI hang
+        const sessionKey = getTencentDBSessionKey(this.historyFilePath || null);
         const historyPath = this.historyFilePath || "";
-        // Use a stable 8-char hash of the full path so different projects never
-        // share the same TencentDB session key (even if filenames are identical).
-        const keySource = historyPath || process.cwd();
-        const sessionKey = createHash("sha1").update(keySource).digest("hex").slice(0, 8);
         // Lazily load lastCapturedTimestamp from persisted compaction history
         if (this.lastCapturedTimestamp === 0 && historyPath) {
             try {
@@ -124,7 +112,7 @@ export class TencentDBMemoryStrategy {
             }
             const toKeep = messages.slice(keepIndex);
             const memoryMessage = {
-                role: "system",
+                role: "user",
                 content: `[TencentDB Agent Memory Context]:\n${summaryText || "No prior memories recalled."}`,
                 timestamp: Date.now(),
             };

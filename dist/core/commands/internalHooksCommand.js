@@ -18,7 +18,7 @@ export const internalHooksCommand = {
         if (!subCommand || (subCommand !== "init" && subCommand !== "dev" && subCommand !== "active" && subCommand !== "list")) {
             ctx.addLine({
                 type: "error",
-                content: "Usage:\n  /ih init <namahook>  - Scaffold a new internal hook project\n  /ih dev <namahook>   - Run local development/test loop inside hook workspace\n  /ih list             - List all discovered internal hooks and their status\n  /ih active           - Interactively select which hooks to activate",
+                content: "Usage:\n  /ih init <namahook>  - Scaffold a new internal hook project\n  /ih dev <namahook>   - Set workspace focus to hook development and run dev loop\n  /ih list             - List all discovered internal hooks and their status\n  /ih active           - Interactively select which hooks to activate",
                 timestamp: now,
             });
             return;

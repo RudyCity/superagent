@@ -20,15 +20,17 @@ export function fuzzyScore(text, query) {
             matches += 1.0;
         }
         else {
-            let qIdx = 0;
-            for (let i = 0; i < t.length; i++) {
-                if (t[i] === word[qIdx]) {
-                    qIdx++;
-                    if (qIdx === word.length)
-                        break;
+            let lastIdx = -1;
+            let possibleMatch = true;
+            for (let j = 0; j < word.length; j++) {
+                const idx = t.indexOf(word[j], lastIdx + 1);
+                if (idx === -1) {
+                    possibleMatch = false;
+                    break;
                 }
+                lastIdx = idx;
             }
-            if (qIdx === word.length) {
+            if (possibleMatch) {
                 matches += 0.5;
             }
         }
@@ -43,6 +45,14 @@ export function cleanTranscriptForLLM(messages) {
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => `[${m.role.toUpperCase()}]: ${m.content || ""}`)
         .join("\n\n");
+}
+const historySearchCache = new Map();
+const semanticSearchCache = new Map();
+/**
+ * Clear the in-memory semantic search cache.
+ */
+export function clearSemanticSearchCache() {
+    semanticSearchCache.clear();
 }
 /**
  * Perform a hybrid AI-powered semantic search with an offline fuzzy fallback.
@@ -63,22 +73,53 @@ export async function searchHistory(query, isMulti = false, crossSession = false
             ? "No conversation history sessions found across any sessions."
             : "No conversation history sessions found in the workspace.";
     }
+    const config = getConfig();
+    // Generate cache signature from sessions paths and modification times
+    const sig = sessions
+        .map((s) => `${s.filePath}:${s.lastModified.getTime()}`)
+        .join("|");
+    const cacheKey = `${query}:${isMulti}:${crossSession}:${config.model || ""}:${config.provider || ""}`;
+    const cachedEntry = semanticSearchCache.get(cacheKey);
+    if (cachedEntry && cachedEntry.sig === sig) {
+        if (onDebug) {
+            onDebug(`[DEBUG] Cache hit for query: "${query}". Returning cached results.`);
+        }
+        return cachedEntry.result;
+    }
     const scoredSessions = [];
-    for (const session of sessions) {
+    const promises = sessions.map(async (session) => {
         try {
-            const raw = fs.readFileSync(session.filePath, "utf-8");
-            const parsed = JSON.parse(raw);
+            const mtimeMs = session.lastModified.getTime();
+            const cached = historySearchCache.get(session.filePath);
             let messages;
-            if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
-                messages = parsed.messages;
-            }
-            else if (Array.isArray(parsed)) {
-                messages = parsed;
+            let dialogueText;
+            if (cached && cached.mtimeMs === mtimeMs) {
+                messages = cached.messages;
+                dialogueText = cached.dialogueText;
             }
             else {
-                continue;
+                const raw = await fs.promises.readFile(session.filePath, "utf-8");
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+                    messages = parsed.messages;
+                }
+                else if (Array.isArray(parsed)) {
+                    messages = parsed;
+                }
+                else {
+                    return;
+                }
+                dialogueText = cleanTranscriptForLLM(messages);
+                // Cache it, saving only role and content of messages to keep memory low
+                historySearchCache.set(session.filePath, {
+                    mtimeMs,
+                    messages: messages.map((m) => ({
+                        role: m.role,
+                        content: typeof m.content === "string" ? m.content : String(m.content || ""),
+                    })),
+                    dialogueText,
+                });
             }
-            const dialogueText = cleanTranscriptForLLM(messages);
             const score = fuzzyScore(dialogueText, query);
             if (score > 0) {
                 scoredSessions.push({
@@ -90,9 +131,10 @@ export async function searchHistory(query, isMulti = false, crossSession = false
             }
         }
         catch {
-            // Ignore corrupted files
+            // Ignore corrupted or missing files
         }
-    }
+    });
+    await Promise.all(promises);
     // Sort: highest score first, then most recently modified first
     scoredSessions.sort((a, b) => b.score - a.score ||
         b.session.lastModified.getTime() - a.session.lastModified.getTime());
@@ -134,21 +176,22 @@ export async function searchHistory(query, isMulti = false, crossSession = false
         }
         return lines.join("\n").trim();
     };
-    const config = getConfig();
     const hasApiKey = !!config.apiKey;
     if (!hasApiKey) {
         if (onDebug) {
             onDebug("[DEBUG] No API key configured. Skipping AI Semantic Search.");
         }
-        return generateFuzzyFallbackText();
+        const fallback = generateFuzzyFallbackText();
+        semanticSearchCache.set(cacheKey, { sig, result: fallback });
+        return fallback;
     }
     try {
         const model = getModelInstance();
         if (onDebug) {
             onDebug(`[DEBUG] API key configured. Using model: ${model?.modelId || "unknown"}`);
         }
-        // AI Semantic Filtering
-        const candidates = scoredSessions.slice(0, 5).map((item, idx) => ({
+        // AI Semantic Filtering - Slice increased to 10 for broader pool
+        const candidates = scoredSessions.slice(0, 10).map((item, idx) => ({
             index: idx,
             displayName: item.session.displayName,
             preview: item.session.preview,
@@ -159,7 +202,9 @@ export async function searchHistory(query, isMulti = false, crossSession = false
             onDebug(`[DEBUG] Top ${candidates.length} candidates for AI semantic filtering:\n${JSON.stringify(candidates, null, 2)}`);
         }
         if (candidates.length === 0) {
-            return `No matches found in history for query: "${query}"`;
+            const emptyResult = `No matches found in history for query: "${query}"`;
+            semanticSearchCache.set(cacheKey, { sig, result: emptyResult });
+            return emptyResult;
         }
         const filterPrompt = `You are a developer assistant analyzing past coding session logs.
 The developer is searching for context about: "${query}".
@@ -201,12 +246,14 @@ If no sessions are relevant, return an empty array: []`;
             onDebug(`[DEBUG] Parsed indices: ${JSON.stringify(indices)}`);
         }
         if (indices.length === 0) {
-            return `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
+            const noSemanticResult = `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
+            semanticSearchCache.set(cacheKey, { sig, result: noSemanticResult });
+            return noSemanticResult;
         }
         const reports = [];
-        for (const idx of indices) {
+        const summaryPromises = indices.map(async (idx) => {
             if (idx < 0 || idx >= candidates.length)
-                continue;
+                return null;
             const match = scoredSessions[idx];
             const truncatedTranscript = match.dialogueText.slice(-15000);
             const summaryPrompt = `You are analyzing a past coding session transcript.
@@ -242,18 +289,33 @@ Please summarize what was discussed, decided, or implemented in this session reg
             }
             if (onDebug) {
                 onDebug(`[DEBUG] Raw AI summary output for "${match.session.displayName}":\n${summary}`);
+                onDebug(`[PROGRESS] Completed semantic summary for: 📁 ${match.session.displayName}`);
             }
-            reports.push(`📁 **${match.session.displayName}**\n${summary.trim()}`);
+            return {
+                displayName: match.session.displayName,
+                summary: summary.trim(),
+            };
+        });
+        const summaryResults = await Promise.all(summaryPromises);
+        for (const res of summaryResults) {
+            if (res) {
+                reports.push(`📁 **${res.displayName}**\n${res.summary}`);
+            }
         }
         if (reports.length === 0) {
-            return `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
+            const noSemanticResult = `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
+            semanticSearchCache.set(cacheKey, { sig, result: noSemanticResult });
+            return noSemanticResult;
         }
-        return `[AI SEMANTIC SEARCH] Found relevant history for "${query}":\n\n` + reports.join("\n\n");
+        const finalResult = `[AI SEMANTIC SEARCH] Found relevant history for "${query}":\n\n` + reports.join("\n\n");
+        semanticSearchCache.set(cacheKey, { sig, result: finalResult });
+        return finalResult;
     }
     catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         const fallback = generateFuzzyFallbackText();
-        return `[AI Search Failed (${errorMsg}) - Falling back to Fuzzy Search]\n\n${fallback}`;
+        const errorResult = `[AI Search Failed (${errorMsg}) - Falling back to Fuzzy Search]\n\n${fallback}`;
+        return errorResult;
     }
 }
 //# sourceMappingURL=historySearch.js.map
