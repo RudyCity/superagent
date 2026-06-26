@@ -132,6 +132,7 @@ export class Agent {
     allowSessionEnvAccess = false;
     allowSessionDangerous = false;
     workspaceCache = null;
+    workspaceCacheNeedsUpdate = true;
     disableWorkspaceDiscovery = !!process.env.VITEST;
     conversation;
     customSystemPrompt;
@@ -818,35 +819,39 @@ CRITICAL GOAL MODE RULES:
                     throw err;
                 }
                 // Run workspace discovery and load/update cache if workspace files changed
-                if (!this.disableWorkspaceDiscovery) {
-                    try {
-                        const { discoverWorkspace } = await import("./workspaceDiscovery.js");
-                        const { isIdentical, cache } = await discoverWorkspace(this.workingDirectory);
-                        const wasFirstRun = !this.workspaceCache;
-                        this.workspaceCache = cache;
-                        if (wasFirstRun) {
-                            if (isIdentical) {
-                                this.onEvent({
-                                    type: "text",
-                                    content: `\n[SYS] Workspace identical to previous session. Using cached context.\n`,
-                                });
+                if (!this.disableWorkspaceDiscovery && this.tier !== "subagent") {
+                    const shouldScan = !this.workspaceCache || this.workspaceCacheNeedsUpdate;
+                    if (shouldScan) {
+                        try {
+                            const { discoverWorkspace } = await import("./workspaceDiscovery.js");
+                            const { isIdentical, cache } = await discoverWorkspace(this.workingDirectory);
+                            const wasFirstRun = !this.workspaceCache;
+                            this.workspaceCache = cache;
+                            this.workspaceCacheNeedsUpdate = false;
+                            if (wasFirstRun) {
+                                if (isIdentical) {
+                                    this.onEvent({
+                                        type: "text",
+                                        content: `\n[SYS] Workspace identical to previous session. Using cached context.\n`,
+                                    });
+                                }
+                                else {
+                                    this.onEvent({
+                                        type: "text",
+                                        content: `\n[SYS] Workspace scanned and cached.\n`,
+                                    });
+                                }
                             }
-                            else {
+                            else if (!isIdentical) {
                                 this.onEvent({
                                     type: "text",
-                                    content: `\n[SYS] Workspace scanned and cached.\n`,
+                                    content: `\n[SYS] Workspace changes detected. Updated cache.\n`,
                                 });
                             }
                         }
-                        else if (!isIdentical) {
-                            this.onEvent({
-                                type: "text",
-                                content: `\n[SYS] Workspace changes detected. Updated cache.\n`,
-                            });
+                        catch (err) {
+                            this.writeToLogFile("WARN", `Workspace discovery failed: ${err.message}`);
                         }
-                    }
-                    catch (err) {
-                        this.writeToLogFile("WARN", `Workspace discovery failed: ${err.message}`);
                     }
                 }
                 await this.compactHistoryIfNeeded(signal);
@@ -1008,16 +1013,51 @@ After all subagents finish, you MUST perform this verification loop before consi
                     }
                     catch { }
                 }
+                // Build static system prompt (cacheable)
                 const systemPrompt = `${activeSystemPrompt}
 
 CRITICAL TASK EXECUTION CONTEXT:
 - You are running with a strict step limit of ${maxIterations} agent iterations per request.
-- Current Step: ${currentStep} of ${maxIterations}.
 - Be highly efficient. DO NOT try to do everything in a single sequential thread.
 - MANDATORY: For any task that is complex, multi-step, or touches multiple files/components — you MUST spawn subagents via 'invoke_subagent'. Doing it yourself is forbidden for such tasks.
 - Spawn subagents in parallel whenever tasks are independent. This is the primary way to complete large tasks within the iteration limit.
 - After spawning, wait for results, integrate them, and report back to the user.
-${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}${processNotice}${pinnedKnowledgeNotice}`;
+${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}`;
+                // Build dynamic context to inject into messages array
+                const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]\n- Current Step: ${currentStep} of ${maxIterations}.${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
+                const injectDynamicContext = (msgs) => {
+                    if (msgs.length > 0) {
+                        const lastMsg = msgs[msgs.length - 1];
+                        if (lastMsg.role === "user") {
+                            if (typeof lastMsg.content === "string") {
+                                lastMsg.content += dynamicContext;
+                            }
+                            else if (Array.isArray(lastMsg.content)) {
+                                const lastPart = lastMsg.content[lastMsg.content.length - 1];
+                                if (lastPart && lastPart.type === "text") {
+                                    lastPart.text += dynamicContext;
+                                }
+                                else {
+                                    lastMsg.content.push({ type: "text", text: dynamicContext });
+                                }
+                            }
+                        }
+                        else if (lastMsg.role === "tool") {
+                            msgs.push({
+                                role: "user",
+                                content: dynamicContext,
+                            });
+                        }
+                    }
+                    else {
+                        msgs.push({
+                            role: "user",
+                            content: dynamicContext,
+                        });
+                    }
+                };
+                // Inject dynamic context into the active messages list
+                injectDynamicContext(messages);
                 // ── Pre-flight context window safety check ──────────────────────────
                 // Prevents 400 errors when total request (system + messages + tool schemas)
                 // exceeds the model's context window limit. This catches edge cases where
@@ -1030,7 +1070,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                     const safetyMax = Math.floor(modelLimit * 0.70);
                     // Estimate system prompt tokens (conservative ~3 chars/token for code-heavy text)
                     const estSysTokens = Math.ceil(systemPrompt.length / 3);
-                    const estMsgTokens = this.conversation.getTokenEstimate();
+                    const estMsgTokens = this.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
                     const estTotal = estMsgTokens + estSysTokens;
                     if (estTotal > safetyMax) {
                         const overshootPct = Math.round((estTotal / modelLimit) * 100);
@@ -1038,7 +1078,8 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                         await this.compactHistoryIfNeeded(signal);
                         // Rebuild messages from compacted conversation
                         messages = this.buildMessages();
-                        const afterEstMsgTokens = this.conversation.getTokenEstimate();
+                        injectDynamicContext(messages);
+                        const afterEstMsgTokens = this.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
                         const afterEstTotal = afterEstMsgTokens + estSysTokens;
                         this.writeToLogFile("INFO", `Post-compaction estimated total: ~${afterEstTotal.toLocaleString()} tokens.`);
                         // If still over safety limit after compaction, log a critical warning
@@ -1417,6 +1458,7 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
                     }
                     break;
                 }
+                this.workspaceCacheNeedsUpdate = true;
                 const toolResults = [];
                 for (const tc of toolCalls) {
                     if (signal?.aborted) {

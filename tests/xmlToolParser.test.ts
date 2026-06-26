@@ -199,6 +199,57 @@ Let me execute these in sequence:
 
       expect(output).toBe("If x < 5 then print hello.");
     });
+
+    it("should filter out DSML tool calls with full-width or standard pipes", () => {
+      let output = "";
+      const filter = new StreamXmlFilter((text) => {
+        output += text;
+      }, toolDefs);
+
+      filter.push("Before <｜｜DSML｜｜invoke name=\"run_command\">");
+      filter.push("<｜｜DSML｜｜parameter name=\"CommandLine\">npm test</｜｜DSML｜｜parameter>");
+      filter.push("</｜｜DSML｜｜invoke> After");
+      filter.flush();
+
+      expect(output).toBe("Before  After");
+    });
+  });
+
+  describe("DSML tool calls parsing", () => {
+    it("should parse DSML tool calls with full-width pipes correctly", () => {
+      const text = `
+<tool_calls>
+<｜｜DSML｜｜invoke name="run_command">
+<｜｜DSML｜｜parameter name="CommandLine" string="true">npm test</｜｜DSML｜｜parameter>
+<｜｜DSML｜｜parameter name="Cwd" string="true">/workspace</｜｜DSML｜｜parameter>
+</｜｜DSML｜｜invoke>
+</｜｜DSML｜｜tool_calls>
+`;
+      const result = parseXmlToolCalls(text, toolDefs);
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls[0].name).toBe("run_command");
+      expect(result.toolCalls[0].args).toEqual({
+        CommandLine: "npm test",
+        Cwd: "/workspace",
+      });
+      expect(result.cleanText).toBe("");
+    });
+
+    it("should parse DSML tool calls with single full-width pipes correctly", () => {
+      const text = `
+<｜DSML｜tool_calls>
+<｜DSML｜invoke name="run_command">
+<｜DSML｜parameter name="CommandLine" string="true">npm test</｜DSML｜parameter>
+</｜DSML｜invoke>
+</｜DSML｜tool_calls>
+`;
+      const result = parseXmlToolCalls(text, toolDefs);
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls[0].name).toBe("run_command");
+      expect(result.toolCalls[0].args).toEqual({
+        CommandLine: "npm test",
+      });
+    });
   });
 });
 

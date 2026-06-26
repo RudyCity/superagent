@@ -19,7 +19,15 @@ export function parseXmlToolCalls(
   toolDefs: { name: string }[]
 ): { toolCalls: ParsedToolCall[]; cleanText: string } {
   const toolCalls: ParsedToolCall[] = [];
-  let cleanText = textContent;
+  
+  // Normalize DSML namespaces to standard tags
+  const normalizedText = textContent
+    .replace(/｜｜DSML｜｜/gi, "")
+    .replace(/｜DSML｜/gi, "")
+    .replace(/\|\|DSML\|\|/gi, "")
+    .replace(/\|DSML\|/gi, "");
+
+  let cleanText = normalizedText;
 
   const generateId = () => `call_${Math.random().toString(36).substring(2, 15)}`;
 
@@ -49,13 +57,14 @@ export function parseXmlToolCalls(
     return val;
   };
 
-  // 0. Match <tool_calls>...</tool_calls> blocks containing JSON-based <tool_call>...</tool_call>
+  // 0. Match <tool_calls>...</tool_calls> blocks containing JSON-based <tool_call>...</tool_call> or XML-based <invoke>
   const toolCallsRegex = /<tool_calls\s*>([\s\S]*?)<\/tool_calls>/gi;
   let tcMatch;
-  while ((tcMatch = toolCallsRegex.exec(textContent)) !== null) {
+  while ((tcMatch = toolCallsRegex.exec(normalizedText)) !== null) {
     const blockContent = tcMatch[1];
     const fullBlock = tcMatch[0];
 
+    // Check JSON-based <tool_call>
     const blockToolCallRegex = /<tool_call\s*>([\s\S]*?)<\/tool_call>/gi;
     let singleTcMatch;
     while ((singleTcMatch = blockToolCallRegex.exec(blockContent)) !== null) {
@@ -65,7 +74,6 @@ export function parseXmlToolCalls(
         try {
           parsedJson = JSON.parse(rawBody);
         } catch {
-          // If direct parse fails, try decoding first
           parsedJson = JSON.parse(decodeHtmlEntities(rawBody));
         }
 
@@ -84,13 +92,28 @@ export function parseXmlToolCalls(
         // Ignore or log error
       }
     }
+
+    // Check XML-based <invoke> (like DSML)
+    const blockInvokeRegex = /<invoke\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/invoke>/gi;
+    let invMatch;
+    while ((invMatch = blockInvokeRegex.exec(blockContent)) !== null) {
+      const toolName = invMatch[1].trim();
+      const body = invMatch[2];
+      const args = parseXmlBody(body);
+      toolCalls.push({
+        id: generateId(),
+        name: toolName,
+        args,
+      });
+    }
+
     cleanText = cleanText.replace(fullBlock, "");
   }
 
   // Match standalone <tool_call>...</tool_call> blocks that are not wrapped in <tool_calls>
   const standaloneToolCallRegex = /<tool_call\s*>([\s\S]*?)<\/tool_call>/gi;
   let standTcMatch;
-  while ((standTcMatch = standaloneToolCallRegex.exec(textContent)) !== null) {
+  while ((standTcMatch = standaloneToolCallRegex.exec(normalizedText)) !== null) {
     const fullBlock = standTcMatch[0];
     if (cleanText.includes(fullBlock)) {
       const rawBody = cleanJsonString(standTcMatch[1]);
@@ -124,7 +147,7 @@ export function parseXmlToolCalls(
   // 1. Match <function_calls>...</function_calls> blocks
   const functionCallsRegex = /<function_calls\s*>([\s\S]*?)<\/function_calls>/gi;
   let fcMatch;
-  while ((fcMatch = functionCallsRegex.exec(textContent)) !== null) {
+  while ((fcMatch = functionCallsRegex.exec(normalizedText)) !== null) {
     const blockContent = fcMatch[1];
     const fullBlock = fcMatch[0];
 
@@ -145,10 +168,10 @@ export function parseXmlToolCalls(
     cleanText = cleanText.replace(fullBlock, "");
   }
 
-  // 2. Match standalone <invoke name="...">...</invoke> if any were not inside <function_calls>
+  // 2. Match standalone <invoke name="...">...</invoke> if any were not inside <function_calls> or <tool_calls>
   const standaloneInvokeRegex = /<invoke\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/invoke>/gi;
   let standMatch;
-  while ((standMatch = standaloneInvokeRegex.exec(textContent)) !== null) {
+  while ((standMatch = standaloneInvokeRegex.exec(normalizedText)) !== null) {
     const fullBlock = standMatch[0];
     if (cleanText.includes(fullBlock)) {
       const toolName = standMatch[1].trim();
@@ -170,7 +193,7 @@ export function parseXmlToolCalls(
     const escapedName = toolName.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
     const directTagRegex = new RegExp(`<${escapedName}\\s*>([\\s\\S]*?)<\\/${escapedName}>`, "gi");
     let directMatch;
-    while ((directMatch = directTagRegex.exec(textContent)) !== null) {
+    while ((directMatch = directTagRegex.exec(normalizedText)) !== null) {
       const fullBlock = directMatch[0];
       if (cleanText.includes(fullBlock)) {
         const body = directMatch[1];
@@ -273,7 +296,7 @@ export class StreamXmlFilter {
   constructor(onText: (text: string) => void, toolDefs: { name: string }[]) {
     this.onText = onText;
     this.toolNames = toolDefs.map((t) => t.name);
-    this.activeTags = ["tool_calls", "tool_call", "function_calls", "invoke", ...this.toolNames];
+    this.activeTags = ["tool_calls", "tool_call", "function_calls", "invoke", "parameter", ...this.toolNames];
   }
 
   push(delta: string) {
@@ -311,7 +334,7 @@ export class StreamXmlFilter {
       let nameEnd = nameStart;
       while (nameEnd < this.buffer.length) {
         const char = this.buffer[nameEnd];
-        if (/[a-zA-Z0-9_-]/.test(char)) {
+        if (/[a-zA-Z0-9_-]/.test(char) || char === "｜" || char === "|") {
           nameEnd++;
         } else {
           break;
@@ -324,17 +347,24 @@ export class StreamXmlFilter {
         break;
       }
 
-      const tagName = this.buffer.substring(nameStart, nameEnd).trim();
+      const rawTagName = this.buffer.substring(nameStart, nameEnd).trim();
+      const tagName = rawTagName
+        .replace(/｜｜DSML｜｜/gi, "")
+        .replace(/｜DSML｜/gi, "")
+        .replace(/\|\|DSML\|\|/gi, "")
+        .replace(/\|DSML\|/gi, "");
       const isToolTag = this.activeTags.includes(tagName);
 
       if (isToolTag) {
         // Yes, it is a tool tag or tool container.
         // We must buffer this entire tag and its content until we see its matching closing tag.
-        const closingTag = `</${tagName}>`;
-        const closingIndex = this.buffer.indexOf(closingTag);
-        if (closingIndex !== -1) {
+        // Search for the closing tag flexibly, ignoring any potential DSML prefixes
+        const escapedTagName = tagName.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+        const closingRegex = new RegExp(`<\/(?:｜｜DSML｜｜|｜DSML｜|\\|\\|DSML\\|\\||\\|DSML\\||)?${escapedTagName}\\s*>`, "i");
+        const match = closingRegex.exec(this.buffer);
+        if (match) {
           // Found the closing tag! Discard the entire tag and content from the buffer.
-          this.buffer = this.buffer.substring(closingIndex + closingTag.length);
+          this.buffer = this.buffer.substring(match.index + match[0].length);
           // Loop again to process remaining buffer
           continue;
         } else {

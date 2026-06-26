@@ -74,6 +74,7 @@ export declare class Agent {
     allowSessionEnvAccess: boolean;
     allowSessionDangerous: boolean;
     workspaceCache: any;
+    private workspaceCacheNeedsUpdate;
     disableWorkspaceDiscovery: boolean;
     private conversation;
     private customSystemPrompt?;
