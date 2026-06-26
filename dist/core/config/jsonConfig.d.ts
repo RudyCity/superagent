@@ -39,6 +39,7 @@ export interface SystemSettings {
     tencentdbGatewayApiKey?: string;
     tencentdbServiceId?: string;
     enableTencentdbMemory?: boolean;
+    tencentdbPollIntervalMs?: number;
 }
 export interface GlobalModelConfig {
     providers: ProviderProfile[];

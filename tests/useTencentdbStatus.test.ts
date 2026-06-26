@@ -24,6 +24,7 @@ let mockSettings = {
   tencentdbGatewayUrl: "http://127.0.0.1:8420",
   tencentdbGatewayApiKey: "sk-xxxx",
   tencentdbServiceId: "default",
+  tencentdbPollIntervalMs: 30000,
 };
 
 vi.mock("../src/core/config/jsonConfig.js", () => {

@@ -70,10 +70,10 @@ describe("TencentDBMemoryStrategy", () => {
     expect(strategy.canHandle(context)).toBe(true);
 
     const result = await strategy.execute(messages, { preserveRecent: 5 });
-    
+
     // Check that we captured conversation
     expect(mockAddConversation).toHaveBeenCalled();
-    
+
     // Check that we recalled memories
     expect(mockSearchAtomic).toHaveBeenCalled();
     expect(mockReadCore).toHaveBeenCalled();
@@ -107,5 +107,38 @@ describe("TencentDBMemoryStrategy", () => {
     // Verify it fell back to summarization
     expect(result.metadata.strategy).toBe("summarization");
     expect(result.messages[0].content).toContain("[System Conversation Summary]");
+  });
+
+  it("should use offline cooldown after first failure and skip gateway calls within 5 minutes", async () => {
+    // First call: gateway fails
+    mockAddConversation.mockRejectedValue(new Error("Connection refused"));
+
+    const strategy = new TencentDBMemoryStrategy({ historyFilePath: "conversation_test.json" });
+    const messages: Message[] = [];
+    for (let i = 0; i < 15; i++) {
+      messages.push({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `Message ${i}`,
+        timestamp: Date.now() + i,
+      });
+    }
+
+    // First call — should try gateway, fail, and cache offline state
+    const result1 = await strategy.execute(messages, { preserveRecent: 5 });
+    expect(result1.metadata.strategy).toBe("summarization");
+
+    // Clear mock call count
+    mockAddConversation.mockClear();
+
+    // Second call immediately — should skip gateway calls due to offline cooldown
+    const result2 = await strategy.execute(messages, { preserveRecent: 5 });
+    expect(mockAddConversation).not.toHaveBeenCalled(); // key: no gateway call
+    expect(result2.metadata.strategy).toBe("summarization");
+
+    // Third call also hits cooldown
+    mockAddConversation.mockClear();
+    const result3 = await strategy.execute(messages, { preserveRecent: 5 });
+    expect(mockAddConversation).not.toHaveBeenCalled();
+    expect(result3.metadata.strategy).toBe("summarization");
   });
 });

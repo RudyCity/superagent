@@ -48,7 +48,10 @@ export function useTencentdbStatus(): TencentdbStatus {
     };
 
     checkHealth();
-    timer = setInterval(checkHealth, 5000);
+    // Read polling interval from settings (default 30s, minimum 5s)
+    const settings2 = getSettings();
+    const pollMs = Math.max(5000, (settings2.tencentdbPollIntervalMs || 30000));
+    timer = setInterval(checkHealth, pollMs);
 
     return () => {
       active = false;
