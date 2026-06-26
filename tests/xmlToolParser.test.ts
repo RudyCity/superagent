@@ -175,6 +175,21 @@ Let me execute these in sequence:
       expect(output).toBe("Hello world!  and then some more text.");
     });
 
+    it("should filter out tool calls with mismatched closing tags during streaming", () => {
+      let output = "";
+      const filter = new StreamXmlFilter((text) => {
+        output += text;
+      }, toolDefs);
+
+      filter.push("Hello ");
+      filter.push("world! <tool_calls><tool_call>");
+      filter.push('{"name": "run_command", "arguments": {"CommandLine": "npm test"}}');
+      filter.push("</tool_calls></tool_calls> and then some more text.");
+      filter.flush();
+
+      expect(output).toBe("Hello world!  and then some more text.");
+    });
+
     it("should flush remaining buffer on flush() if tool call was cut off", () => {
       let output = "";
       const filter = new StreamXmlFilter((text) => {

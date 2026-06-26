@@ -403,7 +403,10 @@ export class StreamXmlFilter {
         // We must buffer this entire tag and its content until we see its matching closing tag.
         // Search for the closing tag flexibly, ignoring any potential DSML prefixes
         const escapedTagName = tagName.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
-        const closingRegex = new RegExp(`<\/(?:｜｜DSML｜｜|｜DSML｜|\\|\\|DSML\\|\\||\\|DSML\\||)?${escapedTagName}\\s*>`, "i");
+        const closingTagNamePattern = (tagName === "tool_call" || tagName === "tool_calls")
+          ? "(?:tool_call|tool_calls)"
+          : escapedTagName;
+        const closingRegex = new RegExp(`<\/(?:｜｜DSML｜｜|｜DSML｜|\\|\\|DSML\\|\\||\\|DSML\\||)?${closingTagNamePattern}\\s*>`, "i");
         const match = closingRegex.exec(this.buffer);
         if (match) {
           // Found the closing tag! Discard the entire tag and content from the buffer.
