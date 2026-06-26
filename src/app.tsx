@@ -1851,8 +1851,8 @@ export function App({
     if (activeWizard.type === "skills") return activeWizard.step !== 1;
     if (activeWizard.type === "question" && activeWizard.step !== 2) return true;
     if (activeWizard.type === "login") {
-      // Steps 1,2,6,7,10 = pure selection; Step 8 = selection with search filter (needs input)
-      return [1, 2, 6, 7, 10].includes(activeWizard.step);
+      // Steps 1,2,6,7,10,15 = pure selection; Step 8,14 = selection with search filter (needs input)
+      return [1, 2, 6, 7, 10, 15].includes(activeWizard.step);
     }
     if (activeWizard.type === "model") {
       // Steps 15,24,34 = model search/filter (needs input); others with options are pure selection
@@ -2277,21 +2277,17 @@ export function App({
                           focused={focusMode === "input"}
                         />
                       )}
-                      {activeWizard?.type === "login" && activeWizard.step === 15 ? (
-                        <Text dimColor>↑/↓ to select, Enter to confirm, Esc to go back</Text>
-                      ) : (
-                        <ChatTextInput
-                          focus={focusMode === "input"}
-                          value={input}
-                          onChange={handleInputChange}
-                          onSubmit={handleSubmit}
-                          placeholder={getWizardPlaceholder()}
-                          onAttachImage={handleAttachImage}
-                          onPasteImage={handlePasteImage}
-                          onRemoveLastAttachment={handleRemoveLastAttachment}
-                          attachmentCount={attachments.length}
-                        />
-                      )}
+                      <ChatTextInput
+                        focus={focusMode === "input"}
+                        value={input}
+                        onChange={handleInputChange}
+                        onSubmit={handleSubmit}
+                        placeholder={getWizardPlaceholder()}
+                        onAttachImage={handleAttachImage}
+                        onPasteImage={handlePasteImage}
+                        onRemoveLastAttachment={handleRemoveLastAttachment}
+                        attachmentCount={attachments.length}
+                      />
                     </Box>
                   );
                 })()}
