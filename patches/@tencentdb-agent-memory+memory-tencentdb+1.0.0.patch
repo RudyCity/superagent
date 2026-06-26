@@ -10213,7 +10213,7 @@ index 0000000..c2b6e18
 +  }
 +}
 diff --git a/node_modules/@tencentdb-agent-memory/memory-tencentdb/src/gateway/v2-router.ts b/node_modules/@tencentdb-agent-memory/memory-tencentdb/src/gateway/v2-router.ts
-index 2ba37e4..5e2c053 100644
+index 2ba37e4..6c17cd1 100644
 --- a/node_modules/@tencentdb-agent-memory/memory-tencentdb/src/gateway/v2-router.ts
 +++ b/node_modules/@tencentdb-agent-memory/memory-tencentdb/src/gateway/v2-router.ts
 @@ -536,27 +536,44 @@ async function handleAtomicUpdate(body: unknown, _auth: V2AuthContext, requestId
@@ -10259,7 +10259,7 @@ index 2ba37e4..5e2c053 100644
 -    timestamps: record.timestamps ?? [],
 -    createdAt: record.created_time,
 +    type: record ? (record.type as any) : mapType((body as any).type),
-+    priority: record ? (record.priority ?? 50) : 50,
++    priority: record ? (record.priority ?? 50) : (typeof (body as any).priority === "number" ? (body as any).priority : 50),
 +    scene_name: background !== undefined ? background : (record ? (record.scene_name ?? "") : ""),
 +    source_message_ids: record ? (record.source_message_ids ?? []) : [],
 +    metadata: record ? (record.metadata ?? {} as any) : {} as any,
