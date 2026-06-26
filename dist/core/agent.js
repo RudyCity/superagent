@@ -498,7 +498,13 @@ If none of the options are suitable, still pick the closest one.`;
         ensureGlobalConfigDir();
         const sanitizedPath = this.workingDirectory.replace(/[^a-zA-Z0-9]/g, "_");
         const mode = this.isMultiAgent ? "multi" : "single";
-        const historyDir = path.join(getGlobalConfigDir(), "history", mode);
+        let historyDir = path.join(getGlobalConfigDir(), "history", mode);
+        if (this.tier === "subagent") {
+            historyDir = path.join(historyDir, "subagents");
+        }
+        else if (this.tier === "superagent") {
+            historyDir = path.join(historyDir, "superagents");
+        }
         if (typeof autoResume === "string" && autoResume.trim() !== "") {
             const val = autoResume.trim();
             // 1. Check if it's a direct path to a json file
