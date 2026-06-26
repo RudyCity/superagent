@@ -232,9 +232,21 @@ export function getModelInstanceForString(modelStr: string) {
             baseUrl = "https://openrouter.ai/api/v1";
           }
         } else if (typeLower === "anthropic") {
-          provider = "anthropic";
-          if (!matchedProvider.baseUrl || matchedProvider.baseUrl.trim() === "") {
-            baseUrl = undefined;
+          // If the profile has a custom baseUrl that is NOT an official Anthropic endpoint,
+          // treat it as an OpenAI-compatible (custom) provider. Local servers (e.g. Orbit,
+          // LiteLLM, OpenCode) use the OpenAI API format and reject the Anthropic SDK headers,
+          // causing 401 Unauthorized errors.
+          const isOfficialAnthropic = !matchedProvider.baseUrl ||
+            matchedProvider.baseUrl.trim() === "" ||
+            matchedProvider.baseUrl.toLowerCase().includes("anthropic.com");
+          if (isOfficialAnthropic) {
+            provider = "anthropic";
+            if (!matchedProvider.baseUrl || matchedProvider.baseUrl.trim() === "") {
+              baseUrl = undefined;
+            }
+          } else {
+            // Custom baseUrl with anthropic provider type → treat as OpenAI-compatible endpoint
+            provider = "custom";
           }
         } else if (typeLower === "custom" || baseUrl) {
           provider = "custom";
