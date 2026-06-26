@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getPackageRootDir } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getPackageRootDir, getModelConnectionDetailsForTier } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
@@ -1167,6 +1167,35 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
           }
         }
 
+        // Check if the endpoint/model supports native tool calling
+        let supportsNativeTools = true;
+        const details = getModelConnectionDetailsForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
+        const isTest = !!process.env.VITEST;
+        if (!isTest && details.provider === "custom" && details.baseUrl) {
+          try {
+            const { probeToolCallSupport } = await import("../utils/promptBasedToolCalling.js");
+            supportsNativeTools = await probeToolCallSupport(details.baseUrl, details.apiKey, details.modelName);
+          } catch (err: any) {
+            this.writeToLogFile("WARN", `Failed to probe tool call support: ${err.message}. Defaulting to native tools.`);
+          }
+        }
+
+        let finalSystemPrompt = systemPrompt;
+        if (!supportsNativeTools) {
+          try {
+            const { buildToolsSystemPromptBlock } = await import("../utils/promptBasedToolCalling.js");
+            const toolDefsForPrompt = toolDefs.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.input_schema as any,
+            }));
+            finalSystemPrompt += buildToolsSystemPromptBlock(toolDefsForPrompt);
+            this.writeToLogFile("INFO", `Prompt-based tool calling fallback activated for ${details.modelName} on ${details.baseUrl}`);
+          } catch (err: any) {
+            this.writeToLogFile("WARN", `Failed to build prompt-based tool block: ${err.message}`);
+          }
+        }
+
         let textContent = "";
         let reasoningContent = ""; // DeepSeek R1 thinking tokens — displayed in UI but NOT stored in history
         const toolCalls: ToolCall[] = [];
@@ -1192,17 +1221,19 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
 
               const result = await generateText({
                 model: modelInstance,
-                system: systemPrompt,
+                system: finalSystemPrompt,
                 messages,
-                tools: Object.fromEntries(
-                  toolDefs.map((t) => [
-                    t.name,
-                    {
-                      description: t.description,
-                      parameters: jsonSchema(t.input_schema),
-                    },
-                  ])
-                ),
+                ...(supportsNativeTools && {
+                  tools: Object.fromEntries(
+                    toolDefs.map((t) => [
+                      t.name,
+                      {
+                        description: t.description,
+                        parameters: jsonSchema(t.input_schema),
+                      },
+                    ])
+                  ),
+                }),
                 maxSteps: 1,
                 abortSignal: signal,
                 ...(isAnthropic && {
@@ -1309,19 +1340,21 @@ ${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}$
               const isTest = !!process.env.VITEST;
               const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
 
-              const result = streamText({
+               const result = streamText({
                 model: modelInstance,
-                system: systemPrompt,
+                system: finalSystemPrompt,
                 messages,
-                tools: Object.fromEntries(
-                  toolDefs.map((t) => [
-                    t.name,
-                    {
-                      description: t.description,
-                      parameters: jsonSchema(t.input_schema),
-                    },
-                  ])
-                ),
+                ...(supportsNativeTools && {
+                  tools: Object.fromEntries(
+                    toolDefs.map((t) => [
+                      t.name,
+                      {
+                        description: t.description,
+                        parameters: jsonSchema(t.input_schema),
+                      },
+                    ])
+                  ),
+                }),
                 maxSteps: 1,
                 abortSignal: signal,
                 ...(isAnthropic && {

@@ -343,7 +343,7 @@ function resolveSubagentTierConfig(subagentType, subagentDetails, subagentDefaul
     // 3. Return whatever we have (will be caught by later fallbacks)
     return subagentDefault || (subagentType ? subagentDetails?.[subagentType] : undefined);
 }
-export function getModelInstanceForTier(tier, depth, subagentType, isSingleMode) {
+export function getModelConnectionDetailsForTier(tier, depth, subagentType, isSingleMode) {
     const isMulti = !isSingleMode && !process.env.SINGLE_AGENT_MODE && (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true");
     const mode = isMulti ? "multi" : "single";
     const config = loadModelConfig();
@@ -413,10 +413,15 @@ export function getModelInstanceForTier(tier, depth, subagentType, isSingleMode)
     const provider = providerProfile?.provider || "openai";
     const modelName = tierConfig?.model || getEffectiveMasterModel(mode) || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
     const profileId = providerProfile?.id || provider;
+    const baseUrl = providerProfile?.baseUrl || undefined;
+    return { provider, modelName, apiKey, baseUrl, profileId };
+}
+export function getModelInstanceForTier(tier, depth, subagentType, isSingleMode) {
+    const details = getModelConnectionDetailsForTier(tier, depth, subagentType, isSingleMode);
     // If modelName already contains a provider prefix (e.g. 'openai@gpt-4o'), do not double-prepend the profileId
-    if (modelName.includes("@")) {
-        return getModelInstanceForString(modelName);
+    if (details.modelName.includes("@")) {
+        return getModelInstanceForString(details.modelName);
     }
-    return getModelInstanceForString(`${profileId}@${modelName}`);
+    return getModelInstanceForString(`${details.profileId}@${details.modelName}`);
 }
 //# sourceMappingURL=models.js.map

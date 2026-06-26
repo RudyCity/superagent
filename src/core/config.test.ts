@@ -7,7 +7,7 @@ import os from "os";
 const tempHome = path.join(process.cwd(), "tests", "temp-home-config");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset } from "./config.js";
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset, getModelConnectionDetailsForTier } from "./config.js";
 import { getModelConfigPath } from "./config/paths.js";
 import { clearModelConfigCache, loadModelConfig, addProvider, saveModelConfig, getProviders, removeProvider } from "./config/jsonConfig.js";
 
@@ -623,6 +623,29 @@ describe("config", () => {
       expect(preset.models.subagentDefault.providerProfileId).toBe("anthropic");
       expect(preset.models.subagentDetails.researcher.providerProfileId).toBe("anthropic");
       expect(preset.models.subagentDetails.researcher.model).toBe("gpt-4-turbo");
+    });
+  });
+
+  describe("getModelConnectionDetailsForTier", () => {
+    it("should extract connection details correctly", () => {
+      const testPreset = {
+        id: "test-details-preset",
+        name: "Test Details Preset",
+        description: "Test",
+        models: {
+          master: { providerProfileId: "default-openai", model: "gpt-4o-mini" },
+          superagent: { providerProfileId: "default-anthropic", model: "claude-3-5-sonnet" },
+          subagentDefault: { providerProfileId: "default-openai", model: "local-llama" },
+          subagentDetails: {}
+        }
+      };
+      savePreset("multi", testPreset);
+      setActivePresetId("multi", "test-details-preset");
+      process.env.SUPERAGENT_MULTI = "true";
+
+      const details = getModelConnectionDetailsForTier("superagent", 1);
+      expect(details.modelName).toBe("claude-3-5-sonnet");
+      expect(details.provider).toBe("anthropic");
     });
   });
 
