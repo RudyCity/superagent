@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.25] - 2026-06-26
+
+### Added
+- **Delete Provider Option**: Added a delete/remove provider option to the `/login` setup wizard, including:
+  - Interactive search and filter interface for selecting a provider profile to delete.
+  - Step 14 list view and Step 15 confirmation dialog rendering.
+  - Test suites aligned with provider deletion and credential management.
+- **XML/DSML Tool Call Parsing**: Support for parsing, filtering, and stripping XML and DSML format tool calls from streaming and non-streaming models (e.g. DeepSeek and OpenAI proxies).
+- **Prompt Caching Support**: Integrated Anthropic prompt caching in the FastContext runner, and optimized workspace cache scanning to reduce context token usage.
+
+### Fixed
+- **XML Tags Leakage**: Screen/terminal output now filters out raw XML/DSML tool tags from both streaming and static assistant message responses in real-time.
+- **Click Coordinates on Truncated Text**: Fixed selection and coordinates mapping for click actions in long assistant responses when lines wrap/truncate.
+- **Type Conversion Bypass**: Respected the `string='true'` parameter attribute in tool calls to prevent numerical properties from being incorrectly converted to numbers.
+- **OpenAI Endpoint Model Handling**: Enforced the OpenAI SDK wrapper for custom OpenAI endpoints serving Claude models, and correctly identified Anthropic profiles with custom base URLs as OpenAI-compatible.
+
+### Improved
+- **History Cache Performance**: Optimized `listHistorySessions` by introducing incremental metadata caching and a 30-second TTL cache to reduce disk reads.
+
+---
+
 ## [1.2.24] - 2026-06-25
 
 ### Fixed

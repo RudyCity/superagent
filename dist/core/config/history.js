@@ -23,11 +23,15 @@ function normalizeAndCheckSubpath(childPath, parentPath) {
     return resolvedChild.startsWith(resolvedParent + path.sep) || resolvedChild === resolvedParent;
 }
 const listCache = new Map();
+const fileMetadataCache = new Map();
+export function clearHistoryCache() {
+    listCache.clear();
+}
 export function listHistorySessions(isMulti = false, crossSession = false) {
     const cacheKey = `${isMulti}:${crossSession}:${process.cwd()}`;
     const now = Date.now();
     const cached = listCache.get(cacheKey);
-    if (!process.env.VITEST && cached && now - cached.timestamp < 3000) {
+    if (!process.env.VITEST && cached && now - cached.timestamp < 30000) {
         return cached.data;
     }
     const mode = isMulti ? "multi" : "single";
@@ -62,11 +66,63 @@ export function listHistorySessions(isMulti = false, crossSession = false) {
             continue;
         try {
             const stat = fs.statSync(filePath);
-            const raw = fs.readFileSync(filePath, "utf-8");
-            const parsed = JSON.parse(raw);
+            const mtimeMs = stat.mtimeMs !== undefined ? stat.mtimeMs : stat.mtime.getTime();
+            let displayName = "";
+            let messageCount = 0;
+            let preview = "";
+            let sessionCwd;
+            let legacyMatch = false;
+            const cachedFile = fileMetadataCache.get(filePath);
+            if (cachedFile && cachedFile.mtimeMs === mtimeMs) {
+                displayName = cachedFile.displayName;
+                messageCount = cachedFile.messageCount;
+                preview = cachedFile.preview;
+                sessionCwd = cachedFile.workingDirectory;
+                legacyMatch = cachedFile.legacyMatch;
+            }
+            else {
+                const raw = fs.readFileSync(filePath, "utf-8");
+                const parsed = JSON.parse(raw);
+                sessionCwd = parsed && typeof parsed === "object" ? parsed.workingDirectory : undefined;
+                let messages = [];
+                if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+                    messages = parsed.messages;
+                }
+                else if (Array.isArray(parsed)) {
+                    messages = parsed;
+                }
+                else {
+                    continue;
+                }
+                const userMessages = messages.filter((m) => m.role === "user");
+                const lastUser = userMessages[userMessages.length - 1];
+                preview = lastUser
+                    ? lastUser.content.slice(0, 60).replace(/\n/g, " ") + (lastUser.content.length > 60 ? "…" : "")
+                    : "(no user messages)";
+                // Reconstruct display name from sanitized filename as fallback
+                // Strip trailing timestamp suffix if present (e.g. _1717999999)
+                const cleanName = d.replace(/_\d+$/, "");
+                const folderPathName = cleanName
+                    .replace(/^([a-zA-Z])__/, "$1:\\")
+                    .replace(/^_+/, "/")
+                    .replace(/_/g, "/");
+                displayName = lastUser && lastUser.content && lastUser.content.trim()
+                    ? lastUser.content.trim().slice(0, 60).replace(/\n/g, " ") + (lastUser.content.trim().length > 60 ? "…" : "")
+                    : folderPathName;
+                const cleanNameLower = d.toLowerCase().replace(/_\d+$/, "");
+                legacyMatch = cleanNameLower === currentSanitized;
+                messageCount = messages.length;
+                fileMetadataCache.set(filePath, {
+                    mtimeMs,
+                    displayName,
+                    messageCount,
+                    preview,
+                    workingDirectory: sessionCwd,
+                    legacyMatch,
+                });
+            }
             // Verify that the session actually belongs to this workspace
             if (!crossSession) {
-                const sessionCwd = parsed && typeof parsed === "object" ? parsed.workingDirectory : undefined;
                 if (sessionCwd) {
                     if (!normalizeAndCheckSubpath(sessionCwd, currentDir)) {
                         continue;
@@ -74,41 +130,15 @@ export function listHistorySessions(isMulti = false, crossSession = false) {
                 }
                 else {
                     // Legacy fallback: check if cleanName is exactly the sanitized path of current cwd
-                    const cleanNameLower = d.toLowerCase().replace(/_\d+$/, "");
-                    if (cleanNameLower !== currentSanitized) {
+                    if (!legacyMatch) {
                         continue;
                     }
                 }
             }
-            let messages = [];
-            if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
-                messages = parsed.messages;
-            }
-            else if (Array.isArray(parsed)) {
-                messages = parsed;
-            }
-            else {
-                continue;
-            }
-            const userMessages = messages.filter((m) => m.role === "user");
-            const lastUser = userMessages[userMessages.length - 1];
-            const preview = lastUser
-                ? lastUser.content.slice(0, 60).replace(/\n/g, " ") + (lastUser.content.length > 60 ? "…" : "")
-                : "(no user messages)";
-            // Reconstruct display name from sanitized filename as fallback
-            // Strip trailing timestamp suffix if present (e.g. _1717999999)
-            const cleanName = d.replace(/_\d+$/, "");
-            const folderPathName = cleanName
-                .replace(/^([a-zA-Z])__/, "$1:\\")
-                .replace(/^_+/, "/")
-                .replace(/_/g, "/");
-            const displayName = lastUser && lastUser.content && lastUser.content.trim()
-                ? lastUser.content.trim().slice(0, 60).replace(/\n/g, " ") + (lastUser.content.trim().length > 60 ? "…" : "")
-                : folderPathName;
             sessions.push({
                 filePath,
                 displayName,
-                messageCount: messages.length,
+                messageCount,
                 lastModified: stat.mtime,
                 preview,
             });

@@ -5,5 +5,6 @@ export interface HistorySession {
     lastModified: Date;
     preview: string;
 }
+export declare function clearHistoryCache(): void;
 export declare function listHistorySessions(isMulti?: boolean, crossSession?: boolean): HistorySession[];
 //# sourceMappingURL=history.d.ts.map

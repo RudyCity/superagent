@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
 import { execSync } from "child_process";
+import { clearHistoryCache } from "./config.js";
 import { backgroundTasks, subagentInstances, notifyTasksChanged, notifySubagentsChanged } from "./tools/state.js";
 import { killProcessTree } from "./tools/shellTools.js";
 /**
@@ -127,6 +128,7 @@ export async function restoreCheckpoint(checkpointFilePath, sessionFilePath) {
         planState: checkpoint.planState,
     };
     await fs.writeFile(sessionFilePath, JSON.stringify(sessionData, null, 2), "utf-8");
+    clearHistoryCache();
     // Re-sync plan, task, task history, and walkthrough markdown files
     const planPath = sessionFilePath.replace(/\.json$/, "_implementation_plan.md");
     const taskPath = sessionFilePath.replace(/\.json$/, "_task.md");

@@ -1,7 +1,7 @@
 import { streamText, generateText, jsonSchema } from "ai";
 import path from "path";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, loadAgentSkills, getSettings, getTierModel, getPackageRootDir, getModelConnectionDetailsForTier } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, loadAgentSkills, getSettings, getTierModel, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks } from "./tools.js";
 import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
@@ -607,6 +607,7 @@ If none of the options are suitable, still pick the closest one.`;
         }
         process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
         await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState, this.workingDirectory);
+        clearHistoryCache();
     }
     getModel() {
         return getModelInstanceForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
