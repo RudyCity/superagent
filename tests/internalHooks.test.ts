@@ -58,20 +58,44 @@ describe("Internal Hooks Feature", () => {
     expect(tools[0].parameters).toHaveProperty("type", "object");
   });
 
-  it("should execute the dev subcommand on /ih dev", async () => {
+  it("should execute the dev subcommand on /ih dev and set workspace focus", async () => {
     const lines: ChatLine[] = [];
+    let focusedHook: string | null = "";
     const mockCtx: SlashCommandContext = {
       addLine: (line) => lines.push(line),
       exit: () => {},
       agent: null,
+      setActiveDevHook: (name) => {
+        focusedHook = name;
+      },
     };
 
     await internalHooksCommand.execute("dev test-hook", mockCtx);
 
-    // Verify dev execution was triggered
-    expect(lines.some(l => l.content.includes("Entering workspace") || l.content.includes("Executing dev command"))).toBe(true);
+    // Verify dev execution was triggered and focus was set
+    expect(focusedHook).toBe("test-hook");
+    expect(lines.some(l => l.content.includes("Workspace focus set") || l.content.includes("Executing dev command"))).toBe(true);
     // Since index.js prints "Hook executed successfully!", verify that was logged as stdout
     expect(lines.some(l => l.content.includes("Hook executed successfully!"))).toBe(true);
+  });
+
+  it("should clear workspace focus on /ih dev off", async () => {
+    const lines: ChatLine[] = [];
+    let focusedHook: string | null = "some-hook";
+    const mockCtx: SlashCommandContext = {
+      addLine: (line) => lines.push(line),
+      exit: () => {},
+      agent: null,
+      setActiveDevHook: (name) => {
+        focusedHook = name;
+      },
+    };
+
+    await internalHooksCommand.execute("dev off", mockCtx);
+
+    // Verify focus was cleared
+    expect(focusedHook).toBeNull();
+    expect(lines.some(l => l.content.includes("Cleared active internal hook"))).toBe(true);
   });
 
   it("should persist active hooks selection in model-config.json", async () => {

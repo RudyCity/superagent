@@ -17,6 +17,7 @@ export interface StatusBarProps {
   lastSpeed: number | null;
   formatCompactNumber: (val: number) => string;
   tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
+  activeDevHook?: string | null;
 }
 
 export function StatusBar(props: StatusBarProps) {
@@ -36,6 +37,7 @@ export function StatusBar(props: StatusBarProps) {
     lastSpeed,
     formatCompactNumber,
     tencentdbStatus,
+    activeDevHook,
   } = props;
 
   return (
@@ -95,6 +97,12 @@ export function StatusBar(props: StatusBarProps) {
               <>
                 <Text color="gray"> │ </Text>
                 <Text color="blue" bold>Worktrees: {worktreeCount}</Text>
+              </>
+            )}
+            {activeDevHook && (
+              <>
+                <Text color="gray"> │ </Text>
+                <Text color="magenta" bold>🪝 dev {activeDevHook} hook</Text>
               </>
             )}
           </Text>

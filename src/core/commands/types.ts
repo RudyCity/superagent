@@ -39,6 +39,7 @@ export interface SlashCommandContext {
   runInteractiveProcess?: (command: string, cwd: string, env?: Record<string, string | undefined>) => Promise<number>;
   attachImage?: (filePath: string) => Promise<void>;
   pasteImage?: () => Promise<void>;
+  setActiveDevHook?: (name: string | null) => void;
 }
 
 export interface SlashCommand {

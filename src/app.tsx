@@ -310,6 +310,7 @@ export function App({
   const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
   const [gitBranch, setGitBranch] = useState<string>("");
   const [worktreeCount, setWorktreeCount] = useState<number>(0);
+  const [activeDevHook, setActiveDevHook] = useState<string | null>(null);
 
   const addLine = useCallback((line: ChatLine) => {
     setLines((prev) => [...prev, line]);
@@ -635,6 +636,9 @@ export function App({
           runInteractiveProcess,
           attachImage: handleAttachImage,
           pasteImage: handlePasteImage,
+          setActiveDevHook: (name: string | null) => {
+            setActiveDevHook(name);
+          },
         } as any);
         return;
       }
@@ -664,6 +668,9 @@ export function App({
           runInteractiveProcess,
           attachImage: handleAttachImage,
           pasteImage: handlePasteImage,
+          setActiveDevHook: (name: string | null) => {
+            setActiveDevHook(name);
+          },
         } as any);
         return;
       }
@@ -2351,6 +2358,7 @@ export function App({
         lastSpeed={lastSpeed}
         formatCompactNumber={formatCompactNumber}
         tencentdbStatus={tencentdbStatus}
+        activeDevHook={activeDevHook}
       />
     </Box>
   );
