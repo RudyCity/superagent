@@ -40,10 +40,20 @@ export const askQuestionTool: Tool = {
     const handler = getActiveQuestionHandler();
 
     // Check if we are running in a multi-question workflow
-    const hasQuestionsArray = Array.isArray(args.questions) && args.questions.length > 0;
+    let questionsVal = args.questions;
+    if (typeof questionsVal === "string") {
+      try {
+        const parsed = JSON.parse(questionsVal);
+        if (Array.isArray(parsed)) {
+          questionsVal = parsed;
+        }
+      } catch (e) {}
+    }
+
+    const hasQuestionsArray = Array.isArray(questionsVal) && questionsVal.length > 0;
 
     if (hasQuestionsArray) {
-      const questionsList = args.questions as any[];
+      const questionsList = questionsVal as any[];
       const normalizedQuestions = questionsList.map((q: any, idx: number) => {
         const qText = q.question as string || "";
         let qOptsRaw = q.options || [];
@@ -56,7 +66,8 @@ export const askQuestionTool: Tool = {
           } catch (e) {}
         }
         const qOpts = Array.isArray(qOptsRaw) ? qOptsRaw.map(o => String(o)) : [];
-        const isMs = !!(q.isMultiSelect || q.is_multi_select || q.isMultiSelect || q.is_multi_select);
+        const isMsRaw = q.isMultiSelect !== undefined ? q.isMultiSelect : q.is_multi_select;
+        const isMs = typeof isMsRaw === "string" ? isMsRaw.toLowerCase() === "true" : !!isMsRaw;
         return { question: qText, options: qOpts, isMultiSelect: isMs };
       });
 
@@ -124,7 +135,11 @@ export const askQuestionTool: Tool = {
 
     let question = args.question as string || "";
     let rawOptionsVal = args.options;
-    let isMultiSelect = args.isMultiSelect as boolean | undefined;
+    let isMultiSelectRaw = args.isMultiSelect !== undefined ? args.isMultiSelect : (args as any).is_multi_select;
+    let isMultiSelect: boolean | undefined = undefined;
+    if (isMultiSelectRaw !== undefined) {
+      isMultiSelect = typeof isMultiSelectRaw === "string" ? isMultiSelectRaw.toLowerCase() === "true" : !!isMultiSelectRaw;
+    }
 
     if (typeof rawOptionsVal === "string") {
       try {

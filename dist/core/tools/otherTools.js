@@ -37,9 +37,19 @@ export const askQuestionTool = {
         const currentTier = currentAgent ? currentAgent.tier : undefined;
         const handler = getActiveQuestionHandler();
         // Check if we are running in a multi-question workflow
-        const hasQuestionsArray = Array.isArray(args.questions) && args.questions.length > 0;
+        let questionsVal = args.questions;
+        if (typeof questionsVal === "string") {
+            try {
+                const parsed = JSON.parse(questionsVal);
+                if (Array.isArray(parsed)) {
+                    questionsVal = parsed;
+                }
+            }
+            catch (e) { }
+        }
+        const hasQuestionsArray = Array.isArray(questionsVal) && questionsVal.length > 0;
         if (hasQuestionsArray) {
-            const questionsList = args.questions;
+            const questionsList = questionsVal;
             const normalizedQuestions = questionsList.map((q, idx) => {
                 const qText = q.question || "";
                 let qOptsRaw = q.options || [];
@@ -53,7 +63,8 @@ export const askQuestionTool = {
                     catch (e) { }
                 }
                 const qOpts = Array.isArray(qOptsRaw) ? qOptsRaw.map(o => String(o)) : [];
-                const isMs = !!(q.isMultiSelect || q.is_multi_select || q.isMultiSelect || q.is_multi_select);
+                const isMsRaw = q.isMultiSelect !== undefined ? q.isMultiSelect : q.is_multi_select;
+                const isMs = typeof isMsRaw === "string" ? isMsRaw.toLowerCase() === "true" : !!isMsRaw;
                 return { question: qText, options: qOpts, isMultiSelect: isMs };
             });
             if (currentTier === "superagent" || currentTier === "subagent") {
@@ -122,7 +133,11 @@ export const askQuestionTool = {
         }
         let question = args.question || "";
         let rawOptionsVal = args.options;
-        let isMultiSelect = args.isMultiSelect;
+        let isMultiSelectRaw = args.isMultiSelect !== undefined ? args.isMultiSelect : args.is_multi_select;
+        let isMultiSelect = undefined;
+        if (isMultiSelectRaw !== undefined) {
+            isMultiSelect = typeof isMultiSelectRaw === "string" ? isMultiSelectRaw.toLowerCase() === "true" : !!isMultiSelectRaw;
+        }
         if (typeof rawOptionsVal === "string") {
             try {
                 const parsed = JSON.parse(rawOptionsVal);

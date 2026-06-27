@@ -113,6 +113,34 @@ describe("ask_question and ReplacementChunks robustness", () => {
       expect(res).toContain('User selected option: "Option B"');
       expect(questionHandler).toHaveBeenCalledWith("Which option?", ["Option A", "Option B"], true);
     });
+
+    it("handles stringified JSON questions parameter (parses to array)", async () => {
+      const tool = getToolByName("ask_question");
+      const questionHandler = vi.fn().mockResolvedValue("Option B");
+      registerQuestionHandler(questionHandler);
+
+      const res = await tool?.execute(
+        {
+          questions: '[{"question": "Which option?", "options": ["Option A", "Option B"], "is_multi_select": "true"}]'
+        },
+        process.cwd()
+      );
+      expect(res).toContain('User selected option: "Option B"');
+      expect(questionHandler).toHaveBeenCalledWith("Which option?", ["Option A", "Option B"], true);
+    });
+
+    it("handles string isMultiSelect parameter", async () => {
+      const tool = getToolByName("ask_question");
+      const questionHandler = vi.fn().mockResolvedValue("Yes");
+      registerQuestionHandler(questionHandler);
+
+      const res = await tool?.execute(
+        { question: "Is this correct?", options: ["Yes", "No"], isMultiSelect: "false" },
+        process.cwd()
+      );
+      expect(res).toContain('User selected option: "Yes"');
+      expect(questionHandler).toHaveBeenCalledWith("Is this correct?", ["Yes", "No"], false);
+    });
   });
 
   describe("Agent message loop ask_question and ReplacementChunks processing", () => {
