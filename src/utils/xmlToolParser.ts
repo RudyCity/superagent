@@ -298,6 +298,18 @@ function decodeHtmlEntities(str: string): string {
 
 function parseXmlValue(valStr: string): any {
   const trimmed = valStr.trim();
+
+  // If the value looks like a JSON array or object, try to parse it as JSON first
+  if ((trimmed.startsWith("[") && trimmed.endsWith("]")) || (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+    try {
+      return JSON.parse(decodeHtmlEntities(trimmed));
+    } catch (e) {
+      try {
+        return JSON.parse(trimmed);
+      } catch (e2) {}
+    }
+  }
+
   const subTagRegex = /<([^>\s]+)\s*>([\s\S]*?)<\/\1>/g;
   const subTags = [...trimmed.matchAll(subTagRegex)];
 

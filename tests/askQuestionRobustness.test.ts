@@ -80,6 +80,19 @@ describe("ask_question and ReplacementChunks robustness", () => {
       expect(questionHandler).toHaveBeenCalledWith("Is this correct?", ["Yes"], undefined);
     });
 
+    it("handles stringified JSON options parameter (parses to array)", async () => {
+      const tool = getToolByName("ask_question");
+      const questionHandler = vi.fn().mockResolvedValue("Option B");
+      registerQuestionHandler(questionHandler);
+
+      const res = await tool?.execute(
+        { question: "Is this correct?", options: '["Option A", "Option B"]' },
+        process.cwd()
+      );
+      expect(res).toContain('User selected option: "Option B"');
+      expect(questionHandler).toHaveBeenCalledWith("Is this correct?", ["Option A", "Option B"], undefined);
+    });
+
     it("handles nested questions array", async () => {
       const tool = getToolByName("ask_question");
       const questionHandler = vi.fn().mockResolvedValue("Option B");

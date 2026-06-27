@@ -159,6 +159,21 @@ Let me execute these in sequence:
     expect(result.toolCalls[0].args.command).toBe('npm run build && echo "hello"');
   });
 
+  it("should parse JSON arrays and objects inside XML parameter/element values", () => {
+    const text = `
+<ask_question>
+  <question>What is your choice?</question>
+  <options>["Option 1", "Option 2"]</options>
+</ask_question>
+`;
+    const result = parseXmlToolCalls(text, toolDefs);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].args).toEqual({
+      question: "What is your choice?",
+      options: ["Option 1", "Option 2"],
+    });
+  });
+
   describe("StreamXmlFilter", () => {
     it("should filter out tool calls from stream and emit normal text", () => {
       let output = "";

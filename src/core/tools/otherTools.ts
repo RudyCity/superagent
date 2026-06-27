@@ -46,7 +46,15 @@ export const askQuestionTool: Tool = {
       const questionsList = args.questions as any[];
       const normalizedQuestions = questionsList.map((q: any, idx: number) => {
         const qText = q.question as string || "";
-        const qOptsRaw = q.options || [];
+        let qOptsRaw = q.options || [];
+        if (typeof qOptsRaw === "string") {
+          try {
+            const parsed = JSON.parse(qOptsRaw);
+            if (Array.isArray(parsed)) {
+              qOptsRaw = parsed;
+            }
+          } catch (e) {}
+        }
         const qOpts = Array.isArray(qOptsRaw) ? qOptsRaw.map(o => String(o)) : [];
         const isMs = !!(q.isMultiSelect || q.is_multi_select || q.isMultiSelect || q.is_multi_select);
         return { question: qText, options: qOpts, isMultiSelect: isMs };
@@ -117,6 +125,15 @@ export const askQuestionTool: Tool = {
     let question = args.question as string || "";
     let rawOptionsVal = args.options;
     let isMultiSelect = args.isMultiSelect as boolean | undefined;
+
+    if (typeof rawOptionsVal === "string") {
+      try {
+        const parsed = JSON.parse(rawOptionsVal);
+        if (Array.isArray(parsed)) {
+          rawOptionsVal = parsed;
+        }
+      } catch (e) {}
+    }
 
     const rawOptions = Array.isArray(rawOptionsVal)
       ? rawOptionsVal
