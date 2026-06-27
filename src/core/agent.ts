@@ -1163,9 +1163,13 @@ After all subagents finish, you MUST perform this verification loop before consi
           const activeDevHook = getActiveDevHookGlobal();
           if (activeDevHook) {
             devHookNotice = `\n\n🛠️ ACTIVE INTERNAL HOOK DEVELOPMENT FOCUS:
-- You are currently focusing on developing the "${activeDevHook}" internal hook (located in "internal-hooks/${activeDevHook}/").
+- You are currently focusing on developing the "${activeDevHook}" internal hook.
+- CRITICAL: Your active working directory (CWD) is ALREADY set to the hook's folder: "internal-hooks/${activeDevHook}/".
+- All files in the WORKSPACE FILES LIST (like hook.json, index.js, package.json, README.md, CHANGELOG.md) are located directly inside this hook folder.
+- You MUST access, read, and modify these files using their direct relative names (e.g., "index.js", "hook.json", "package.json") WITHOUT any "internal-hooks/${activeDevHook}/" prefix.
+- DO NOT prefix paths with "internal-hooks/${activeDevHook}/" because doing so will resolve to incorrect nested paths.
 - Your primary objective is to implement, refine, or test this specific hook.
-- Prioritize modifications within the "internal-hooks/${activeDevHook}/" directory (such as hook.json, index.js, package.json, README.md, CHANGELOG.md, and .agents/skills/ folders).
+- If you need to access files in the parent project, prefix them with "../../" to reference them relative to the project root.
 - You can test this hook's execution and verify its behavior locally by calling appropriate terminal commands or using "/ih dev ${activeDevHook}" as reference.`;
           }
         } catch {}
