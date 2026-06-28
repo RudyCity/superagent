@@ -24,6 +24,18 @@ function cleanupBackgroundTasks() {
   }
 }
 
+function hideCursor() {
+  if (process.stdin.isTTY) {
+    process.stdout.write("\x1b[?25l");
+  }
+}
+
+function showCursor() {
+  if (process.stdin.isTTY) {
+    process.stdout.write("\x1b[?25h");
+  }
+}
+
 function abortAllAgents() {
   // Abort all running subagents
   for (const inst of subagentInstances.values()) {
@@ -49,7 +61,10 @@ function abortAllAgents() {
 }
 
 let sigintCount = 0;
-process.on("exit", cleanupBackgroundTasks);
+process.on("exit", () => {
+  cleanupBackgroundTasks();
+  showCursor();
+});
 process.on("SIGINT", () => {
   if (process.stdin.isTTY) {
     // First Ctrl+C: abort all running agents & kill background procs.
@@ -184,6 +199,7 @@ if (process.stdin.isTTY) {
   let hasCurrentHistory = false;
   let sessionPath = "";
   console.clear();
+  hideCursor();
 
   if (isMulti) {
     let logHandler: ((msg: string) => void) | null = null;
