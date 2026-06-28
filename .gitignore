@@ -13,6 +13,9 @@ bin/python/
 # FastContext source (cloned by setup script)
 vendor/fastcontext/
 
+# TencentDB Memory Gateway (cloned automatically at runtime by tencentdbSetup.ts)
+vendor/tencentdb-memory/
+
 # Superagent runtime directory
 .superagent-r/
 
