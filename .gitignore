@@ -27,3 +27,15 @@ vendor/tencentdb-memory/
 .DS_Store
 Thumbs.db
 *.log
+
+# Local tool configs (opencode, fastcontext)
+.opencode/
+opencode.json
+.fastcontext/
+
+# Scratch / debug / temp files
+scratch/
+ponytail/
+debug_creds.mjs
+test_exec.mjs
+nul
