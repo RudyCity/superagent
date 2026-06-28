@@ -426,3 +426,5 @@ For guidelines on how to contribute to features and bug fixes, please see [CONTR
 ## 📄 License
 
 This project is licensed under the **MIT License** - see the [LICENSE](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/LICENSE) file for details.
+
+Copyright (c) 2026 Rudy H. <hrudy715@gmail.com>
