@@ -87,8 +87,8 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
   } = ctx;
 
   useEffect(() => {
-    const enableMouseTracking = "\x1b[?1000h\x1b[?1006h";
-    const disableMouseTracking = "\x1b[?1006l\x1b[?1000l";
+    const enableMouseTracking = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+    const disableMouseTracking = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 
     const handleMouseInput = (data: Buffer) => {
       const text = data.toString("utf8");

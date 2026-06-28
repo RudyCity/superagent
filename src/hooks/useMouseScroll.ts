@@ -85,8 +85,8 @@ export function useMouseScroll(
     if (!process.stdin.isTTY) return;
 
     // Enable SGR extended mouse tracking (button events + SGR coordinates)
-    const enableMouseTracking = "\x1b[?1000h\x1b[?1006h";
-    const disableMouseTracking = "\x1b[?1006l\x1b[?1000l";
+    const enableMouseTracking = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+    const disableMouseTracking = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 
     const handleMouseInput = (data: Buffer) => {
       const ctx = ctxRef.current;
