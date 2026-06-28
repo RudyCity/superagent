@@ -1681,14 +1681,20 @@ export function App({
 
   useEffect(() => {
     const fetchGitData = async () => {
+      const targetCwd = agentRef.current?.workingDirectory || process.cwd();
       try {
-        const { stdout } = await execa("git", ["branch", "--show-current"], { cwd: process.cwd(), reject: false });
-        setGitBranch(stdout?.trim() || "");
+        const { stdout } = await execa("git", ["branch", "--show-current"], { cwd: targetCwd, reject: false });
+        let branch = stdout?.trim() || "";
+        if (!branch) {
+          const { stdout: shaStdout } = await execa("git", ["rev-parse", "--short", "HEAD"], { cwd: targetCwd, reject: false });
+          branch = shaStdout?.trim() || "";
+        }
+        setGitBranch(branch);
       } catch {
         // ignore
       }
       try {
-        const { stdout } = await execa("git", ["worktree", "list"], { cwd: process.cwd(), reject: false });
+        const { stdout } = await execa("git", ["worktree", "list"], { cwd: targetCwd, reject: false });
         if (stdout) {
           const lines = stdout.split("\n").filter(Boolean);
           setWorktreeCount(lines.length);
@@ -2379,6 +2385,7 @@ export function App({
         formatCompactNumber={formatCompactNumber}
         tencentdbStatus={tencentdbStatus}
         activeDevHook={activeDevHook}
+        workspace={agentRef.current?.workingDirectory || process.cwd()}
       />
     </Box>
   );

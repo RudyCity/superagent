@@ -21,6 +21,7 @@ export interface DashboardStatusBarProps {
   wizardOptions: string[];
   focusArea: string;
   tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
+  workspace?: string;
 }
 
 export function DashboardStatusBar({
@@ -42,6 +43,7 @@ export function DashboardStatusBar({
   wizardOptions,
   focusArea,
   tencentdbStatus,
+  workspace,
 }: DashboardStatusBarProps) {
   const subagentTokens = Array.from(subagentInstances.values()).reduce(
     (acc: number, i: any) => acc + (i.tokenUsage?.prompt || 0) + (i.tokenUsage?.completion || 0),
@@ -103,7 +105,7 @@ export function DashboardStatusBar({
         <Box>
           <Text>
             <Text color="gray">Workspace: </Text>
-            <Text color="white" bold>{process.cwd()}</Text>
+            <Text color="white" bold>{workspace || process.cwd()}</Text>
           </Text>
         </Box>
       </Box>

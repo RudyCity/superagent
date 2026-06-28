@@ -18,6 +18,7 @@ export interface StatusBarProps {
   formatCompactNumber: (val: number) => string;
   tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
   activeDevHook?: string | null;
+  workspace?: string;
 }
 
 export function StatusBar(props: StatusBarProps) {
@@ -38,6 +39,7 @@ export function StatusBar(props: StatusBarProps) {
     formatCompactNumber,
     tencentdbStatus,
     activeDevHook,
+    workspace,
   } = props;
 
   return (
@@ -85,7 +87,7 @@ export function StatusBar(props: StatusBarProps) {
         <Box>
           <Text>
             <Text color="gray">Workspace: </Text>
-            <Text dimColor>{process.cwd()}</Text>
+            <Text dimColor>{workspace || process.cwd()}</Text>
             {gitBranch && (
               <>
                 <Text color="gray"> │ </Text>

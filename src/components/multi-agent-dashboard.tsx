@@ -472,20 +472,28 @@ export function MultiAgentDashboard({
   const suggestionDescs = getSuggestionDescriptions();
 
   useEffect(() => {
-    try {
-      const branch = execSync("git branch --show-current", {
-        encoding: "utf-8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
-      if (branch) setGitBranch(branch);
-    } catch {}
-  }, []);
+    const fetchGitData = () => {
+      const targetCwd = agent?.workingDirectory || process.cwd();
+      try {
+        let branch = execSync("git branch --show-current", {
+          encoding: "utf-8",
+          cwd: targetCwd,
+          stdio: ["ignore", "pipe", "ignore"],
+        }).trim();
+        if (!branch) {
+          branch = execSync("git rev-parse --short HEAD", {
+            encoding: "utf-8",
+            cwd: targetCwd,
+            stdio: ["ignore", "pipe", "ignore"],
+          }).trim();
+        }
+        if (branch) setGitBranch(branch);
+      } catch {}
 
-  useEffect(() => {
-    const updateCount = () => {
       try {
         const output = execSync("git worktree list", {
           encoding: "utf-8",
+          cwd: targetCwd,
           stdio: ["ignore", "pipe", "ignore"],
         }).trim();
         if (output) {
@@ -498,10 +506,11 @@ export function MultiAgentDashboard({
         setWorktreeCount(0);
       }
     };
-    updateCount();
-    const timer = setInterval(updateCount, 5000);
+
+    fetchGitData();
+    const timer = setInterval(fetchGitData, 5000);
     return () => clearInterval(timer);
-  }, []);
+  }, [agent]);
 
   useEffect(() => {
     if (agent) {
@@ -1425,6 +1434,7 @@ export function MultiAgentDashboard({
         wizardOptions={wizardOptions}
         focusArea={focusArea}
         tencentdbStatus={tencentdbStatus}
+        workspace={agent?.workingDirectory || process.cwd()}
       />
     </Box>
   );
