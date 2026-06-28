@@ -10,9 +10,8 @@ interface TaskChecklistProps {
   focusMode: string;
   isMultiAgent: boolean;
   completedHistory?: { status: string; text: string; remainingSeconds?: number }[];
+  maxHistoryVisible?: number;
 }
-
-const MAX_HISTORY_VISIBLE = 3;
 
 export function TaskChecklist({
   planState,
@@ -22,6 +21,7 @@ export function TaskChecklist({
   focusMode,
   isMultiAgent,
   completedHistory = [],
+  maxHistoryVisible = 3,
 }: TaskChecklistProps) {
   const hasActiveTasks = checklistTasks.length > 0;
   const hasHistory = completedHistory.length > 0;
@@ -41,7 +41,7 @@ export function TaskChecklist({
   const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
 
   // History: show the most recent completed tasks (capped)
-  const historyToShow = completedHistory.slice(-MAX_HISTORY_VISIBLE);
+  const historyToShow = completedHistory.slice(-maxHistoryVisible);
   const hiddenHistoryCount = completedHistory.length - historyToShow.length;
 
   // Find the maximum remaining seconds for the countdown header

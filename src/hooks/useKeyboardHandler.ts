@@ -4,7 +4,7 @@ import path from "path";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getPasteSplit, filterSuggestions, getInsertion } from "../utils/text.js";
 import { reconstructChatLines } from "../utils/uiHelpers.js";
-import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getActiveProviderName, getResolvedModelWithProvider, getTierModel, getEffectiveMasterModel } from "../core/config.js";
+import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getContextWindowLimit, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getActiveProviderName, getResolvedModelWithProvider, getTierModel, getEffectiveMasterModel, getSettings } from "../core/config.js";
 import { getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, deleteCheckpointById, type Checkpoint } from "../core/checkpoints.js";
 import { getToolDescription } from "../core/permissions.js";
@@ -185,10 +185,11 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     suggestions = [],
   } = ctx;
 
-  const maxChecklistVisible = 3;
+  const settings = getSettings();
+  const maxChecklistVisible = settings.maxChecklistVisible ?? 3;
   const maxSuperagentsVisible = 2;
   const maxSubagentsVisible = 3;
-  const maxProcsVisible = 3;
+  const maxProcsVisible = settings.maxProcsVisible ?? 3;
 
   const handlerRef = useRef<(inputChar: string, key: any) => void>();
   handlerRef.current = (inputChar, key) => {

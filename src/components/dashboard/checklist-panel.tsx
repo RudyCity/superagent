@@ -10,9 +10,8 @@ interface ChecklistPanelProps {
   agent: any;
   superagentInstances: any;
   completedHistory?: { status: string; text: string; remainingSeconds?: number }[];
+  maxHistoryVisible?: number;
 }
-
-const MAX_HISTORY_VISIBLE = 3;
 
 export function ChecklistPanel({
   planState,
@@ -23,6 +22,7 @@ export function ChecklistPanel({
   agent,
   superagentInstances,
   completedHistory = [],
+  maxHistoryVisible = 3,
 }: ChecklistPanelProps) {
   const hasActiveTasks = checklistTasks.length > 0;
   const hasHistory = completedHistory.length > 0;
@@ -42,7 +42,7 @@ export function ChecklistPanel({
   const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
 
   // History: show the most recent completed tasks (capped)
-  const historyToShow = completedHistory.slice(-MAX_HISTORY_VISIBLE);
+  const historyToShow = completedHistory.slice(-maxHistoryVisible);
   const hiddenHistoryCount = completedHistory.length - historyToShow.length;
 
   // Find the maximum remaining seconds for the countdown header

@@ -137,6 +137,9 @@ export const settingsCommand: SlashCommand = {
         `│ • Streaming          : ${s.disableStreaming ? "DISABLED" : "ENABLED"}`,
         `│ • Context Window     : ${s.contextWindowLimit > 0 ? `${s.contextWindowLimit} tokens` : "auto (model default)"}`,
         `│ • Max Iterations     : ${s.maxIterations}`,
+        `│ • Checklist Limit    : ${s.maxChecklistVisible} items`,
+        `│ • History Limit      : ${s.maxHistoryVisible} items`,
+        `│ • Processes Limit    : ${s.maxProcsVisible} items`,
         `│ • TencentDB Memory   : ${s.enableTencentdbMemory ? "ENABLED" : "DISABLED"}`,
         `│ • TencentDB Gateway  : ${s.tencentdbGatewayUrl}`,
         "│ ",
@@ -148,6 +151,9 @@ export const settingsCommand: SlashCommand = {
         "  /setting-streaming <on|off>",
         "  /setting-context-limit <number>",
         "  /setting-max-iterations <number>",
+        "  /setting-checklist-limit <number>",
+        "  /setting-history-limit <number>",
+        "  /setting-procs-limit <number>",
         "  /setting-tencentdb <on|off|status|show|hide> [gatewayUrl]"
       ].join("\n"),
       timestamp: Date.now(),
@@ -413,6 +419,129 @@ export const settingMaxIterationsCommand: SlashCommand = {
       ctx.addLine({
         type: "system",
         content: `✓ Max iterations set to: ${num}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
+// /setting-checklist-limit command
+export const settingChecklistLimitCommand: SlashCommand = {
+  name: "setting-checklist-limit",
+  description: "Set maximum visible items in active task checklist",
+  execute(args, ctx) {
+    const val = args.trim();
+    const now = Date.now();
+    if (!val) {
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-checklist-limit <number>\nCurrent value: ${getSettings().maxChecklistVisible}`,
+        timestamp: now,
+      });
+      return;
+    }
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 1) {
+      ctx.addLine({
+        type: "error",
+        content: "Invalid value. Must be a positive integer (minimum 1).",
+        timestamp: now,
+      });
+      return;
+    }
+    try {
+      updateSettings({ maxChecklistVisible: num });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Checklist visible limit set to: ${num}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
+// /setting-history-limit command
+export const settingHistoryLimitCommand: SlashCommand = {
+  name: "setting-history-limit",
+  description: "Set maximum visible completed items in checklist history",
+  execute(args, ctx) {
+    const val = args.trim();
+    const now = Date.now();
+    if (!val) {
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-history-limit <number>\nCurrent value: ${getSettings().maxHistoryVisible}`,
+        timestamp: now,
+      });
+      return;
+    }
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 1) {
+      ctx.addLine({
+        type: "error",
+        content: "Invalid value. Must be a positive integer (minimum 1).",
+        timestamp: now,
+      });
+      return;
+    }
+    try {
+      updateSettings({ maxHistoryVisible: num });
+      ctx.addLine({
+        type: "system",
+        content: `✓ History visible limit set to: ${num}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
+// /setting-procs-limit command
+export const settingProcsLimitCommand: SlashCommand = {
+  name: "setting-procs-limit",
+  description: "Set maximum visible items in active background processes panel",
+  execute(args, ctx) {
+    const val = args.trim();
+    const now = Date.now();
+    if (!val) {
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-procs-limit <number>\nCurrent value: ${getSettings().maxProcsVisible}`,
+        timestamp: now,
+      });
+      return;
+    }
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 1) {
+      ctx.addLine({
+        type: "error",
+        content: "Invalid value. Must be a positive integer (minimum 1).",
+        timestamp: now,
+      });
+      return;
+    }
+    try {
+      updateSettings({ maxProcsVisible: num });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Processes visible limit set to: ${num}`,
         timestamp: now,
       });
     } catch (err: any) {
@@ -978,4 +1107,7 @@ registry.register(settingCapacityCommand);
 registry.register(settingStreamingCommand);
 registry.register(settingContextLimitCommand);
 registry.register(settingMaxIterationsCommand);
+registry.register(settingChecklistLimitCommand);
+registry.register(settingHistoryLimitCommand);
+registry.register(settingProcsLimitCommand);
 registry.register(settingTencentdbCommand);

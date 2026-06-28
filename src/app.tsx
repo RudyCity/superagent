@@ -301,10 +301,12 @@ export function App({
     });
   }, []);
 
-  const maxChecklistVisible = 3;
+  const settings = getSettings();
+  const maxChecklistVisible = settings.maxChecklistVisible ?? 3;
+  const maxHistoryVisible = settings.maxHistoryVisible ?? 3;
   const maxSuperagentsVisible = 2;
   const maxSubagentsVisible = 3;
-  const maxProcsVisible = 3;
+  const maxProcsVisible = settings.maxProcsVisible ?? 3;
 
   const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
   const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
@@ -2259,6 +2261,7 @@ export function App({
               focusMode={focusMode}
               isMultiAgent={!!agentRef.current?.isMultiAgent}
               completedHistory={completedHistory}
+              maxHistoryVisible={maxHistoryVisible}
             />
 
             {/* Input History Panel — shown when Ctrl+H is pressed */}

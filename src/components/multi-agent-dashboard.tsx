@@ -240,9 +240,11 @@ export function MultiAgentDashboard({
   const [agentsScrollOffset, setAgentsScrollOffset] = useState(0);
   const [procsScrollOffset, setProcsScrollOffset] = useState(0);
 
-  const maxChecklistVisible = 3;
+  const settings = getSettings();
+  const maxChecklistVisible = settings.maxChecklistVisible ?? 3;
+  const maxHistoryVisible = settings.maxHistoryVisible ?? 3;
   const maxAgentsVisible = 3;
-  const maxProcsVisible = 3;
+  const maxProcsVisible = settings.maxProcsVisible ?? 3;
 
   // Safeguard scroll offsets when lists shrink
   useEffect(() => {
@@ -1228,6 +1230,7 @@ export function MultiAgentDashboard({
               agent={agent}
               superagentInstances={superagentInstances}
               completedHistory={completedHistory}
+              maxHistoryVisible={maxHistoryVisible}
             />
           </Box>
         </Box>

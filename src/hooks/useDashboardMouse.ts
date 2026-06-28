@@ -76,11 +76,11 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     setAgentsScrollOffset,
     setProcsScrollOffset,
     checklistTasksCount,
-    maxChecklistVisible,
+    maxChecklistVisible = 3,
     agentsCount,
-    maxAgentsVisible,
+    maxAgentsVisible = 3,
     procsCount,
-    maxProcsVisible,
+    maxProcsVisible = 3,
     startIdxLogs = 0,
     groupBoundaries = [],
     toggleGroupCollapse,
@@ -127,8 +127,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
               .filter((s) => s.status === "running").length;
             const runningTasksCount = [...backgroundTasks.values()]
               .filter((t) => t.isDetachedWindow || !t.hasExited).length;
-            const maxAgentsVisible = 3;
-            const maxProcsVisible = 3;
+            // use destructured limits from context
 
             let wizardHeight = 0;
             if (activeWizard) {
@@ -421,8 +420,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
               .filter((s) => s.status === "running").length;
             const runningTasksCount = [...backgroundTasks.values()]
               .filter((t) => t.isDetachedWindow || !t.hasExited).length;
-            const maxAgentsVisible = 3;
-            const maxProcsVisible = 3;
+            // use destructured limits from context
 
             let wizardHeight = 0;
             if (activeWizard) {
