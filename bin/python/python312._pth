@@ -1,7 +1,0 @@
-python312.zip
-.
-Lib\site-packages
-../../vendor/fastcontext/src
-
-# Uncomment to run site.main() automatically
-import site

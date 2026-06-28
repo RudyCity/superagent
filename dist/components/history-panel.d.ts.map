@@ -1,1 +1,0 @@
-{"version":3,"file":"history-panel.d.ts","sourceRoot":"","sources":["../../src/components/history-panel.tsx"],"names":[],"mappings":"AAAA,OAAO,KAAK,MAAM,OAAO,CAAC;AAK1B,UAAU,iBAAiB;IACzB,OAAO,EAAE,MAAM,EAAE,CAAC;IAClB,oBAAoB,EAAE,MAAM,CAAC;IAC7B,SAAS,EAAE,MAAM,CAAC;CACnB;AAED,wBAAgB,YAAY,CAAC,EAC3B,OAAO,EACP,oBAAoB,EACpB,SAAS,GACV,EAAE,iBAAiB,4BAwFnB"}

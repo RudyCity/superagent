@@ -1,1 +1,26 @@
+# Git worktrees
 .worktrees/
+
+# Node.js dependencies (run: npm install)
+node_modules/
+
+# TypeScript build output (run: npm run build)
+dist/
+
+# Portable Python bundled for fastcontext (run: .\bin\setup-fastcontext.ps1)
+bin/python/
+
+# FastContext source (cloned by setup script)
+vendor/fastcontext/
+
+# Superagent runtime directory
+.superagent-r/
+
+# Environment & secrets
+.env
+.env.local
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+*.log

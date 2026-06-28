@@ -1,7 +1,0 @@
-{
-  "sipdev": [
-    "npm run tauri:api",
-    "npm run tauri:dev"
-  ],
-  "ping": "ping 127.0.0.1 -t"
-}

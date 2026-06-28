@@ -1,1 +1,0 @@
-{"version":3,"file":"trust-prompt.d.ts","sourceRoot":"","sources":["../../src/components/trust-prompt.tsx"],"names":[],"mappings":"AAAA,OAAO,KAAwC,MAAM,OAAO,CAAC;AAG7D,UAAU,gBAAgB;IACxB,aAAa,EAAE,MAAM,CAAC;IACtB,QAAQ,EAAE,MAAM,IAAI,CAAC;IACrB,QAAQ,EAAE,MAAM,IAAI,CAAC;CACtB;AAED,wBAAgB,WAAW,CAAC,EAAE,aAAa,EAAE,QAAQ,EAAE,QAAQ,EAAE,EAAE,gBAAgB,qBAmFlF"}
