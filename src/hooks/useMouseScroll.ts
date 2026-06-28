@@ -1,5 +1,8 @@
 import { useEffect, type MutableRefObject } from "react";
 import { planApprovalChromeHeight } from "../components/plan-approval-dialog.js";
+import fs from "fs";
+import path from "path";
+import os from "os";
 
 export interface SectionBoundary {
   name: string;
@@ -93,6 +96,21 @@ export function useMouseScroll(
       if (!ctx) return;
 
       const text = data.toString("utf8");
+
+      // Diagnostic mouse logging
+      try {
+        const logDir = path.join(os.homedir(), ".superagent-r");
+        if (!fs.existsSync(logDir)) {
+          fs.mkdirSync(logDir, { recursive: true });
+        }
+        const logPath = path.join(logDir, "superagent.log");
+        fs.appendFileSync(
+          logPath,
+          `[MOUSE DEBUG] Raw escape sequence: ${JSON.stringify(text)} (visible positions count: ${ctx.visibleLinePositions?.length || 0})\n`
+        );
+      } catch (e) {
+        // ignore
+      }
       const matches = text.matchAll(
         /\x1b\[<(?<btn>\d+);(?<col>\d+);(?<row>\d+)(?<action>[Mm])/g
       );
