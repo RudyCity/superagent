@@ -5,10 +5,10 @@ import { superagentInstances, subagentInstances, backgroundTasks } from "../core
 import { getDashboardSuggestions } from "../utils/dashboardSuggestions.js";
 import { filterSuggestions } from "../utils/text.js";
 export function useDashboardMouse(ctx) {
-    const { wrappedLines, logsCount, terminalSize, activeWizard, setActiveWizard, wizardOptions, wizardSelectedIndex, setWizardSelectedIndex, wizardSelectedSet, setWizardSelectedSet, setWizardOptions, pendingQuestion, handleWizardSubmit, query, setQuery, wizardAllOptions, workspaceHeight, leftTopHeight, wizardIsLoadingModels, agent, focusArea, setFocusArea, setLogScrollOffset, setChecklistScrollOffset, setAgentsScrollOffset, setProcsScrollOffset, checklistTasksCount, maxChecklistVisible, agentsCount, maxAgentsVisible, procsCount, maxProcsVisible, startIdxLogs = 0, groupBoundaries = [], toggleGroupCollapse, } = ctx;
+    const { wrappedLines, logsCount, terminalSize, activeWizard, setActiveWizard, wizardOptions, wizardSelectedIndex, setWizardSelectedIndex, wizardSelectedSet, setWizardSelectedSet, setWizardOptions, pendingQuestion, handleWizardSubmit, query, setQuery, wizardAllOptions, workspaceHeight, leftTopHeight, wizardIsLoadingModels, agent, focusArea, setFocusArea, setLogScrollOffset, setChecklistScrollOffset, setAgentsScrollOffset, setProcsScrollOffset, checklistTasksCount, maxChecklistVisible = 3, agentsCount, maxAgentsVisible = 3, procsCount, maxProcsVisible = 3, startIdxLogs = 0, groupBoundaries = [], toggleGroupCollapse, } = ctx;
     useEffect(() => {
-        const enableMouseTracking = "\x1b[?1000h\x1b[?1006h";
-        const disableMouseTracking = "\x1b[?1006l\x1b[?1000l";
+        const enableMouseTracking = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+        const disableMouseTracking = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
         const handleMouseInput = (data) => {
             const text = data.toString("utf8");
             const matches = text.matchAll(/\x1b\[<(?<btn>\d+);(?<col>\d+);(?<row>\d+)(?<action>[Mm])/g);
@@ -42,8 +42,7 @@ export function useDashboardMouse(ctx) {
                             .filter((s) => s.status === "running").length;
                         const runningTasksCount = [...backgroundTasks.values()]
                             .filter((t) => t.isDetachedWindow || !t.hasExited).length;
-                        const maxAgentsVisible = 3;
-                        const maxProcsVisible = 3;
+                        // use destructured limits from context
                         let wizardHeight = 0;
                         if (activeWizard) {
                             const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
@@ -336,8 +335,7 @@ export function useDashboardMouse(ctx) {
                             .filter((s) => s.status === "running").length;
                         const runningTasksCount = [...backgroundTasks.values()]
                             .filter((t) => t.isDetachedWindow || !t.hasExited).length;
-                        const maxAgentsVisible = 3;
-                        const maxProcsVisible = 3;
+                        // use destructured limits from context
                         let wizardHeight = 0;
                         if (activeWizard) {
                             const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);

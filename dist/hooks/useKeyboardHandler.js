@@ -4,7 +4,7 @@ import path from "path";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getPasteSplit, filterSuggestions } from "../utils/text.js";
 import { reconstructChatLines } from "../utils/uiHelpers.js";
-import { getConfiguredProviders, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getResolvedModelWithProvider, getTierModel } from "../core/config.js";
+import { getConfiguredProviders, listHistorySessions, getModelPresets, BUILT_IN_PRESETS, getInstalledSkills, getProviderOptionsList, getProviders, getResolvedModelWithProvider, getTierModel, getSettings } from "../core/config.js";
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, deleteCheckpointById } from "../core/checkpoints.js";
 import { backgroundTasks, subagentInstances, superagentInstances } from "../core/tools.js";
 import { contentToString } from "../core/conversation.js";
@@ -21,10 +21,11 @@ function formatArgs(args) {
 }
 export function useKeyboardHandler(ctx) {
     const { input, setInput, isProcessing, setIsProcessing, activeWizard, setActiveWizard, wizardOptions, setWizardOptions, wizardSelectedIndex, setWizardSelectedIndex, wizardSelectedSet, setWizardSelectedSet, checkpointsList, setCheckpointsList, lines, setLines, addLine, history, setHistory, historyIndex, setHistoryIndex, tempInput, setTempInput, scrollOffset, setScrollOffset, focusedResponseIndex, setFocusedResponseIndex, focusedResponseOffset, setFocusedResponseOffset, planState, setPlanState, focusMode, setFocusMode, historySelectedIndex, setHistorySelectedIndex, checklistScrollOffset, setChecklistScrollOffset, superagentsScrollOffset, setSuperagentsScrollOffset, subagentsScrollOffset, setSubagentsScrollOffset, procsScrollOffset, setProcsScrollOffset, terminalHeight, terminalWidth, checklistTasks, completedHistory = [], agentRef, pendingPermission, setPendingPermission, pendingQuestion, setPendingQuestion, handleWizardSubmit, handleSubmit, handlePermissionResponse, openLatestTruncatedResponse, stopRunningSubagents, scrollChat, setContextLimit, setActiveModel, exit, isPasted, setIsPasted, pastePrefixLength, pasteSuffixLength, lastTabPrefix, setLastTabPrefix, commands, suggestions = [], } = ctx;
-    const maxChecklistVisible = 3;
+    const settings = getSettings();
+    const maxChecklistVisible = settings.maxChecklistVisible ?? 3;
     const maxSuperagentsVisible = 2;
     const maxSubagentsVisible = 3;
-    const maxProcsVisible = 3;
+    const maxProcsVisible = settings.maxProcsVisible ?? 3;
     const handlerRef = useRef();
     handlerRef.current = (inputChar, key) => {
         const isEscape = !!(key?.escape || ((inputChar === "\x1b" || inputChar === "\u001b") && inputChar.length === 1));

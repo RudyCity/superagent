@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.30] - 2026-06-28
+
+### Added
+- **Dynamic Limit Configuration**: Made checklist, history, and process visible limits dynamic and configurable via settings.
+- **Git Branch and Workspace Tracking**: Dynamically track and update git branch and workspace path in footer and dashboard.
+- **Diagnostics Event Logging**: Added mouse click raw event logging to superagent.log for diagnostics.
+
+### Fixed
+- **Mouse Tracking Mode**: Upgraded mouse tracking to button-event mode (1002h) to support scrolling and clicks in xterm/VS Code.
+- **TTY Cursor Flickering**: Hide native cursor in TTY mode to prevent flickering in xterm during thinking updates.
+- **Ask Question Input Validation**: Fixed parsing and handling of stringified JSON arrays in question options and coerced `isMultiSelect`.
+
+### Improved
+- **History Search Performance**: Isolated subagent and superagent session history to prevent heavy load on listing.
+- **Settings Autocomplete**: Documented visible limit settings commands in the help screen and autocomplete suggestions.
+- **Agent Dev Hook Context**: Clarified CWD and relative path prefix rules in the dev hook system prompt notice.
+
+---
+
 ## [1.2.29] - 2026-06-27
 
 ### Added

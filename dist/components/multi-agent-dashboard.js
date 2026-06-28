@@ -11,7 +11,7 @@ import { killProcessTree } from "../core/tools/index.js";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
 import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./plan-approval-dialog.js";
 import path from "path";
-import { getContextWindowLimit, getRootConfigDir, getEffectiveMasterModel } from "../core/config.js";
+import { getContextWindowLimit, getRootConfigDir, getEffectiveMasterModel, getSettings } from "../core/config.js";
 import { contentToString } from "../core/conversation.js";
 import ImageAttachmentBar from "./ImageAttachmentBar.js";
 import { readImageFromPath, readImageFromClipboard, } from "../utils/imageUtils.js";
@@ -154,9 +154,11 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
     const [checklistScrollOffset, setChecklistScrollOffset] = useState(0);
     const [agentsScrollOffset, setAgentsScrollOffset] = useState(0);
     const [procsScrollOffset, setProcsScrollOffset] = useState(0);
-    const maxChecklistVisible = 3;
+    const settings = getSettings();
+    const maxChecklistVisible = settings.maxChecklistVisible ?? 3;
+    const maxHistoryVisible = settings.maxHistoryVisible ?? 3;
     const maxAgentsVisible = 3;
-    const maxProcsVisible = 3;
+    const maxProcsVisible = settings.maxProcsVisible ?? 3;
     // Safeguard scroll offsets when lists shrink
     useEffect(() => {
         if (checklistScrollOffset >= checklistTasks.length && checklistTasks.length > 0) {
@@ -373,21 +375,29 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
     const suggestions = getDashboardSuggestions(lastTabPrefix || query);
     const suggestionDescs = getSuggestionDescriptions();
     useEffect(() => {
-        try {
-            const branch = execSync("git branch --show-current", {
-                encoding: "utf-8",
-                stdio: ["ignore", "pipe", "ignore"],
-            }).trim();
-            if (branch)
-                setGitBranch(branch);
-        }
-        catch { }
-    }, []);
-    useEffect(() => {
-        const updateCount = () => {
+        const fetchGitData = () => {
+            const targetCwd = agent?.workingDirectory || process.cwd();
+            try {
+                let branch = execSync("git branch --show-current", {
+                    encoding: "utf-8",
+                    cwd: targetCwd,
+                    stdio: ["ignore", "pipe", "ignore"],
+                }).trim();
+                if (!branch) {
+                    branch = execSync("git rev-parse --short HEAD", {
+                        encoding: "utf-8",
+                        cwd: targetCwd,
+                        stdio: ["ignore", "pipe", "ignore"],
+                    }).trim();
+                }
+                if (branch)
+                    setGitBranch(branch);
+            }
+            catch { }
             try {
                 const output = execSync("git worktree list", {
                     encoding: "utf-8",
+                    cwd: targetCwd,
                     stdio: ["ignore", "pipe", "ignore"],
                 }).trim();
                 if (output) {
@@ -402,10 +412,10 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
                 setWorktreeCount(0);
             }
         };
-        updateCount();
-        const timer = setInterval(updateCount, 5000);
+        fetchGitData();
+        const timer = setInterval(fetchGitData, 5000);
         return () => clearInterval(timer);
-    }, []);
+    }, [agent]);
     useEffect(() => {
         if (agent) {
             try {
@@ -1046,7 +1056,7 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
     return (_jsxs(Box, { flexDirection: "column", paddingX: 1, paddingY: 0, width: terminalSize.width, height: terminalSize.height, children: [_jsxs(Box, { flexDirection: "row", justifyContent: "space-between", paddingX: 0, marginBottom: 2, alignItems: "center", children: [_jsx(Box, { flexDirection: "row", alignItems: "center", children: _jsx(Box, { flexDirection: "column", justifyContent: "center", children: _jsxs(Box, { flexDirection: "row", alignItems: "center", children: [_jsx(Text, { color: "red", bold: true, children: "S U P E R" }), _jsx(Text, { color: "white", bold: true, children: "A G E N T" }), _jsx(Text, { color: "gray", children: " \u2502 " }), _jsxs(Text, { color: "yellow", bold: true, children: ["MULTI-AGENT SYSTEM v", multiVersion] }), _jsx(Text, { color: "gray", children: " \u2502 " }), _jsxs(Text, { color: "blue", bold: true, children: ["Branch: ", gitBranch] })] }) }) }), _jsx(Text, { color: "green", bold: true, children: "\u25CF ONLINE" })] }), _jsxs(Box, { flexDirection: "row", height: workspaceHeight, children: [_jsxs(Box, { flexDirection: "column", width: "40%", height: workspaceHeight, children: [_jsx(RegistryPanel, { sessions: sessions, selectedIndex: selectedIndex, focusArea: focusArea, startIdx: startIdx, visibleSessions: visibleSessions, getLatestSuperagentAction: getLatestSuperagentAction, getLatestSubagentAction: getLatestSubagentAction, leftTopHeight: leftTopHeight }), _jsxs(Box, { flexDirection: "column", width: "100%", marginTop: 0, children: [planState === "PLANNING_PENDING" && activeWizard?.type !== "plan_approve" && (() => {
                                         const planUrl = "file:///" + path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/");
                                         return (_jsxs(Box, { marginBottom: 1, flexDirection: "column", borderStyle: "round", borderColor: "yellow", paddingX: 1, children: [_jsx(Text, { bold: true, color: "yellow", children: "\u26A0\uFE0F PENDING_PLAN: IMPLEMENTATION PLAN REQUIRES APPROVAL" }), _jsxs(Text, { color: "yellow", children: ["AI model has designed a plan in file: ", _jsx(Text, { bold: true, color: "cyan", children: planUrl })] }), _jsx(Text, { color: "yellow", children: "Send any message/feedback to display the plan approval dialog again." })] }));
-                                    })(), _jsx(ChecklistPanel, { planState: planState, checklistTasks: checklistTasks, focusArea: focusArea, checklistScrollOffset: checklistScrollOffset, maxChecklistVisible: maxChecklistVisible, agent: agent, superagentInstances: superagentInstances, completedHistory: completedHistory })] })] }), _jsx(Box, { width: "2%" }), _jsx(InspectorPanel, { selectedSession: selectedSession, focusArea: focusArea, logScrollOffset: logScrollOffset, isHistoryTruncated: isHistoryTruncated, feedWidth: feedWidth, logBoxHeight: logBoxHeight, visibleLogs: visibleLogs, isExecutingTool: isExecutingTool, timeLeft: timeLeft, activeToolLines: activeToolLines, workspaceHeight: workspaceHeight })] }), _jsx(Box, { flexDirection: "row", paddingX: 1, marginTop: 1, marginBottom: 0, children: _jsx(Text, { color: "gray", dimColor: true, children: "─".repeat(Math.floor(terminalSize.width * 0.8)) }) }), _jsx(DashboardWizard, { activeWizard: activeWizard, query: query, wizardAllOptions: wizardAllOptions, wizardSelectedIndex: wizardSelectedIndex, wizardIsLoadingModels: wizardIsLoadingModels, wizardOptions: wizardOptions, wizardSelectedSet: wizardSelectedSet, pendingQuestion: pendingQuestion, agent: agent, terminalWidth: terminalSize.width, focus: activeWizard?.data?.focus || "actions", scrollOffset: parseInt(activeWizard?.data?.scrollOffset || "0", 10), onScrollChange: (offset) => setActiveWizard((curr) => curr ? { ...curr, data: { ...curr.data, scrollOffset: String(offset) } } : null) }), (runningSubagentsCount > 0 || runningTasksCount > 0) && (_jsxs(Box, { flexDirection: "column", paddingX: 1, marginBottom: 0, width: "100%", children: [_jsx(ActiveSubagentsPanel, { subagentInstances: subagentInstances, agentsScrollOffset: agentsScrollOffset, maxAgentsVisible: maxAgentsVisible, focusArea: focusArea, getLatestSubagentAction: getLatestSubagentAction }), _jsx(ActiveProcessesPanel, { backgroundTasks: backgroundTasks, procsScrollOffset: procsScrollOffset, maxProcsVisible: maxProcsVisible, focusArea: focusArea, runningSubagentsCount: runningSubagentsCount })] })), !isSelectionOnlyStep && (_jsxs(_Fragment, { children: [focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (_jsxs(Box, { flexDirection: "column", marginBottom: 1, paddingX: 1, children: [_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: "cyan", dimColor: true, children: "\u2502   " }), _jsx(Text, { color: "gray", dimColor: true, children: "Suggestions: " }), suggestions.slice(0, 5).map((s, idx) => (_jsxs(Text, { color: s === query ? "cyan" : "gray", bold: s === query, underline: s === query, children: [s, idx < Math.min(suggestions.length, 5) - 1 ? "  " : ""] }, s))), suggestions.length > 5 && _jsxs(Text, { color: "gray", dimColor: true, children: [" (+", suggestions.length - 5, " more)"] })] }), suggestionDescs[query] && (_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: "cyan", dimColor: true, children: "\u2502   " }), _jsxs(Text, { color: "yellow", dimColor: true, italic: true, children: ["  ", suggestionDescs[query].length > 80 ? suggestionDescs[query].slice(0, 77) + "..." : suggestionDescs[query]] })] }))] })), _jsxs(Box, { flexDirection: "row", marginTop: 0, paddingX: 1, width: "100%", children: [_jsx(Box, { flexShrink: 0, children: _jsx(Text, { bold: true, color: activeWizard ? "blue" : isProcessing ? "gray" : (focusArea === "input" ? "green" : "cyan"), children: activeWizard?.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)
+                                    })(), _jsx(ChecklistPanel, { planState: planState, checklistTasks: checklistTasks, focusArea: focusArea, checklistScrollOffset: checklistScrollOffset, maxChecklistVisible: maxChecklistVisible, agent: agent, superagentInstances: superagentInstances, completedHistory: completedHistory, maxHistoryVisible: maxHistoryVisible })] })] }), _jsx(Box, { width: "2%" }), _jsx(InspectorPanel, { selectedSession: selectedSession, focusArea: focusArea, logScrollOffset: logScrollOffset, isHistoryTruncated: isHistoryTruncated, feedWidth: feedWidth, logBoxHeight: logBoxHeight, visibleLogs: visibleLogs, isExecutingTool: isExecutingTool, timeLeft: timeLeft, activeToolLines: activeToolLines, workspaceHeight: workspaceHeight })] }), _jsx(Box, { flexDirection: "row", paddingX: 1, marginTop: 1, marginBottom: 0, children: _jsx(Text, { color: "gray", dimColor: true, children: "─".repeat(Math.floor(terminalSize.width * 0.8)) }) }), _jsx(DashboardWizard, { activeWizard: activeWizard, query: query, wizardAllOptions: wizardAllOptions, wizardSelectedIndex: wizardSelectedIndex, wizardIsLoadingModels: wizardIsLoadingModels, wizardOptions: wizardOptions, wizardSelectedSet: wizardSelectedSet, pendingQuestion: pendingQuestion, agent: agent, terminalWidth: terminalSize.width, focus: activeWizard?.data?.focus || "actions", scrollOffset: parseInt(activeWizard?.data?.scrollOffset || "0", 10), onScrollChange: (offset) => setActiveWizard((curr) => curr ? { ...curr, data: { ...curr.data, scrollOffset: String(offset) } } : null) }), (runningSubagentsCount > 0 || runningTasksCount > 0) && (_jsxs(Box, { flexDirection: "column", paddingX: 1, marginBottom: 0, width: "100%", children: [_jsx(ActiveSubagentsPanel, { subagentInstances: subagentInstances, agentsScrollOffset: agentsScrollOffset, maxAgentsVisible: maxAgentsVisible, focusArea: focusArea, getLatestSubagentAction: getLatestSubagentAction }), _jsx(ActiveProcessesPanel, { backgroundTasks: backgroundTasks, procsScrollOffset: procsScrollOffset, maxProcsVisible: maxProcsVisible, focusArea: focusArea, runningSubagentsCount: runningSubagentsCount })] })), !isSelectionOnlyStep && (_jsxs(_Fragment, { children: [focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (_jsxs(Box, { flexDirection: "column", marginBottom: 1, paddingX: 1, children: [_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: "cyan", dimColor: true, children: "\u2502   " }), _jsx(Text, { color: "gray", dimColor: true, children: "Suggestions: " }), suggestions.slice(0, 5).map((s, idx) => (_jsxs(Text, { color: s === query ? "cyan" : "gray", bold: s === query, underline: s === query, children: [s, idx < Math.min(suggestions.length, 5) - 1 ? "  " : ""] }, s))), suggestions.length > 5 && _jsxs(Text, { color: "gray", dimColor: true, children: [" (+", suggestions.length - 5, " more)"] })] }), suggestionDescs[query] && (_jsxs(Box, { flexDirection: "row", children: [_jsx(Text, { color: "cyan", dimColor: true, children: "\u2502   " }), _jsxs(Text, { color: "yellow", dimColor: true, italic: true, children: ["  ", suggestionDescs[query].length > 80 ? suggestionDescs[query].slice(0, 77) + "..." : suggestionDescs[query]] })] }))] })), _jsxs(Box, { flexDirection: "row", marginTop: 0, paddingX: 1, width: "100%", children: [_jsx(Box, { flexShrink: 0, children: _jsx(Text, { bold: true, color: activeWizard ? "blue" : isProcessing ? "gray" : (focusArea === "input" ? "green" : "cyan"), children: activeWizard?.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)
                                         ? "└──[ MODEL ] ❯ "
                                         : activeWizard?.type === "model" && (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35)
                                             ? "└──[ PROFILE ] ❯ "
@@ -1090,7 +1100,7 @@ export function MultiAgentDashboard({ agent, autoResume = false, registerLogHand
                                         return (_jsxs(Box, { flexDirection: "row", children: [prefix ? _jsx(Text, { children: prefix }) : null, _jsxs(Text, { color: "yellow", bold: true, children: ["[Pasted Text: ", inserted.length, " chars, ", lineCount, " lines] "] }), suffix ? _jsx(Text, { children: suffix }) : null, _jsx(Text, { dimColor: true, children: "(Press Enter to send, Esc to clear)" })] }));
                                     }
                                     return (_jsxs(Box, { flexDirection: "column", children: [attachments.length > 0 && (_jsx(ImageAttachmentBar, { attachments: attachments, onRemove: handleRemoveAttachment, focused: focusArea === "input" && !isProcessing })), _jsx(ChatTextInput, { value: query, onChange: handleQueryChange, onSubmit: handleQuerySubmit, focus: focusArea === "input" && !isProcessing, onAttachImage: handleAttachImage, onPasteImage: handlePasteImage, onRemoveLastAttachment: handleRemoveLastAttachment, attachmentCount: attachments.length })] }));
-                                })() })] })] })), _jsx(DashboardStatusBar, { activeModel: activeModel, contextPercentage: contextPercentage, activeContextUsage: activeContextUsage, contextLimit: contextLimit, lastSpeed: lastSpeed, masterPromptTokens: masterPromptTokens, masterCompletionTokens: masterCompletionTokens, historicalSuperagentTokens: historicalSuperagentTokens, activeSuperagentsCount: [...superagentInstances.values()].filter(i => i.status === "running").length, subagentInstances: subagentInstances, worktreeCount: worktreeCount, runningTasksCount: runningTasksCount, runningSubagentsCount: runningSubagentsCount, activeWTs: activeWTs, activeWizard: activeWizard, wizardOptions: wizardOptions, focusArea: focusArea, tencentdbStatus: tencentdbStatus })] }));
+                                })() })] })] })), _jsx(DashboardStatusBar, { activeModel: activeModel, contextPercentage: contextPercentage, activeContextUsage: activeContextUsage, contextLimit: contextLimit, lastSpeed: lastSpeed, masterPromptTokens: masterPromptTokens, masterCompletionTokens: masterCompletionTokens, historicalSuperagentTokens: historicalSuperagentTokens, activeSuperagentsCount: [...superagentInstances.values()].filter(i => i.status === "running").length, subagentInstances: subagentInstances, worktreeCount: worktreeCount, runningTasksCount: runningTasksCount, runningSubagentsCount: runningSubagentsCount, activeWTs: activeWTs, activeWizard: activeWizard, wizardOptions: wizardOptions, focusArea: focusArea, tencentdbStatus: tencentdbStatus, workspace: agent?.workingDirectory || process.cwd() })] }));
 }
 function getLatestSubagentAction(logs) {
     if (!logs || logs.length === 0)

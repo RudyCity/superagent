@@ -36,6 +36,9 @@ const BUILTIN_DESCRIPTIONS = {
     "/setting-streaming": "Enable or disable streaming (on or off)",
     "/setting-context-limit": "Set custom context window limit (0 = auto)",
     "/setting-max-iterations": "Set max agent loop iterations",
+    "/setting-checklist-limit": "Set checklist visible limit",
+    "/setting-history-limit": "Set checklist history visible limit",
+    "/setting-procs-limit": "Set processes visible limit",
     "/setting-tencentdb": "Configure TencentDB memory strategy and gateway URL",
     "/memory": "Manage and inspect TencentDB long-term memory",
 };

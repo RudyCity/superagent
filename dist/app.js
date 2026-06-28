@@ -3,7 +3,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Box, Text, useApp } from "ink";
 import ChatTextInput from "./components/ChatTextInput.js";
 import { Agent } from "./core/agent.js";
-import { getInstalledSkills, getRootConfigDir, getEffectiveMasterModel } from "./core/config.js";
+import { getInstalledSkills, getRootConfigDir, getEffectiveMasterModel, getSettings } from "./core/config.js";
 import { contentToString } from "./core/conversation.js";
 import ImageAttachmentBar from "./components/ImageAttachmentBar.js";
 import { readImageFromPath, readImageFromClipboard, attachmentToImagePart, } from "./utils/imageUtils.js";
@@ -236,10 +236,12 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
             return next;
         });
     }, []);
-    const maxChecklistVisible = 3;
+    const settings = getSettings();
+    const maxChecklistVisible = settings.maxChecklistVisible ?? 3;
+    const maxHistoryVisible = settings.maxHistoryVisible ?? 3;
     const maxSuperagentsVisible = 2;
     const maxSubagentsVisible = 3;
-    const maxProcsVisible = 3;
+    const maxProcsVisible = settings.maxProcsVisible ?? 3;
     const [terminalHeight, setTerminalHeight] = useState(process.stdout.rows || 30);
     const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
     const [gitBranch, setGitBranch] = useState("");
@@ -1599,15 +1601,21 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
     }, []);
     useEffect(() => {
         const fetchGitData = async () => {
+            const targetCwd = agentRef.current?.workingDirectory || process.cwd();
             try {
-                const { stdout } = await execa("git", ["branch", "--show-current"], { cwd: process.cwd(), reject: false });
-                setGitBranch(stdout?.trim() || "");
+                const { stdout } = await execa("git", ["branch", "--show-current"], { cwd: targetCwd, reject: false });
+                let branch = stdout?.trim() || "";
+                if (!branch) {
+                    const { stdout: shaStdout } = await execa("git", ["rev-parse", "--short", "HEAD"], { cwd: targetCwd, reject: false });
+                    branch = shaStdout?.trim() || "";
+                }
+                setGitBranch(branch);
             }
             catch {
                 // ignore
             }
             try {
-                const { stdout } = await execa("git", ["worktree", "list"], { cwd: process.cwd(), reject: false });
+                const { stdout } = await execa("git", ["worktree", "list"], { cwd: targetCwd, reject: false });
                 if (stdout) {
                     const lines = stdout.split("\n").filter(Boolean);
                     setWorktreeCount(lines.length);
@@ -2093,7 +2101,7 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
         toggleLineExpand,
         handleWizardSubmit,
     };
-    return (_jsxs(Box, { flexDirection: "column", height: terminalHeight, children: [_jsx(Box, { flexDirection: "row", flexGrow: 1, children: _jsxs(Box, { flexDirection: "column", width: "100%", flexGrow: 1, children: [_jsx(ChatArea, { showBanner: showBanner, focusMode: focusMode, scrollOffset: scrollOffset, focusedResponseIndex: focusedResponseIndex, setFocusedResponseIndex: setFocusedResponseIndex, focusedResponseOffset: focusedResponseOffset, setFocusedResponseOffset: setFocusedResponseOffset, lines: lines, chatHeightLimit: chatHeightLimit, terminalHeight: terminalHeight, terminalWidth: terminalWidth, isProcessing: isProcessing, streamDisplay: streamDisplay, tokensUp: tokensUp, tokensDown: tokensDown, liveStreamTokens: liveStreamTokens, modelName: activeModel, maxAssistantResponseLines: 12, isExecutingTool: isExecutingTool, timeLeft: timeLeft, activeToolOutput: activeToolOutput, formatCompactNumber: formatCompactNumber, onVisibleLinesChange: setVisibleLinePositions, chatContentStartRow: chatContentStartRow, expandedLines: expandedLines, toggleLineExpand: toggleLineExpand, expandedChildren: expandedChildren, toggleChildExpand: toggleChildExpand, wrappedLines: wrappedLines }), _jsxs(Box, { flexDirection: "column", paddingX: 1, marginTop: 1, flexShrink: 0, children: [_jsx(ActiveAgentsList, { focusMode: focusMode, runningSuperagentsCount: runningSuperagentsCount, runningSubagentsCount: runningSubagentsCount, runningTasksCount: runningTasksCount, superagentsScrollOffset: superagentsScrollOffset, subagentsScrollOffset: subagentsScrollOffset, procsScrollOffset: procsScrollOffset, maxSuperagentsVisible: maxSuperagentsVisible, maxSubagentsVisible: maxSubagentsVisible, maxProcsVisible: maxProcsVisible, collapsedSections: collapsedSections }), _jsx(TaskChecklist, { planState: planState, checklistTasks: checklistTasks, checklistScrollOffset: checklistScrollOffset, maxChecklistVisible: maxChecklistVisible, focusMode: focusMode, isMultiAgent: !!agentRef.current?.isMultiAgent, completedHistory: completedHistory }), _jsx(HistoryPanel, { history: history, historySelectedIndex: historySelectedIndex, focusMode: focusMode }), _jsx(WizardPanels, { activeWizard: activeWizard, wizardOptions: wizardOptions, wizardSelectedIndex: wizardSelectedIndex, wizardSelectedSet: wizardSelectedSet, pendingPermission: pendingPermission, pendingQuestion: pendingQuestion, planState: planState, planUrl: planUrl, planFilePath: planPath, input: input, wizardIsLoadingModels: wizardIsLoadingModels, checkpointsList: checkpointsList, goalMode: goalMode, suggestions: suggestions, focus: activeWizard?.data?.focus || "actions", scrollOffset: parseInt(activeWizard?.data?.scrollOffset || "0", 10), onScrollChange: (offset) => setActiveWizard((curr) => curr ? { ...curr, data: { ...curr.data, scrollOffset: String(offset) } } : null) }), !isSelectionOnlyStep && (_jsxs(Box, { flexDirection: "column", children: [(() => {
+    return (_jsxs(Box, { flexDirection: "column", height: terminalHeight, children: [_jsx(Box, { flexDirection: "row", flexGrow: 1, children: _jsxs(Box, { flexDirection: "column", width: "100%", flexGrow: 1, children: [_jsx(ChatArea, { showBanner: showBanner, focusMode: focusMode, scrollOffset: scrollOffset, focusedResponseIndex: focusedResponseIndex, setFocusedResponseIndex: setFocusedResponseIndex, focusedResponseOffset: focusedResponseOffset, setFocusedResponseOffset: setFocusedResponseOffset, lines: lines, chatHeightLimit: chatHeightLimit, terminalHeight: terminalHeight, terminalWidth: terminalWidth, isProcessing: isProcessing, streamDisplay: streamDisplay, tokensUp: tokensUp, tokensDown: tokensDown, liveStreamTokens: liveStreamTokens, modelName: activeModel, maxAssistantResponseLines: 12, isExecutingTool: isExecutingTool, timeLeft: timeLeft, activeToolOutput: activeToolOutput, formatCompactNumber: formatCompactNumber, onVisibleLinesChange: setVisibleLinePositions, chatContentStartRow: chatContentStartRow, expandedLines: expandedLines, toggleLineExpand: toggleLineExpand, expandedChildren: expandedChildren, toggleChildExpand: toggleChildExpand, wrappedLines: wrappedLines }), _jsxs(Box, { flexDirection: "column", paddingX: 1, marginTop: 1, flexShrink: 0, children: [_jsx(ActiveAgentsList, { focusMode: focusMode, runningSuperagentsCount: runningSuperagentsCount, runningSubagentsCount: runningSubagentsCount, runningTasksCount: runningTasksCount, superagentsScrollOffset: superagentsScrollOffset, subagentsScrollOffset: subagentsScrollOffset, procsScrollOffset: procsScrollOffset, maxSuperagentsVisible: maxSuperagentsVisible, maxSubagentsVisible: maxSubagentsVisible, maxProcsVisible: maxProcsVisible, collapsedSections: collapsedSections }), _jsx(TaskChecklist, { planState: planState, checklistTasks: checklistTasks, checklistScrollOffset: checklistScrollOffset, maxChecklistVisible: maxChecklistVisible, focusMode: focusMode, isMultiAgent: !!agentRef.current?.isMultiAgent, completedHistory: completedHistory, maxHistoryVisible: maxHistoryVisible }), _jsx(HistoryPanel, { history: history, historySelectedIndex: historySelectedIndex, focusMode: focusMode }), _jsx(WizardPanels, { activeWizard: activeWizard, wizardOptions: wizardOptions, wizardSelectedIndex: wizardSelectedIndex, wizardSelectedSet: wizardSelectedSet, pendingPermission: pendingPermission, pendingQuestion: pendingQuestion, planState: planState, planUrl: planUrl, planFilePath: planPath, input: input, wizardIsLoadingModels: wizardIsLoadingModels, checkpointsList: checkpointsList, goalMode: goalMode, suggestions: suggestions, focus: activeWizard?.data?.focus || "actions", scrollOffset: parseInt(activeWizard?.data?.scrollOffset || "0", 10), onScrollChange: (offset) => setActiveWizard((curr) => curr ? { ...curr, data: { ...curr.data, scrollOffset: String(offset) } } : null) }), !isSelectionOnlyStep && (_jsxs(Box, { flexDirection: "column", children: [(() => {
                                             const question = getWizardQuestion();
                                             if (!question)
                                                 return null;
@@ -2106,6 +2114,6 @@ export function App({ autoResume = false, onHistoryChange, onSessionPath, initia
                                                         return (_jsxs(Box, { flexDirection: "row", children: [prefix ? _jsx(Text, { children: prefix }) : null, _jsxs(Text, { color: "yellow", bold: true, children: ["[Pasted Text: ", inserted.length, " chars, ", lineCount, " lines] "] }), suffix ? _jsx(Text, { children: suffix }) : null, _jsx(Text, { dimColor: true, children: "(Press Enter to send, Esc to clear)" })] }));
                                                     }
                                                     return (_jsxs(Box, { flexDirection: "column", children: [attachments.length > 0 && (_jsx(ImageAttachmentBar, { attachments: attachments, onRemove: handleRemoveAttachment, focused: focusMode === "input" })), _jsx(ChatTextInput, { focus: focusMode === "input", value: input, onChange: handleInputChange, onSubmit: handleSubmit, placeholder: getWizardPlaceholder(), onAttachImage: handleAttachImage, onPasteImage: handlePasteImage, onRemoveLastAttachment: handleRemoveLastAttachment, attachmentCount: attachments.length })] }));
-                                                })()] })] }))] })] }) }), _jsx(StatusBar, { modelName: activeModel, contextPercentage: contextPercentage, tokensUp: tokensUp, tokensDown: tokensDown, liveStreamTokens: liveStreamTokens, activeContextUsage: activeContextUsage, contextLimit: contextLimit, messageCount: messageCount, runningTasksCount: runningTasksCount, runningSubagentsCount: runningSubagentsCount, gitBranch: gitBranch, worktreeCount: worktreeCount, lastSpeed: lastSpeed, formatCompactNumber: formatCompactNumber, tencentdbStatus: tencentdbStatus, activeDevHook: activeDevHook })] }));
+                                                })()] })] }))] })] }) }), _jsx(StatusBar, { modelName: activeModel, contextPercentage: contextPercentage, tokensUp: tokensUp, tokensDown: tokensDown, liveStreamTokens: liveStreamTokens, activeContextUsage: activeContextUsage, contextLimit: contextLimit, messageCount: messageCount, runningTasksCount: runningTasksCount, runningSubagentsCount: runningSubagentsCount, gitBranch: gitBranch, worktreeCount: worktreeCount, lastSpeed: lastSpeed, formatCompactNumber: formatCompactNumber, tencentdbStatus: tencentdbStatus, activeDevHook: activeDevHook, workspace: agentRef.current?.workingDirectory || process.cwd() })] }));
 }
 //# sourceMappingURL=app.js.map

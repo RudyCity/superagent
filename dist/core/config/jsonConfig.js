@@ -13,6 +13,9 @@ const DEFAULT_CONFIG = {
         maxIterations: 50,
         simpleTaskFileThreshold: 3,
         simpleTaskKeywords: ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
+        maxChecklistVisible: 3,
+        maxHistoryVisible: 3,
+        maxProcsVisible: 3,
     },
     trustedDirectories: [],
     providers: [
@@ -657,6 +660,9 @@ export function getSettings() {
         tencentdbGatewayApiKey: s.tencentdbGatewayApiKey ?? "sk-xxxx",
         tencentdbServiceId: s.tencentdbServiceId ?? "default",
         enableTencentdbMemory: s.enableTencentdbMemory ?? false,
+        maxChecklistVisible: s.maxChecklistVisible ?? 3,
+        maxHistoryVisible: s.maxHistoryVisible ?? 3,
+        maxProcsVisible: s.maxProcsVisible ?? 3,
     };
 }
 /**

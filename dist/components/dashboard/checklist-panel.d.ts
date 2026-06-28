@@ -12,7 +12,8 @@ interface ChecklistPanelProps {
         text: string;
         remainingSeconds?: number;
     }[];
+    maxHistoryVisible?: number;
 }
-export declare function ChecklistPanel({ planState, checklistTasks, focusArea, checklistScrollOffset, maxChecklistVisible, agent, superagentInstances, completedHistory, }: ChecklistPanelProps): React.JSX.Element | null;
+export declare function ChecklistPanel({ planState, checklistTasks, focusArea, checklistScrollOffset, maxChecklistVisible, agent, superagentInstances, completedHistory, maxHistoryVisible, }: ChecklistPanelProps): React.JSX.Element | null;
 export {};
 //# sourceMappingURL=checklist-panel.d.ts.map

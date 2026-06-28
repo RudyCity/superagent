@@ -14,7 +14,8 @@ interface TaskChecklistProps {
         text: string;
         remainingSeconds?: number;
     }[];
+    maxHistoryVisible?: number;
 }
-export declare function TaskChecklist({ planState, checklistTasks, checklistScrollOffset, maxChecklistVisible, focusMode, isMultiAgent, completedHistory, }: TaskChecklistProps): React.JSX.Element | null;
+export declare function TaskChecklist({ planState, checklistTasks, checklistScrollOffset, maxChecklistVisible, focusMode, isMultiAgent, completedHistory, maxHistoryVisible, }: TaskChecklistProps): React.JSX.Element | null;
 export {};
 //# sourceMappingURL=task-checklist.d.ts.map

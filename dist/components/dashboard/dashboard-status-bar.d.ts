@@ -18,6 +18,7 @@ export interface DashboardStatusBarProps {
     wizardOptions: string[];
     focusArea: string;
     tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
+    workspace?: string;
 }
-export declare function DashboardStatusBar({ activeModel, contextPercentage, activeContextUsage, contextLimit, lastSpeed, masterPromptTokens, masterCompletionTokens, historicalSuperagentTokens, activeSuperagentsCount, subagentInstances, worktreeCount, runningTasksCount, runningSubagentsCount, activeWTs, activeWizard, wizardOptions, focusArea, tencentdbStatus, }: DashboardStatusBarProps): React.JSX.Element;
+export declare function DashboardStatusBar({ activeModel, contextPercentage, activeContextUsage, contextLimit, lastSpeed, masterPromptTokens, masterCompletionTokens, historicalSuperagentTokens, activeSuperagentsCount, subagentInstances, worktreeCount, runningTasksCount, runningSubagentsCount, activeWTs, activeWizard, wizardOptions, focusArea, tencentdbStatus, workspace, }: DashboardStatusBarProps): React.JSX.Element;
 //# sourceMappingURL=dashboard-status-bar.d.ts.map

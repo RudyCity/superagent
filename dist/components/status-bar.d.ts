@@ -16,6 +16,7 @@ export interface StatusBarProps {
     formatCompactNumber: (val: number) => string;
     tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
     activeDevHook?: string | null;
+    workspace?: string;
 }
 export declare function StatusBar(props: StatusBarProps): React.JSX.Element;
 //# sourceMappingURL=status-bar.d.ts.map

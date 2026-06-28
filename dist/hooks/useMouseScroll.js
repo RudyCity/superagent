@@ -1,4 +1,7 @@
 import { useEffect } from "react";
+import fs from "fs";
+import path from "path";
+import os from "os";
 /**
  * Hook to enable mouse wheel scroll + click support in the terminal for the single-agent app.
  * Uses a ref-based approach so the event listener is registered once and always reads
@@ -9,13 +12,25 @@ export function useMouseScroll(ctxRef) {
         if (!process.stdin.isTTY)
             return;
         // Enable SGR extended mouse tracking (button events + SGR coordinates)
-        const enableMouseTracking = "\x1b[?1000h\x1b[?1006h";
-        const disableMouseTracking = "\x1b[?1006l\x1b[?1000l";
+        const enableMouseTracking = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
+        const disableMouseTracking = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
         const handleMouseInput = (data) => {
             const ctx = ctxRef.current;
             if (!ctx)
                 return;
             const text = data.toString("utf8");
+            // Diagnostic mouse logging
+            try {
+                const logDir = path.join(os.homedir(), ".superagent-r");
+                if (!fs.existsSync(logDir)) {
+                    fs.mkdirSync(logDir, { recursive: true });
+                }
+                const logPath = path.join(logDir, "superagent.log");
+                fs.appendFileSync(logPath, `[MOUSE DEBUG] Raw escape sequence: ${JSON.stringify(text)} (visible positions count: ${ctx.visibleLinePositions?.length || 0})\n`);
+            }
+            catch (e) {
+                // ignore
+            }
             const matches = text.matchAll(/\x1b\[<(?<btn>\d+);(?<col>\d+);(?<row>\d+)(?<action>[Mm])/g);
             for (const match of matches) {
                 const btn = match.groups?.btn;

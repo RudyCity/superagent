@@ -40,6 +40,9 @@ export interface SystemSettings {
     tencentdbServiceId?: string;
     enableTencentdbMemory?: boolean;
     tencentdbPollIntervalMs?: number;
+    maxChecklistVisible?: number;
+    maxHistoryVisible?: number;
+    maxProcsVisible?: number;
 }
 export interface GlobalModelConfig {
     providers: ProviderProfile[];

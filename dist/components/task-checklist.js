@@ -1,8 +1,7 @@
 import { jsxs as _jsxs, jsx as _jsx, Fragment as _Fragment } from "react/jsx-runtime";
 import { Box, Text } from "ink";
 import { superagentInstances } from "../core/tools.js";
-const MAX_HISTORY_VISIBLE = 3;
-export function TaskChecklist({ planState, checklistTasks, checklistScrollOffset, maxChecklistVisible, focusMode, isMultiAgent, completedHistory = [], }) {
+export function TaskChecklist({ planState, checklistTasks, checklistScrollOffset, maxChecklistVisible, focusMode, isMultiAgent, completedHistory = [], maxHistoryVisible = 3, }) {
     const hasActiveTasks = checklistTasks.length > 0;
     const hasHistory = completedHistory.length > 0;
     // Only show when plan is approved AND (there are active tasks OR completed history)
@@ -18,7 +17,7 @@ export function TaskChecklist({ planState, checklistTasks, checklistScrollOffset
     const helpText = focusMode === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : " [Ctrl+T Focus]";
     const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
     // History: show the most recent completed tasks (capped)
-    const historyToShow = completedHistory.slice(-MAX_HISTORY_VISIBLE);
+    const historyToShow = completedHistory.slice(-maxHistoryVisible);
     const hiddenHistoryCount = completedHistory.length - historyToShow.length;
     // Find the maximum remaining seconds for the countdown header
     const maxRemaining = historyToShow.reduce((max, t) => {
