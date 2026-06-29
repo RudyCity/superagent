@@ -1168,6 +1168,7 @@ export function MultiAgentDashboard({
     startIdxLogs,
     groupBoundaries,
     toggleGroupCollapse,
+    logBoxStartRow: 7 + (renderedTaskLinesCount || 0),
   });
 
   const maxVisibleSessions = Math.max(3, leftTopHeight - 2);

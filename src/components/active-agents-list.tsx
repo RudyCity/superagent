@@ -174,10 +174,22 @@ export function ActiveAgentsList({
       {/* === PROCESSES === */}
       {runningTasksCount > 0 && (() => {
         const totalProcs = runningProcs.length;
+        const isCollapsed = collapsedSections.procs;
         const isFocused = focusMode === "procs";
+        const collapseIcon = isCollapsed ? "▶" : "▼";
         const headerColor = isFocused ? "green" : "cyan";
         const isFirstHeader = runningSuperagentsCount === 0 && runningSubagentsCount === 0;
         const branchPrefix = isFirstHeader ? "┌───" : "├───";
+
+        if (isCollapsed) {
+          return (
+            <Box flexDirection="column" marginTop={0}>
+              <Text color={headerColor} bold>
+                {branchPrefix}[ {collapseIcon} ⚙️ ACTIVE PROCESSES ({totalProcs}) ] <Text dimColor italic>click to expand</Text>
+              </Text>
+            </Box>
+          );
+        }
 
         const hasScroll = totalProcs > maxProcsVisible;
         const scrollIndicator = hasScroll
@@ -188,7 +200,7 @@ export function ActiveAgentsList({
         return (
           <Box flexDirection="column" marginTop={0}>
             <Text color={headerColor} bold>
-              {branchPrefix}[ ⚙️ ACTIVE PROCESSES ]{scrollIndicator}{helpText}
+              {branchPrefix}[ {collapseIcon} ⚙️ ACTIVE PROCESSES ]{scrollIndicator}{helpText} <Text dimColor italic>click header to collapse</Text>
             </Text>
             {visibleProcs.map(([id, task]) => (
               <Text key={id} color="cyan">

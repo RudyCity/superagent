@@ -228,6 +228,7 @@ export function App({
     superagents: false,
     subagents: false,
     procs: false,
+    checklist: false,
   });
 
   // Visible line positions for mouse click detection
@@ -2020,17 +2021,21 @@ export function App({
       : 1 + Math.min(runningSubagentsCount, maxSubagentsVisible);
   }
   if (runningTasksCount > 0) {
-    procSectionHeight = 1 + Math.min(runningTasksCount, maxProcsVisible);
+    procSectionHeight = collapsedSections.procs
+      ? 1
+      : 1 + Math.min(runningTasksCount, maxProcsVisible);
   }
   const totalAgentsHeight = saSectionHeight + subSectionHeight + procSectionHeight;
 
   // Checklist height
   let checklistSectionHeight = 0;
   if (planState === "APPROVED" && checklistTasks.length > 0) {
-    checklistSectionHeight = 1 + Math.min(checklistTasks.length, maxChecklistVisible);
+    checklistSectionHeight = collapsedSections.checklist
+      ? 1
+      : 1 + Math.min(checklistTasks.length, maxChecklistVisible);
   }
   // Account for completed history section height
-  if (planState === "APPROVED" && completedHistory.length > 0) {
+  if (planState === "APPROVED" && completedHistory.length > 0 && !collapsedSections.checklist) {
     const historyVisible = Math.min(completedHistory.length, 3);
     checklistSectionHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
   }
@@ -2097,6 +2102,7 @@ export function App({
 
   // Checklist
   if (checklistSectionHeight > 0) {
+    sectionBounds.push({ name: "checklist_header", startRow: row, endRow: row, isHeader: true });
     sectionBounds.push({ name: "checklist", startRow: row, endRow: row + checklistSectionHeight - 1 });
     row += checklistSectionHeight;
   }
@@ -2268,6 +2274,7 @@ export function App({
               isMultiAgent={!!agentRef.current?.isMultiAgent}
               completedHistory={completedHistory}
               maxHistoryVisible={maxHistoryVisible}
+              collapsedSections={collapsedSections}
             />
 
             {/* Input History Panel — shown when Ctrl+H is pressed */}

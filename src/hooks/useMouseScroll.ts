@@ -106,7 +106,8 @@ export function useMouseScroll(
         const logPath = path.join(logDir, "superagent.log");
         fs.appendFileSync(
           logPath,
-          `[MOUSE DEBUG] Raw escape sequence: ${JSON.stringify(text)} (visible positions count: ${ctx.visibleLinePositions?.length || 0})\n`
+          `[MOUSE DEBUG] Raw escape sequence: ${JSON.stringify(text)} (visible positions count: ${ctx.visibleLinePositions?.length || 0})\n` +
+          `[MOUSE DEBUG] Current sections: ${JSON.stringify(ctx.sections)}\n`
         );
       } catch (e) {
         // ignore
@@ -198,6 +199,7 @@ export function useMouseScroll(
         // --- Click (button 0, press action "M") ---
         if (btn === "0" && action === "M" && rowStr) {
           const y = parseInt(rowStr, 10);
+          const x = colStr ? parseInt(colStr, 10) : 0;
 
           // Find which section was clicked
           let clickedSection: SectionBoundary | null = null;
@@ -208,6 +210,14 @@ export function useMouseScroll(
             }
           }
 
+          try {
+            const logPath = path.join(os.homedir(), ".superagent-r", "superagent.log");
+            fs.appendFileSync(
+              logPath,
+              `[MOUSE DEBUG] Click at x=${x}, y=${y}. Matched section: ${clickedSection ? clickedSection.name : "none"}\n`
+            );
+          } catch (e) {}
+
           if (!clickedSection) continue;
 
           const name = clickedSection.name;
@@ -215,11 +225,7 @@ export function useMouseScroll(
           // Handle header clicks → toggle collapse
           if (name.endsWith("_header")) {
             const sectionName = name.replace("_header", "");
-            if (sectionName === "procs") {
-              ctx.setFocusMode("procs");
-            } else {
-              ctx.toggleCollapse(sectionName);
-            }
+            ctx.toggleCollapse(sectionName);
             continue;
           }
 
@@ -233,15 +239,37 @@ export function useMouseScroll(
               }
               // Check if clicked on a chat line
               let handledClick = false;
+              try {
+                const logPath = path.join(os.homedir(), ".superagent-r", "superagent.log");
+                fs.appendFileSync(
+                  logPath,
+                  `[MOUSE DEBUG] Chat click: visible positions are: ${JSON.stringify(ctx.visibleLinePositions)}\n`
+                );
+              } catch (e) {}
               for (const pos of ctx.visibleLinePositions) {
                 if (y >= pos.startRow && y <= pos.endRow) {
+                  try {
+                    const logPath = path.join(os.homedir(), ".superagent-r", "superagent.log");
+                    fs.appendFileSync(
+                      logPath,
+                      `[MOUSE DEBUG] Matched position: index=${pos.index}, type=${pos.type}, isCollapsible=${pos.isCollapsible}, parentIndex=${pos.parentIndex}, childIndex=${pos.childIndex}\n`
+                    );
+                  } catch (e) {}
                   // Nested child line click → toggle child expand/collapse
                   if (pos.parentIndex !== undefined && pos.childIndex !== undefined && pos.isCollapsible && ctx.toggleChildExpand) {
+                    try {
+                      const logPath = path.join(os.homedir(), ".superagent-r", "superagent.log");
+                      fs.appendFileSync(logPath, `[MOUSE DEBUG] Toggling child expand for parent=${pos.parentIndex}, child=${pos.childIndex}\n`);
+                    } catch (e) {}
                     ctx.toggleChildExpand(pos.parentIndex, pos.childIndex);
                     handledClick = true;
                   }
                   // Collapsible line click → toggle expand/collapse
                   else if (pos.isCollapsible && ctx.toggleLineExpand) {
+                    try {
+                      const logPath = path.join(os.homedir(), ".superagent-r", "superagent.log");
+                      fs.appendFileSync(logPath, `[MOUSE DEBUG] Toggling line expand for index=${pos.index}\n`);
+                    } catch (e) {}
                     ctx.toggleLineExpand(pos.index);
                     handledClick = true;
                   }

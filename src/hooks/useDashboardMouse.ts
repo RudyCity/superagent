@@ -45,6 +45,8 @@ export interface DashboardMouseContext {
   groupBoundaries?: LogGroupInfo[];
   /** Toggle expand/collapse for a log group */
   toggleGroupCollapse?: (groupIndex: number) => void;
+  /** Actual dynamic start row of log window on terminal screen */
+  logBoxStartRow?: number;
 }
 
 export function useDashboardMouse(ctx: DashboardMouseContext) {
@@ -84,6 +86,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     startIdxLogs = 0,
     groupBoundaries = [],
     toggleGroupCollapse,
+    logBoxStartRow = 6,
   } = ctx;
 
   useEffect(() => {
@@ -399,11 +402,6 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
               // Clicked in the logs/inspector area
               // Check if clicked on a collapsible log group
               if (toggleGroupCollapse && groupBoundaries.length > 0) {
-                // Estimate log box start row within the workspace
-                const workspaceStartRow = 4;
-                const inspectorHeaderRows = 2; // header + task label
-                const logBoxStartRow = workspaceStartRow + inspectorHeaderRows;
-
                 const clickedLogLine = (y - logBoxStartRow) + startIdxLogs;
                 for (const group of groupBoundaries) {
                   if (group.isCollapsible && clickedLogLine >= group.startLine && clickedLogLine <= group.endLine) {
@@ -545,5 +543,6 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     startIdxLogs,
     groupBoundaries,
     toggleGroupCollapse,
+    logBoxStartRow,
   ]);
 }

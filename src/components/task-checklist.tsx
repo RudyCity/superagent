@@ -11,6 +11,7 @@ interface TaskChecklistProps {
   isMultiAgent: boolean;
   completedHistory?: { status: string; text: string; remainingSeconds?: number }[];
   maxHistoryVisible?: number;
+  collapsedSections?: { superagents: boolean; subagents: boolean; procs: boolean; checklist: boolean };
 }
 
 export function TaskChecklist({
@@ -22,6 +23,7 @@ export function TaskChecklist({
   isMultiAgent,
   completedHistory = [],
   maxHistoryVisible = 3,
+  collapsedSections,
 }: TaskChecklistProps) {
   const hasActiveTasks = checklistTasks.length > 0;
   const hasHistory = completedHistory.length > 0;
@@ -31,13 +33,17 @@ export function TaskChecklist({
     return null;
   }
 
+  const isCollapsed = collapsedSections?.checklist || false;
+  const collapseIcon = isCollapsed ? "▶" : "▼";
   const totalTasks = checklistTasks.length;
   const completedTasks = checklistTasks.filter((t) => t.status === "x").length;
   const hasScroll = totalTasks > maxChecklistVisible;
   const scrollIndicator = hasScroll
     ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
     : "";
-  const helpText = focusMode === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : " [Ctrl+T Focus]";
+  const helpText = isCollapsed
+    ? ""
+    : (focusMode === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : " [Ctrl+T Focus] (click header to collapse)");
   const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
 
   // History: show the most recent completed tasks (capped)
@@ -53,6 +59,16 @@ export function TaskChecklist({
   }, undefined as number | undefined);
   const headerTimeText = maxRemaining !== undefined ? ` ~ Hide in (${maxRemaining}s)` : "";
 
+  if (isCollapsed) {
+    return (
+      <Box flexDirection="column">
+        <Text bold color={focusMode === "checklist" ? "green" : "cyan"}>
+          📋 {collapseIcon} ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed) <Text dimColor italic>click header to expand</Text>
+        </Text>
+      </Box>
+    );
+  }
+
   return (
     <Box
       flexDirection="column"
@@ -63,7 +79,7 @@ export function TaskChecklist({
           {/* Header */}
           <Box flexDirection="row" justifyContent="space-between">
             <Text bold color={focusMode === "checklist" ? "green" : "cyan"}>
-              📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}
+              📋 {collapseIcon} ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}
             </Text>
           </Box>
 
