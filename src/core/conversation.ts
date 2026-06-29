@@ -234,16 +234,58 @@ export class Conversation {
             this.pendingPinnedMessages = parsed.pinnedMessages;
           }
         }
+        this.stripOldToolResults(2);
       } else if (Array.isArray(parsed)) {
         this.messages = parsed;
         this.loadedPlanState = undefined;
         setHistoricalSuperagentTokens(0);
         setMasterTokens(0, 0);
         setLastMasterPromptTokens(0);
+        this.stripOldToolResults(2);
       }
     } catch (err: any) {
       if (err.code !== "ENOENT") {
         console.error("Failed to load history:", err);
+      }
+    }
+  }
+
+  stripOldToolResults(keepCycles = 2): void {
+    let toolMessagesSeen = 0;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const msg = this.messages[i];
+      if (msg.role === "tool") {
+        toolMessagesSeen++;
+        const isRoutine = msg.toolResults?.some(tr => 
+          ["read_file", "list_directory", "grep", "list_dir", "grep_search"].includes(tr.name)
+        ) || false;
+
+        const currentKeepCycles = isRoutine ? 1 : keepCycles;
+
+        if (toolMessagesSeen > currentKeepCycles) {
+          if (msg.toolResults) {
+            msg.toolResults = msg.toolResults.map((tr) => ({
+              ...tr,
+              result: tr.isError 
+                ? (tr.result.length > 150 ? `${tr.result.substring(0, 150)}... [Error truncated]` : tr.result)
+                : `[Output truncated for token efficiency (success)]`,
+            }));
+          }
+        }
+      } else if (msg.role === "assistant") {
+        const isRoutine = msg.toolCalls?.some(tc => 
+          ["read_file", "list_directory", "grep", "list_dir", "grep_search"].includes(tc.name)
+        ) || false;
+        const currentKeepCycles = isRoutine ? 1 : keepCycles;
+
+        if (msg.toolResults && toolMessagesSeen > currentKeepCycles) {
+          msg.toolResults = msg.toolResults.map((tr) => ({
+            ...tr,
+            result: tr.isError 
+              ? (tr.result.length > 150 ? `${tr.result.substring(0, 150)}... [Error truncated]` : tr.result)
+              : `[Output truncated for token efficiency (success)]`,
+          }));
+        }
       }
     }
   }
@@ -253,6 +295,7 @@ export class Conversation {
     if (this.messages.length > this.maxHistory) {
       this.messages = this.messages.slice(-this.maxHistory);
     }
+    this.stripOldToolResults(2);
   }
 
   addUserMessage(content: MessageContent): void {

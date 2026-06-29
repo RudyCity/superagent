@@ -84,4 +84,51 @@ describe("Conversation", () => {
     expect(msgs).toHaveLength(1);
     expect(msgs[0].content).toBe("Test file save");
   });
+
+  it("should proactively strip old tool results and prune routine results faster", () => {
+    const conv = new Conversation();
+
+    // 1. Add non-routine tool (e.g. run_command)
+    conv.addAssistantMessage("running build", [{ id: "c1", name: "run_command", args: {} }]);
+    conv.addMessage({
+      role: "tool",
+      content: "",
+      toolResults: [{ toolCallId: "c1", name: "run_command", result: "build output very long...", isError: false }],
+      timestamp: Date.now()
+    });
+
+    // 2. Add routine tool (e.g. read_file)
+    conv.addAssistantMessage("reading file", [{ id: "c2", name: "read_file", args: {} }]);
+    conv.addMessage({
+      role: "tool",
+      content: "",
+      toolResults: [{ toolCallId: "c2", name: "read_file", result: "file content lines...", isError: false }],
+      timestamp: Date.now()
+    });
+
+    // At this point:
+    // - "read_file" is the most recent (1st tool message seen). It should be intact.
+    // - "run_command" is the 2nd tool message seen. Since it is non-routine, and keepCycles is 2, it should be intact.
+    let msgs = conv.getMessages();
+    expect(msgs.find(m => m.toolResults?.[0]?.name === "read_file")?.toolResults?.[0]?.result).toBe("file content lines...");
+    expect(msgs.find(m => m.toolResults?.[0]?.name === "run_command")?.toolResults?.[0]?.result).toBe("build output very long...");
+
+    // 3. Add another tool call to advance the cycle
+    conv.addAssistantMessage("running test", [{ id: "c3", name: "run_command", args: {} }]);
+    conv.addMessage({
+      role: "tool",
+      content: "",
+      toolResults: [{ toolCallId: "c3", name: "run_command", result: "tests passed", isError: false }],
+      timestamp: Date.now()
+    });
+
+    // Now:
+    // - "run_command (tests passed)" is 1st tool message seen. Intact.
+    // - "read_file" is 2nd tool message seen. Since it is routine, its keepCycles is 1. It should be stripped!
+    // - "run_command (build output)" is 3rd tool message seen. Since toolMessagesSeen (3) > keepCycles (2), it should be stripped!
+    msgs = conv.getMessages();
+    expect(msgs.find(m => m.toolResults?.[0]?.name === "read_file")?.toolResults?.[0]?.result).toContain("truncated");
+    expect(msgs.find(m => m.toolResults?.[0]?.name === "run_command" && m.toolResults?.[0]?.toolCallId === "c1")?.toolResults?.[0]?.result).toContain("truncated");
+    expect(msgs.find(m => m.toolResults?.[0]?.name === "run_command" && m.toolResults?.[0]?.toolCallId === "c3")?.toolResults?.[0]?.result).toBe("tests passed");
+  });
 });
