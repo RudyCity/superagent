@@ -55,8 +55,6 @@ export function DashboardStatusBar({
       <Box flexDirection="row" justifyContent="space-between">
         <Box>
           <Text>
-            <Text color="green" bold>🟢 ONLINE</Text>
-            <Text color="gray"> │ </Text>
             <Text color="yellow" bold>{activeModel}</Text>
             <Text color="gray"> │ </Text>
             <Text color="green" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>

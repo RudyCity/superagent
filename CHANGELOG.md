@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.35] - 2026-06-30
+
+### Changed
+- **Footer UI cleanup**: Removed the keyboard shortcuts legend and the green `🟢 ONLINE` connection indicator/text from both the single-agent `StatusBar` footer and multi-agent `DashboardStatusBar` footer.
+- **Help Command Updates**: Moved and expanded the keyboard shortcuts info to the `/help` command output.
+
+---
+
 ## [1.2.34] - 2026-06-30
 
 ### Added

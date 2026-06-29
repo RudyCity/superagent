@@ -47,8 +47,6 @@ export function StatusBar(props: StatusBarProps) {
       <Box justifyContent="space-between" paddingX={0}>
         <Box>
           <Text>
-            <Text color="green" bold>🟢 ONLINE</Text>
-            <Text color="gray"> │ </Text>
             <Text color="cyan" bold>{modelName}</Text>
             {lastSpeed !== null && (
               <>
@@ -114,26 +112,6 @@ export function StatusBar(props: StatusBarProps) {
             <Text color="yellow">▲ {formatCompactNumber(tokensUp)}</Text>
             <Text color="gray"> │ </Text>
             <Text color="green">▼ {formatCompactNumber(tokensDown + liveStreamTokens)}</Text>
-          </Text>
-        </Box>
-      </Box>
-      <Box justifyContent="space-between" paddingX={0} marginTop={0}>
-        <Box>
-          <Text>
-            <Text color="gray">Shortcuts: </Text>
-            <Text color="cyan">Ctrl+C</Text><Text dimColor> Exit</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="cyan">Ctrl+P</Text><Text dimColor> Checkpoint</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="cyan">Ctrl+H</Text><Text dimColor> History</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="cyan">Esc</Text><Text dimColor> Clear</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="cyan">↑/↓</Text><Text dimColor> History/Scroll</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="cyan">Tab</Text><Text dimColor> Autocomplete</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="cyan">Click</Text><Text dimColor> Focus/Scroll</Text>
           </Text>
         </Box>
       </Box>
