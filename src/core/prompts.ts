@@ -6,8 +6,6 @@
  * Subagent      (depth 2): specialized worker with a restricted role
  */
 
-// NOTE: loadAgentSkills is imported dynamically inside getSubagentSystemPrompt
-// to avoid circular module dependencies (prompts.ts ← subagentTools.ts ← toolsets.ts)
 
 // ─── Master Agent ─────────────────────────────────────────────────────────────
 
@@ -206,6 +204,7 @@ RULES:
 - Do NOT spawn other agents
 - Do NOT run git commands (commit, push, merge)
 - Do NOT modify files outside your working directory
+- On Windows PowerShell, use ';' to separate commands instead of '&&' (Git Bash supports '&&' normally).
 - MANDATORY: You MUST use the \`ask_question\` tool at EVERY decision point. Note that it supports multiple questions and multi-select checkboxes. Use it when implementation details are unclear, when you need to choose between approaches, or when you encounter unexpected issues. NEVER guess or assume; always ask with clear options.
 - SKILL CHECK (MANDATORY FIRST STEP): Before coding, scan the INSTALLED AGENT SKILLS list in your system prompt. If any skill is relevant (e.g. 'test-driven-development-tdd', 'tdd', 'karpathy-guidelines', or dynamic skills loaded from active internal hooks under \`internal-hooks/\` or \`ih\`), read its SKILL.md using its absolute path from that list via a file-reading tool and follow its workflow exactly.
 
@@ -245,6 +244,7 @@ RULES:
 - Identify bugs, security issues, performance problems, or improvements
 - Do NOT modify source files unless explicitly asked to fix a specific bug (DO NOT attempt to call 'edit', 'write_to_file', or other modifying tools unless authorized)
 - Run linting and tests to validate correctness
+- On Windows PowerShell, use ';' to separate commands instead of '&&' (Git Bash supports '&&' normally).
 - MANDATORY: You MUST use the \`ask_question\` tool at EVERY decision point. Note that it supports multiple questions and multi-select checkboxes. Use it when review scope is unclear, when you need to prioritize issues, or when a potential fix has multiple valid approaches. NEVER guess or assume; always ask with clear options.
 - SKILL CHECK (MANDATORY FIRST STEP): Before reviewing, scan the INSTALLED AGENT SKILLS list in your system prompt. If any skill is relevant (e.g. 'requesting-code-review', 'code-review-reception', 'testing-anti-patterns', 'verification-before-completion', or dynamic skills loaded from active internal hooks under \`internal-hooks/\` or \`ih\`), read its SKILL.md using its absolute path from that list via a file-reading tool and follow its workflow.
 
@@ -289,6 +289,8 @@ RULES:
 - Use cloakbrowser for testing websites protected by advanced bot detection (e.g. Cloudflare, reCAPTCHA) or when standard Playwright gets blocked
 - Take screenshots when verifying visual output
 - Do NOT modify source code — report issues only (DO NOT attempt to call 'edit', 'write_to_file', or other modifying tools)
+- On Windows PowerShell, use ';' to separate commands instead of '&&' (Git Bash supports '&&' normally).
+- Perform visual UI/UX checks (design taste): analyze screenshots to check visual alignment, spacing, typography, responsiveness, styling inconsistencies, and overall design aesthetics to ensure a high-quality, premium visual feel.
 - Check for: functionality correctness, UI rendering, error handling, edge cases
 - MANDATORY: You MUST use the \`ask_question\` tool at EVERY decision point. Note that it supports multiple questions and multi-select checkboxes. Use it when test scenarios are unclear, when you need to prioritize which tests to run, or when results are ambiguous. NEVER guess or assume; always ask with clear options.
 
@@ -314,11 +316,7 @@ CRITICAL: You MUST end your final response with a structured report using this E
 `.trim(),
 };
 
-/** Get system prompt for a subagent type, with fallback to a generic prompt.
- * Also injects the installed agent skills list so subagents know which skills
- * exist and can read their SKILL.md files before executing tasks.
- * Uses dynamic import to avoid circular module dependencies.
- */
+/** Get system prompt for a subagent type, with fallback to a generic prompt. */
 export async function getSubagentSystemPrompt(typeName: string, basePrompt: string): Promise<string> {
   return SUBAGENT_SYSTEM_PROMPTS[typeName] || basePrompt;
 }

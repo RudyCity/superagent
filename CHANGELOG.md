@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.32] - 2026-06-29
+
+### Audited & Improved
+- **System Prompts**: Audited system prompts across all tiers (Master, Superagent, Subagents).
+- **Windows Command Separator Support**: Added explicit Windows PowerShell command separator (`;` instead of `&&`) instructions to `coder`, `reviewer`, and `manual-tester` subagent prompts to ensure robust command execution on Windows.
+- **Manual Tester UI/UX Checks**: Integrated high-quality visual UI/UX / design taste checks into the `manual-tester` system prompt.
+- **Redundant Prompts Clean-up**: Imported `SUBAGENT_SYSTEM_PROMPTS` directly into `src/core/tools/index.ts` for subagent registration, preventing drift and eliminating duplicate/redundant hardcoded prompts.
+- **Duplicate Reports Prevention**: Updated `subagentTools.ts` to skip appending the generic `SUBAGENT_REPORT_INSTRUCTION` if the resolved subagent prompt already defines a custom report format, preventing model confusion from duplicate instructions.
+- **Documentation Refinement**: Removed outdated comment about `loadAgentSkills` inside `prompts.ts` to keep codebase docs accurate.
+
+---
+
 ## [1.2.31] - 2026-06-29
 
 ### Improved
