@@ -50,23 +50,31 @@ function getKnowledgePath(): string {
   return path.join(getRootConfigDir(), "pinned-knowledge.json");
 }
 
+let cachedStore: KnowledgeStore | null = null;
+
 function readStore(): KnowledgeStore {
+  if (cachedStore) {
+    return cachedStore;
+  }
   const filePath = getKnowledgePath();
   try {
     if (fs.existsSync(filePath)) {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.entries)) {
-        return parsed as KnowledgeStore;
+        cachedStore = parsed as KnowledgeStore;
+        return cachedStore;
       }
     }
   } catch {
     // Corrupted file — start fresh
   }
-  return { version: STORE_VERSION, entries: [] };
+  cachedStore = { version: STORE_VERSION, entries: [] };
+  return cachedStore;
 }
 
 function writeStore(store: KnowledgeStore): void {
+  cachedStore = store;
   try {
     ensureGlobalConfigDir();
     const filePath = getKnowledgePath();

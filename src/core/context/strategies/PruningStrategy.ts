@@ -7,6 +7,7 @@ import {
   tokensForMessages,
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
+import { SemanticAnalyzer } from "../SemanticAnalyzer.js";
 
 export class PruningStrategy implements CompactionStrategy {
   name = "pruning";
@@ -86,6 +87,17 @@ export class PruningStrategy implements CompactionStrategy {
 
     if (fileMatches.length > 0) {
       parts.push(`Files referenced: ${fileMatches.join(", ")}.`);
+    }
+
+    try {
+      const analyzer = new SemanticAnalyzer();
+      const keyPoints = analyzer.extractKeyPoints(messages);
+      if (keyPoints.length > 0) {
+        const kps = keyPoints.map(kp => `[${kp.type.toUpperCase()}] ${kp.content}`).slice(0, 5).join(" | ");
+        parts.push(`Key semantic points: ${kps}.`);
+      }
+    } catch {
+      // Ignored fallback
     }
 
     parts.push("Key topics discussed and actions taken were preserved in task files.");

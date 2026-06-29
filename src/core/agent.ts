@@ -902,7 +902,7 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
     // We only need to inject skills when using a customSystemPrompt (subagents spawned with custom prompts
     // that bypass getSystemPrompt), to ensure they also see the installed skills list.
     if (this.customSystemPrompt) {
-      const skillsPrompt = loadAgentSkills();
+      const skillsPrompt = loadAgentSkills(this.subagentType, this.tier);
       if (skillsPrompt && !baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
         baseSystemPrompt += "\n\n" + skillsPrompt;
       }
@@ -1088,17 +1088,15 @@ This ensures the ACTIVE TASK CHECKLIST stays up-to-date with the current work.`;
           ? `\n\n⚙️ RUNNING BACKGROUND/TERMINAL PROCESSES:\nYou are aware that the following background/terminal processes are currently running in the environment:\n${runningProcesses}`
           : "";
 
-        // ── Inject pinned knowledge from global store (once per session, on first iteration) ──
+        // ── Inject pinned knowledge from global store (persistently to keep prompt cache hot) ──
         let pinnedKnowledgeNotice = "";
-        if (i === 0) {
-          try {
-            const { getAllKnowledge, formatKnowledgeForPrompt } = await import("./pinnedKnowledge.js");
-            const knowledgeEntries = getAllKnowledge({ limit: 10 });
-            if (knowledgeEntries.length > 0) {
-              pinnedKnowledgeNotice = "\n\n" + formatKnowledgeForPrompt(knowledgeEntries, 8, 1500);
-            }
-          } catch { /* non-critical */ }
-        }
+        try {
+          const { getAllKnowledge, formatKnowledgeForPrompt } = await import("./pinnedKnowledge.js");
+          const knowledgeEntries = getAllKnowledge({ limit: 10 });
+          if (knowledgeEntries.length > 0) {
+            pinnedKnowledgeNotice = "\n\n" + formatKnowledgeForPrompt(knowledgeEntries, 8, 1500);
+          }
+        } catch { /* non-critical */ }
 
         // ── Single-mode subagent directive ──────────────────────────────────
         const singleModeSubagentDirective = this.tier === "single" ? `
@@ -1225,10 +1223,10 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         // token estimation differs from the provider's actual counting.
         {
           const modelLimit = getContextWindowLimit(this.config.model);
-          // Conservative safety margin: 70% of model limit for messages + system,
-          // leaving ~30% headroom for tool schemas and provider-specific tokenizer
-          // differences (e.g. cl100k_base vs DeepSeek tokenizer can differ by ~1.5x).
-          const safetyMax = Math.floor(modelLimit * 0.70);
+          const isAnthropic = this.config.provider === "anthropic" || (typeof this.config.provider === "string" && this.config.provider.includes("anthropic"));
+          // Conservative safety margin: 85% of model limit for Anthropic/Claude (which matches cl100k_base tokenizer),
+          // 70% for other providers to leave headroom for tokenizer differences (e.g. DeepSeek).
+          const safetyMax = Math.floor(modelLimit * (isAnthropic ? 0.85 : 0.70));
           // Estimate system prompt tokens (conservative ~3 chars/token for code-heavy text)
           const estSysTokens = Math.ceil(systemPrompt.length / 3);
           const estMsgTokens = this.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);

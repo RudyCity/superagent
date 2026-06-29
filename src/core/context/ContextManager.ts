@@ -304,10 +304,14 @@ export class ContextManager {
 
   private calculateThreshold(): number {
     const modelLimit = this.config.contextWindowLimit;
-    const responseBuffer = 8000;
-    const toolCallBuffer = 10000;
+    const isAnthropic = this.config.model.includes("claude");
+    // Dynamic buffer: 5% of model limit, capped within safe ranges
+    const responseBuffer = Math.max(4000, Math.min(8000, Math.floor(modelLimit * 0.05)));
+    const toolCallBuffer = Math.max(5000, Math.min(10000, Math.floor(modelLimit * 0.05)));
     const threshold = modelLimit - responseBuffer - toolCallBuffer;
-    return Math.min(threshold, modelLimit * 0.75);
+    // For large models (e.g. Claude 200k), cap at 85% of limit, otherwise 75%
+    const capRatio = isAnthropic || modelLimit >= 100000 ? 0.85 : 0.75;
+    return Math.min(threshold, Math.floor(modelLimit * capRatio));
   }
 
   private selectStrategy(messages: Message[]): CompactionStrategy {

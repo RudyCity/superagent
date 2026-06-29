@@ -43,11 +43,11 @@ describe("ContextManager", () => {
       contextWindowLimit: 100000,
     });
 
-    // Threshold = min(100000 - 8000 - 10000, 100000 * 0.7) = min(82000, 70000) = 70000
-    // 80% of threshold = 56000
-    // Create messages totaling ~60000 tokens (between 80% and 100%)
+    // Threshold = min(100000 - 5000 - 5000, 100000 * 0.85) = min(90000, 85000) = 85000
+    // 80% of threshold = 68000
+    // Create messages totaling ~75000 tokens (between 80% and 100%)
     const messages: Message[] = [];
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 75; i++) {
       messages.push({
         role: "user",
         content: "A".repeat(4000),

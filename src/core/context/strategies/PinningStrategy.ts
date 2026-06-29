@@ -7,6 +7,7 @@ import {
   tokensForMessages,
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
+import { SemanticAnalyzer } from "../SemanticAnalyzer.js";
 
 export class PinningStrategy implements CompactionStrategy {
   name = "pinning";
@@ -137,6 +138,17 @@ export class PinningStrategy implements CompactionStrategy {
       parts.push(`Tools used: ${[...toolNames].join(", ")}.`);
     if (errorKeywords.length > 0)
       parts.push(`Errors noted: ${errorKeywords.slice(0, 3).join(" | ")}.`);
+
+    try {
+      const analyzer = new SemanticAnalyzer();
+      const keyPoints = analyzer.extractKeyPoints(messages);
+      if (keyPoints.length > 0) {
+        const kps = keyPoints.map(kp => `[${kp.type.toUpperCase()}] ${kp.content}`).slice(0, 5).join(" | ");
+        parts.push(`Key semantic points: ${kps}.`);
+      }
+    } catch {
+      // Ignored fallback
+    }
 
     return parts.join(" ");
   }

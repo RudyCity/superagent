@@ -8,6 +8,7 @@ import {
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
 import { generateText } from "ai";
+import { SemanticAnalyzer } from "../SemanticAnalyzer.js";
 
 export interface SummarizationConfig {
   model?: any;
@@ -182,6 +183,17 @@ ${truncated}`;
 
     if (errorMessages.length > 0) {
       parts.push(`${errorMessages.length} error-related messages encountered.`);
+    }
+
+    try {
+      const analyzer = new SemanticAnalyzer();
+      const keyPoints = analyzer.extractKeyPoints(messages);
+      if (keyPoints.length > 0) {
+        const kps = keyPoints.map(kp => `[${kp.type.toUpperCase()}] ${kp.content}`).slice(0, 5).join(" | ");
+        parts.push(`Key semantic points: ${kps}.`);
+      }
+    } catch {
+      // Ignored fallback
     }
 
     parts.push("Key topics and actions were preserved in task files.");

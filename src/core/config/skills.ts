@@ -235,10 +235,34 @@ export function getInstalledSkills(): LoadedSkill[] {
   return skills;
 }
 
-export function loadAgentSkills(): string {
-  const skills = getInstalledSkills();
+export function loadAgentSkills(subagentType?: string, tier?: string): string {
+  let skills = getInstalledSkills();
   if (skills.length === 0) {
     return "";
+  }
+
+  // Filter skills based on subagent type to save tokens and focus context
+  if (subagentType) {
+    const type = subagentType.toLowerCase();
+    const commonSkills = ["getting-started-with-skills", "when-stuck-problem-solving-dispatch", "remembering-conversations"];
+    
+    let keywords: string[] = [];
+    if (type === "researcher") {
+      keywords = ["research", "search", "literature", "find", "query", "database", "explore", "discover", "recall", "remember", "knowledge", "history", "read", "analyze", "arxiv", "pmc", "pubmed", "science", "uniprot", "pdb", "chembl", "obsidian"];
+    } else if (type === "coder") {
+      keywords = ["code", "implement", "write", "develop", "create", "tdd", "test", "debug", "fix", "refactor", "migrate", "git", "worktree", "finish", "branch", "deploy", "build", "linter", "style", "patterns", "api", "design", "database", "sql", "postgres", "python", "fastapi", "react", "nextjs", "typescript", "go", "rust", "solidity", "smart contract", "nft", "android", "ios", "mobile", "pre-commit"];
+    } else if (type === "reviewer") {
+      keywords = ["review", "test", "audit", "verify", "check", "correctness", "lint", "accessibility", "wcag", "screen reader", "e2e", "security", "sast", "threat", "mitigation", "validate", "standards"];
+    }
+
+    if (keywords.length > 0) {
+      skills = skills.filter(s => {
+        const nameLower = s.name.toLowerCase();
+        if (commonSkills.some(cs => nameLower.includes(cs))) return true;
+        const descLower = (s.description || "").toLowerCase();
+        return keywords.some(kw => nameLower.includes(kw) || descLower.includes(kw));
+      });
+    }
   }
 
   let text = "\n\nINSTALLED AGENT SKILLS & MANDATORY DISCOVERY RULES:\n";
