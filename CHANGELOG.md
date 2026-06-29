@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.33] - 2026-06-30
+
+### Added
+- **MCP Client Feature**: Integrated Model Context Protocol (MCP) client features. Superagent can now connect to local/remote stdio-based MCP servers and register their tools dynamically across all agent tiers (Master, Superagent, and Subagents).
+- **McpManager**: Created `src/core/mcp/McpManager.ts` to manage the lifecycle of MCP server connections and tools.
+- **MCP Slash Command**: Implemented `/mcp` command (with `list`, `add`, `remove`, `reload` subcommands) in `src/core/commands/mcpCommand.ts` to easily inspect and configure MCP servers from the terminal.
+- **Tests**: Created a comprehensive mock-based test suite in `tests/mcp.test.ts` to verify MCP configurations and tool loading.
+
+---
+
 ## [1.2.32] - 2026-06-29
 
 ### Audited & Improved

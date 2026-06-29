@@ -13,8 +13,13 @@ import { getConfig } from "./core/config.js";
 import { isDirectoryTrusted, addTrustedDirectory, ensureDirectoryTrusted } from "./core/config/jsonConfig.js";
 import { backgroundTasks, killProcessTree } from "./core/tools/index.js";
 import { subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
+import { closeMcpServers } from "./core/mcp/McpManager.js";
 
 function cleanupBackgroundTasks() {
+  try {
+    closeMcpServers().catch(() => {});
+  } catch {}
+
   for (const [id, task] of backgroundTasks.entries()) {
     try {
       killProcessTree(task.process.pid);
@@ -126,6 +131,12 @@ runFastContextSetup();
 // Auto-setup TencentDB Memory Gateway if enabled
 import { runTencentdbSetup } from "./core/tencentdbSetup.js";
 runTencentdbSetup().catch(() => {});
+
+// Initialize MCP Servers
+import { initMcpServers } from "./core/mcp/McpManager.js";
+await initMcpServers().catch((err) => {
+  console.error("[MCP] Error initializing servers during startup:", err);
+});
 
 import readline from "readline";
 import { Agent } from "./core/agent.js";

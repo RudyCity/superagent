@@ -5,6 +5,7 @@ import "./agentCommands.js";
 import "./skillCommands.js";
 import "./internalHooksCommand.js";
 import "./memoryCommand.js";
+import "./mcpCommand.js";
 
 export { registry } from "./registry.js";
 export * from "./types.js";

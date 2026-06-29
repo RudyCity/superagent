@@ -56,6 +56,12 @@ export interface SystemSettings {
   maxProcsVisible?: number;
 }
 
+export interface McpServerConfig {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
 export interface GlobalModelConfig {
   providers: ProviderProfile[];
   presets: {
@@ -69,6 +75,7 @@ export interface GlobalModelConfig {
   settings?: SystemSettings;
   trustedDirectories?: string[];
   activeHooks?: Record<string, string[]>;
+  mcpServers?: Record<string, McpServerConfig>;
 }
 
 const DEFAULT_CONFIG: GlobalModelConfig = {
