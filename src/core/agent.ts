@@ -2359,8 +2359,9 @@ for (const tc of toolCalls) {
     try {
       const modelInstance = this.getModel();
       const isTest = !!process.env.VITEST;
-      const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
+      const isAnthropic = (!isTest || process.env.TEST_PROMPT_CACHING === "true") && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
       if (isAnthropic && coreMessages.length > 0) {
+        let markedCount = 0;
         for (let i = coreMessages.length - 1; i >= 0; i--) {
           if (coreMessages[i].role === "user") {
             const msg = coreMessages[i];
@@ -2374,6 +2375,7 @@ for (const tc of toolCalls) {
                   },
                 },
               ];
+              markedCount++;
             } else if (Array.isArray(msg.content)) {
               for (let j = msg.content.length - 1; j >= 0; j--) {
                 if (msg.content[j].type === "text") {
@@ -2383,11 +2385,14 @@ for (const tc of toolCalls) {
                       anthropic: { cacheControl: { type: "ephemeral" } },
                     },
                   };
+                  markedCount++;
                   break;
                 }
               }
             }
-            break;
+            if (markedCount >= 3) {
+              break;
+            }
           }
         }
       }
