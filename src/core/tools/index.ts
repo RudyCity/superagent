@@ -61,6 +61,8 @@ import {
   tdaiConversationAddTool,
 } from "./tencentdbMemoryTools.js";
 
+import { manageMcpTool } from "./mcpTools.js";
+
 import { 
   askQuestionTool, 
   scheduleTool, 
@@ -115,6 +117,7 @@ export const allTools: Tool[] = [
   listPeerSuperagentsTool,
   managePlanTool,
   fastcontextTool,
+  manageMcpTool,
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,
   tdaiReadCosTool,

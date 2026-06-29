@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.34] - 2026-06-30
+
+### Added
+- **AI Agent MCP Management**: Exposed the `manage_mcp` tool to the AI agents (`masterToolset`, `superagentToolset`, and `defaultSubagentToolset`). This allows agents to programmatically add, remove, list, and reload MCP servers during feature implementation.
+- **Pengujian**: Extended tests in `tests/mcp.test.ts` to cover `manage_mcp` tool execution actions.
+
+---
+
 ## [1.2.33] - 2026-06-30
 
 ### Added

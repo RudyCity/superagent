@@ -63,6 +63,7 @@ import {
   tdaiMemorySaveTool,
   tdaiConversationAddTool,
 } from "./tencentdbMemoryTools.js";
+import { manageMcpTool } from "./mcpTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Focused on orchestration. Does NOT write code itself.
@@ -81,6 +82,7 @@ export const masterToolset: Tool[] = [
   searchPinnedKnowledgeTool,
   webSearchTool,
   fastcontextTool,       // AI-powered repo explorer
+  manageMcpTool,
   readTool,              // read-only: inspect results
   globTool,
   grepTool,
@@ -122,6 +124,7 @@ export const superagentToolset: Tool[] = [
   gitWorktreeTool,
   manageTasksTool,
   managePlanTool,
+  manageMcpTool,
   listPeerSuperagentsTool,
   defineSubagentTool,    // define specialized subagents
   invokeSubagentTool,    // spawn subagents (depth 2)
@@ -226,6 +229,7 @@ export const defaultSubagentToolset: Tool[] = [
   globTool,
   grepTool,
   fastcontextTool,       // AI-powered repo explorer
+  manageMcpTool,
   webSearchTool,
   writeToFileTool,
   replaceFileContentTool,

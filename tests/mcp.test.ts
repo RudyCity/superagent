@@ -93,4 +93,34 @@ describe("MCP Client Integration", () => {
     expect(connectedServers.size).toBe(0);
     expect(allTools.find(t => t.name === "testserver_echo")).toBeUndefined();
   });
+
+  it("should manage MCP servers using manage_mcp tool", async () => {
+    const manageTool = allTools.find(t => t.name === "manage_mcp");
+    expect(manageTool).toBeDefined();
+
+    // 1. Add server via tool
+    const addResult = await manageTool?.execute({
+      action: "add",
+      name: "toolserver",
+      command: "node",
+      args: ["test.js"]
+    }, process.cwd());
+    expect(addResult).toContain("Successfully added and connected MCP server");
+
+    // 2. List servers via tool
+    const listResult = await manageTool?.execute({ action: "list" }, process.cwd());
+    expect(listResult).toContain("Configured MCP Servers");
+    expect(listResult).toContain("toolserver");
+
+    // 3. Remove server via tool
+    const removeResult = await manageTool?.execute({
+      action: "remove",
+      name: "toolserver"
+    }, process.cwd());
+    expect(removeResult).toContain("Successfully removed MCP server");
+
+    // 4. List after removal
+    const listAfterRemove = await manageTool?.execute({ action: "list" }, process.cwd());
+    expect(listAfterRemove).toBe("No MCP servers configured.");
+  });
 });
