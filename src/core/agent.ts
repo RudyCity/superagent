@@ -1628,7 +1628,6 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           break;
         }
 
-        this.workspaceCacheNeedsUpdate = true;
         const toolResults: ToolResult[] = [];
 
 for (const tc of toolCalls) {

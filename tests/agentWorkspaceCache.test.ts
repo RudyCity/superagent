@@ -175,10 +175,10 @@ describe("Agent Workspace Cache Integration", () => {
     expect(sysLogs.length).toBeGreaterThan(0);
   });
 
-  it("should detect workspace changes and update cache on subsequent loop iterations", async () => {
+  it("should scan workspace only once at start of session and not on subsequent loop iterations", async () => {
     let callCount = 0;
     
-    // First call returns initial cache, second call returns changed workspace cache
+    // First call returns initial cache, second call returns changed workspace cache (should not be called)
     const discoverSpy = vi.spyOn(workspaceDiscovery, "discoverWorkspace").mockImplementation(async () => {
       callCount++;
       if (callCount === 1) {
@@ -251,11 +251,11 @@ describe("Agent Workspace Cache Integration", () => {
 
     await agent.sendMessage("Run something");
 
-    // The agent loop should have run twice (since first turn yielded a tool call)
-    expect(discoverSpy).toHaveBeenCalledTimes(2);
+    // The agent loop should have run only once for discoverWorkspace
+    expect(discoverSpy).toHaveBeenCalledTimes(1);
 
-    // Verify it printed change detection message on the second iteration
+    // Verify it did not print change detection message
     const changeLogs = events.filter(e => e.type === "text" && e.content.includes("changes detected"));
-    expect(changeLogs.length).toBeGreaterThan(0);
+    expect(changeLogs.length).toBe(0);
   }, 20000);
 });

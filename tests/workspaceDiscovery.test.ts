@@ -154,10 +154,11 @@ describe("workspaceDiscovery", () => {
       const injectedPrompt = injectWorkspaceOverview(basePrompt, cache);
       
       expect(injectedPrompt).toContain("You are a coding assistant.");
-      expect(injectedPrompt).toContain("WORKSPACE FILES LIST:");
-      expect(injectedPrompt).toContain("src/index.ts");
+      expect(injectedPrompt).not.toContain("WORKSPACE FILES LIST:");
+      expect(injectedPrompt).not.toContain("src/index.ts");
       expect(injectedPrompt).toContain("PROJECT SPECIFICATIONS (agents.md):");
       expect(injectedPrompt).toContain("# Specs");
+      expect(injectedPrompt).toContain("PROJECT METADATA (package.json):");
     });
   });
 });
