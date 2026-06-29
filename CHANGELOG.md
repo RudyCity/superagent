@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.31] - 2026-06-29
+
+### Improved
+- **AI Agent Guidelines**: Updated `AGENTS.md` guidelines to strictly enforce coding files under 1000 lines, emphasize best practices, modularity, maintainability, optimization, and require commits, version bumps, and changelog updates for every change.
+
+---
+
 ## [1.2.30] - 2026-06-28
 
 ### Added
