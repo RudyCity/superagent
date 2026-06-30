@@ -159,6 +159,21 @@ Let me execute these in sequence:
     expect(result.toolCalls[0].args.command).toBe('npm run build && echo "hello"');
   });
 
+  it("should parse and repair JSON payloads with unescaped double quotes inside values", () => {
+    const text = `
+<tool_call>
+{"name": "run_command", "arguments": {"command": "rm -f tests/temp-* && echo "Done: $(ls tests/temp-* 2>/dev/null | wc -l) files remaining"", "timeout": 10000}}
+</tool_call>
+`;
+    const result = parseXmlToolCalls(text, toolDefs);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].name).toBe("run_command");
+    expect(result.toolCalls[0].args).toEqual({
+      command: 'rm -f tests/temp-* && echo "Done: $(ls tests/temp-* 2>/dev/null | wc -l) files remaining"',
+      timeout: 10000,
+    });
+  });
+
   it("should parse JSON arrays and objects inside XML parameter/element values", () => {
     const text = `
 <ask_question>

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.40] - 2026-06-30
+
+### Fixed
+- **XML Tool Call JSON Parsing Robustness**: Implemented a regex-based JSON parser and repair fallback in `xmlToolParser` to successfully extract and parse tool arguments containing unescaped double quotes. This prevents slightly malformed JSON outputs (e.g. from local/custom models trying to execute bash commands) from failing to parse and leaking as raw XML/JSON text in the terminal.
+
+---
+
 ## [1.2.39] - 2026-06-30
 
 ### Added

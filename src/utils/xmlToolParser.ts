@@ -14,6 +14,69 @@ export interface ParsedToolCall {
  * It extracts all detected tool calls and returns a cleaned version of the text
  * with these XML blocks removed.
  */
+function tryParseToolCallJson(rawBody: string): any {
+  try {
+    return JSON.parse(rawBody);
+  } catch {}
+  try {
+    return JSON.parse(decodeHtmlEntities(rawBody));
+  } catch {}
+
+  // Fallback for malformed/unescaped JSON arrays or objects
+  try {
+    const trimmed = rawBody.trim();
+    if (trimmed.startsWith("[")) {
+      const elementRegex = /\{[\s\S]*?\}(?=\s*,\s*\{|\s*\])/g;
+      const elements = trimmed.match(elementRegex);
+      if (elements) {
+        const parsedElements = elements.map(el => tryParseToolCallJson(el)).filter(Boolean);
+        if (parsedElements.length > 0) return parsedElements;
+      }
+    }
+
+    const nameMatch = /["']name["']\s*:\s*["']([^"']+)["']/i.exec(trimmed);
+    if (!nameMatch) return null;
+    const name = nameMatch[1].trim();
+
+    const argsBlockRegex = /["'](?:arguments|args)["']\s*:\s*\{([\s\S]*)\}/i;
+    const argsMatch = argsBlockRegex.exec(trimmed);
+    let args: Record<string, any> = {};
+
+    if (argsMatch) {
+      const argsContent = argsMatch[1].trim();
+      const pairRegex = /["']([a-zA-Z0-9_-]+)["']\s*:\s*(?:["']([\s\S]*?)["'](?=\s*,\s*["'][a-zA-Z0-9_-]+["']\s*:|\s*\}$|\s*\}[\s\S]*?$)|\s*(-?\d+(?:\.\d+)?|true|false|null|\[[\s\S]*?\]|\{[\s\S]*?\}))/gi;
+      
+      let pairMatch;
+      while ((pairMatch = pairRegex.exec(argsContent)) !== null) {
+        const key = pairMatch[1];
+        const strVal = pairMatch[2];
+        const otherVal = pairMatch[3];
+
+        if (strVal !== undefined) {
+          args[key] = decodeHtmlEntities(strVal);
+        } else if (otherVal !== undefined) {
+          const trimmedVal = otherVal.trim();
+          if (trimmedVal === "true") args[key] = true;
+          else if (trimmedVal === "false") args[key] = false;
+          else if (trimmedVal === "null") args[key] = null;
+          else if (/^-?\d+(?:\.\d+)?$/.test(trimmedVal)) args[key] = Number(trimmedVal);
+          else {
+            try {
+              args[key] = JSON.parse(trimmedVal);
+            } catch {
+              args[key] = trimmedVal;
+            }
+          }
+        }
+      }
+    }
+
+    return { name, arguments: args, args };
+  } catch {
+    return null;
+  }
+}
+
 export function parseXmlToolCalls(
   textContent: string,
   toolDefs: { name: string }[]
@@ -70,12 +133,8 @@ export function parseXmlToolCalls(
     while ((singleTcMatch = blockToolCallRegex.exec(blockContent)) !== null) {
       const rawBody = cleanJsonString(singleTcMatch[1]);
       try {
-        let parsedJson;
-        try {
-          parsedJson = JSON.parse(rawBody);
-        } catch {
-          parsedJson = JSON.parse(decodeHtmlEntities(rawBody));
-        }
+        const parsedJson = tryParseToolCallJson(rawBody);
+        if (!parsedJson) throw new Error("Parse failed");
 
         const name = parsedJson.name;
         let args = parsedJson.arguments || parsedJson.args || {};
@@ -107,16 +166,11 @@ export function parseXmlToolCalls(
       });
     }
 
-    // Fallback: if no tool calls were found, check if the block content itself contains a JSON payload (omitted <tool_call> tag)
     if (toolCalls.length === 0) {
       const rawBody = cleanJsonString(blockContent);
       try {
-        let parsedJson;
-        try {
-          parsedJson = JSON.parse(rawBody);
-        } catch {
-          parsedJson = JSON.parse(decodeHtmlEntities(rawBody));
-        }
+        const parsedJson = tryParseToolCallJson(rawBody);
+        if (!parsedJson) throw new Error("Parse failed");
 
         const candidates = Array.isArray(parsedJson) ? parsedJson : [parsedJson];
         for (const candidate of candidates) {
@@ -148,13 +202,8 @@ export function parseXmlToolCalls(
     if (cleanText.includes(fullBlock)) {
       const rawBody = cleanJsonString(standTcMatch[1]);
       try {
-        let parsedJson;
-        try {
-          parsedJson = JSON.parse(rawBody);
-        } catch {
-          // If direct parse fails, try decoding first
-          parsedJson = JSON.parse(decodeHtmlEntities(rawBody));
-        }
+        const parsedJson = tryParseToolCallJson(rawBody);
+        if (!parsedJson) throw new Error("Parse failed");
 
         const name = parsedJson.name;
         let args = parsedJson.arguments || parsedJson.args || {};
