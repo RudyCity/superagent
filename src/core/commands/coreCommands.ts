@@ -181,6 +181,8 @@ export const helpCommand: SlashCommand = {
         "  /setting-history-limit <number> - Set checklist history visible limit",
         "  /setting-procs-limit <number> - Set processes panel visible limit",
         "  /setting-tencentdb <on|off|status|show-bg-procs|hide-bg-procs> [gatewayUrl] - Configure TencentDB Memory Gateway",
+        "  /setting-focus <off|low|medium|high|xhigh|max|custom> - Set reasoning focus depth level (alias: /focus)",
+        "  /setting-focus-budget <number> - Set reasoning focus custom budget tokens",
         "  /memory   - Manage and inspect TencentDB long-term memory",
         "              Usage: /memory [status|list|search <query>|add <id> <val>|delete <id>|help]",
         "  /help     - Show this help",

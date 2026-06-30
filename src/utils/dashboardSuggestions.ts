@@ -41,6 +41,8 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-history-limit": "Set checklist history visible limit",
   "/setting-procs-limit": "Set processes visible limit",
   "/setting-tencentdb": "Configure TencentDB memory strategy and gateway URL",
+  "/setting-focus": "Set reasoning focus depth level (alias: /focus)",
+  "/setting-focus-budget": "Set reasoning focus custom budget tokens",
   "/memory": "Manage and inspect TencentDB long-term memory",
 };
 
@@ -176,6 +178,19 @@ export function getDashboardSuggestions(query: string): string[] {
       "/setting-tencentdb status",
       "/setting-tencentdb show-bg-procs",
       "/setting-tencentdb hide-bg-procs",
+    ];
+    return filterSuggestions(possibilities, query);
+  }
+
+  if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
+    const possibilities = [
+      `${parts[0]} off`,
+      `${parts[0]} low`,
+      `${parts[0]} medium`,
+      `${parts[0]} high`,
+      `${parts[0]} xhigh`,
+      `${parts[0]} max`,
+      `${parts[0]} custom`,
     ];
     return filterSuggestions(possibilities, query);
   }
