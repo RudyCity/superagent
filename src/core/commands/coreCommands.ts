@@ -159,6 +159,8 @@ export const helpCommand: SlashCommand = {
         "              Shortcut: !<command> (e.g. !npm run dev)",
         "  /skills   - List all installed agent skills and templates",
         "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",
+        "  /mcp      - Manage Model Context Protocol (MCP) servers",
+        "              Usage: /mcp [list|add <name> <command> [args...]|remove <name>|reload]",
         "  /image paste      - Attach an image from the system clipboard",
         "  /image attach <p> - Attach an image from the specified file path",
         "  /ih       - Manage custom internal hook tools (alias: /internal-hooks)",

@@ -952,6 +952,16 @@ export function App({
       return filterSuggestions(shSuggestions, currentInput);
     }
 
+    if (mainCommand === "/mcp") {
+      const mcpSuggestions = [
+        `${mainCommand} list`,
+        `${mainCommand} add`,
+        `${mainCommand} remove`,
+        `${mainCommand} reload`
+      ];
+      return filterSuggestions(mcpSuggestions, currentInput);
+    }
+
     if (mainCommand === "/setting-tencentdb") {
       const tdbSuggestions = [
         "/setting-tencentdb on",

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.36] - 2026-06-30
+
+### Added
+- **Help and Suggestions for MCP**: Updated `/help` command output to describe `/mcp` subcommand usage. Added autocomplete tab-completion suggestions for `/mcp` subcommands (`list`, `add`, `remove`, `reload`) in the CLI.
+
+---
+
 ## [1.2.35] - 2026-06-30
 
 ### Changed
