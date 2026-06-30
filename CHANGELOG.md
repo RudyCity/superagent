@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.39] - 2026-06-30
+
+### Added
+- **Focus Commands Help & Autocomplete**: Added autocomplete suggestions for `/setting-focus` and `/focus` subcommands in the CLI. Added `/setting-focus` and `/setting-focus-budget` commands to the `/help` output.
+
+---
+
 ## [1.2.38] - 2026-06-30
 
 ### Added
