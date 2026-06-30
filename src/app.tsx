@@ -975,6 +975,19 @@ export function App({
       return filterSuggestions(tdbSuggestions, currentInput);
     }
 
+    if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
+      const focusSuggestions = [
+        `${parts[0]} off`,
+        `${parts[0]} low`,
+        `${parts[0]} medium`,
+        `${parts[0]} high`,
+        `${parts[0]} xhigh`,
+        `${parts[0]} max`,
+        `${parts[0]} custom`,
+      ];
+      return filterSuggestions(focusSuggestions, currentInput);
+    }
+
     return [];
   };
 
