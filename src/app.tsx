@@ -203,6 +203,7 @@ export function App({
   const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [activeModel, setActiveModel] = useState(() => getEffectiveMasterModel("single") || getDefaultModel());
+  const [activeFocus, setActiveFocus] = useState(() => getSettings().focus || "off");
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
   const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string; remainingSeconds?: number }[]>([]);
   const [rawCompletedHistory, setRawCompletedHistory] = useState<{ status: string; text: string }[]>([]);
@@ -633,6 +634,7 @@ export function App({
           setPlanState,
           setContextLimit,
           setActiveModel,
+          setFocusLevel: setActiveFocus,
           setInputHistory: setHistory,
           clearLines: () => {
             setLines([]);
@@ -2403,6 +2405,7 @@ export function App({
         tencentdbStatus={tencentdbStatus}
         activeDevHook={activeDevHook}
         workspace={agentRef.current?.workingDirectory || process.cwd()}
+        focus={activeFocus}
       />
     </Box>
   );

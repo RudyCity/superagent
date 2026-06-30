@@ -123,7 +123,7 @@ function hideTencentdbWindow() {
 // /settings command — show all settings from JSON config
 export const settingsCommand: SlashCommand = {
   name: "settings",
-  description: "Show current settings (rate limit, concurrency, streaming, etc.)",
+  description: "Show current settings (rate limit, concurrency, streaming, focus, etc.)",
   execute(args, ctx) {
     const s = getSettings();
     ctx.addLine({
@@ -142,6 +142,8 @@ export const settingsCommand: SlashCommand = {
         `│ • Processes Limit    : ${s.maxProcsVisible} items`,
         `│ • TencentDB Memory   : ${s.enableTencentdbMemory ? "ENABLED" : "DISABLED"}`,
         `│ • TencentDB Gateway  : ${s.tencentdbGatewayUrl}`,
+        `│ • Focus Level (Depth): ${s.focus?.toUpperCase() ?? "OFF"}`,
+        `│ • Focus Custom Budget: ${s.focusBudget} tokens`,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",
@@ -154,7 +156,9 @@ export const settingsCommand: SlashCommand = {
         "  /setting-checklist-limit <number>",
         "  /setting-history-limit <number>",
         "  /setting-procs-limit <number>",
-        "  /setting-tencentdb <on|off|status|show|hide> [gatewayUrl]"
+        "  /setting-tencentdb <on|off|status|show|hide> [gatewayUrl]",
+        "  /setting-focus <off|low|medium|high|xhigh|max|custom>",
+        "  /setting-focus-budget <number>"
       ].join("\n"),
       timestamp: Date.now(),
     });
@@ -1100,6 +1104,92 @@ export const settingTencentdbCommand: SlashCommand = {
   }
 };
 
+// /setting-focus command
+export const settingFocusCommand: SlashCommand = {
+  name: "setting-focus",
+  aliases: ["focus"],
+  description: "Set reasoning focus depth level",
+  execute(args, ctx) {
+    const val = args.trim().toLowerCase();
+    const now = Date.now();
+    const validLevels = ["off", "low", "medium", "high", "xhigh", "max", "custom"];
+    if (!val) {
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-focus <off|low|medium|high|xhigh|max|custom>\nCurrent value: ${getSettings().focus?.toUpperCase() ?? "OFF"}`,
+        timestamp: now,
+      });
+      return;
+    }
+    if (!validLevels.includes(val)) {
+      ctx.addLine({
+        type: "error",
+        content: `Invalid value. Must be one of: ${validLevels.join(", ")}`,
+        timestamp: now,
+      });
+      return;
+    }
+    try {
+      updateSettings({ focus: val as any });
+      if (ctx.setFocusLevel) {
+        ctx.setFocusLevel(val);
+      }
+      ctx.addLine({
+        type: "system",
+        content: `✓ Focus depth set to: ${val.toUpperCase()}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
+// /setting-focus-budget command
+export const settingFocusBudgetCommand: SlashCommand = {
+  name: "setting-focus-budget",
+  description: "Set reasoning focus custom budget tokens",
+  execute(args, ctx) {
+    const val = args.trim();
+    const now = Date.now();
+    if (!val) {
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-focus-budget <number>\nCurrent value: ${getSettings().focusBudget} tokens`,
+        timestamp: now,
+      });
+      return;
+    }
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 1024) {
+      ctx.addLine({
+        type: "error",
+        content: "Invalid value. Must be an integer >= 1024 (Anthropic minimum budget).",
+        timestamp: now,
+      });
+      return;
+    }
+    try {
+      updateSettings({ focusBudget: num });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Focus custom budget set to: ${num} tokens`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
 registry.register(settingsCommand);
 registry.register(settingConcurrencyCommand);
 registry.register(settingRpmCommand);
@@ -1111,3 +1201,5 @@ registry.register(settingChecklistLimitCommand);
 registry.register(settingHistoryLimitCommand);
 registry.register(settingProcsLimitCommand);
 registry.register(settingTencentdbCommand);
+registry.register(settingFocusCommand);
+registry.register(settingFocusBudgetCommand);

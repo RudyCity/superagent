@@ -40,6 +40,7 @@ export interface SlashCommandContext {
   attachImage?: (filePath: string) => Promise<void>;
   pasteImage?: () => Promise<void>;
   setActiveDevHook?: (name: string | null) => void;
+  setFocusLevel?: (level: string) => void;
 }
 
 export interface SlashCommand {

@@ -19,6 +19,7 @@ export interface StatusBarProps {
   tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
   activeDevHook?: string | null;
   workspace?: string;
+  focus?: string;
 }
 
 export function StatusBar(props: StatusBarProps) {
@@ -40,6 +41,7 @@ export function StatusBar(props: StatusBarProps) {
     tencentdbStatus,
     activeDevHook,
     workspace,
+    focus,
   } = props;
 
   return (
@@ -52,6 +54,12 @@ export function StatusBar(props: StatusBarProps) {
               <>
                 <Text color="gray"> │ </Text>
                 <Text color="yellow" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
+              </>
+            )}
+            {focus && focus !== "off" && (
+              <>
+                <Text color="gray"> │ </Text>
+                <Text color="green" bold>🎯 Focus: {focus.toUpperCase()}</Text>
               </>
             )}
             <Text color="gray"> │ </Text>

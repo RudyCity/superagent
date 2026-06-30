@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.38] - 2026-06-30
+
+### Added
+- **Focus Setting (Reasoning Depth Control)**: Implemented a rebranded focus level setting (`off`, `low`, `medium`, `high`, `xhigh`, `max`, `custom`) allowing users to control reasoning thinking token budgets for Anthropic Claude 3.7+ models and reasoning effort for OpenAI o-series models.
+- **Focus Slash Commands**: Implemented `/setting-focus` (alias `/focus`) and `/setting-focus-budget` commands to configure focus levels and budgets from the CLI.
+- **Focus UI Display**: Integrated focus level status indicators dynamically onto the terminal `StatusBar` footer.
+
+---
+
 ## [1.2.37] - 2026-06-30
 
 ### Changed

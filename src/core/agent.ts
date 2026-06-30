@@ -1437,9 +1437,73 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               const startTime = Date.now();
               const modelInstance = this.getModel();
               const isTest = !!process.env.VITEST;
-              const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
+              const modelDetails = getModelConnectionDetailsForTier(
+                this.tier,
+                this.delegationDepth,
+                this.subagentType,
+                !this.isMultiAgent
+              );
+              const modelName = modelDetails.modelName || "";
+              
+              const focus = getSettings().focus ?? "off";
+              const focusBudget = getSettings().focusBudget ?? 4000;
 
-               const result = streamText({
+              const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
+              const isOpenAI = !isTest && modelInstance && (modelInstance.provider === "openai" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("openai")));
+
+              // Determine if model supports thinking
+              const modelSupportsThinking = isAnthropic && (
+                modelName.includes("3-7") || 
+                modelName.includes("3.7") || 
+                modelName.includes("claude-4") || 
+                modelName.includes("opus-4")
+              );
+
+              // Map focus to Anthropic thinking configuration
+              let anthropicThinking: any = undefined;
+              if (modelSupportsThinking && focus !== "off") {
+                let budgetTokens = 4000;
+                if (focus === "low") budgetTokens = 1024;
+                else if (focus === "medium") budgetTokens = 4096;
+                else if (focus === "high") budgetTokens = 8192;
+                else if (focus === "xhigh") budgetTokens = 16384;
+                else if (focus === "max") budgetTokens = 32768;
+                else if (focus === "custom") budgetTokens = focusBudget;
+
+                anthropicThinking = {
+                  type: "enabled",
+                  budgetTokens,
+                };
+              }
+
+              // Determine if model supports OpenAI reasoning effort (o1, o3, etc.)
+              const modelSupportsReasoningEffort = isOpenAI && (
+                modelName.startsWith("o1") || 
+                modelName.startsWith("o3")
+              );
+
+              let openaiReasoningEffort: "low" | "medium" | "high" | undefined = undefined;
+              if (modelSupportsReasoningEffort && focus !== "off") {
+                if (focus === "low") openaiReasoningEffort = "low";
+                else if (focus === "medium") openaiReasoningEffort = "medium";
+                else if (focus === "high" || focus === "xhigh" || focus === "max" || focus === "custom") {
+                  openaiReasoningEffort = "high";
+                }
+              }
+
+              const providerOptions: any = {};
+              if (openaiReasoningEffort) {
+                providerOptions.openai = {
+                  reasoningEffort: openaiReasoningEffort,
+                };
+              }
+              if (anthropicThinking) {
+                providerOptions.anthropic = {
+                  thinking: anthropicThinking,
+                };
+              }
+
+              const result = streamText({
                 model: modelInstance,
                 system: finalSystemPrompt,
                 messages,
@@ -1460,6 +1524,9 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                   experimental_providerMetadata: {
                     anthropic: { cacheControl: { type: "ephemeral" } },
                   },
+                }),
+                ...(Object.keys(providerOptions).length > 0 && {
+                  providerOptions,
                 }),
               });
 

@@ -13,7 +13,8 @@ import {
   updateSettings,
   getTrustedDirectories,
   addTrustedDirectory,
-  isDirectoryTrusted
+  isDirectoryTrusted,
+  getSettings
 } from "../src/core/config/jsonConfig";
 import { getModelInstanceForTier } from "../src/core/config/models";
 
@@ -157,6 +158,17 @@ describe("JSON-based model-config.json storage", () => {
     expect(config.settings?.concurrencyLimit).toBe(1);
     expect(config.settings?.rateLimitRpm).toBe(100);
     expect(config.settings?.rateLimitCapacity).toBe(150);
+  });
+
+  it("should have correct defaults for focus and focusBudget and persist updates", () => {
+    const settings = getSettings();
+    expect(settings.focus).toBe("off");
+    expect(settings.focusBudget).toBe(4000);
+
+    updateSettings({ focus: "medium", focusBudget: 8000 });
+    const updated = getSettings();
+    expect(updated.focus).toBe("medium");
+    expect(updated.focusBudget).toBe(8000);
   });
 
   it("should handle trusted directories operations correctly", () => {

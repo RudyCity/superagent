@@ -54,6 +54,8 @@ export interface SystemSettings {
   maxChecklistVisible?: number;
   maxHistoryVisible?: number;
   maxProcsVisible?: number;
+  focus?: "off" | "low" | "medium" | "high" | "xhigh" | "max" | "custom";
+  focusBudget?: number;
 }
 
 export interface McpServerConfig {
@@ -91,6 +93,8 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     maxChecklistVisible: 3,
     maxHistoryVisible: 3,
     maxProcsVisible: 3,
+    focus: "off",
+    focusBudget: 4000,
   },
   trustedDirectories: [],
   providers: [
@@ -733,6 +737,8 @@ export function getSettings(): SystemSettings {
     maxChecklistVisible: s.maxChecklistVisible ?? 3,
     maxHistoryVisible: s.maxHistoryVisible ?? 3,
     maxProcsVisible: s.maxProcsVisible ?? 3,
+    focus: s.focus ?? "off",
+    focusBudget: s.focusBudget ?? 4000,
   };
 }
 
