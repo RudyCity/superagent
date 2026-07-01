@@ -898,18 +898,20 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
     // populated before we call markPreloadedSkillsInList below.
     const guidelinesText = this.buildGuidelinesText();
 
-    // config.systemPrompt (from getSystemPrompt() in base.ts) already includes skills for main tiers.
-    // We only need to inject skills when using a customSystemPrompt (subagents spawned with custom prompts
-    // that bypass getSystemPrompt), to ensure they also see the installed skills list.
-    if (this.customSystemPrompt) {
-      const skillsPrompt = loadAgentSkills(this.subagentType, this.tier);
-      if (skillsPrompt && !baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
+    // Dynamically load filtered skills based on the user's initial or recent queries in the history
+    if (!baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
+      const userMessages = this.conversation.getMessages().filter(m => m.role === "user");
+      const recentUserMessages = userMessages.slice(-3);
+      const queryStr = recentUserMessages.map(m => contentToString(m.content)).join(" ");
+
+      const skillsPrompt = loadAgentSkills(this.subagentType, this.tier, queryStr);
+      if (skillsPrompt) {
         baseSystemPrompt += "\n\n" + skillsPrompt;
       }
     }
 
     // For ALL agents: mark already-preloaded skills in the INSTALLED AGENT SKILLS list
-    // (which is present either via getSystemPrompt() or injected above for custom prompts)
+    // (which is present either via customSystemPrompt injection or loaded above)
     // so the AI knows not to re-read files already injected into the context above.
     if (baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
       baseSystemPrompt = this.markPreloadedSkillsInList(baseSystemPrompt);

@@ -235,17 +235,32 @@ export function getInstalledSkills(): LoadedSkill[] {
   return skills;
 }
 
-export function loadAgentSkills(subagentType?: string, tier?: string): string {
+export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?: string): string {
   let skills = getInstalledSkills();
   if (skills.length === 0) {
     return "";
   }
 
-  // Filter skills based on subagent type to save tokens and focus context
+  const normalizeSkillName = (n: string) =>
+    n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+  // Predefined core skills that are always loaded to ensure robust agent operations
+  const alwaysIncludeSkills = new Set([
+    "getting-started-with-skills",
+    "when-stuck-problem-solving-dispatch",
+    "remembering-conversations",
+    "verification-before-completion",
+    "systematic-debugging",
+    "root-cause-tracing",
+    "karpathy-guidelines",
+    "workflow-patterns",
+    "superagent-planning",
+    "master-agent-orchestration"
+  ]);
+
+  // 1. Filter skills based on subagent type
   if (subagentType) {
     const type = subagentType.toLowerCase();
-    const commonSkills = ["getting-started-with-skills", "when-stuck-problem-solving-dispatch", "remembering-conversations"];
-    
     let keywords: string[] = [];
     if (type === "researcher") {
       keywords = ["research", "search", "literature", "find", "query", "database", "explore", "discover", "recall", "remember", "knowledge", "history", "read", "analyze", "arxiv", "pmc", "pubmed", "science", "uniprot", "pdb", "chembl", "obsidian"];
@@ -257,10 +272,45 @@ export function loadAgentSkills(subagentType?: string, tier?: string): string {
 
     if (keywords.length > 0) {
       skills = skills.filter(s => {
-        const nameLower = s.name.toLowerCase();
-        if (commonSkills.some(cs => nameLower.includes(cs))) return true;
+        const normName = normalizeSkillName(s.name);
+        if (alwaysIncludeSkills.has(normName) || normName.includes("getting-started") || normName.includes("when-stuck")) return true;
         const descLower = (s.description || "").toLowerCase();
-        return keywords.some(kw => nameLower.includes(kw) || descLower.includes(kw));
+        return keywords.some(kw => normName.includes(kw) || descLower.includes(kw));
+      });
+    }
+  }
+
+  // 2. Filter skills based on userQuery keywords
+  if (userQuery) {
+    const stopWords = new Set([
+      "and", "the", "for", "use", "any", "our", "you", "with", "are", 
+      "not", "but", "can", "this", "that", "how", "what", "why", "who", 
+      "has", "had", "have", "been", "was", "were", "should", "would", 
+      "could", "about", "your", "them", "they", "their", "from", "into",
+      "its", "here", "there", "when", "then", "where", "which",
+      "need", "needs", "want", "wants", "check", "checking", "test", 
+      "testing", "deploy", "deployment", "project", "code", "codebase", 
+      "file", "files", "task", "tasks", "work", "add", "adding", "create", 
+      "creating", "make", "making", "build", "building", "run", "running", 
+      "execute", "executing", "simple", "complex", "basic", "advanced",
+      "please", "help", "with", "show", "get", "set"
+    ]);
+
+    const queryLower = userQuery.toLowerCase();
+    const queryWords = queryLower
+      .split(/[^a-z0-9]+/i)
+      .filter(w => w.length >= 3 && !stopWords.has(w));
+
+    if (queryWords.length > 0) {
+      skills = skills.filter(s => {
+        const normName = normalizeSkillName(s.name);
+        if (alwaysIncludeSkills.has(normName)) return true;
+
+        const nameWords = new Set(normName.split(/[^a-z0-9]+/i));
+        const descLower = (s.description || "").toLowerCase();
+        const descWords = new Set(descLower.split(/[^a-z0-9]+/i));
+
+        return queryWords.some(w => nameWords.has(w) || descWords.has(w));
       });
     }
   }
@@ -273,3 +323,4 @@ export function loadAgentSkills(subagentType?: string, tier?: string): string {
   }
   return text;
 }
+

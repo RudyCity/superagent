@@ -189,6 +189,5 @@ AVAILABLE TOOLS:
 - manage_subagents: List or terminate active subagents.
 - git_worktree: Manage Git worktrees (list, add, remove, prune) to inspect or clean up isolated workspaces.`;
   
-  const skillsPrompt = loadAgentSkills();
-  return basePrompt + skillsPrompt;
+  return basePrompt;
 }

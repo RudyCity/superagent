@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.41] - 2026-07-01
+
+### Added
+- **Dynamic Skill Filtering & Prompt Optimization**: Implemented query-based dynamic filtering for loading agent skills. This replaces the static all-skills injection, reducing initial system prompt tokens by up to 10,000–15,000 tokens. It uses whole-word keyword matching against the user's recent queries while permanently retaining a core set of operational skills (like `karpathy-guidelines` and `getting-started-with-skills`).
+
+---
+
 ## [1.2.40] - 2026-06-30
 
 ### Fixed
