@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.46] - 2026-07-01
+
+### Changed
+- **System Prompts Optimization**: Redesigned and audited all system prompts in the codebase (`MASTER_AGENT_SYSTEM_PROMPT`, `SUPERAGENT_SYSTEM_PROMPT`, and all four `SUBAGENT_SYSTEM_PROMPTS`) using Concepts A, B, and C (Telegraphic English, Markdown structure, and Pseudocode logic gates) to achieve a ~50% reduction in token count and increase reasoning reliability.
+- **System Prompt Guidelines**: Added a dedicated `System Prompt Guidelines` section to `AGENTS.md` to serve as a project specification and reference for writing and maintaining system prompts.
+
+---
+
 ## [1.2.45] - 2026-07-01
 
 ### Fixed
