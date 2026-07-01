@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.49] - 2026-07-02
+
+### Changed
+- **Unlimited Iterations Limit**: Added support for setting the agent loop iteration limit (`maxIterations`) to `0` for unlimited execution. Updated display strings in settings and loop messages to show `"unlimited"` instead of `0` or `Infinity`.
+
+---
+
 ## [1.2.48] - 2026-07-01
 
 ### Changed

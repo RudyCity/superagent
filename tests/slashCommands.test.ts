@@ -638,6 +638,30 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(getSettings().focusBudget).toBe(8000);
     expect(addedLines[addedLines.length - 1].content).toContain("Focus custom budget set to: 8000 tokens");
   });
+
+  it("should configure max agent loop iterations when running /setting-max-iterations", () => {
+    // Show usage when empty
+    handleSlashCommand("/setting-max-iterations", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-max-iterations");
+
+    // Invalid value (negative)
+    handleSlashCommand("/setting-max-iterations -5", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    // Invalid value (non-number)
+    handleSlashCommand("/setting-max-iterations abc", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    // Valid value (0 for unlimited)
+    handleSlashCommand("/setting-max-iterations 0", mockCtx as any);
+    expect(getSettings().maxIterations).toBe(0);
+    expect(addedLines[addedLines.length - 1].content).toContain("Max iterations set to: unlimited");
+
+    // Valid positive value
+    handleSlashCommand("/setting-max-iterations 120", mockCtx as any);
+    expect(getSettings().maxIterations).toBe(120);
+    expect(addedLines[addedLines.length - 1].content).toContain("Max iterations set to: 120");
+  });
 });
 
 describe("Slash Command: /worktree", () => {

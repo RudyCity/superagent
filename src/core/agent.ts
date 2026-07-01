@@ -929,8 +929,9 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
   private async runAgentLoop(): Promise<void> {
     const signal = this.abortController?.signal;
     const isGoalMode = !!this.goalMode;
-    const defaultMax = getSettings().maxIterations || 50;
+    const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 50);
     const maxIterations = isGoalMode ? this.goalMaxIterations : defaultMax;
+    const maxIterationsStr = maxIterations === Infinity ? "unlimited" : maxIterations.toString();
     let continueCount = 0;
     // In goal mode, allow many more auto-continues without prompting the user
     const maxContinues = isGoalMode ? 10 : 3;
@@ -1221,7 +1222,7 @@ After all subagents finish, you MUST perform this verification loop before consi
         const systemPrompt = `${activeSystemPrompt}
 
 CRITICAL TASK EXECUTION CONTEXT:
-- You are running with a strict step limit of ${maxIterations} agent iterations per request.
+- You are running with a strict step limit of ${maxIterationsStr} agent iterations per request.
 - Be highly efficient. DO NOT try to do everything in a single sequential thread.
 - MANDATORY: For any task that is complex, multi-step, or touches multiple files/components — you MUST spawn subagents via 'invoke_subagent'. Doing it yourself is forbidden for such tasks.
 - Spawn subagents in parallel whenever tasks are independent. This is the primary way to complete large tasks within the iteration limit.
@@ -1229,7 +1230,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}`;
 
         // Build dynamic context to inject into messages array
-        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]\n- Current Step: ${currentStep} of ${maxIterations}.${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
+        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]\n- Current Step: ${currentStep} of ${maxIterationsStr}.${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
 
         const injectDynamicContext = (msgs: CoreMessage[]) => {
           if (msgs.length > 0) {

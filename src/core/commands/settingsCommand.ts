@@ -136,7 +136,7 @@ export const settingsCommand: SlashCommand = {
         `│ • Limit Capacity     : ${s.rateLimitCapacity}`,
         `│ • Streaming          : ${s.disableStreaming ? "DISABLED" : "ENABLED"}`,
         `│ • Context Window     : ${s.contextWindowLimit > 0 ? `${s.contextWindowLimit} tokens` : "auto (model default)"}`,
-        `│ • Max Iterations     : ${s.maxIterations}`,
+        `│ • Max Iterations     : ${s.maxIterations === 0 ? "0 (unlimited)" : s.maxIterations}`,
         `│ • Checklist Limit    : ${s.maxChecklistVisible} items`,
         `│ • History Limit      : ${s.maxHistoryVisible} items`,
         `│ • Processes Limit    : ${s.maxProcsVisible} items`,
@@ -402,18 +402,19 @@ export const settingMaxIterationsCommand: SlashCommand = {
     const val = args.trim();
     const now = Date.now();
     if (!val) {
+      const current = getSettings().maxIterations;
       ctx.addLine({
         type: "system",
-        content: `Usage: /setting-max-iterations <number>\nCurrent value: ${getSettings().maxIterations}`,
+        content: `Usage: /setting-max-iterations <number>\nCurrent value: ${current === 0 ? "0 (unlimited)" : current}`,
         timestamp: now,
       });
       return;
     }
     const num = parseInt(val, 10);
-    if (isNaN(num) || num < 1) {
+    if (isNaN(num) || num < 0) {
       ctx.addLine({
         type: "error",
-        content: "Invalid value. Must be a positive integer (minimum 1).",
+        content: "Invalid value. Must be a non-negative integer (0 for unlimited).",
         timestamp: now,
       });
       return;
@@ -422,7 +423,7 @@ export const settingMaxIterationsCommand: SlashCommand = {
       updateSettings({ maxIterations: num });
       ctx.addLine({
         type: "system",
-        content: `✓ Max iterations set to: ${num}`,
+        content: `✓ Max iterations set to: ${num === 0 ? "unlimited" : num}`,
         timestamp: now,
       });
     } catch (err: any) {
