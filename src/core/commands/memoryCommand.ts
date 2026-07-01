@@ -178,7 +178,7 @@ export const memoryCommand: SlashCommand = {
       });
 
       try {
-        const res = await client.updateAtomic({ id: key, content: value, type, upsert: true });
+        const res = await client.updateAtomic({ id: key, content: value });
         ctx.addLine({
           type: "system",
           content: `✓ Memory saved successfully.\n  ID: ${res.id}\n  Type: ${type}\n  Updated: ${new Date(res.updated_at).toLocaleString()}`,

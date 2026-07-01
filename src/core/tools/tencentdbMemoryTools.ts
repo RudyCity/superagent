@@ -136,7 +136,7 @@ export const tdaiMemorySaveTool: Tool = {
     const client = getClient();
 
     try {
-      const res = await client.updateAtomic({ id, content, type, upsert: true });
+      const res = await client.updateAtomic({ id, content });
       return `Memory saved successfully. ID: ${res.id}, updated at: ${res.updated_at}`;
     } catch (err) {
       return `Failed to save memory: ${formatError(err)}. Make sure the TencentDB memory gateway is running.`;

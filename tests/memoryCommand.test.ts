@@ -103,8 +103,6 @@ describe("/memory Command Suite", () => {
     expect(mockClient.updateAtomic).toHaveBeenCalledWith({
       id: "user-name",
       content: "John Doe",
-      type: "preference",
-      upsert: true,
     });
     expect(addedLines.some((l) => l.content.includes("Memory saved successfully"))).toBe(true);
   });

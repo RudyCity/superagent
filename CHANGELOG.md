@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.44] - 2026-07-01
+
+### Fixed
+- **TencentDB Memory Client API Alignments**: Updated `/memory` slash command and `tdai_memory_save` tool execution logic to match the updated `@tencentdb-agent-memory/memory-tencentdb` signature where `updateAtomic` parameters do not include `type` or `upsert` fields. Fixed corresponding unit and integration tests.
+
+---
+
 ## [1.2.43] - 2026-07-01
 
 ### Added

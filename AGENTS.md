@@ -1,4 +1,4 @@
-# Project Specifications (agents.md)
+# Project Specifications (agents.md) 
 
 This file contains key information about the project for AI agents to study and align with when working on Superagent.
 

@@ -111,8 +111,6 @@ describe("TencentDB Memory Tools", () => {
       expect(mockUpdateAtomic).toHaveBeenCalledWith({
         id: "user-identity",
         content: "User name is Rudy",
-        type: "identity",
-        upsert: true,
       });
     });
 
@@ -130,8 +128,6 @@ describe("TencentDB Memory Tools", () => {
       expect(mockUpdateAtomic).toHaveBeenCalledWith({
         id: "simple-note",
         content: "A simple note",
-        type: undefined,
-        upsert: true,
       });
     });
 
