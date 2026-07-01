@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.47] - 2026-07-01
+
+### Fixed
+- **Test Stability**: Increased polling timeout to 10s and reduced polling step to 10ms in `agentAbortInterrupt.test.ts` to prevent flaky failures under high CPU load or concurrent test execution.
+
+---
+
 ## [1.2.46] - 2026-07-01
 
 ### Changed

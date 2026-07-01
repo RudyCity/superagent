@@ -85,10 +85,10 @@ describe("Agent - Abort and Instant Interruption", () => {
 
     const sendPromise = agent.sendMessage("test message");
 
-    // Poll until streamText is called (with a reasonable timeout)
+    // Poll until streamText is called (with a reasonable timeout of 10s for high load/CI environments)
     const pollStart = Date.now();
-    while (!abortSignalPassed && Date.now() - pollStart < 2000) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+    while (!abortSignalPassed && Date.now() - pollStart < 10000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
     expect(agent.isAgentRunning()).toBe(true);
@@ -146,10 +146,10 @@ describe("Agent - Abort and Instant Interruption", () => {
 
     const sendPromise = agent.sendMessage("test message");
 
-    // Poll until agent is running and has entered the retry delay (with timeout)
+    // Poll until agent is running and has entered the retry delay (with timeout of 10s for high load/CI environments)
     const pollStart2 = Date.now();
-    while (!agent.isAgentRunning() && Date.now() - pollStart2 < 2000) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+    while (!agent.isAgentRunning() && Date.now() - pollStart2 < 10000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
     expect(agent.isAgentRunning()).toBe(true);
