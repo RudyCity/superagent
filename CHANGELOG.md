@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.45] - 2026-07-01
+
+### Fixed
+- **Malformed XML/JSON Tool Call Parsing**: Fixed a bug where the model's blended/malformed XML and JSON tool calls (e.g. `<tool name="..." "arguments": {...}}` or `<tool_name="..." "arguments": {...}}`) would fail to parse and leak onto the user's terminal as plain text. Added robust brace balancing fallback parsing and updated the stream filter (`StreamXmlFilter`) to correctly block these malformed tool blocks from being printed to the stdout stream.
+
+---
+
 ## [1.2.44] - 2026-07-01
 
 ### Fixed

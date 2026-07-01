@@ -14,6 +14,71 @@ export interface ParsedToolCall {
  * It extracts all detected tool calls and returns a cleaned version of the text
  * with these XML blocks removed.
  */
+export function findBalancedJson(str: string, startIndex: number): { json: string; endIndex: number } | null {
+  let braceCount = 0;
+  let inString = false;
+  let escape = false;
+  let i = startIndex;
+  while (i < str.length) {
+    const char = str[i];
+    if (escape) {
+      escape = false;
+    } else if (char === "\\") {
+      escape = true;
+    } else if (char === '"') {
+      inString = !inString;
+    } else if (!inString) {
+      if (char === "{") {
+        braceCount++;
+      } else if (char === "}") {
+        braceCount--;
+        if (braceCount === 0) {
+          return {
+            json: str.substring(startIndex, i + 1),
+            endIndex: i + 1
+          };
+        }
+      }
+    }
+    i++;
+  }
+  return null;
+}
+
+export function normalizeMalformedToolCalls(text: string): string {
+  const regex = /<tool(?:_name|\s+name)\s*=\s*"([^"]+)"\s*,?\s*["']arguments["']\s*:\s*/gi;
+  let match;
+  let result = "";
+  let lastIndex = 0;
+
+  regex.lastIndex = 0;
+
+  while ((match = regex.exec(text)) !== null) {
+    const matchStartIndex = match.index;
+    const matchEndIndex = regex.lastIndex;
+    const toolName = match[1];
+
+    const balanced = findBalancedJson(text, matchEndIndex);
+    if (balanced) {
+      result += text.substring(lastIndex, matchStartIndex);
+      
+      let replaceEnd = balanced.endIndex;
+      if (replaceEnd < text.length && text[replaceEnd] === "}") {
+        replaceEnd++;
+      }
+
+      result += `<tool_call>{"name": "${toolName}", "arguments": ${balanced.json}}</tool_call>`;
+      lastIndex = replaceEnd;
+      regex.lastIndex = replaceEnd;
+    } else {
+      result += text.substring(lastIndex, matchEndIndex);
+      lastIndex = matchEndIndex;
+    }
+  }
+  result += text.substring(lastIndex);
+  return result;
+}
+
 function tryParseToolCallJson(rawBody: string): any {
   try {
     return JSON.parse(rawBody);
@@ -83,8 +148,11 @@ export function parseXmlToolCalls(
 ): { toolCalls: ParsedToolCall[]; cleanText: string } {
   const toolCalls: ParsedToolCall[] = [];
   
+  // Normalize any malformed XML/JSON mixed tool calls like <tool name="..." ...}}
+  const normalizedMalformed = normalizeMalformedToolCalls(textContent);
+
   // Normalize DSML namespaces to standard tags
-  const normalizedText = textContent
+  const normalizedText = normalizedMalformed
     .replace(/｜｜DSML｜｜/gi, "")
     .replace(/｜DSML｜/gi, "")
     .replace(/\|\|DSML\|\|/gi, "")
@@ -289,12 +357,15 @@ export function parseXmlToolCalls(
 
   // Clean up any leftover/stray XML tool tags
   cleanText = cleanText
-    .replace(/<\/function_calls\s*>/gi, "")
-    .replace(/<function_calls\s*>/gi, "")
-    .replace(/<\/tool_calls\s*>/gi, "")
-    .replace(/<tool_calls\s*>/gi, "")
-    .replace(/<\/tool_call\s*>/gi, "")
-    .replace(/<tool_call\s*>/gi, "");
+    .replace(/([ \t]*│)?[ \t]*<\/function_calls\s*>/gi, "")
+    .replace(/([ \t]*│)?[ \t]*<function_calls\s*>/gi, "")
+    .replace(/([ \t]*│)?[ \t]*<\/tool_calls?\s*>/gi, "")
+    .replace(/([ \t]*│)?[ \t]*<tool_calls?\s*>/gi, "")
+    .replace(/([ \t]*│)?[ \t]*<\/tool_call\s*>/gi, "")
+    .replace(/([ \t]*│)?[ \t]*<tool_call\s*>/gi, "");
+
+  // Remove lines containing only space/tab and a vertical line
+  cleanText = cleanText.replace(/^[ \t]*│[ \t]*(?:\r?\n|$)/gm, "");
 
   return {
     toolCalls,
@@ -425,13 +496,68 @@ export class StreamXmlFilter {
         break;
       }
 
-      // We have an opening bracket. Emit everything before it immediately
+      // We have an opening bracket.
       if (ltIndex > 0) {
-        this.onText(this.buffer.substring(0, ltIndex));
+        const rest = this.buffer.substring(ltIndex);
+        const isClosingTag = rest.startsWith("</");
+        const nameStart = isClosingTag ? 2 : 1;
+        let nameEnd = nameStart;
+        while (nameEnd < rest.length) {
+          const char = rest[nameEnd];
+          if (/[a-zA-Z0-9_-]/.test(char) || char === "｜" || char === "|") {
+            nameEnd++;
+          } else {
+            break;
+          }
+        }
+        if (nameEnd === rest.length) {
+          // Tag name is incomplete, wait for more data
+          break;
+        }
+
+        const rawTagName = rest.substring(nameStart, nameEnd).trim();
+        const tagName = rawTagName
+          .replace(/｜｜DSML｜｜/gi, "")
+          .replace(/｜DSML｜/gi, "")
+          .replace(/\|\|DSML\|\|/gi, "")
+          .replace(/\|DSML\|/gi, "");
+        
+        const isToolTag = this.activeTags.includes(tagName) || tagName === "tool" || tagName === "tool_name";
+        
+        let prefixLen = 0;
+        if (isToolTag) {
+          const prefixText = this.buffer.substring(0, ltIndex);
+          const match = /[ \t]*│[ \t]*$/.exec(prefixText);
+          if (match) {
+            prefixLen = match[0].length;
+          }
+        }
+
+        this.onText(this.buffer.substring(0, ltIndex - prefixLen));
         this.buffer = this.buffer.substring(ltIndex);
       }
 
       // Now the buffer starts with '<'.
+
+      // Check if it is a malformed tool call starting at index 0
+      const malformedRegex = /^<tool(?:_name|\s+name)\s*=\s*"([^"]+)"\s*,?\s*["']arguments["']\s*:\s*/i;
+      const malformedMatch = malformedRegex.exec(this.buffer);
+      if (malformedMatch) {
+        const matchEndIndex = malformedMatch[0].length;
+        const balanced = findBalancedJson(this.buffer, matchEndIndex);
+        if (balanced) {
+          let replaceEnd = balanced.endIndex;
+          if (replaceEnd < this.buffer.length && this.buffer[replaceEnd] === "}") {
+            replaceEnd++;
+          }
+          this.buffer = this.buffer.substring(replaceEnd);
+          continue;
+        } else {
+          // JSON not fully buffered yet, wait for more data
+          break;
+        }
+      }
+
       const isClosingTag = this.buffer.startsWith("</");
       const nameStart = isClosingTag ? 2 : 1;
 
@@ -446,8 +572,6 @@ export class StreamXmlFilter {
       }
 
       if (nameEnd === this.buffer.length) {
-        // We reached the end of the buffer while reading the tag name.
-        // We must wait for more characters to decide.
         break;
       }
 
@@ -457,30 +581,22 @@ export class StreamXmlFilter {
         .replace(/｜DSML｜/gi, "")
         .replace(/\|\|DSML\|\|/gi, "")
         .replace(/\|DSML\|/gi, "");
-      const isToolTag = this.activeTags.includes(tagName);
+      const isToolTag = this.activeTags.includes(tagName) || tagName === "tool" || tagName === "tool_name";
 
       if (isToolTag) {
-        // Yes, it is a tool tag or tool container.
-        // We must buffer this entire tag and its content until we see its matching closing tag.
-        // Search for the closing tag flexibly, ignoring any potential DSML prefixes
         const escapedTagName = tagName.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
-        const closingTagNamePattern = (tagName === "tool_call" || tagName === "tool_calls")
-          ? "(?:tool_call|tool_calls)"
+        const closingTagNamePattern = (tagName === "tool_call" || tagName === "tool_calls" || tagName === "tool" || tagName === "tool_name")
+          ? "(?:tool_call|tool_calls|tool|tool_name)"
           : escapedTagName;
         const closingRegex = new RegExp(`<\/(?:｜｜DSML｜｜|｜DSML｜|\\|\\|DSML\\|\\||\\|DSML\\||)?${closingTagNamePattern}\\s*>`, "i");
         const match = closingRegex.exec(this.buffer);
         if (match) {
-          // Found the closing tag! Discard the entire tag and content from the buffer.
           this.buffer = this.buffer.substring(match.index + match[0].length);
-          // Loop again to process remaining buffer
           continue;
         } else {
-          // Closing tag not found yet, keep buffering everything from '<' onwards.
           break;
         }
       } else {
-        // It's not a tool tag.
-        // Emit the '<' character to advance the parser.
         this.onText(this.buffer[0]);
         this.buffer = this.buffer.substring(1);
       }

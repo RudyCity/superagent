@@ -358,6 +358,71 @@ Some outro text.
       expect(result.toolCalls[0].name).toBe("view_file");
       expect(result.cleanText).toBe("Some intro text.\n\nStray closing tag in the middle.\n\nSome outro text.");
     });
+
+    it("should parse malformed <tool name=...> and <tool_name=...> calls inside mismatched tags", () => {
+      const text = `[SYS] Intro text.
+<tool_calls>
+ │    <tool name="ask_question", "arguments": {"question": "Program Google Colab?", "options": [{"label": "A"}, {"label": "B"}], "isMultiSelect": false}}
+ │    <tool_name="view_file", "arguments": {"AbsolutePath": "/test1.txt"}}
+ │    <tool_name="view_file", "arguments": {"AbsolutePath": "/test2.txt"}}
+ │    </tool_call>`;
+
+      const result = parseXmlToolCalls(text, toolDefs);
+      expect(result.toolCalls).toHaveLength(3);
+      
+      expect(result.toolCalls[0].name).toBe("ask_question");
+      expect(result.toolCalls[0].args).toEqual({
+        question: "Program Google Colab?",
+        options: [{ label: "A" }, { label: "B" }],
+        isMultiSelect: false,
+      });
+
+      expect(result.toolCalls[1].name).toBe("view_file");
+      expect(result.toolCalls[1].args).toEqual({
+        AbsolutePath: "/test1.txt",
+      });
+
+      expect(result.toolCalls[2].name).toBe("view_file");
+      expect(result.toolCalls[2].args).toEqual({
+        AbsolutePath: "/test2.txt",
+      });
+
+      expect(result.cleanText).toBe("[SYS] Intro text.");
+    });
+  });
+
+  describe("StreamXmlFilter malformed handling", () => {
+    it("should filter out malformed tool calls from stream and emit normal text", () => {
+      let output = "";
+      const filter = new StreamXmlFilter((text) => {
+        output += text;
+      }, toolDefs);
+
+      filter.push("Before ");
+      filter.push('<tool_calls>\n');
+      filter.push(' │    <tool name="ask_question", "arguments": {"question": "Program Google Colab?", "options": [{"label": "A"}], "isMultiSelect": false}}\n');
+      filter.push(' │    <tool_name="view_file", "arguments": {"AbsolutePath": "/test1.txt"}}\n');
+      filter.push(' │    </tool_call> After');
+      filter.flush();
+
+      expect(output.replace(/\s+/g, " ").trim()).toBe("Before After");
+    });
+
+    it("should filter out standalone streamed malformed tool calls", () => {
+      let output = "";
+      const filter = new StreamXmlFilter((text) => {
+        output += text;
+      }, toolDefs);
+
+      filter.push("Before ");
+      filter.push('<tool name="ask_question", "arguments": {"question": "Program Google Colab?", "options": [{"label": "A"}], "isMultiSelect": false}}');
+      filter.push(" Middle ");
+      filter.push('<tool_name="view_file", "arguments": {"AbsolutePath": "/test1.txt"}}');
+      filter.push(" After");
+      filter.flush();
+
+      expect(output.replace(/\s+/g, " ").trim()).toBe("Before Middle After");
+    });
   });
 });
 
