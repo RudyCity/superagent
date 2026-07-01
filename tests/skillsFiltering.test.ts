@@ -25,4 +25,14 @@ describe("Dynamic Skill Filtering by Query", () => {
     expect(prompt).toContain("mobile-ios-design");
     expect(prompt).not.toContain("airflow-dag-patterns");
   });
+
+  it("should filter out multi-agent specific skills in single agent mode", () => {
+    // When isMultiAgent is false (default), team-composition-patterns should not be loaded
+    const singlePrompt = loadAgentSkills(undefined, undefined, "need to check team composition patterns", false);
+    expect(singlePrompt).not.toContain("team-composition-patterns");
+
+    // When isMultiAgent is true, it should load team-composition-patterns
+    const multiPrompt = loadAgentSkills(undefined, undefined, "need to check team composition patterns", true);
+    expect(multiPrompt).toContain("team-composition-patterns");
+  });
 });

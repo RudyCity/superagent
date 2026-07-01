@@ -947,7 +947,7 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
 
     // Dynamically load filtered skills based on the user's initial or recent queries in the history
     if (!baseSystemPrompt.includes("INSTALLED AGENT SKILLS:")) {
-      const skillsPrompt = loadAgentSkills(this.subagentType, this.tier, queryStr);
+      const skillsPrompt = loadAgentSkills(this.subagentType, this.tier, queryStr, this.isMultiAgent);
       if (skillsPrompt) {
         baseSystemPrompt += "\n\n" + skillsPrompt;
       }

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.43] - 2026-07-01
+
+### Added
+- **Multi-Agent vs Single-Agent Skill Grouping**: Added `isMultiAgent` filtering in `loadAgentSkills`. When running in single-agent mode, multi-agent specific skills (such as `master-agent-orchestration`, `team-composition-patterns`, `team-communication-protocols`, and `dispatching-parallel-agents`) are automatically filtered out and excluded from the agent skills prompt to prevent unnecessary token consumption and guidelines clutter.
+
+---
+
 ## [1.2.42] - 2026-07-01
 
 ### Added

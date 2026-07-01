@@ -235,7 +235,7 @@ export function getInstalledSkills(): LoadedSkill[] {
   return skills;
 }
 
-export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?: string): string {
+export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?: string, isMultiAgent?: boolean): string {
   let skills = getInstalledSkills();
   if (skills.length === 0) {
     return "";
@@ -243,6 +243,20 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
 
   const normalizeSkillName = (n: string) =>
     n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+  const multiAgentOnlySkills = new Set([
+    "master-agent-orchestration",
+    "team-composition-patterns",
+    "team-communication-protocols",
+    "dispatching-parallel-agents"
+  ]);
+
+  if (!isMultiAgent) {
+    skills = skills.filter(s => {
+      const normName = normalizeSkillName(s.name);
+      return !multiAgentOnlySkills.has(normName);
+    });
+  }
 
   // Predefined core skills that are always loaded to ensure robust agent operations
   const alwaysIncludeSkills = new Set([
