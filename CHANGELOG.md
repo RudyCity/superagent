@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.42] - 2026-07-01
+
+### Added
+- **State-Based Preloaded Skills Optimization**: Optimized preloaded guidelines/mandatory skills inside `Agent` system prompt. Skills (like `superagent-planning`, `executing-plans`, `systematic-debugging`) are now dynamically preloaded based on the agent's current planning/execution state and query keywords, saving another 4,000–7,000 tokens on every turn. Added an in-memory caching system to prevent redundant disk I/O when dynamically building guidelines.
+
+---
+
 ## [1.2.41] - 2026-07-01
 
 ### Added

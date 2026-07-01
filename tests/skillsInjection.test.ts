@@ -105,7 +105,7 @@ describe("Skills Injection into Agent System Prompts", () => {
 
     const agent = new Agent(onEvent, onPermission, onQuestion);
     agent.tier = "superagent";
-    agent.planState = "APPROVED";
+    agent.planState = "PLANNING_PENDING";
 
     let capturedSystemPrompt = "";
 
@@ -211,14 +211,13 @@ describe("Skill Preloading Enhancements", () => {
     vi.restoreAllMocks();
   });
 
-  it("should preload all 8 mandatory skills plus master-agent-orchestration for master tier", async () => {
+  it("should preload appropriate guidelines dynamically based on state and query for master tier", async () => {
     const onEvent = vi.fn();
     const onPermission = vi.fn().mockResolvedValue(true);
     const onQuestion = vi.fn();
 
     const masterAgent = new Agent(onEvent, onPermission, onQuestion);
     masterAgent.tier = "master";
-    masterAgent.planState = "APPROVED";
 
     const mandatoryKeys = [
       "karpathy-guidelines",
@@ -243,6 +242,8 @@ describe("Skill Preloading Enhancements", () => {
       return key ? `MOCK_CONTENT_FOR_${key.toUpperCase().replace(/-/g, "_")}` : "";
     });
 
+    // 1. PLANNING_PENDING state: should load planning skills
+    masterAgent.planState = "PLANNING_PENDING";
     let capturedSystemPrompt = "";
     vi.mocked(streamText).mockImplementation((options) => {
       capturedSystemPrompt = options.system || "";
@@ -257,12 +258,20 @@ describe("Skill Preloading Enhancements", () => {
     expect(capturedSystemPrompt).toContain("BEHAVIORAL CODING GUIDELINES (karpathy-guidelines):");
     expect(capturedSystemPrompt).toContain("PLANNING AND TASK GUIDELINES (superagent-planning):");
     expect(capturedSystemPrompt).toContain("PLAN WRITING GUIDELINES (writing-plans):");
+    expect(capturedSystemPrompt).not.toContain("PLAN EXECUTION GUIDELINES (executing-plans):");
+
+    // 2. APPROVED state with a debug query: should load execution skills + debugging guidelines
+    masterAgent.planState = "APPROVED";
+    (masterAgent as any).skillContentCache.clear();
+    await masterAgent.sendMessage("please debug this error");
+
+    expect(capturedSystemPrompt).toContain("BEHAVIORAL CODING GUIDELINES (karpathy-guidelines):");
     expect(capturedSystemPrompt).toContain("PLAN EXECUTION GUIDELINES (executing-plans):");
-    expect(capturedSystemPrompt).toContain("TRACK MANAGEMENT GUIDELINES (track-management):");
-    expect(capturedSystemPrompt).toContain("DEBUGGING GUIDELINES (systematic-debugging):");
     expect(capturedSystemPrompt).toContain("VERIFICATION GUIDELINES (verification-before-completion):");
     expect(capturedSystemPrompt).toContain("SUBAGENT DELEGATION GUIDELINES (subagent-driven-development):");
+    expect(capturedSystemPrompt).toContain("DEBUGGING GUIDELINES (systematic-debugging):");
     expect(capturedSystemPrompt).toContain("MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration):");
+    expect(capturedSystemPrompt).not.toContain("PLANNING AND TASK GUIDELINES (superagent-planning):");
   });
 
   it("should cache guidelinesText and not re-read SKILL.md files on subsequent sendMessage calls", async () => {
