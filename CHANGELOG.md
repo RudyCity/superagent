@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.48] - 2026-07-01
+
+### Changed
+- **Skills Prompt Optimization**: Replaced the detailed list of installed agent skills with a concise, telegraphic instruction set in the system prompt. This directs the agent to locate and read relevant skills under the `.agents/skills/` directory on-demand, saving thousands of prompt tokens and reducing system prompt bloat.
+
+---
+
 ## [1.2.47] - 2026-07-01
 
 ### Fixed

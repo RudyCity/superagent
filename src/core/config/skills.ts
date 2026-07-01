@@ -236,105 +236,12 @@ export function getInstalledSkills(): LoadedSkill[] {
 }
 
 export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?: string, isMultiAgent?: boolean): string {
-  let skills = getInstalledSkills();
-  if (skills.length === 0) {
-    return "";
-  }
+  // Option 2: Return a concise general instruction prompt about searching and reading skills in the workspace,
+  // instead of listing all of them, to optimize token usage.
+  return `
 
-  const normalizeSkillName = (n: string) =>
-    n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-
-  const multiAgentOnlySkills = new Set([
-    "master-agent-orchestration",
-    "team-composition-patterns",
-    "team-communication-protocols",
-    "dispatching-parallel-agents"
-  ]);
-
-  if (!isMultiAgent) {
-    skills = skills.filter(s => {
-      const normName = normalizeSkillName(s.name);
-      return !multiAgentOnlySkills.has(normName);
-    });
-  }
-
-  // Predefined core skills that are always loaded to ensure robust agent operations
-  const alwaysIncludeSkills = new Set([
-    "getting-started-with-skills",
-    "when-stuck-problem-solving-dispatch",
-    "remembering-conversations",
-    "verification-before-completion",
-    "systematic-debugging",
-    "root-cause-tracing",
-    "karpathy-guidelines",
-    "workflow-patterns",
-    "superagent-planning",
-    "master-agent-orchestration"
-  ]);
-
-  // 1. Filter skills based on subagent type
-  if (subagentType) {
-    const type = subagentType.toLowerCase();
-    let keywords: string[] = [];
-    if (type === "researcher") {
-      keywords = ["research", "search", "literature", "find", "query", "database", "explore", "discover", "recall", "remember", "knowledge", "history", "read", "analyze", "arxiv", "pmc", "pubmed", "science", "uniprot", "pdb", "chembl", "obsidian"];
-    } else if (type === "coder") {
-      keywords = ["code", "implement", "write", "develop", "create", "tdd", "test", "debug", "fix", "refactor", "migrate", "git", "worktree", "finish", "branch", "deploy", "build", "linter", "style", "patterns", "api", "design", "database", "sql", "postgres", "python", "fastapi", "react", "nextjs", "typescript", "go", "rust", "solidity", "smart contract", "nft", "android", "ios", "mobile", "pre-commit"];
-    } else if (type === "reviewer") {
-      keywords = ["review", "test", "audit", "verify", "check", "correctness", "lint", "accessibility", "wcag", "screen reader", "e2e", "security", "sast", "threat", "mitigation", "validate", "standards"];
-    }
-
-    if (keywords.length > 0) {
-      skills = skills.filter(s => {
-        const normName = normalizeSkillName(s.name);
-        if (alwaysIncludeSkills.has(normName) || normName.includes("getting-started") || normName.includes("when-stuck")) return true;
-        const descLower = (s.description || "").toLowerCase();
-        return keywords.some(kw => normName.includes(kw) || descLower.includes(kw));
-      });
-    }
-  }
-
-  // 2. Filter skills based on userQuery keywords
-  if (userQuery) {
-    const stopWords = new Set([
-      "and", "the", "for", "use", "any", "our", "you", "with", "are", 
-      "not", "but", "can", "this", "that", "how", "what", "why", "who", 
-      "has", "had", "have", "been", "was", "were", "should", "would", 
-      "could", "about", "your", "them", "they", "their", "from", "into",
-      "its", "here", "there", "when", "then", "where", "which",
-      "need", "needs", "want", "wants", "check", "checking", "test", 
-      "testing", "deploy", "deployment", "project", "code", "codebase", 
-      "file", "files", "task", "tasks", "work", "add", "adding", "create", 
-      "creating", "make", "making", "build", "building", "run", "running", 
-      "execute", "executing", "simple", "complex", "basic", "advanced",
-      "please", "help", "with", "show", "get", "set"
-    ]);
-
-    const queryLower = userQuery.toLowerCase();
-    const queryWords = queryLower
-      .split(/[^a-z0-9]+/i)
-      .filter(w => w.length >= 3 && !stopWords.has(w));
-
-    if (queryWords.length > 0) {
-      skills = skills.filter(s => {
-        const normName = normalizeSkillName(s.name);
-        if (alwaysIncludeSkills.has(normName)) return true;
-
-        const nameWords = new Set(normName.split(/[^a-z0-9]+/i));
-        const descLower = (s.description || "").toLowerCase();
-        const descWords = new Set(descLower.split(/[^a-z0-9]+/i));
-
-        return queryWords.some(w => nameWords.has(w) || descWords.has(w));
-      });
-    }
-  }
-
-  let text = "\n\nINSTALLED AGENT SKILLS & MANDATORY DISCOVERY RULES:\n";
-  text += "CRITICAL DIRECTIVE: At the very beginning of processing the user's request, you MUST proactively scan the list of installed specialized agent skills below. Note that skills may also be loaded dynamically from active internal hooks (located under `internal-hooks/` or `ih`). If the task or any subtask involves concepts, workflows, platforms, or tools mentioned in a skill's name or description, you MUST immediately read the corresponding instruction file ('SKILL.md') using a file-reading tool (e.g. view_file) using the EXACT absolute path listed in 'Instruction File:' below BEFORE executing commands, writing code, or proposing plans. DO NOT use relative paths (like '.agents/skills/...') if they do not exist in your workspace; always use the absolute paths from this list. Do NOT attempt to guess the workflow or perform it from memory if a relevant skill exists. Always check for relevant skills first.\n\n";
-  for (const s of skills) {
-    const provider = s.author || "local";
-    text += `- **${provider}/${s.name}**: ${s.description}\n  Instruction File: ${s.path}\n`;
-  }
-  return text;
+INSTALLED AGENT SKILLS & MANDATORY DISCOVERY RULES:
+CRITICAL: Specialized skills (workflows, platforms, tools) are installed under \`.agents/skills/\` (and globally under config/plugins).
+Before starting any coding, plan, or command, check for a relevant skill (e.g. by listing/searching \`.agents/skills/\`). If a relevant skill exists, you MUST read its \`SKILL.md\` using the exact absolute path before taking action. Do not guess or execute from memory. Check skills first.`;
 }
 
