@@ -72,13 +72,26 @@ Master Agent  (orchestrator)
 - **Exploration & Research**: When performing codebase exploration, investigation, or research, always spawn a subagent to handle the task.
 - **Mandatory Skill Reading**: At the very start of the workflow to solve any user request (such as debugging, testing, QA, refactoring, new feature development, or any other task supported by our comprehensive skills), you MUST identify all relevant skills and read their `SKILL.md` instructions using the `view_file` tool before making plans or taking action.
 - **Terminal Preset Names**: When creating or setting up terminal presets (e.g. via `/terminal init` or by writing to `terminal-presets.json`), preset names (keys in the JSON configuration) MUST be short, simple, lowercase, alphanumeric characters, and may use hyphens or underscores (e.g., `'dev'`, `'build'`, `'start'`, `'test'`). Emojis are strictly prohibited in preset names to ensure they are easy for users to type in the terminal when running `/terminal <preset_name>` or `/terminal preset <preset_name>`.
-- **Prompt Optimization Guidelines (Concept ABC)**: All system prompts, agent instructions, and subagent prompts in the codebase must be optimized for token efficiency and logical clarity using the following concepts:
-  - **A (Telegraphic English)**: Remove conversational fillers, polite phrasing, and redundant words (keep only core commands and nouns).
-  - **B (Markdown/JSON Structure)**: Group constraints, workflow steps, and formats under clear headings (e.g., `# ROLE`, `# CRITICAL RULES`, `# WORKFLOW`) using bullet points or structured keys.
-  - **C (Pseudocode / Logic Gates)**: Format condition-based rules (such as triggering dynamic tools like `ask_question` or error-recovery flows) as pseudo-code logical blocks (e.g., `if condition: CALL action()`).
+
+
+
+
+
+## System Prompt Guidelines (Concept A, B, and C)
+All system prompts in the codebase (e.g., in [prompts.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/prompts.ts)) must be designed and optimized using the following guidelines:
+- **Concept A: Telegraphic English (Minified Prose)**
+  - Remove conversational filler, pronouns, polite phrasing, and redundant verbs.
+  - Use brief, direct imperative statements.
+- **Concept B: Markdown Structure**
+  - Organize rules, context, workflows, and rules under clear Markdown headers (e.g., `# ROLE`, `# CRITICAL RULES`, `# WORKFLOW`).
+  - Use bullet points and lists to establish a clean hierarchy.
+- **Concept C: Pseudocode & Logic Gates**
+  - Structure conditional flows, decision gates, or self-verification routines using programming-like logic statements (e.g., `if decision_point: CALL ask_question()`).
+  - Avoid verbose natural language paragraphs for branching paths.
 
 ## Verification Checklist
 - Run `npm test` to verify that all unit tests pass before committing.
 - Build the project using `npm run build` to verify there are no TypeScript compilation errors.
 - After adding new tools, verify they are added to the correct tier toolset in `toolsets.ts` and not to other tiers.
 - After modifying `subagentTools.ts` or `superagentTools.ts`, check for circular dependency issues — imports of `toolsets.ts`/`prompts.ts` must be dynamic.
+
