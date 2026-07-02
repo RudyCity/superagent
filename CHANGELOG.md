@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.70] - 2026-07-02
+
+### Changed
+- **Aligned Log Console Layout & Removed Dividers**: Adjusted the log console formatting in `dashboardLogFormatter.tsx` to align tool inputs, outputs, and separator lines perfectly with the expanded tool header by substituting spaces for extra inner vertical tree line elements. Completely removed the horizontal divider line (`──────────`) from expanded tool logs.
+
+---
+
 ## [1.2.69] - 2026-07-02
 
 ### Changed

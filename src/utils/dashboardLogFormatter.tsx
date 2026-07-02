@@ -261,7 +261,6 @@ export function computeLogGroupBoundaries(
 
       // Add merged result output lines if expanded
       if (isTool && group.mergedResult) {
-        lineCount += 1; // Divider line: "───"
         for (const rawLine of group.mergedResult.lines) {
           const cleaned = rawLine.replace(/\r\n/g, "\n").replace(/\r/g, "");
           const subLines = wrapTextForDisplay(cleaned, Math.max(10, feedWidth - 18));
@@ -442,7 +441,7 @@ export function computeWrappedLogs(
         }
         const lineText = subLines[i];
         const trimmed = lineText.trim();
-        const activeSubLinePrefix = isTool ? subLinePrefix + "    " : subLinePrefix;
+        const activeSubLinePrefix = isTool ? nestPrefix + "        " : subLinePrefix;
 
         if (group.parseMarkdown) {
           if (trimmed.startsWith("```")) {
@@ -539,13 +538,7 @@ export function computeWrappedLogs(
     if (isTool && group.mergedResult) {
       const merged = group.mergedResult;
       const mergedColor = merged.isError ? "red" : "green";
-      const outputSubLinePrefix = subLinePrefix + "    ";
-      // Divider
-      wrappedLines.push(
-        <Box flexDirection="row" key={`log-divider-${groupIdx}`} width={feedWidth}>
-          <Text color={mergedColor} dimColor>{outputSubLinePrefix}{"─".repeat(28)}</Text>
-        </Box>
-      );
+      const outputSubLinePrefix = nestPrefix + "        ";
       for (let mi = 0; mi < merged.lines.length; mi++) {
         const content = merged.lines[mi];
         const cleanedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
@@ -567,7 +560,7 @@ export function computeWrappedLogs(
     if (groupIdx < groups.length - 1 && !nextIsNested) {
       wrappedLines.push(
         <Box flexDirection="row" key={`log-sep-${groupIdx}`}>
-          <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{isTool ? subLinePrefix + "    " : subLinePrefix}</Text>
+          <Text color={group.color === "gray" ? "gray" : group.color} dimColor={group.dimColor}>{isTool ? nestPrefix + "        " : subLinePrefix}</Text>
         </Box>
       );
     }
