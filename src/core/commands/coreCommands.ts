@@ -176,7 +176,7 @@ export const helpCommand: SlashCommand = {
         "  /setting-capacity <number> - Set rate limit capacity",
         "  /setting-streaming <on|off> - Enable or disable streaming",
         "  /setting-context-limit <number> - Set context window limit (0 = auto)",
-        "  /setting-max-iterations <number> - Set max agent iterations",
+        "  /setting-max-iterations <number> - Set max agent iterations (0 = unlimited)",
         "  /setting-checklist-limit <number> - Set task checklist visible limit",
         "  /setting-history-limit <number> - Set checklist history visible limit",
         "  /setting-procs-limit <number> - Set processes panel visible limit",

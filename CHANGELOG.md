@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.50] - 2026-07-02
+
+### Changed
+- **Help Text and Documentation**: Updated `/help` command output and setting descriptions in `/settings` command helper messages to clarify that setting the value to `0` configures `unlimited` max iterations and `auto` context window limits.
+
+---
+
 ## [1.2.49] - 2026-07-02
 
 ### Changed
