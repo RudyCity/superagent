@@ -385,16 +385,10 @@ export function computeWrappedLogs(
       const prefix = nestPrefix + (groupIdx === 0 ? "┌───" : (groupIdx === groups.length - 1 ? "└───" : "├───"));
       const firstContent = group.rawLines[0] || "";
       const preview = firstContent.length > 50 ? firstContent.slice(0, 47) + "..." : firstContent;
-      const icon = group.label.includes("TOOL START") ? "⚙️" :
-                   group.label.includes("TOOL") && group.label.includes("DONE") ? "✅" :
-                   group.label.includes("TOOL") && group.label.includes("OK") ? "✅" :
-                   group.label.includes("FAIL") ? "🚨" :
-                   group.label.includes("THINK") ? "🧠" :
-                   group.label.includes("AUTO") ? "⚙️" : "▶";
       wrappedLines.push(
         <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>
           <Text color={group.color} dimColor wrap="truncate-end">
-            {prefix} [ <Text bold color={group.color}>▶ {icon} {group.label}</Text> ] <Text dimColor>{preview}</Text> <Text italic dimColor>click to expand</Text>
+            {prefix} [ <Text bold color={group.color}>▶ {group.label}</Text> ] <Text dimColor>{preview}</Text> <Text italic dimColor>click to expand</Text>
           </Text>
         </Box>
       );

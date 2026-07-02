@@ -497,5 +497,94 @@ describe("MultiAgentDashboard UI Component", () => {
 
     unmount();
   });
+
+  it("should trigger toggleGroupCollapse when a collapsible log line is clicked", async () => {
+    const { useDashboardMouse } = await import("../src/hooks/useDashboardMouse.js");
+    const { computeLogGroupBoundaries, computeWrappedLogs } = await import("../src/utils/dashboardLogFormatter.js");
+
+    const originalOn = process.stdin.on;
+    const originalOff = process.stdin.off;
+    const originalWrite = process.stdout.write;
+
+    let mouseHandler: any = null;
+    process.stdin.on = vi.fn((event, cb) => {
+      if (event === "data") mouseHandler = cb;
+      return process.stdin;
+    }) as any;
+    process.stdin.off = vi.fn() as any;
+    process.stdout.write = vi.fn() as any;
+
+    const mockToggleGroupCollapse = vi.fn();
+    const mockSetFocusArea = vi.fn();
+
+    const mockSession = {
+      id: "session-1",
+      type: "MASTER",
+      task: "Test task",
+      status: "WORKING",
+      tokens: 100,
+      logs: [
+        "[TOOL START] Managing tasks (list)",
+        "[TOOL START] Running command: pwd",
+        "[TOOL:FAIL] ✗ Failed - Reading file: C:\\Users\\USER\\.superagent",
+      ],
+      branch: "main",
+    };
+
+    const feedWidth = 80;
+    const isHistoryTruncated = false;
+    const expandedGroups = new Set<number>();
+
+    const groupBoundaries = computeLogGroupBoundaries(mockSession as any, feedWidth, isHistoryTruncated, expandedGroups);
+    const wrappedLines = computeWrappedLogs(mockSession as any, feedWidth, isHistoryTruncated, expandedGroups);
+
+    const TestComponent = () => {
+      useDashboardMouse({
+        wrappedLines,
+        logsCount: 10,
+        terminalSize: { width: 100, height: 40 },
+        activeWizard: null,
+        setActiveWizard: vi.fn(),
+        wizardOptions: [],
+        wizardSelectedIndex: 0,
+        setWizardSelectedIndex: vi.fn(),
+        wizardSelectedSet: new Set(),
+        setWizardSelectedSet: vi.fn(),
+        setWizardOptions: vi.fn(),
+        pendingQuestion: null,
+        handleWizardSubmit: vi.fn(),
+        query: "",
+        setQuery: vi.fn(),
+        wizardAllOptions: [],
+        workspaceHeight: 15,
+        leftTopHeight: 10,
+        wizardIsLoadingModels: false,
+        agent: null,
+        focusArea: "logs",
+        setFocusArea: mockSetFocusArea,
+        setLogScrollOffset: vi.fn(),
+        startIdxLogs: 0,
+        groupBoundaries,
+        toggleGroupCollapse: mockToggleGroupCollapse,
+        logBoxStartRow: 7,
+      } as any);
+      return null;
+    };
+
+    const { unmount } = render(React.createElement(TestComponent));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Click on the first log line: y = 7 (which corresponds to clickedLogLine = 0)
+    // rightStart = Math.floor(100 * 0.42) = 42. Click at x = 50.
+    mouseHandler(Buffer.from("\x1b[<0;50;7M"));
+
+    expect(mockToggleGroupCollapse).toHaveBeenCalledWith(0);
+    unmount();
+
+    process.stdin.on = originalOn;
+    process.stdin.off = originalOff;
+    process.stdout.write = originalWrite;
+  });
 });
+
 

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.66] - 2026-07-02
+
+### Fixed
+- **Multi-Agent Collapsible Log Group Clicks**: Resolved a click-to-expand bug where collapsible tool/think log headers were unclickable for `SUPERAGENT` sessions. The layout math of `logBoxStartRow` and `logBoxHeight` now dynamically accounts for the taller Title box (2 lines instead of 1) in sessions that render a git worktree path, preventing mouse coordinate misalignment.
+- **Collapsed Header Duplicate Emojis**: Removed the redundant icon prefix rendering in collapsed log headers. The headers now correctly rely solely on the beautiful emoji prefixes defined directly on each group's label.
+
+---
+
 ## [1.2.65] - 2026-07-02
 
 ### Fixed

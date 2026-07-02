@@ -985,7 +985,9 @@ export function MultiAgentDashboard({
       }
     }
   }
-  const logBoxHeight = Math.max(5, workspaceHeight - 3 - (renderedTaskLinesCount || 1));
+  const hasWorktree = selectedSession.type === "SUPERAGENT" && !!selectedSession.worktreePath;
+  const titleBoxHeight = hasWorktree ? 2 : 1;
+  const logBoxHeight = Math.max(5, workspaceHeight - 2 - titleBoxHeight - (renderedTaskLinesCount || 1));
   const showCursor = selectedSession.status === "WORKING" && logScrollOffset === 0;
   const maxActiveLines = Math.max(0, Math.min(8, logBoxHeight - 4));
   const activeToolLines = (selectedSession.type === "MASTER" && isExecutingTool && activeToolOutput) 
@@ -1182,7 +1184,7 @@ export function MultiAgentDashboard({
     startIdxLogs,
     groupBoundaries,
     toggleGroupCollapse,
-    logBoxStartRow: 7 + (renderedTaskLinesCount || 0),
+    logBoxStartRow: 6 + titleBoxHeight + (renderedTaskLinesCount || 0),
   });
 
   const maxVisibleSessions = Math.max(3, leftTopHeight - 2);
