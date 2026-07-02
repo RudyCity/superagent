@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.65] - 2026-07-02
+
+### Fixed
+- **Tool Error Log Truncation**: Increased the log truncation slice limit from 200 to 2000 characters for `appendMasterLog` and `appendToolsErrorLog` in `src/core/permissions.ts`, as well as `src/core/tools/subagentTools.ts`. This prevents absolute folder paths and detailed error messages from being truncated (e.g., cutting off in the middle of session folder names), resolving cosmetic errors that look like path resolution bugs in the multi-agent UI.
+
+---
+
 ## [1.2.64] - 2026-07-02
 
 ### Fixed

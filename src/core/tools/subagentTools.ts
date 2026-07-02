@@ -285,7 +285,7 @@ export const invokeSubagentTool: Tool = {
           const status = r.isError ? "🔴 FAILED" : "🟢 SUCCESS";
           logs.push(`│   └───[ ${status} ]\n`);
           const resultStr = typeof r.result === "string" ? r.result : JSON.stringify(r.result);
-          const truncated = resultStr.slice(0, 200) + (resultStr.length > 200 ? "..." : "");
+          const truncated = resultStr.slice(0, 2000) + (resultStr.length > 2000 ? "..." : "");
           const resultLines = truncated.split("\n");
           for (const line of resultLines) {
             logs.push(`│       ${line}\n`);
@@ -592,7 +592,7 @@ export const sendMessageTool: Tool = {
             const status = r.isError ? "🔴 FAILED" : "🟢 SUCCESS";
             logsList.push(`│   └───[ ${status} ]\n`);
             const resultStr = typeof r.result === "string" ? r.result : JSON.stringify(r.result);
-            const truncated = resultStr.slice(0, 200) + (resultStr.length > 200 ? "..." : "");
+            const truncated = resultStr.slice(0, 2000) + (resultStr.length > 2000 ? "..." : "");
             const resultLines = truncated.split("\n");
             for (const line of resultLines) {
               logsList.push(`│       ${line}\n`);

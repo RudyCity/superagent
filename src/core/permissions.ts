@@ -435,8 +435,8 @@ export async function executeToolCall(
     if (isError) {
       try {
         const { appendMasterLog, appendToolsErrorLog } = await import("./tools/state.js");
-        appendMasterLog(`[ERROR] Tool returned error: ${toolCall.name} | ${String(result).slice(0, 200)}`);
-        appendToolsErrorLog(tier, depth, toolCall.name, String(result).slice(0, 500), { cwd });
+        appendMasterLog(`[ERROR] Tool returned error: ${toolCall.name} | ${String(result).slice(0, 2000)}`);
+        appendToolsErrorLog(tier, depth, toolCall.name, String(result).slice(0, 2000), { cwd });
       } catch {}
     }
     return {
