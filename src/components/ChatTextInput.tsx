@@ -178,7 +178,7 @@ export default function ChatTextInput({
       }
 
       // ── Strip SGR mouse escape sequences that leak from terminal clicks ──
-      if (/^(?:\x1b)?\[<\d+(?:;\d+)*[Mm]/.test(input)) {
+      if (input && (input.startsWith("[<") || input.startsWith("\x1b[<") || input.startsWith("\u001b[<"))) {
         return;
       }
 

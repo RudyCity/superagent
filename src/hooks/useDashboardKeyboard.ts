@@ -130,6 +130,11 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
 
   const handlerRef = React.useRef<(input: string, key: any) => void>();
   handlerRef.current = (input, key) => {
+    // Ignore SGR mouse escape sequences that leak from terminal clicks
+    if (input && (input.startsWith("[<") || input.startsWith("\x1b[<") || input.startsWith("\u001b[<"))) {
+      return;
+    }
+
     const isEscape = !!(key?.escape || ((input === "\x1b" || input === "\u001b") && input.length === 1));
     const isCtrlC = !!(input === "\x03" || (key?.ctrl && input === "c"));
 

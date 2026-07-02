@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.58] - 2026-07-02
+
+### Fixed
+- **XTerm SGR Mouse Click Leak Fix**: Fixed an issue where rapid or partial XTerm SGR mouse tracking escape sequences (e.g. `[<0;1;5M`) would leak directly into the terminal prompt. Implemented a robust prefix-based filter in the dashboard keyboard hook `useDashboardKeyboard` and the text input component `ChatTextInput` to catch and ignore all full and partial mouse click sequences.
+
+---
+
 ## [1.2.57] - 2026-07-02
 
 ### Added
