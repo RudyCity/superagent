@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.53] - 2026-07-02
+
+### Added
+- **Pragmatic Minimalism Skill**: Consolidated a new pragmatic-minimalism skill guidelines to promote simple, minimal, and high-impact solutions.
+- **Coding Guidelines Update**: Added coding best practices, maintainability, scalability, and modularity guidelines to `AGENTS.md`.
+
+### Changed
+- **Best Practices Refinement**: Refined best practices guidelines in `AGENTS.md` to use token-efficient, telegraphic English.
+
+---
+
 ## [1.2.52] - 2026-07-02
 
 ### Changed
