@@ -52,71 +52,83 @@ export function DashboardStatusBar({
 
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
-      <Box flexDirection="row" justifyContent="space-between">
-        <Box>
-          <Text>
-            <Text color="yellow" bold>{activeModel}</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="green" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="yellow">▲ {formatCompactNumber(masterPromptTokens)}</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="green">▼ {formatCompactNumber(masterCompletionTokens)}</Text>
-          </Text>
-        </Box>
-        <Box>
-          <Text>
-            {lastSpeed !== null && (
-              <>
-                <Text color="cyan" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
-                <Text color="gray"> │ </Text>
-              </>
-            )}
-            <Text color="blue" bold>Master: {(masterPromptTokens + masterCompletionTokens).toLocaleString()}t</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="cyan" bold>Superagents({activeSuperagentsCount} active): {(historicalSuperagentTokens || 0).toLocaleString()}t</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="yellow" bold>Subagents: {subagentTokens.toLocaleString()}t</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="blue" bold>Worktrees: {worktreeCount}</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="yellow" bold>Proc: {runningTasksCount}</Text>
-            <Text color="gray"> • </Text>
-            <Text color="blue" bold>Sub: {runningSubagentsCount}</Text>
-            <Text color="gray"> │ </Text>
-            {tencentdbStatus === "online" && (
-              <Text color="magenta" bold>🧠 Mem: ON</Text>
-            )}
-            {tencentdbStatus === "offline" && (
-              <Text color="red" bold>🧠 Mem: OFFLINE</Text>
-            )}
-            {tencentdbStatus === "checking" && (
-              <Text color="yellow" bold>🧠 Mem: CHECKING</Text>
-            )}
-            {(tencentdbStatus === "disabled" || !tencentdbStatus) && (
-              <Text color="gray" dimColor>🧠 Mem: OFF</Text>
-            )}
-          </Text>
-        </Box>
+      {/* Row 1: Engine Status */}
+      <Box flexDirection="row">
+        <Text color="gray">┌───[ </Text>
+        <Text color="cyan" bold>🤖 {activeModel}</Text>
+        <Text color="gray"> ]───[ </Text>
+        <Text color="green" bold>🧠 Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
+        {lastSpeed !== null && (
+          <>
+            <Text color="gray"> ]───[ </Text>
+            <Text color="yellow" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
+          </>
+        )}
+        <Text color="gray"> ]───[ </Text>
+        {tencentdbStatus === "online" && (
+          <Text color="magenta" bold>🧠 Mem: ON</Text>
+        )}
+        {tencentdbStatus === "offline" && (
+          <Text color="red" bold>🧠 Mem: OFFLINE</Text>
+        )}
+        {tencentdbStatus === "checking" && (
+          <Text color="yellow" bold>🧠 Mem: CHECKING</Text>
+        )}
+        {(tencentdbStatus === "disabled" || !tencentdbStatus) && (
+          <Text color="gray" dimColor>🧠 Mem: OFF</Text>
+        )}
+        <Text color="gray"> ]</Text>
       </Box>
-      <Box flexDirection="row" justifyContent="space-between" marginTop={0}>
-        <Box>
-          <Text>
-            <Text color="gray">Workspace: </Text>
-            <Text color="white" bold>{workspace || process.cwd()}</Text>
-          </Text>
-        </Box>
+
+      {/* Row 2: Tokens & stats */}
+      <Box flexDirection="row">
+        <Text color="gray">├───[ </Text>
+        <Text color="blue" bold>📊 TOKENS & RUNTIMES</Text>
+        <Text color="gray"> ] </Text>
+        <Text color="white">Master: </Text>
+        <Text color="cyan" bold>{(masterPromptTokens + masterCompletionTokens).toLocaleString()}t </Text>
+        <Text color="gray" dimColor>(▲{formatCompactNumber(masterPromptTokens)} ▼{formatCompactNumber(masterCompletionTokens)})</Text>
+        <Text color="gray"> │ </Text>
+        <Text color="white">Super: </Text>
+        <Text color="magenta" bold>{(historicalSuperagentTokens || 0).toLocaleString()}t </Text>
+        <Text color="gray" dimColor>({activeSuperagentsCount} act)</Text>
+        <Text color="gray"> │ </Text>
+        <Text color="white">Sub: </Text>
+        <Text color="yellow" bold>{subagentTokens.toLocaleString()}t </Text>
+        <Text color="gray" dimColor>({runningSubagentsCount} run)</Text>
+        <Text color="gray"> │ </Text>
+        <Text color="white">Proc: </Text>
+        <Text color="green" bold>{runningTasksCount}</Text>
+        <Text color="gray"> │ </Text>
+        <Text color="white">WT: </Text>
+        <Text color="cyan" bold>{worktreeCount}</Text>
       </Box>
+
+      {/* Row 3: Workspace */}
+      <Box flexDirection="row">
+        <Text color="gray">├───[ </Text>
+        <Text color="yellow" bold>📁 WORKSPACE</Text>
+        <Text color="gray"> ] </Text>
+        <Text color="white">{workspace || process.cwd()}</Text>
+      </Box>
+
+      {/* Row 4: Active Branches (Optional) */}
       {activeWTs.length > 0 && (
-        <Box flexDirection="row" marginTop={0}>
-          <Text color="gray">Active branches: </Text>
+        <Box flexDirection="row">
+          <Text color="gray">├───[ </Text>
+          <Text color="magenta" bold>🌿 ACTIVE BRANCHES</Text>
+          <Text color="gray"> ] </Text>
           <Text color="cyan" bold>{activeWTs.join(", ")}</Text>
         </Box>
       )}
-      <Box flexDirection="row" marginTop={0}>
+
+      {/* Row 5: Wizard / Controls */}
+      <Box flexDirection="row">
         {activeWizard ? (
-          <Text color="yellow">
-            <Text bold color="yellow">⚡ [WIZARD] </Text>
+          <>
+            <Text color="gray">└───[ </Text>
+            <Text bold color="yellow">⚡ WIZARD</Text>
+            <Text color="gray"> ] </Text>
             {activeWizard.isMultiSelect ? (
               <Text color="gray" dimColor>[▲/▼] Navigate  [Space] Select/Toggle  [Enter] Confirm  [Esc] Cancel</Text>
             ) : wizardOptions.length > 0 ? (
@@ -124,29 +136,33 @@ export function DashboardStatusBar({
             ) : (
               <Text color="gray" dimColor>[Type text...]  [Enter] Submit  [Esc] Cancel</Text>
             )}
-          </Text>
+          </>
         ) : (
-          <Text color="gray" dimColor>
-            <Text bold color="cyan">[{focusArea.toUpperCase()}] </Text>
-            {focusArea === "input" && (
-              <Text>[Tab] Focus List  [▲/▼] History  [Ctrl+T] Toggle Truncate  [Ctrl+C] Exit/Interrupt</Text>
-            )}
-            {focusArea === "list" && (
-              <Text>[▲/▼] Select Session  [1-9] Quick Select  [Enter] View Logs  [Tab] Cycle Focus  [Esc] Focus Input</Text>
-            )}
-            {focusArea === "logs" && (
-              <Text>[▲/▼] Scroll Logs  [Esc] Focus List  [Tab] Cycle Focus</Text>
-            )}
-            {focusArea === "checklist" && (
-              <Text>[▲/▼] Scroll Checklist  [Esc] Focus Input  [Tab] Cycle Focus</Text>
-            )}
-            {focusArea === "agents" && (
-              <Text>[▲/▼] Scroll Agents  [Esc] Focus Input  [Tab] Cycle Focus</Text>
-            )}
-            {focusArea === "procs" && (
-              <Text>[▲/▼] Scroll Processes  [Esc] Focus Input  [Tab] Cycle Focus</Text>
-            )}
-          </Text>
+          <>
+            <Text color="gray">└───[ </Text>
+            <Text bold color="cyan">⌨️ CONTROLS:{focusArea.toUpperCase()}</Text>
+            <Text color="gray"> ] </Text>
+            <Text color="gray" dimColor>
+              {focusArea === "input" && (
+                <Text>[Tab] Focus List  [▲/▼] History  [Ctrl+T] Toggle Truncate  [Ctrl+C] Exit</Text>
+              )}
+              {focusArea === "list" && (
+                <Text>[▲/▼] Select Session  [1-9] Quick Select  [Enter] View Logs  [Tab] Cycle Focus  [Esc] Focus Input</Text>
+              )}
+              {focusArea === "logs" && (
+                <Text>[▲/▼] Scroll Logs  [Esc] Focus List  [Tab] Cycle Focus</Text>
+              )}
+              {focusArea === "checklist" && (
+                <Text>[▲/▼] Scroll Checklist  [Esc] Focus Input  [Tab] Cycle Focus</Text>
+              )}
+              {focusArea === "agents" && (
+                <Text>[▲/▼] Scroll Agents  [Esc] Focus Input  [Tab] Cycle Focus</Text>
+              )}
+              {focusArea === "procs" && (
+                <Text>[▲/▼] Scroll Processes  [Esc] Focus Input  [Tab] Cycle Focus</Text>
+              )}
+            </Text>
+          </>
         )}
       </Box>
     </Box>

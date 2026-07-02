@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.67] - 2026-07-02
+
+### Changed
+- **Multi-Agent Mode Footer Redesign**: Restructured the multi-agent mode footer (`src/components/dashboard/dashboard-status-bar.tsx`) to use a clean, structured cyberpunk panel style with consistent border characters (`┌───`, `├───`, `└───`), colored tags for engine status and statistics, and aligned layout rows to match height budgeting, eliminating word-wrapping issues.
+
+---
+
 ## [1.2.66] - 2026-07-02
 
 ### Fixed
