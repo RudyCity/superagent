@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.61] - 2026-07-02
+
+### Fixed
+- **Multi-Agent Log Stream Carriage Return Resolution**: Fixed an issue where carriage returns (`\r`) in the master log queue were stripped prior to stream concatenation, preventing correct in-place countdown updates and causing wrapped lines to duplicate rather than overwrite. Updated the log processing interval in `MultiAgentDashboard` to retain raw carriage returns and apply `resolveCarriageReturns` across concatenated master agent log text.
+
+---
+
 ## [1.2.60] - 2026-07-02
 
 ### Fixed

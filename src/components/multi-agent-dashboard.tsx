@@ -56,7 +56,8 @@ import {
   formatCompactNumber,
   getInsertion,
   getPasteSplit,
-  stripSgrMouseSequences
+  stripSgrMouseSequences,
+  resolveCarriageReturns
 } from "../utils/text.js";
 import { WizardDialog } from "./wizard-dialog.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
@@ -617,9 +618,9 @@ export function MultiAgentDashboard({
       setMasterLogs((prev) => {
         let current = [...prev];
         for (const rawMsg of msgs) {
-          const msg = rawMsg.replace(/\r\n/g, "\n").replace(/\r/g, "");
+          const msg = rawMsg.replace(/\r\n/g, "\n");
           if (current.length === 0) {
-            current = [msg];
+            current = [resolveCarriageReturns(msg)];
             continue;
           }
 
@@ -642,11 +643,11 @@ export function MultiAgentDashboard({
 
           if (msg.startsWith("[AGENT]") && last.startsWith("[AGENT]")) {
             const cleanMsg = msg.replace(/^\[AGENT\]/, "");
-            current[lastIdx] = last + cleanMsg;
+            current[lastIdx] = resolveCarriageReturns(last + cleanMsg);
           } else if (!isTag(msg) && !isTag(last)) {
-            current[lastIdx] = last + "\n" + msg;
+            current[lastIdx] = resolveCarriageReturns(last + "\n" + msg);
           } else {
-            current.push(msg);
+            current.push(resolveCarriageReturns(msg));
           }
         }
         return current.slice(-500);

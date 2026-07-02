@@ -227,7 +227,7 @@ if (process.stdin.isTTY) {
           eventHandler(event);
         }
         if (event.type === "text" && event.content !== "") {
-          logHandler?.(`[AGENT]${resolveCarriageReturns(event.content)}`);
+          logHandler?.(`[AGENT]${event.content}`);
         } else if (event.type === "tool_start") {
           logHandler?.(`[TOOL START] ${event.description}`);
         } else if (event.type === "tool_end") {
