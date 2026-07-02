@@ -16,7 +16,7 @@ export function ActiveProcessesPanel({
   focusArea,
   runningSubagentsCount,
 }: ActiveProcessesPanelProps) {
-  const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited);
+  const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited && !task.isHidden);
   if (runningProcs.length === 0) {
     return null;
   }

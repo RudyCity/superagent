@@ -693,6 +693,10 @@ export const settingTencentdbCommand: SlashCommand = {
           savePersistedTasks();
           notifyTasksChanged();
         }
+      } else if (task.isHidden) {
+        task.isHidden = false;
+        savePersistedTasks();
+        notifyTasksChanged();
       }
 
       if (!task) {
@@ -1006,6 +1010,7 @@ export const settingTencentdbCommand: SlashCommand = {
               output: [],
               logPath: path.join(globalDataDir, "logs", "gateway.log"),
               hasExited: false,
+              isHidden: true,
             });
             savePersistedTasks();
             notifyTasksChanged();

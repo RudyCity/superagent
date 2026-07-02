@@ -95,6 +95,7 @@ export function useDashboardSessions(
 
       // Active background tasks
       for (const [id, task] of backgroundTasks.entries()) {
+        if (task.isHidden) continue;
         list.push({
           id: `task-${id}`,
           type: "TASK",

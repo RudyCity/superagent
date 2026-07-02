@@ -23,6 +23,7 @@ export interface BackgroundTask {
   autoRetry?: boolean;
   onExit?: string;
   completedAt?: number;
+  isHidden?: boolean;
 }
 
 export type TaskChangeListener = () => void;

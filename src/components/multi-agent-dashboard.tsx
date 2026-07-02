@@ -261,7 +261,7 @@ export function MultiAgentDashboard({
   }, [sessions, agentsScrollOffset]);
 
   useEffect(() => {
-    const runningTasksCount = [...backgroundTasks.values()].filter((t) => t.isDetachedWindow || !t.hasExited).length;
+    const runningTasksCount = [...backgroundTasks.values()].filter((t) => !t.isHidden && (t.isDetachedWindow || !t.hasExited)).length;
     if (procsScrollOffset >= runningTasksCount && runningTasksCount > 0) {
       setProcsScrollOffset(Math.max(0, runningTasksCount - maxProcsVisible));
     }
@@ -836,7 +836,7 @@ export function MultiAgentDashboard({
   };
 
   const runningTasksCount = [...backgroundTasks.values()]
-    .filter((t) => t.isDetachedWindow || !t.hasExited).length;
+    .filter((t) => !t.isHidden && (t.isDetachedWindow || !t.hasExited)).length;
 
   const runningSubagentsCount = [...subagentInstances.values()]
     .filter((s) => s.status === "running").length;

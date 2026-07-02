@@ -76,7 +76,7 @@ export function ActiveAgentsList({
 
   const runningSuperagents = Array.from(superagentInstances.values()).filter((s) => s.status === "running");
   const runningSubagents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
-  const runningProcs = Array.from(backgroundTasks.entries()).filter(([_, task]) => !task.hasExited);
+  const runningProcs = Array.from(backgroundTasks.entries()).filter(([_, task]) => !task.hasExited && !task.isHidden);
 
   return (
     <Box flexDirection="column" marginBottom={0}>

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.57] - 2026-07-02
+
+### Added
+- **TencentDB Gateway Daemon Silence**: Added `isHidden` flag support to `BackgroundTask`. Configured TencentDB Memory Gateway auto-started background processes to run completely silently in the background by excluding them from the terminal dashboard's Active Processes list, Workspace Registry list, and active agents list, resolving clutter in multi-agent mode.
+
+---
+
 ## [1.2.56] - 2026-07-02
 
 ### Fixed

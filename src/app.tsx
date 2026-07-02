@@ -1759,7 +1759,7 @@ export function App({
   }, [lines, subagentsScrollOffset]);
 
   useEffect(() => {
-    const count = [...backgroundTasks.values()].filter((t) => !t.hasExited).length;
+    const count = [...backgroundTasks.values()].filter((t) => !t.hasExited && !t.isHidden).length;
     if (procsScrollOffset >= count && count > 0) {
       setProcsScrollOffset(Math.max(0, count - maxProcsVisible));
     }
@@ -1770,7 +1770,7 @@ export function App({
     const unsubTasks = subscribeToTasks(() => {
       const allTasks = Array.from(backgroundTasks.values());
       setRunningTasksCount(
-        allTasks.filter((t) => !t.hasExited).length
+        allTasks.filter((t) => !t.hasExited && !t.isHidden).length
       );
       allTasks.forEach((task) => {
         if (task.isDetachedWindow) return;
