@@ -2,7 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.52] - 2026-07-02
+
+### Changed
+- **Gitignore Update**: Added `node_modules/`, `dist/`, `bin/python/`, `vendor/`, and local temporary test directories to `.gitignore` to keep git status clean.
+
+---
+
 ## [1.2.51] - 2026-07-02
+
 
 ### Added
 - **Keyboard Auto-Refocus**: Typing any printable character (letters, spaces, symbols) while a non-input panel (like logs, registry, or checklist) is focused will automatically switch focus back to the input box and append the typed character to the input query.
