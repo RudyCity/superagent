@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.68] - 2026-07-02
+
+### Fixed
+- **Prompt-based Tool Calling History Format**: Resolved an issue where reasoning/thinking models or custom endpoints would get stuck in a "Communication error: Model tried to call unavailable tool..." retry loop. This occurred because previous turns executed native tool calls, but subsequent calls to the model had native tool calling disabled (`supportsNativeTools = false`), causing the LLM provider API to reject the history containing native tool-call/tool-result blocks. Fixed by resolving `supportsNativeTools` early in the execution loop and converting the history messages containing native tool calls and results to standard XML text prompts when native tools are disabled.
+
+---
+
 ## [1.2.67] - 2026-07-02
 
 ### Changed

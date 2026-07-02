@@ -54,17 +54,16 @@ export function DashboardStatusBar({
     <Box flexDirection="column" paddingX={1} marginTop={1}>
       {/* Row 1: Engine Status */}
       <Box flexDirection="row">
-        <Text color="gray">┌───[ </Text>
         <Text color="cyan" bold>🤖 {activeModel}</Text>
-        <Text color="gray"> ]───[ </Text>
-        <Text color="green" bold>🧠 Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
+        <Text color="gray"> │ </Text>
+        <Text color="green" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
         {lastSpeed !== null && (
           <>
-            <Text color="gray"> ]───[ </Text>
+            <Text color="gray"> │ </Text>
             <Text color="yellow" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
           </>
         )}
-        <Text color="gray"> ]───[ </Text>
+        <Text color="gray"> │ </Text>
         {tencentdbStatus === "online" && (
           <Text color="magenta" bold>🧠 Mem: ON</Text>
         )}
@@ -77,14 +76,11 @@ export function DashboardStatusBar({
         {(tencentdbStatus === "disabled" || !tencentdbStatus) && (
           <Text color="gray" dimColor>🧠 Mem: OFF</Text>
         )}
-        <Text color="gray"> ]</Text>
       </Box>
 
       {/* Row 2: Tokens & stats */}
       <Box flexDirection="row">
-        <Text color="gray">├───[ </Text>
-        <Text color="blue" bold>📊 TOKENS & RUNTIMES</Text>
-        <Text color="gray"> ] </Text>
+        <Text color="gray">Tokens: </Text>
         <Text color="white">Master: </Text>
         <Text color="cyan" bold>{(masterPromptTokens + masterCompletionTokens).toLocaleString()}t </Text>
         <Text color="gray" dimColor>(▲{formatCompactNumber(masterPromptTokens)} ▼{formatCompactNumber(masterCompletionTokens)})</Text>
@@ -106,18 +102,14 @@ export function DashboardStatusBar({
 
       {/* Row 3: Workspace */}
       <Box flexDirection="row">
-        <Text color="gray">├───[ </Text>
-        <Text color="yellow" bold>📁 WORKSPACE</Text>
-        <Text color="gray"> ] </Text>
-        <Text color="white">{workspace || process.cwd()}</Text>
+        <Text color="gray">Workspace: </Text>
+        <Text color="white" bold>{workspace || process.cwd()}</Text>
       </Box>
 
       {/* Row 4: Active Branches (Optional) */}
       {activeWTs.length > 0 && (
         <Box flexDirection="row">
-          <Text color="gray">├───[ </Text>
-          <Text color="magenta" bold>🌿 ACTIVE BRANCHES</Text>
-          <Text color="gray"> ] </Text>
+          <Text color="gray">Active branches: </Text>
           <Text color="cyan" bold>{activeWTs.join(", ")}</Text>
         </Box>
       )}
@@ -125,10 +117,8 @@ export function DashboardStatusBar({
       {/* Row 5: Wizard / Controls */}
       <Box flexDirection="row">
         {activeWizard ? (
-          <>
-            <Text color="gray">└───[ </Text>
-            <Text bold color="yellow">⚡ WIZARD</Text>
-            <Text color="gray"> ] </Text>
+          <Text color="yellow">
+            <Text bold color="yellow">⚡ WIZARD </Text>
             {activeWizard.isMultiSelect ? (
               <Text color="gray" dimColor>[▲/▼] Navigate  [Space] Select/Toggle  [Enter] Confirm  [Esc] Cancel</Text>
             ) : wizardOptions.length > 0 ? (
@@ -136,33 +126,29 @@ export function DashboardStatusBar({
             ) : (
               <Text color="gray" dimColor>[Type text...]  [Enter] Submit  [Esc] Cancel</Text>
             )}
-          </>
+          </Text>
         ) : (
-          <>
-            <Text color="gray">└───[ </Text>
-            <Text bold color="cyan">⌨️ CONTROLS:{focusArea.toUpperCase()}</Text>
-            <Text color="gray"> ] </Text>
-            <Text color="gray" dimColor>
-              {focusArea === "input" && (
-                <Text>[Tab] Focus List  [▲/▼] History  [Ctrl+T] Toggle Truncate  [Ctrl+C] Exit</Text>
-              )}
-              {focusArea === "list" && (
-                <Text>[▲/▼] Select Session  [1-9] Quick Select  [Enter] View Logs  [Tab] Cycle Focus  [Esc] Focus Input</Text>
-              )}
-              {focusArea === "logs" && (
-                <Text>[▲/▼] Scroll Logs  [Esc] Focus List  [Tab] Cycle Focus</Text>
-              )}
-              {focusArea === "checklist" && (
-                <Text>[▲/▼] Scroll Checklist  [Esc] Focus Input  [Tab] Cycle Focus</Text>
-              )}
-              {focusArea === "agents" && (
-                <Text>[▲/▼] Scroll Agents  [Esc] Focus Input  [Tab] Cycle Focus</Text>
-              )}
-              {focusArea === "procs" && (
-                <Text>[▲/▼] Scroll Processes  [Esc] Focus Input  [Tab] Cycle Focus</Text>
-              )}
-            </Text>
-          </>
+          <Text color="gray" dimColor>
+            <Text bold color="cyan">[{focusArea.toUpperCase()}] </Text>
+            {focusArea === "input" && (
+              <Text>[Tab] Focus List  [▲/▼] History  [Ctrl+T] Toggle Truncate  [Ctrl+C] Exit</Text>
+            )}
+            {focusArea === "list" && (
+              <Text>[▲/▼] Select Session  [1-9] Quick Select  [Enter] View Logs  [Tab] Cycle Focus  [Esc] Focus Input</Text>
+            )}
+            {focusArea === "logs" && (
+              <Text>[▲/▼] Scroll Logs  [Esc] Focus List  [Tab] Cycle Focus</Text>
+            )}
+            {focusArea === "checklist" && (
+              <Text>[▲/▼] Scroll Checklist  [Esc] Focus Input  [Tab] Cycle Focus</Text>
+            )}
+            {focusArea === "agents" && (
+              <Text>[▲/▼] Scroll Agents  [Esc] Focus Input  [Tab] Cycle Focus</Text>
+            )}
+            {focusArea === "procs" && (
+              <Text>[▲/▼] Scroll Processes  [Esc] Focus Input  [Tab] Cycle Focus</Text>
+            )}
+          </Text>
         )}
       </Box>
     </Box>

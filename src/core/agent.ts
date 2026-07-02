@@ -1047,7 +1047,19 @@ CRITICAL GOAL MODE RULES:
         }
 
         await this.compactHistoryIfNeeded(signal);
-        let messages = this.buildMessages();
+        // Check if the endpoint/model supports native tool calling
+        let supportsNativeTools = true;
+        const details = getModelConnectionDetailsForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
+        const isTest = !!process.env.VITEST;
+        if (!isTest && details.provider === "custom" && details.baseUrl) {
+          try {
+            const { probeToolCallSupport } = await import("../utils/promptBasedToolCalling.js");
+            supportsNativeTools = await probeToolCallSupport(details.baseUrl, details.apiKey, details.modelName);
+          } catch (err: any) {
+            this.writeToLogFile("WARN", `Failed to probe tool call support: ${err.message}. Defaulting to native tools.`);
+          }
+        }
+        let messages = this.buildMessages(supportsNativeTools);
         // Use tier-specific toolset if provided, otherwise use the appropriate tier-default toolset dynamically
         let toolsToUse = this.customTools;
         if (!toolsToUse) {
@@ -1287,7 +1299,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             this.writeToLogFile("WARN", `Pre-flight context check: estimated ~${estTotal.toLocaleString()} total tokens (${overshootPct}% of ${modelLimit.toLocaleString()} limit). Compact threshold: ${safetyMax.toLocaleString()}. Triggering emergency compaction.`);
             await this.compactHistoryIfNeeded(signal);
             // Rebuild messages from compacted conversation
-            messages = this.buildMessages();
+            messages = this.buildMessages(supportsNativeTools);
             injectDynamicContext(messages);
             const afterEstMsgTokens = this.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
             const afterEstTotal = afterEstMsgTokens + estSysTokens;
@@ -1296,19 +1308,6 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             if (afterEstTotal > safetyMax) {
               this.writeToLogFile("ERROR", `Post-compaction total ${afterEstTotal.toLocaleString()} still exceeds safety limit ${safetyMax.toLocaleString()}. Proceeding with risk of provider rejection.`);
             }
-          }
-        }
-
-        // Check if the endpoint/model supports native tool calling
-        let supportsNativeTools = true;
-        const details = getModelConnectionDetailsForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
-        const isTest = !!process.env.VITEST;
-        if (!isTest && details.provider === "custom" && details.baseUrl) {
-          try {
-            const { probeToolCallSupport } = await import("../utils/promptBasedToolCalling.js");
-            supportsNativeTools = await probeToolCallSupport(details.baseUrl, details.apiKey, details.modelName);
-          } catch (err: any) {
-            this.writeToLogFile("WARN", `Failed to probe tool call support: ${err.message}. Defaulting to native tools.`);
           }
         }
 
@@ -2358,7 +2357,7 @@ for (const tc of toolCalls) {
     return false;
   }
 
-  private buildMessages(): CoreMessage[] {
+  private buildMessages(supportsNativeTools = true): CoreMessage[] {
     const coreMessages: CoreMessage[] = [];
 
     let modelName = "";
@@ -2397,7 +2396,7 @@ for (const tc of toolCalls) {
         });
       } else if (m.role === "assistant") {
         const hasToolCalls = m.toolCalls && m.toolCalls.length > 0;
-        if (hasToolCalls) {
+        if (hasToolCalls && supportsNativeTools) {
           const contentParts: Array<
             | { type: "text"; text: string }
             | { type: "tool-call"; toolCallId: string; toolName: string; args: unknown }
@@ -2420,6 +2419,14 @@ for (const tc of toolCalls) {
             role: "assistant",
             content: contentParts,
           });
+        } else if (hasToolCalls) {
+          // Reconstruct XML tool calls for prompt-based tool calling
+          let text = contentToString(m.content);
+          text += "\n<tool_calls>\n" + m.toolCalls!.map(tc => `<tool_call>\n${JSON.stringify({ name: tc.name, arguments: tc.args })}\n</tool_call>`).join("\n") + "\n</tool_calls>";
+          coreMessages.push({
+            role: "assistant",
+            content: text,
+          });
         } else {
           coreMessages.push({
             role: "assistant",
@@ -2427,6 +2434,17 @@ for (const tc of toolCalls) {
           });
         }
       } else if (m.role === "tool") {
+        if (!supportsNativeTools) {
+          // Reconstruct XML responses for prompt-based tool calling
+          const results = m.toolResults || [];
+          const resultText = results.map(tr => `<tool_response name="${tr.name}">\n${tr.result}\n</tool_response>`).join("\n");
+          coreMessages.push({
+            role: "user",
+            content: resultText,
+          });
+          continue;
+        }
+
         // Safe check to avoid orphaned tool messages (required by DeepSeek)
         let lastAssistantWithToolCalls = false;
         for (let i = coreMessages.length - 1; i >= 0; i--) {
