@@ -227,6 +227,7 @@ export class Agent {
   private static readonly MAX_SKILL_LINES = 300;
   private static readonly MANDATORY_SKILLS: Array<{ key: string; label: string }> = [
     { key: "karpathy-guidelines",           label: "BEHAVIORAL CODING GUIDELINES (karpathy-guidelines)" },
+    { key: "pragmatic-minimalism",          label: "PRAGMATIC MINIMALISM GUIDELINES (pragmatic-minimalism)" },
     { key: "superagent-planning",            label: "PLANNING AND TASK GUIDELINES (superagent-planning)" },
     { key: "writing-plans",                  label: "PLAN WRITING GUIDELINES (writing-plans)" },
     { key: "executing-plans",                label: "PLAN EXECUTION GUIDELINES (executing-plans)" },
@@ -297,6 +298,10 @@ export class Agent {
       // Always include Karpathy Guidelines (universal coding rules)
       const karpathy = Agent.MANDATORY_SKILLS.find(s => s.key === "karpathy-guidelines");
       if (karpathy) targetSkills.push(karpathy);
+
+      // Always include Pragmatic Minimalism (forces lean coding & reviews)
+      const minimalism = Agent.MANDATORY_SKILLS.find(s => s.key === "pragmatic-minimalism");
+      if (minimalism) targetSkills.push(minimalism);
 
       // Planning-related guidelines: only load during planning phase
       if (!this.isSimpleTask && (this.planState === "IDLE" || this.planState === "PLANNING_PENDING")) {

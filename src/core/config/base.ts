@@ -120,6 +120,7 @@ ${shellPrompt}
 - SECURITY: Never expose secrets, credentials, or API keys.
 - AGENTS_MD: Read and study 'agents.md' in workspace root if present. Adhere to project guidelines.
 - KARPATHY_GUIDELINES: Adhere to 'karpathy-guidelines' skill instructions for all coding decisions.
+- PRAGMATIC_MINIMALISM: Adhere to 'pragmatic-minimalism' skill instructions (enforce lean coding, footprint reduction, and complexity review/auditing) for all task implementations.
 
 # LOGIC GATES
 if decision_point:
