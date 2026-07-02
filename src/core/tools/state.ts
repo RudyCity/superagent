@@ -30,6 +30,7 @@ interface PersistedTask {
   hasExited: boolean;
   exitCode?: number | null;
   completedAt?: number;
+  isHidden?: boolean;
 }
 
 function acquireTasksLockSync(lockPath: string): boolean {
@@ -95,6 +96,7 @@ export function savePersistedTasks(): void {
         hasExited: !!task.hasExited,
         exitCode: task.exitCode,
         completedAt: task.completedAt,
+        isHidden: task.isHidden,
       });
     }
     fs.writeFileSync(tasksFilePath, JSON.stringify(list, null, 2), "utf-8");
@@ -147,10 +149,19 @@ export function loadAndSyncPersistedTasks(): void {
 
         const existing = backgroundTasks.get(item.id);
         if (existing) {
+          let itemChanged = false;
           if (existing.hasExited !== hasExited) {
             existing.hasExited = hasExited;
             existing.exitCode = exitCode;
             existing.completedAt = completedAt;
+            itemChanged = true;
+          }
+          const expectedHidden = item.isHidden !== undefined ? item.isHidden : (item.id === "tencentdb-gateway" ? true : undefined);
+          if (existing.isHidden !== expectedHidden) {
+            existing.isHidden = expectedHidden;
+            itemChanged = true;
+          }
+          if (itemChanged) {
             changed = true;
           }
         } else {
@@ -171,6 +182,7 @@ export function loadAndSyncPersistedTasks(): void {
             autoRetry: item.autoRetry,
             onExit: item.onExit,
             completedAt,
+            isHidden: item.isHidden !== undefined ? item.isHidden : (item.id === "tencentdb-gateway" ? true : undefined),
           };
           if (item.logPath && fs.existsSync(item.logPath)) {
             try {

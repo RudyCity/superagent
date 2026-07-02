@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.59] - 2026-07-02
+
+### Fixed
+- **TencentDB Gateway Silence Persistence**: Fixed an issue where the `tencentdb-gateway` process would still appear in the Active Processes list in single or multi mode. Added `isHidden` to the persisted tasks schema in `background-tasks.json` so that the hidden status is preserved across CLI sessions. Also updated the `/processes` slash command and the keyboard dashboard navigation hooks to correctly filter out hidden tasks.
+
+---
+
 ## [1.2.58] - 2026-07-02
 
 ### Fixed

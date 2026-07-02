@@ -204,6 +204,7 @@ export const processesCommand: SlashCommand = {
       if (!stopArg || stopArg.toLowerCase() === "all") {
         let count = 0;
         for (const [id, task] of taskList) {
+          if (task.isHidden) continue;
           try { killProcessTree(task.process.pid); } catch {}
           try {
             if (task.logPath) {
@@ -252,13 +253,14 @@ export const processesCommand: SlashCommand = {
     }
 
     const taskList = Array.from(backgroundTasks.entries());
+    const visibleTasks = taskList.filter(([, t]) => !t.isHidden);
     const lines = [
       "┌───[ ⚙️ RUNNING BACKGROUND PROCESSES ]",
       "│ ",
     ];
 
-    const windowTasks = taskList.filter(([, t]) => (t as any).isDetachedWindow);
-    const bgTasks = taskList.filter(([, t]) => !(t as any).isDetachedWindow);
+    const windowTasks = visibleTasks.filter(([, t]) => (t as any).isDetachedWindow);
+    const bgTasks = visibleTasks.filter(([, t]) => !(t as any).isDetachedWindow);
 
     if (windowTasks.length > 0) {
       lines.push("│  🖥️  TERMINAL WINDOWS (detached)");
@@ -278,7 +280,7 @@ export const processesCommand: SlashCommand = {
       lines.push("│ ");
     }
 
-    if (taskList.length === 0) {
+    if (visibleTasks.length === 0) {
       lines.push("│  No active background processes.");
     }
     lines.push("├──────────────────────────────────────────────");

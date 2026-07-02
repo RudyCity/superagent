@@ -747,7 +747,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         setProcsScrollOffset((prev) => Math.max(0, prev - 1));
       } else if (key.downArrow) {
         setProcsScrollOffset((prev) => {
-          const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited);
+          const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited && !task.isHidden);
           const maxScroll = Math.max(0, runningProcs.length - maxProcsVisible);
           return Math.min(prev + 1, maxScroll);
         });
