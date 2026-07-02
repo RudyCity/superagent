@@ -738,6 +738,9 @@ export function MultiAgentDashboard({
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
+  const [logScrollOffset, setLogScrollOffset] = useState(0);
+  const lastWrappedLinesLengthRef = useRef(0);
+
   const { handleWizardSubmit, handleQuerySubmit } = useDashboardWizard({
     agent,
     exit,
@@ -786,11 +789,9 @@ export function MultiAgentDashboard({
     setIsProcessing,
     attachments,
     setAttachments,
+    setSelectedIndex,
+    setLogScrollOffset,
   });
-
-
-  const [logScrollOffset, setLogScrollOffset] = useState(0);
-  const lastWrappedLinesLengthRef = useRef(0);
 
   // Collapsible log groups state (for multi-agent tool/think groups)
   // Tracks which groups are EXPANDED (all collapsible groups are collapsed by default)

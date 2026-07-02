@@ -283,15 +283,28 @@ export const modelCommand: SlashCommand = {
           step: 1,
           data: {},
         });
-        ctx.setWizardOptions?.([
-          `1. Load/Apply Model Preset [${modeLabelMenu}]`,
-          `2. List Model Presets [${modeLabelMenu}]`,
-          `3. Create Model Preset [${modeLabelMenu}]`,
-          `4. Edit Model Preset [${modeLabelMenu}]`,
-          `5. Delete Model Preset [${modeLabelMenu}]`,
-          `6. Configure ${isMulti ? "Agent Tier" : "Single Agent"} Models`,
-          "< Back"
-        ]);
+        ctx.setWizardOptions?.(
+          isMulti
+            ? [
+                `1. Load/Apply Model Preset [${modeLabelMenu}]`,
+                `2. List Model Presets [${modeLabelMenu}]`,
+                `3. Create Model Preset [${modeLabelMenu}]`,
+                `4. Edit Model Preset [${modeLabelMenu}]`,
+                `5. Delete Model Preset [${modeLabelMenu}]`,
+                `6. Configure Agent Tier Models`,
+                "< Back"
+              ]
+            : [
+                `1. Load/Apply Model Preset [${modeLabelMenu}]`,
+                `2. List Model Presets [${modeLabelMenu}]`,
+                `3. Create Model Preset [${modeLabelMenu}]`,
+                `4. Edit Model Preset [${modeLabelMenu}]`,
+                `5. Delete Model Preset [${modeLabelMenu}]`,
+                `6. Configure Single Agent Model`,
+                `7. Configure Subagent Models`,
+                "< Back"
+              ]
+        );
         ctx.setWizardSelectedIndex?.(0);
       }
     }

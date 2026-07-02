@@ -841,7 +841,7 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
     this.abortController = new AbortController();
 
     this.writeToLogFile("INFO", `Agent execution started (tier: ${this.tier}, depth: ${this.delegationDepth}, isMultiAgent: ${this.isMultiAgent}, workingDirectory: ${this.workingDirectory}, worktreePath: ${this.worktreePath})`);
-    this.writeToLogFile("INFO", `Received user message: "${typeof userInput === "string" ? userInput : "[multimodal message]"}"`);
+    this.writeToLogFile("USER", typeof userInput === "string" ? userInput : "[multimodal message]");
 
     this.conversation.addUserMessage(userInput);
     await this.compactHistoryIfNeeded();

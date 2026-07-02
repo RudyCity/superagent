@@ -14,6 +14,7 @@ import { isDirectoryTrusted, addTrustedDirectory, ensureDirectoryTrusted } from 
 import { backgroundTasks, killProcessTree } from "./core/tools/index.js";
 import { subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
 import { closeMcpServers } from "./core/mcp/McpManager.js";
+import { resolveCarriageReturns } from "./utils/text.js";
 
 function cleanupBackgroundTasks() {
   try {
@@ -226,7 +227,7 @@ if (process.stdin.isTTY) {
           eventHandler(event);
         }
         if (event.type === "text" && event.content !== "") {
-          logHandler?.(`[AGENT]${event.content}`);
+          logHandler?.(`[AGENT]${resolveCarriageReturns(event.content)}`);
         } else if (event.type === "tool_start") {
           logHandler?.(`[TOOL START] ${event.description}`);
         } else if (event.type === "tool_end") {

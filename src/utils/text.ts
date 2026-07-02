@@ -1,8 +1,9 @@
 export function resolveCarriageReturns(text: string): string {
   const lines = text.split("\n");
   const processed = lines.map((line) => {
-    const idx = line.lastIndexOf("\r");
-    return idx === -1 ? line : line.slice(idx + 1);
+    const clean = line.endsWith("\r") ? line.slice(0, -1) : line;
+    const idx = clean.lastIndexOf("\r");
+    return idx === -1 ? clean : clean.slice(idx + 1);
   });
   return processed.join("\n");
 }

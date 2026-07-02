@@ -9,6 +9,7 @@ import {
   appendMasterLog
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
+import { resolveCarriageReturns } from "../../utils/text.js";
 
 const SUBAGENT_REPORT_INSTRUCTION = `
 CRITICAL INSTRUCTION FOR SUBAGENT REPORTING:
@@ -207,6 +208,9 @@ export const invokeSubagentTool: Tool = {
         logs.push(`│   `);
         lastTextIdx = logs.length - 1;
         logs[lastTextIdx] += parts[parts.length - 1];
+      }
+      if (lastTextIdx >= 0) {
+        logs[lastTextIdx] = resolveCarriageReturns(logs[lastTextIdx]);
       }
     }
 

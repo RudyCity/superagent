@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.60] - 2026-07-02
+
+### Fixed
+- **Multi-Agent & Subagent Retry Countdown Formatting**: Resolved an issue where communication retry countdowns (`\rRetrying in Xs...`) in multi-agent mode and subagents caused line wrapping collisions, text corruption (e.g. `ttempt 1/10...ation error:`), and log file pollution. Updated `resolveCarriageReturns` in `src/utils/text.ts` to cleanly handle trailing carriage returns from CRLF and inline updates, and integrated it into `appendToThinkingNode` across `subagentTools.ts`, `superagentTools.ts`, and `cli.tsx`.
+
+---
+
 ## [1.2.59] - 2026-07-02
 
 ### Fixed

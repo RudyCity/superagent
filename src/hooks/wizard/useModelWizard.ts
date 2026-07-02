@@ -31,6 +31,7 @@ import type { ChatLine } from "../../core/slash-commands.js";
 interface ModelWizardContext {
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
   setWizardOptions: React.Dispatch<React.SetStateAction<string[]>>;
+  setWizardAllOptions?: React.Dispatch<React.SetStateAction<string[]>>;
   setWizardSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
   addLine: (line: ChatLine) => void;
   setInput: React.Dispatch<React.SetStateAction<string>>;
@@ -47,6 +48,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
   const {
     setActiveWizard,
     setWizardOptions,
+    setWizardAllOptions,
     setWizardSelectedIndex,
     addLine,
     setInput,
@@ -81,15 +83,28 @@ export function useModelWizard(ctx: ModelWizardContext) {
     };
 
     const getStep1Options = (): string[] => {
-      return [
-        `1. Load/Apply Model Preset [${modeLabel}]`,
-        `2. List Model Presets [${modeLabel}]`,
-        `3. Create Model Preset [${modeLabel}]`,
-        `4. Edit Model Preset [${modeLabel}]`,
-        `5. Delete Model Preset [${modeLabel}]`,
-        `6. Configure ${isMulti ? "Agent Tier" : "Single Agent"} Models`,
-        "< Back"
-      ];
+      if (isMulti) {
+        return [
+          `1. Load/Apply Model Preset [${modeLabel}]`,
+          `2. List Model Presets [${modeLabel}]`,
+          `3. Create Model Preset [${modeLabel}]`,
+          `4. Edit Model Preset [${modeLabel}]`,
+          `5. Delete Model Preset [${modeLabel}]`,
+          `6. Configure Agent Tier Models`,
+          "< Back"
+        ];
+      } else {
+        return [
+          `1. Load/Apply Model Preset [${modeLabel}]`,
+          `2. List Model Presets [${modeLabel}]`,
+          `3. Create Model Preset [${modeLabel}]`,
+          `4. Edit Model Preset [${modeLabel}]`,
+          `5. Delete Model Preset [${modeLabel}]`,
+          `6. Configure Single Agent Model`,
+          `7. Configure Subagent Models`,
+          "< Back"
+        ];
+      }
     };
 
     const getProfilePickerOptions = (providerType: string): string[] => {
@@ -626,7 +641,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
               const data = await res.json() as any;
               if (data && Array.isArray(data.data)) {
                 const modelsList = data.data.map((m: any) => m.id);
-                setWizardOptions([...modelsList, "< Back"]);
+                const opts = [...modelsList, "< Back"];
+                setWizardOptions(opts);
+                setWizardAllOptions?.(opts);
               }
             }
           })
@@ -646,7 +663,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  setWizardOptions([...modelsList, "< Back"]);
+                  const opts = [...modelsList, "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
                 }
               }
             })
@@ -677,7 +696,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  setWizardOptions([...modelsList, "< Back"]);
+                  const opts = [...modelsList, "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
                 }
               }
             })
@@ -698,7 +719,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  setWizardOptions([...modelsList, "< Back"]);
+                  const opts = [...modelsList, "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
                 }
               }
             })
@@ -707,7 +730,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
       }
 
-      setWizardOptions([...initialModels, "< Back"]);
+      const initialOpts = [...initialModels, "< Back"];
+      setWizardOptions(initialOpts);
+      setWizardAllOptions?.(initialOpts);
       setWizardSelectedIndex(0);
       setInput("");
       addLine({
@@ -874,7 +899,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  setWizardOptions([...modelsList, "< Back"]);
+                  const opts = [...modelsList, "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
                 }
               }
             })
@@ -894,7 +921,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
                   const data = await res.json() as any;
                   if (data && Array.isArray(data.data)) {
                     const modelsList = data.data.map((m: any) => m.id);
-                    setWizardOptions([...modelsList, "< Back"]);
+                    const opts = [...modelsList, "< Back"];
+                    setWizardOptions(opts);
+                    setWizardAllOptions?.(opts);
                   }
                 }
               })
@@ -925,7 +954,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
                   const data = await res.json() as any;
                   if (data && Array.isArray(data.data)) {
                     const modelsList = data.data.map((m: any) => m.id);
-                    setWizardOptions([...modelsList, "< Back"]);
+                    const opts = [...modelsList, "< Back"];
+                    setWizardOptions(opts);
+                    setWizardAllOptions?.(opts);
                   }
                 }
               })
@@ -946,7 +977,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
                   const data = await res.json() as any;
                   if (data && Array.isArray(data.data)) {
                     const modelsList = data.data.map((m: any) => m.id);
-                    setWizardOptions([...modelsList, "< Back"]);
+                    const opts = [...modelsList, "< Back"];
+                    setWizardOptions(opts);
+                    setWizardAllOptions?.(opts);
                   }
                 }
               })
@@ -955,7 +988,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
           }
         }
 
-        setWizardOptions([...initialModels, "< Back"]);
+        const initialOpts = [...initialModels, "< Back"];
+        setWizardOptions(initialOpts);
+        setWizardAllOptions?.(initialOpts);
         setWizardSelectedIndex(0);
         setInput("");
       } catch (err: any) {
@@ -1406,7 +1441,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
               const data = await res.json() as any;
               if (data && Array.isArray(data.data)) {
                 const modelsList = data.data.map((m: any) => m.id);
-                setWizardOptions([...modelsList, "< Back"]);
+                const opts = [...modelsList, "< Back"];
+                setWizardOptions(opts);
+                setWizardAllOptions?.(opts);
               }
             }
           })
@@ -1426,7 +1463,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  setWizardOptions([...modelsList, "< Back"]);
+                  const opts = [...modelsList, "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
                 }
               }
             })
@@ -1457,7 +1496,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  setWizardOptions([...modelsList, "< Back"]);
+                  const opts = [...modelsList, "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
                 }
               }
             })
@@ -1478,7 +1519,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  setWizardOptions([...modelsList, "< Back"]);
+                  const opts = [...modelsList, "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
                 }
               }
             })
@@ -1487,7 +1530,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
       }
 
-      setWizardOptions([...initialModels, "< Back"]);
+      const initialOpts = [...initialModels, "< Back"];
+      setWizardOptions(initialOpts);
+      setWizardAllOptions?.(initialOpts);
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 15 || step === 24 || step === 34) {

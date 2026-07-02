@@ -11,6 +11,7 @@ import path from "path";
 import fs from "fs";
 import { execa } from "execa";
 import { Tool } from "./types.js";
+import { resolveCarriageReturns } from "../../utils/text.js";
 import {
   superagentInstances,
   notifySuperagentsChanged,
@@ -219,6 +220,7 @@ export const invokeSuperagentTool: Tool = {
         lastTextIdx = logs.length - 1;
       }
       logs[lastTextIdx] += text;
+      logs[lastTextIdx] = resolveCarriageReturns(logs[lastTextIdx]);
     }
 
     function closeThinkingNode() {
