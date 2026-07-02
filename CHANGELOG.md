@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.54] - 2026-07-02
+
+### Fixed
+- **Workflow Testing**: Mocked `execa` in `tests/masterAgentWorkflow.test.ts` to prevent executing real git commands (such as creating the `feat/test` worktree/branch) on the host repository during test runs.
+
+---
+
 ## [1.2.53] - 2026-07-02
 
 ### Added

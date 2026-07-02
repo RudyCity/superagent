@@ -6,6 +6,7 @@ import os from "os";
 import { Agent } from "../src/core/agent.js";
 import { generateText, streamText } from "ai";
 import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
+import { superagentInstances, subagentInstances } from "../src/core/tools/state.js";
 
 // Mock configuration partially, keeping other config helpers intact
 vi.mock("../src/core/config.js", async (importOriginal) => {
@@ -32,18 +33,55 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
+// Mock execa to prevent executing real git commands (e.g. worktree creation)
+vi.mock("execa", () => ({
+  execa: vi.fn().mockResolvedValue({ stdout: "" }),
+}));
+
 describe("Master Agent Workflow & Guardrails", () => {
   const originalEnv = process.env;
   const testConfigDir = path.join(os.tmpdir(), `superagent-master-workflow-${process.pid}`);
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.restoreAllMocks();
+    for (const inst of superagentInstances.values()) {
+      if (inst.agent && typeof inst.agent.abort === "function") {
+        inst.agent.abort();
+      }
+    }
+    const start = Date.now();
+    while (Array.from(superagentInstances.values()).some(inst => inst.agent?.isRunning) && Date.now() - start < 1000) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    superagentInstances.clear();
+    subagentInstances.clear();
     process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
     clearModelConfigCache();
     fs.rmSync(testConfigDir, { recursive: true, force: true });
+    const originalWriteFile = fs.writeFileSync;
+    const originalAppendFile = fs.appendFileSync;
+    vi.spyOn(fs, "writeFileSync").mockImplementation((filePath, data, options) => {
+      if (String(filePath).endsWith(".gitignore")) return;
+      return originalWriteFile(filePath, data, options);
+    });
+    vi.spyOn(fs, "appendFileSync").mockImplementation((filePath, data, options) => {
+      if (String(filePath).endsWith(".gitignore")) return;
+      return originalAppendFile(filePath, data, options);
+    });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const inst of superagentInstances.values()) {
+      if (inst.agent && typeof inst.agent.abort === "function") {
+        inst.agent.abort();
+      }
+    }
+    const start = Date.now();
+    while (Array.from(superagentInstances.values()).some(inst => inst.agent?.isRunning) && Date.now() - start < 1000) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    superagentInstances.clear();
+    subagentInstances.clear();
     clearModelConfigCache();
     fs.rmSync(testConfigDir, { recursive: true, force: true });
     process.env = originalEnv;
