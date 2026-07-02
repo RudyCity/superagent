@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.56] - 2026-07-02
+
+### Fixed
+- **UI Log Scroll Lock**: Fixed an issue where the conversation log/history could not be scrolled using the Up/Down arrow keys during thinking or streaming (when the agent is processing). Also implemented dynamic scroll-pinning so that if the user scrolls up to view past logs, the viewport does not slide downwards when new streaming tokens or logs are appended at the bottom.
+
+---
+
 ## [1.2.55] - 2026-07-02
 
 ### Fixed

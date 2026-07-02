@@ -174,6 +174,7 @@ export function App({
   const [focusedResponseOffset, setFocusedResponseOffset] = useState(0);
   
   const wrappedLinesLengthRef = useRef(0);
+  const lastWrappedLinesLengthRef = useRef(0);
   const chatHeightLimitRef = useRef(15);
   
   const [runningTasksCount, setRunningTasksCount] = useState(0);
@@ -2196,6 +2197,17 @@ export function App({
 
   wrappedLinesLengthRef.current = wrappedLines.length;
   chatHeightLimitRef.current = chatHeightLimit;
+
+  // Adjust scroll offset when wrapped lines length increases during streaming/thinking to pin scroll position
+  useEffect(() => {
+    const prevLength = lastWrappedLinesLengthRef.current;
+    const newLength = wrappedLines.length;
+    lastWrappedLinesLengthRef.current = newLength;
+
+    if (scrollOffset > 0 && newLength > prevLength) {
+      setScrollOffset((prev) => prev + (newLength - prevLength));
+    }
+  }, [wrappedLines.length]);
 
   // Update mouse context ref (read by mouse handler on each event)
   mouseCtxRef.current = {

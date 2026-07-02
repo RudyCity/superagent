@@ -790,6 +790,7 @@ export function MultiAgentDashboard({
 
 
   const [logScrollOffset, setLogScrollOffset] = useState(0);
+  const lastWrappedLinesLengthRef = useRef(0);
 
   // Collapsible log groups state (for multi-agent tool/think groups)
   // Tracks which groups are EXPANDED (all collapsible groups are collapsed by default)
@@ -1002,6 +1003,17 @@ export function MultiAgentDashboard({
   }
 
   const wrappedLines = computeWrappedLogs(selectedSession, feedWidth, isHistoryTruncated, expandedGroups);
+
+  // Pin scroll position when wrapped lines length increases during streaming/thinking
+  useEffect(() => {
+    const prevLength = lastWrappedLinesLengthRef.current;
+    const newLength = wrappedLines.length;
+    lastWrappedLinesLengthRef.current = newLength;
+
+    if (logScrollOffset > 0 && newLength > prevLength) {
+      setLogScrollOffset((prev) => prev + (newLength - prevLength));
+    }
+  }, [wrappedLines.length]);
 
   const groupBoundaries = computeLogGroupBoundaries(selectedSession, feedWidth, isHistoryTruncated, expandedGroups);
 

@@ -305,22 +305,29 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     }
 
     if (focusArea === "input" && !activeWizard) {
-      if (key.upArrow && history.length > 0) {
-        let newIndex = historyIndex;
-        if (historyIndex === -1) {
-          setTempInput(query);
-          newIndex = history.length - 1;
-        } else if (historyIndex > 0) {
-          newIndex = historyIndex - 1;
+      if (key.upArrow) {
+        if (!isProcessing && history.length > 0) {
+          let newIndex = historyIndex;
+          if (historyIndex === -1) {
+            setTempInput(query);
+            newIndex = history.length - 1;
+          } else if (historyIndex > 0) {
+            newIndex = historyIndex - 1;
+          }
+          setHistoryIndex(newIndex);
+          setQuery(history[newIndex]);
+          setIsPasted(false);
+        } else if (isProcessing) {
+          setLogScrollOffset((prev) => {
+            const maxScroll = Math.max(0, wrappedLines.length - logsCount);
+            return Math.min(prev + 1, maxScroll);
+          });
         }
-        setHistoryIndex(newIndex);
-        setQuery(history[newIndex]);
-        setIsPasted(false);
         return;
       }
 
       if (key.downArrow) {
-        if (historyIndex !== -1) {
+        if (!isProcessing && historyIndex !== -1) {
           if (historyIndex === history.length - 1) {
             setHistoryIndex(-1);
             setQuery(tempInput);
@@ -331,6 +338,8 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
             setQuery(history[newIndex]);
             setIsPasted(false);
           }
+        } else if (isProcessing) {
+          setLogScrollOffset((prev) => Math.max(0, prev - 1));
         }
         return;
       }
