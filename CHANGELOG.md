@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.64] - 2026-07-02
+
+### Fixed
+- **Tool Support Probing with Reasoning Models**: Improved the `probeToolCallSupport` utility by changing the test probe prompt to explicitly instruct the model to call the probe tool, increasing the token limit to 128 to accommodate thinking/reasoning prefixes, and ensuring strict boolean coercion of the result. This prevents tool-capable models on custom/local endpoints (like Cohere) from failing the probe and triggering "unavailable tool 'manage_plan'" errors during subsequent runs.
+
+---
+
 ## [1.2.63] - 2026-07-02
 
 ### Fixed

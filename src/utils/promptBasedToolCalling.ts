@@ -43,7 +43,7 @@ export async function probeToolCallSupport(
 
   const probeBody = {
     model,
-    messages: [{ role: "user", content: "Reply with exactly one word: OK" }],
+    messages: [{ role: "user", content: "You must call probe_tool with input 'hello'. do not reply with text, use the tool." }],
     tools: [
       {
         type: "function",
@@ -59,7 +59,7 @@ export async function probeToolCallSupport(
       },
     ],
     tool_choice: "auto",
-    max_tokens: 32,
+    max_tokens: 128,
   };
 
   try {
@@ -81,9 +81,10 @@ export async function probeToolCallSupport(
 
     const json = (await res.json()) as any;
     const choice = json?.choices?.[0];
-    const hasToolCalls =
+    const hasToolCalls = !!(
       choice?.finish_reason === "tool_calls" ||
-      (choice?.message?.tool_calls && choice.message.tool_calls.length > 0);
+      (choice?.message?.tool_calls && choice.message.tool_calls.length > 0)
+    );
 
     toolCallSupportCache.set(cacheKey, hasToolCalls);
     return hasToolCalls;
