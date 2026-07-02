@@ -272,6 +272,38 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
       }
     }
 
+    // Redirect printable characters to input if another panel is focused
+    if (focusArea !== "input" && !activeWizard && input) {
+      const hasControlChar = input.split("").some(char => {
+        const code = char.charCodeAt(0);
+        return code < 32 || code === 127;
+      });
+      const isPrintable =
+        !hasControlChar &&
+        !key.ctrl &&
+        !key.meta &&
+        !key.upArrow &&
+        !key.downArrow &&
+        !key.leftArrow &&
+        !key.rightArrow &&
+        !key.return &&
+        !isEscape &&
+        !key.tab &&
+        !key.backspace &&
+        !key.delete;
+
+      if (isPrintable) {
+        if (focusArea === "list" && input >= "1" && input <= "9") {
+          // let list selection handle it
+        } else {
+          setFocusArea("input");
+          setQuery((prev) => prev + input);
+          setIsPasted(false);
+          return;
+        }
+      }
+    }
+
     if (focusArea === "input" && !activeWizard) {
       if (key.upArrow && history.length > 0) {
         let newIndex = historyIndex;

@@ -344,5 +344,158 @@ describe("MultiAgentDashboard UI Component", () => {
     process.stdin.off = originalOff;
     process.stdout.write = originalWrite;
   });
+
+  it("should refocus input and append character when a printable key is typed while a panel is focused", async () => {
+    const { useDashboardKeyboard } = await import("../src/hooks/useDashboardKeyboard.js");
+    const mockSetFocusArea = vi.fn();
+    const mockSetQuery = vi.fn();
+
+    const TestComponent = () => {
+      useDashboardKeyboard({
+        focusArea: "logs",
+        setFocusArea: mockSetFocusArea,
+        setQuery: mockSetQuery,
+        activeWizard: null,
+        stopAllRunningAgents: vi.fn(),
+        setCurrentTask: vi.fn(),
+        setIsHistoryTruncated: vi.fn(),
+        query: "",
+        pastePrefixLength: 0,
+        pasteSuffixLength: 0,
+        isPasted: false,
+        setIsPasted: vi.fn(),
+        handleQuerySubmit: vi.fn(),
+        setActiveWizard: vi.fn(),
+        setLogScrollOffset: vi.fn(),
+        history: [],
+        historyIndex: -1,
+        setHistoryIndex: vi.fn(),
+        tempInput: "",
+        setTempInput: vi.fn(),
+        wizardSelectedIndex: 0,
+        setWizardSelectedIndex: vi.fn(),
+        wizardAllOptions: [],
+        wizardOptions: [],
+        wizardSelectedSet: new Set(),
+        setWizardSelectedSet: vi.fn(),
+        setWizardOptions: vi.fn(),
+        setWizardAllOptions: vi.fn(),
+        setWizardIsLoadingModels: vi.fn(),
+        pendingQuestion: null,
+        setPendingQuestion: vi.fn(),
+        suggestions: [],
+        planState: "IDLE",
+        checklistTasks: [],
+        completedHistory: [],
+        runningSubagentsCount: 0,
+        runningTasksCount: 0,
+        setSelectedIndex: vi.fn(),
+        sessions: [],
+        selectedIndex: 0,
+        wrappedLines: [],
+        logsCount: 10,
+        setChecklistScrollOffset: vi.fn(),
+        maxChecklistVisible: 5,
+        setAgentsScrollOffset: vi.fn(),
+        maxAgentsVisible: 5,
+        setProcsScrollOffset: vi.fn(),
+        maxProcsVisible: 5,
+      } as any);
+      return null;
+    };
+
+    const { unmount } = render(React.createElement(TestComponent));
+
+    expect(inputCallback).toBeDefined();
+
+    // 1. Type printable character "x"
+    inputCallback("x", {});
+    expect(mockSetFocusArea).toHaveBeenCalledWith("input");
+    expect(mockSetQuery).toHaveBeenCalled();
+    // Verify the function passed to setQuery
+    const updater = mockSetQuery.mock.calls[0][0];
+    expect(updater("hello")).toBe("hellox");
+
+    mockSetFocusArea.mockClear();
+    mockSetQuery.mockClear();
+
+    // 2. Type non-printable key (upArrow)
+    inputCallback("", { upArrow: true });
+    expect(mockSetFocusArea).not.toHaveBeenCalled();
+    expect(mockSetQuery).not.toHaveBeenCalled();
+
+    unmount();
+  });
+
+  it("should not refocus input when digit 1-9 is typed in list focusArea", async () => {
+    const { useDashboardKeyboard } = await import("../src/hooks/useDashboardKeyboard.js");
+    const mockSetFocusArea = vi.fn();
+    const mockSetQuery = vi.fn();
+    const mockSetSelectedIndex = vi.fn();
+
+    const TestComponent = () => {
+      useDashboardKeyboard({
+        focusArea: "list",
+        setFocusArea: mockSetFocusArea,
+        setQuery: mockSetQuery,
+        setSelectedIndex: mockSetSelectedIndex,
+        sessions: [{ id: "session-1" }, { id: "session-2" }],
+        selectedIndex: 0,
+        activeWizard: null,
+        stopAllRunningAgents: vi.fn(),
+        setCurrentTask: vi.fn(),
+        setIsHistoryTruncated: vi.fn(),
+        query: "",
+        pastePrefixLength: 0,
+        pasteSuffixLength: 0,
+        isPasted: false,
+        setIsPasted: vi.fn(),
+        handleQuerySubmit: vi.fn(),
+        setActiveWizard: vi.fn(),
+        setLogScrollOffset: vi.fn(),
+        history: [],
+        historyIndex: -1,
+        setHistoryIndex: vi.fn(),
+        tempInput: "",
+        setTempInput: vi.fn(),
+        wizardSelectedIndex: 0,
+        setWizardSelectedIndex: vi.fn(),
+        wizardAllOptions: [],
+        wizardOptions: [],
+        wizardSelectedSet: new Set(),
+        setWizardSelectedSet: vi.fn(),
+        setWizardOptions: vi.fn(),
+        setWizardAllOptions: vi.fn(),
+        setWizardIsLoadingModels: vi.fn(),
+        pendingQuestion: null,
+        setPendingQuestion: vi.fn(),
+        suggestions: [],
+        planState: "IDLE",
+        checklistTasks: [],
+        completedHistory: [],
+        runningSubagentsCount: 0,
+        runningTasksCount: 0,
+        wrappedLines: [],
+        logsCount: 10,
+        setChecklistScrollOffset: vi.fn(),
+        maxChecklistVisible: 5,
+        setAgentsScrollOffset: vi.fn(),
+        maxAgentsVisible: 5,
+        setProcsScrollOffset: vi.fn(),
+        maxProcsVisible: 5,
+      } as any);
+      return null;
+    };
+
+    const { unmount } = render(React.createElement(TestComponent));
+
+    // Type digit "2"
+    inputCallback("2", {});
+    expect(mockSetFocusArea).not.toHaveBeenCalled();
+    expect(mockSetQuery).not.toHaveBeenCalled();
+    expect(mockSetSelectedIndex).toHaveBeenCalledWith(1);
+
+    unmount();
+  });
 });
 
