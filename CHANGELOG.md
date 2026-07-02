@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.63] - 2026-07-02
+
+### Fixed
+- **Multi-Agent Collapsible Tool Logs Clicks**: Unified log parsing, nesting, merging, and line wrap calculations between `computeLogGroupBoundaries` and `computeWrappedLogs` in `dashboardLogFormatter.tsx`. Correctly accounted for stripped prefixes in boundary wrap math and added line count mappings for expanded tool divider and output streams, ensuring terminal click actions perfectly align with log entries for expansion and collapse.
+
+---
+
 ## [1.2.62] - 2026-07-02
 
 ### Fixed

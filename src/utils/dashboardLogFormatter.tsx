@@ -29,7 +29,6 @@ const COLLAPSIBLE_LABELS = new Set([
   "🚨 TOOL FAIL",
   "🧠 THINK",
   "⚙️ AUTO-APPROVE",
-  "🔧 TOOL START",
 ]);
 
 /** Returns true if the given label is collapsible */
@@ -45,122 +44,11 @@ export interface LogGroupInfo {
   isCollapsible: boolean;
 }
 
-/** Compute group boundaries for click detection in the multi-agent dashboard */
-export function computeLogGroupBoundaries(
-  selectedSession: AgentSession,
-  feedWidth: number,
-  isHistoryTruncated: boolean,
-  expandedGroups: Set<number>
-): LogGroupInfo[] {
+/** Parse, clean, nest, and merge raw logs of an AgentSession into standardized groups */
+export function parseLogGroups(selectedSession: AgentSession): LogGroup[] {
   const activeLogs = selectedSession.logs.map(l => l.trim()).filter(Boolean);
   const groups: LogGroup[] = [];
-  for (let logIdx = 0; logIdx < activeLogs.length; logIdx++) {
-    const logStr = activeLogs[logIdx];
-    const isBoxLine = /^[┌├│└─]/.test(logStr);
-    if (isBoxLine) {
-      groups.push({ isBox: true, label: "", color: "gray", isBold: false, dimColor: false, parseMarkdown: false, rawLines: [logStr] });
-      continue;
-    }
-    let label = "INFO";
-    if (logStr.startsWith("[USER]")) label = "👤 USER";
-    else if (logStr.startsWith("[MASTER]")) label = "🤖 SYSTEM";
-    else if (logStr.startsWith("[AGENT]")) label = "🧠 AGENT";
-    else if (logStr.startsWith("[TOOL START]") || logStr.startsWith("[TOOL:START]")) label = "🔧 TOOL START";
-    else if (logStr.startsWith("[TOOL END]") || logStr.startsWith("[TOOL:OK]")) label = "✅ TOOL DONE";
-    else if (logStr.startsWith("[TOOL:FAIL]")) label = "🚨 TOOL FAIL";
-    else if (logStr.startsWith("[ERROR]")) label = "🚨 ERROR";
-    else if (logStr.startsWith("[AUTO-APPROVE]")) label = "⚙️ AUTO-APPROVE";
-    else if (logStr.startsWith("[QUESTION]")) label = "❓ QUESTION";
-    else if (logStr.startsWith("[THINK]")) label = "🧠 THINK";
 
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup && !lastGroup.isBox && lastGroup.label === label) {
-      lastGroup.rawLines.push(logStr);
-    } else {
-      groups.push({ isBox: false, label, color: "gray", isBold: false, dimColor: false, parseMarkdown: false, rawLines: [logStr] });
-    }
-  }
-
-  // Assign group indexes
-  groups.forEach((g, i) => { g.groupIndex = i; });
-
-  // Nest TOOL groups under the preceding AGENT group (visual nesting)
-  for (let gi = 1; gi < groups.length; gi++) {
-    const g = groups[gi];
-    if (g.isBox) continue;
-    const isToolGroup = g.label.includes("TOOL") || g.label.includes("AUTO-APPROVE");
-    if (!isToolGroup) continue;
-    // Look back for the nearest non-box, non-tool group
-    for (let j = gi - 1; j >= 0; j--) {
-      const prev = groups[j];
-      if (prev.isBox) continue;
-      const isPrevTool = prev.label.includes("TOOL") || prev.label.includes("AUTO-APPROVE");
-      if (isPrevTool) continue;
-      if (prev.label === "🧠 AGENT" || prev.label === "👤 USER") {
-        g.nestLevel = 1;
-      }
-      break;
-    }
-  }
-
-  const boundaries: LogGroupInfo[] = [];
-  let currentLine = 0;
-
-  for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
-    const group = groups[groupIdx];
-    const isCollapsible = !group.isBox && isCollapsibleLabel(group.label);
-    const isCollapsed = isCollapsible && !expandedGroups.has(groupIdx);
-    const isTool = (group.label.includes("TOOL") || group.label.includes("AUTO-APPROVE")) && (group.nestLevel || 0) > 0;
-
-    if (group.isBox) {
-      const lineCount = group.rawLines.length;
-      boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine + lineCount - 1, label: group.label, isCollapsible: false });
-      currentLine += lineCount;
-      continue;
-    }
-
-    if (isCollapsed) {
-      // Collapsed = 1 line (compact header)
-      boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine, label: group.label, isCollapsible: true });
-      currentLine += 1;
-    } else {
-      // Expanded: header + content lines + separator
-      let lineCount = 1; // header
-      let firstLine = true;
-      for (const rawLine of group.rawLines) {
-        const cleaned = rawLine.replace(/\r\n/g, "\n").replace(/\r/g, "");
-        const subLines = isHistoryTruncated
-          ? cleaned.split("\n")
-          : wrapTextForDisplay(cleaned, Math.max(10, feedWidth - (isTool ? 14 : 9)));
-        if (isTool && firstLine && subLines.length > 0) {
-          // The first line of content is rendered inline in the header line
-          lineCount += subLines.length - 1;
-          firstLine = false;
-        } else {
-          lineCount += subLines.length;
-        }
-      }
-      const nextGroup = groups[groupIdx + 1];
-      const nextIsNested = nextGroup && (nextGroup.nestLevel || 0) > 0;
-      if (groupIdx < groups.length - 1 && !nextIsNested) lineCount += 1; // separator
-      boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine + lineCount - 1, label: group.label, isCollapsible: true });
-      currentLine += lineCount;
-    }
-  }
-
-  return boundaries;
-}
-
-export function computeWrappedLogs(
-  selectedSession: AgentSession,
-  feedWidth: number,
-  isHistoryTruncated: boolean,
-  expandedGroups?: Set<number>
-): React.ReactNode[] {
-  const wrappedLines: React.ReactNode[] = [];
-  const activeLogs = selectedSession.logs.map(l => l.trim()).filter(Boolean);
-
-  const groups: LogGroup[] = [];
   for (let logIdx = 0; logIdx < activeLogs.length; logIdx++) {
     const logStr = activeLogs[logIdx];
     const isBoxLine = /^[┌├│└─]/.test(logStr);
@@ -298,7 +186,6 @@ export function computeWrappedLogs(
   }
 
   // Merge TOOL:START + TOOL:OK/FAIL pairs into a single group
-  // The result group is absorbed into the start group as mergedResult, then removed
   const mergedGroups: LogGroup[] = [];
   for (let gi = 0; gi < groups.length; gi++) {
     const g = groups[gi];
@@ -310,7 +197,6 @@ export function computeWrappedLogs(
       !next.isBox &&
       (next.label === "✅ TOOL OK" || next.label === "✅ TOOL DONE" || next.label === "🚨 TOOL FAIL")
     ) {
-      // Absorb next group as mergedResult on current TOOL:START group
       const isError = next.label.includes("FAIL");
       mergedGroups.push({ ...g, mergedResult: { isError, lines: next.rawLines } });
       gi++; // Skip the TOOL:OK/FAIL group
@@ -318,9 +204,91 @@ export function computeWrappedLogs(
       mergedGroups.push(g);
     }
   }
-  // Replace groups with merged result
-  groups.length = 0;
-  groups.push(...mergedGroups);
+
+  // Assign final groupIndex
+  mergedGroups.forEach((g, i) => {
+    g.groupIndex = i;
+  });
+
+  return mergedGroups;
+}
+
+/** Compute group boundaries for click detection in the multi-agent dashboard */
+export function computeLogGroupBoundaries(
+  selectedSession: AgentSession,
+  feedWidth: number,
+  isHistoryTruncated: boolean,
+  expandedGroups: Set<number>
+): LogGroupInfo[] {
+  const groups = parseLogGroups(selectedSession);
+  const boundaries: LogGroupInfo[] = [];
+  let currentLine = 0;
+
+  for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
+    const group = groups[groupIdx];
+    const isCollapsible = !group.isBox && isCollapsibleLabel(group.label);
+    const isCollapsed = isCollapsible && !expandedGroups.has(groupIdx);
+    const isTool = (group.label.includes("TOOL") || group.label.includes("AUTO-APPROVE")) && (group.nestLevel || 0) > 0;
+
+    if (group.isBox) {
+      const lineCount = group.rawLines.length;
+      boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine + lineCount - 1, label: group.label, isCollapsible: false });
+      currentLine += lineCount;
+      continue;
+    }
+
+    if (isCollapsed) {
+      // Collapsed = 1 line (compact header)
+      boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine, label: group.label, isCollapsible: true });
+      currentLine += 1;
+    } else {
+      // Expanded: header + content lines + separator
+      let lineCount = 1; // header
+      let firstLine = true;
+      for (const rawLine of group.rawLines) {
+        const cleaned = rawLine.replace(/\r\n/g, "\n").replace(/\r/g, "");
+        const subLines = isHistoryTruncated
+          ? cleaned.split("\n")
+          : wrapTextForDisplay(cleaned, Math.max(10, feedWidth - (isTool ? 14 : 9)));
+        if (isTool && firstLine && subLines.length > 0) {
+          // The first line of content is rendered inline in the header line
+          lineCount += subLines.length - 1;
+          firstLine = false;
+        } else {
+          lineCount += subLines.length;
+        }
+      }
+
+      // Add merged result output lines if expanded
+      if (isTool && group.mergedResult) {
+        lineCount += 1; // Divider line: "───"
+        for (const rawLine of group.mergedResult.lines) {
+          const cleaned = rawLine.replace(/\r\n/g, "\n").replace(/\r/g, "");
+          const subLines = wrapTextForDisplay(cleaned, Math.max(10, feedWidth - 18));
+          lineCount += subLines.length;
+        }
+      }
+
+      const nextGroup = groups[groupIdx + 1];
+      const nextIsNested = nextGroup && (nextGroup.nestLevel || 0) > 0;
+      if (groupIdx < groups.length - 1 && !nextIsNested) lineCount += 1; // separator
+
+      boundaries.push({ groupIndex: groupIdx, startLine: currentLine, endLine: currentLine + lineCount - 1, label: group.label, isCollapsible: true });
+      currentLine += lineCount;
+    }
+  }
+
+  return boundaries;
+}
+
+export function computeWrappedLogs(
+  selectedSession: AgentSession,
+  feedWidth: number,
+  isHistoryTruncated: boolean,
+  expandedGroups?: Set<number>
+): React.ReactNode[] {
+  const wrappedLines: React.ReactNode[] = [];
+  const groups = parseLogGroups(selectedSession);
 
   for (let groupIdx = 0; groupIdx < groups.length; groupIdx++) {
     const group = groups[groupIdx];
@@ -453,7 +421,6 @@ export function computeWrappedLogs(
           </Text>
         </Box>
       );
-      // Render remaining input lines
     } else {
       wrappedLines.push(
         <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
@@ -611,7 +578,6 @@ export function computeWrappedLogs(
       );
     }
   }
-
 
   return wrappedLines;
 }
