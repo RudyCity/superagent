@@ -42,11 +42,11 @@ export function useDashboardSessions(
         });
       }
 
-      // Check for active agents or background tasks
+      // Check for active agents or background tasks (exclude hidden tasks like tencentdb-gateway)
       const hasActiveAgentsOrTasks =
         [...superagentInstances.values()].some((i) => i.status === "running") ||
         [...subagentInstances.values()].some((s) => s.status === "running") ||
-        [...backgroundTasks.values()].some((t) => t.isDetachedWindow || !t.hasExited);
+        [...backgroundTasks.values()].some((t) => !t.isHidden && (t.isDetachedWindow || !t.hasExited));
 
       list.push({
         id: "master-orchestrator",
