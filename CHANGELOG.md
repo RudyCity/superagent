@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.69] - 2026-07-02
+
+### Changed
+- **Multi-Agent Mode Footer Simpler Layout**: Simplified the redesigned status bar to use a clean and minimal cyberpunk text layout, replacing the heavy pseudo-tree bracket characters with clean label tags and simple vertical dividers (`│`).
+
+---
+
 ## [1.2.68] - 2026-07-02
 
 ### Fixed
