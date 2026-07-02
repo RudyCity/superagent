@@ -49,6 +49,9 @@ export async function initMcpServers(): Promise<void> {
       command: srvConfig.command,
       args: srvConfig.args || [],
       env: mergedEnv,
+      // Pipe stderr so MCP subprocess output (e.g. pip install logs) does NOT
+      // bleed into Superagent's terminal UI. We capture it for error reporting.
+      stderr: "pipe",
     });
 
     const client = new Client(
@@ -69,6 +72,20 @@ export async function initMcpServers(): Promise<void> {
       status: "connecting",
     };
     connectedServers.set(serverName, connectionRecord);
+
+    // Accumulate piped stderr from the MCP subprocess (installation logs, boot messages, etc.)
+    // so it is available for error reporting without leaking to the Superagent terminal.
+    let stderrBuffer = "";
+    const stderrStream = transport.stderr;
+    if (stderrStream) {
+      stderrStream.on("data", (chunk: Buffer) => {
+        stderrBuffer += chunk.toString();
+        // Keep last 4 KB to avoid unbounded growth
+        if (stderrBuffer.length > 4096) {
+          stderrBuffer = stderrBuffer.slice(-4096);
+        }
+      });
+    }
 
     try {
       await client.connect(transport);
@@ -109,8 +126,13 @@ export async function initMcpServers(): Promise<void> {
       }
     } catch (err: any) {
       connectionRecord.status = "error";
-      connectionRecord.error = err.message || String(err);
-      console.error(`[MCP] Failed to connect to server "${serverName}":`, connectionRecord.error);
+      // Combine the JS error message with any captured stderr for a richer error report
+      const detail = stderrBuffer.trim()
+        ? `${err.message || String(err)}\nServer stderr:\n${stderrBuffer.trim()}`
+        : (err.message || String(err));
+      connectionRecord.error = detail;
+      // Write to log rather than process.stderr to avoid polluting the Superagent UI
+      process.stderr.write(`[MCP] Failed to connect to server "${serverName}": ${detail}\n`);
     }
   });
 

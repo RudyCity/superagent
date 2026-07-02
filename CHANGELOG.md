@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.55] - 2026-07-02
+
+### Fixed
+- **MCP Live Process Bleed**: Fixed `McpManager` passing no `stderr` option to `StdioClientTransport`, which caused the MCP SDK to default to `stderr: 'inherit'`. This made subprocess output from MCP server processes (e.g. `pip install`, build logs) flood directly into Superagent's terminal UI as an unexpected "live process". Now `stderr: 'pipe'` is passed explicitly, capturing all subprocess output internally. Captured stderr is surfaced in error messages when the MCP connection fails, providing richer diagnostics without polluting the terminal.
+
+---
+
 ## [1.2.54] - 2026-07-02
 
 ### Fixed
