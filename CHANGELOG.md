@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.62] - 2026-07-02
+
+### Fixed
+- **Multi-Agent Provider Preset Routing**: Resolved a bug where custom model presets saved from the model wizard omitted the provider prefix (e.g. `cohere/north-mini-code:free` instead of `openrouter@cohere/north-mini-code:free`) if they matched the active provider. When applied, these presets resolved `providerProfileId` to `""`, causing the connection details resolver to fall back to the first available provider with a key (e.g., local proxy on port 8085), leading to connection failures. Fixed by always prepending the provider prefix in the wizard and adding automatic parsing of `@` strings in `setTierModel`/`setAllTierModels`.
+
+---
+
 ## [1.2.61] - 2026-07-02
 
 ### Fixed

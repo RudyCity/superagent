@@ -280,8 +280,17 @@ export function getTierModelWithProvider(mode: ModelMode | "auto", tier: string)
 export function setTierModel(mode: ModelMode | "auto", tier: string, modelName: string, providerProfileId?: string): void {
   const m = resolveMode(mode);
   const key = tier.toLowerCase();
-  const update: any = { model: modelName };
-  if (providerProfileId) update.providerProfileId = providerProfileId;
+
+  let parsedModel = modelName;
+  let parsedProviderId = providerProfileId;
+  if (modelName && modelName.includes("@")) {
+    const parts = modelName.split("@");
+    parsedProviderId = parts[0];
+    parsedModel = parts[1];
+  }
+
+  const update: any = { model: parsedModel };
+  if (parsedProviderId) update.providerProfileId = parsedProviderId;
 
   mutateModelConfig((config) => {
     const activeId = config.activePresetId?.[m];
@@ -311,8 +320,17 @@ export function setTierModel(mode: ModelMode | "auto", tier: string, modelName: 
  */
 export function setAllTierModels(mode: ModelMode | "auto", modelName: string, providerProfileId?: string): void {
   const m = resolveMode(mode);
-  const update: any = { model: modelName };
-  if (providerProfileId) update.providerProfileId = providerProfileId;
+
+  let parsedModel = modelName;
+  let parsedProviderId = providerProfileId;
+  if (modelName && modelName.includes("@")) {
+    const parts = modelName.split("@");
+    parsedProviderId = parts[0];
+    parsedModel = parts[1];
+  }
+
+  const update: any = { model: parsedModel };
+  if (parsedProviderId) update.providerProfileId = parsedProviderId;
 
   mutateModelConfig((config) => {
     const activeId = config.activePresetId?.[m];

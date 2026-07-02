@@ -1573,10 +1573,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const profileName = data.provider || "";
         const tier = data.tier || "";
         
-        const activeProvider = getActiveProviderName();
-        const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-          ? `${profileName.toLowerCase()}@${modelName}`
-          : modelName;
+        const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
 
         const presetModels: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
 
@@ -1638,13 +1635,10 @@ export function useModelWizard(ctx: ModelWizardContext) {
           let targetLabel = "";
           if (tier === "default") {
             switchActiveProvider(profileName);
-            setAllTierModels(presetMode, modelName);
+            setAllTierModels(presetMode, `${profileName.toLowerCase()}@${modelName}`);
             targetLabel = "Default Model";
           } else if (tier === "all_subagents") {
-            const activeProvider = getActiveProviderName() || profileName;
-            const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-              ? `${profileName.toLowerCase()}@${modelName}`
-              : modelName;
+            const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
             setTierModel(presetMode, "subagent", finalModelName);
             setTierModel(presetMode, "researcher", finalModelName);
             setTierModel(presetMode, "coder", finalModelName);
@@ -1652,18 +1646,12 @@ export function useModelWizard(ctx: ModelWizardContext) {
             targetLabel = "All Subagent Models";
             switchActiveProvider(profileName);
           } else if (tier === "all") {
-            const activeProvider = getActiveProviderName() || profileName;
-            const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-              ? `${profileName.toLowerCase()}@${modelName}`
-              : modelName;
+            const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
             setAllTierModels(presetMode, finalModelName);
             targetLabel = "All Tiers & Subagents";
             switchActiveProvider(profileName);
           } else {
-            const activeProvider = getActiveProviderName() || profileName;
-            const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-              ? `${profileName.toLowerCase()}@${modelName}`
-              : modelName;
+            const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
             
             if (tier === "master") {
               setTierModel(presetMode, "master", finalModelName);
@@ -1904,21 +1892,15 @@ export function useModelWizard(ctx: ModelWizardContext) {
         let targetLabel = "";
         if (tier === "default") {
           switchActiveProvider(profileName);
-          setAllTierModels(presetMode, modelName);
+          setAllTierModels(presetMode, `${profileName.toLowerCase()}@${modelName}`);
           targetLabel = "Default Model";
         } else if (tier === "all") {
-          const activeProvider = getActiveProviderName();
-          const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-            ? `${profileName.toLowerCase()}@${modelName}`
-            : modelName;
+          const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
           setAllTierModels(presetMode, finalModelName);
           targetLabel = "All Tiers & Subagents";
           switchActiveProvider(profileName);
         } else {
-          const activeProvider = getActiveProviderName();
-          const finalModelName = profileName.toLowerCase() !== activeProvider.toLowerCase()
-            ? `${profileName.toLowerCase()}@${modelName}`
-            : modelName;
+          const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
           
           if (tier === "master") {
             setTierModel(presetMode, "master", finalModelName);
