@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fastcontextTool } from "../src/core/tools/fastcontextTool.js";
-import { existsSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 import { execa } from "execa";
 import { appendActiveToolOutput, clearActiveToolOutput } from "../src/core/tools/state.js";
 
@@ -8,7 +8,26 @@ import { appendActiveToolOutput, clearActiveToolOutput } from "../src/core/tools
 
 vi.mock("fs", async () => {
   const actual = await vi.importActual<typeof import("fs")>("fs");
-  return { ...actual, existsSync: vi.fn() };
+  return {
+    ...actual,
+    existsSync: vi.fn(),
+    readdirSync: vi.fn().mockImplementation((pathStr, options) => {
+      if (pathStr === "/tmp" || pathStr === "\\tmp") {
+        if (options && (options as any).withFileTypes) {
+          return [
+            {
+              name: "dummy.ts",
+              isFile: () => true,
+              isDirectory: () => false,
+              isSymbolicLink: () => false,
+            }
+          ];
+        }
+        return ["dummy.ts"];
+      }
+      return actual.readdirSync(pathStr, options);
+    })
+  };
 });
 
 vi.mock("execa", () => ({
@@ -141,6 +160,29 @@ describe("fastcontextTool", () => {
     );
     expect(result).toContain("not installed");
     expect(result).toContain("setup-fastcontext");
+  });
+
+  it("returns early when workspace is empty or has no exploreable files", async () => {
+    vi.mocked(readdirSync).mockImplementationOnce((pathStr, options) => {
+      if (options && (options as any).withFileTypes) {
+        return [
+          {
+            name: ".git",
+            isFile: () => false,
+            isDirectory: () => true,
+            isSymbolicLink: () => false,
+          }
+        ] as any;
+      }
+      return [".git"] as any;
+    });
+
+    const result = await fastcontextTool.execute(
+      { query: "Find auth middleware" },
+      "/tmp"
+    );
+    expect(result).toContain("FastContext skipped");
+    expect(result).toContain("empty or contains no exploreable files");
   });
 
   it("is registered in all toolsets", async () => {

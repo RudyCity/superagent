@@ -187,6 +187,49 @@ async function resolveFastContextCredentials(): Promise<{
   return { baseUrl, apiKey, model, tierName, providerName, providerType, providerMismatch };
 }
 
+/**
+ * Check if the workspace directory contains any exploreable files,
+ * ignoring hidden folders/files and typical build/dependency folders.
+ */
+function hasExploreableFiles(
+  dir: string,
+  ignoredDirs: Set<string> = new Set([
+    ".git",
+    ".fastcontext",
+    ".gemini",
+    ".agents",
+    "node_modules",
+    "dist",
+    "build",
+    "out",
+    "target",
+    "bin",
+  ])
+): boolean {
+  try {
+    const items = readdirSync(dir, { withFileTypes: true });
+    for (const item of items) {
+      if (item.name.startsWith(".")) {
+        continue;
+      }
+      if (item.isDirectory()) {
+        if (ignoredDirs.has(item.name)) {
+          continue;
+        }
+        if (hasExploreableFiles(path.join(dir, item.name), ignoredDirs)) {
+          return true;
+        }
+      } else if (item.isFile()) {
+        return true;
+      }
+    }
+  } catch {
+    // If we fail to read a subdirectory, just ignore
+  }
+  return false;
+}
+
+
 export const fastcontextTool: Tool = {
   name: "fastcontext",
   description:
@@ -246,6 +289,11 @@ export const fastcontextTool: Tool = {
     const exclude = (args.exclude as string) || "";
     const maxFileSizeKb = (args.maxFileSizeKb as number) || 512;
     const noCache = args.noCache === true;
+
+    // Check if the workspace contains exploreable files
+    if (!hasExploreableFiles(cwd)) {
+      return "FastContext skipped: The workspace directory is empty or contains no exploreable files.";
+    }
 
     // Resolve maxTurns: arg → default 8, capped by maxIterations from global settings.
     // maxIterations = 0 means "unlimited" (no cap).

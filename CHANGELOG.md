@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.80] - 2026-07-03
+
+### Changed
+- **Empty Workspace Optimization for FastContext**: Added an early check `hasExploreableFiles` to `fastcontextTool.ts` that recursively detects if the workspace contains any non-hidden, non-ignored files. If the workspace is empty or contains only configuration/hidden files (like `.git`), FastContext will skip execution and return immediately, preventing unnecessary API calls, token usage, and process spawning.
+
+---
+
 ## [1.2.79] - 2026-07-03
 
 ### Changed
