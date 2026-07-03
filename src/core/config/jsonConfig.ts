@@ -56,6 +56,7 @@ export interface SystemSettings {
   maxProcsVisible?: number;
   focus?: "off" | "low" | "medium" | "high" | "xhigh" | "max" | "custom";
   focusBudget?: number;
+  forcePromptBasedToolCalling?: boolean;
 }
 
 export interface McpServerConfig {
@@ -95,6 +96,7 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     maxProcsVisible: 3,
     focus: "off",
     focusBudget: 4000,
+    forcePromptBasedToolCalling: false,
   },
   trustedDirectories: [],
   providers: [

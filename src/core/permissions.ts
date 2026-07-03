@@ -427,6 +427,30 @@ export async function executeToolCall(
     };
   }
 
+  // Tier-level tool access validation (Layer 2 business logic guard)
+  if (currentAgent) {
+    try {
+      const activeTools = await currentAgent.getActiveTools();
+      const isAllowed = activeTools.some((t: any) => t.name === toolCall.name);
+      if (!isAllowed) {
+        try {
+          const { appendMasterLog, appendToolsErrorLog } = await import("./tools/state.js");
+          const subTypeSuffix = currentAgent.subagentType ? ` / ${currentAgent.subagentType}` : "";
+          appendMasterLog(`[ERROR] Unauthorized tool called by ${tier}${subTypeSuffix}: ${toolCall.name}`);
+          appendToolsErrorLog(tier, depth, toolCall.name, `Unauthorized tool called: ${toolCall.name}`);
+        } catch {}
+        return {
+          toolCallId: toolCall.id,
+          name: toolCall.name,
+          result: `Error: Tool "${toolCall.name}" is not available for this agent's tier (${tier}${currentAgent.subagentType ? ` / ${currentAgent.subagentType}` : ""}).`,
+          isError: true,
+        };
+      }
+    } catch (err) {
+      // Fallback: if resolution fails, continue execution to avoid deadlock/blocker
+    }
+  }
+
   try {
     await runEventHooks("pre_tool", { toolName: toolCall.name, args: toolCall.args, cwd });
     const result = await tool.execute(toolCall.args, cwd, signal);

@@ -647,6 +647,19 @@ If none of the options are suitable, still pick the closest one.`;
     return historyPath.replace(/\.json$/, "_implementation_plan.md");
   }
 
+  public async getActiveTools(): Promise<Tool[]> {
+    if (this.customTools) return this.customTools;
+    const { masterToolset, superagentToolset, subagentToolsets, defaultSubagentToolset } = await import("./tools/toolsets.js");
+    if (this.tier === "master") {
+      return masterToolset;
+    } else if (this.tier === "superagent" || this.tier === "single") {
+      return superagentToolset;
+    } else if (this.tier === "subagent") {
+      return (this.subagentType && subagentToolsets[this.subagentType]) || defaultSubagentToolset;
+    }
+    return [];
+  }
+
   public getTaskFilePath(): string {
     const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
     return historyPath.replace(/\.json$/, "_task.md");
@@ -1072,13 +1085,17 @@ CRITICAL GOAL MODE RULES:
         // Check if the endpoint/model supports native tool calling
         let supportsNativeTools = true;
         const details = getModelConnectionDetailsForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
-        const isTest = !!process.env.VITEST;
-        if (!isTest && details.provider === "custom" && details.baseUrl) {
-          try {
-            const { probeToolCallSupport } = await import("../utils/promptBasedToolCalling.js");
-            supportsNativeTools = await probeToolCallSupport(details.baseUrl, details.apiKey, details.modelName);
-          } catch (err: any) {
-            this.writeToLogFile("WARN", `Failed to probe tool call support: ${err.message}. Defaulting to native tools.`);
+        if (getSettings().forcePromptBasedToolCalling) {
+          supportsNativeTools = false;
+        } else {
+          const isTest = !!process.env.VITEST;
+          if (!isTest && details.provider === "custom" && details.baseUrl) {
+            try {
+              const { probeToolCallSupport } = await import("../utils/promptBasedToolCalling.js");
+              supportsNativeTools = await probeToolCallSupport(details.baseUrl, details.apiKey, details.modelName);
+            } catch (err: any) {
+              this.writeToLogFile("WARN", `Failed to probe tool call support: ${err.message}. Defaulting to native tools.`);
+            }
           }
         }
         let messages = this.buildMessages(supportsNativeTools);

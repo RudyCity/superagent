@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.75] - 2026-07-03
+
+### Added
+- **Tier-Level Tool Validation**: Exposed `getActiveTools()` on the `Agent` class to retrieve allowed tools per tier. Implemented strict runtime checks in `executeToolCall()` (permissions layer) to block unauthorized tools at the execution level across all tiers.
+- **Forced Prompt-Based Override**: Added `forcePromptBasedToolCalling` config flag to `SystemSettings` and default configuration to allow developers to force prompt-based (XML) tool calling.
+- **Resilient XML Parser**: Enhanced XML regexes and cleanup helpers to support optional attributes in XML tags (e.g. `<tool_call id="...">`), improving stability under mixed model outputs.
+
+---
+
 ## [1.2.74] - 2026-07-03
 
 ### Fixed

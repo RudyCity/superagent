@@ -189,14 +189,14 @@ export function parseXmlToolCalls(
   };
 
   // 0. Match <tool_calls>...</tool_calls> blocks containing JSON-based <tool_call>...</tool_call> or XML-based <invoke>
-  const toolCallsRegex = /<tool_calls\s*>([\s\S]*?)<\/tool_calls>/gi;
+  const toolCallsRegex = /<tool_calls(?:\s+[^>]*)?>([\s\S]*?)<\/tool_calls>/gi;
   let tcMatch;
   while ((tcMatch = toolCallsRegex.exec(normalizedText)) !== null) {
     const blockContent = tcMatch[1];
     const fullBlock = tcMatch[0];
 
     // Check JSON-based <tool_call>
-    const blockToolCallRegex = /<tool_call\s*>((?:(?!<tool_call\s*>)[\s\S])*?)(?:<\/tool_call>|<\/tool_calls>|$)/gi;
+    const blockToolCallRegex = /<tool_call(?:\s+[^>]*)?>((?:(?!<tool_call(?:\s+[^>]*)?>)[\s\S])*?)(?:<\/tool_call>|<\/tool_calls>|$)/gi;
     let singleTcMatch;
     while ((singleTcMatch = blockToolCallRegex.exec(blockContent)) !== null) {
       const rawBody = cleanJsonString(singleTcMatch[1]);
@@ -263,7 +263,7 @@ export function parseXmlToolCalls(
   }
 
   // Match standalone <tool_call>...</tool_call> blocks that are not wrapped in <tool_calls>
-  const standaloneToolCallRegex = /<tool_call\s*>((?:(?!<tool_call\s*>)[\s\S])*?)(?:<\/tool_call>|<\/tool_calls>|$)/gi;
+  const standaloneToolCallRegex = /<tool_call(?:\s+[^>]*)?>((?:(?!<tool_call(?:\s+[^>]*)?>)[\s\S])*?)(?:<\/tool_call>|<\/tool_calls>|$)/gi;
   let standTcMatch;
   while ((standTcMatch = standaloneToolCallRegex.exec(normalizedText)) !== null) {
     const fullBlock = standTcMatch[0];
@@ -292,7 +292,7 @@ export function parseXmlToolCalls(
   }
 
   // 1. Match <function_calls>...</function_calls> blocks
-  const functionCallsRegex = /<function_calls\s*>([\s\S]*?)<\/function_calls>/gi;
+  const functionCallsRegex = /<function_calls(?:\s+[^>]*)?>([\s\S]*?)<\/function_calls>/gi;
   let fcMatch;
   while ((fcMatch = functionCallsRegex.exec(normalizedText)) !== null) {
     const blockContent = fcMatch[1];
@@ -338,7 +338,7 @@ export function parseXmlToolCalls(
   for (const toolName of toolNames) {
     // Escape tool name for regex
     const escapedName = toolName.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
-    const directTagRegex = new RegExp(`<${escapedName}\\s*>([\\s\\S]*?)<\\/${escapedName}>`, "gi");
+    const directTagRegex = new RegExp(`<${escapedName}(?:\\s+[^>]*)?>([\\s\\S]*?)<\\/${escapedName}>`, "gi");
     let directMatch;
     while ((directMatch = directTagRegex.exec(normalizedText)) !== null) {
       const fullBlock = directMatch[0];
@@ -358,11 +358,11 @@ export function parseXmlToolCalls(
   // Clean up any leftover/stray XML tool tags
   cleanText = cleanText
     .replace(/([ \t]*│)?[ \t]*<\/function_calls\s*>/gi, "")
-    .replace(/([ \t]*│)?[ \t]*<function_calls\s*>/gi, "")
+    .replace(/([ \t]*│)?[ \t]*<function_calls(?:\s+[^>]*)?>/gi, "")
     .replace(/([ \t]*│)?[ \t]*<\/tool_calls?\s*>/gi, "")
-    .replace(/([ \t]*│)?[ \t]*<tool_calls?\s*>/gi, "")
+    .replace(/([ \t]*│)?[ \t]*<tool_calls?(?:\s+[^>]*)?>/gi, "")
     .replace(/([ \t]*│)?[ \t]*<\/tool_call\s*>/gi, "")
-    .replace(/([ \t]*│)?[ \t]*<tool_call\s*>/gi, "");
+    .replace(/([ \t]*│)?[ \t]*<tool_call(?:\s+[^>]*)?>/gi, "");
 
   // Remove lines containing only space/tab and a vertical line
   cleanText = cleanText.replace(/^[ \t]*│[ \t]*(?:\r?\n|$)/gm, "");
