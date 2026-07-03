@@ -561,11 +561,13 @@ export function useModelWizard(ctx: ModelWizardContext) {
       });
       const profileOptions = formatProviderForPicker(matchingProfiles);
 
-      setWizardOptions([
+      const opts = [
         ...profileOptions,
         `+ Configure a new ${providerType} profile`,
         "< Back"
-      ]);
+      ];
+      setWizardOptions(opts);
+      setWizardAllOptions?.(opts);
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 3) {
@@ -759,11 +761,13 @@ export function useModelWizard(ctx: ModelWizardContext) {
           return p.type === providerType;
         });
         const profileOptions = formatProviderForPicker(matchingProfiles);
-        setWizardOptions([
+        const opts = [
           ...profileOptions,
           `+ Configure a new ${providerType} profile`,
           "< Back"
-        ]);
+        ];
+        setWizardOptions(opts);
+        setWizardAllOptions?.(opts);
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -1358,11 +1362,13 @@ export function useModelWizard(ctx: ModelWizardContext) {
 
       const profileOptions = getProfilePickerOptions(providerType);
 
-      setWizardOptions([
+      const opts = [
         ...profileOptions,
         `+ Configure a new ${providerType} profile`,
         "< Back"
-      ]);
+      ];
+      setWizardOptions(opts);
+      setWizardAllOptions?.(opts);
       setWizardSelectedIndex(0);
       setInput("");
     } else if (step === 25 || step === 35) {
@@ -1556,11 +1562,13 @@ export function useModelWizard(ctx: ModelWizardContext) {
           return p.type === providerType;
         });
         const profileOptions = formatProviderForPicker(matchingProfiles);
-        setWizardOptions([
+        const opts = [
           ...profileOptions,
           `+ Configure a new ${providerType} profile`,
           "< Back"
-        ]);
+        ];
+        setWizardOptions(opts);
+        setWizardAllOptions?.(opts);
         setWizardSelectedIndex(0);
         setInput("");
         return;

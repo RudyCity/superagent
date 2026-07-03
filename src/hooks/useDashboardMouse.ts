@@ -134,6 +134,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
             let wizardHeight = 0;
             if (activeWizard) {
+              const isSearchFilteredStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35);
               const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
               const maxVis = isModelSelectStep ? 8 : 10;
 
@@ -142,7 +143,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
                 ? filterSuggestions(wizardAllOptions, lc)
                 : wizardAllOptions;
 
-              const effectiveOptions = isModelSelectStep
+              const effectiveOptions = isSearchFilteredStep
                 ? (filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"])
                 : wizardOptions;
 
@@ -283,12 +284,12 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
           if (activeWizard) {
             let options = wizardOptions;
             let maxVisible = 10;
-            if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
+            if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35)) {
               const lc = query.trim().toLowerCase();
               options = lc
                 ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
                 : wizardAllOptions;
-              maxVisible = 8;
+              maxVisible = (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) ? 8 : 10;
             }
 
             const total = options.length;
@@ -422,6 +423,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
             let wizardHeight = 0;
             if (activeWizard) {
+              const isSearchFilteredStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35);
               const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
               const maxVis = isModelSelectStep ? 8 : 10;
 
@@ -430,7 +432,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
                 ? filterSuggestions(wizardAllOptions, lc)
                 : wizardAllOptions;
 
-              const effectiveOptions = isModelSelectStep
+              const effectiveOptions = isSearchFilteredStep
                 ? (filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"])
                 : wizardOptions;
 

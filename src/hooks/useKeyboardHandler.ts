@@ -766,7 +766,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         }
       } else if (
         activeWizard.type === "model" && 
-        (activeWizard.step === 2 || activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 35 || activeWizard.step === 40 || activeWizard.step === 41) && 
+        (activeWizard.step === 2 || activeWizard.step === 4 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 40 || activeWizard.step === 41) && 
         wizardOptions.length > 0
       ) {
         if (key.upArrow) {
@@ -784,14 +784,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
           return;
         }
-      } else if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) && wizardOptions.length > 0) {
-        const modelSearchQuery = input.trim();
-        const filteredModels = modelSearchQuery
-          ? filterSuggestions(wizardOptions, modelSearchQuery)
+      } else if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35) && wizardOptions.length > 0) {
+        const searchQuery = input.trim();
+        const filtered = searchQuery
+          ? filterSuggestions(wizardOptions, searchQuery)
           : wizardOptions;
         if (key.upArrow) {
           setWizardSelectedIndex((prev) => {
-            const currentMax = Math.max(0, filteredModels.length - 1);
+            const currentMax = Math.max(0, filtered.length - 1);
             const clampedPrev = Math.min(prev, currentMax);
             return Math.max(0, clampedPrev - 1);
           });
@@ -799,16 +799,16 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         }
         if (key.downArrow) {
           setWizardSelectedIndex((prev) => {
-            const currentMax = Math.max(0, filteredModels.length - 1);
+            const currentMax = Math.max(0, filtered.length - 1);
             const clampedPrev = Math.min(prev, currentMax);
             return Math.min(currentMax, clampedPrev + 1);
           });
           return;
         }
         if (key.return) {
-          const selectedModel = filteredModels[wizardSelectedIndex] ?? filteredModels[0];
-          if (selectedModel) {
-            handleWizardSubmit(selectedModel);
+          const selectedVal = filtered[wizardSelectedIndex] ?? filtered[0];
+          if (selectedVal) {
+            handleWizardSubmit(selectedVal);
           }
           return;
         }

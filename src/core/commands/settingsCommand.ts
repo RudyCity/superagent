@@ -144,6 +144,7 @@ export const settingsCommand: SlashCommand = {
         `│ • TencentDB Gateway  : ${s.tencentdbGatewayUrl}`,
         `│ • Focus Level (Depth): ${s.focus?.toUpperCase() ?? "OFF"}`,
         `│ • Focus Custom Budget: ${s.focusBudget} tokens`,
+        `│ • Force Prompt Tools : ${s.forcePromptBasedToolCalling ? "ENABLED" : "DISABLED"}`,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",
@@ -158,7 +159,8 @@ export const settingsCommand: SlashCommand = {
         "  /setting-procs-limit <number>",
         "  /setting-tencentdb <on|off|status|show|hide> [gatewayUrl]",
         "  /setting-focus <off|low|medium|high|xhigh|max|custom>",
-        "  /setting-focus-budget <number>"
+        "  /setting-focus-budget <number>",
+        "  /setting-force-prompt-tools <on|off>"
       ].join("\n"),
       timestamp: Date.now(),
     });
@@ -1196,6 +1198,39 @@ export const settingFocusBudgetCommand: SlashCommand = {
   }
 };
 
+// /setting-force-prompt-tools command
+export const settingForcePromptToolsCommand: SlashCommand = {
+  name: "setting-force-prompt-tools",
+  description: "Force prompt-based (XML) tool calling even if the model/endpoint supports native tools",
+  execute(args, ctx) {
+    const now = Date.now();
+    const val = args[0];
+    if (!val || (val !== "on" && val !== "off")) {
+      ctx.addLine({
+        type: "error",
+        content: "Usage: /setting-force-prompt-tools <on|off>",
+        timestamp: now,
+      });
+      return;
+    }
+    const force = val === "on";
+    try {
+      updateSettings({ forcePromptBasedToolCalling: force });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Force prompt-based tool calling set to: ${force ? "ENABLED" : "DISABLED"}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
 registry.register(settingsCommand);
 registry.register(settingConcurrencyCommand);
 registry.register(settingRpmCommand);
@@ -1209,3 +1244,4 @@ registry.register(settingProcsLimitCommand);
 registry.register(settingTencentdbCommand);
 registry.register(settingFocusCommand);
 registry.register(settingFocusBudgetCommand);
+registry.register(settingForcePromptToolsCommand);

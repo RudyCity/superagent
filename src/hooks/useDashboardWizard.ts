@@ -1397,13 +1397,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       let finalValue: string;
       if (cleanVal === "< Back" || cleanVal === "back") {
         finalValue = cleanVal;
-      } else if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
+      } else if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35)) {
         const lc = query.trim();
-        const filteredModels = lc
+        const filteredOptions = lc
           ? filterSuggestions(wizardAllOptions, lc)
           : wizardAllOptions;
-        const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
-        finalValue = filteredModels[clampedIndex] || cleanVal;
+        const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+        finalValue = filteredOptions[clampedIndex] || cleanVal;
       } else {
         const hasOptions = wizardOptions.length > 0;
         finalValue = hasOptions && wizardSelectedIndex >= 0 && wizardSelectedIndex < wizardOptions.length

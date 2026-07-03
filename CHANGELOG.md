@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.77] - 2026-07-03
+
+### Added
+- **Model Provider Profile List Filtering & Navigation**: Enabled query-based filtering, pagination (max 10 visible items), and up/down arrow keyboard navigation in the provider profile selection screen (steps 3, 25, 35) for both single-agent and multi-agent modes.
+
+---
+
 ## [1.2.76] - 2026-07-03
 
 ### Changed

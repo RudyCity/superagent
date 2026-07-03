@@ -874,7 +874,7 @@ export function MultiAgentDashboard({
       return [1, 2, 6, 7, 10].includes(activeWizard.step);
     }
     if (activeWizard.type === "model") {
-      return [1, 2, 3, 4, 22, 23, 25, 30, 32, 33, 35, 40, 41, 50].includes(activeWizard.step);
+      return [1, 2, 4, 22, 23, 30, 32, 33, 40, 41, 50].includes(activeWizard.step);
     }
     return false;
   })();
@@ -891,16 +891,16 @@ export function MultiAgentDashboard({
       const planPath = agent ? path.resolve(agent.getPlanFilePath()) : "";
       wizardHeight = planApprovalChromeHeight(planPath, activeWizard.step, 10) + 2; // +2 for outer borders
     } else {
-    const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
-    const maxVis = isModelSelectStep ? 8 : 10;
+    const isSearchFilteredStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35);
+    const maxVis = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) ? 8 : 10;
 
     const lc = query.trim();
-    const filteredModels = lc
+    const filtered = lc
       ? filterSuggestions(wizardAllOptions, lc)
       : wizardAllOptions;
 
-    const effectiveOptions = isModelSelectStep
-      ? (filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"])
+    const effectiveOptions = isSearchFilteredStep
+      ? (filtered.length > 0 ? filtered : ["(no results — try different search)"])
       : wizardOptions;
 
     let start = 0;

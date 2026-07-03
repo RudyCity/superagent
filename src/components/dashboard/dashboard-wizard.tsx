@@ -57,26 +57,45 @@ export function DashboardWizard({
         <Text color={wizardBorderColor}>│</Text>
       </Box>
       {/* Model step 3, 24, 34: split out to handle query-based filtering like single agent */}
-      {activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) && (() => {
+      {activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35) && (() => {
         const lc = query.trim();
-        const filteredModels = lc
+        const filtered = lc
           ? filterSuggestions(wizardAllOptions, lc)
           : wizardAllOptions;
-        const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredModels.length - 1));
+        const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filtered.length - 1));
         const tierStr = activeWizard.data.tier ? ` FOR ${activeWizard.data.tier.toUpperCase()}` : "";
         const provStr = activeWizard.data.provider ? ` VIA ${activeWizard.data.provider.toUpperCase()}` : "";
-        const searchTitle = wizardIsLoadingModels
-          ? `⚙️ SELECT MODEL${tierStr}${provStr} — ⏳ loading...`
-          : lc
-            ? `⚙️ SELECT MODEL${tierStr}${provStr} — 🔍 "${query.trim()}" (${filteredModels.length}/${wizardAllOptions.length} results):`
-            : `⚙️ SELECT MODEL${tierStr}${provStr} (${wizardAllOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
+        
+        let searchTitle = "";
+        let description = undefined;
+        let maxVis = 10;
+        
+        if (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) {
+          searchTitle = wizardIsLoadingModels
+            ? `⚙️ SELECT MODEL${tierStr}${provStr} — ⏳ loading...`
+            : lc
+              ? `⚙️ SELECT MODEL${tierStr}${provStr} — 🔍 "${query.trim()}" (${filtered.length}/${wizardAllOptions.length} results):`
+              : `⚙️ SELECT MODEL${tierStr}${provStr} (${wizardAllOptions.length} available — type to filter, ↑/↓ navigate, Enter select):`;
+          maxVis = 8;
+        } else {
+          // step 3, 25, 35 (Select Profile)
+          const prefix = activeWizard.step === 3 ? "⚙️ SELECT PROFILE" : activeWizard.step === 25 ? "📝 CREATE MODEL PRESET — Select Profile" : "📝 EDIT MODEL PRESET — Select Profile";
+          searchTitle = lc
+            ? `${prefix} FOR ${activeWizard.data.tier?.toUpperCase() || "Tiers"} — 🔍 "${query.trim()}" (${filtered.length}/${wizardAllOptions.length} results):`
+            : `${prefix} FOR ${activeWizard.data.tier?.toUpperCase() || "Tiers"} (${wizardAllOptions.length} profiles — type to filter, ↑/↓ navigate, Enter select):`;
+          if (activeWizard.step === 25 || activeWizard.step === 35) {
+            description = "Choose a credential profile (or select '< Back' to return):";
+          }
+        }
+        
         return (
           <WizardDialog
             title={searchTitle}
+            description={description}
             borderColor={wizardBorderColor}
-            options={filteredModels.length > 0 ? filteredModels : ["(no results — try different search)"]}
+            options={filtered.length > 0 ? filtered : ["(no results — try different search)"]}
             selectedIndex={clampedIndex}
-            maxVisible={8}
+            maxVisible={maxVis}
             marginY={0}
             isLoading={wizardIsLoadingModels}
             terminalWidth={terminalWidth}
@@ -102,7 +121,7 @@ export function DashboardWizard({
       )}
 
       {/* All other wizard types (not model search, not plan_approve) */}
-      {(activeWizard.type !== "model" || (activeWizard.step !== 15 && activeWizard.step !== 24 && activeWizard.step !== 34)) && activeWizard.type !== "plan_approve" && (
+      {(activeWizard.type !== "model" || (activeWizard.step !== 3 && activeWizard.step !== 15 && activeWizard.step !== 24 && activeWizard.step !== 25 && activeWizard.step !== 34 && activeWizard.step !== 35)) && activeWizard.type !== "plan_approve" && (
         <Box flexDirection="column">
           {activeWizard.type === "question" && activeWizard.questions && activeWizard.currentQuestionIndex !== undefined && (
             <Box flexDirection="row" flexWrap="wrap" marginBottom={1}>
@@ -145,18 +164,15 @@ export function DashboardWizard({
             title={
               activeWizard.type === "model" && activeWizard.step === 1 ? `⚙️ SELECT AGENT TIER TO CONFIGURE:` :
               activeWizard.type === "model" && activeWizard.step === 2 ? `⚙️ SELECT MODEL PROVIDER FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"}:` :
-              activeWizard.type === "model" && activeWizard.step === 3 ? `⚙️ SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"}:` :
               activeWizard.type === "model" && activeWizard.step === 4 ? `⚙️ LOAD/APPLY MODEL PRESET:` :
               activeWizard.type === "model" && activeWizard.step === 20 ? `⚙️ CREATE MODEL PRESET — ENTER PRESET NAME:` :
               activeWizard.type === "model" && activeWizard.step === 21 ? `⚙️ CREATE MODEL PRESET — ENTER DESCRIPTION:` :
               activeWizard.type === "model" && activeWizard.step === 22 ? `⚙️ CREATE MODEL PRESET — SELECT AGENT TIER TO CONFIGURE:` :
               activeWizard.type === "model" && activeWizard.step === 23 ? `⚙️ CREATE MODEL PRESET — SELECT MODEL PROVIDER FOR ${activeWizard.data.tier?.toUpperCase()}:` :
-              activeWizard.type === "model" && activeWizard.step === 25 ? `⚙️ CREATE MODEL PRESET — SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase()}:` :
               activeWizard.type === "model" && activeWizard.step === 30 ? `⚙️ EDIT MODEL PRESET — SELECT PRESET TO EDIT:` :
               activeWizard.type === "model" && activeWizard.step === 31 ? `⚙️ EDIT MODEL PRESET — ENTER NEW DESCRIPTION:` :
               activeWizard.type === "model" && activeWizard.step === 32 ? `⚙️ EDIT MODEL PRESET — SELECT AGENT TIER TO CONFIGURE:` :
               activeWizard.type === "model" && activeWizard.step === 33 ? `⚙️ EDIT MODEL PRESET — SELECT MODEL PROVIDER FOR ${activeWizard.data.tier?.toUpperCase()}:` :
-              activeWizard.type === "model" && activeWizard.step === 35 ? `⚙️ EDIT MODEL PRESET — SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase()}:` :
               activeWizard.type === "model" && activeWizard.step === 40 ? `⚙️ DELETE MODEL PRESET — SELECT PRESET TO DELETE:` :
               activeWizard.type === "model" && activeWizard.step === 41 ? `⚙️ DELETE MODEL PRESET — CONFIRM DELETION:` :
               activeWizard.type === "model" && activeWizard.step === 50 ? `⚙️ CONFIGURE AGENT TIERS — SELECT TIER TO CONFIGURE:` :

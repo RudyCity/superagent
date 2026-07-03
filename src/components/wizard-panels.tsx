@@ -364,14 +364,25 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
-        {activeWizard && activeWizard.type === "model" && activeWizard.step === 3 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title={`⚙️ SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"} (Use Arrow Keys Up/Down & Enter):`}
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-          />
-        )}
+        {activeWizard && activeWizard.type === "model" && activeWizard.step === 3 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const searchTitle = searchQuery
+            ? `⚙️ SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"} — 🔍 "${input.trim()}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : `⚙️ SELECT PROFILE FOR ${activeWizard.data.tier?.toUpperCase() || "MODELS"} (${wizardOptions.length} profiles — type to filter, ↑/↓ navigate, Enter select):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              borderColor="cyan"
+              options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
 
         {activeWizard && activeWizard.type === "model" && activeWizard.step === 6 && (
           <WizardDialog
@@ -526,15 +537,26 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
-        {activeWizard && activeWizard.type === "model" && activeWizard.step === 25 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title={`📝 CREATE MODEL PRESET — Select Profile for ${activeWizard.data.tier?.toUpperCase() || "Tiers"}:`}
-            description="Choose a credential profile (or select '< Back' to return):"
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-          />
-        )}
+        {activeWizard && activeWizard.type === "model" && activeWizard.step === 25 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const searchTitle = searchQuery
+            ? `📝 CREATE MODEL PRESET — Select Profile for ${activeWizard.data.tier?.toUpperCase() || "Tiers"} — 🔍 "${input.trim()}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : `📝 CREATE MODEL PRESET — Select Profile for ${activeWizard.data.tier?.toUpperCase() || "Tiers"} (${wizardOptions.length} profiles — type to filter, ↑/↓ navigate, Enter select):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              description="Choose a credential profile (or select '< Back' to return):"
+              borderColor="cyan"
+              options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
 
         {activeWizard && activeWizard.type === "model" && activeWizard.step === 24 && wizardOptions.length > 0 && (() => {
           const modelSearchQuery = input.trim();
@@ -579,15 +601,26 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
-        {activeWizard && activeWizard.type === "model" && activeWizard.step === 35 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title={`📝 EDIT MODEL PRESET — Select Profile for ${activeWizard.data.tier?.toUpperCase() || "Tiers"}:`}
-            description="Choose a credential profile (or select '< Back' to return):"
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-          />
-        )}
+        {activeWizard && activeWizard.type === "model" && activeWizard.step === 35 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const searchTitle = searchQuery
+            ? `📝 EDIT MODEL PRESET — Select Profile for ${activeWizard.data.tier?.toUpperCase() || "Tiers"} — 🔍 "${input.trim()}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : `📝 EDIT MODEL PRESET — Select Profile for ${activeWizard.data.tier?.toUpperCase() || "Tiers"} (${wizardOptions.length} profiles — type to filter, ↑/↓ navigate, Enter select):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              description="Choose a credential profile (or select '< Back' to return):"
+              borderColor="cyan"
+              options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
 
         {activeWizard && activeWizard.type === "model" && activeWizard.step === 34 && wizardOptions.length > 0 && (() => {
           const modelSearchQuery = input.trim();

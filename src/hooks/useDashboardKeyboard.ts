@@ -367,7 +367,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         if (activeWizard.type === "plan_approve" && currentFocus === "plan") {
           // Do not intercept, let it pass to PlanApprovalDialog local listener
         } else {
-          if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
+          if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35)) {
             const lc = query.trim();
             const len = lc
               ? filterSuggestions(wizardAllOptions, lc).length
@@ -387,7 +387,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         if (activeWizard.type === "plan_approve" && currentFocus === "plan") {
           // Do not intercept
         } else {
-          if (activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)) {
+          if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35)) {
             const lc = query.trim();
             const len = lc
               ? filterSuggestions(wizardAllOptions, lc).length

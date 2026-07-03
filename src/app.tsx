@@ -1090,7 +1090,7 @@ export function App({
       if (activeWizard.step === 21) return "Type preset description and press Enter (or type 'back' to go back)...";
       if (activeWizard.step === 22 || activeWizard.step === 32) return "Select tier option using arrows and Enter...";
       if (activeWizard.step === 23 || activeWizard.step === 33) return "Select provider using arrows and Enter...";
-      if (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35) return "Select profile using arrows and Enter...";
+      if (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35) return "🔍 Search profiles (type to filter, arrows to navigate, Enter to select)...";
       if (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) return "🔍 Search models (type to filter, arrows to navigate, Enter to select)...";
       if (activeWizard.step === 30) return "Select preset to edit using arrows and Enter...";
       if (activeWizard.step === 31) return "Type new description and press Enter (or type 'back' to go back)...";
@@ -1950,7 +1950,7 @@ export function App({
     }
     if (activeWizard.type === "model") {
       // Steps 15,24,34 = model search/filter (needs input); others with options are pure selection
-      return [1, 2, 3, 4, 22, 23, 25, 30, 32, 33, 35, 40, 41, 50].includes(activeWizard.step);
+      return [1, 2, 4, 22, 23, 30, 32, 33, 40, 41, 50].includes(activeWizard.step);
     }
     return false;
   })();
