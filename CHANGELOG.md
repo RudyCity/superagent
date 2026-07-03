@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.90] - 2026-07-03
+
+### Fixed
+- **Edit/Replace Tool Overlap & Duplication**: Fixed an issue where `replace_file_content` and `multi_replace_file_content` could match incorrect duplicate substrings within a range (e.g. matching strings starting after `reject: false`) and corrupt files.
+- **Uniqueness Check**: Both tools now check if the normalized target content is unique within the specified line range. If there are multiple occurrences and `allowMultiple` is not true, they abort with a descriptive error.
+- **Multiple Replacements Support**: Added `allowMultiple` (and alias `AllowMultiple`) support to allow replacing all occurrences safely using character index mapping from right to left (bottom to top) to prevent character shift corruption.
+
+### Tests
+- Added unit tests in `tests/systemTools.test.ts` to verify duplicate checks and multiple replacement correctness for `replace_file_content` and `multi_replace_file_content`.
+
+---
+
 ## [1.2.89] - 2026-07-03
 
 ### Added

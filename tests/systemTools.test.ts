@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readTool, grepTool, multiReplaceFileContentTool } from "../src/core/tools/systemTools.js";
+import { readTool, grepTool, replaceFileContentTool, multiReplaceFileContentTool } from "../src/core/tools/systemTools.js";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -251,6 +251,110 @@ describe("System Tools Optimizations", () => {
         expect(result).toContain("File updated successfully");
         const content = await fs.readFile(tempFilePath, "utf-8");
         expect(content).toBe("line 1 updated   \nline 2\n");
+      } finally {
+        await fs.unlink(tempFilePath).catch(() => {});
+      }
+    });
+  });
+
+  describe("replace_file_content and multi_replace_file_content uniqueness and allowMultiple", () => {
+    it("should error on replace_file_content if targetContent matches multiple times and allowMultiple is not true", async () => {
+      const tempFilePath = path.resolve(__dirname, "temp-replace-dup.txt");
+      await fs.writeFile(tempFilePath, "foo\nbar\nfoo\n", "utf-8");
+
+      try {
+        const result = await replaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            startLine: 1,
+            endLine: 3,
+            targetContent: "foo",
+            replacementContent: "new-foo"
+          },
+          process.cwd()
+        );
+        expect(result).toContain("Error: Multiple occurrences of targetContent found");
+        const content = await fs.readFile(tempFilePath, "utf-8");
+        expect(content).toBe("foo\nbar\nfoo\n");
+      } finally {
+        await fs.unlink(tempFilePath).catch(() => {});
+      }
+    });
+
+    it("should replace all occurrences in replace_file_content if allowMultiple is true", async () => {
+      const tempFilePath = path.resolve(__dirname, "temp-replace-dup-allowed.txt");
+      await fs.writeFile(tempFilePath, "foo\nbar\nfoo\n", "utf-8");
+
+      try {
+        const result = await replaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            startLine: 1,
+            endLine: 3,
+            targetContent: "foo",
+            replacementContent: "new-foo",
+            allowMultiple: true
+          },
+          process.cwd()
+        );
+        expect(result).toContain("File updated successfully");
+        const content = await fs.readFile(tempFilePath, "utf-8");
+        expect(content).toBe("new-foo\nbar\nnew-foo\n");
+      } finally {
+        await fs.unlink(tempFilePath).catch(() => {});
+      }
+    });
+
+    it("should error on multi_replace_file_content if a chunk matches multiple times and allowMultiple is not true", async () => {
+      const tempFilePath = path.resolve(__dirname, "temp-multi-dup.txt");
+      await fs.writeFile(tempFilePath, "foo\nbar\nfoo\n", "utf-8");
+
+      try {
+        const result = await multiReplaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            chunks: [
+              {
+                startLine: 1,
+                endLine: 3,
+                targetContent: "foo",
+                replacementContent: "new-foo"
+              }
+            ]
+          },
+          process.cwd()
+        );
+        expect(result).toContain("Error: Multiple occurrences of targetContent found");
+        const content = await fs.readFile(tempFilePath, "utf-8");
+        expect(content).toBe("foo\nbar\nfoo\n");
+      } finally {
+        await fs.unlink(tempFilePath).catch(() => {});
+      }
+    });
+
+    it("should replace all occurrences in multi_replace_file_content if allowMultiple is true in a chunk", async () => {
+      const tempFilePath = path.resolve(__dirname, "temp-multi-dup-allowed.txt");
+      await fs.writeFile(tempFilePath, "foo\nbar\nfoo\n", "utf-8");
+
+      try {
+        const result = await multiReplaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            chunks: [
+              {
+                startLine: 1,
+                endLine: 3,
+                targetContent: "foo",
+                replacementContent: "new-foo",
+                allowMultiple: true
+              }
+            ]
+          },
+          process.cwd()
+        );
+        expect(result).toContain("File updated successfully");
+        const content = await fs.readFile(tempFilePath, "utf-8");
+        expect(content).toBe("new-foo\nbar\nnew-foo\n");
       } finally {
         await fs.unlink(tempFilePath).catch(() => {});
       }

@@ -4,7 +4,7 @@ import path from "path";
 import fg from "fast-glob";
 import { execa } from "execa";
 import { Tool } from "./types.js";
-import { normalizeForMatching, verifySyntax, mapNormToOrigIndices } from "./helpers.js";
+import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences } from "./helpers.js";
 import { getLocalRgPath, isRgInstalledGlobally, ensureRgInstalled } from "../androidSetup.js";
 import { getWorkspaceCachePath } from "../workspaceDiscovery.js";
 
@@ -656,6 +656,14 @@ export const replaceFileContentTool: Tool = {
         type: "number",
         description: "End line number of the block to replace (1-indexed)",
       },
+      allowMultiple: {
+        type: "boolean",
+        description: "If true, allow multiple occurrences of targetContent within the line range to be replaced. Default is false.",
+      },
+      AllowMultiple: {
+        type: "boolean",
+        description: "Alias for allowMultiple.",
+      },
     },
     required: ["filePath", "targetContent", "replacementContent", "startLine", "endLine"],
   },
@@ -668,6 +676,11 @@ export const replaceFileContentTool: Tool = {
     const replacementContent = (args.replacementContent ?? args.ReplacementContent ?? "") as string;
     const startLine = Math.max(1, Number(args.startLine ?? args.StartLine ?? 0));
     const endLine = Math.max(startLine, Number(args.endLine ?? args.EndLine ?? 0));
+    const allowMultiple = !!(args.allowMultiple ?? args.AllowMultiple);
+
+    if (!targetContent) {
+      return "Error: targetContent cannot be empty.";
+    }
 
     try {
       const content = await fs.readFile(filePath, "utf-8");
@@ -686,16 +699,42 @@ export const replaceFileContentTool: Tool = {
         return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] (matching normalized content).`;
       }
 
-      const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
-      const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
-      const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
-      const matchOrigEnd = normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1;
+      const occurrences = countOccurrences(normSliceText, normTargetContent);
+      if (occurrences > 1 && !allowMultiple) {
+        return `Error: Multiple occurrences of targetContent found in specified line range [${startLine}, ${endLine}] (matching normalized content). Set 'allowMultiple' to true if you want to replace all occurrences, or use a more specific targetContent/narrower line range.`;
+      }
 
       let replacedSlice: string;
-      if (matchOrigStart === -1 || matchOrigEnd === -1) {
-        replacedSlice = sliceText.replace(targetContent, replacementContent);
+      if (occurrences > 1 && allowMultiple) {
+        const matchIndices: number[] = [];
+        let pos = normSliceText.indexOf(normTargetContent);
+        while (pos !== -1) {
+          matchIndices.push(pos);
+          pos = normSliceText.indexOf(normTargetContent, pos + normTargetContent.length);
+        }
+
+        const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
+        let tempSlice = sliceText;
+        for (let i = matchIndices.length - 1; i >= 0; i--) {
+          const mIdx = matchIndices[i];
+          const origStart = normToOrigMap[mIdx] ?? -1;
+          const origEnd = normToOrigMap[mIdx + normTargetContent.length] ?? -1;
+          if (origStart !== -1 && origEnd !== -1) {
+            tempSlice = tempSlice.slice(0, origStart) + replacementContent + tempSlice.slice(origEnd);
+          }
+        }
+        replacedSlice = tempSlice;
       } else {
-        replacedSlice = sliceText.slice(0, matchOrigStart) + replacementContent + sliceText.slice(matchOrigEnd);
+        const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
+        const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
+        const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+        const matchOrigEnd = normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1;
+
+        if (matchOrigStart === -1 || matchOrigEnd === -1) {
+          replacedSlice = sliceText.replace(targetContent, replacementContent);
+        } else {
+          replacedSlice = sliceText.slice(0, matchOrigStart) + replacementContent + sliceText.slice(matchOrigEnd);
+        }
       }
 
       const newLines = [
@@ -757,6 +796,14 @@ export const multiReplaceFileContentTool: Tool = {
               type: "number",
               description: "End line number of the block to replace (1-indexed)",
             },
+            allowMultiple: {
+              type: "boolean",
+              description: "If true, allow multiple occurrences of targetContent within the line range to be replaced. Default is false.",
+            },
+            AllowMultiple: {
+              type: "boolean",
+              description: "Alias for allowMultiple.",
+            },
           },
           required: ["targetContent", "replacementContent", "startLine", "endLine"],
         },
@@ -774,6 +821,8 @@ export const multiReplaceFileContentTool: Tool = {
       replacementContent: string;
       startLine: number;
       endLine: number;
+      allowMultiple?: boolean;
+      AllowMultiple?: boolean;
     }
     let rawChunks = args.chunks || args.ReplacementChunks || args.replacementChunks || [];
     if (typeof rawChunks === "string") {
@@ -801,13 +850,18 @@ export const multiReplaceFileContentTool: Tool = {
       if (typeof replacementContent !== "string") {
         return `Error: Missing or invalid 'replacementContent' in chunk. Expected string, got ${typeof replacementContent}.`;
       }
+      if (!targetContent) {
+        return "Error: targetContent in chunk cannot be empty.";
+      }
       const sl = Math.max(1, Number(c.startLine ?? c.StartLine ?? 0));
       const el = Math.max(sl, Number(c.endLine ?? c.EndLine ?? 0));
+      const allowMultiple = !!(c.allowMultiple ?? c.AllowMultiple);
       chunks.push({
         targetContent,
         replacementContent,
         startLine: sl,
         endLine: el,
+        allowMultiple,
       });
     }
 
@@ -821,7 +875,7 @@ export const multiReplaceFileContentTool: Tool = {
       let lines = content.split(/\r?\n/);
 
       interface ResolvedChunk {
-        originalChunk: typeof chunks[0];
+        originalChunk: Chunk;
         actualStartLine: number;
         actualEndLine: number;
         matchOrigStart: number;
@@ -831,7 +885,7 @@ export const multiReplaceFileContentTool: Tool = {
       const resolvedChunks: ResolvedChunk[] = [];
 
       for (const chunk of chunks) {
-        const { targetContent, replacementContent, startLine, endLine } = chunk;
+        const { targetContent, replacementContent, startLine, endLine, allowMultiple } = chunk;
         if (startLine < 1 || startLine > lines.length || endLine < startLine || endLine > lines.length) {
           return `Error: Invalid line range [${startLine}, ${endLine}] in chunk. File has ${lines.length} lines.`;
         }
@@ -845,6 +899,11 @@ export const multiReplaceFileContentTool: Tool = {
           return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] for a chunk (matching normalized content).`;
         }
 
+        const occurrences = countOccurrences(normSliceText, normTargetContent);
+        if (occurrences > 1 && !allowMultiple) {
+          return `Error: Multiple occurrences of targetContent found in specified line range [${startLine}, ${endLine}] for a chunk (matching normalized content). Set 'allowMultiple' to true in the chunk if you want to replace all occurrences, or use a more specific targetContent/narrower line range.`;
+        }
+
         const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
         let actualStartLine = startLine;
         let actualEndLine = endLine;
@@ -854,29 +913,49 @@ export const multiReplaceFileContentTool: Tool = {
 
         if (matchIndexInNorm !== -1) {
           const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
-          matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
-          matchOrigEnd = normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1;
 
-          if (matchOrigStart !== -1 && matchOrigEnd !== -1) {
-            const startLineOffset = sliceText.slice(0, matchOrigStart).split("\n").length - 1;
-            actualStartLine = startLine + startLineOffset;
+          if (occurrences > 1) {
+            const firstMatchIdx = normSliceText.indexOf(normTargetContent);
+            const lastMatchIdx = normSliceText.lastIndexOf(normTargetContent);
+            
+            const firstOrigStart = normToOrigMap[firstMatchIdx] ?? -1;
+            const lastOrigEnd = normToOrigMap[lastMatchIdx + normTargetContent.length] ?? -1;
+            
+            if (firstOrigStart !== -1 && lastOrigEnd !== -1) {
+              const startLineOffset = sliceText.slice(0, firstOrigStart).split("\n").length - 1;
+              actualStartLine = startLine + startLineOffset;
 
-            const endLineOffset = sliceText.slice(0, matchOrigEnd).split("\n").length - 1;
-            actualEndLine = startLine + endLineOffset;
+              const endLineOffset = sliceText.slice(0, lastOrigEnd).split("\n").length - 1;
+              actualEndLine = startLine + endLineOffset;
 
-            const minSliceOfLines = lines.slice(actualStartLine - 1, actualEndLine);
-            minSliceText = minSliceOfLines.join("\n");
+              const minSliceOfLines = lines.slice(actualStartLine - 1, actualEndLine);
+              minSliceText = minSliceOfLines.join("\n");
+            }
+          } else {
+            matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+            matchOrigEnd = normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1;
 
-            // Recalculate match indices for the minSliceText to ensure correct replacement character offsets
-            const normMinSliceText = normalizeForMatching(minSliceText);
-            const matchIndexInMinNorm = normMinSliceText.indexOf(normTargetContent);
-            if (matchIndexInMinNorm !== -1) {
-              const minNormToOrigMap = mapNormToOrigIndices(minSliceText, normMinSliceText);
-              matchOrigStart = minNormToOrigMap[matchIndexInMinNorm] ?? -1;
-              matchOrigEnd = minNormToOrigMap[matchIndexInMinNorm + normTargetContent.length] ?? -1;
-            } else {
-              matchOrigStart = -1;
-              matchOrigEnd = -1;
+            if (matchOrigStart !== -1 && matchOrigEnd !== -1) {
+              const startLineOffset = sliceText.slice(0, matchOrigStart).split("\n").length - 1;
+              actualStartLine = startLine + startLineOffset;
+
+              const endLineOffset = sliceText.slice(0, matchOrigEnd).split("\n").length - 1;
+              actualEndLine = startLine + endLineOffset;
+
+              const minSliceOfLines = lines.slice(actualStartLine - 1, actualEndLine);
+              minSliceText = minSliceOfLines.join("\n");
+
+              // Recalculate match indices for the minSliceText to ensure correct replacement character offsets
+              const normMinSliceText = normalizeForMatching(minSliceText);
+              const matchIndexInMinNorm = normMinSliceText.indexOf(normTargetContent);
+              if (matchIndexInMinNorm !== -1) {
+                const minNormToOrigMap = mapNormToOrigIndices(minSliceText, normMinSliceText);
+                matchOrigStart = minNormToOrigMap[matchIndexInMinNorm] ?? -1;
+                matchOrigEnd = minNormToOrigMap[matchIndexInMinNorm + normTargetContent.length] ?? -1;
+              } else {
+                matchOrigStart = -1;
+                matchOrigEnd = -1;
+              }
             }
           }
         }
@@ -906,13 +985,38 @@ export const multiReplaceFileContentTool: Tool = {
 
       for (const resolved of sortedChunks) {
         const { originalChunk, matchOrigStart, matchOrigEnd, minSliceText, actualStartLine, actualEndLine } = resolved;
-        const { targetContent, replacementContent } = originalChunk;
+        const { targetContent, replacementContent, allowMultiple } = originalChunk;
 
         let replacedSlice: string;
-        if (matchOrigStart === -1 || matchOrigEnd === -1) {
-          replacedSlice = minSliceText.replace(targetContent, replacementContent);
+        const normMinSliceText = normalizeForMatching(minSliceText);
+        const normTargetContent = normalizeForMatching(targetContent);
+        const chunkOccurrences = countOccurrences(normMinSliceText, normTargetContent);
+
+        if (chunkOccurrences > 1 && allowMultiple) {
+          const matchIndices: number[] = [];
+          let pos = normMinSliceText.indexOf(normTargetContent);
+          while (pos !== -1) {
+            matchIndices.push(pos);
+            pos = normMinSliceText.indexOf(normTargetContent, pos + normTargetContent.length);
+          }
+
+          const minNormToOrigMap = mapNormToOrigIndices(minSliceText, normMinSliceText);
+          let tempSlice = minSliceText;
+          for (let i = matchIndices.length - 1; i >= 0; i--) {
+            const mIdx = matchIndices[i];
+            const origStart = minNormToOrigMap[mIdx] ?? -1;
+            const origEnd = minNormToOrigMap[mIdx + normTargetContent.length] ?? -1;
+            if (origStart !== -1 && origEnd !== -1) {
+              tempSlice = tempSlice.slice(0, origStart) + replacementContent + tempSlice.slice(origEnd);
+            }
+          }
+          replacedSlice = tempSlice;
         } else {
-          replacedSlice = minSliceText.slice(0, matchOrigStart) + replacementContent + minSliceText.slice(matchOrigEnd);
+          if (matchOrigStart === -1 || matchOrigEnd === -1) {
+            replacedSlice = minSliceText.replace(targetContent, replacementContent);
+          } else {
+            replacedSlice = minSliceText.slice(0, matchOrigStart) + replacementContent + minSliceText.slice(matchOrigEnd);
+          }
         }
 
         lines = [

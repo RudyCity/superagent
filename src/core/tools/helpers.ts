@@ -226,3 +226,14 @@ export function mapNormToOrigIndices(sliceText: string, normSliceText: string): 
   return normToOrigMap;
 }
 
+export function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0;
+  let count = 0;
+  let pos = haystack.indexOf(needle);
+  while (pos !== -1) {
+    count++;
+    pos = haystack.indexOf(needle, pos + needle.length);
+  }
+  return count;
+}
+
