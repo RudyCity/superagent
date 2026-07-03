@@ -101,6 +101,22 @@ export const saveSharedMemoryTool: Tool = {
       fs.writeFileSync(tempPath, JSON.stringify(memories, null, 2), "utf-8");
       fs.renameSync(tempPath, sharedMemPath);
 
+      // Sync to TencentDB Memory if enabled
+      try {
+        const { getSettings } = await import("../config.js");
+        const settings = getSettings();
+        if (settings.enableTencentdbMemory) {
+          const { getTencentDBClient } = await import("../tencentdbUtil.js");
+          const client = getTencentDBClient(2000);
+          await client.updateAtomic({
+            id: `shared-memory-${key}`,
+            content: `[${source}] ${key}: ${value}`
+          });
+        }
+      } catch (tdbErr: any) {
+        // Log to console/logs but don't fail the command
+      }
+
       return `Successfully saved memory "${key}" to shared memory cache.`;
     } catch (err: any) {
       return `Error saving memory: ${err.message}`;
