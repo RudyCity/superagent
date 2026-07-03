@@ -366,6 +366,56 @@ describe("superagentTools", () => {
       expect(execa).toHaveBeenCalledWith("git", ["worktree", "remove", "/dummy/worktree-x", "--force"], expect.any(Object));
       expect(superagentInstances.has("agent-2")).toBe(false);
     });
+
+    it("should skip merge if Superagent report indicates build failed", async () => {
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
+
+      superagentInstances.set("agent-build-fail", {
+        id: "agent-build-fail",
+        role: "feature-dev",
+        task: "task",
+        branch: "feat/build-fail",
+        worktreePath: "/dummy/worktree-fail",
+        agent: {} as any,
+        status: "completed",
+        result: "### SUPERAGENT TASK REPORT\n- **Build**: failed\n- **Status**: Completed",
+        logs: [],
+        tokenUsage: { prompt: 0, completion: 0 }
+      });
+
+      const result = await agentLocalStorage.run(parentAgent, () => {
+        return mergeSuperagentsTool.execute({}, process.cwd());
+      });
+
+      expect(result).toContain("Skipped merge");
+      expect(result).toContain("build failed");
+      expect(superagentInstances.get("agent-build-fail")?.status).toBe("error");
+    });
+
+    it("should skip merge if Superagent report indicates status blocked", async () => {
+      const parentAgent = { delegationDepth: 0, planState: "APPROVED", getPlanFilePath: () => "/dummy/plan.md" } as any;
+
+      superagentInstances.set("agent-blocked", {
+        id: "agent-blocked",
+        role: "backend-dev",
+        task: "task",
+        branch: "feat/blocked",
+        worktreePath: "/dummy/worktree-blocked",
+        agent: {} as any,
+        status: "completed",
+        result: "### SUPERAGENT TASK REPORT\n- **Build**: passed\n- **Status**: Blocked",
+        logs: [],
+        tokenUsage: { prompt: 0, completion: 0 }
+      });
+
+      const result = await agentLocalStorage.run(parentAgent, () => {
+        return mergeSuperagentsTool.execute({}, process.cwd());
+      });
+
+      expect(result).toContain("Skipped merge");
+      expect(result).toContain("blocked/partial");
+      expect(superagentInstances.get("agent-blocked")?.status).toBe("error");
+    });
   });
 
   describe("manageSuperagentsTool", () => {

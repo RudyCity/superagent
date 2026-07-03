@@ -315,8 +315,20 @@ async function diffSanityCheck(cwd: string, branchName: string): Promise<string[
 }
 
 /**
+ * Detect the package manager used in a project by checking for lockfiles.
+ * Priority: bun > pnpm > yarn > npm
+ */
+export function detectPackageManager(cwd: string): string {
+  if (fs.existsSync(path.join(cwd, "bun.lockb"))) return "bun";
+  if (fs.existsSync(path.join(cwd, "pnpm-lock.yaml"))) return "pnpm";
+  if (fs.existsSync(path.join(cwd, "yarn.lock"))) return "yarn";
+  return "npm";
+}
+
+/**
  * Run project-level validation using the project's own build/test/lint scripts.
  * This is the most reliable universal check — defer to the project's own tooling.
+ * Automatically detects package manager (bun/pnpm/yarn/npm) from lockfiles.
  */
 async function runProjectValidation(cwd: string): Promise<{ errors: string[]; warnings: string[] }> {
   const errors: string[] = [];
@@ -327,32 +339,37 @@ async function runProjectValidation(cwd: string): Promise<{ errors: string[]; wa
     return { errors, warnings };
   }
 
+  const pm = detectPackageManager(cwd);
+
   try {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
     if (!pkg.scripts) return { errors, warnings };
 
     if (pkg.scripts.build) {
       try {
-        await execa("npm", ["run", "build"], { cwd, timeout: 120000 });
+        // bun/pnpm/yarn use `run build`; npm uses `run build` too — all consistent
+        await execa(pm, ["run", "build"], { cwd, timeout: 120000 });
       } catch (err: any) {
-        errors.push(`Build failed: ${err.message?.substring(0, 300) || "unknown error"}`);
+        errors.push(`Build failed (${pm}): ${err.message?.substring(0, 300) || "unknown error"}`);
       }
     }
 
     if (pkg.scripts.test) {
       try {
-        await execa("npm", ["test"], { cwd, timeout: 120000 });
+        // npm uses `npm test`; others use `<pm> run test` or `<pm> test`
+        const testArgs = pm === "npm" ? ["test"] : ["run", "test"];
+        await execa(pm, testArgs, { cwd, timeout: 120000 });
       } catch (err: any) {
-        errors.push(`Tests failed: ${err.message?.substring(0, 300) || "unknown error"}`);
+        errors.push(`Tests failed (${pm}): ${err.message?.substring(0, 300) || "unknown error"}`);
       }
     }
 
     if (pkg.scripts.lint) {
       try {
-        await execa("npm", ["run", "lint"], { cwd, timeout: 60000 });
+        await execa(pm, ["run", "lint"], { cwd, timeout: 60000 });
       } catch (err: any) {
         // Lint failures are warnings, not hard errors
-        warnings.push(`Lint warnings: ${err.message?.substring(0, 200) || "unknown"}`);
+        warnings.push(`Lint warnings (${pm}): ${err.message?.substring(0, 200) || "unknown"}`);
       }
     }
   } catch {
@@ -647,14 +664,47 @@ export class MasterAgent {
             const { Agent } = await import("./agent.js");
             const { defaultSubagentToolset } = await import("./tools/toolsets.js");
 
+            // ── Fix 4: Collect branch intent context from git log (Tasks 10-12) ────
+            // Give the conflict-resolver the commit history so it understands WHAT
+            // each side was trying to achieve, not just WHERE the markers are.
+            let branchIntentContext = "";
+            try {
+              // Commit summary (--oneline) — compact list of what changed
+              const { stdout: commitLog } = await execa(
+                "git", ["log", "--oneline", `HEAD...${branchName}`],
+                { cwd, timeout: 15000 }
+              );
+              // Patch diff — the actual code changes per commit
+              const { stdout: patchLog } = await execa(
+                "git", ["log", "-p", "--no-color", `HEAD...${branchName}`],
+                { cwd, timeout: 15000 }
+              );
+              const raw = `Commit summary:\n${commitLog}\n\nPatch diff:\n${patchLog}`;
+              // Cap at 3000 characters to prevent context overflow (Task 12)
+              branchIntentContext = raw.length > 3000
+                ? raw.slice(0, 3000) + "\n...[diff truncated for context safety]"
+                : raw;
+            } catch {
+              // git log failed (e.g. no common ancestor) — proceed without context
+              branchIntentContext = "(Branch intent context unavailable — git log failed)";
+            }
+
             const conflictResolverPrompt = `You are a conflict-resolver agent.
 Your sole task is to resolve Git merge conflicts in the following conflicted file(s) in this repository:
 ${conflictedFiles.map(f => `- ${f}`).join("\n")}
 
+## BRANCH INTENT CONTEXT
+The following is the git commit history and patch diff of the incoming branch "${branchName}".
+Use this to understand WHAT the branch was trying to achieve before resolving each conflict hunk:
+
+\`\`\`
+${branchIntentContext}
+\`\`\`
+
 Instructions:
 1. Examine the conflicted files and look for git conflict markers (<<<<<<<, =======, >>>>>>>).
-2. Understand the changes from both the current branch (HEAD) and the incoming branch (${branchName}).
-3. Edit the file(s) to resolve the conflicts cleanly, keeping the correct logic from both branches where appropriate, and completely remove all conflict markers.
+2. Use the BRANCH INTENT CONTEXT above to understand the purpose of each change from both sides.
+3. Edit the file(s) to resolve the conflicts cleanly, preserving the correct logic from both branches, and completely remove all conflict markers.
 4. Run validation (e.g. 'npm run build' or check files) to ensure the code compiles and is free of syntax errors.
 5. Report back when all conflicts are resolved.`;
 

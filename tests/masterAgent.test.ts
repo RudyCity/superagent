@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
+import path from "path";
+import os from "os";
 import { execa } from "execa";
-import { parseConflictHunks, resolveFileConflicts, MasterAgent } from "../src/core/masterAgent.js";
+import { parseConflictHunks, resolveFileConflicts, MasterAgent, detectPackageManager } from "../src/core/masterAgent.js";
 
 vi.mock("../src/core/config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/core/config.js")>();
@@ -272,5 +274,50 @@ return "theirs";
       expect(result).toBe(false);
       expect(execa).toHaveBeenCalledWith("git", ["merge", "--abort"], expect.any(Object));
     });
+  });
+});
+
+// ─── detectPackageManager ─────────────────────────────────────────────────────
+
+describe("detectPackageManager", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pm-detect-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns 'npm' when no lockfile is present", () => {
+    expect(detectPackageManager(tmpDir)).toBe("npm");
+  });
+
+  it("returns 'yarn' when yarn.lock is present", () => {
+    fs.writeFileSync(path.join(tmpDir, "yarn.lock"), "");
+    expect(detectPackageManager(tmpDir)).toBe("yarn");
+  });
+
+  it("returns 'pnpm' when pnpm-lock.yaml is present", () => {
+    fs.writeFileSync(path.join(tmpDir, "pnpm-lock.yaml"), "");
+    expect(detectPackageManager(tmpDir)).toBe("pnpm");
+  });
+
+  it("returns 'bun' when bun.lockb is present", () => {
+    fs.writeFileSync(path.join(tmpDir, "bun.lockb"), "");
+    expect(detectPackageManager(tmpDir)).toBe("bun");
+  });
+
+  it("prefers bun over pnpm when both lockfiles are present", () => {
+    fs.writeFileSync(path.join(tmpDir, "bun.lockb"), "");
+    fs.writeFileSync(path.join(tmpDir, "pnpm-lock.yaml"), "");
+    expect(detectPackageManager(tmpDir)).toBe("bun");
+  });
+
+  it("prefers pnpm over yarn when both lockfiles are present", () => {
+    fs.writeFileSync(path.join(tmpDir, "pnpm-lock.yaml"), "");
+    fs.writeFileSync(path.join(tmpDir, "yarn.lock"), "");
+    expect(detectPackageManager(tmpDir)).toBe("pnpm");
   });
 });

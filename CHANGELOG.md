@@ -2,7 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.89] - 2026-07-03
+
+### Added
+- **Dynamic Package Manager Detection**: `masterAgent.ts` now auto-detects the project's package manager (bun, pnpm, yarn, npm) from lockfiles before running build/test/lint validation. Previously hardcoded to `npm`, causing failures on pnpm/yarn/bun projects. New exported helper `detectPackageManager(cwd)` checks for `bun.lockb` > `pnpm-lock.yaml` > `yarn.lock` in priority order.
+- **Subagent Context Inheritance**: `invoke_subagent` gains optional `inheritContext: boolean` parameter. When `true`, a compact workspace snapshot (task progress, plan objective, working directory) from the parent agent is prepended to the subagent's system prompt (capped at 2000 chars). Reduces redundant re-research and fastcontext calls from freshly spawned subagents.
+- **Pre-merge Branch Verification**: `merge_superagents` now checks each completed Superagent's result report for failure signals (`Build: failed`, `Status: Blocked/Partial`) before attempting `git merge`. Branches that self-report as broken are skipped immediately with a clear error message, avoiding expensive merge+abort cycles.
+- **Intent-Context Conflict Resolution**: When the Master Agent spawns a conflict-resolver subagent, it now first collects `git log --oneline` and `git log -p` from the conflicting branch and injects them as a `BRANCH INTENT CONTEXT` section into the resolver's prompt (capped at 3000 chars). The resolver now understands *what* each branch was trying to achieve, not just *where* the conflict markers are.
+- **Peer Worktree Read Access**: New `read_peer_superagent_file` tool added to `superagentToolset`. Allows a running Superagent to read a file from another Superagent's worktree in read-only mode. Access is strictly path-validated against the registered worktree path (no traversal allowed), files over 512 KB are blocked, and only Superagent-tier agents (depth 1) may call it. Enables parallel Superagents to share generated schemas, types, or interfaces without waiting for a full merge cycle.
+
+### Tests
+- **detectPackageManager**: 6 unit tests in `tests/masterAgent.test.ts` covering npm (fallback), yarn, pnpm, bun, and priority conflicts.
+- **Pre-merge verification**: 2 unit tests in `tests/superagentTools.test.ts` — build-failed report and status-blocked report both trigger skip-and-error without touching git.
+
+---
+
 ## [1.2.88] - 2026-07-03
+
 
 ### Added
 - **Sequential Message Queueing**: Replaced single pendingMessage property in agent.ts with pendingMessagesQueue array to prevent message loss on concurrent signals.

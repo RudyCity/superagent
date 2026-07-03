@@ -54,6 +54,7 @@ import {
   manageSuperagentsTool,
   defineSuperagentTool,
   sendMessageToSuperagentTool,
+  readPeerSuperagentFileTool,
 } from "./superagentTools.js";
 
 import {
@@ -138,6 +139,7 @@ export const superagentToolset: Tool[] = [
   searchPinnedKnowledgeTool,
   screenshotTool,
   androidCliTool,
+  readPeerSuperagentFileTool, // read files from peer Superagent worktrees
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,
   tdaiReadCosTool,

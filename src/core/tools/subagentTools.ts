@@ -200,6 +200,14 @@ export const invokeSubagentTool: Tool = {
         type: "integer",
         description: "Timeout in milliseconds for inline execution. If execution exceeds this limit, the subagent is aborted.",
       },
+      inheritContext: {
+        type: "boolean",
+        description:
+          "If true, prepend a compact snapshot of the parent agent's current workspace state " +
+          "(task progress, plan objective, working directory) to the subagent's system prompt. " +
+          "Reduces redundant re-research by giving the subagent a head-start on context. " +
+          "Snapshot is capped at 2000 characters. Default: false.",
+      },
     },
     required: ["typeName", "role", "prompt"],
   },
@@ -313,9 +321,47 @@ export const invokeSubagentTool: Tool = {
     const { getSubagentSystemPrompt } = await import("../prompts.js");
     const baseSystemPrompt = await getSubagentSystemPrompt(typeName, subType.systemPrompt);
     const reportInstruction = SUBAGENT_REPORT_INSTRUCTION(subagentId);
-    const resolvedPrompt = baseSystemPrompt.includes("SUBAGENT TASK REPORT")
-      ? baseSystemPrompt
-      : `${baseSystemPrompt}\n\n${reportInstruction}`;
+
+    // ── Fix 2: Optional context inheritance — inject parent workspace snapshot ─
+    const inheritContext = args.inheritContext === true;
+    let contextSnippet = "";
+    if (inheritContext && parentAgent) {
+      const snippetParts: string[] = [];
+      snippetParts.push(`Working directory: ${cwd}`);
+
+      // Include task progress if a task file exists
+      try {
+        const taskFilePath = parentAgent.getPlanFilePath
+          ? parentAgent.getPlanFilePath().replace("implementation_plan.md", "task.md")
+          : "";
+        if (taskFilePath) {
+          const { buildWorkspaceStateBlock } = await import("../context/WorkspaceStateTracker.js");
+          const block = buildWorkspaceStateBlock({
+            taskFilePath,
+            planFilePath: parentAgent.getPlanFilePath ? parentAgent.getPlanFilePath() : undefined,
+            cwd,
+            tier: "superagent",
+          });
+          if (block.text) snippetParts.push(block.text.trim());
+        }
+      } catch {
+        // Non-critical — skip context injection if it fails
+      }
+
+      const rawSnippet = snippetParts.join("\n");
+      // Cap at 2000 characters to protect subagent context window (Task 6)
+      contextSnippet = rawSnippet.length > 2000
+        ? rawSnippet.slice(0, 2000) + "\n...[context truncated]"
+        : rawSnippet;
+    }
+
+    const resolvedPrompt = (() => {
+      const withReport = baseSystemPrompt.includes("SUBAGENT TASK REPORT")
+        ? baseSystemPrompt
+        : `${baseSystemPrompt}\n\n${reportInstruction}`;
+      if (!contextSnippet) return withReport;
+      return `## INHERITED WORKSPACE CONTEXT (from parent agent)\n${contextSnippet}\n\n---\n\n${withReport}`;
+    })();
     // Ensure report directory exists before subagent starts
     try { fs.mkdirSync(SUBAGENT_REPORTS_DIR, { recursive: true }); } catch {}
     const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
