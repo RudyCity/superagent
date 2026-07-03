@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.73] - 2026-07-03
+
+### Added
+- **DAG Cycle Detection**: Integrated dynamic DFS-based cycle detection in `invokeSuperagentTool` to prevent deadlocks from circular agent dependencies (e.g., C -> A -> B -> C).
+- **Shared Memory Compaction & TencentDB Sync**: Updated the shared memory system to automatically prune entries older than 7 days (TTL compaction) and enforce a maximum limit of 30 entries. Connected compaction to delete pruned findings atomically from TencentDB Memory if enabled.
+- **Conflict Resolver Telemetry**: Added conflict resolver UI telemetry piping to improve UI feedback during automated git merge conflict resolution.
+
+---
+
 ## [1.2.72] - 2026-07-03
 
 ### Added
