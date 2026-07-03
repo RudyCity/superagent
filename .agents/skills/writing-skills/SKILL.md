@@ -605,12 +605,10 @@ Deploying untested skills = deploying untested code. It's a violation of quality
 - [ ] Commit skill to git and push to your fork (if configured)
 - [ ] Consider contributing back via PR (if broadly useful)
 
-## Discovery Workflow
-
 How future Claude finds your skill:
 
 1. **Encounters problem** ("tests are flaky")
-2. **Searches skills** using `find-skills` tool (searches skills repository)
+2. **Searches skills** using the `get_skills` tool
 3. **Finds SKILL.md** (rich when_to_use matches)
 4. **Scans overview** (is this relevant?)
 5. **Reads patterns** (quick reference table)

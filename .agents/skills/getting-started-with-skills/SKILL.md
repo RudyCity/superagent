@@ -18,11 +18,11 @@ version: 4.0.2
 
 ## Mandatory Workflow: Before ANY Task
 
-**1. Check skills list** at session start, or run `find-skills [PATTERN]` to filter.
+**1. Check skills list** by running the `get_skills` tool (with optional query pattern).
 
 **2. If relevant skill exists, YOU MUST use it:**
 
-- Use Read tool with full path: `${SUPERPOWERS_SKILLS_ROOT}/skills/category/skill-name/SKILL.md`
+- Use Read tool (or view_file) with the absolute path returned by the `get_skills` tool
 - Read ENTIRE file, not just frontmatter
 - Announce: "I've read [Skill Name] skill and I'm using it to [purpose]"
 - Follow it exactly
@@ -30,7 +30,7 @@ version: 4.0.2
 **Don't rationalize:**
 - "I remember this skill" - Skills evolve. Read the current version.
 - "Session-start showed it to me" - That was using-skills/SKILL.md only. Read the actual skill.
-- "This doesn't count as a task" - It counts. Find and read skills.
+- "This doesn't count as a task" - It counts. Find and read skills using the `get_skills` tool.
 
 **Why:** Skills document proven techniques that save time and prevent mistakes. Not using available skills means repeating solved problems and making known errors.
 
@@ -92,8 +92,8 @@ Your human partner's specific instructions describe WHAT to do, not HOW.
 ## Summary
 
 **Starting any task:**
-1. Run find-skills to check for relevant skills
-2. If relevant skill exists → Use Read tool with full path (includes /SKILL.md)
+1. Run the `get_skills` tool to check for relevant skills
+2. If relevant skill exists → Use Read tool with the path returned by the tool (includes /SKILL.md)
 3. Announce you're using it
 4. Follow what it says
 
