@@ -1290,8 +1290,33 @@ After all subagents finish, you MUST perform this verification loop before consi
             const raw = fs.readFileSync(sharedMemPath, "utf-8");
             const memories = JSON.parse(raw);
             if (Array.isArray(memories) && memories.length > 0) {
-              const memLines = memories.map((m: any) => `- [${m.source}] ${m.key}: ${m.value}`).join("\n");
-              sharedMemoryNotice = `\n\n### SHARED AGENT MEMORIES / FINDINGS:\nOther agents or subagents have recorded the following findings in this workspace. Review them carefully to avoid repeating work or introducing bugs:\n${memLines}`;
+              const currentWorkspace = path.resolve(process.cwd());
+              
+              const globalMemories = memories
+                .filter((m: any) => m.scope === "global")
+                .slice(-10);
+
+              const projectMemories = memories
+                .filter((m: any) => {
+                  if (m.scope === "global") return false;
+                  if (!m.projectPath) return true; // fallback for un-scoped legacy items
+                  return path.resolve(m.projectPath) === currentWorkspace;
+                })
+                .slice(-15);
+
+              const sections: string[] = [];
+              if (globalMemories.length > 0) {
+                const lines = globalMemories.map((m: any) => `- [${m.source}] ${m.key}: ${m.value}`).join("\n");
+                sections.push(`### GLOBAL AGENT MEMORIES:\n${lines}`);
+              }
+              if (projectMemories.length > 0) {
+                const lines = projectMemories.map((m: any) => `- [${m.source}] ${m.key}: ${m.value}`).join("\n");
+                sections.push(`### PROJECT AGENT MEMORIES (this workspace):\n${lines}`);
+              }
+
+              if (sections.length > 0) {
+                sharedMemoryNotice = `\n\n${sections.join("\n\n")}`;
+              }
             }
           }
         } catch {}

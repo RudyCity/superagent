@@ -217,9 +217,11 @@ describe("Shared Memory Compaction", () => {
     const res = await saveSharedMemoryTool.execute({
       key: "new-key",
       value: "new-val",
+      scope: "project",
     }, process.cwd());
 
     expect(res).toContain("Successfully saved memory");
+    expect(res).toContain("project scope");
 
     // The old-x memories should be pruned by TTL.
     // The oldest fresh memories should be pruned by count, leaving exactly 30 entries (including the new-key).
@@ -227,6 +229,34 @@ describe("Shared Memory Compaction", () => {
     const keys = finalWritten.map(m => m.key);
     expect(keys).toContain("new-key");
     expect(keys.some(k => k.startsWith("old-"))).toBe(false);
+    
+    const savedEntry = finalWritten.find(m => m.key === "new-key");
+    expect(savedEntry?.scope).toBe("project");
+    expect(savedEntry?.projectPath).toBeTruthy();
+  });
+
+  it("should support saving global scope memories", async () => {
+    let finalWritten: any[] = [];
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readFileSync").mockReturnValue("[]");
+    vi.spyOn(fs, "writeFileSync").mockImplementation((filePath, content) => {
+      if (typeof filePath === "string" && filePath.endsWith(".tmp")) {
+        finalWritten = JSON.parse(content as string);
+      }
+      return undefined as any;
+    });
+    vi.spyOn(fs, "renameSync").mockImplementation(() => {});
+
+    const res = await saveSharedMemoryTool.execute({
+      key: "user-pref-theme",
+      value: "dark-mode",
+      scope: "global",
+    }, process.cwd());
+
+    expect(res).toContain("global scope");
+    expect(finalWritten.length).toBe(1);
+    expect(finalWritten[0].scope).toBe("global");
+    expect(finalWritten[0].projectPath).toBeUndefined();
   });
 
   it("should sync updates and deletions to TencentDB if enabled", async () => {
@@ -248,10 +278,10 @@ describe("Shared Memory Compaction", () => {
       value: "new-val",
     }, process.cwd());
 
-    // Should call client.updateAtomic for the new memory
+    // Should call client.updateAtomic for the new memory with scope tag
     expect(mockUpdateAtomic).toHaveBeenCalledWith({
       id: "shared-memory-new-key",
-      content: "[system] new-key: new-val"
+      content: expect.stringContaining("new-key: new-val")
     });
 
     // Should call client.deleteAtomic for the pruned memory

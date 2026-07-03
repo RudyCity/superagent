@@ -110,7 +110,7 @@ export const tdaiReadCosTool: Tool = {
 
 export const tdaiMemorySaveTool: Tool = {
   name: "tdai_memory_save",
-  description: "Save a structured atomic memory (L1) to long-term storage. Use to store important facts, user preferences, project context, or decisions that should be remembered across sessions.",
+  description: "Save a structured atomic memory (L1) to long-term storage. Specify scope as 'project' (default, workspace-specific) or 'global' (universal preference).",
   parameters: {
     type: "object",
     properties: {
@@ -126,18 +126,29 @@ export const tdaiMemorySaveTool: Tool = {
         type: "string",
         description: "Optional type/category for the memory (e.g. 'preference', 'fact', 'context', 'decision').",
       },
+      scope: {
+        type: "string",
+        enum: ["project", "global"],
+        description: "Scope of the memory. 'project' (default) isolates memory to current workspace. 'global' applies universally.",
+      },
     },
     required: ["id", "content"],
   },
-  async execute(args) {
+  async execute(args, cwd) {
     const id = String(args.id || "");
-    const content = String(args.content || "");
+    const rawContent = String(args.content || "");
     const type = args.type ? String(args.type) : undefined;
+    const scope = args.scope === "global" ? "global" : "project";
     const client = getClient();
+
+    const scopePrefix = scope === "global" ? "[global]" : `[project]`;
+    const content = rawContent.startsWith("[global]") || rawContent.startsWith("[project")
+      ? rawContent
+      : `${scopePrefix} ${rawContent}`;
 
     try {
       const res = await client.updateAtomic({ id, content });
-      return `Memory saved successfully. ID: ${res.id}, updated at: ${res.updated_at}`;
+      return `Memory saved successfully (${scope} scope). ID: ${res.id}, updated at: ${res.updated_at}`;
     } catch (err) {
       return `Failed to save memory: ${formatError(err)}. Make sure the TencentDB memory gateway is running.`;
     }

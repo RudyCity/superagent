@@ -4,9 +4,18 @@ import { Tool } from "./types.js";
 import { getRootConfigDir } from "../config/paths.js";
 import { agentLocalStorage } from "../agent.js";
 
+export interface SharedMemoryEntry {
+  key: string;
+  value: string;
+  source: string;
+  timestamp: number;
+  scope?: "global" | "project";
+  projectPath?: string;
+}
+
 export const saveSharedMemoryTool: Tool = {
   name: "save_shared_memory",
-  description: "Save a key finding, API change, or crucial codebase fact to the global shared memory so other parallel Superagents/Subagents can see it instantly.",
+  description: "Save a key finding, API change, or crucial codebase fact to shared memory so other parallel Superagents/Subagents can see it. Specify scope as 'project' (default, workspace-specific) or 'global' (universal preference) to optimize token usage.",
   parameters: {
     type: "object",
     properties: {
@@ -18,12 +27,20 @@ export const saveSharedMemoryTool: Tool = {
         type: "string",
         description: "The detailed finding, codebase fact, or context to share",
       },
+      scope: {
+        type: "string",
+        enum: ["project", "global"],
+        description: "Scope of the memory. 'project' (default) isolates memory to the current workspace. 'global' shares it universally across all projects.",
+      },
     },
     required: ["key", "value"],
   },
   async execute(args, cwd, signal) {
     const key = (args.key as string).trim();
     const value = (args.value as string).trim();
+    const scope: "global" | "project" = args.scope === "global" ? "global" : "project";
+    const projectPath = path.resolve(cwd || process.cwd());
+
     if (!key || !value) {
       return "Error: key and value cannot be empty.";
     }
@@ -75,7 +92,7 @@ export const saveSharedMemoryTool: Tool = {
     }
 
     try {
-      let memories: Array<{ key: string; value: string; source: string; timestamp: number }> = [];
+      let memories: SharedMemoryEntry[] = [];
       if (fs.existsSync(sharedMemPath)) {
         try {
           const raw = fs.readFileSync(sharedMemPath, "utf-8");
@@ -88,12 +105,21 @@ export const saveSharedMemoryTool: Tool = {
         }
       }
 
+      const newEntry: SharedMemoryEntry = {
+        key,
+        value,
+        source,
+        timestamp: Date.now(),
+        scope,
+        projectPath: scope === "project" ? projectPath : undefined,
+      };
+
       // Update existing or add new
       const index = memories.findIndex(m => m.key.toLowerCase() === key.toLowerCase());
       if (index !== -1) {
-        memories[index] = { key, value, source, timestamp: Date.now() };
+        memories[index] = newEntry;
       } else {
-        memories.push({ key, value, source, timestamp: Date.now() });
+        memories.push(newEntry);
       }
 
       // Compact & Prune: 7-day TTL and 30-entry max limit
@@ -127,10 +153,12 @@ export const saveSharedMemoryTool: Tool = {
           const { getTencentDBClient } = await import("../tencentdbUtil.js");
           const client = getTencentDBClient(2000);
           
+          const scopeTag = scope === "global" ? "[global]" : `[project:${path.basename(projectPath)}]`;
+          
           // 1. Update/save the new/updated entry
           await client.updateAtomic({
             id: `shared-memory-${key}`,
-            content: `[${source}] ${key}: ${value}`
+            content: `[${source}] ${scopeTag} ${key}: ${value}`
           });
 
           // 2. Delete any pruned entries from TencentDB
@@ -143,7 +171,7 @@ export const saveSharedMemoryTool: Tool = {
         // Log to console/logs but don't fail the command
       }
 
-      return `Successfully saved memory "${key}" to shared memory cache.`;
+      return `Successfully saved memory "${key}" (${scope} scope) to shared memory cache.`;
     } catch (err: any) {
       return `Error saving memory: ${err.message}`;
     } finally {

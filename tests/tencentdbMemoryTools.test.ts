@@ -96,7 +96,7 @@ describe("TencentDB Memory Tools", () => {
   });
 
   describe("tdai_memory_save", () => {
-    it("should successfully save memory with upsert", async () => {
+    it("should successfully save memory with upsert and default project scope", async () => {
       mockUpdateAtomic.mockResolvedValue({
         id: "user-identity",
         updated_at: "2026-06-26T10:00:00.000Z",
@@ -110,7 +110,24 @@ describe("TencentDB Memory Tools", () => {
       expect(result).toContain("user-identity");
       expect(mockUpdateAtomic).toHaveBeenCalledWith({
         id: "user-identity",
-        content: "User name is Rudy",
+        content: "[project] User name is Rudy",
+      });
+    });
+
+    it("should save memory with explicit global scope", async () => {
+      mockUpdateAtomic.mockResolvedValue({
+        id: "global-pref",
+        updated_at: "2026-06-26T10:00:00.000Z",
+      });
+
+      const result = await tdaiMemorySaveTool.execute(
+        { id: "global-pref", content: "Prefer dark mode", scope: "global" },
+        "."
+      );
+      expect(result).toContain("Memory saved successfully (global scope)");
+      expect(mockUpdateAtomic).toHaveBeenCalledWith({
+        id: "global-pref",
+        content: "[global] Prefer dark mode",
       });
     });
 
@@ -127,7 +144,7 @@ describe("TencentDB Memory Tools", () => {
       expect(result).toContain("Memory saved successfully");
       expect(mockUpdateAtomic).toHaveBeenCalledWith({
         id: "simple-note",
-        content: "A simple note",
+        content: "[project] A simple note",
       });
     });
 

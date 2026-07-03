@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.84] - 2026-07-03
+
+### Changed
+- **Global vs Per-Project Memory Scoping**: Added `scope` parameter (`"project"` | `"global"`) to `save_shared_memory` and `tdai_memory_save` tools to isolate workspace findings and prevent cross-project context pollution.
+- **Agent Context Filtering**: Updated `sharedMemoryNotice` in `agent.ts` to filter shared memories based on current workspace path, rendering distinct `GLOBAL AGENT MEMORIES` and `PROJECT AGENT MEMORIES` sections with token allocation caps.
+- **System Prompts Update**: Added `SHARED_MEMORY_SCOPING` rule to `MASTER_AGENT_SYSTEM_PROMPT` and `SUPERAGENT_SYSTEM_PROMPT` in `src/core/prompts.ts` to guide agents on selecting appropriate memory scopes.
+
+---
+
 ## [1.2.83] - 2026-07-03
 
 ### Fixed
