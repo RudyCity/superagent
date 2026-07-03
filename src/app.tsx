@@ -224,6 +224,7 @@ export function App({
   const [superagentsScrollOffset, setSuperagentsScrollOffset] = useState(0);
   const [subagentsScrollOffset, setSubagentsScrollOffset] = useState(0);
   const [procsScrollOffset, setProcsScrollOffset] = useState(0);
+  const [procsSelectedIndex, setProcsSelectedIndex] = useState(0);
 
   // Collapsible sections state
   const [collapsedSections, setCollapsedSections] = useState({
@@ -1163,6 +1164,8 @@ export function App({
     setSubagentsScrollOffset,
     procsScrollOffset,
     setProcsScrollOffset,
+    procsSelectedIndex,
+    setProcsSelectedIndex,
     terminalHeight,
     terminalWidth,
     checklistTasks,
@@ -2311,6 +2314,7 @@ export function App({
               maxProcsVisible={maxProcsVisible}
               collapsedSections={collapsedSections}
               workspace={agentRef.current?.workingDirectory || process.cwd()}
+              procsSelectedIndex={procsSelectedIndex}
             />
 
             <TaskChecklist

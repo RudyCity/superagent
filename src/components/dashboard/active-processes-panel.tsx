@@ -9,6 +9,7 @@ interface ActiveProcessesPanelProps {
   focusArea: string;
   runningSubagentsCount: number;
   workspace?: string;
+  procsSelectedIndex?: number;
 }
 
 export const ActiveProcessesPanel = memo(function ActiveProcessesPanel({
@@ -18,6 +19,7 @@ export const ActiveProcessesPanel = memo(function ActiveProcessesPanel({
   focusArea,
   runningSubagentsCount,
   workspace,
+  procsSelectedIndex,
 }: ActiveProcessesPanelProps) {
   const workspacePath = workspace || process.cwd();
   const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited && !task.isHidden && isTaskInWorkspace(task.cwd, workspacePath));
@@ -39,11 +41,17 @@ export const ActiveProcessesPanel = memo(function ActiveProcessesPanel({
       <Text color={focusArea === "procs" ? "green" : "cyan"} bold>
         {isFirstHeader ? "┌───" : "├───"}[ ⚙️ ACTIVE PROCESSES ]{scrollIndicator}{helpText}
       </Text>
-      {visibleProcs.map(([id, task]) => (
-        <Text key={id} color="cyan">
-          ├─── [{id}] Command: {task.command}
-        </Text>
-      ))}
+      {visibleProcs.map(([id, task], index) => {
+        const absIndex = procsScrollOffset + index;
+        const isSelected = focusArea === "procs" && absIndex === procsSelectedIndex;
+        const prefix = isSelected ? "├─── ▶" : "├───  ";
+        const textColor = isSelected ? "white" : "cyan";
+        return (
+          <Text key={id} color={textColor}>
+            {prefix} [{id}] Command: {task.command}
+          </Text>
+        );
+      })}
     </Box>
   );
 });

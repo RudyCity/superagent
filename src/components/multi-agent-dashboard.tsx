@@ -147,6 +147,7 @@ export function MultiAgentDashboard({
   const tencentdbStatus = useTencentdbStatus();
   const [isExecutingTool, setIsExecutingTool] = useState(false);
   const [activeToolOutput, setActiveToolOutput] = useState("");
+  const [procsSelectedIndex, setProcsSelectedIndex] = useState(0);
   const [toolTimeout, setToolTimeout] = useState<number | null>(null);
   const [toolStartTime, setToolStartTime] = useState<number | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
@@ -1140,8 +1141,11 @@ export function MultiAgentDashboard({
     maxChecklistVisible,
     setAgentsScrollOffset,
     maxAgentsVisible,
+    procsScrollOffset,
     setProcsScrollOffset,
     maxProcsVisible,
+    procsSelectedIndex,
+    setProcsSelectedIndex,
     isProcessing,
     setIsProcessing,
     setMasterLogs,
@@ -1323,6 +1327,7 @@ export function MultiAgentDashboard({
             focusArea={focusArea}
             runningSubagentsCount={runningSubagentsCount}
             workspace={workspacePath}
+            procsSelectedIndex={procsSelectedIndex}
           />
         </Box>
       )}

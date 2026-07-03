@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.92] - 2026-07-03
+
+### Added
+- **Keyboard Navigation and Log Output for Active Processes**: Enabled keyboard navigation (up/down arrow keys) for the active processes panel in both the single-agent console and multi-agent dashboard. Pressing Enter while focusing a running process prints the last 40 lines of its output/logs directly in the terminal chat/master logs. Added the Ctrl+B shortcut to quickly toggle focus to the active processes panel when processes are running.
+
+### Fixed
+- **Tool Registry Consistency**: Added `readPeerSuperagentFileTool` to the exported `allTools` array in `tools/index.ts` to maintain registry integrity.
+- **Mock Cleanup in Post-Merge Validation Tests**: Fixed `fs.existsSync` mocks in `tests/postMergeValidation.test.ts` to return `false` for lockfiles (`bun.lockb`, `pnpm-lock.yaml`, `yarn.lock`), preventing test failures caused by dynamic package manager detection on machines with Bun/PNPM installed.
+
+---
+
 ## [1.2.91] - 2026-07-03
 
 ### Fixed

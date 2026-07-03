@@ -56,6 +56,7 @@ interface ActiveAgentsListProps {
   maxProcsVisible: number;
   collapsedSections: { superagents: boolean; subagents: boolean; procs: boolean };
   workspace?: string;
+  procsSelectedIndex?: number;
 }
 
 export const ActiveAgentsList = memo(function ActiveAgentsList({
@@ -71,6 +72,7 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
   maxProcsVisible,
   collapsedSections,
   workspace,
+  procsSelectedIndex,
 }: ActiveAgentsListProps) {
   if (runningSuperagentsCount === 0 && runningSubagentsCount === 0 && runningTasksCount === 0) {
     return null;
@@ -205,11 +207,17 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
             <Text color={headerColor} bold>
               {branchPrefix}[ {collapseIcon} ⚙️ ACTIVE PROCESSES ]{scrollIndicator}{helpText} <Text dimColor italic>click header to collapse</Text>
             </Text>
-            {visibleProcs.map(([id, task]) => (
-              <Text key={id} color="cyan">
-                ├─── [{id}] Command: {task.command}
-              </Text>
-            ))}
+            {visibleProcs.map(([id, task], index) => {
+              const absIndex = procsScrollOffset + index;
+              const isSelected = isFocused && absIndex === procsSelectedIndex;
+              const prefix = isSelected ? "├─── ▶" : "├───  ";
+              const textColor = isSelected ? "white" : "cyan";
+              return (
+                <Text key={id} color={textColor}>
+                  {prefix} [{id}] Command: {task.command}
+                </Text>
+              );
+            })}
           </Box>
         );
       })()}

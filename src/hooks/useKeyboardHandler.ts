@@ -1,6 +1,7 @@
 import { useInput } from "ink";
 import { useRef, useCallback } from "react";
 import path from "path";
+import fs from "fs";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
 import { getPasteSplit, filterSuggestions, getInsertion } from "../utils/text.js";
 import { reconstructChatLines } from "../utils/uiHelpers.js";
@@ -8,7 +9,7 @@ import { getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getC
 import { getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, terminateActiveTasksAndSubagents, restoreCheckpoint, deleteCheckpointById, type Checkpoint } from "../core/checkpoints.js";
 import { getToolDescription } from "../core/permissions.js";
-import { registerSubagentType, allTools, backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged } from "../core/tools.js";
+import { registerSubagentType, allTools, backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, notifySubagentsChanged, isTaskInWorkspace } from "../core/tools.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ToolCall } from "../core/conversation.js";
 import { contentToString } from "../core/conversation.js";
@@ -76,6 +77,8 @@ export interface KeyboardHandlerContext {
   setSubagentsScrollOffset: React.Dispatch<React.SetStateAction<number>>;
   procsScrollOffset: number;
   setProcsScrollOffset: React.Dispatch<React.SetStateAction<number>>;
+  procsSelectedIndex: number;
+  setProcsSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
   terminalHeight: number;
   terminalWidth: number;
   checklistTasks: { status: string; text: string }[];
@@ -157,6 +160,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     setSubagentsScrollOffset,
     procsScrollOffset,
     setProcsScrollOffset,
+    procsSelectedIndex,
+    setProcsSelectedIndex,
     terminalHeight,
     terminalWidth,
     checklistTasks,
@@ -329,16 +334,59 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (focusMode === "procs" && !activeWizard) {
+      const workspacePath = agentRef.current?.workingDirectory || process.cwd();
+      const runningProcs = Array.from(backgroundTasks.entries()).filter(([_, task]) => !task.hasExited && !task.isHidden && isTaskInWorkspace(task.cwd, workspacePath));
+      const total = runningProcs.length;
+
       if (key.upArrow) {
-        setProcsScrollOffset((prev) => Math.max(0, prev - 1));
+        setProcsSelectedIndex((prev) => {
+          const next = Math.max(0, prev - 1);
+          if (next < procsScrollOffset) {
+            setProcsScrollOffset(next);
+          }
+          return next;
+        });
         return;
       }
       if (key.downArrow) {
-        setProcsScrollOffset((prev) => {
-          const runningTasksCount = [...backgroundTasks.values()].filter((t) => t.isDetachedWindow || !t.hasExited).length;
-          const maxScroll = Math.max(0, runningTasksCount - maxProcsVisible);
-          return Math.min(prev + 1, maxScroll);
+        setProcsSelectedIndex((prev) => {
+          const next = Math.min(total - 1, prev + 1);
+          if (next >= procsScrollOffset + maxProcsVisible) {
+            setProcsScrollOffset(next - maxProcsVisible + 1);
+          }
+          return next;
         });
+        return;
+      }
+      if (key.return) {
+        const selected = runningProcs[procsSelectedIndex];
+        if (selected) {
+          const [taskId, task] = selected;
+          let logContent = "";
+          if (task.logPath && fs.existsSync(task.logPath)) {
+            try {
+              const fullLog = fs.readFileSync(task.logPath, "utf-8");
+              const logLines = fullLog.split("\n");
+              logContent = logLines.slice(-40).join("\n");
+            } catch (e) {
+              logContent = `Error reading log file: ${e instanceof Error ? e.message : String(e)}`;
+            }
+          } else if (task.output && task.output.length > 0) {
+            logContent = task.output.slice(-40).join("");
+          } else {
+            logContent = "No log output available yet.";
+          }
+
+          addLine({
+            type: "system",
+            content: `┌───[ 📄 LOG FOR PROCESS ${taskId} ]\n` +
+                     `│ Command: ${task.command}\n` +
+                     `├──────────────────────────────────────────────\n` +
+                     logContent.split("\n").map(l => `│ ${l}`).join("\n") +
+                     `\n└──────────────────────────────────────────────`,
+            timestamp: Date.now()
+          });
+        }
         return;
       }
       if (isEscape) {
@@ -381,6 +429,17 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     if (key.ctrl && inputChar === "t" && !activeWizard) {
       if (planState === "APPROVED" && (checklistTasks.length > 0 || completedHistory.length > 0)) {
         setFocusMode((prev: any) => (prev === "checklist" ? "input" : "checklist"));
+      }
+      return;
+    }
+
+    // Ctrl+B: Toggle active processes focus mode
+    if (key.ctrl && inputChar === "b" && !activeWizard) {
+      const workspacePath = agentRef.current?.workingDirectory || process.cwd();
+      const runningTasksCount = [...backgroundTasks.values()].filter((t) => !t.isHidden && (t.isDetachedWindow || !t.hasExited) && isTaskInWorkspace(t.cwd, workspacePath)).length;
+      if (runningTasksCount > 0) {
+        setFocusMode((prev: any) => (prev === "procs" ? "input" : "procs"));
+        setProcsSelectedIndex(0);
       }
       return;
     }

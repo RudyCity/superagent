@@ -1,7 +1,8 @@
 import React from "react";
 import { useInput } from "ink";
+import fs from "fs";
 import { getPasteSplit, filterSuggestions } from "../utils/text.js";
-import { subagentInstances, backgroundTasks } from "../core/tools/state.js";
+import { subagentInstances, backgroundTasks, isTaskInWorkspace } from "../core/tools/state.js";
 import { getConfiguredProviders, getProviders } from "../core/config.js";
 import { listCheckpointsForSession } from "../core/checkpoints.js";
 import type { Agent } from "../core/agent.js";
@@ -55,8 +56,11 @@ export interface DashboardKeyboardContext {
   maxChecklistVisible: number;
   setAgentsScrollOffset: React.Dispatch<React.SetStateAction<number>>;
   maxAgentsVisible: number;
+  procsScrollOffset: number;
   setProcsScrollOffset: React.Dispatch<React.SetStateAction<number>>;
   maxProcsVisible: number;
+  procsSelectedIndex: number;
+  setProcsSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
   isProcessing?: boolean;
   setIsProcessing?: React.Dispatch<React.SetStateAction<boolean>>;
   setMasterLogs?: React.Dispatch<React.SetStateAction<string[]>>;
@@ -116,8 +120,11 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     maxChecklistVisible,
     setAgentsScrollOffset,
     maxAgentsVisible,
+    procsScrollOffset,
     setProcsScrollOffset,
     maxProcsVisible,
+    procsSelectedIndex,
+    setProcsSelectedIndex,
     isProcessing = false,
     setIsProcessing = () => {},
     setMasterLogs,
@@ -186,6 +193,16 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
 
     if (key.ctrl && input === "t") {
       setIsHistoryTruncated((prev) => !prev);
+      return;
+    }
+
+    if (key.ctrl && input === "b") {
+      const workspacePath = agent?.workingDirectory || process.cwd();
+      const runningTasksCount = [...backgroundTasks.values()].filter((t) => !t.isHidden && (t.isDetachedWindow || !t.hasExited) && isTaskInWorkspace(t.cwd, workspacePath)).length;
+      if (runningTasksCount > 0) {
+        setFocusArea((prev: any) => (prev === "procs" ? "input" : "procs"));
+        setProcsSelectedIndex(0);
+      }
       return;
     }
 
@@ -743,14 +760,53 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
         setFocusArea("input");
       }
     } else if (focusArea === "procs") {
+      const workspacePath = agent?.workingDirectory || process.cwd();
+      const runningProcs = Array.from(backgroundTasks.entries()).filter(([_, task]) => !task.hasExited && !task.isHidden && isTaskInWorkspace(task.cwd, workspacePath));
+      const total = runningProcs.length;
+
       if (key.upArrow) {
-        setProcsScrollOffset((prev) => Math.max(0, prev - 1));
-      } else if (key.downArrow) {
-        setProcsScrollOffset((prev) => {
-          const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited && !task.isHidden);
-          const maxScroll = Math.max(0, runningProcs.length - maxProcsVisible);
-          return Math.min(prev + 1, maxScroll);
+        setProcsSelectedIndex((prev) => {
+          const next = Math.max(0, prev - 1);
+          if (next < procsScrollOffset) {
+            setProcsScrollOffset(next);
+          }
+          return next;
         });
+      } else if (key.downArrow) {
+        setProcsSelectedIndex((prev) => {
+          const next = Math.min(total - 1, prev + 1);
+          if (next >= procsScrollOffset + maxProcsVisible) {
+            setProcsScrollOffset(next - maxProcsVisible + 1);
+          }
+          return next;
+        });
+      } else if (key.return) {
+        const selected = runningProcs[procsSelectedIndex];
+        if (selected) {
+          const [taskId, task] = selected;
+          let logContent = "";
+          if (task.logPath && fs.existsSync(task.logPath)) {
+            try {
+              const fullLog = fs.readFileSync(task.logPath, "utf-8");
+              const logLines = fullLog.split("\n");
+              logContent = logLines.slice(-40).join("\n");
+            } catch (e) {
+              logContent = `Error reading log file: ${e instanceof Error ? e.message : String(e)}`;
+            }
+          } else if (task.output && task.output.length > 0) {
+            logContent = task.output.slice(-40).join("");
+          } else {
+            logContent = "No log output available yet.";
+          }
+
+          const header = `┌───[ 📄 LOG FOR PROCESS ${taskId} ]`;
+          const cmdLine = `│ Command: ${task.command}`;
+          const sep = `├──────────────────────────────────────────────`;
+          const bodyLines = logContent.split("\n").map(l => `│ ${l}`);
+          const footer = `└──────────────────────────────────────────────`;
+
+          setMasterLogs?.((prev) => [...prev, header, cmdLine, sep, ...bodyLines, footer].slice(-500));
+        }
       } else if (isEscape) {
         setFocusArea("input");
       }

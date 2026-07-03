@@ -51,6 +51,7 @@ import {
   manageSuperagentsTool,
   defineSuperagentTool,
   sendMessageToSuperagentTool,
+  readPeerSuperagentFileTool,
 } from "./superagentTools.js";
 
 import {
@@ -125,6 +126,7 @@ export const allTools: Tool[] = [
   tdaiMemorySaveTool,
   tdaiConversationAddTool,
   saveSharedMemoryTool,
+  readPeerSuperagentFileTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {
