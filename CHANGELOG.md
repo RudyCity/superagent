@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.87] - 2026-07-03
+
+### Security
+- **Workspace Boundary: Split Out-of-Bounds Session Bypass Flags**: Introduced a separate `allowSessionFileWriteOutOfBounds` flag for file write tools (`write_to_file`, `replace_file_content`, `multi_replace_file_content`, `edit`, `apply_patch`). Previously, a single `allowSessionOutOfBounds` flag granted by approving a shell or glob tool would silently bypass ALL subsequent file write permission checks for the session — allowing the agent to write files outside the workspace without further prompts. File write tools and shell tools now maintain independent bypass states.
+- **Workspace Boundary: Non-Interactive Mode Blocks Out-of-Bounds File Writes**: Non-TTY (non-interactive) mode previously auto-approved ALL permission requests including out-of-bounds file writes. It now explicitly blocks all file write tools (`MODIFYING_TOOLS`) outside the workspace and returns `false`, while continuing to auto-approve shell and read tools.
+- **Workspace Boundary: System Prompt Constraint Injection**: Every agent iteration now injects a `# WORKSPACE BOUNDARY — CRITICAL` section into the system prompt containing the exact workspace root path, preventing the LLM from hallucinating file write targets derived from bash command output (e.g., Git Bash `/c/Users/...` paths that map to a different drive than the configured workspace).
+
+### Tests
+- **New: `tests/workspaceBoundaryPermission.test.ts`**: 14 unit tests verifying the split flag defaults and independence, `MODIFYING_TOOLS` list correctness, and the non-interactive CLI handler blocking all file write tools while allowing shell/read tools.
+
+---
+
 ## [1.2.86] - 2026-07-03
 
 ### Added

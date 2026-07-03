@@ -387,6 +387,19 @@ if (process.stdin.isTTY) {
       }
     },
     async (toolCall, description) => {
+      // In non-interactive mode: auto-approve shell/read tools but BLOCK out-of-bounds file writes.
+      // File write tools outside the workspace must never silently succeed in headless mode.
+      const FILE_WRITE_TOOLS = [
+        "write", "write_to_file", "edit",
+        "replace_file_content", "multi_replace_file_content", "apply_patch",
+      ];
+      if (FILE_WRITE_TOOLS.includes(toolCall.name)) {
+        console.error(
+          `\n🚫 Blocked out-of-bounds FILE WRITE in non-TTY mode: ${description}\n` +
+          `   Tool "${toolCall.name}" attempted to write outside the workspace. Denied.`
+        );
+        return false;
+      }
       console.log(`\n⚠ Auto-approving permission in non-TTY: ${description}`);
       return true;
     },
