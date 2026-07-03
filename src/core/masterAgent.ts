@@ -641,7 +641,83 @@ export class MasterAgent {
             ];
           }
         } else {
-          // Line-based resolution failed — abort and report
+          // Line-based resolution failed — spawn conflict-resolver subagent
+          console.log(`[INFO] Line-based resolution failed. Spawning programmatic conflict-resolver subagent for branch "${branchName}"...`);
+          try {
+            const { Agent } = await import("./agent.js");
+            const { defaultSubagentToolset } = await import("./tools/toolsets.js");
+
+            const conflictResolverPrompt = `You are a conflict-resolver agent.
+Your sole task is to resolve Git merge conflicts in the following conflicted file(s) in this repository:
+${conflictedFiles.map(f => `- ${f}`).join("\n")}
+
+Instructions:
+1. Examine the conflicted files and look for git conflict markers (<<<<<<<, =======, >>>>>>>).
+2. Understand the changes from both the current branch (HEAD) and the incoming branch (${branchName}).
+3. Edit the file(s) to resolve the conflicts cleanly, keeping the correct logic from both branches where appropriate, and completely remove all conflict markers.
+4. Run validation (e.g. 'npm run build' or check files) to ensure the code compiles and is free of syntax errors.
+5. Report back when all conflicts are resolved.`;
+
+            const conflictAgent = new Agent(
+              (ev) => {
+                if (ev.type === "tool_start") {
+                  console.log(`[conflict-resolver] [TOOL:START] ${ev.toolCall.name} - ${ev.description}`);
+                } else if (ev.type === "tool_end") {
+                  const status = ev.toolResult.isError ? "FAIL" : "OK";
+                  console.log(`[conflict-resolver] [TOOL:${status}] ${ev.toolResult.name}`);
+                } else if (ev.type === "error") {
+                  console.error(`[conflict-resolver] [ERROR] ${ev.message}`);
+                }
+              },
+              async () => true, // auto-approve non-destructive tools
+              async (q, opts) => (opts && opts[0]) ?? "", // auto-answer questions
+              conflictResolverPrompt,
+              defaultSubagentToolset,
+              cwd
+            );
+
+            conflictAgent.tier = "subagent";
+            conflictAgent.subagentType = "conflict-resolver";
+            conflictAgent.delegationDepth = 2;
+            conflictAgent.planState = "APPROVED"; // stateless executor
+
+            await conflictAgent.sendMessage("Please resolve the Git merge conflicts now.");
+
+            // Check if conflict markers are gone in all conflicted files
+            let allMarkersResolved = true;
+            for (const file of conflictedFiles) {
+              const fullPath = path.resolve(cwd, file);
+              if (fs.existsSync(fullPath)) {
+                const content = fs.readFileSync(fullPath, "utf-8");
+                if (content.includes("<<<<<<<") || content.includes("=======") || content.includes(">>>>>>>")) {
+                  allMarkersResolved = false;
+                  break;
+                }
+              }
+            }
+
+            if (allMarkersResolved) {
+              console.log("[INFO] Conflict-resolver subagent successfully removed all conflict markers. Verifying post-merge...");
+              await execa("git", ["add", "-A"], { cwd });
+              const validation = await validatePostMerge(cwd, branchName, targetFiles);
+              if (validation.valid) {
+                await execa("git", ["commit", "-m", `Merge branch '${branchName}' (resolved via conflict-resolver subagent) via Master Agent`], { cwd });
+                this.lastMergeWarnings = [
+                  ...validation.warnings,
+                  `Resolved conflicts via subagent for: ${conflictedFiles.join(", ")}`,
+                ];
+                return "merged";
+              } else {
+                console.error("[ERROR] Post-merge validation failed after conflict-resolver subagent run.");
+              }
+            } else {
+              console.error("[ERROR] Conflict-resolver subagent failed to remove all conflict markers.");
+            }
+          } catch (agentErr: any) {
+            console.error(`[ERROR] Exception in conflict-resolver subagent: ${agentErr.message}`);
+          }
+
+          // Fallback if resolver agent failed
           this.lastMergeErrors = [
             `Merge conflict detected for branch "${branchName}".`,
             `Conflicted files:`,

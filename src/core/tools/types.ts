@@ -53,7 +53,7 @@ export interface SubagentInstance {
   typeName: string;
   role: string;
   agent: any;
-  status: "idle" | "running" | "completed" | "paused" | "error";
+  status: "idle" | "running" | "completed" | "paused" | "error" | "waiting";
   logs: string[];
   result?: string;
   completedAt?: number;
@@ -71,7 +71,7 @@ export interface SuperagentInstance {
   branch: string;
   worktreePath: string;
   agent: any;
-  status: "running" | "completed" | "error" | "paused";
+  status: "running" | "completed" | "error" | "paused" | "waiting";
   logs: string[];
   result?: string;
   completedAt?: number;

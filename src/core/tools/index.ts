@@ -62,6 +62,7 @@ import {
 } from "./tencentdbMemoryTools.js";
 
 import { manageMcpTool } from "./mcpTools.js";
+import { saveSharedMemoryTool } from "./sharedMemoryTools.js";
 
 import { 
   askQuestionTool, 
@@ -123,6 +124,7 @@ export const allTools: Tool[] = [
   tdaiReadCosTool,
   tdaiMemorySaveTool,
   tdaiConversationAddTool,
+  saveSharedMemoryTool,
 ];
 
 export function getToolByName(name: string): Tool | undefined {

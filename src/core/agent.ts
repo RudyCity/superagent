@@ -240,13 +240,35 @@ export class Agent {
     { key: "master-agent-orchestration",     label: "MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration)" },
   ];
 
+  private static compressTelegraphic(text: string): string {
+    // 1. Remove Markdown comments
+    let cleaned = text.replace(/<!--[\s\S]*?-->/g, "");
+
+    // 2. Remove verbose helper/filler phrasing commonly found in guidelines
+    cleaned = cleaned.replace(/please\s+make\s+sure\s+to\s+/gi, "");
+    cleaned = cleaned.replace(/please\s+ensure\s+that\s+you\s+/gi, "");
+    cleaned = cleaned.replace(/you\s+should\s+always\s+/gi, "Always ");
+    cleaned = cleaned.replace(/in\s+order\s+to\s+/gi, "To ");
+    cleaned = cleaned.replace(/it\s+is\s+recommended\s+that\s+you\s+/gi, "Recommend: ");
+    cleaned = cleaned.replace(/remember\s+to\s+/gi, "");
+    cleaned = cleaned.replace(/it\s+is\s+mandatory\s+to\s+/gi, "Mandatory: ");
+    cleaned = cleaned.replace(/note\s+that\s+/gi, "");
+    cleaned = cleaned.replace(/do\s+not\s+forget\s+to\s+/gi, "Must ");
+
+    // 3. Collapse multiple consecutive empty lines
+    cleaned = cleaned.replace(/\n\s*\n\s*\n+/g, "\n\n");
+
+    return cleaned;
+  }
+
   /**
    * Trim a SKILL.md file's content to MAX_SKILL_LINES lines while always
    * preserving the YAML frontmatter (--- delimited block at the top, if any).
    * The line cap applies only to the body — critical metadata is never cut off.
    */
   private static trimSkillContent(raw: string, absolutePath: string): string {
-    const lines = raw.split("\n");
+    const minified = Agent.compressTelegraphic(raw);
+    const lines = minified.split("\n");
 
     // Detect YAML frontmatter: file starts with "---" and has a closing "---"
     let frontmatterEnd = 0;
@@ -263,7 +285,7 @@ export class Agent {
     const body = lines.slice(frontmatterEnd);
 
     if (body.length <= Agent.MAX_SKILL_LINES) {
-      return raw; // no trimming needed
+      return minified; // no trimming needed
     }
 
     const trimmedBody = body.slice(0, Agent.MAX_SKILL_LINES);
@@ -1235,6 +1257,20 @@ After all subagents finish, you MUST perform this verification loop before consi
           }
         } catch {}
 
+        let sharedMemoryNotice = "";
+        try {
+          const { getRootConfigDir } = await import("./config/paths.js");
+          const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
+          if (fs.existsSync(sharedMemPath)) {
+            const raw = fs.readFileSync(sharedMemPath, "utf-8");
+            const memories = JSON.parse(raw);
+            if (Array.isArray(memories) && memories.length > 0) {
+              const memLines = memories.map((m: any) => `- [${m.source}] ${m.key}: ${m.value}`).join("\n");
+              sharedMemoryNotice = `\n\n### SHARED AGENT MEMORIES / FINDINGS:\nOther agents or subagents have recorded the following findings in this workspace. Review them carefully to avoid repeating work or introducing bugs:\n${memLines}`;
+            }
+          }
+        } catch {}
+
         // Build static system prompt (cacheable)
         const systemPrompt = `${activeSystemPrompt}
 
@@ -1244,7 +1280,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - MANDATORY: For any task that is complex, multi-step, or touches multiple files/components — you MUST spawn subagents via 'invoke_subagent'. Doing it yourself is forbidden for such tasks.
 - Spawn subagents in parallel whenever tasks are independent. This is the primary way to complete large tasks within the iteration limit.
 - After spawning, wait for results, integrate them, and report back to the user.
-${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}`;
+${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}`;
 
         // Build dynamic context to inject into messages array
         const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]\n- Current Step: ${currentStep} of ${maxIterationsStr}.${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;

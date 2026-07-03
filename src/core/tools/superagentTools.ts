@@ -96,10 +96,15 @@ export const invokeSuperagentTool: Tool = {
           "ideal for small targeted fixes (e.g. fixing 1-2 lines of corruption). " +
           "Patch mode is faster but the Superagent operates in the same working directory as the parent.",
       },
+      dependsOn: {
+        type: "array",
+        items: { type: "string" },
+        description: "List of peer Superagent roles, branch names, or IDs that this Superagent depends on. The agent will wait until they finish and merge their branches before starting execution.",
+      },
     },
     required: ["role", "task", "branch"],
   },
-
+ 
   async execute(args, cwd, signal) {
     const role = args.role as string;
     const task = args.task as string;
@@ -116,6 +121,7 @@ export const invokeSuperagentTool: Tool = {
           : undefined);
     const mode = (args.mode as string | undefined) || "full";
     const isPatchMode = mode === "patch";
+    const dependsOn = Array.isArray(args.dependsOn) ? args.dependsOn.map(String) : undefined;
 
     // Only depth-0 (Master Agent) may invoke Superagents
     const parentAgent = agentLocalStorage.getStore();
@@ -408,6 +414,51 @@ export const invokeSuperagentTool: Tool = {
 
     const run = async (): Promise<string> => {
       try {
+        if (dependsOn && dependsOn.length > 0) {
+          appendMasterLog(`[INFO] Superagent "${role}" is waiting for dependencies: ${dependsOn.join(", ")}...`);
+          const inst = superagentInstances.get(superagentId);
+          if (inst) {
+            (inst as any).status = "waiting";
+            notifySuperagentsChanged();
+          }
+
+          while (true) {
+            if (signal?.aborted) throw new Error("Aborted while waiting for dependencies.");
+
+            const allDone = dependsOn.every((dep) => {
+              const peer = [...superagentInstances.values()].find(
+                (p) => p.role === dep || p.branch === dep || p.id === dep
+              );
+              if (!peer) return true; // not tracked anymore (e.g. merged & deleted), so assumed completed
+              return peer.status === "completed";
+            });
+
+            if (allDone) break;
+            await new Promise((r) => setTimeout(r, 2000));
+          }
+
+          if (inst) {
+            inst.status = "running";
+            notifySuperagentsChanged();
+          }
+          appendMasterLog(`[INFO] Dependencies resolved for Superagent "${role}". Proceeding to execute.`);
+
+          // Integrate dependency branches into this Superagent's worktree
+          for (const dep of dependsOn) {
+            const peer = [...superagentInstances.values()].find(
+              (p) => p.role === dep || p.branch === dep || p.id === dep
+            );
+            if (peer) {
+              appendMasterLog(`[INFO] Merging dependency branch "${peer.branch}" into "${branch}" for Superagent "${role}"...`);
+              try {
+                await execa("git", ["merge", "--no-commit", peer.branch], { cwd: worktreePath });
+              } catch (mergeErr: any) {
+                appendMasterLog(`[WARN] Merge of dependency branch "${peer.branch}" into "${branch}" had conflicts. Superagent must resolve them.`);
+              }
+            }
+          }
+        }
+
         await agentInstance.sendMessage(task);
         closeThinkingNode();
 

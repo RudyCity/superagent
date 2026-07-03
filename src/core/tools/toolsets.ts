@@ -64,6 +64,7 @@ import {
   tdaiConversationAddTool,
 } from "./tencentdbMemoryTools.js";
 import { manageMcpTool } from "./mcpTools.js";
+import { saveSharedMemoryTool } from "./sharedMemoryTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Focused on orchestration. Does NOT write code itself.
@@ -142,6 +143,7 @@ export const superagentToolset: Tool[] = [
   tdaiReadCosTool,
   tdaiMemorySaveTool,
   tdaiConversationAddTool,
+  saveSharedMemoryTool,
 ];
 
 // ─── Subagent Toolsets (depth 2) — keyed by type name ───────────────────────
@@ -163,6 +165,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     tdaiReadCosTool,
     tdaiMemorySaveTool,
     tdaiConversationAddTool,
+    saveSharedMemoryTool,
   ],
 
   coder: [
@@ -185,6 +188,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     tdaiReadCosTool,
     tdaiMemorySaveTool,
     tdaiConversationAddTool,
+    saveSharedMemoryTool,
   ],
 
   reviewer: [

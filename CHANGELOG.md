@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.72] - 2026-07-03
+
+### Added
+- **Multi-Agent Optimizations & Superpowers**:
+  - **DAG Task Scheduling**: Added `dependsOn` arrays to `invoke_superagent` with wait loops and dependency branch pre-merging.
+  - **Programmatic Conflict Resolver**: Integrated a programmatic subagent fallback in Master Agent `mergeBranch` to resolve git conflicts in conflicted files if line-based auto-resolution fails.
+  - **Spin-Locked Shared Memory**: Created `save_shared_memory` tool with concurrent spin-lock file safety for shared agent discoveries, and injected findings into system prompts.
+  - **Skill Token Compression**: Minified preloaded `SKILL.md` documents via telegraphic English replacements.
+  - **Fast Provisioning**: Added detailed master execution logs for `node_modules` provisioning.
+
+---
+
 ## [1.2.71] - 2026-07-03
 
 ### Fixed
