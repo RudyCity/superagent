@@ -139,4 +139,31 @@ describe("SharedConcurrencyLimiter", () => {
     concurrency.release();
     expect(spyUnlink).toHaveBeenCalled();
   });
+
+  it("should auto-heal if lock holds a dead PID", async () => {
+    const openSyncError: any = new Error("File already exists");
+    openSyncError.code = "EEXIST";
+
+    let openCallCount = 0;
+    vi.spyOn(fs, "openSync").mockImplementation(() => {
+      openCallCount++;
+      if (openCallCount === 1) {
+        throw openSyncError;
+      }
+      return 1;
+    });
+
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readFileSync").mockReturnValue("999999");
+    vi.spyOn(fs, "statSync").mockReturnValue({ mtimeMs: Date.now() } as any);
+    const unlinkSpy = vi.spyOn(fs, "unlinkSync").mockImplementation(() => {});
+    vi.spyOn(process, "kill").mockImplementation(() => {
+      const err: any = new Error("No process");
+      err.code = "ESRCH";
+      throw err;
+    });
+
+    await expect(concurrency.acquire()).resolves.not.toThrow();
+    expect(unlinkSpy).toHaveBeenCalled();
+  });
 });

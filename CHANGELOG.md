@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.88] - 2026-07-03
+
+### Added
+- **Sequential Message Queueing**: Replaced single pendingMessage property in agent.ts with pendingMessagesQueue array to prevent message loss on concurrent signals.
+- **PID-Based Stale Lock Healing**: Added active process verification in rateLimiter.ts to instantly release concurrency and rate limit lock files if the holding process ID (PID) is dead, avoiding unnecessary timeouts.
+- **High-Accuracy Token Estimation**: Pre-flight safety checks in agent.ts now query the tiktoken TokenTracker when ContextManager is initialized, improving token count accuracy.
+
+### Tests
+- **New tests/messageQueueing.test.ts**: Verifies sequential queueing and execution of multiple concurrent messages.
+- **Limiter PID Healing Tests**: Added a test in tests/rateLimiter.test.ts to verify auto-healing of lock files holding dead PIDs.
+
+---
+
 ## [1.2.87] - 2026-07-03
 
 ### Security

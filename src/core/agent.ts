@@ -202,7 +202,7 @@ export class Agent {
   private onQuestion: QuestionHandler;
   private abortController: AbortController | null = null;
   private isRunning = false;
-  private pendingMessage: string | null = null;
+  private pendingMessagesQueue: string[] = [];
   private textLogBuffer = "";
   /** Flag set when completed tasks were just archived — used to inject system prompt hint */
   private tasksJustArchived: boolean = false;
@@ -832,8 +832,9 @@ If none of the options are suitable, still pick the closest one.`;
       // Queue the message instead of dropping it silently.
       // This handles the race condition where the user approves a plan
       // while the agent loop is still finishing its current iteration.
-      this.pendingMessage = typeof userInput === "string" ? userInput : "[multimodal message]";
-      this.writeToLogFile("INFO", `Message queued (agent is running): "${typeof userInput === "string" ? userInput.substring(0, 80) : "[multimodal]"}..."`);
+      const msgText = typeof userInput === "string" ? userInput : "[multimodal message]";
+      this.pendingMessagesQueue.push(msgText);
+      this.writeToLogFile("INFO", `Message queued (agent is running): "${msgText.substring(0, 80)}..."`);
       return;
     }
 
@@ -962,11 +963,10 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
       this.isRunning = false;
       this.abortController = null;
 
-      // If a message was queued while this run was in progress (e.g. plan approval),
-      // auto-send it now instead of firing "done" and stopping.
-      if (this.pendingMessage !== null) {
-        const queued = this.pendingMessage;
-        this.pendingMessage = null;
+      // If messages were queued while this run was in progress (e.g. plan approval),
+      // auto-send the next one now instead of firing "done" and stopping.
+      if (this.pendingMessagesQueue.length > 0) {
+        const queued = this.pendingMessagesQueue.shift()!;
         this.writeToLogFile("INFO", `Auto-sending queued message: "${queued.substring(0, 80)}..."`);
         // Fire a "text" event so the UI knows the agent is continuing
         this.onEvent({ type: "text", content: "\n[SYS] Resuming with queued approval message...\n" });
@@ -1418,10 +1418,30 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           // Conservative safety margin: 85% of model limit for Anthropic/Claude (which matches cl100k_base tokenizer),
           // 70% for other providers to leave headroom for tokenizer differences (e.g. DeepSeek).
           const safetyMax = Math.floor(modelLimit * (isAnthropic ? 0.85 : 0.70));
-          // Estimate system prompt tokens (conservative ~3 chars/token for code-heavy text)
-          const estSysTokens = Math.ceil(systemPrompt.length / 3);
-          const estMsgTokens = this.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
-          const estTotal = estMsgTokens + estSysTokens;
+          
+          let estSysTokens = 0;
+          let estMsgTokens = 0;
+          let estTotal = 0;
+
+          const ctxMgr = this.conversation.getContextManager();
+          if (ctxMgr) {
+            const tracker = ctxMgr.getTokenTracker();
+            const breakdown = tracker.getBreakdown(this.conversation.getMessages(), systemPrompt);
+            const dynamicContextTokens = tracker.estimateTokens({
+              role: "user",
+              content: dynamicContext,
+              timestamp: Date.now(),
+            });
+            estTotal = breakdown.total + dynamicContextTokens;
+            estSysTokens = breakdown.systemPrompt;
+            estMsgTokens = estTotal - estSysTokens;
+          } else {
+            // Fallback: estimate system prompt tokens (conservative ~3 chars/token for code-heavy text)
+            estSysTokens = Math.ceil(systemPrompt.length / 3);
+            estMsgTokens = this.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
+            estTotal = estMsgTokens + estSysTokens;
+          }
+
           if (estTotal > safetyMax) {
             const overshootPct = Math.round((estTotal / modelLimit) * 100);
             this.writeToLogFile("WARN", `Pre-flight context check: estimated ~${estTotal.toLocaleString()} total tokens (${overshootPct}% of ${modelLimit.toLocaleString()} limit). Compact threshold: ${safetyMax.toLocaleString()}. Triggering emergency compaction.`);
@@ -2888,14 +2908,14 @@ ${formatted}`;
     // Clear any queued message so the agent does NOT auto-restart
     // after the abort (e.g. a pending plan approval that was queued
     // while the agent loop was still running).
-    this.pendingMessage = null;
+    this.pendingMessagesQueue = [];
     this.abortController?.abort();
   }
 
   async clearHistory(): Promise<void> {
     this.conversation.clear();
     this.textLogBuffer = "";
-    this.pendingMessage = null;
+    this.pendingMessagesQueue = [];
     this.lastSpeed = null;
     this.wasRunningBeforeAbort = false;
     this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
@@ -2933,7 +2953,7 @@ ${formatted}`;
 
   public resetInternalState(): void {
     this.textLogBuffer = "";
-    this.pendingMessage = null;
+    this.pendingMessagesQueue = [];
     this.lastSpeed = null;
     this.wasRunningBeforeAbort = false;
     this.isRunning = false;

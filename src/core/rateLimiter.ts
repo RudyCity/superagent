@@ -50,11 +50,22 @@ export class SharedRateLimiter {
             continue;
           } catch {}
         }
-        // If file exists, check if it's stale (older than 10 seconds)
+        // If file exists, check if it's stale (older than 10 seconds or process is dead)
         if (err.code === "EEXIST") {
           try {
+            const content = fs.readFileSync(this.lockPath, "utf-8").trim();
+            const pid = parseInt(content, 10);
+            let isAlive = false;
+            if (!isNaN(pid) && pid > 0) {
+              try {
+                process.kill(pid, 0);
+                isAlive = true;
+              } catch (e: any) {
+                isAlive = e.code === "EPERM";
+              }
+            }
             const stat = fs.statSync(this.lockPath);
-            if (Date.now() - stat.mtimeMs > 10000) {
+            if (!isAlive || Date.now() - stat.mtimeMs > 10000) {
               this.releaseFileLock(); // Remove stale lock
               continue;
             }
@@ -213,11 +224,22 @@ export class SharedConcurrencyLimiter {
             continue;
           } catch {}
         }
-        // If file exists, check if it's stale (older than 60 seconds)
+        // If file exists, check if it's stale (older than 60 seconds or process is dead)
         if (err.code === "EEXIST") {
           try {
+            const content = fs.readFileSync(this.lockPath, "utf-8").trim();
+            const pid = parseInt(content, 10);
+            let isAlive = false;
+            if (!isNaN(pid) && pid > 0) {
+              try {
+                process.kill(pid, 0);
+                isAlive = true;
+              } catch (e: any) {
+                isAlive = e.code === "EPERM";
+              }
+            }
             const stat = fs.statSync(this.lockPath);
-            if (Date.now() - stat.mtimeMs > 60000) {
+            if (!isAlive || Date.now() - stat.mtimeMs > 60000) {
               this.releaseFileLock(); // Remove stale lock
               continue;
             }
