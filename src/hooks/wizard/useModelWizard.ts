@@ -164,7 +164,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
         });
         const presets = getModelPresets(presetMode);
         const options = presets.map(p => `${p.name} - ${p.description}${p.mode ? ` [${p.mode}]` : ""}`);
-        setWizardOptions([...options, "< Back"]);
+        const opts = [...options, "< Back"];
+        setWizardOptions(opts);
+        setWizardAllOptions?.(opts);
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -220,7 +222,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
           step: 30,
           data: {},
         });
-        setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
+        const opts = [...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"];
+        setWizardOptions(opts);
+        setWizardAllOptions?.(opts);
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -245,7 +249,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
           step: 40,
           data: {},
         });
-        setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
+        const opts = [...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"];
+        setWizardOptions(opts);
+        setWizardAllOptions?.(opts);
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -1797,7 +1803,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
         });
         const presets = getModelPresets(presetMode);
         const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
-        setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
+        const opts = [...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"];
+        setWizardOptions(opts);
+        setWizardAllOptions?.(opts);
         setWizardSelectedIndex(0);
         setInput("");
         return;
@@ -1845,7 +1853,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
         });
         const presets = getModelPresets(presetMode);
         const customPresets = presets.filter(p => !BUILT_IN_PRESETS.some(bp => bp.name === p.name));
-        setWizardOptions([...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"]);
+        const opts = [...customPresets.map(p => `${p.name} - ${p.description}`), "< Back"];
+        setWizardOptions(opts);
+        setWizardAllOptions?.(opts);
         setWizardSelectedIndex(0);
         setInput("");
         return;

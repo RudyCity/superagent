@@ -1092,9 +1092,8 @@ export function App({
       if (activeWizard.step === 23 || activeWizard.step === 33) return "Select provider using arrows and Enter...";
       if (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35) return "🔍 Search profiles (type to filter, arrows to navigate, Enter to select)...";
       if (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) return "🔍 Search models (type to filter, arrows to navigate, Enter to select)...";
-      if (activeWizard.step === 30) return "Select preset to edit using arrows and Enter...";
+      if (activeWizard.step === 4 || activeWizard.step === 30 || activeWizard.step === 40) return "🔍 Search presets (type to filter, arrows to navigate, Enter to select)...";
       if (activeWizard.step === 31) return "Type new description and press Enter (or type 'back' to go back)...";
-      if (activeWizard.step === 40) return "Select preset to delete using arrows and Enter...";
       if (activeWizard.step === 41) return "Select confirmation using arrows and Enter...";
       if (activeWizard.step === 50) return "Select agent tier using arrows and Enter...";
       if (activeWizard.step === 6) return "Enter config profile name (or press Enter for default)...";
@@ -1950,7 +1949,7 @@ export function App({
     }
     if (activeWizard.type === "model") {
       // Steps 15,24,34 = model search/filter (needs input); others with options are pure selection
-      return [1, 2, 4, 22, 23, 30, 32, 33, 40, 41, 50].includes(activeWizard.step);
+      return [1, 2, 22, 23, 32, 33, 41, 50].includes(activeWizard.step);
     }
     return false;
   })();

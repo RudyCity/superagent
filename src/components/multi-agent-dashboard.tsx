@@ -874,7 +874,7 @@ export function MultiAgentDashboard({
       return [1, 2, 6, 7, 10].includes(activeWizard.step);
     }
     if (activeWizard.type === "model") {
-      return [1, 2, 4, 22, 23, 30, 32, 33, 40, 41, 50].includes(activeWizard.step);
+      return [1, 2, 22, 23, 32, 33, 41, 50].includes(activeWizard.step);
     }
     return false;
   })();
@@ -891,7 +891,7 @@ export function MultiAgentDashboard({
       const planPath = agent ? path.resolve(agent.getPlanFilePath()) : "";
       wizardHeight = planApprovalChromeHeight(planPath, activeWizard.step, 10) + 2; // +2 for outer borders
     } else {
-    const isSearchFilteredStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35);
+    const isSearchFilteredStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40);
     const maxVis = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) ? 8 : 10;
 
     const lc = query.trim();

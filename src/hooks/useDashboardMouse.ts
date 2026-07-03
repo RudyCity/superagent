@@ -134,7 +134,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
             let wizardHeight = 0;
             if (activeWizard) {
-              const isSearchFilteredStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35);
+              const isSearchFilteredStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40);
               const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
               const maxVis = isModelSelectStep ? 8 : 10;
 
@@ -284,7 +284,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
           if (activeWizard) {
             let options = wizardOptions;
             let maxVisible = 10;
-            if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35)) {
+            if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40)) {
               const lc = query.trim().toLowerCase();
               options = lc
                 ? wizardAllOptions.filter(m => m.toLowerCase().includes(lc))
@@ -423,7 +423,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
 
             let wizardHeight = 0;
             if (activeWizard) {
-              const isSearchFilteredStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35);
+              const isSearchFilteredStep = activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40);
               const isModelSelectStep = activeWizard.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34);
               const maxVis = isModelSelectStep ? 8 : 10;
 

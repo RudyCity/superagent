@@ -467,15 +467,25 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           );
         })()}
 
-        {activeWizard && activeWizard.type === "model" && activeWizard.step === 4 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title="⚙️ APPLY MODEL PRESET (Use Arrow Keys Up/Down & Enter):"
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-            maxVisible={10}
-          />
-        )}
+        {activeWizard && activeWizard.type === "model" && activeWizard.step === 4 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const searchTitle = searchQuery
+            ? `⚙️ APPLY MODEL PRESET — 🔍 "${input.trim()}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : `⚙️ APPLY MODEL PRESET (${wizardOptions.length} presets — type to filter, ↑/↓ navigate, Enter select):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              borderColor="cyan"
+              options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
 
         {activeWizard && activeWizard.type === "model" && activeWizard.step === 20 && (
           <WizardDialog
@@ -497,15 +507,25 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
-        {activeWizard && activeWizard.type === "model" && activeWizard.step === 30 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title="📝 EDIT MODEL PRESET — Select Preset to Edit:"
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-            maxVisible={10}
-          />
-        )}
+        {activeWizard && activeWizard.type === "model" && activeWizard.step === 30 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const searchTitle = searchQuery
+            ? `📝 EDIT MODEL PRESET — Select Preset to Edit — 🔍 "${input.trim()}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : `📝 EDIT MODEL PRESET — Select Preset to Edit (${wizardOptions.length} presets — type to filter, ↑/↓ navigate, Enter select):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              borderColor="cyan"
+              options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
 
         {activeWizard && activeWizard.type === "model" && activeWizard.step === 31 && (
           <WizardDialog
@@ -645,15 +665,25 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           );
         })()}
 
-        {activeWizard && activeWizard.type === "model" && activeWizard.step === 40 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title="❌ DELETE MODEL PRESET — Select Preset to Delete:"
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-            maxVisible={10}
-          />
-        )}
+        {activeWizard && activeWizard.type === "model" && activeWizard.step === 40 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const searchTitle = searchQuery
+            ? `❌ DELETE MODEL PRESET — Select Preset to Delete — 🔍 "${input.trim()}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : `❌ DELETE MODEL PRESET — Select Preset to Delete (${wizardOptions.length} presets — type to filter, ↑/↓ navigate, Enter select):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              borderColor="cyan"
+              options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
 
         {activeWizard && activeWizard.type === "model" && activeWizard.step === 41 && wizardOptions.length > 0 && (
           <WizardDialog

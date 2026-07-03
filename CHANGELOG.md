@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.78] - 2026-07-03
+
+### Added
+- **Preset List Search-Filtering & Navigation**: Expanded query-based filtering, item pagination (max 10 visible items), and up/down arrow keyboard navigation to all model preset lists (Apply Preset: step 4, Select Preset to Edit: step 30, and Select Preset to Delete: step 40) for both single-agent and multi-agent modes.
+
+---
+
 ## [1.2.77] - 2026-07-03
 
 ### Added

@@ -766,7 +766,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         }
       } else if (
         activeWizard.type === "model" && 
-        (activeWizard.step === 2 || activeWizard.step === 4 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 30 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 40 || activeWizard.step === 41) && 
+        (activeWizard.step === 2 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 41) && 
         wizardOptions.length > 0
       ) {
         if (key.upArrow) {
@@ -784,7 +784,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
           return;
         }
-      } else if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35) && wizardOptions.length > 0) {
+      } else if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40) && wizardOptions.length > 0) {
         const searchQuery = input.trim();
         const filtered = searchQuery
           ? filterSuggestions(wizardOptions, searchQuery)

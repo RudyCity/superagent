@@ -1397,7 +1397,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       let finalValue: string;
       if (cleanVal === "< Back" || cleanVal === "back") {
         finalValue = cleanVal;
-      } else if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 34 || activeWizard.step === 35)) {
+      } else if (activeWizard.type === "model" && (activeWizard.step === 3 || activeWizard.step === 4 || activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 25 || activeWizard.step === 30 || activeWizard.step === 34 || activeWizard.step === 35 || activeWizard.step === 40)) {
         const lc = query.trim();
         const filteredOptions = lc
           ? filterSuggestions(wizardAllOptions, lc)
