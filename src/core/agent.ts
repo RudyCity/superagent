@@ -1144,7 +1144,7 @@ PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
 - Verification/Walkthrough File: ${this.getWalkthroughFilePath()}
 
 CRITICAL RULES FOR PLANNING:
-1. You MUST use the 'manage_plan' tool (action: 'create' or 'sync') to create, update, or synchronize the Implementation Plan and tasks.
+1. You MUST use the 'manage_plan' tool (action: 'create', 'edit', or 'sync') to create, edit, update, or synchronize the Implementation Plan and tasks.
 2. You MUST use the 'manage_tasks' tool (action: 'update') to update the status of checklist tasks.
 3. DO NOT use 'write_to_file', 'replace_file_content', 'multi_replace_file_content', or 'edit' to create, modify, or update the Implementation Plan File or the Task Tracking File directly. Doing so is strictly forbidden.
 4. For the Verification/Walkthrough File, you may use 'write_to_file' directly.

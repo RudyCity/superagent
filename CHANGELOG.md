@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.95] - 2026-07-03
+
+### Added
+- **Plan Editing via Manage Plan Tool**: Added support for an `edit` action in the `manage_plan` tool. This allows updating the implementation plan using either a full replacement `planContent` or incremental find-and-replace using `targetContent` and `replacementContent`.
+- **System Prompt and Instruction Updates**: Exposed and documented the plan editing capability in `MASTER_AGENT_SYSTEM_PROMPT` and `SUPERAGENT_SYSTEM_PROMPT` to let agents modify plans through the tool rather than direct file writes.
+- **Agent Rule Updates**: Updated planning rules in `src/core/agent.ts` to allow `edit` under the `manage_plan` tool.
+
+### Tests
+- Added unit tests in `tests/managePlanTool.test.ts` verifying edit action, parameters error checking, full replacement, and find-and-replace synchronization.
+
+---
+
 ## [1.2.94] - 2026-07-03
 
 ### Added

@@ -268,6 +268,115 @@ We will delegate features to sub-worktrees.
     });
   });
 
+  describe("edit action", () => {
+    it("should fail if plan file does not exist", async () => {
+      const mockAgent = {
+        tier: "superagent",
+        getPlanFilePath: () => customPlanPath,
+        getTaskFilePath: () => customTaskPath,
+        planState: "IDLE",
+      } as any;
+
+      await agentLocalStorage.run(mockAgent, async () => {
+        const result = await managePlanTool.execute({ action: "edit", planContent: "# New Plan" }, tempDir);
+        expect(result).toContain("Error: Implementation plan file does not exist");
+      });
+    });
+
+    it("should fail if neither planContent nor targetContent/replacementContent are provided", async () => {
+      const mockAgent = {
+        tier: "superagent",
+        getPlanFilePath: () => customPlanPath,
+        getTaskFilePath: () => customTaskPath,
+        planState: "IDLE",
+      } as any;
+
+      await agentLocalStorage.run(mockAgent, async () => {
+        await fs.writeFile(customPlanPath, validSuperagentPlan, "utf-8");
+        const result = await managePlanTool.execute({ action: "edit" }, tempDir);
+        expect(result).toContain("Error: Either 'planContent' or both 'targetContent' and 'replacementContent' must be provided");
+      });
+    });
+
+    it("should edit the plan using planContent full replacement", async () => {
+      const mockAgent = {
+        tier: "superagent",
+        getPlanFilePath: () => customPlanPath,
+        getTaskFilePath: () => customTaskPath,
+        planState: "IDLE",
+      } as any;
+
+      await agentLocalStorage.run(mockAgent, async () => {
+        await fs.writeFile(customPlanPath, validSuperagentPlan, "utf-8");
+
+        const editedPlan = `# Edited Goal
+
+## Proposed Changes
+We edited the plan.
+- [ ] Task A: first task
+`;
+        const result = await managePlanTool.execute({ action: "edit", planContent: editedPlan }, tempDir);
+        expect(result).toContain("Successfully edited implementation plan");
+
+        const content = await fs.readFile(customPlanPath, "utf-8");
+        expect(content).toContain("# Edited Goal");
+        expect(content).not.toContain("Sample Goal");
+
+        const taskContent = await fs.readFile(customTaskPath, "utf-8");
+        expect(taskContent).toBe("- [ ] Task A: first task\n");
+      });
+    });
+
+    it("should edit the plan using targetContent and replacementContent", async () => {
+      const mockAgent = {
+        tier: "superagent",
+        getPlanFilePath: () => customPlanPath,
+        getTaskFilePath: () => customTaskPath,
+        planState: "IDLE",
+      } as any;
+
+      await agentLocalStorage.run(mockAgent, async () => {
+        await fs.writeFile(customPlanPath, validSuperagentPlan, "utf-8");
+
+        const result = await managePlanTool.execute({
+          action: "edit",
+          targetContent: "Task 1: edit source code",
+          replacementContent: "Task 1: rewrite all code"
+        }, tempDir);
+
+        expect(result).toContain("Successfully edited implementation plan");
+
+        const content = await fs.readFile(customPlanPath, "utf-8");
+        expect(content).toContain("Task 1: rewrite all code");
+        expect(content).not.toContain("Task 1: edit source code");
+
+        const taskContent = await fs.readFile(customTaskPath, "utf-8");
+        expect(taskContent).toBe("- [ ] Task 1: rewrite all code\n- [ ] Task 2: run build\n");
+      });
+    });
+
+    it("should fail if targetContent is not found", async () => {
+      const mockAgent = {
+        tier: "superagent",
+        getPlanFilePath: () => customPlanPath,
+        getTaskFilePath: () => customTaskPath,
+        planState: "IDLE",
+      } as any;
+
+      await agentLocalStorage.run(mockAgent, async () => {
+        await fs.writeFile(customPlanPath, validSuperagentPlan, "utf-8");
+
+        const result = await managePlanTool.execute({
+          action: "edit",
+          targetContent: "Non-existent string",
+          replacementContent: "Something else"
+        }, tempDir);
+
+        expect(result).toContain("Error: 'targetContent' not found in the existing plan");
+      });
+    });
+  });
+
   describe("get action", () => {
     it("should return correct status when files exist", async () => {
       const mockAgent = {

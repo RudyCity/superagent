@@ -1029,12 +1029,20 @@ export const managePlanTool: Tool = {
     properties: {
       action: {
         type: "string",
-        enum: ["create", "sync", "get"],
-        description: "The action to perform: 'create' (create/overwrite the plan and sync tasks), 'sync' (parse the existing plan and sync tasks to _task.md), or 'get' (retrieve current plan and task status)",
+        enum: ["create", "edit", "sync", "get"],
+        description: "The action to perform: 'create' (create/overwrite the plan and sync tasks), 'edit' (modify the plan using planContent or find-and-replace), 'sync' (parse the existing plan and sync tasks to _task.md), or 'get' (retrieve current plan and task status)",
       },
       planContent: {
         type: "string",
-        description: "The markdown content of the implementation plan (required for action 'create')",
+        description: "The markdown content of the implementation plan (required for action 'create', optional for 'edit')",
+      },
+      targetContent: {
+        type: "string",
+        description: "The exact text in the existing implementation plan to be replaced (used with action 'edit')",
+      },
+      replacementContent: {
+        type: "string",
+        description: "The replacement text for targetContent (used with action 'edit')",
       },
       sessionId: {
         type: "string",
@@ -1046,6 +1054,8 @@ export const managePlanTool: Tool = {
   async execute(args, cwd, signal) {
     const action = args.action as string;
     const planContentInput = args.planContent as string | undefined;
+    const targetContent = args.targetContent as string | undefined;
+    const replacementContent = args.replacementContent as string | undefined;
     const sessionId = args.sessionId as string | undefined;
 
     const { agentLocalStorage } = await import("../agent.js");
@@ -1223,6 +1233,67 @@ export const managePlanTool: Tool = {
         }
 
         return `Successfully created implementation plan at ${planPath}.\n${syncStatus}\nPlan state updated to: ${currentAgent ? currentAgent.planState : "PLANNING_PENDING"}`;
+      }
+
+      if (action === "edit") {
+        let existingPlanContent = "";
+        try {
+          existingPlanContent = await fs.readFile(planPath, "utf-8");
+        } catch (err: any) {
+          if (err.code === "ENOENT") {
+            return `Error: Implementation plan file does not exist at: ${planPath}. Use action 'create' first.`;
+          }
+          throw err;
+        }
+
+        let newPlanContent = "";
+        if (targetContent !== undefined && replacementContent !== undefined) {
+          if (targetContent === "") {
+            return "Error: 'targetContent' cannot be empty for edit action.";
+          }
+          if (!existingPlanContent.includes(targetContent)) {
+            return `Error: 'targetContent' not found in the existing plan.`;
+          }
+          newPlanContent = existingPlanContent.replace(targetContent, replacementContent);
+        } else if (planContentInput !== undefined) {
+          if (planContentInput.trim() === "") {
+            return "Error: 'planContent' cannot be empty for edit action.";
+          }
+          newPlanContent = planContentInput;
+        } else {
+          return "Error: Either 'planContent' or both 'targetContent' and 'replacementContent' must be provided for 'edit' action.";
+        }
+
+        const { content: enhancedPlanContent } = validatePlan(newPlanContent);
+
+        // Write the edited implementation plan
+        await fs.mkdir(path.dirname(planPath), { recursive: true });
+        await fs.writeFile(planPath, enhancedPlanContent, "utf-8");
+
+        // Sync tasks
+        let syncStatus = "";
+        try {
+          syncStatus = await syncTasks(enhancedPlanContent);
+          
+          if (syncStatus.includes("No checklist tasks found")) {
+            await fs.mkdir(path.dirname(taskPath), { recursive: true });
+            await fs.writeFile(taskPath, "# Tasks\n- [ ] Execute implementation plan\n", "utf-8");
+            syncStatus += "\nCreated minimal task file.";
+          }
+        } catch (syncErr: any) {
+          return `Error: Plan was updated at ${planPath}, but task synchronization failed: ${syncErr.message}`;
+        }
+
+        // Update planState if currentAgent context is available
+        if (currentAgent) {
+          if (currentAgent.goalMode) {
+            currentAgent.planState = "APPROVED";
+          } else if (currentAgent.planState !== "APPROVED") {
+            currentAgent.planState = "PLANNING_PENDING";
+          }
+        }
+
+        return `Successfully edited implementation plan at ${planPath}.\n${syncStatus}\nPlan state updated to: ${currentAgent ? currentAgent.planState : "PLANNING_PENDING"}`;
       }
 
       if (action === "sync") {
