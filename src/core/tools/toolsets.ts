@@ -45,6 +45,7 @@ import {
   manageTasksTool,
   listPeerSuperagentsTool,
   managePlanTool,
+  getSkillsTool,
 } from "./otherTools.js";
 
 import {
@@ -91,6 +92,7 @@ export const masterToolset: Tool[] = [
   gitWorktreeTool,
   manageTasksTool,
   managePlanTool,
+  getSkillsTool,
   writeToFileTool,       // for planning files
   replaceFileContentTool,// for planning files
   multiReplaceFileContentTool, // for planning files
@@ -126,6 +128,7 @@ export const superagentToolset: Tool[] = [
   gitWorktreeTool,
   manageTasksTool,
   managePlanTool,
+  getSkillsTool,
   manageMcpTool,
   listPeerSuperagentsTool,
   defineSubagentTool,    // define specialized subagents
@@ -162,6 +165,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     loadPinnedSessionTool,
     searchPinnedKnowledgeTool,
     askQuestionTool,
+    getSkillsTool,
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
@@ -185,6 +189,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     bashTool,
     webSearchTool,
     askQuestionTool,
+    getSkillsTool,
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
@@ -203,6 +208,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     bashTool,
     webSearchTool,
     askQuestionTool,
+    getSkillsTool,
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
@@ -221,6 +227,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     screenshotTool,
     webSearchTool,
     askQuestionTool,
+    getSkillsTool,
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
@@ -242,6 +249,7 @@ export const defaultSubagentToolset: Tool[] = [
   runCommandTool,
   bashTool,
   askQuestionTool,
+  getSkillsTool,
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,
   tdaiReadCosTool,

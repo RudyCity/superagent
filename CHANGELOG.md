@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.93] - 2026-07-03
+
+### Added
+- **Get Skills Tool for Discovery**: Added `get_skills` tool to list and search installed skills across all directory locations (workspace-local, hooks, global config, packages) with optional query filtering and clean non-markdown output.
+- **Direct Skill Discovery Prompting**: Updated the `loadAgentSkills` system instructions and the main `SKILL CHECK` step in Master and Subagent (Coder, Researcher, Reviewer) prompts to guide agents to call `get_skills` rather than manually listing directories or checking static environment arrays.
+
+### Tests
+- Added unit tests in `tests/skillsTool.test.ts` to verify `get_skills` output formatting, empty states, and case-insensitive query filtering.
+- Updated `tests/skillsFiltering.test.ts` assertions to align with the new prompt instructions.
+
+---
+
 ## [1.2.92] - 2026-07-03
 
 ### Added

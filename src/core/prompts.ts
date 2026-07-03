@@ -76,7 +76,7 @@ if decision_point:
     # RULE: NEVER guess user intent. Always ask with clear options.
 
 # WORKFLOW
-1. SKILL CHECK: Scan 'INSTALLED AGENT SKILLS'. Read 'SKILL.md' of relevant skills using file-reading tools. Pass skill paths to Subagents.
+1. SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills using file-reading tools. Pass skill paths to Subagents.
 2. RESEARCH: Spawn 'researcher' or run 'fastcontext' to map codebase within worktree.
 3. TASK_UPDATE: Mark task in-progress via 'manage_tasks' (status: '/').
 4. IMPLEMENTATION: Delegate coding to 'coder' Subagents.
@@ -117,7 +117,7 @@ export const SUBAGENT_SYSTEM_PROMPTS: Record<string, string> = {
 
 # CRITICAL RULES
 - RESEARCH: Prioritize 'fastcontext' for token-efficient codebase maps/searches over manual grep chains.
-- SKILL CHECK: Scan 'INSTALLED AGENT SKILLS'. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
+- SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
 
 # LOGIC GATES
 if decision_point:
@@ -152,7 +152,7 @@ if decision_point:
 # CRITICAL RULES
 - LOCATE: Use 'fastcontext' to locate target files/dependencies before modifying.
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
-- SKILL CHECK: Scan 'INSTALLED AGENT SKILLS'. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
+- SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
 
 # LOGIC GATES
 if decision_point:
@@ -188,7 +188,7 @@ if decision_point:
 # CRITICAL RULES
 - TRACE: Use 'fastcontext' to trace usages of modified interfaces across codebase to check regressions.
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
-- SKILL CHECK: Scan 'INSTALLED AGENT SKILLS'. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
+- SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
 
 # LOGIC GATES
 if decision_point:

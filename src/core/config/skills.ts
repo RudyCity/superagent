@@ -243,8 +243,9 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
   return `
 
 INSTALLED AGENT SKILLS & MANDATORY DISCOVERY RULES:
-CRITICAL: Specialized skills (workflows, platforms, tools) are installed under \`.agents/skills/\` (and globally under config/plugins).
-Before starting any coding, plan, or command, check if a relevant skill exists (e.g. by checking \`.agents/skills/\`). If a relevant skill exists, you MUST read its \`SKILL.md\` using the exact absolute path before taking action. Do not guess or execute from memory.
-IMPORTANT: If \`.agents/skills/\` does not exist or contains no matching skills, proceed directly with your task. Do NOT repeatedly execute find/ls commands searching for skills if none are present.`;
+CRITICAL: Specialized skills (workflows, platforms, tools) are installed across multiple locations.
+You MUST use the \`get_skills\` tool to search or list installed skills.
+Before starting any coding, plan, or command, check if a relevant skill exists by calling \`get_skills\`. If a relevant skill exists, you MUST read its \`SKILL.md\` using the exact absolute path before taking action. Do not guess or execute from memory.
+IMPORTANT: If no matching skills are found, proceed directly with your task. Do NOT repeatedly execute filesystem search or directory listing commands if no skills are present.`;
 }
 

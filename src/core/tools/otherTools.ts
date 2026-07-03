@@ -1286,3 +1286,53 @@ export const managePlanTool: Tool = {
   }
 };
 
+export const getSkillsTool: Tool = {
+  name: "get_skills",
+  description: "List all installed skills, including their names, descriptions, authors, and paths. Optionally filter by a search query.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "Optional search query to filter skills by name or description (case-insensitive).",
+      },
+    },
+    required: [],
+  },
+  async execute(args, cwd, signal) {
+    try {
+      const { getInstalledSkills } = await import("../config.js");
+      const skills = getInstalledSkills();
+      const query = typeof args.query === "string" ? args.query.trim().toLowerCase() : undefined;
+
+      const filtered = query
+        ? skills.filter(
+            (s) =>
+              s.name.toLowerCase().includes(query) ||
+              s.description.toLowerCase().includes(query)
+          )
+        : skills;
+
+      if (filtered.length === 0) {
+        if (query) {
+          return `No skills found matching query: ${args.query}`;
+        }
+        return "No installed skills found.";
+      }
+
+      let output = "Installed Skills:\n";
+      for (const s of filtered) {
+        const author = s.author || "local";
+        output += `- name: ${s.name}\n`;
+        output += `  author: ${author}\n`;
+        output += `  description: ${s.description}\n`;
+        output += `  path: ${s.path}\n\n`;
+      }
+      return output.trim();
+    } catch (err: any) {
+      return `Error retrieving skills: ${err.message}`;
+    }
+  }
+};
+
+

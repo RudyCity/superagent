@@ -77,7 +77,8 @@ import {
   manageTasksTool,
   gitWorktreeTool,
   listPeerSuperagentsTool,
-  managePlanTool
+  managePlanTool,
+  getSkillsTool
 } from "./otherTools.js";
 
 export const allTools: Tool[] = [
@@ -118,6 +119,7 @@ export const allTools: Tool[] = [
   manageTasksTool,
   listPeerSuperagentsTool,
   managePlanTool,
+  getSkillsTool,
   fastcontextTool,
   manageMcpTool,
   tdaiMemorySearchTool,
