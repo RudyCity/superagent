@@ -658,6 +658,9 @@ Instructions:
 4. Run validation (e.g. 'npm run build' or check files) to ensure the code compiles and is free of syntax errors.
 5. Report back when all conflicts are resolved.`;
 
+            const { agentLocalStorage } = await import("./agent.js");
+            const parentAgent = agentLocalStorage.getStore();
+
             const conflictAgent = new Agent(
               (ev) => {
                 if (ev.type === "tool_start") {
@@ -667,6 +670,10 @@ Instructions:
                   console.log(`[conflict-resolver] [TOOL:${status}] ${ev.toolResult.name}`);
                 } else if (ev.type === "error") {
                   console.error(`[conflict-resolver] [ERROR] ${ev.message}`);
+                }
+
+                if (parentAgent && parentAgent.onEvent) {
+                  parentAgent.onEvent(ev);
                 }
               },
               async () => true, // auto-approve non-destructive tools

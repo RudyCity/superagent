@@ -82,6 +82,7 @@ export interface SuperagentInstance {
   constraints?: string;
   acceptanceCriteria?: string[];
   violations?: ViolationRecord[];
+  dependsOn?: string[];
 }
 
 /**

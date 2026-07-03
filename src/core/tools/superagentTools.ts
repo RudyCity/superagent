@@ -25,6 +25,97 @@ import { MasterAgent } from "../masterAgent.js";
 import { ensureGitIgnore, pruneWorktrees } from "../workspaceIsolation.js";
 import { contentToString } from "../conversation.js";
 
+function checkCycle(proposedRole: string, proposedBranch: string, proposedDeps: string[]): string[] | null {
+  const adj = new Map<string, string[]>();
+  const idToLabel = new Map<string, string>();
+  idToLabel.set("PROPOSED", `${proposedRole} (${proposedBranch})`);
+  
+  const nodes = [...superagentInstances.values()].filter(
+    (inst) => inst.status === "running" || inst.status === "waiting" || inst.status === "paused"
+  );
+  
+  const findNodeId = (dep: string): string | null => {
+    if (
+      proposedRole.toLowerCase() === dep.toLowerCase() ||
+      proposedBranch.toLowerCase() === dep.toLowerCase()
+    ) {
+      return "PROPOSED";
+    }
+    const found = nodes.find(
+      (n) =>
+        n.role.toLowerCase() === dep.toLowerCase() ||
+        n.branch.toLowerCase() === dep.toLowerCase() ||
+        n.id.toLowerCase() === dep.toLowerCase()
+    );
+    return found ? found.id : null;
+  };
+
+  const proposedEdgeIds: string[] = [];
+  for (const dep of proposedDeps) {
+    const targetId = findNodeId(dep);
+    if (targetId) {
+      proposedEdgeIds.push(targetId);
+    }
+  }
+  adj.set("PROPOSED", proposedEdgeIds);
+
+  for (const node of nodes) {
+    idToLabel.set(node.id, `${node.role} (${node.branch})`);
+    const nodeEdges: string[] = [];
+    if (node.dependsOn) {
+      for (const dep of node.dependsOn) {
+        const targetId = findNodeId(dep);
+        if (targetId) {
+          nodeEdges.push(targetId);
+        }
+      }
+    }
+    adj.set(node.id, nodeEdges);
+  }
+
+  const colors = new Map<string, number>();
+  const parent = new Map<string, string>();
+  let cyclePath: string[] | null = null;
+
+  const dfs = (u: string): boolean => {
+    colors.set(u, 1);
+    const neighbors = adj.get(u) || [];
+    for (const v of neighbors) {
+      const color = colors.get(v) || 0;
+      if (color === 1) {
+        const path: string[] = [v];
+        let curr = u;
+        while (curr !== v && curr) {
+          path.push(curr);
+          curr = parent.get(curr)!;
+        }
+        path.push(v);
+        cyclePath = path.reverse();
+        return true;
+      } else if (color === 0) {
+        parent.set(v, u);
+        if (dfs(v)) return true;
+      }
+    }
+    colors.set(u, 2);
+    return false;
+  };
+
+  if (dfs("PROPOSED")) {
+    return cyclePath!.map(id => idToLabel.get(id) || id);
+  }
+
+  for (const u of adj.keys()) {
+    if ((colors.get(u) || 0) === 0) {
+      if (dfs(u)) {
+        return cyclePath!.map(id => idToLabel.get(id) || id);
+      }
+    }
+  }
+
+  return null;
+}
+
 const SUPERAGENT_REPORT_INSTRUCTION = `
 When you have completed your task, provide a final report formatted exactly as:
 
@@ -136,6 +227,13 @@ export const invokeSuperagentTool: Tool = {
         return `Error: Spawning or merging Superagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
       } else {
         return `Error: Spawning or merging Superagents is blocked. You must first write an implementation plan to '${parentAgent.getPlanFilePath()}' and have the user approve it before you can invoke any Superagents.`;
+      }
+    }
+
+    if (dependsOn && dependsOn.length > 0) {
+      const cycle = checkCycle(role, branch, dependsOn);
+      if (cycle) {
+        return `Error: Dependency cycle detected among Superagents: ${cycle.join(" -> ")}. Spawn rejected to prevent deadlock.`;
       }
     }
 
@@ -407,6 +505,7 @@ export const invokeSuperagentTool: Tool = {
       customTypeName: typeName,
       constraints,
       acceptanceCriteria,
+      dependsOn,
     };
     superagentInstances.set(superagentId, instance);
     notifySuperagentsChanged();

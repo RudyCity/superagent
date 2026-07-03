@@ -96,9 +96,27 @@ export const saveSharedMemoryTool: Tool = {
         memories.push({ key, value, source, timestamp: Date.now() });
       }
 
+      // Compact & Prune: 7-day TTL and 30-entry max limit
+      const now = Date.now();
+      const TTL = 7 * 24 * 60 * 60 * 1000;
+      const validMemories = memories.filter(m => now - m.timestamp < TTL);
+      const ttlPruned = memories.filter(m => now - m.timestamp >= TTL);
+
+      let prunedMemories = [...ttlPruned];
+      let finalMemories = [...validMemories];
+
+      if (finalMemories.length > 30) {
+        // Sort by timestamp ascending (oldest first)
+        finalMemories.sort((a, b) => a.timestamp - b.timestamp);
+        const toPruneCount = finalMemories.length - 30;
+        const extraPruned = finalMemories.slice(0, toPruneCount);
+        prunedMemories.push(...extraPruned);
+        finalMemories = finalMemories.slice(toPruneCount);
+      }
+
       // Write atomically using a temporary file and rename
       const tempPath = sharedMemPath + ".tmp";
-      fs.writeFileSync(tempPath, JSON.stringify(memories, null, 2), "utf-8");
+      fs.writeFileSync(tempPath, JSON.stringify(finalMemories, null, 2), "utf-8");
       fs.renameSync(tempPath, sharedMemPath);
 
       // Sync to TencentDB Memory if enabled
@@ -108,10 +126,18 @@ export const saveSharedMemoryTool: Tool = {
         if (settings.enableTencentdbMemory) {
           const { getTencentDBClient } = await import("../tencentdbUtil.js");
           const client = getTencentDBClient(2000);
+          
+          // 1. Update/save the new/updated entry
           await client.updateAtomic({
             id: `shared-memory-${key}`,
             content: `[${source}] ${key}: ${value}`
           });
+
+          // 2. Delete any pruned entries from TencentDB
+          if (prunedMemories.length > 0) {
+            const prunedIds = prunedMemories.map(m => `shared-memory-${m.key}`);
+            await client.deleteAtomic({ ids: prunedIds });
+          }
         }
       } catch (tdbErr: any) {
         // Log to console/logs but don't fail the command
