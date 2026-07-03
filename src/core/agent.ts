@@ -183,6 +183,8 @@ export class Agent {
   public goalMaxIterations: number = 200;
   public wasRunningBeforeAbort = false;
   public allowSessionOutOfBounds = false;
+  /** Separate flag — file write tools (write_to_file, replace_file_content, etc.) are NEVER granted session-wide bypass. */
+  public allowSessionFileWriteOutOfBounds = false;
   public allowSessionEnvAccess = false;
   public allowSessionDangerous = false;
   public workspaceCache: any = null;
@@ -1322,6 +1324,19 @@ After all subagents finish, you MUST perform this verification loop before consi
         } catch {}
 
         // Build static system prompt (cacheable)
+        // Workspace boundary constraint injected into every system prompt iteration
+        const workspaceDir = this.worktreePath || this.workingDirectory;
+        const workspaceBoundaryNotice = workspaceDir
+          ? `
+
+# WORKSPACE BOUNDARY — CRITICAL
+- Workspace root: "${workspaceDir}"
+- ALL file read/write operations MUST target paths inside this directory.
+- NEVER write files to any path outside the workspace root.
+- Do NOT use absolute paths discovered from bash command output (e.g., ls, find, pwd) as file write targets — always derive paths relative to the workspace root.
+- If a shell command reveals a path on a different drive or directory than the workspace, DO NOT write files there.`
+          : "";
+
         const systemPrompt = `${activeSystemPrompt}
 
 CRITICAL TASK EXECUTION CONTEXT:
@@ -1330,7 +1345,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - MANDATORY: For any task that is complex, multi-step, or touches multiple files/components — you MUST spawn subagents via 'invoke_subagent'. Doing it yourself is forbidden for such tasks.
 - Spawn subagents in parallel whenever tasks are independent. This is the primary way to complete large tasks within the iteration limit.
 - After spawning, wait for results, integrate them, and report back to the user.
-${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}`;
+${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}${workspaceBoundaryNotice}`;
 
         // Build dynamic context to inject into messages array
         const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - currentStep);
@@ -2285,11 +2300,15 @@ for (const tc of toolCalls) {
           const isEnvFile = !isModelCfg && isSensitiveEnvFileAccess(tc);
           // model-config.json always requires per-access permission (never bypassed by session flag)
           // .env* files require permission unless user already granted session access for env files
+          // File write tools (write_to_file, replace_file_content, etc.) are NEVER granted
+          // session-wide bypass — every out-of-bounds file write requires explicit approval.
+          const isFileWriteTool = MODIFYING_TOOLS.includes(tc.name);
           const needsPermission = isModelCfg
             ? true
             : isEnvFile
             ? !this.allowSessionEnvAccess
-            : isToolCallOutOfBounds(tc, effectiveWorkspace) && !this.allowSessionOutOfBounds;
+            : isToolCallOutOfBounds(tc, effectiveWorkspace) &&
+              (isFileWriteTool ? !this.allowSessionFileWriteOutOfBounds : !this.allowSessionOutOfBounds);
           if (needsPermission) {
             let details = "";
             if (tc.args) {
@@ -2309,13 +2328,18 @@ for (const tc of toolCalls) {
               ? `⚠️  Protected file access detected: model-config.json contains your API keys and model presets. Tool "${tc.name}" is attempting to access this file. This requires your explicit permission.`
               : isEnvFile
               ? `⚠️  Sensitive file access detected: Tool "${tc.name}" is attempting to access a .env file which may contain API keys, database credentials, or other secrets. This requires your explicit permission.`
+              : isFileWriteTool
+              ? `⚠️  Out-of-bounds FILE WRITE detected: Tool "${tc.name}" is attempting to write a file OUTSIDE the workspace directory.${details}\n\n  ⚠️  WARNING: "Allow for This Session" for file writes grants permanent bypass for all future out-of-bounds writes this session.`
               : `Out-of-bounds access detected for tool: ${tc.name}. Requires permission to access files/directories/processes outside the workspace.${details}`;
             const approved = await this.onPermission(
               tc,
               permMessage
             );
             // model-config.json: "Allow for This Session" is not meaningful — treat it as a one-time allow
-            if (!isModelCfg && !isEnvFile && approved === "session") {
+            // File write tools: "Allow for This Session" sets allowSessionFileWriteOutOfBounds (separate from shell bypass)
+            if (!isModelCfg && !isEnvFile && isFileWriteTool && approved === "session") {
+              this.allowSessionFileWriteOutOfBounds = true;
+            } else if (!isModelCfg && !isEnvFile && !isFileWriteTool && approved === "session") {
               this.allowSessionOutOfBounds = true;
             } else if (!isModelCfg && isEnvFile && approved === "session") {
               this.allowSessionEnvAccess = true;
