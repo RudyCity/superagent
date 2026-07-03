@@ -198,7 +198,9 @@ export function refreshDynamicHooks(): void {
     filterArray(superagentToolset);
     filterArray(defaultSubagentToolset);
     for (const key of Object.keys(subagentToolsets)) {
-      filterArray(subagentToolsets[key]);
+      if (Array.isArray(subagentToolsets[key])) {
+        filterArray(subagentToolsets[key]);
+      }
     }
   }
 
@@ -211,7 +213,9 @@ export function refreshDynamicHooks(): void {
       superagentToolset.push(...loadedDynamicTools);
       defaultSubagentToolset.push(...loadedDynamicTools);
       for (const key of Object.keys(subagentToolsets)) {
-        subagentToolsets[key].push(...loadedDynamicTools);
+        if (Array.isArray(subagentToolsets[key])) {
+          subagentToolsets[key].push(...loadedDynamicTools);
+        }
       }
     }
   } catch (err: any) {

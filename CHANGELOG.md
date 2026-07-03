@@ -2,7 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.83] - 2026-07-03
+
+### Fixed
+- **Dynamic Hooks Toolset Guard**: Added `Array.isArray()` guard before calling `.push()` and `filterArray()` on `subagentToolsets[key]` in `refreshDynamicHooks()` (`tools/index.ts`). When running the full test suite, cross-test module state could result in a key existing in `subagentToolsets` with an `undefined` value, causing `Cannot read properties of undefined (reading 'push')` errors.
+
+---
+
 ## [1.2.82] - 2026-07-03
+
 
 ### Fixed
 - **Skills Discovery Order Bug**: Fixed `getInstalledSkills()` in `skills.ts` to discover superagent package built-in skills **first** (as the base), then project-local `.agents/skills` are appended last as overrides. Previously, project-local skills were searched first, causing built-in package skills to be silently dropped when a name collision occurred — so the agent never saw them in the INSTALLED AGENT SKILLS list.

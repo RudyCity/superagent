@@ -145,7 +145,9 @@ export async function initMcpServers(): Promise<void> {
     superagentToolset.push(...loadedMcpTools);
     defaultSubagentToolset.push(...loadedMcpTools);
     for (const key of Object.keys(subagentToolsets)) {
-      subagentToolsets[key].push(...loadedMcpTools);
+      if (Array.isArray(subagentToolsets[key])) {
+        subagentToolsets[key].push(...loadedMcpTools);
+      }
     }
   }
 }
@@ -184,7 +186,9 @@ export async function closeMcpServers(): Promise<void> {
     filterArray(superagentToolset);
     filterArray(defaultSubagentToolset);
     for (const key of Object.keys(subagentToolsets)) {
-      filterArray(subagentToolsets[key]);
+      if (Array.isArray(subagentToolsets[key])) {
+        filterArray(subagentToolsets[key]);
+      }
     }
 
     loadedMcpTools = [];
