@@ -92,7 +92,8 @@ All system prompts in the codebase (e.g., in [prompts.ts](file:///d:/backup%20fr
 
 ## Verification Checklist
 - Run `npm test` to verify that all unit tests pass before committing.
-- Build the project using `npm run build` to verify there are no TypeScript compilation errors. **Always run `npm run build` to recompile the project after making any code changes.**
+- Build the project using `npm run build` to verify there are no TypeScript compilation errors.
+- **Build After Changes**: Always run `npm run build` immediately after making any changes to the source files to ensure the compiled outputs in `dist/` are up to date and there are no compilation errors.
 - After adding new tools, verify they are added to the correct tier toolset in `toolsets.ts` and not to other tiers.
 - After modifying `subagentTools.ts` or `superagentTools.ts`, check for circular dependency issues — imports of `toolsets.ts`/`prompts.ts` must be dynamic.
 
