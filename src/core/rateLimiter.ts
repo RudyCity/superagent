@@ -17,6 +17,8 @@ const REFILL_RATE_PER_MS = 1 / 1000; // Refill 1 token per second (1000ms)
 export class SharedRateLimiter {
   private statePath: string;
   private lockPath: string;
+  private processQueue: (() => void)[] = [];
+  private processLocked = false;
 
   constructor() {
     const root = getRootConfigDir();
@@ -25,6 +27,13 @@ export class SharedRateLimiter {
   }
 
   private async acquireLock(): Promise<void> {
+    if (this.processLocked) {
+      await new Promise<void>((resolve) => {
+        this.processQueue.push(resolve);
+      });
+    }
+    this.processLocked = true;
+
     const start = Date.now();
     while (true) {
       try {
@@ -46,7 +55,7 @@ export class SharedRateLimiter {
           try {
             const stat = fs.statSync(this.lockPath);
             if (Date.now() - stat.mtimeMs > 10000) {
-              this.releaseLock(); // Remove stale lock
+              this.releaseFileLock(); // Remove stale lock
               continue;
             }
           } catch {}
@@ -55,18 +64,27 @@ export class SharedRateLimiter {
         await new Promise((resolve) => setTimeout(resolve, 50));
         // Timeout check to prevent infinite loop (safety backup)
         if (Date.now() - start > 15000) {
-          this.releaseLock();
+          this.releaseFileLock();
         }
       }
     }
   }
 
-  private releaseLock(): void {
+  private releaseFileLock(): void {
     try {
       if (fs.existsSync(this.lockPath)) {
         fs.unlinkSync(this.lockPath);
       }
     } catch {}
+  }
+
+  private releaseLock(): void {
+    this.releaseFileLock();
+    this.processLocked = false;
+    const next = this.processQueue.shift();
+    if (next) {
+      next();
+    }
   }
 
   private readState(capacity: number): RateLimitState {
@@ -158,6 +176,8 @@ export class SharedRateLimiter {
 
 export class SharedConcurrencyLimiter {
   private lockPath: string;
+  private processQueue: (() => void)[] = [];
+  private processLocked = false;
 
   constructor() {
     const root = getRootConfigDir();
@@ -169,6 +189,13 @@ export class SharedConcurrencyLimiter {
     if (process.env.VITEST === "true" && process.env.SUPERAGENT_TEST_LIMITS !== "true") {
       return;
     }
+
+    if (this.processLocked) {
+      await new Promise<void>((resolve) => {
+        this.processQueue.push(resolve);
+      });
+    }
+    this.processLocked = true;
 
     const start = Date.now();
     while (true) {
@@ -191,7 +218,7 @@ export class SharedConcurrencyLimiter {
           try {
             const stat = fs.statSync(this.lockPath);
             if (Date.now() - stat.mtimeMs > 60000) {
-              this.release(); // Remove stale lock
+              this.releaseFileLock(); // Remove stale lock
               continue;
             }
           } catch {}
@@ -200,10 +227,18 @@ export class SharedConcurrencyLimiter {
         await new Promise((resolve) => setTimeout(resolve, 100));
         // Timeout check to prevent infinite loop (safety backup)
         if (Date.now() - start > 90000) {
-          this.release();
+          this.releaseFileLock();
         }
       }
     }
+  }
+
+  private releaseFileLock(): void {
+    try {
+      if (fs.existsSync(this.lockPath)) {
+        fs.unlinkSync(this.lockPath);
+      }
+    } catch {}
   }
 
   public release(): void {
@@ -212,11 +247,12 @@ export class SharedConcurrencyLimiter {
       return;
     }
 
-    try {
-      if (fs.existsSync(this.lockPath)) {
-        fs.unlinkSync(this.lockPath);
-      }
-    } catch {}
+    this.releaseFileLock();
+    this.processLocked = false;
+    const next = this.processQueue.shift();
+    if (next) {
+      next();
+    }
   }
 }
 

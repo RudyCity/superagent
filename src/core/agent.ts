@@ -1213,29 +1213,27 @@ This ensures the ACTIVE TASK CHECKLIST stays up-to-date with the current work.`;
         // ── Single-mode subagent directive ──────────────────────────────────
         const singleModeSubagentDirective = this.tier === "single" ? `
 
-SUBAGENT WORKFLOW — MANDATORY FOR SINGLE MODE:
-You operate in single-agent mode but you MUST leverage subagents aggressively. Your role is to ORCHESTRATE, not to do everything yourself.
+SUBAGENT WORKFLOW — GUIDELINES FOR SINGLE MODE:
+You operate in single-agent mode. You should leverage subagents when tasks are complex, independent, or can be run in parallel.
+For small, simple, or direct operations (e.g. reading a single file, running a quick build or test command, or editing a specific code block), you should perform them directly rather than spawning subagents. This minimizes process spawning and context-swapping overhead.
 
-COMPULSORY SUBAGENT RULES:
-1. RESEARCH tasks (exploring codebase, reading docs, searching web) → ALWAYS spawn a 'researcher' subagent. Never do research inline.
-2. IMPLEMENTATION tasks (writing code, editing files) → spawn a 'coder' subagent. You coordinate, not code.
-3. REVIEW tasks (checking correctness, testing, validating) → spawn a 'reviewer' subagent after each implementation.
-4. COMPLEX requests → immediately break into parallel subtasks and spawn multiple subagents concurrently.
+SUBAGENT RULES:
+1. RESEARCH tasks (exploring codebase, reading docs, searching web) → Spawn a 'researcher' subagent for broad context gathering or when reading multiple files. You may perform quick direct lookups.
+2. IMPLEMENTATION tasks (writing code, editing files) → Spawn a 'coder' subagent for multi-file changes or larger features. You may perform small or simple inline modifications.
+3. REVIEW tasks (checking correctness, testing, validating) → Spawn a 'reviewer' subagent for verifying large features. For simple verification, run commands directly.
+4. COMPLEX requests → Break into parallel subtasks and spawn multiple subagents concurrently.
 
-SUBAGENT DISPATCH PATTERN (follow this every time):
+SUBAGENT DISPATCH PATTERN (follow this when delegating):
   Step 1 — Analyze: understand what the user wants.
   Step 2 — Plan: identify independent subtasks (and which skills are relevant).
   Step 3 — Spawn: invoke subagents for each subtask (parallel if independent).
   Step 4 — Integrate: collect results, synthesize, respond to user.
 
-WHEN YOU MUST SPAWN A SUBAGENT (non-exhaustive):
-- Any codebase investigation or file reading beyond a single quick lookup
-- Any multi-file editing or feature implementation
-- Any test run or build verification
-- Any web search or documentation lookup
-- Any task that would take more than 2 of your own steps to complete
-
-DO NOT do any of the above yourself. Delegate everything you can.
+WHEN YOU SHOULD DELEGATE TO A SUBAGENT (non-exhaustive):
+- Any codebase investigation spanning multiple folders or components
+- Multi-file editing or complex feature implementation
+- Large-scale refactoring or major architectural changes
+- Web search or documentation lookup that requires extensive research
 
 SKILL USAGE — MANDATORY:
 You have access to INSTALLED AGENT SKILLS listed above. You MUST use them.
@@ -1310,7 +1308,11 @@ CRITICAL TASK EXECUTION CONTEXT:
 ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}`;
 
         // Build dynamic context to inject into messages array
-        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]\n- Current Step: ${currentStep} of ${maxIterationsStr}.${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
+        const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - currentStep);
+        const stepNotice = stepsRemaining <= 5
+          ? `\n- Current Step: ${currentStep} of ${maxIterationsStr} (WARNING: Only ${stepsRemaining} steps remaining!)`
+          : "";
+        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]${stepNotice}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
 
         const injectDynamicContext = (msgs: CoreMessage[]) => {
           if (msgs.length > 0) {

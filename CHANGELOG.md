@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.81] - 2026-07-03
+
+### Changed
+- **Optimized Prompt Caching**: Modified `injectDynamicContext` in `agent.ts` to only include the step-counter warning when remaining steps are 5 or fewer. This keeps the message history static for the vast majority of execution turns, allowing near 100% LLM prompt cache hits across steps.
+- **Softened Single-Agent Subagent Delegation**: Softened subagent delegation rules in `singleModeSubagentDirective` for single-agent mode (`tier === "single"`), allowing direct file editing, reading, and command execution for simple tasks without process-spawn overhead.
+- **Concurrency & Rate Limit Lock Optimizations**: Implemented in-process locking and queuing (`processQueue`, `processLocked`) in `SharedConcurrencyLimiter` and `SharedRateLimiter` within `rateLimiter.ts` to coordinate lock acquisitions in memory before polling the filesystem, significantly reducing lock contention and I/O latency.
+
+---
+
 ## [1.2.80] - 2026-07-03
 
 ### Changed
