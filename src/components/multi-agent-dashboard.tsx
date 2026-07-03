@@ -19,7 +19,8 @@ import {
   historicalSuperagentTokens,
   masterPromptTokens,
   masterCompletionTokens,
-  lastMasterPromptTokens
+  lastMasterPromptTokens,
+  isTaskInWorkspace
 } from "../core/tools/state.js";
 import { Agent } from "../core/agent.js";
 import type { QuestionItem } from "../core/agent.js";
@@ -262,7 +263,8 @@ export function MultiAgentDashboard({
   }, [sessions, agentsScrollOffset]);
 
   useEffect(() => {
-    const runningTasksCount = [...backgroundTasks.values()].filter((t) => !t.isHidden && (t.isDetachedWindow || !t.hasExited)).length;
+    const workspacePath = agent?.workingDirectory || process.cwd();
+    const runningTasksCount = [...backgroundTasks.values()].filter((t) => !t.isHidden && (t.isDetachedWindow || !t.hasExited) && isTaskInWorkspace(t.cwd, workspacePath)).length;
     if (procsScrollOffset >= runningTasksCount && runningTasksCount > 0) {
       setProcsScrollOffset(Math.max(0, runningTasksCount - maxProcsVisible));
     }
@@ -837,8 +839,9 @@ export function MultiAgentDashboard({
     branch: "N/A",
   };
 
+  const workspacePath = agent?.workingDirectory || process.cwd();
   const runningTasksCount = [...backgroundTasks.values()]
-    .filter((t) => !t.isHidden && (t.isDetachedWindow || !t.hasExited)).length;
+    .filter((t) => !t.isHidden && (t.isDetachedWindow || !t.hasExited) && isTaskInWorkspace(t.cwd, workspacePath)).length;
 
   const runningSubagentsCount = [...subagentInstances.values()]
     .filter((s) => s.status === "running").length;
@@ -1066,9 +1069,10 @@ export function MultiAgentDashboard({
       count++;
     }
 
-    // Kill all background processes (shell tasks spawned by agents)
+    // Kill all background processes (shell tasks spawned by agents) belonging to this project
+    const workspacePath = agent?.workingDirectory || process.cwd();
     for (const [id, task] of backgroundTasks.entries()) {
-      if (!task.hasExited) {
+      if (!task.hasExited && isTaskInWorkspace(task.cwd, workspacePath)) {
         try {
           killProcessTree(task.process.pid);
         } catch {}
@@ -1318,6 +1322,7 @@ export function MultiAgentDashboard({
             maxProcsVisible={maxProcsVisible}
             focusArea={focusArea}
             runningSubagentsCount={runningSubagentsCount}
+            workspace={workspacePath}
           />
         </Box>
       )}

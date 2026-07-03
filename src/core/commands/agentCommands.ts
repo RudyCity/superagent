@@ -8,6 +8,7 @@ import {
   backgroundTasks,
   notifyTasksChanged,
   BackgroundTask,
+  isTaskInWorkspace,
 } from "../tools.js";
 import { killProcessTree } from "../tools/shellTools.js";
 import { getGlobalConfigDir } from "../config.js";
@@ -187,10 +188,11 @@ export const processesCommand: SlashCommand = {
   async execute(args, ctx) {
     const now = Date.now();
     const lowerArgs = args.toLowerCase();
+    const workspacePath = ctx.agent?.workingDirectory || process.cwd();
 
     if (lowerArgs === "stop" || lowerArgs.startsWith("stop ")) {
       const stopArg = args.slice(4).trim();
-      const taskList = Array.from(backgroundTasks.entries());
+      const taskList = Array.from(backgroundTasks.entries()).filter(([, task]) => isTaskInWorkspace(task.cwd, workspacePath));
 
       if (taskList.length === 0) {
         ctx.addLine({
@@ -225,7 +227,7 @@ export const processesCommand: SlashCommand = {
       }
 
       const task = backgroundTasks.get(stopArg);
-      if (!task) {
+      if (!task || !isTaskInWorkspace(task.cwd, workspacePath)) {
         const ids = taskList.map(([id]) => id).join(", ");
         ctx.addLine({
           type: "error",
@@ -252,7 +254,7 @@ export const processesCommand: SlashCommand = {
       return;
     }
 
-    const taskList = Array.from(backgroundTasks.entries());
+    const taskList = Array.from(backgroundTasks.entries()).filter(([, task]) => isTaskInWorkspace(task.cwd, workspacePath));
     const visibleTasks = taskList.filter(([, t]) => !t.isHidden);
     const lines = [
       "┌───[ ⚙️ RUNNING BACKGROUND PROCESSES ]",

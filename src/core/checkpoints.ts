@@ -4,7 +4,7 @@ import path from "path";
 import { execSync } from "child_process";
 import { getGlobalConfigDir, ensureGlobalConfigDir, clearHistoryCache } from "./config.js";
 import { Message } from "./conversation.js";
-import { backgroundTasks, subagentInstances, notifyTasksChanged, notifySubagentsChanged } from "./tools/state.js";
+import { backgroundTasks, subagentInstances, notifyTasksChanged, notifySubagentsChanged, isTaskInWorkspace } from "./tools/state.js";
 import { killProcessTree } from "./tools/shellTools.js";
 
 export interface Checkpoint {
@@ -234,13 +234,15 @@ export async function deleteCheckpointsForSession(
 /**
  * Terminates all running background tasks and subagents.
  */
-export function terminateActiveTasksAndSubagents(): void {
+export function terminateActiveTasksAndSubagents(workspacePath: string = process.cwd()): void {
   // 1. Kill background tasks
   for (const [id, task] of backgroundTasks.entries()) {
-    try {
-      killProcessTree(task.process.pid);
-    } catch {}
-    backgroundTasks.delete(id);
+    if (isTaskInWorkspace(task.cwd, workspacePath)) {
+      try {
+        killProcessTree(task.process.pid);
+      } catch {}
+      backgroundTasks.delete(id);
+    }
   }
   notifyTasksChanged();
 

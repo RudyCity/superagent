@@ -24,6 +24,7 @@ export interface BackgroundTask {
   onExit?: string;
   completedAt?: number;
   isHidden?: boolean;
+  cwd?: string;
 }
 
 export type TaskChangeListener = () => void;

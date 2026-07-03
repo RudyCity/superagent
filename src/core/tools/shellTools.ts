@@ -527,6 +527,7 @@ export const runBackgroundProcessTool: Tool = {
           logPath,
           autoRetry,
           onExit,
+          cwd: targetCwd,
         };
         task = currentTask;
         backgroundTasks.set(taskId, task);
@@ -535,6 +536,7 @@ export const runBackgroundProcessTool: Tool = {
         task.command = commandToRun;
         task.hasExited = false;
         task.exitCode = undefined;
+        task.cwd = targetCwd;
         currentTask = task;
       }
 

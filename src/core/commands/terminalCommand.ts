@@ -14,7 +14,8 @@ import { getGlobalConfigDir } from "../config.js";
 import { 
   backgroundTasks, 
   notifyTasksChanged, 
-  BackgroundTask 
+  BackgroundTask,
+  isTaskInWorkspace
 } from "../tools.js";
 import { killProcessTree } from "../tools/shellTools.js";
 function normalizeCwd(cwdPath: string): string {
@@ -65,7 +66,8 @@ export const terminalCommand: SlashCommand = {
 
     if (args.toLowerCase() === "stop" || args.toLowerCase().startsWith("stop ")) {
       const stopArg = args.slice(4).trim().toLowerCase();
-      const termTasks = Array.from(backgroundTasks.entries()).filter(([id]) => id.startsWith("term-"));
+      const workspacePath = ctx.agent?.workingDirectory || process.cwd();
+      const termTasks = Array.from(backgroundTasks.entries()).filter(([id, task]) => id.startsWith("term-") && isTaskInWorkspace(task.cwd, workspacePath));
 
       if (termTasks.length === 0) {
         ctx.addLine({
@@ -98,7 +100,7 @@ export const terminalCommand: SlashCommand = {
       } else {
         const fullId = stopArg.startsWith("term-") ? stopArg : `term-${stopArg}`;
         const task = backgroundTasks.get(fullId);
-        if (!task) {
+        if (!task || !isTaskInWorkspace(task.cwd, workspacePath)) {
           const ids = termTasks.map(([id]) => id).join(", ");
           ctx.addLine({
             type: "error",
@@ -239,6 +241,7 @@ export const terminalCommand: SlashCommand = {
           process: proc,
           output: [],
           logPath,
+          cwd: runCwd,
         };
 
         backgroundTasks.set(taskId, task);
@@ -396,6 +399,7 @@ export const terminalCommand: SlashCommand = {
           logPath,
           isDetachedWindow: true,
           windowLabel,
+          cwd: runCwd,
         };
 
         backgroundTasks.set(taskId, task);

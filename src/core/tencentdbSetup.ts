@@ -227,6 +227,7 @@ export async function runTencentdbSetup(): Promise<void> {
         logPath: path.join(globalDataDir, "logs", "gateway.log"),
         hasExited: false,
         isHidden: true,
+        cwd: process.cwd(),
       });
       savePersistedTasks();
       notifyTasksChanged();

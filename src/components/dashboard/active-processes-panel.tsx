@@ -1,5 +1,6 @@
 import React, { memo } from "react";
 import { Box, Text } from "ink";
+import { isTaskInWorkspace } from "../../core/tools/state.js";
 
 interface ActiveProcessesPanelProps {
   backgroundTasks: Map<string, any>;
@@ -7,6 +8,7 @@ interface ActiveProcessesPanelProps {
   maxProcsVisible: number;
   focusArea: string;
   runningSubagentsCount: number;
+  workspace?: string;
 }
 
 export const ActiveProcessesPanel = memo(function ActiveProcessesPanel({
@@ -15,8 +17,10 @@ export const ActiveProcessesPanel = memo(function ActiveProcessesPanel({
   maxProcsVisible,
   focusArea,
   runningSubagentsCount,
+  workspace,
 }: ActiveProcessesPanelProps) {
-  const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited && !task.isHidden);
+  const workspacePath = workspace || process.cwd();
+  const runningProcs = Array.from(backgroundTasks.entries()).filter(([id, task]) => !task.hasExited && !task.isHidden && isTaskInWorkspace(task.cwd, workspacePath));
   if (runningProcs.length === 0) {
     return null;
   }

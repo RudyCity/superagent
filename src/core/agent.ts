@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs";
 import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache } from "./config.js";
 import { Conversation } from "./conversation.js";
-import { getToolDefinitions, backgroundTasks } from "./tools.js";
+import { getToolDefinitions, backgroundTasks, isTaskInWorkspace } from "./tools.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
 import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
 import {
@@ -1194,8 +1194,9 @@ This ensures the ACTIVE TASK CHECKLIST stays up-to-date with the current work.`;
         }
 
         const currentStep = i + 1;
+        const workspacePath = this.workingDirectory || process.cwd();
         const runningProcesses = Array.from(backgroundTasks.entries())
-          .filter(([_, t]) => !t.hasExited)
+          .filter(([_, t]) => !t.hasExited && isTaskInWorkspace(t.cwd, workspacePath))
           .map(([id, t]) => `- Process ID: ${id}, Command: "${t.command}"`)
           .join("\n");
         const processNotice = runningProcesses

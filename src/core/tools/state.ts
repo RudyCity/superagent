@@ -31,6 +31,7 @@ interface PersistedTask {
   exitCode?: number | null;
   completedAt?: number;
   isHidden?: boolean;
+  cwd?: string;
 }
 
 function acquireTasksLockSync(lockPath: string): boolean {
@@ -97,6 +98,7 @@ export function savePersistedTasks(): void {
         exitCode: task.exitCode,
         completedAt: task.completedAt,
         isHidden: task.isHidden,
+        cwd: task.cwd,
       });
     }
     fs.writeFileSync(tasksFilePath, JSON.stringify(list, null, 2), "utf-8");
@@ -183,6 +185,7 @@ export function loadAndSyncPersistedTasks(): void {
             onExit: item.onExit,
             completedAt,
             isHidden: item.isHidden !== undefined ? item.isHidden : (item.id === "tencentdb-gateway" ? true : undefined),
+            cwd: item.cwd,
           };
           if (item.logPath && fs.existsSync(item.logPath)) {
             try {
@@ -210,6 +213,8 @@ export function loadAndSyncPersistedTasks(): void {
             hasExited: !!task.hasExited,
             exitCode: task.exitCode,
             completedAt: task.completedAt,
+            isHidden: task.isHidden,
+            cwd: task.cwd,
           });
         }
         fs.writeFileSync(tasksFilePath, JSON.stringify(updatedList, null, 2), "utf-8");
@@ -475,6 +480,24 @@ export function cleanupStaleInstances(): void {
 
 // Run cleanup every 5 minutes
 setInterval(cleanupStaleInstances, 5 * 60 * 1000).unref();
+
+export function isTaskInWorkspace(taskCwd: string | undefined, workspacePath: string): boolean {
+  if (!taskCwd) {
+    return false;
+  }
+  try {
+    let p = path.resolve(workspacePath);
+    let c = path.resolve(taskCwd);
+    if (process.platform === "win32") {
+      p = p.toLowerCase();
+      c = c.toLowerCase();
+    }
+    const relative = path.relative(p, c);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  } catch {
+    return false;
+  }
+}
 
 // Initial load and periodic synchronization of background tasks
 try {

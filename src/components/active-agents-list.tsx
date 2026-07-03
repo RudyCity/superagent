@@ -1,6 +1,6 @@
 import React, { memo } from "react";
 import { Box, Text } from "ink";
-import { superagentInstances, subagentInstances, backgroundTasks } from "../core/tools.js";
+import { superagentInstances, subagentInstances, backgroundTasks, isTaskInWorkspace } from "../core/tools.js";
 
 function getLatestSubagentAction(logs: string[]): string {
   if (!logs || logs.length === 0) return "Initializing...";
@@ -55,6 +55,7 @@ interface ActiveAgentsListProps {
   maxSubagentsVisible: number;
   maxProcsVisible: number;
   collapsedSections: { superagents: boolean; subagents: boolean; procs: boolean };
+  workspace?: string;
 }
 
 export const ActiveAgentsList = memo(function ActiveAgentsList({
@@ -69,6 +70,7 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
   maxSubagentsVisible,
   maxProcsVisible,
   collapsedSections,
+  workspace,
 }: ActiveAgentsListProps) {
   if (runningSuperagentsCount === 0 && runningSubagentsCount === 0 && runningTasksCount === 0) {
     return null;
@@ -76,7 +78,8 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
 
   const runningSuperagents = Array.from(superagentInstances.values()).filter((s) => s.status === "running");
   const runningSubagents = Array.from(subagentInstances.values()).filter((s) => s.status === "running");
-  const runningProcs = Array.from(backgroundTasks.entries()).filter(([_, task]) => !task.hasExited && !task.isHidden);
+  const workspacePath = workspace || process.cwd();
+  const runningProcs = Array.from(backgroundTasks.entries()).filter(([_, task]) => !task.hasExited && !task.isHidden && isTaskInWorkspace(task.cwd, workspacePath));
 
   return (
     <Box flexDirection="column" marginBottom={0}>

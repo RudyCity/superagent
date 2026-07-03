@@ -681,6 +681,7 @@ export const settingTencentdbCommand: SlashCommand = {
             output: [],
             logPath: path.join(os.homedir(), ".superagent-r", "tencentdb-memory", "logs", "gateway.log"),
             hasExited: false,
+            cwd: process.cwd(),
           };
           
           // Try to read log file outputs
@@ -1013,6 +1014,7 @@ export const settingTencentdbCommand: SlashCommand = {
               logPath: path.join(globalDataDir, "logs", "gateway.log"),
               hasExited: false,
               isHidden: true,
+              cwd: process.cwd(),
             });
             savePersistedTasks();
             notifyTasksChanged();

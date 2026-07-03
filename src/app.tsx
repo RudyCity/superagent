@@ -20,7 +20,7 @@ import { registry } from "./core/commands/registry.js";
 import { createCheckpoint, terminateActiveTasksAndSubagents } from "./core/checkpoints.js";
 import { getToolDescription } from "./core/permissions.js";
 import path from "path";
-import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, registerMasterAgent, notifyTasksChanged, setActiveDevHookGlobal } from "./core/tools.js";
+import { backgroundTasks, subagentInstances, superagentInstances, subscribeToTasks, subscribeToSubagents, subscribeToSuperagents, subscribeToSchedules, subscribeToActiveOutput, registerQuestionHandler, registerMasterAgent, notifyTasksChanged, setActiveDevHookGlobal, isTaskInWorkspace } from "./core/tools.js";
 import { ProcessingIndicator } from "./components/common/LoadingIndicators.js";
 import { ActiveAgentsList } from "./components/active-agents-list.js";
 import { TaskChecklist } from "./components/task-checklist.js";
@@ -826,8 +826,11 @@ export function App({
     if (mainCommand === "/processes" || mainCommand === "/procs") {
       if (currentInput.startsWith(`${mainCommand} stop`)) {
         const stopSuggestions = [`${mainCommand} stop all`];
-        for (const [id] of backgroundTasks.entries()) {
-          stopSuggestions.push(`${mainCommand} stop ${id}`);
+        const workspacePath = agentRef.current?.workingDirectory || process.cwd();
+        for (const [id, task] of backgroundTasks.entries()) {
+          if (isTaskInWorkspace(task.cwd, workspacePath)) {
+            stopSuggestions.push(`${mainCommand} stop ${id}`);
+          }
         }
         return stopSuggestions.filter(p => p.startsWith(currentInput));
       }
@@ -864,8 +867,11 @@ export function App({
     if (mainCommand === "/terminal") {
       if (currentInput.startsWith(`${mainCommand} stop`)) {
         const stopSuggestions = [`${mainCommand} stop all`];
-        for (const [id] of backgroundTasks.entries()) {
-          if (id.startsWith("term-")) stopSuggestions.push(`${mainCommand} stop ${id}`);
+        const workspacePath = agentRef.current?.workingDirectory || process.cwd();
+        for (const [id, task] of backgroundTasks.entries()) {
+          if (id.startsWith("term-") && isTaskInWorkspace(task.cwd, workspacePath)) {
+            stopSuggestions.push(`${mainCommand} stop ${id}`);
+          }
         }
         return stopSuggestions.filter(p => p.startsWith(currentInput));
       }
@@ -1761,7 +1767,8 @@ export function App({
   }, [lines, subagentsScrollOffset]);
 
   useEffect(() => {
-    const count = [...backgroundTasks.values()].filter((t) => !t.hasExited && !t.isHidden).length;
+    const workspacePath = agentRef.current?.workingDirectory || process.cwd();
+    const count = [...backgroundTasks.values()].filter((t) => !t.hasExited && !t.isHidden && isTaskInWorkspace(t.cwd, workspacePath)).length;
     if (procsScrollOffset >= count && count > 0) {
       setProcsScrollOffset(Math.max(0, count - maxProcsVisible));
     }
@@ -1771,8 +1778,9 @@ export function App({
   useEffect(() => {
     const unsubTasks = subscribeToTasks(() => {
       const allTasks = Array.from(backgroundTasks.values());
+      const workspacePath = agentRef.current?.workingDirectory || process.cwd();
       setRunningTasksCount(
-        allTasks.filter((t) => !t.hasExited && !t.isHidden).length
+        allTasks.filter((t) => !t.hasExited && !t.isHidden && isTaskInWorkspace(t.cwd, workspacePath)).length
       );
       allTasks.forEach((task) => {
         if (task.isDetachedWindow) return;
@@ -2302,6 +2310,7 @@ export function App({
               maxSubagentsVisible={maxSubagentsVisible}
               maxProcsVisible={maxProcsVisible}
               collapsedSections={collapsedSections}
+              workspace={agentRef.current?.workingDirectory || process.cwd()}
             />
 
             <TaskChecklist

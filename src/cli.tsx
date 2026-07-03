@@ -11,7 +11,7 @@ import { App } from "./app.js";
 
 import { getConfig } from "./core/config.js";
 import { isDirectoryTrusted, addTrustedDirectory, ensureDirectoryTrusted } from "./core/config/jsonConfig.js";
-import { backgroundTasks, killProcessTree } from "./core/tools/index.js";
+import { backgroundTasks, killProcessTree, isTaskInWorkspace } from "./core/tools/index.js";
 import { subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
 import { closeMcpServers } from "./core/mcp/McpManager.js";
 import { resolveCarriageReturns } from "./utils/text.js";
@@ -21,11 +21,14 @@ function cleanupBackgroundTasks() {
     closeMcpServers().catch(() => {});
   } catch {}
 
+  const workspacePath = process.cwd();
   for (const [id, task] of backgroundTasks.entries()) {
-    try {
-      killProcessTree(task.process.pid);
-    } catch {
-      // Ignore errors during exit cleanup
+    if (isTaskInWorkspace(task.cwd, workspacePath)) {
+      try {
+        killProcessTree(task.process.pid);
+      } catch {
+        // Ignore errors during exit cleanup
+      }
     }
   }
 }

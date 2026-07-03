@@ -10,7 +10,8 @@ vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 import { 
   backgroundTasks, 
   savePersistedTasks, 
-  loadAndSyncPersistedTasks 
+  loadAndSyncPersistedTasks,
+  isTaskInWorkspace
 } from "../src/core/tools/state";
 import { getRootConfigDir } from "../src/core/config/paths";
 
@@ -42,6 +43,7 @@ describe("Background Tasks Persistence & Sync Tests", () => {
       output: ["Hello\n"],
       logPath: path.join(tempHome, "test.log"),
       hasExited: false,
+      cwd: "/some/workspace/path",
     } as any;
 
     backgroundTasks.set(taskId, dummyTask);
@@ -58,6 +60,7 @@ describe("Background Tasks Persistence & Sync Tests", () => {
     expect(list[0].command).toBe("sleep 100");
     expect(list[0].pid).toBe(99999);
     expect(list[0].hasExited).toBe(false);
+    expect(list[0].cwd).toBe("/some/workspace/path");
   });
 
   it("should restore and sync tasks, marking dead processes as exited", () => {
@@ -94,5 +97,41 @@ describe("Background Tasks Persistence & Sync Tests", () => {
 
     expect(activeTask.hasExited).toBe(false); // current process is alive
     expect(deadTask.hasExited).toBe(true); // pid 99999 is dead
+  });
+
+  describe("isTaskInWorkspace", () => {
+    it("should return true when task cwd matches workspace path", () => {
+      const workspacePath = path.resolve("/project/root");
+      const taskCwd = path.resolve("/project/root");
+      expect(isTaskInWorkspace(taskCwd, workspacePath)).toBe(true);
+    });
+
+    it("should return true when task cwd is a subfolder of workspace path", () => {
+      const workspacePath = path.resolve("/project/root");
+      const taskCwd = path.resolve("/project/root/subdir/sub");
+      expect(isTaskInWorkspace(taskCwd, workspacePath)).toBe(true);
+    });
+
+    it("should return false when task cwd is outside workspace path", () => {
+      const workspacePath = path.resolve("/project/root");
+      const taskCwd = path.resolve("/other/project");
+      expect(isTaskInWorkspace(taskCwd, workspacePath)).toBe(false);
+    });
+
+    it("should return false when task cwd is undefined", () => {
+      const workspacePath = path.resolve("/project/root");
+      expect(isTaskInWorkspace(undefined, workspacePath)).toBe(false);
+    });
+
+    it("should be case-insensitive on Windows", () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, "platform", { value: "win32" });
+
+      const workspacePath = "C:\\Project\\Root";
+      const taskCwd = "c:\\project\\root\\subdir";
+      expect(isTaskInWorkspace(taskCwd, workspacePath)).toBe(true);
+
+      Object.defineProperty(process, "platform", { value: originalPlatform });
+    });
   });
 });

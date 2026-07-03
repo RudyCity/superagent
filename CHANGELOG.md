@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.91] - 2026-07-03
+
+### Fixed
+- **Project-Specific Background Processes**: Fixed a bug where background processes ("ACTIVE PROCESSES") from all projects were loaded globally across all terminal dashboards and CLI commands. Added `cwd` path tracking to `BackgroundTask` and `PersistedTask` structures in `background-tasks.json`. Added workspace filtering via `isTaskInWorkspace` helper across dashboard panels, slash commands (`/processes` and `/terminal`), agent prompt injections, checkpoint restores, and exit handlers.
+
+### Tests
+- Added unit tests in `tests/backgroundTasksSync.test.ts` to verify workspace directory filtering (`isTaskInWorkspace`) and task directory serialization/deserialization.
+
+---
+
 ## [1.2.90] - 2026-07-03
 
 ### Fixed
