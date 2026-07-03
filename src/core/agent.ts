@@ -1337,7 +1337,30 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         const stepNotice = stepsRemaining <= 5
           ? `\n- Current Step: ${currentStep} of ${maxIterationsStr} (WARNING: Only ${stepsRemaining} steps remaining!)`
           : "";
-        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]${stepNotice}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
+        // ── Live Workspace State block ─────────────────────────────────────────
+        let workspaceStateText = "";
+        if (this.tier !== "subagent") {
+          try {
+            const { buildWorkspaceStateBlock } = await import("./context/WorkspaceStateTracker.js");
+            const { subagentInstances: saInstances } = await import("./tools/state.js");
+            const subagentSummary = Array.from(saInstances.entries()).map(([id, inst]) => ({
+              id,
+              role: inst.role,
+              typeName: inst.typeName,
+              status: inst.status,
+            }));
+            const wsBlock = buildWorkspaceStateBlock({
+              taskFilePath: this.getTaskFilePath(),
+              planFilePath: this.getPlanFilePath(),
+              cwd: this.workingDirectory,
+              tier: this.tier as "master" | "single" | "superagent",
+              subagentSummary,
+            });
+            workspaceStateText = wsBlock.text;
+          } catch { /* non-critical */ }
+        }
+
+        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]${stepNotice}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${workspaceStateText}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
 
         const injectDynamicContext = (msgs: CoreMessage[]) => {
           if (msgs.length > 0) {

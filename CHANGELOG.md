@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.86] - 2026-07-03
+
+### Added
+- **JSON Subagent Report Handshake**: `SUBAGENT_REPORT_INSTRUCTION` is now a function that embeds the concrete report file path (`~/.superagent-r/subagents/<id>_report.json`) per subagent ID. Subagents are instructed to write a structured JSON report on completion. `extractSubagentReport()` now prefers this file-based report (machine-readable, includes `verificationPassed` field) over regex-scanning chat history, with full markdown fallback for backward compatibility.
+- **Live Workspace State Context Block**: New `WorkspaceStateTracker` module (`src/core/context/WorkspaceStateTracker.ts`) that builds a concise live state snapshot injected into the dynamic context on every agent iteration for master/single/superagent tiers. Displays task progress (done/total + next pending tasks), current plan objective, and active/completed subagent IDs — preventing context drift between turns.
+- **`verificationPassed` Self-Report Field**: Subagent JSON report schema includes a `verificationPassed` boolean so the parent agent can instantly detect if a subagent verified its work (build/tests) or not, and spawn a reviewer automatically when needed.
+
+---
+
 ## [1.2.85] - 2026-07-03
 
 ### Changed

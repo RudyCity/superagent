@@ -10,31 +10,94 @@ import {
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
 import { resolveCarriageReturns } from "../../utils/text.js";
+import fs from "fs";
+import path from "path";
+import os from "os";
 
-const SUBAGENT_REPORT_INSTRUCTION = `
+/** Directory where subagent JSON reports are persisted. */
+const SUBAGENT_REPORTS_DIR = path.join(os.homedir(), ".superagent-r", "subagents");
+
+/**
+ * Return the canonical JSON report file path for a given subagent ID.
+ */
+function subagentReportPath(subagentId: string): string {
+  return path.join(SUBAGENT_REPORTS_DIR, `${subagentId}_report.json`);
+}
+
+const SUBAGENT_REPORT_INSTRUCTION = (subagentId: string): string => `
 CRITICAL INSTRUCTION FOR SUBAGENT REPORTING:
-When you have completed your assigned task, or if you are blocked and cannot proceed, you MUST provide a standardized final report in your last response. Format your report exactly as follows using Markdown:
+When you have completed your assigned task, or if you are blocked and cannot proceed, you MUST do TWO things:
 
+1. Write a structured JSON report file to: ${subagentReportPath(subagentId)}
+   Use write_to_file (or equivalent) with this exact JSON schema:
+   {
+     "subagentId": "${subagentId}",
+     "goal": "<brief description of what you were asked to do>",
+     "status": "completed" | "blocked" | "error",
+     "actionsTaken": ["<action 1>", "<action 2>", ...],
+     "keyFindings": ["<finding 1>", "<finding 2>", ...],
+     "nextSteps": "<optional: recommendations for the parent agent>",
+     "verificationPassed": true | false
+   }
+
+2. Also include a summary in your final response using Markdown:
 ### SUBAGENT TASK REPORT
 - **Goal / Objective**: [Brief description of what you were asked to do]
 - **Actions Taken**:
-  - [Action 1: e.g. read src/app.tsx]
-  - [Action 2: e.g. executed tests]
+  - [Action 1]
+  - [Action 2]
 - **Key Findings / Outcomes**:
   - [Detail what you discovered or accomplished]
-- **Status & Next Steps**: [Completed / Blocked / Unresolved issues - and any recommendations for the main agent]
+- **Status & Next Steps**: [Completed / Blocked / Unresolved issues]
+
+IMPORTANT: Writing the JSON file is MANDATORY. The parent agent reads it to track your progress reliably.
 `;
 
 /**
  * Extract the best report from a subagent's conversation history.
- * Scans assistant messages in reverse to find one with meaningful content,
- * preferring messages that contain report markers.
+ * Priority:
+ *   1. JSON report file written by subagent (machine-readable, most reliable)
+ *   2. Markdown SUBAGENT TASK REPORT section in chat history
+ *   3. Any substantial assistant message
+ *   4. Last assistant message (fallback)
  */
-function extractSubagentReport(agentInstance: any): string {
-  const msgs = agentInstance.getHistory().getMessages();
-  const assistantMsgs = [...msgs].filter(m => m.role === "assistant");
+function extractSubagentReport(agentInstance: any, subagentId?: string): string {
+  // 1. Try reading the JSON report file first
+  if (subagentId) {
+    try {
+      const reportFile = subagentReportPath(subagentId);
+      if (fs.existsSync(reportFile)) {
+        const raw = fs.readFileSync(reportFile, "utf-8");
+        const report = JSON.parse(raw);
+        // Convert to readable markdown for the parent agent
+        const lines: string[] = [
+          `### SUBAGENT TASK REPORT (JSON verified)`,
+          `- **Goal**: ${report.goal || "N/A"}`,
+          `- **Status**: ${report.status || "unknown"}`,
+        ];
+        if (Array.isArray(report.actionsTaken) && report.actionsTaken.length > 0) {
+          lines.push(`- **Actions Taken**:`);
+          for (const a of report.actionsTaken) lines.push(`  - ${a}`);
+        }
+        if (Array.isArray(report.keyFindings) && report.keyFindings.length > 0) {
+          lines.push(`- **Key Findings**:`);
+          for (const f of report.keyFindings) lines.push(`  - ${f}`);
+        }
+        if (report.nextSteps) lines.push(`- **Next Steps**: ${report.nextSteps}`);
+        if (report.verificationPassed !== undefined) {
+          lines.push(`- **Verification**: ${report.verificationPassed ? "✅ passed" : "❌ failed"}`);
+        }
+        return lines.join("\n");
+      }
+    } catch {
+      // Fall through to markdown extraction
+    }
+  }
 
-  // 1. Look for messages containing the SUBAGENT TASK REPORT marker
+  const msgs = agentInstance.getHistory().getMessages();
+  const assistantMsgs = [...msgs].filter((m: any) => m.role === "assistant");
+
+  // 2. Look for messages containing the SUBAGENT TASK REPORT marker
   for (let i = assistantMsgs.length - 1; i >= 0; i--) {
     const content = assistantMsgs[i].content || "";
     if (content.includes("SUBAGENT TASK REPORT") || content.includes("### SUBAGENT TASK REPORT")) {
@@ -42,7 +105,7 @@ function extractSubagentReport(agentInstance: any): string {
     }
   }
 
-  // 2. Look for any message with substantial text content (not just tool calls)
+  // 3. Look for any message with substantial text content (not just tool calls)
   for (let i = assistantMsgs.length - 1; i >= 0; i--) {
     const content = assistantMsgs[i].content || "";
     if (content.trim().length > 20) {
@@ -50,7 +113,7 @@ function extractSubagentReport(agentInstance: any): string {
     }
   }
 
-  // 3. Fallback: last assistant message (even if short)
+  // 4. Fallback: last assistant message (even if short)
   const last = assistantMsgs[assistantMsgs.length - 1];
   return last?.content || "";
 }
@@ -249,9 +312,12 @@ export const invokeSubagentTool: Tool = {
     const { subagentToolsets, defaultSubagentToolset } = await import("./toolsets.js");
     const { getSubagentSystemPrompt } = await import("../prompts.js");
     const baseSystemPrompt = await getSubagentSystemPrompt(typeName, subType.systemPrompt);
+    const reportInstruction = SUBAGENT_REPORT_INSTRUCTION(subagentId);
     const resolvedPrompt = baseSystemPrompt.includes("SUBAGENT TASK REPORT")
       ? baseSystemPrompt
-      : `${baseSystemPrompt}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
+      : `${baseSystemPrompt}\n\n${reportInstruction}`;
+    // Ensure report directory exists before subagent starts
+    try { fs.mkdirSync(SUBAGENT_REPORTS_DIR, { recursive: true }); } catch {}
     const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
 
     const agentInstance = new Agent(
@@ -421,7 +487,7 @@ export const invokeSubagentTool: Tool = {
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();
-        instance.result = extractSubagentReport(agentInstance);
+        instance.result = extractSubagentReport(agentInstance, subagentId);
         notifySubagentsChanged();
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
         return `Subagent "${typeName}" (Role: ${role}) finished. Report:\n\n${instance.result || "(no report)"}`;
@@ -442,7 +508,7 @@ export const invokeSubagentTool: Tool = {
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "completed";
         instance.completedAt = Date.now();
-        instance.result = extractSubagentReport(agentInstance);
+        instance.result = extractSubagentReport(agentInstance, subagentId);
         notifySubagentsChanged();
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
       }).catch((err: any) => {
@@ -553,9 +619,10 @@ export const sendMessageTool: Tool = {
       const { getSubagentSystemPrompt } = await import("../prompts.js");
       const subType = subagentTypes.get(typeName);
       const baseSystemPrompt = await getSubagentSystemPrompt(typeName, subType?.systemPrompt || "");
+      const resumeReportInstruction = SUBAGENT_REPORT_INSTRUCTION(recipientId);
       const systemPrompt = baseSystemPrompt.includes("SUBAGENT TASK REPORT")
         ? baseSystemPrompt
-        : `${baseSystemPrompt}\n\n${SUBAGENT_REPORT_INSTRUCTION}`;
+        : `${baseSystemPrompt}\n\n${resumeReportInstruction}`;
       const toolset = subagentToolsets[typeName] ?? defaultSubagentToolset;
 
       const { Agent } = await import("../agent.js");
