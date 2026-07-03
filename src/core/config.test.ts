@@ -458,6 +458,47 @@ describe("config", () => {
       }
     });
 
+    it("should ignore superagents and subagents directories from history session listing", () => {
+      const mockCwd = "D:\\projects\\my-awesome-project";
+      const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
+
+      const spyExistsSync = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
+        const pathStr = typeof p === "string" ? p : p.toString();
+        if (pathStr.includes("history")) return true;
+        return false;
+      });
+
+      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockImplementation((p) => {
+        const pathStr = typeof p === "string" ? p : p.toString();
+        if (pathStr.includes("multi")) {
+          return ["D__projects_my_awesome_project_456", "superagents", "subagents"] as any;
+        }
+        return [] as any;
+      });
+
+      const spyStatSync = vi.spyOn(fs, "statSync").mockReturnValue({
+        mtime: new Date(),
+      } as any);
+
+      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockReturnValue(
+        JSON.stringify({
+          messages: [{ role: "user", content: "hello" }],
+        })
+      );
+
+      try {
+        const multiSessions = listHistorySessions(true);
+        expect(multiSessions.length).toBe(1);
+        expect(multiSessions[0].filePath).toContain("my_awesome_project_456");
+      } finally {
+        spyCwd.mockRestore();
+        spyExistsSync.mockRestore();
+        spyReaddirSync.mockRestore();
+        spyStatSync.mockRestore();
+        spyReadFileSync.mockRestore();
+      }
+    });
+
     it("should cache metadata based on mtime and allow clearing history list cache", () => {
       const mockCwd = "D:\\projects\\my-awesome-project";
       const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);

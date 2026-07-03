@@ -680,10 +680,20 @@ If none of the options are suitable, still pick the closest one.`;
     const mode = this.isMultiAgent ? "multi" : "single";
     let historyDir = path.join(getGlobalConfigDir(), "history", mode);
 
-    if (this.tier === "subagent") {
-      historyDir = path.join(historyDir, "subagents");
-    } else if (this.tier === "superagent") {
-      historyDir = path.join(historyDir, "superagents");
+    if (this.tier === "subagent" || this.tier === "superagent") {
+      const parentSessionPath = process.env.SUPERAGENT_SESSION_PATH;
+      if (parentSessionPath) {
+        const parentSessionDir = path.dirname(parentSessionPath);
+        const resolvedParent = path.resolve(parentSessionDir);
+        const resolvedGlobal = path.resolve(getGlobalConfigDir());
+        if (resolvedParent.startsWith(resolvedGlobal)) {
+          historyDir = path.join(parentSessionDir, this.tier === "subagent" ? "subagents" : "superagents");
+        } else {
+          historyDir = path.join(historyDir, this.tier === "subagent" ? "subagents" : "superagents");
+        }
+      } else {
+        historyDir = path.join(historyDir, this.tier === "subagent" ? "subagents" : "superagents");
+      }
     }
 
     if (typeof autoResume === "string" && autoResume.trim() !== "") {

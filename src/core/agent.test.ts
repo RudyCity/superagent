@@ -9,7 +9,7 @@ vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
 import { Agent } from "./agent.js";
 import type { AgentEvent } from "./agent.js";
-import { savePreset, setActivePresetId, clearModelConfigCache } from "./config/jsonConfig.js";
+import { savePreset, setActivePresetId, clearModelConfigCache, getConfig, getGlobalConfigDir } from "./config.js";
 import { getModelConfigPath, ensureGlobalConfigDir } from "./config/paths.js";
 
 const configPath = getModelConfigPath();
@@ -216,6 +216,40 @@ describe("Agent – history sessions", () => {
     const resolvedPath = (agent as any).resolveHistoryFilePath(false);
     expect(resolvedPath).toContain("multi");
     expect(resolvedPath).toMatch(/_\d+[\\/]\w+_\d+\.json$/);
+  });
+
+  it("places superagent history nested under parent session path when process.env.SUPERAGENT_SESSION_PATH is set", () => {
+    const oldEnv = process.env.SUPERAGENT_SESSION_PATH;
+    const parentPath = path.join(getGlobalConfigDir(), "history", "multi", "parent_sess_123", "parent_sess_123.json");
+    process.env.SUPERAGENT_SESSION_PATH = parentPath;
+    try {
+      const { onEvent, onPermission, onQuestion } = makeHandlers();
+      const agent = new Agent(onEvent, onPermission, onQuestion);
+      agent.tier = "superagent";
+      agent.isMultiAgent = true;
+      const resolvedPath = (agent as any).resolveHistoryFilePath(false);
+      expect(resolvedPath).toContain("parent_sess_123");
+      expect(resolvedPath).toContain("superagents");
+    } finally {
+      process.env.SUPERAGENT_SESSION_PATH = oldEnv;
+    }
+  });
+
+  it("places subagent history nested under parent session path when process.env.SUPERAGENT_SESSION_PATH is set", () => {
+    const oldEnv = process.env.SUPERAGENT_SESSION_PATH;
+    const parentPath = path.join(getGlobalConfigDir(), "history", "multi", "parent_sess_123", "parent_sess_123.json");
+    process.env.SUPERAGENT_SESSION_PATH = parentPath;
+    try {
+      const { onEvent, onPermission, onQuestion } = makeHandlers();
+      const agent = new Agent(onEvent, onPermission, onQuestion);
+      agent.tier = "subagent";
+      agent.isMultiAgent = true;
+      const resolvedPath = (agent as any).resolveHistoryFilePath(false);
+      expect(resolvedPath).toContain("parent_sess_123");
+      expect(resolvedPath).toContain("subagents");
+    } finally {
+      process.env.SUPERAGENT_SESSION_PATH = oldEnv;
+    }
   });
 });
 

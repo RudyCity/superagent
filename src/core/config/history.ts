@@ -73,10 +73,11 @@ export function listHistorySessions(isMulti = false, crossSession = false): Hist
   try {
     if (crossSession) {
       // Cross-session: list ALL sessions regardless of working directory
-      dirs = fs.readdirSync(historyDir);
+      dirs = fs.readdirSync(historyDir).filter((d) => d !== "superagents" && d !== "subagents");
     } else {
       // Workspace-scoped: only sessions matching current cwd
       dirs = fs.readdirSync(historyDir).filter((d) => {
+        if (d === "superagents" || d === "subagents") return false;
         const nameLower = d.toLowerCase();
         const cleanNameLower = nameLower.replace(/_\d+$/, "");
         return cleanNameLower === currentSanitized || cleanNameLower.startsWith(currentSanitized + "_");

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.76] - 2026-07-03
+
+### Changed
+- **Tidy Up Log/Session History**: Nested Superagent and Subagent session folders under their parent Master/Super Agent session directory respectively (using `process.env.SUPERAGENT_SESSION_PATH`) to keep history folder layout clean and self-contained.
+- **Ignore Category Subdirectories**: Updated `listHistorySessions` to explicitly filter out `superagents` and `subagents` subdirectories to prevent them from being scanned or processed as history sessions.
+
+---
+
 ## [1.2.75] - 2026-07-03
 
 ### Added
