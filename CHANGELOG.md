@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.74] - 2026-07-03
+
+### Fixed
+- **Persistent Tool Support Probe Cache & Increased Timeout**: Implemented disk-based persistence for `probeToolCallSupport` in `~/.superagent-r/tool_support_cache.json` to prevent repeated latency-inducing API calls on every CLI invocation. Increased the probe HTTP request timeout from 10 seconds to 30 seconds to allow slower local models or custom OpenAI-compatible proxies (such as local Orbit presets) to successfully complete the initial probe, resolving a bug where slow custom endpoints timed out during the probe, fell back to `supportsNativeTools = false`, and subsequently crashed Vercel AI SDK with a "Model tried to call unavailable tool... No tools are available" error.
+
+---
+
 ## [1.2.73] - 2026-07-03
 
 ### Added

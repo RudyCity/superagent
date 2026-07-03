@@ -10,6 +10,10 @@
  * into structured ToolCall objects.
  */
 
+import fs from "fs";
+import path from "path";
+import { getRootConfigDir } from "../core/config/paths.js";
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -27,15 +31,61 @@ export interface ToolDefinition {
  * Returns true if the endpoint's response has `finish_reason: "tool_calls"`
  * or contains a structured `tool_calls` object. Returns false otherwise.
  *
- * Results are cached per baseUrl to avoid repeated probes.
+ * Results are cached to disk to avoid repeated probes across CLI invocations.
  */
 const toolCallSupportCache = new Map<string, boolean>();
+let diskCacheLoaded = false;
+
+function getCacheFilePath(): string {
+  try {
+    return path.join(getRootConfigDir(), "tool_support_cache.json");
+  } catch {
+    return "";
+  }
+}
+
+function loadDiskCache(): void {
+  if (diskCacheLoaded) return;
+  diskCacheLoaded = true;
+  try {
+    const cacheFile = getCacheFilePath();
+    if (cacheFile && fs.existsSync(cacheFile)) {
+      const data = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
+      for (const [key, value] of Object.entries(data)) {
+        if (typeof value === "boolean") {
+          toolCallSupportCache.set(key, value);
+        }
+      }
+    }
+  } catch {
+    // Ignore cache load errors
+  }
+}
+
+function saveDiskCache(): void {
+  try {
+    const cacheFile = getCacheFilePath();
+    if (!cacheFile) return;
+    const data: Record<string, boolean> = {};
+    for (const [key, value] of toolCallSupportCache.entries()) {
+      data[key] = value;
+    }
+    const dir = path.dirname(cacheFile);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(cacheFile, JSON.stringify(data, null, 2), "utf-8");
+  } catch {
+    // Ignore cache save errors
+  }
+}
 
 export async function probeToolCallSupport(
   baseUrl: string,
   apiKey: string,
   model: string
 ): Promise<boolean> {
+  loadDiskCache();
   const cacheKey = `${baseUrl}::${model}`;
   if (toolCallSupportCache.has(cacheKey)) {
     return toolCallSupportCache.get(cacheKey)!;
@@ -71,11 +121,12 @@ export async function probeToolCallSupport(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(probeBody),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(30000), // Increased from 10000 to accommodate slower/local custom endpoints
     });
 
     if (!res.ok) {
       toolCallSupportCache.set(cacheKey, false);
+      saveDiskCache();
       return false;
     }
 
@@ -87,9 +138,11 @@ export async function probeToolCallSupport(
     );
 
     toolCallSupportCache.set(cacheKey, hasToolCalls);
+    saveDiskCache();
     return hasToolCalls;
   } catch {
     toolCallSupportCache.set(cacheKey, false);
+    saveDiskCache();
     return false;
   }
 }
@@ -97,6 +150,13 @@ export async function probeToolCallSupport(
 /** Clears the tool-call-support probe cache (useful in tests). */
 export function clearToolCallSupportCache(): void {
   toolCallSupportCache.clear();
+  diskCacheLoaded = false;
+  try {
+    const cacheFile = getCacheFilePath();
+    if (cacheFile && fs.existsSync(cacheFile)) {
+      fs.unlinkSync(cacheFile);
+    }
+  } catch {}
 }
 
 /**
