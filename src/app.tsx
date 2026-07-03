@@ -560,7 +560,7 @@ export function App({
           }
         } else if (activeWizard.type === "login" && activeWizard.step === 14) {
             // Step 14: search-select provider to delete
-            const currentInput = (typeof input === "string") ? input.trim() : "";
+            const currentInput = (typeof value === "string") ? value.trim() : "";
             const filteredProviders = currentInput ? filterSuggestions(wizardOptions, currentInput) : wizardOptions;
             const clampedIdx = Math.min(wizardSelectedIndex, Math.max(0, filteredProviders.length - 1));
             const chosenProvider = filteredProviders[clampedIdx];
@@ -2398,6 +2398,7 @@ export function App({
                         onPasteImage={handlePasteImage}
                         onRemoveLastAttachment={handleRemoveLastAttachment}
                         attachmentCount={attachments.length}
+                        immediate={!!activeWizard}
                       />
                     </Box>
                   );

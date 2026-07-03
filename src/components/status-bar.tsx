@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 
 export interface StatusBarProps {
@@ -22,7 +22,7 @@ export interface StatusBarProps {
   focus?: string;
 }
 
-export function StatusBar(props: StatusBarProps) {
+export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
   const {
     modelName,
     contextPercentage,
@@ -125,4 +125,4 @@ export function StatusBar(props: StatusBarProps) {
       </Box>
     </Box>
   );
-}
+});

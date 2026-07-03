@@ -39,6 +39,8 @@ type Props = {
   onRemoveLastAttachment?: () => void;
   /** Current attachments (used to decide whether Ctrl+W should remove) */
   attachmentCount?: number;
+  /** Force immediate (non-debounced) parent state updates (e.g., active wizard) */
+  immediate?: boolean;
 };
 
 const BLINK_ON = "\x1b[5m";
@@ -59,16 +61,45 @@ export default function ChatTextInput({
   onPasteImage,
   onRemoveLastAttachment,
   attachmentCount = 0,
+  immediate = false,
 }: Props) {
+  const [localValue, setLocalValue] = useState(originalValue || "");
   const [cursorOffset, setCursorOffset] = useState(
     (originalValue || "").length
   );
 
   const lastSentValueRef = useRef(originalValue || "");
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleChange = (val: string) => {
-    lastSentValueRef.current = val;
-    onChange(val);
+  const debounceOnChange = (val: string, forceImmediate = false) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+
+    const shouldUpdateImmediately =
+      forceImmediate ||
+      immediate ||
+      val === "" ||
+      val.startsWith("/") ||
+      val.length - (lastSentValueRef.current || "").length > 5 ||
+      val.includes("\n");
+
+    if (shouldUpdateImmediately) {
+      lastSentValueRef.current = val;
+      onChange(val);
+    } else {
+      debounceTimerRef.current = setTimeout(() => {
+        lastSentValueRef.current = val;
+        onChange(val);
+        debounceTimerRef.current = null;
+      }, 100);
+    }
+  };
+
+  const handleChange = (val: string, forceImmediate = false) => {
+    setLocalValue(val);
+    debounceOnChange(val, forceImmediate);
   };
 
   const { internal_eventEmitter } = useStdin();
@@ -85,16 +116,28 @@ export default function ChatTextInput({
     };
   }, [internal_eventEmitter]);
 
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Sync localValue with originalValue when it changes externally.
   // Keep cursorOffset within bounds and snap cursor to end when value changes externally.
   useEffect(() => {
-    if (!focus || !showCursor) return;
     const currentVal = originalValue || "";
     const len = currentVal.length;
     if (currentVal !== lastSentValueRef.current) {
-      setCursorOffset(len);
+      setLocalValue(currentVal);
       lastSentValueRef.current = currentVal;
+      if (focus && showCursor) {
+        setCursorOffset(len);
+      }
     } else {
-      if (cursorOffset > len) {
+      if (focus && showCursor && cursorOffset > len) {
         setCursorOffset(len);
       }
     }
@@ -103,22 +146,22 @@ export default function ChatTextInput({
   // Detect image file paths when value changes.
   // If the entire current input looks like an image path, convert it to attachment.
   useEffect(() => {
-    if (!onAttachImage || !originalValue.trim()) return;
-    const trimmed = originalValue.trim();
+    if (!onAttachImage || !localValue.trim()) return;
+    const trimmed = localValue.trim();
     if (isImageFilePath(trimmed)) {
       // Small delay to debounce rapid onChange calls
       const timer = setTimeout(() => {
         onAttachImage(trimmed);
-        handleChange(""); // Clear the input
+        handleChange("", true); // Clear the input immediately
       }, 80);
       return () => clearTimeout(timer);
     }
-  }, [originalValue]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [localValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build displayed value with cursor highlight.
   // Performance: for very long input, only render a window around cursor position
   // to avoid O(n) per-char ANSI processing on every keystroke.
-  const value = mask ? mask.repeat(originalValue.length) : originalValue;
+  const value = mask ? mask.repeat(localValue.length) : localValue;
   let renderedValue = value;
   let renderedPlaceholder = placeholder ? chalk.grey(placeholder) : undefined;
 
@@ -183,7 +226,13 @@ export default function ChatTextInput({
       }
 
       if (key.return) {
-        onSubmit?.(originalValue);
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        lastSentValueRef.current = localValue;
+        onChange(localValue);
+        onSubmit?.(localValue);
         return;
       }
 
@@ -197,27 +246,27 @@ export default function ChatTextInput({
 
       // ── Ctrl+W — remove last attachment when input is empty ─────────────────
       if (key.ctrl && input === "w") {
-        if (originalValue === "" && attachmentCount > 0) {
+        if (localValue === "" && attachmentCount > 0) {
           onRemoveLastAttachment?.();
           return;
         }
         // Otherwise fall through to default Ctrl+W word-delete (handled below)
-        if (originalValue !== "") {
+        if (localValue !== "") {
           // Delete word before cursor
           let pos = cursorOffset;
-          while (pos > 0 && originalValue[pos - 1] === " ") pos--;
-          while (pos > 0 && originalValue[pos - 1] !== " ") pos--;
+          while (pos > 0 && localValue[pos - 1] === " ") pos--;
+          while (pos > 0 && localValue[pos - 1] !== " ") pos--;
           const nextValue =
-            originalValue.slice(0, pos) + originalValue.slice(cursorOffset);
+            localValue.slice(0, pos) + localValue.slice(cursorOffset);
           setCursorOffset(pos);
-          if (nextValue !== originalValue) handleChange(nextValue);
+          if (nextValue !== localValue) handleChange(nextValue);
           return;
         }
         return;
       }
 
       let nextCursorOffset = cursorOffset;
-      let nextValue = originalValue;
+      let nextValue = localValue;
 
       const isBackspace =
         key.backspace ||
@@ -233,22 +282,22 @@ export default function ChatTextInput({
         }
       } else if (key.rightArrow) {
         if (showCursor) {
-          nextCursorOffset = Math.min(originalValue.length, cursorOffset + 1);
+          nextCursorOffset = Math.min(localValue.length, cursorOffset + 1);
         }
       } else if (isBackspace) {
         // ── Backspace: delete character BEFORE cursor ──────────────────────
         if (cursorOffset > 0) {
           nextValue =
-            originalValue.slice(0, cursorOffset - 1) +
-            originalValue.slice(cursorOffset);
+            localValue.slice(0, cursorOffset - 1) +
+            localValue.slice(cursorOffset);
           nextCursorOffset = cursorOffset - 1;
         }
       } else if (isDelete) {
         // ── Delete (forward): delete character AFTER cursor ────────────────
-        if (cursorOffset < originalValue.length) {
+        if (cursorOffset < localValue.length) {
           nextValue =
-            originalValue.slice(0, cursorOffset) +
-            originalValue.slice(cursorOffset + 1);
+            localValue.slice(0, cursorOffset) +
+            localValue.slice(cursorOffset + 1);
           // cursor stays in place
         }
       } else if (key.ctrl && input === "a") {
@@ -256,13 +305,13 @@ export default function ChatTextInput({
         nextCursorOffset = 0;
       } else if (key.ctrl && input === "e") {
         // Ctrl+E / End — move to end
-        nextCursorOffset = originalValue.length;
+        nextCursorOffset = localValue.length;
       } else if (key.ctrl && input === "k") {
         // Ctrl+K — delete to end of line
-        nextValue = originalValue.slice(0, cursorOffset);
+        nextValue = localValue.slice(0, cursorOffset);
       } else if (key.ctrl && input === "u") {
         // Ctrl+U — delete to start of line
-        nextValue = originalValue.slice(cursorOffset);
+        nextValue = localValue.slice(cursorOffset);
         nextCursorOffset = 0;
       } else if (input) {
         // Git Bash may deliver combined \x7f bytes from held-down
@@ -278,19 +327,19 @@ export default function ChatTextInput({
           ).length;
           if (cursorOffset >= deleteCount) {
             nextValue =
-              originalValue.slice(0, cursorOffset - deleteCount) +
-              originalValue.slice(cursorOffset);
+              localValue.slice(0, cursorOffset - deleteCount) +
+              localValue.slice(cursorOffset);
             nextCursorOffset = cursorOffset - deleteCount;
           } else {
-            nextValue = originalValue.slice(cursorOffset);
+            nextValue = localValue.slice(cursorOffset);
             nextCursorOffset = 0;
           }
         } else {
           // Regular character insertion at cursor position.
           nextValue =
-            originalValue.slice(0, cursorOffset) +
+            localValue.slice(0, cursorOffset) +
             input +
-            originalValue.slice(cursorOffset);
+            localValue.slice(cursorOffset);
           nextCursorOffset = cursorOffset + input.length;
         }
       }
@@ -303,7 +352,7 @@ export default function ChatTextInput({
 
       setCursorOffset(nextCursorOffset);
 
-      if (nextValue !== originalValue) {
+      if (nextValue !== localValue) {
         handleChange(nextValue);
       }
     },

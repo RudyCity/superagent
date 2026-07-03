@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 
 interface ActiveProcessesPanelProps {
@@ -9,7 +9,7 @@ interface ActiveProcessesPanelProps {
   runningSubagentsCount: number;
 }
 
-export function ActiveProcessesPanel({
+export const ActiveProcessesPanel = memo(function ActiveProcessesPanel({
   backgroundTasks,
   procsScrollOffset,
   maxProcsVisible,
@@ -42,4 +42,4 @@ export function ActiveProcessesPanel({
       ))}
     </Box>
   );
-}
+});

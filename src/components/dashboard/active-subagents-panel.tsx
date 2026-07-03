@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 
 interface ActiveSubagentsPanelProps {
@@ -9,7 +9,7 @@ interface ActiveSubagentsPanelProps {
   getLatestSubagentAction: (logs: string[]) => string;
 }
 
-export function ActiveSubagentsPanel({
+export const ActiveSubagentsPanel = memo(function ActiveSubagentsPanel({
   subagentInstances,
   agentsScrollOffset,
   maxAgentsVisible,
@@ -46,4 +46,4 @@ export function ActiveSubagentsPanel({
       })}
     </Box>
   );
-}
+});

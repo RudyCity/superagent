@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { superagentInstances, subagentInstances, backgroundTasks } from "../core/tools.js";
 
@@ -57,7 +57,7 @@ interface ActiveAgentsListProps {
   collapsedSections: { superagents: boolean; subagents: boolean; procs: boolean };
 }
 
-export function ActiveAgentsList({
+export const ActiveAgentsList = memo(function ActiveAgentsList({
   focusMode,
   runningSuperagentsCount,
   runningSubagentsCount,
@@ -212,4 +212,4 @@ export function ActiveAgentsList({
       })()}
     </Box>
   );
-}
+});

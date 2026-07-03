@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.79] - 2026-07-03
+
+### Changed
+- **Input Performance Optimization**: Optimized typing latency by adding local state tracking and a 100ms debounced update system to the terminal input box (`ChatTextInput`). Updates are propagated immediately under conditions such as slash commands, active wizard prompts, empty values, or pasted blocks to ensure no loss of functionality or responsiveness.
+- **UI Render Optimization**: Memoized peripheral components (including `ActiveAgentsList`, `TaskChecklist`, `HistoryPanel`, `StatusBar`, `ActiveProcessesPanel`, `ActiveSubagentsPanel`, and `DashboardStatusBar`) using `React.memo` to eliminate redundant renders during input updates.
+
+---
+
 ## [1.2.78] - 2026-07-03
 
 ### Added

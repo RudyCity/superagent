@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 
 const MAX_HISTORY_VISIBLE = 10;
@@ -9,7 +9,7 @@ interface HistoryPanelProps {
   focusMode: string;
 }
 
-export function HistoryPanel({
+export const HistoryPanel = memo(function HistoryPanel({
   history,
   historySelectedIndex,
   focusMode,
@@ -101,4 +101,4 @@ export function HistoryPanel({
       </Text>
     </Box>
   );
-}
+});

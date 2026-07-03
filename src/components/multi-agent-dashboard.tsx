@@ -1422,6 +1422,7 @@ export function MultiAgentDashboard({
                       onPasteImage={handlePasteImage}
                       onRemoveLastAttachment={handleRemoveLastAttachment}
                       attachmentCount={attachments.length}
+                      immediate={!!activeWizard}
                     />
                   </Box>
                 );

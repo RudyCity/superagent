@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { formatCompactNumber } from "../../utils/text.js";
 
@@ -24,7 +24,7 @@ export interface DashboardStatusBarProps {
   workspace?: string;
 }
 
-export function DashboardStatusBar({
+export const DashboardStatusBar = memo(function DashboardStatusBar({
   activeModel,
   contextPercentage,
   activeContextUsage,
@@ -153,4 +153,4 @@ export function DashboardStatusBar({
       </Box>
     </Box>
   );
-}
+});

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { Box, Text } from "ink";
 import { superagentInstances } from "../core/tools.js";
 
@@ -14,7 +14,7 @@ interface TaskChecklistProps {
   collapsedSections?: { superagents: boolean; subagents: boolean; procs: boolean; checklist: boolean };
 }
 
-export function TaskChecklist({
+export const TaskChecklist = memo(function TaskChecklist({
   planState,
   checklistTasks,
   checklistScrollOffset,
@@ -192,4 +192,4 @@ export function TaskChecklist({
       )}
     </Box>
   );
-}
+});
