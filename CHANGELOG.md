@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.85] - 2026-07-03
+
+### Changed
+- **Auto-Pinning for Plans and Checklists**: Added `autoPinKeyMessages` in `ContextManager.ts` to automatically scan conversation logs and pin user requirements, task lists, and implementation plan documents, preventing critical state from being compacted.
+
+### Fixed
+- **TencentDB Sync & Skills Discovery Build**: Built fixes to sanitize TencentDB sync payloads (avoiding HTTP 400 empty string errors) and skills discovery prompts (preventing search loop commands).
+
 ## [1.2.84] - 2026-07-03
 
 ### Changed

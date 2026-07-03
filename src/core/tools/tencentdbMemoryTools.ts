@@ -180,7 +180,8 @@ export const tdaiConversationAddTool: Tool = {
   async execute(args) {
     const sessionId = String(args.session_id || "");
     const role = String(args.role || "") as "user" | "assistant" | "system";
-    const content = String(args.content || "");
+    const rawContent = String(args.content || "").trim();
+    const content = rawContent.length > 0 ? rawContent : "[empty message]";
     const client = getClient();
 
     try {

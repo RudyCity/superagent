@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { Message } from "../conversation.js";
+import { Message, contentToString } from "../conversation.js";
 import { TokenTracker, TokenBreakdown } from "./TokenTracker.js";
 import {
   CompactionStrategy,
@@ -122,12 +122,47 @@ export class ContextManager {
     return { shouldCompact: false, reason: "approaching-threshold" };
   }
 
+  /**
+   * Scan messages and automatically pin those containing critical planning metadata
+   */
+  public autoPinKeyMessages(messages: Message[]): void {
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      const content = contentToString(msg.content);
+
+      // Pin the initial user request, task checklists, and implementation plans
+      if (
+        (msg.role === "user" && i === 0) || // First user request
+        content.includes("# Implementation Plan") ||
+        content.includes("task.md") ||
+        content.includes("implementation_plan.md") ||
+        content.includes("[System Conversation Summary]")
+      ) {
+        const contentPrefix = content.slice(0, 64);
+        const stableId = `${msg.role}:${msg.timestamp}:${contentPrefix}`;
+        
+        // Add to pinned messages if not already pinned
+        if (!this.pinnedMessages.has(stableId)) {
+          this.addPinnedMessage(stableId, {
+            role: msg.role,
+            content: content,
+            timestamp: msg.timestamp,
+            pinnedAt: Date.now(),
+            originalIndex: i,
+            tag: "auto-plan"
+          });
+        }
+      }
+    }
+  }
+
   async compact(
     messages: Message[],
     strategy?: CompactionStrategy,
     abortSignal?: AbortSignal
   ): Promise<CompactionResult> {
     this.setState("CHECKING");
+    this.autoPinKeyMessages(messages);
 
     try {
       const selectedStrategy = strategy || this.selectStrategy(messages);

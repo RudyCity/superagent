@@ -2980,11 +2980,19 @@ ${formatted}`;
 
     const newMessages = messages
       .filter((m) => (m.role === "user" || m.role === "assistant") && m.timestamp > lastCaptured)
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: contentToString(m.content),
-        timestamp: new Date(m.timestamp || Date.now()).toISOString(),
-      }));
+      .map((m) => {
+        const rawContent = contentToString(m.content).trim();
+        const content = rawContent.length > 0
+          ? rawContent
+          : (m.toolCalls && m.toolCalls.length > 0
+            ? `[Tool invocation: ${m.toolCalls.map((t) => t.name).join(", ")}]`
+            : "[empty message]");
+        return {
+          role: m.role as "user" | "assistant",
+          content,
+          timestamp: new Date(m.timestamp || Date.now()).toISOString(),
+        };
+      });
 
     if (newMessages.length > 0) {
       this.writeToLogFile("INFO", `Incrementally syncing ${newMessages.length} new messages to TencentDB (session: ${sessionKey})...`);
