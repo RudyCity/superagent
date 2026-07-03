@@ -90,14 +90,15 @@ export function getInstalledSkills(): LoadedSkill[] {
     }
   }
 
-  // Precedence order: Workspace local (highest) -> Hooks -> Global -> Package default (lowest)
-  const searchDirs = [
-    path.join(process.cwd(), "skills"),
-    path.join(process.cwd(), ".superagent", "skills"),
-    path.join(process.cwd(), ".agents", "skills")
+  // Precedence order: Package built-in (base/lowest) -> Global -> Hooks -> Workspace local (highest/overrides)
+  // Skills are deduplicated by name: first occurrence wins, so higher-priority dirs are appended LAST.
+  const searchDirs: string[] = [
+    path.join(packageRootDir, ".agents", "skills"),
+    path.join(packageRootDir, "skills"),
+    path.join(os.homedir(), ".superagent-r", "skills"),
   ];
 
-  // Append active internal hooks' skills subdirectories
+  // Append active internal hooks' skills subdirectories (above global, below workspace)
   const hooksRoot = path.join(process.cwd(), "internal-hooks");
   if (fs.existsSync(hooksRoot)) {
     try {
@@ -130,11 +131,11 @@ export function getInstalledSkills(): LoadedSkill[] {
     } catch {}
   }
 
-  // Append global and package default directories (lowest precedence)
+  // Workspace-local directories have highest precedence — appended last so they override duplicates
   searchDirs.push(
-    path.join(os.homedir(), ".superagent-r", "skills"),
-    path.join(packageRootDir, "skills"),
-    path.join(packageRootDir, ".agents", "skills")
+    path.join(process.cwd(), "skills"),
+    path.join(process.cwd(), ".superagent", "skills"),
+    path.join(process.cwd(), ".agents", "skills")
   );
 
   for (const dir of searchDirs) {
@@ -214,18 +215,19 @@ export function getInstalledSkills(): LoadedSkill[] {
 
       const normalizedPath = normalizePath(skillMdPath);
       const hasPathDuplicate = skills.some(s => normalizePath(s.path) === normalizedPath);
-      const hasNameDuplicate = skills.some(
+      if (hasPathDuplicate) return; // exact same file — skip
+
+      // Replace same-named skill (later/higher-priority dirs override earlier ones)
+      const existingIndex = skills.findIndex(
         s => s.name.toLowerCase() === name.toLowerCase() &&
              (s.author || "").toLowerCase() === (author || "").toLowerCase()
       );
 
-      if (!hasPathDuplicate && !hasNameDuplicate) {
-        skills.push({
-          name,
-          description,
-          path: skillMdPath,
-          author
-        });
+      const entry = { name, description, path: skillMdPath, author };
+      if (existingIndex !== -1) {
+        skills[existingIndex] = entry; // project-local overrides package version
+      } else {
+        skills.push(entry);
       }
     } catch (e) {
       // Ignore parsing errors for individual files

@@ -2,7 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.82] - 2026-07-03
+
+### Fixed
+- **Skills Discovery Order Bug**: Fixed `getInstalledSkills()` in `skills.ts` to discover superagent package built-in skills **first** (as the base), then project-local `.agents/skills` are appended last as overrides. Previously, project-local skills were searched first, causing built-in package skills to be silently dropped when a name collision occurred — so the agent never saw them in the INSTALLED AGENT SKILLS list.
+- **Deduplication Logic**: Changed from "skip on duplicate name" to **"replace on duplicate name"** — a later (higher-priority) skill with the same name now replaces the earlier package version. This ensures project-local customizations always win while all unique package skills remain visible.
+
+---
+
 ## [1.2.81] - 2026-07-03
+
 
 ### Changed
 - **Optimized Prompt Caching**: Modified `injectDynamicContext` in `agent.ts` to only include the step-counter warning when remaining steps are 5 or fewer. This keeps the message history static for the vast majority of execution turns, allowing near 100% LLM prompt cache hits across steps.
