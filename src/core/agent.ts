@@ -202,7 +202,7 @@ export class Agent {
   private onQuestion: QuestionHandler;
   private abortController: AbortController | null = null;
   private isRunning = false;
-  private pendingMessagesQueue: string[] = [];
+  private pendingMessagesQueue: (string | import("./conversation.js").MessageContent)[] = [];
   private textLogBuffer = "";
   /** Flag set when completed tasks were just archived — used to inject system prompt hint */
   private tasksJustArchived: boolean = false;
@@ -833,7 +833,7 @@ If none of the options are suitable, still pick the closest one.`;
       // This handles the race condition where the user approves a plan
       // while the agent loop is still finishing its current iteration.
       const msgText = typeof userInput === "string" ? userInput : "[multimodal message]";
-      this.pendingMessagesQueue.push(msgText);
+      this.pendingMessagesQueue.push(userInput);
       this.writeToLogFile("INFO", `Message queued (agent is running): "${msgText.substring(0, 80)}..."`);
       return;
     }
@@ -967,7 +967,8 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
       // auto-send the next one now instead of firing "done" and stopping.
       if (this.pendingMessagesQueue.length > 0) {
         const queued = this.pendingMessagesQueue.shift()!;
-        this.writeToLogFile("INFO", `Auto-sending queued message: "${queued.substring(0, 80)}..."`);
+        const logText = typeof queued === "string" ? queued : "[multimodal message]";
+        this.writeToLogFile("INFO", `Auto-sending queued message: "${logText.substring(0, 80)}..."`);
         // Fire a "text" event so the UI knows the agent is continuing
         this.onEvent({ type: "text", content: "\n[SYS] Resuming with queued approval message...\n" });
         // Recursively send — this sets isRunning=true and starts a new loop
@@ -2911,6 +2912,10 @@ ${formatted}`;
     // while the agent loop was still running).
     this.pendingMessagesQueue = [];
     this.abortController?.abort();
+  }
+
+  queueMessage(message: string | import("./conversation.js").MessageContent): void {
+    this.pendingMessagesQueue.push(message);
   }
 
   async clearHistory(): Promise<void> {

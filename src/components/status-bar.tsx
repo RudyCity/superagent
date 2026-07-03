@@ -20,6 +20,21 @@ export interface StatusBarProps {
   activeDevHook?: string | null;
   workspace?: string;
   focus?: string;
+  isProcessing?: boolean;
+}
+
+function StatusBarSpinner() {
+  const [frame, setFrame] = React.useState(0);
+  const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setFrame((prev) => (prev + 1) % spinnerFrames.length);
+    }, 120);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <Text color="yellow" bold>{spinnerFrames[frame]} </Text>;
 }
 
 export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
@@ -42,6 +57,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
     activeDevHook,
     workspace,
     focus,
+    isProcessing = false,
   } = props;
 
   return (
@@ -50,6 +66,13 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
         <Box>
           <Text>
             <Text color="cyan" bold>{modelName}</Text>
+            {isProcessing && (
+              <>
+                <Text color="gray"> │ </Text>
+                <StatusBarSpinner />
+                <Text color="yellow" bold>Processing...</Text>
+              </>
+            )}
             {lastSpeed !== null && (
               <>
                 <Text color="gray"> │ </Text>

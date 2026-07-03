@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.94] - 2026-07-03
+
+### Added
+- **Interruption and Interactivity (Sanggah)**: Allowed the user input box to remain visible and active during processing in both single-agent and multi-agent dashboard modes. Submitting a new message while the agent is running immediately aborts the active run and queues the new prompt to run.
+- **Footer Status Bar Loading Indicators**: Moved the processing/loading spinner and "Processing..." status text to the bottom status bar footer in both single-agent and multi-agent modes.
+
+### Tests
+- Added unit tests in `tests/sanggahInterruption.test.ts` to verify `queueMessage` function and interruption queuing logic.
+
+---
+
 ## [1.2.93] - 2026-07-03
 
 ### Added

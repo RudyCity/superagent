@@ -1550,11 +1550,6 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
     const displayText = commandInput || (attachments.length > 0 ? `[${attachments.length} image${attachments.length > 1 ? "s" : ""}]` : "");
     const displayLine = attachments.length > 0 ? `${displayText} 📎×${attachments.length}` : commandInput;
-    setMasterLogs((prev) => [...prev, `[USER] ${displayLine}`].slice(-500));
-    setQuery("");
-    setCurrentTask(displayLine);
-
-    setIsProcessing(true);
 
     let messageContent: import("../core/conversation.js").MessageContent = commandInput;
     if (attachments.length > 0) {
@@ -1564,6 +1559,21 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       ];
       messageContent = parts;
     }
+
+    if (isProcessing) {
+      setMasterLogs((prev) => [...prev, `[USER] ${displayLine}`].slice(-500));
+      setQuery("");
+      setAttachments([]);
+      agent.abort();
+      agent.queueMessage(messageContent);
+      return;
+    }
+
+    setMasterLogs((prev) => [...prev, `[USER] ${displayLine}`].slice(-500));
+    setQuery("");
+    setCurrentTask(displayLine);
+
+    setIsProcessing(true);
     setAttachments([]);
 
     agent.sendMessage(messageContent)

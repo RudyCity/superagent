@@ -1398,9 +1398,7 @@ export function MultiAgentDashboard({
               </Text>
             </Box>
             <Box flexGrow={1}>
-              {isProcessing && !activeWizard ? (
-                <ProcessingIndicator scrollOffset={logScrollOffset} />
-              ) : (() => {
+              {(() => {
                 const { prefix, inserted, suffix } = getPasteSplit(query, pastePrefixLength, pasteSuffixLength);
                 const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
                 if (isPasteActive) {
@@ -1420,14 +1418,14 @@ export function MultiAgentDashboard({
                       <ImageAttachmentBar
                         attachments={attachments}
                         onRemove={handleRemoveAttachment}
-                        focused={focusArea === "input" && !isProcessing}
+                        focused={focusArea === "input"}
                       />
                     )}
                     <ChatTextInput
                       value={query}
                       onChange={handleQueryChange}
                       onSubmit={handleQuerySubmit}
-                      focus={focusArea === "input" && !isProcessing}
+                      focus={focusArea === "input"}
                       onAttachImage={handleAttachImage}
                       onPasteImage={handlePasteImage}
                       onRemoveLastAttachment={handleRemoveLastAttachment}
@@ -1463,6 +1461,7 @@ export function MultiAgentDashboard({
         focusArea={focusArea}
         tencentdbStatus={tencentdbStatus}
         workspace={agent?.workingDirectory || process.cwd()}
+        isProcessing={isProcessing}
       />
     </Box>
   );

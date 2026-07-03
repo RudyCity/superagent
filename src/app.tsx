@@ -521,9 +521,52 @@ export function App({
 
   const handleSubmit = useCallback(
     async (value: string) => {
-      if (isProcessing && !activeWizard) return;
-
       const trimmed = value.trim();
+
+      if (isProcessing && !activeWizard) {
+        if (!trimmed && attachments.length === 0) return;
+
+        setHistory((prev) => {
+          if (prev.length > 0 && prev[prev.length - 1] === trimmed) {
+            return prev;
+          }
+          const next = [...prev, trimmed].slice(-200);
+          fs.writeFile(INPUT_HISTORY_FILE, JSON.stringify(next, null, 2), "utf8").catch(() => {});
+          return next;
+        });
+
+        setInput("");
+        setIsPasted(false);
+        setLastTabPrefix(null);
+        setHistoryIndex(-1);
+        setScrollOffset(0);
+
+        let messageContent: MessageContent = trimmed;
+        if (attachments.length > 0) {
+          const parts: import("./core/conversation.js").MessageContent = [
+            ...(trimmed ? [{ type: "text" as const, text: trimmed }] : []),
+            ...attachments.map(attachmentToImagePart),
+          ];
+          messageContent = parts;
+        }
+
+        const displayText = trimmed || (attachments.length > 0 ? `[${attachments.length} image${attachments.length > 1 ? "s" : ""}]` : "");
+        addLine({
+          type: "user",
+          content: attachments.length > 0
+            ? `❯ ${displayText} 📎×${attachments.length}`
+            : `❯ ${trimmed}`,
+          timestamp: Date.now(),
+        });
+
+        setAttachments([]);
+
+        if (agentRef.current) {
+          agentRef.current.abort();
+          agentRef.current.queueMessage(messageContent);
+        }
+        return;
+      }
 
       if (activeWizard) {
         setInput("");
@@ -2379,9 +2422,7 @@ export function App({
               </Text>
               <Box flexDirection="row">
                 <Text color={activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "green"}>│ ❯ </Text>
-                {isProcessing && !activeWizard ? (
-                  <ProcessingIndicator scrollOffset={scrollOffset} />
-                ) : (() => {
+                {(() => {
                   const { prefix, inserted, suffix } = getPasteSplit(input, pastePrefixLength, pasteSuffixLength);
                   const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
                   if (isPasteActive) {
@@ -2447,6 +2488,7 @@ export function App({
         activeDevHook={activeDevHook}
         workspace={agentRef.current?.workingDirectory || process.cwd()}
         focus={activeFocus}
+        isProcessing={isProcessing}
       />
     </Box>
   );

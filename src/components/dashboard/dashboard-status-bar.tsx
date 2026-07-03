@@ -22,6 +22,21 @@ export interface DashboardStatusBarProps {
   focusArea: string;
   tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
   workspace?: string;
+  isProcessing?: boolean;
+}
+
+function StatusBarSpinner() {
+  const [frame, setFrame] = React.useState(0);
+  const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setFrame((prev) => (prev + 1) % spinnerFrames.length);
+    }, 120);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <Text color="yellow" bold>{spinnerFrames[frame]} </Text>;
 }
 
 export const DashboardStatusBar = memo(function DashboardStatusBar({
@@ -44,6 +59,7 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
   focusArea,
   tencentdbStatus,
   workspace,
+  isProcessing = false,
 }: DashboardStatusBarProps) {
   const subagentTokens = Array.from(subagentInstances.values()).reduce(
     (acc: number, i: any) => acc + (i.tokenUsage?.prompt || 0) + (i.tokenUsage?.completion || 0),
@@ -55,6 +71,13 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
       {/* Row 1: Engine Status */}
       <Box flexDirection="row">
         <Text color="cyan" bold>🤖 {activeModel}</Text>
+        {isProcessing && (
+          <>
+            <Text color="gray"> │ </Text>
+            <StatusBarSpinner />
+            <Text color="yellow" bold>Processing...</Text>
+          </>
+        )}
         <Text color="gray"> │ </Text>
         <Text color="green" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
         {lastSpeed !== null && (
