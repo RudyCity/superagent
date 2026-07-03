@@ -401,7 +401,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
             } else if (x >= rightStart) {
               // Clicked in the logs/inspector area
               // Check if clicked on a collapsible log group
-              if (toggleGroupCollapse && groupBoundaries.length > 0) {
+              if (toggleGroupCollapse && groupBoundaries.length > 0 && y >= logBoxStartRow && y < logBoxStartRow + logsCount) {
                 const clickedLogLine = (y - logBoxStartRow) + startIdxLogs;
                 for (const group of groupBoundaries) {
                   if (group.isCollapsible && clickedLogLine >= group.startLine && clickedLogLine <= group.endLine) {

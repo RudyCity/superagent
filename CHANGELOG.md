@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.71] - 2026-07-03
+
+### Fixed
+- **Multi-Agent Collapsible Tools & Clicks**: Fixed a bug where tool log groups that are not nested under an agent/user message (such as immediate tool calls at the start of a Superagent session) were unclickable/unexpandable, failing to render their merged results and output. Made the click handler in `useDashboardMouse.ts` strictly check for clicks within the visible vertical bounds of the log box to avoid misalignments.
+
+---
+
 ## [1.2.70] - 2026-07-02
 
 ### Changed

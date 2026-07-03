@@ -213,6 +213,19 @@ export function parseLogGroups(selectedSession: AgentSession): LogGroup[] {
   return mergedGroups;
 }
 
+/** Returns wrap offset for line wrapping depending on group nesting and tool status */
+function getWrapOffset(group: LogGroup, isOutput = false): number {
+  const isTool = group.label.includes("TOOL") || group.label.includes("AUTO-APPROVE");
+  const nested = (group.nestLevel || 0) > 0;
+  if (isOutput) {
+    return nested ? 18 : 13;
+  }
+  if (isTool) {
+    return nested ? 14 : 9;
+  }
+  return nested ? 10 : 6;
+}
+
 /** Compute group boundaries for click detection in the multi-agent dashboard */
 export function computeLogGroupBoundaries(
   selectedSession: AgentSession,
@@ -228,7 +241,7 @@ export function computeLogGroupBoundaries(
     const group = groups[groupIdx];
     const isCollapsible = !group.isBox && isCollapsibleLabel(group.label);
     const isCollapsed = isCollapsible && !expandedGroups.has(groupIdx);
-    const isTool = (group.label.includes("TOOL") || group.label.includes("AUTO-APPROVE")) && (group.nestLevel || 0) > 0;
+    const isTool = group.label.includes("TOOL") || group.label.includes("AUTO-APPROVE");
 
     if (group.isBox) {
       const lineCount = group.rawLines.length;
@@ -249,7 +262,7 @@ export function computeLogGroupBoundaries(
         const cleaned = rawLine.replace(/\r\n/g, "\n").replace(/\r/g, "");
         const subLines = isHistoryTruncated
           ? cleaned.split("\n")
-          : wrapTextForDisplay(cleaned, Math.max(10, feedWidth - (isTool ? 14 : 9)));
+          : wrapTextForDisplay(cleaned, Math.max(10, feedWidth - getWrapOffset(group)));
         if (isTool && firstLine && subLines.length > 0) {
           // The first line of content is rendered inline in the header line
           lineCount += subLines.length - 1;
@@ -263,7 +276,7 @@ export function computeLogGroupBoundaries(
       if (isTool && group.mergedResult) {
         for (const rawLine of group.mergedResult.lines) {
           const cleaned = rawLine.replace(/\r\n/g, "\n").replace(/\r/g, "");
-          const subLines = wrapTextForDisplay(cleaned, Math.max(10, feedWidth - 18));
+          const subLines = wrapTextForDisplay(cleaned, Math.max(10, feedWidth - getWrapOffset(group, true)));
           lineCount += subLines.length;
         }
       }
@@ -315,7 +328,7 @@ export function computeWrappedLogs(
     // Collapsed rendering for collapsible groups
     const groupIsCollapsible = isCollapsibleLabel(group.label);
     const groupIsCollapsed = groupIsCollapsible && (!expandedGroups || !expandedGroups.has(groupIdx));
-    const isTool = (group.label.includes("TOOL") || group.label.includes("AUTO-APPROVE")) && (group.nestLevel || 0) > 0;
+    const isTool = group.label.includes("TOOL") || group.label.includes("AUTO-APPROVE");
 
     if (groupIsCollapsed) {
       if (isTool) {
@@ -433,7 +446,7 @@ export function computeWrappedLogs(
       const cleanedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
       const subLines = useTruncate
         ? cleanedContent.split("\n")
-        : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - (isTool ? 14 : 9)));
+        : wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - getWrapOffset(group)));
 
       for (let i = 0; i < subLines.length; i++) {
         if (isTool && rawLineIdx === 0 && i === 0) {
@@ -542,7 +555,7 @@ export function computeWrappedLogs(
       for (let mi = 0; mi < merged.lines.length; mi++) {
         const content = merged.lines[mi];
         const cleanedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
-        const subLines = wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - 18));
+        const subLines = wrapTextForDisplay(cleanedContent, Math.max(10, feedWidth - getWrapOffset(group, true)));
         for (let i = 0; i < subLines.length; i++) {
           const lineText = subLines[i];
           wrappedLines.push(
