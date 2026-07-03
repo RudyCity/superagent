@@ -193,13 +193,15 @@ export function refreshDynamicHooks(): void {
       }
     };
 
-    filterArray(allTools);
-    filterArray(masterToolset);
-    filterArray(superagentToolset);
-    filterArray(defaultSubagentToolset);
-    for (const key of Object.keys(subagentToolsets)) {
-      if (Array.isArray(subagentToolsets[key])) {
-        filterArray(subagentToolsets[key]);
+    if (Array.isArray(allTools)) filterArray(allTools);
+    if (Array.isArray(masterToolset)) filterArray(masterToolset);
+    if (Array.isArray(superagentToolset)) filterArray(superagentToolset);
+    if (Array.isArray(defaultSubagentToolset)) filterArray(defaultSubagentToolset);
+    if (subagentToolsets && typeof subagentToolsets === "object") {
+      for (const key of Object.keys(subagentToolsets)) {
+        if (Array.isArray(subagentToolsets[key])) {
+          filterArray(subagentToolsets[key]);
+        }
       }
     }
   }
@@ -208,13 +210,15 @@ export function refreshDynamicHooks(): void {
   try {
     loadedDynamicTools = loadDynamicHooks();
     if (loadedDynamicTools.length > 0) {
-      allTools.push(...loadedDynamicTools);
-      masterToolset.push(...loadedDynamicTools);
-      superagentToolset.push(...loadedDynamicTools);
-      defaultSubagentToolset.push(...loadedDynamicTools);
-      for (const key of Object.keys(subagentToolsets)) {
-        if (Array.isArray(subagentToolsets[key])) {
-          subagentToolsets[key].push(...loadedDynamicTools);
+      if (Array.isArray(allTools)) allTools.push(...loadedDynamicTools);
+      if (Array.isArray(masterToolset)) masterToolset.push(...loadedDynamicTools);
+      if (Array.isArray(superagentToolset)) superagentToolset.push(...loadedDynamicTools);
+      if (Array.isArray(defaultSubagentToolset)) defaultSubagentToolset.push(...loadedDynamicTools);
+      if (subagentToolsets && typeof subagentToolsets === "object") {
+        for (const key of Object.keys(subagentToolsets)) {
+          if (Array.isArray(subagentToolsets[key])) {
+            subagentToolsets[key].push(...loadedDynamicTools);
+          }
         }
       }
     }
