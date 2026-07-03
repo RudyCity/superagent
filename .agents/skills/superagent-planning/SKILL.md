@@ -96,7 +96,27 @@ Call the tool with `action: "create"` and provide the full markdown plan content
 }
 ```
 
-### 2. Syncing Checklist Tasks
+### 2. Editing a Plan
+To modify the existing implementation plan, use the `edit` action. You can either perform a full replacement by providing `planContent`, or perform an incremental find-and-replace using `targetContent` and `replacementContent`:
+
+- Full replacement:
+```json
+{
+  "action": "edit",
+  "planContent": "# My Updated Feature Plan\n\n## Proposed Changes\n- [ ] Task 1..."
+}
+```
+
+- Incremental edit:
+```json
+{
+  "action": "edit",
+  "targetContent": "- [ ] Task 1: Create new component",
+  "replacementContent": "- [ ] Task 1: Create new component\n- [ ] Task 1b: Verify component tests"
+}
+```
+
+### 3. Syncing Checklist Tasks
 If you modified the plan file directly, synchronize it with the task checklist by calling:
 ```json
 {
@@ -104,7 +124,7 @@ If you modified the plan file directly, synchronize it with the task checklist b
 }
 ```
 
-### 3. Getting Status
+### 4. Getting Status
 To inspect the current plan path, task path, and completion status of checklist tasks, run:
 ```json
 {
