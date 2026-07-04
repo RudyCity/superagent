@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.97] - 2026-07-04
+
+### Added
+- **File Concurrency Locking**: Implemented a Promise-based `FileLockManager` to serialize read/write operations for the same file path, preventing race conditions when multiple file write/edit tools run in parallel.
+- **Improved Edit/Patch Accuracy**: Refactored the `edit` and `apply_patch` (search-replace block mode) tools to use `mapNormToOrigIndices` for character index mapping, resolving misalignment issues when files contain trailing whitespace.
+
+### Tests
+- Added unit and concurrency tests in `tests/fileEditingConcurrency.test.ts` verifying concurrent serialization, `edit` alignment under trailing whitespace, and search-replace patch alignment.
+
+---
+
 ## [1.2.96] - 2026-07-04
 
 ### Changed

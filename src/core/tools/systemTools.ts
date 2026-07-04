@@ -4,7 +4,7 @@ import path from "path";
 import fg from "fast-glob";
 import { execa } from "execa";
 import { Tool } from "./types.js";
-import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences } from "./helpers.js";
+import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences, fileLockManager } from "./helpers.js";
 import { getLocalRgPath, isRgInstalledGlobally, ensureRgInstalled } from "../androidSetup.js";
 import { getWorkspaceCachePath } from "../workspaceDiscovery.js";
 
@@ -181,6 +181,7 @@ export const writeTool: Tool = {
     if (content === undefined || content === null) {
       return "Error: Missing required parameter 'content'. Provide the content to write to the file.";
     }
+    const release = await fileLockManager.acquire(filePath);
     try {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, content, "utf-8");
@@ -188,6 +189,8 @@ export const writeTool: Tool = {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error writing file: ${message}`;
+    } finally {
+      release();
     }
   },
 };
@@ -227,6 +230,7 @@ export const editTool: Tool = {
     if (!filePath) {
       return "Error: Missing required parameter 'filePath'. Provide the path to the file to edit.";
     }
+    const release = await fileLockManager.acquire(filePath);
     try {
       const content = await fs.readFile(filePath, "utf-8");
       const oldStr = args.oldString as string;
@@ -256,33 +260,9 @@ export const editTool: Tool = {
         const subContentStartOffset = normLines.slice(0, startIdx).join("\n").length + (startIdx > 0 ? 1 : 0);
         const matchIndexInNorm = normContent.indexOf(normOldStr, subContentStartOffset);
         
-        const sliceText = lines.slice(startIdx, endIdx).join("\n");
-        const normSliceText = normalizeForMatching(sliceText);
-        const matchIdx = normSliceText.indexOf(normOldStr);
-        
-        let normCharIdx = 0;
-        let origCharIdx = 0;
-        let matchOrigStart = -1;
-        let matchOrigEnd = -1;
-
-        while (origCharIdx < content.length && normCharIdx < normContent.length) {
-          if (normCharIdx === matchIndexInNorm) {
-            matchOrigStart = origCharIdx;
-          }
-          if (normCharIdx === matchIndexInNorm + normOldStr.length) {
-            matchOrigEnd = origCharIdx;
-            break;
-          }
-          const cOrig = content[origCharIdx];
-          const cNorm = normContent[normCharIdx];
-          
-          if (cOrig === "\r") {
-            origCharIdx++;
-            continue;
-          }
-          origCharIdx++;
-          normCharIdx++;
-        }
+        const normToOrigMap = mapNormToOrigIndices(content, normContent);
+        const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+        const matchOrigEnd = normToOrigMap[matchIndexInNorm + normOldStr.length] ?? -1;
 
         if (matchOrigStart === -1 || matchOrigEnd === -1) {
           updated = content.replace(oldStr, newStr);
@@ -300,28 +280,10 @@ export const editTool: Tool = {
         }
 
         const matchIndexInNorm = normContent.indexOf(normOldStr);
-        let normCharIdx = 0;
-        let origCharIdx = 0;
-        let matchOrigStart = -1;
-        let matchOrigEnd = -1;
-
-        while (origCharIdx < content.length && normCharIdx < normContent.length) {
-          if (normCharIdx === matchIndexInNorm) {
-            matchOrigStart = origCharIdx;
-          }
-          if (normCharIdx === matchIndexInNorm + normOldStr.length) {
-            matchOrigEnd = origCharIdx;
-            break;
-          }
-          const cOrig = content[origCharIdx];
-          
-          if (cOrig === "\r") {
-            origCharIdx++;
-            continue;
-          }
-          origCharIdx++;
-          normCharIdx++;
-        }
+        
+        const normToOrigMap = mapNormToOrigIndices(content, normContent);
+        const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+        const matchOrigEnd = normToOrigMap[matchIndexInNorm + normOldStr.length] ?? -1;
 
         if (matchOrigStart === -1 || matchOrigEnd === -1) {
           updated = content.replace(oldStr, newStr);
@@ -341,6 +303,8 @@ export const editTool: Tool = {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error editing file: ${message}`;
+    } finally {
+      release();
     }
   },
 };
@@ -594,6 +558,7 @@ export const writeToFileTool: Tool = {
     if (nextContent === undefined || nextContent === null) {
       return "Error: Missing required parameter 'content'. Provide the content to write to the file.";
     }
+    const release = await fileLockManager.acquire(filePath);
     try {
       if (!overwrite) {
         try {
@@ -626,6 +591,8 @@ export const writeToFileTool: Tool = {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error writing file: ${message}`;
+    } finally {
+      release();
     }
   },
 };
@@ -682,6 +649,7 @@ export const replaceFileContentTool: Tool = {
       return "Error: targetContent cannot be empty.";
     }
 
+    const release = await fileLockManager.acquire(filePath);
     try {
       const content = await fs.readFile(filePath, "utf-8");
       const lines = content.split(/\r?\n/);
@@ -760,6 +728,8 @@ export const replaceFileContentTool: Tool = {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error replacing file content: ${message}`;
+    } finally {
+      release();
     }
   },
 };
@@ -869,6 +839,7 @@ export const multiReplaceFileContentTool: Tool = {
       return "Error: No chunks provided or invalid format.";
     }
 
+    const release = await fileLockManager.acquire(filePath);
     try {
       let content = await fs.readFile(filePath, "utf-8");
       const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
@@ -1040,6 +1011,8 @@ export const multiReplaceFileContentTool: Tool = {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error in multi-replace: ${message}`;
+    } finally {
+      release();
     }
   },
 };
@@ -1067,6 +1040,7 @@ export const applyPatchTool: Tool = {
       return "Error: Missing required parameter 'filePath'. Provide the path to the file to patch.";
     }
     const patchContent = args.patchContent as string;
+    const release = await fileLockManager.acquire(filePath);
     try {
       const originalContent = await fs.readFile(filePath, "utf-8");
       let content = originalContent;
@@ -1172,26 +1146,11 @@ export const applyPatchTool: Tool = {
             const normOldStr = normalizeForMatching(oldStr);
             if (normContent.includes(normOldStr)) {
               const matchIndexInNorm = normContent.indexOf(normOldStr);
-              let normCharIdx = 0;
-              let origCharIdx = 0;
-              let matchOrigStart = -1;
-              let matchOrigEnd = -1;
-              while (origCharIdx < content.length && normCharIdx < normContent.length) {
-                if (normCharIdx === matchIndexInNorm) {
-                  matchOrigStart = origCharIdx;
-                }
-                if (normCharIdx === matchIndexInNorm + normOldStr.length) {
-                  matchOrigEnd = origCharIdx;
-                  break;
-                }
-                const cOrig = content[origCharIdx];
-                if (cOrig === "\r") {
-                  origCharIdx++;
-                  continue;
-                }
-                origCharIdx++;
-                normCharIdx++;
-              }
+              
+              const normToOrigMap = mapNormToOrigIndices(content, normContent);
+              const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+              const matchOrigEnd = normToOrigMap[matchIndexInNorm + normOldStr.length] ?? -1;
+              
               if (matchOrigStart !== -1 && matchOrigEnd !== -1) {
                 content = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
               } else {
@@ -1223,6 +1182,8 @@ export const applyPatchTool: Tool = {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error applying patch: ${message}`;
+    } finally {
+      release();
     }
   },
 };

@@ -237,3 +237,30 @@ export function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
+export class FileLockManager {
+  private locks = new Map<string, Promise<void>>();
+
+  async acquire(filePath: string): Promise<() => void> {
+    const absPath = path.resolve(filePath);
+    const currentLock = this.locks.get(absPath) || Promise.resolve();
+
+    let resolveLock: () => void = () => {};
+    const newLock = new Promise<void>((resolve) => {
+      resolveLock = resolve;
+    });
+
+    this.locks.set(absPath, currentLock.catch(() => {}).then(() => newLock));
+
+    await currentLock;
+    return () => {
+      resolveLock();
+      if (this.locks.get(absPath) === newLock) {
+        this.locks.delete(absPath);
+      }
+    };
+  }
+}
+
+export const fileLockManager = new FileLockManager();
+
+
