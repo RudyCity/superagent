@@ -27,7 +27,7 @@ export interface DashboardStatusBarProps {
 
 function StatusBarSpinner() {
   const [frame, setFrame] = React.useState(0);
-  const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  const spinnerFrames = ["▰▱▱▱▱", "▱▰▱▱▱", "▱▱▰▱▱", "▱▱▱▰▱", "▱▱▱▱▰", "▱▱▱▰▱", "▱▱▰▱▱", "▱▰▱▱▱"];
 
   React.useEffect(() => {
     const timer = setInterval(() => {
@@ -36,7 +36,7 @@ function StatusBarSpinner() {
     return () => clearInterval(timer);
   }, []);
 
-  return <Text color="yellow" bold>{spinnerFrames[frame]} </Text>;
+  return <Text color="yellow" bold>[{spinnerFrames[frame]}] </Text>;
 }
 
 export const DashboardStatusBar = memo(function DashboardStatusBar({
@@ -70,14 +70,14 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
     <Box flexDirection="column" paddingX={1} marginTop={1}>
       {/* Row 1: Engine Status */}
       <Box flexDirection="row">
-        <Text color="cyan" bold>🤖 {activeModel}</Text>
         {isProcessing && (
           <>
-            <Text color="gray"> │ </Text>
             <StatusBarSpinner />
             <Text color="yellow" bold>Processing...</Text>
+            <Text color="gray"> │ </Text>
           </>
         )}
+        <Text color="cyan" bold>🤖 {activeModel}</Text>
         <Text color="gray"> │ </Text>
         <Text color="green" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
         {lastSpeed !== null && (

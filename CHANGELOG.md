@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.96] - 2026-07-04
+
+### Changed
+- **Relocated and Restyled Loading Footer Indicator**: Redesigned the status bar loader to use a cyberpunk-themed scanner block spinner (`[▰▱▱▱▱]`) and moved the processing block to the leftmost position of the footer/status bar in both single-agent and multi-agent dashboard layouts.
+
+---
+
 ## [1.2.95] - 2026-07-03
 
 ### Added
