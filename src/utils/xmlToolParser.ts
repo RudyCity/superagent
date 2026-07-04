@@ -87,9 +87,41 @@ function tryParseToolCallJson(rawBody: string): any {
     return JSON.parse(decodeHtmlEntities(rawBody));
   } catch {}
 
+  const trimmed = rawBody.trim();
+
+  // Fallback for XML-like tags inside <tool_call>
+  try {
+    if (trimmed.includes("<") && trimmed.includes(">")) {
+      const nameMatch = /<(?:tool_name|name)>([\s\S]*?)<\/(?:tool_name|name)>/i.exec(trimmed);
+      if (nameMatch) {
+        const name = nameMatch[1].trim();
+        const args: Record<string, any> = {};
+        const tagRegex = /<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>/gi;
+        let tagMatch;
+        while ((tagMatch = tagRegex.exec(trimmed)) !== null) {
+          const key = tagMatch[1];
+          if (key.toLowerCase() !== "tool_name" && key.toLowerCase() !== "name") {
+            const val = tagMatch[2].trim();
+            if (val === "true") args[key] = true;
+            else if (val === "false") args[key] = false;
+            else if (val === "null") args[key] = null;
+            else if (/^-?\d+(?:\.\d+)?$/.test(val)) args[key] = Number(val);
+            else {
+              try {
+                args[key] = JSON.parse(val);
+              } catch {
+                args[key] = decodeHtmlEntities(val);
+              }
+            }
+          }
+        }
+        return { name, arguments: args, args };
+      }
+    }
+  } catch {}
+
   // Fallback for malformed/unescaped JSON arrays or objects
   try {
-    const trimmed = rawBody.trim();
     if (trimmed.startsWith("[")) {
       const elementRegex = /\{[\s\S]*?\}(?=\s*,\s*\{|\s*\])/g;
       const elements = trimmed.match(elementRegex);

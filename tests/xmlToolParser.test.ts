@@ -189,6 +189,25 @@ Let me execute these in sequence:
     });
   });
 
+  it("should parse tool_call blocks containing XML-like tags (fallback)", () => {
+    const text = `
+<tool_calls>
+<tool_call>
+<tool_name>bash</tool_name>
+<command>cd "D:\\project" && npx tsc</command>
+<timeout>30000</timeout>
+</tool_call>
+</tool_calls>
+`;
+    const result = parseXmlToolCalls(text, [{ name: "bash" }]);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].name).toBe("bash");
+    expect(result.toolCalls[0].args).toEqual({
+      command: 'cd "D:\\project" && npx tsc',
+      timeout: 30000,
+    });
+  });
+
   describe("StreamXmlFilter", () => {
     it("should filter out tool calls from stream and emit normal text", () => {
       let output = "";
