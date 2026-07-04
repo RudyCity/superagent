@@ -1944,7 +1944,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (key.tab && !isProcessing) {
-      if (input.startsWith("/")) {
+      if (input.startsWith("/") || input.startsWith("!")) {
         if (suggestions && suggestions.length > 0) {
           if (!lastTabPrefix) {
             setLastTabPrefix(input);

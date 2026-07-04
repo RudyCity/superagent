@@ -884,7 +884,7 @@ export function MultiAgentDashboard({
   })();
 
   let bottomPromptHeight = isSelectionOnlyStep ? 0 : 1; // Prompt input row (hidden for selection-only steps)
-  if (!isSelectionOnlyStep && focusArea === "input" && query.startsWith("/") && suggestions.length > 0) {
+  if (!isSelectionOnlyStep && focusArea === "input" && (query.startsWith("/") || query.startsWith("!")) && suggestions.length > 0) {
     const activeDesc = suggestionDescs[query];
     bottomPromptHeight += activeDesc ? 3 : 2;
   }
@@ -1335,7 +1335,7 @@ export function MultiAgentDashboard({
       {/* Interactive Full-Width Console Prompt — hidden for selection-only wizard steps */}
       {!isSelectionOnlyStep && (
         <>
-          {focusArea === "input" && query.startsWith("/") && suggestions.length > 0 && (
+          {focusArea === "input" && (query.startsWith("/") || query.startsWith("!")) && suggestions.length > 0 && (
             <Box flexDirection="column" marginBottom={1} paddingX={1}>
               <Box flexDirection="row">
                 <Text color="cyan" dimColor>│   </Text>

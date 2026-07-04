@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.98] - 2026-07-04
+
+### Fixed
+- **Bang Shortcut Suggestion Support**: Added support in the suggestion engine to map inputs starting with `!` shortcut to terminal commands, returning corresponding terminal suggestions (e.g., `!init`, `!bg`, `!stop`, etc.) and showing them properly in the terminal UI and dashboard suggestions panel.
+- **Tab Completion for Bang Prefix**: Allowed tab completion trigger and cycle/selection logic when the user input starts with `!` command shortcut.
+- **Immediate Update for Bang Prefix**: Disabled input debouncing in `ChatTextInput` when typing the `!` prefix, ensuring instant suggestion list updates.
+
+### Added
+- Added unit tests in `tests/bangSuggestions.test.ts` verifying suggestions mapping and tab completion behavior for the bang command prefix.
+
+---
+
 ## [1.2.97] - 2026-07-04
 
 ### Added

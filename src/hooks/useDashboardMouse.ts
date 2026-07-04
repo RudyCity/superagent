@@ -108,7 +108,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
           .map((i) => i.branch).length;
         const statusBarHeight = 5 + (activeWTsCount > 0 ? 1 : 0);
         const suggestions = getDashboardSuggestions(query);
-        const isSuggestionsVisible = ctx.focusArea === "input" && query.startsWith("/") && suggestions.length > 0;
+        const isSuggestionsVisible = ctx.focusArea === "input" && (query.startsWith("/") || query.startsWith("!")) && suggestions.length > 0;
         const bottomPromptHeight = 1 + (isSuggestionsVisible ? 2 : 0);
         const promptStartRow = terminalSize.height - statusBarHeight - bottomPromptHeight + 1;
 
@@ -368,7 +368,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
             .map((i) => i.branch).length;
           const statusBarHeight_click = 5 + (activeWTsCount_click > 0 ? 1 : 0);
           const suggestions_click = getDashboardSuggestions(query);
-          const isSuggestionsVisible_click = ctx.focusArea === "input" && query.startsWith("/") && suggestions_click.length > 0;
+          const isSuggestionsVisible_click = ctx.focusArea === "input" && (query.startsWith("/") || query.startsWith("!")) && suggestions_click.length > 0;
           const bottomPromptHeight_click = 1 + (isSuggestionsVisible_click ? 2 : 0);
           const promptStartRow_click = terminalSize.height - statusBarHeight_click - bottomPromptHeight_click + 1;
 

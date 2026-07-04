@@ -857,189 +857,212 @@ export function App({
     ...skillCommands
   ];
 
-  const getSuggestions = (currentInput = input) => {
-    if (!currentInput.startsWith("/")) return [];
-    const trimmed = currentInput.trim();
-    const parts = trimmed.split(/\s+/);
-    const mainCommand = parts[0];
-
-    if (!currentInput.includes(" ")) {
-      return filterSuggestions(commands, currentInput);
+  const getSuggestions = (originalInput = input) => {
+    const isBang = originalInput.startsWith("!");
+    let currentInput = originalInput;
+    if (isBang) {
+      currentInput = `/terminal ${originalInput.slice(1).trim()}`;
     }
 
-    if (mainCommand === "/processes" || mainCommand === "/procs") {
-      if (currentInput.startsWith(`${mainCommand} stop`)) {
-        const stopSuggestions = [`${mainCommand} stop all`];
-        const workspacePath = agentRef.current?.workingDirectory || process.cwd();
-        for (const [id, task] of backgroundTasks.entries()) {
-          if (isTaskInWorkspace(task.cwd, workspacePath)) {
-            stopSuggestions.push(`${mainCommand} stop ${id}`);
+    const getRawSuggestions = () => {
+      if (!currentInput.startsWith("/")) return [];
+      const trimmed = currentInput.trim();
+      const parts = trimmed.split(/\s+/);
+      const mainCommand = parts[0];
+
+      if (!currentInput.includes(" ")) {
+        return filterSuggestions(commands, currentInput);
+      }
+
+      if (mainCommand === "/processes" || mainCommand === "/procs") {
+        if (currentInput.startsWith(`${mainCommand} stop`)) {
+          const stopSuggestions = [`${mainCommand} stop all`];
+          const workspacePath = agentRef.current?.workingDirectory || process.cwd();
+          for (const [id, task] of backgroundTasks.entries()) {
+            if (isTaskInWorkspace(task.cwd, workspacePath)) {
+              stopSuggestions.push(`${mainCommand} stop ${id}`);
+            }
           }
+          return stopSuggestions.filter(p => p.startsWith(currentInput));
         }
-        return stopSuggestions.filter(p => p.startsWith(currentInput));
+        return [`${mainCommand} stop`, `${mainCommand} stop all`].filter(p => p.startsWith(currentInput));
       }
-      return [`${mainCommand} stop`, `${mainCommand} stop all`].filter(p => p.startsWith(currentInput));
-    }
 
-    if (mainCommand === "/worktree" || mainCommand === "/worktrees") {
-      const worktreeSuggestions = [
-        `${mainCommand} list`,
-        `${mainCommand} prune`,
-        `${mainCommand} remove`
-      ];
-      return filterSuggestions(worktreeSuggestions, currentInput);
-    }
+      if (mainCommand === "/worktree" || mainCommand === "/worktrees") {
+        const worktreeSuggestions = [
+          `${mainCommand} list`,
+          `${mainCommand} prune`,
+          `${mainCommand} remove`
+        ];
+        return filterSuggestions(worktreeSuggestions, currentInput);
+      }
 
-    if (mainCommand === "/checkpoint") {
-      const checkpointSuggestions = [
-        `${mainCommand} list`,
-        `${mainCommand} restore`,
-        `${mainCommand} delete`
-      ];
-      return filterSuggestions(checkpointSuggestions, currentInput);
-    }
+      if (mainCommand === "/checkpoint") {
+        const checkpointSuggestions = [
+          `${mainCommand} list`,
+          `${mainCommand} restore`,
+          `${mainCommand} delete`
+        ];
+        return filterSuggestions(checkpointSuggestions, currentInput);
+      }
 
-    if (mainCommand === "/login") {
-      const loginSuggestions = [
-        `${mainCommand} add`,
-        `${mainCommand} list`,
-        `${mainCommand} remove`
-      ];
-      return filterSuggestions(loginSuggestions, currentInput);
-    }
+      if (mainCommand === "/login") {
+        const loginSuggestions = [
+          `${mainCommand} add`,
+          `${mainCommand} list`,
+          `${mainCommand} remove`
+        ];
+        return filterSuggestions(loginSuggestions, currentInput);
+      }
 
-    if (mainCommand === "/terminal") {
-      if (currentInput.startsWith(`${mainCommand} stop`)) {
-        const stopSuggestions = [`${mainCommand} stop all`];
-        const workspacePath = agentRef.current?.workingDirectory || process.cwd();
-        for (const [id, task] of backgroundTasks.entries()) {
-          if (id.startsWith("term-") && isTaskInWorkspace(task.cwd, workspacePath)) {
-            stopSuggestions.push(`${mainCommand} stop ${id}`);
+      if (mainCommand === "/terminal") {
+        if (currentInput.startsWith(`${mainCommand} stop`)) {
+          const stopSuggestions = [`${mainCommand} stop all`];
+          const workspacePath = agentRef.current?.workingDirectory || process.cwd();
+          for (const [id, task] of backgroundTasks.entries()) {
+            if (id.startsWith("term-") && isTaskInWorkspace(task.cwd, workspacePath)) {
+              stopSuggestions.push(`${mainCommand} stop ${id}`);
+            }
           }
+          return stopSuggestions.filter(p => p.startsWith(currentInput));
         }
-        return stopSuggestions.filter(p => p.startsWith(currentInput));
+        if (currentInput.startsWith(`${mainCommand} bg`)) {
+          const bgSuggestions = [`${mainCommand} bg preset`];
+          return bgSuggestions.filter(p => p.startsWith(currentInput));
+        }
+        const terminalSuggestions = [
+          `${mainCommand} init`,
+          `${mainCommand} bg`,
+          `${mainCommand} stop`,
+          `${mainCommand} stop all`,
+          `${mainCommand} all`,
+          `${mainCommand} preset`
+        ];
+        return filterSuggestions(terminalSuggestions, currentInput);
       }
-      if (currentInput.startsWith(`${mainCommand} bg`)) {
-        const bgSuggestions = [`${mainCommand} bg preset`];
-        return bgSuggestions.filter(p => p.startsWith(currentInput));
-      }
-      const terminalSuggestions = [
-        `${mainCommand} init`,
-        `${mainCommand} bg`,
-        `${mainCommand} stop`,
-        `${mainCommand} stop all`,
-        `${mainCommand} all`,
-        `${mainCommand} preset`
-      ];
-      return filterSuggestions(terminalSuggestions, currentInput);
-    }
 
-    if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
-      const subSuggestions = [`${mainCommand} init`, `${mainCommand} dev`, `${mainCommand} active`];
-      if (parts.length === 2) {
+      if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
+        const subSuggestions = [`${mainCommand} init`, `${mainCommand} dev`, `${mainCommand} active`];
+        if (parts.length === 2) {
+          return filterSuggestions(subSuggestions, currentInput);
+        }
+        if (parts.length >= 3 && parts[1].toLowerCase() === "dev") {
+          const hooksRoot = path.join(process.cwd(), "internal-hooks");
+          let hookDirs: string[] = [];
+          if (fsSync.existsSync(hooksRoot)) {
+            try {
+              hookDirs = fsSync.readdirSync(hooksRoot, { withFileTypes: true })
+                .filter(item => item.isDirectory())
+                .map(item => `${mainCommand} dev ${item.name}`);
+            } catch {}
+          }
+          return filterSuggestions(hookDirs, currentInput);
+        }
         return filterSuggestions(subSuggestions, currentInput);
       }
-      if (parts.length >= 3 && parts[1].toLowerCase() === "dev") {
-        const hooksRoot = path.join(process.cwd(), "internal-hooks");
-        let hookDirs: string[] = [];
-        if (fsSync.existsSync(hooksRoot)) {
-          try {
-            hookDirs = fsSync.readdirSync(hooksRoot, { withFileTypes: true })
-              .filter(item => item.isDirectory())
-              .map(item => `${mainCommand} dev ${item.name}`);
-          } catch {}
+
+      if (mainCommand === "/model") {
+        if (currentInput.startsWith(`${mainCommand} preset`)) {
+          const presetSuggestions = [
+            `${mainCommand} preset list`,
+            `${mainCommand} preset save`,
+          ];
+          return filterSuggestions(presetSuggestions, currentInput);
         }
-        return filterSuggestions(hookDirs, currentInput);
-      }
-      return filterSuggestions(subSuggestions, currentInput);
-    }
-
-    if (mainCommand === "/model") {
-      if (currentInput.startsWith(`${mainCommand} preset`)) {
-        const presetSuggestions = [
-          `${mainCommand} preset list`,
-          `${mainCommand} preset save`,
+        const modelSuggestions = [
+          `${mainCommand} preset`,
+          `${mainCommand} master`,
+          `${mainCommand} superagent`,
+          `${mainCommand} subagent`
         ];
-        return filterSuggestions(presetSuggestions, currentInput);
+        return filterSuggestions(modelSuggestions, currentInput);
       }
-      const modelSuggestions = [
-        `${mainCommand} preset`,
-        `${mainCommand} master`,
-        `${mainCommand} superagent`,
-        `${mainCommand} subagent`
-      ];
-      return filterSuggestions(modelSuggestions, currentInput);
-    }
 
-    if (mainCommand === "/compact") {
-      const compactSuggestions = [
-        `${mainCommand} now`
-      ];
-      return filterSuggestions(compactSuggestions, currentInput);
-    }
+      if (mainCommand === "/compact") {
+        const compactSuggestions = [
+          `${mainCommand} now`
+        ];
+        return filterSuggestions(compactSuggestions, currentInput);
+      }
 
-    if (mainCommand === "/pin") {
-      const pinSuggestions = [
-        `${mainCommand} list`,
-        `${mainCommand} list-messages`,
-        `${mainCommand} last`,
-        `${mainCommand} view`,
-        `${mainCommand} tag`,
-        `${mainCommand} unpin`
-      ];
-      return filterSuggestions(pinSuggestions, currentInput);
-    }
+      if (mainCommand === "/pin") {
+        const pinSuggestions = [
+          `${mainCommand} list`,
+          `${mainCommand} list-messages`,
+          `${mainCommand} last`,
+          `${mainCommand} view`,
+          `${mainCommand} tag`,
+          `${mainCommand} unpin`
+        ];
+        return filterSuggestions(pinSuggestions, currentInput);
+      }
 
-    if (mainCommand === "/knowledge") {
-      const knowledgeSuggestions = [
-        `${mainCommand} list`,
-        `${mainCommand} projects`
-      ];
-      return filterSuggestions(knowledgeSuggestions, currentInput);
-    }
+      if (mainCommand === "/knowledge") {
+        const knowledgeSuggestions = [
+          `${mainCommand} list`,
+          `${mainCommand} projects`
+        ];
+        return filterSuggestions(knowledgeSuggestions, currentInput);
+      }
 
-    if (mainCommand === "/search-history") {
-      const shSuggestions = [
-        `${mainCommand} --all`
-      ];
-      return filterSuggestions(shSuggestions, currentInput);
-    }
+      if (mainCommand === "/search-history") {
+        const shSuggestions = [
+          `${mainCommand} --all`
+        ];
+        return filterSuggestions(shSuggestions, currentInput);
+      }
 
-    if (mainCommand === "/mcp") {
-      const mcpSuggestions = [
-        `${mainCommand} list`,
-        `${mainCommand} add`,
-        `${mainCommand} remove`,
-        `${mainCommand} reload`
-      ];
-      return filterSuggestions(mcpSuggestions, currentInput);
-    }
+      if (mainCommand === "/mcp") {
+        const mcpSuggestions = [
+          `${mainCommand} list`,
+          `${mainCommand} add`,
+          `${mainCommand} remove`,
+          `${mainCommand} reload`
+        ];
+        return filterSuggestions(mcpSuggestions, currentInput);
+      }
 
-    if (mainCommand === "/setting-tencentdb") {
-      const tdbSuggestions = [
-        "/setting-tencentdb on",
-        "/setting-tencentdb off",
-        "/setting-tencentdb status",
-        "/setting-tencentdb show-bg-procs",
-        "/setting-tencentdb hide-bg-procs",
-      ];
-      return filterSuggestions(tdbSuggestions, currentInput);
-    }
+      if (mainCommand === "/setting-tencentdb") {
+        const tdbSuggestions = [
+          "/setting-tencentdb on",
+          "/setting-tencentdb off",
+          "/setting-tencentdb status",
+          "/setting-tencentdb show-bg-procs",
+          "/setting-tencentdb hide-bg-procs",
+        ];
+        return filterSuggestions(tdbSuggestions, currentInput);
+      }
 
-    if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
-      const focusSuggestions = [
-        `${parts[0]} off`,
-        `${parts[0]} low`,
-        `${parts[0]} medium`,
-        `${parts[0]} high`,
-        `${parts[0]} xhigh`,
-        `${parts[0]} max`,
-        `${parts[0]} custom`,
-      ];
-      return filterSuggestions(focusSuggestions, currentInput);
-    }
+      if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
+        const focusSuggestions = [
+          `${parts[0]} off`,
+          `${parts[0]} low`,
+          `${parts[0]} medium`,
+          `${parts[0]} high`,
+          `${parts[0]} xhigh`,
+          `${parts[0]} max`,
+          `${parts[0]} custom`,
+        ];
+        return filterSuggestions(focusSuggestions, currentInput);
+      }
 
-    return [];
+      return [];
+    };
+
+    const res = getRawSuggestions();
+    if (isBang) {
+      return res.map(s => {
+        if (s.startsWith("/terminal")) {
+          const suffix = s.slice(9);
+          if (suffix.startsWith(" ")) {
+            return `!${suffix.trim()}`;
+          }
+          return `!${suffix}`;
+        }
+        return s;
+      });
+    }
+    return res;
   };
 
   const handleInputChange = useCallback((val: string) => {
@@ -2047,7 +2070,7 @@ export function App({
     } else if (activeWizard.type === "question") {
       chromeHeight += 8 + Math.min(6, wizardOptions.length);
     }
-  } else if (input.startsWith("/") && suggestions.length > 0) {
+  } else if ((input.startsWith("/") || input.startsWith("!")) && suggestions.length > 0) {
     chromeHeight += 2;
   }
   if (isProcessing) {
@@ -2142,7 +2165,7 @@ export function App({
         wizardSectionHeight += 8 + Math.min(6, wizardOptions.length);
       }
     }
-  } else if (input.startsWith("/") && suggestions.length > 0) {
+  } else if ((input.startsWith("/") || input.startsWith("!")) && suggestions.length > 0) {
     wizardSectionHeight += 2;
   }
 

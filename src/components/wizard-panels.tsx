@@ -798,7 +798,7 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
         )}
 
         {/* Render suggestions inline above the input line */}
-        {!activeWizard && input.startsWith("/") && suggestions.length > 0 && (() => {
+        {!activeWizard && (input.startsWith("/") || input.startsWith("!")) && suggestions.length > 0 && (() => {
           const MAX_VISIBLE_SUGGESTIONS = 5;
           let visibleSuggestions: string[] = [];
           let hasMoreSuffix = false;

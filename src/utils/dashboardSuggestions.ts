@@ -46,199 +46,222 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/memory": "Manage and inspect TencentDB long-term memory",
 };
 
-export function getDashboardSuggestions(query: string): string[] {
-  if (!query.startsWith("/")) return [];
-  const skillCommands = getInstalledSkills().map(s => {
-    const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    return `/skill-${slug}`;
-  });
+export function getDashboardSuggestions(originalQuery: string): string[] {
+  const isBang = originalQuery.startsWith("!");
+  let query = originalQuery;
+  if (isBang) {
+    query = `/terminal ${originalQuery.slice(1).trim()}`;
+  }
 
-  const commands = [
-    ...new Set(
-      registry.getAll().flatMap(cmd => {
-        const names = [`/${cmd.name}`];
-        if (cmd.aliases) names.push(...cmd.aliases.map(a => `/${a}`));
-        return names;
-      })
-    ),
-    ...skillCommands
-  ];
-  const parts = query.split(/\s+/);
-  const mainCommand = parts[0].toLowerCase();
-  
-  if (parts.length === 1) {
-    return filterSuggestions(commands, query);
-  }
-  
-  if (mainCommand === "/model") {
-    if (parts.length >= 2 && parts[1].toLowerCase() === "preset") {
-      const presetSuggestions = [
-        "/model preset list",
-        "/model preset save",
-      ];
-      const searchTerm = query.replace(/^\/model\s+preset\s*/i, "").trim();
-      return searchTerm
-        ? filterSuggestions(presetSuggestions, query)
-        : presetSuggestions;
+  const getRawSuggestions = () => {
+    if (!query.startsWith("/")) return [];
+    const skillCommands = getInstalledSkills().map(s => {
+      const slug = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      return `/skill-${slug}`;
+    });
+
+    const commands = [
+      ...new Set(
+        registry.getAll().flatMap(cmd => {
+          const names = [`/${cmd.name}`];
+          if (cmd.aliases) names.push(...cmd.aliases.map(a => `/${a}`));
+          return names;
+        })
+      ),
+      ...skillCommands
+    ];
+    const parts = query.split(/\s+/);
+    const mainCommand = parts[0].toLowerCase();
+    
+    if (parts.length === 1) {
+      return filterSuggestions(commands, query);
     }
-    const possibilities = [
-      "/model preset",
-      "/model master",
-      "/model superagent",
-      "/model subagent",
-    ];
-    const fallbackModels = [
-      "google/gemini-2.5-flash",
-      "google/gemini-2.5-pro",
-      "anthropic/claude-3-5-sonnet",
-      "openai/gpt-4o",
-      "openai/gpt-4o-mini"
-    ];
-    const cachedIds = getCachedModelIds();
-    const modelList = cachedIds.length > 0 ? cachedIds : fallbackModels;
-    possibilities.push(...modelList.map(m => `/model ${m}`));
-    const searchTerm = query.replace(/^\/model\s*/i, "").trim();
-    return searchTerm
-      ? filterSuggestions(possibilities, searchTerm)
-      : possibilities.slice(0, 12);
-  }
-  
-  if (mainCommand === "/login") {
-    if (parts.length >= 2 && parts[1].toLowerCase() === "add") {
-      const providers = ["openrouter", "openai", "anthropic", "custom"];
-      const possibilities = providers.map(p => `/login add ${p}`);
+    
+    if (mainCommand === "/model") {
+      if (parts.length >= 2 && parts[1].toLowerCase() === "preset") {
+        const presetSuggestions = [
+          "/model preset list",
+          "/model preset save",
+        ];
+        const searchTerm = query.replace(/^\/model\s+preset\s*/i, "").trim();
+        return searchTerm
+          ? filterSuggestions(presetSuggestions, query)
+          : presetSuggestions;
+      }
+      const possibilities = [
+        "/model preset",
+        "/model master",
+        "/model superagent",
+        "/model subagent",
+      ];
+      const fallbackModels = [
+        "google/gemini-2.5-flash",
+        "google/gemini-2.5-pro",
+        "anthropic/claude-3-5-sonnet",
+        "openai/gpt-4o",
+        "openai/gpt-4o-mini"
+      ];
+      const cachedIds = getCachedModelIds();
+      const modelList = cachedIds.length > 0 ? cachedIds : fallbackModels;
+      possibilities.push(...modelList.map(m => `/model ${m}`));
+      const searchTerm = query.replace(/^\/model\s*/i, "").trim();
+      return searchTerm
+        ? filterSuggestions(possibilities, searchTerm)
+        : possibilities.slice(0, 12);
+    }
+    
+    if (mainCommand === "/login") {
+      if (parts.length >= 2 && parts[1].toLowerCase() === "add") {
+        const providers = ["openrouter", "openai", "anthropic", "custom"];
+        const possibilities = providers.map(p => `/login add ${p}`);
+        return filterSuggestions(possibilities, query);
+      }
+      if (parts.length >= 2 && parts[1].toLowerCase() === "remove") {
+        return ["/login remove <provider_id>"].filter(p => p.startsWith(query));
+      }
+      const possibilities = ["/login add", "/login list", "/login remove"];
       return filterSuggestions(possibilities, query);
     }
-    if (parts.length >= 2 && parts[1].toLowerCase() === "remove") {
-      return ["/login remove <provider_id>"].filter(p => p.startsWith(query));
+
+    if (mainCommand === "/checkpoint") {
+      const possibilities = ["/checkpoint list", "/checkpoint restore", "/checkpoint delete"];
+      return filterSuggestions(possibilities, query);
     }
-    const possibilities = ["/login add", "/login list", "/login remove"];
-    return filterSuggestions(possibilities, query);
-  }
+    
+    if (mainCommand === "/resume") {
+      const sessionsList = listHistorySessions(true);
+      const possibilities = sessionsList.map((s, idx) => `/resume ${idx + 1}`);
+      return filterSuggestions(possibilities, query);
+    }
 
-  if (mainCommand === "/checkpoint") {
-    const possibilities = ["/checkpoint list", "/checkpoint restore", "/checkpoint delete"];
-    return filterSuggestions(possibilities, query);
-  }
-  
-  if (mainCommand === "/resume") {
-    const sessionsList = listHistorySessions(true);
-    const possibilities = sessionsList.map((s, idx) => `/resume ${idx + 1}`);
-    return filterSuggestions(possibilities, query);
-  }
-
-  if (mainCommand === "/terminal") {
-    if (query.startsWith("/terminal stop")) {
-      const stopSuggestions = ["/terminal stop all"];
-      for (const [id] of backgroundTasks.entries()) {
-        if (id.startsWith("term-")) stopSuggestions.push(`/terminal stop ${id}`);
+    if (mainCommand === "/terminal") {
+      if (query.startsWith("/terminal stop")) {
+        const stopSuggestions = ["/terminal stop all"];
+        for (const [id] of backgroundTasks.entries()) {
+          if (id.startsWith("term-")) stopSuggestions.push(`/terminal stop ${id}`);
+        }
+        return stopSuggestions.filter(p => p.startsWith(query));
       }
-      return stopSuggestions.filter(p => p.startsWith(query));
-    }
-    if (query.startsWith("/terminal bg")) {
-      const bgSuggestions = ["/terminal bg preset"];
-      return bgSuggestions.filter(p => p.startsWith(query));
-    }
-    const possibilities = [
-      "/terminal init",
-      "/terminal bg",
-      "/terminal stop",
-      "/terminal stop all",
-      "/terminal all",
-      "/terminal preset"
-    ];
-    return filterSuggestions(possibilities, query);
-  }
-
-  if (mainCommand === "/processes" || mainCommand === "/procs") {
-    if (query.startsWith(`${mainCommand} stop`)) {
-      const stopSuggestions = [`${mainCommand} stop all`];
-      for (const [id] of backgroundTasks.entries()) {
-        stopSuggestions.push(`${mainCommand} stop ${id}`);
+      if (query.startsWith("/terminal bg")) {
+        const bgSuggestions = ["/terminal bg preset"];
+        return bgSuggestions.filter(p => p.startsWith(query));
       }
-      return stopSuggestions.filter(p => p.startsWith(query));
+      const possibilities = [
+        "/terminal init",
+        "/terminal bg",
+        "/terminal stop",
+        "/terminal stop all",
+        "/terminal all",
+        "/terminal preset"
+      ];
+      return filterSuggestions(possibilities, query);
     }
-    const possibilities = [`${mainCommand} stop`, `${mainCommand} stop all`];
-    return possibilities.filter(p => p.startsWith(query));
-  }
 
-  if (mainCommand === "/worktree" || mainCommand === "/worktrees") {
-    const possibilities = [
-      `${parts[0]} list`,
-      `${parts[0]} prune`,
-      `${parts[0]} remove`
-    ];
-    return filterSuggestions(possibilities, query);
-  }
-
-  if (mainCommand === "/setting-tencentdb") {
-    const possibilities = [
-      "/setting-tencentdb on",
-      "/setting-tencentdb off",
-      "/setting-tencentdb status",
-      "/setting-tencentdb show-bg-procs",
-      "/setting-tencentdb hide-bg-procs",
-    ];
-    return filterSuggestions(possibilities, query);
-  }
-
-  if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
-    const possibilities = [
-      `${parts[0]} off`,
-      `${parts[0]} low`,
-      `${parts[0]} medium`,
-      `${parts[0]} high`,
-      `${parts[0]} xhigh`,
-      `${parts[0]} max`,
-      `${parts[0]} custom`,
-    ];
-    return filterSuggestions(possibilities, query);
-  }
-
-  if (mainCommand === "/memory") {
-    const possibilities = [
-      "/memory status",
-      "/memory list",
-      "/memory search",
-      "/memory add",
-      "/memory delete",
-      "/memory help",
-    ];
-    return filterSuggestions(possibilities, query);
-  }
-
-  if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
-    const subSuggestions = [`${parts[0]} init`, `${parts[0]} dev`, `${parts[0]} list`, `${parts[0]} active`];
-    if (parts.length === 1) {
-      return subSuggestions;
+    if (mainCommand === "/processes" || mainCommand === "/procs") {
+      if (query.startsWith(`${mainCommand} stop`)) {
+        const stopSuggestions = [`${mainCommand} stop all`];
+        for (const [id] of backgroundTasks.entries()) {
+          stopSuggestions.push(`${mainCommand} stop ${id}`);
+        }
+        return stopSuggestions.filter(p => p.startsWith(query));
+      }
+      const possibilities = [`${mainCommand} stop`, `${mainCommand} stop all`];
+      return possibilities.filter(p => p.startsWith(query));
     }
-    const sub = parts[1]?.toLowerCase();
-    if (sub === "dev" || sub === "init") {
-      const hooksRoot = path.join(process.cwd(), "internal-hooks");
-      let hookDirs: string[] = [];
-      if (fs.existsSync(hooksRoot)) {
-        try {
-          hookDirs = fs.readdirSync(hooksRoot, { withFileTypes: true })
-            .filter(item => item.isDirectory())
-            .map(item => `${parts[0]} ${sub} ${item.name}`);
-        } catch {}
-      }
-      if (sub === "dev") {
-        hookDirs.push(
-          `${parts[0]} ${sub} off`,
-          `${parts[0]} ${sub} stop`,
-          `${parts[0]} ${sub} clear`,
-          `${parts[0]} ${sub} none`
-        );
-      }
-      if (hookDirs.length > 0) {
-        return filterSuggestions(hookDirs, query);
-      }
-    }
-    return filterSuggestions(subSuggestions, query);
-  }
 
-  return [];
+    if (mainCommand === "/worktree" || mainCommand === "/worktrees") {
+      const possibilities = [
+        `${parts[0]} list`,
+        `${parts[0]} prune`,
+        `${parts[0]} remove`
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/setting-tencentdb") {
+      const possibilities = [
+        "/setting-tencentdb on",
+        "/setting-tencentdb off",
+        "/setting-tencentdb status",
+        "/setting-tencentdb show-bg-procs",
+        "/setting-tencentdb hide-bg-procs",
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
+      const possibilities = [
+        `${parts[0]} off`,
+        `${parts[0]} low`,
+        `${parts[0]} medium`,
+        `${parts[0]} high`,
+        `${parts[0]} xhigh`,
+        `${parts[0]} max`,
+        `${parts[0]} custom`,
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/memory") {
+      const possibilities = [
+        "/memory status",
+        "/memory list",
+        "/memory search",
+        "/memory add",
+        "/memory delete",
+        "/memory help",
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
+      const subSuggestions = [`${parts[0]} init`, `${parts[0]} dev`, `${parts[0]} list`, `${parts[0]} active`];
+      if (parts.length === 1) {
+        return subSuggestions;
+      }
+      const sub = parts[1]?.toLowerCase();
+      if (sub === "dev" || sub === "init") {
+        const hooksRoot = path.join(process.cwd(), "internal-hooks");
+        let hookDirs: string[] = [];
+        if (fs.existsSync(hooksRoot)) {
+          try {
+            hookDirs = fs.readdirSync(hooksRoot, { withFileTypes: true })
+              .filter(item => item.isDirectory())
+              .map(item => `${parts[0]} ${sub} ${item.name}`);
+          } catch {}
+        }
+        if (sub === "dev") {
+          hookDirs.push(
+            `${parts[0]} ${sub} off`,
+            `${parts[0]} ${sub} stop`,
+            `${parts[0]} ${sub} clear`,
+            `${parts[0]} ${sub} none`
+          );
+        }
+        if (hookDirs.length > 0) {
+          return filterSuggestions(hookDirs, query);
+        }
+      }
+      return filterSuggestions(subSuggestions, query);
+    }
+
+    return [];
+  };
+
+  const res = getRawSuggestions();
+  if (isBang) {
+    return res.map(s => {
+      if (s.startsWith("/terminal")) {
+        const suffix = s.slice(9);
+        if (suffix.startsWith(" ")) {
+          return `!${suffix.trim()}`;
+        }
+        return `!${suffix}`;
+      }
+      return s;
+    });
+  }
+  return res;
 }
 
 

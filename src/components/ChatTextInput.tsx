@@ -82,6 +82,7 @@ export default function ChatTextInput({
       immediate ||
       val === "" ||
       val.startsWith("/") ||
+      val.startsWith("!") ||
       val.length - (lastSentValueRef.current || "").length > 5 ||
       val.includes("\n");
 

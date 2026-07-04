@@ -652,7 +652,7 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     }
 
     if (key.tab) {
-      if (focusArea === "input" && query.startsWith("/")) {
+      if (focusArea === "input" && (query.startsWith("/") || query.startsWith("!"))) {
         if (suggestions.length > 0) {
           if (setLastTabPrefix && !lastTabPrefix) {
             setLastTabPrefix(query);
