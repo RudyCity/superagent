@@ -755,22 +755,22 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       const children = line.children || [];
       return (
         <Box flexDirection="column">
-          <Text color="blue">
-            {isFirst ? "┌" : "├"}─── [ <Text bold color="blue">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
+          <Text color="gray">
+            {isFirst ? "┌" : "├"}─── [ <Text bold color="gray">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
           </Text>
-          {renderMarkdown(capped.text, "blue")}
+          {renderMarkdown(capped.text, "gray")}
           {capped.truncated && (
             <Box flexDirection="row">
-              <Text color="blue">│    </Text>
+              <Text color="gray">│    </Text>
               <Text color="yellow">... [long response truncated; click to open scroll view, mouse scroll / ↑↓] ...</Text>
             </Box>
           )}
           {children.length > 0 && children.map((child, childIdx) => {
             const isChildCollapsed = isCollapsibleType(child.type) && !expandedChildren.has(childIdx);
-            return renderNestedChild(child, childIdx, isChildCollapsed, "blue");
+            return renderNestedChild(child, childIdx, isChildCollapsed, "gray");
           })}
           <Box flexDirection="row">
-            <Text color="blue">│ </Text>
+            <Text color="gray">│ </Text>
           </Box>
         </Box>
       );

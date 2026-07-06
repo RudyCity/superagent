@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.105] - 2026-07-06
+
+### Changed
+- **Assistant Timeline UI Theme**:
+  - Colored the timeline tree prefix (`┌───`, `├───`, `│`), agent name (`✦ SUPERAGENT`), and turn index (`[#lineIndex]`) with a single dark gray color (`gray`) to improve aesthetic readability and visual cohesion.
+
+---
+
 ## [1.2.104] - 2026-07-06
 
 ### Fixed

@@ -664,14 +664,14 @@ export function wrapChatLineToLines({
 
       const headerNode = (
         <Box flexDirection="row">
-          <Text color="blue">
-            {isFirst ? "┌" : "├"}─── [ <Text bold color="blue">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
+          <Text color="gray">
+            {isFirst ? "┌" : "├"}─── [ <Text bold color="gray">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
           </Text>
         </Box>
       );
       result.push({ node: headerNode, lineIndex, type: "assistant", isHeader: true, isTruncated: capped.truncated });
 
-      const contentLines = wrapMarkdownToLines(capped.text, "blue", chatWidth, lineIndex);
+      const contentLines = wrapMarkdownToLines(capped.text, "gray", chatWidth, lineIndex);
       for (const wrappedContentLine of contentLines) {
         result.push({
           ...wrappedContentLine,
@@ -682,7 +682,7 @@ export function wrapChatLineToLines({
       if (capped.truncated) {
         const noticeNode = (
           <Box flexDirection="row">
-            <Text color="blue">│    </Text>
+            <Text color="gray">│    </Text>
             <Text color="yellow">... [long response truncated; click to open scroll view, mouse scroll / ↑↓] ...</Text>
           </Box>
         );
@@ -700,7 +700,7 @@ export function wrapChatLineToLines({
 
       const separatorNode = (
         <Box flexDirection="row">
-          <Text color="blue">│ </Text>
+          <Text color="gray">│ </Text>
         </Box>
       );
       result.push({ node: separatorNode, lineIndex, type: "assistant", isSeparator: true, isTruncated: capped.truncated });
@@ -1134,14 +1134,14 @@ export function computeWrappedLines({
   if (shouldRenderStream) {
     const headerNode = (
       <Box flexDirection="row">
-        <Text color="blue">
-          {borderPrefix}─── [ <Text bold color="blue">✦ SUPERAGENT (STREAMING...)</Text> ]
+        <Text color="gray">
+          {borderPrefix}─── [ <Text bold color="gray">✦ SUPERAGENT (STREAMING...)</Text> ]
         </Text>
       </Box>
     );
     result.push({ node: headerNode, lineIndex: -1, type: "assistant", isHeader: true });
 
-    const contentLines = wrapMarkdownToLines(streamDisplay, "blue", chatWidth, -1);
+    const contentLines = wrapMarkdownToLines(streamDisplay, "gray", chatWidth, -1);
     result.push(...contentLines);
   }
 
@@ -1149,8 +1149,8 @@ export function computeWrappedLines({
   if (shouldRenderThinking) {
     const headerNode = (
       <Box flexDirection="row">
-        <Text color="blue">
-          {borderPrefix}─── [ <Text bold color="blue">✦ SUPERAGENT (THINKING...)</Text> ]
+        <Text color="gray">
+          {borderPrefix}─── [ <Text bold color="gray">✦ SUPERAGENT (THINKING...)</Text> ]
         </Text>
       </Box>
     );
@@ -1158,7 +1158,7 @@ export function computeWrappedLines({
 
     const bodyNode = (
       <Box flexDirection="row">
-        <Text color="blue">│    </Text>
+        <Text color="gray">│    </Text>
         <LoadingIndicator />
       </Box>
     );
@@ -1428,7 +1428,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
               <Text color="yellow">
                 ┌─── [ <Text bold color="yellow">RESPONSE_SCROLL</Text><Text dimColor> {currentPosition + 1}/{Math.max(1, truncatedIndexes.length)} line {safeOffset + 1}-{visibleEnd} / {responseLines.length} {renderScrollBar(safeOffset, focusWindowHeight, responseLines.length)} | ↑/↓ scroll | Esc close | click to close</Text> ]
               </Text>
-              {renderMarkdown(visibleText, "blue")}
+              {renderMarkdown(visibleText, "gray")}
               <Text color="yellow">└─── [ focused assistant response #{focusedResponseIndex + 1} ]</Text>
             </Box>
           );
