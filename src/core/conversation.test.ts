@@ -88,12 +88,16 @@ describe("Conversation", () => {
   it("should proactively strip old tool results and prune routine results faster", () => {
     const conv = new Conversation();
 
+    // Build a result string long enough to exceed PREVIEW_CHARS (800) so truncation triggers
+    const longResult = (prefix: string) =>
+      Array.from({ length: 60 }, (_, i) => `${prefix} line ${i + 1}: ${"x".repeat(20)}`).join("\n");
+
     // 1. Add non-routine tool (e.g. run_command)
     conv.addAssistantMessage("running build", [{ id: "c1", name: "run_command", args: {} }]);
     conv.addMessage({
       role: "tool",
       content: "",
-      toolResults: [{ toolCallId: "c1", name: "run_command", result: "build output very long...", isError: false }],
+      toolResults: [{ toolCallId: "c1", name: "run_command", result: longResult("build output"), isError: false }],
       timestamp: Date.now()
     });
 
@@ -102,7 +106,7 @@ describe("Conversation", () => {
     conv.addMessage({
       role: "tool",
       content: "",
-      toolResults: [{ toolCallId: "c2", name: "read_file", result: "file content lines...", isError: false }],
+      toolResults: [{ toolCallId: "c2", name: "read_file", result: longResult("file content"), isError: false }],
       timestamp: Date.now()
     });
 
@@ -110,8 +114,8 @@ describe("Conversation", () => {
     // - "read_file" is the most recent (1st tool message seen). It should be intact.
     // - "run_command" is the 2nd tool message seen. Since it is non-routine, and keepCycles is 2, it should be intact.
     let msgs = conv.getMessages();
-    expect(msgs.find(m => m.toolResults?.[0]?.name === "read_file")?.toolResults?.[0]?.result).toBe("file content lines...");
-    expect(msgs.find(m => m.toolResults?.[0]?.name === "run_command")?.toolResults?.[0]?.result).toBe("build output very long...");
+    expect(msgs.find(m => m.toolResults?.[0]?.name === "read_file")?.toolResults?.[0]?.result).toContain("file content line 1");
+    expect(msgs.find(m => m.toolResults?.[0]?.name === "run_command")?.toolResults?.[0]?.result).toContain("build output line 1");
 
     // 3. Add another tool call to advance the cycle
     conv.addAssistantMessage("running test", [{ id: "c3", name: "run_command", args: {} }]);
@@ -123,7 +127,7 @@ describe("Conversation", () => {
     });
 
     // Now:
-    // - "run_command (tests passed)" is 1st tool message seen. Intact.
+    // - "run_command (tests passed)" is 1st tool message seen. Intact (short result, no truncation).
     // - "read_file" is 2nd tool message seen. Since it is routine, its keepCycles is 1. It should be stripped!
     // - "run_command (build output)" is 3rd tool message seen. Since toolMessagesSeen (3) > keepCycles (2), it should be stripped!
     msgs = conv.getMessages();

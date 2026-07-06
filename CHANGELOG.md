@@ -2,7 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.134] - 2026-07-06
+
+### Fixed
+- **Tool Result Truncation — AI Blindness**:
+  - Replaced the blind `[Output truncated for token efficiency (success)]` wipe with a meaningful preview strategy in `conversation.ts`. Old tool results now retain the first 20 lines (capped at 800 chars) with a `... [truncated — N more line(s) omitted]` suffix instead of being erased entirely.
+  - Results already under 800 chars are preserved verbatim with no truncation.
+  - Error results keep up to 300 chars (up from 150) so failure reasons remain visible.
+  - Routine tools (`read_file`, `grep`, `list_dir`, etc.) age out at `keepCycles - 1` rounds using `Math.max(1, keepCycles - 1)` instead of a hardcoded `1`, making the logic consistent with the configurable cycle parameter.
+  - Updated `conversation.test.ts` to use long synthetic results that exceed the 800-char preview threshold, correctly exercising the new truncation behavior.
+
+---
+
 ## [1.2.133] - 2026-07-06
+
 
 ### Fixed
 - **Image Prompt System — Path Issues**:

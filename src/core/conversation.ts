@@ -250,41 +250,78 @@ export class Conversation {
     }
   }
 
+  /**
+   * Truncate old tool results to save tokens while preserving enough context
+   * for the AI to understand what was previously found.
+   *
+   * Strategy:
+   * - Keep the most recent `keepCycles` tool round-trips in full.
+   * - For older results: keep a meaningful preview (first PREVIEW_LINES lines,
+   *   capped at PREVIEW_CHARS chars) so the AI is NOT left completely blind.
+   * - Errors always keep at least 300 chars so failure reasons remain visible.
+   * - Routine read/list/grep tools age out one cycle sooner (keepCycles - 1)
+   *   because their outputs are usually large and transient.
+   */
   stripOldToolResults(keepCycles = 2): void {
+    /** Max lines to keep in the preview snippet */
+    const PREVIEW_LINES = 20;
+    /** Hard character cap for the preview snippet */
+    const PREVIEW_CHARS = 800;
+    /** Max chars to keep from error results */
+    const ERROR_CHARS = 300;
+
+    /**
+     * Produce a trimmed preview of a successful tool result.
+     * Returns the first PREVIEW_LINES lines, capped at PREVIEW_CHARS,
+     * with a suffix indicating how much was omitted.
+     */
+    const makePreview = (result: string): string => {
+      if (result.length <= PREVIEW_CHARS) return result;
+      const lines = result.split(/\r?\n/);
+      const previewLines = lines.slice(0, PREVIEW_LINES);
+      let preview = previewLines.join("\n");
+      if (preview.length > PREVIEW_CHARS) {
+        preview = preview.slice(0, PREVIEW_CHARS);
+      }
+      const omittedLines = lines.length - previewLines.length;
+      const suffix = omittedLines > 0
+        ? `\n... [truncated — ${omittedLines} more line(s) omitted for token efficiency]`
+        : `\n... [truncated — content too long, omitted for token efficiency]`;
+      return preview + suffix;
+    };
+
+    const truncateResult = (tr: ToolResult): ToolResult => {
+      if (tr.isError) {
+        const trimmed = tr.result.length > ERROR_CHARS
+          ? `${tr.result.substring(0, ERROR_CHARS)}... [Error truncated]`
+          : tr.result;
+        return { ...tr, result: trimmed };
+      }
+      return { ...tr, result: makePreview(tr.result) };
+    };
+
     let toolMessagesSeen = 0;
     for (let i = this.messages.length - 1; i >= 0; i--) {
       const msg = this.messages[i];
       if (msg.role === "tool") {
         toolMessagesSeen++;
-        const isRoutine = msg.toolResults?.some(tr => 
+        const isRoutine = msg.toolResults?.some(tr =>
           ["read_file", "list_directory", "grep", "list_dir", "grep_search"].includes(tr.name)
         ) || false;
 
-        const currentKeepCycles = isRoutine ? 1 : keepCycles;
+        const currentKeepCycles = isRoutine ? Math.max(1, keepCycles - 1) : keepCycles;
 
-        if (toolMessagesSeen > currentKeepCycles) {
-          if (msg.toolResults) {
-            msg.toolResults = msg.toolResults.map((tr) => ({
-              ...tr,
-              result: tr.isError 
-                ? (tr.result.length > 150 ? `${tr.result.substring(0, 150)}... [Error truncated]` : tr.result)
-                : `[Output truncated for token efficiency (success)]`,
-            }));
-          }
+        if (toolMessagesSeen > currentKeepCycles && msg.toolResults) {
+          msg.toolResults = msg.toolResults.map(truncateResult);
         }
       } else if (msg.role === "assistant") {
-        const isRoutine = msg.toolCalls?.some(tc => 
+        const isRoutine = msg.toolCalls?.some(tc =>
           ["read_file", "list_directory", "grep", "list_dir", "grep_search"].includes(tc.name)
         ) || false;
-        const currentKeepCycles = isRoutine ? 1 : keepCycles;
+        const currentKeepCycles = isRoutine ? Math.max(1, keepCycles - 1) : keepCycles;
 
         if (msg.toolResults && toolMessagesSeen > currentKeepCycles) {
-          msg.toolResults = msg.toolResults.map((tr) => ({
-            ...tr,
-            result: tr.isError 
-              ? (tr.result.length > 150 ? `${tr.result.substring(0, 150)}... [Error truncated]` : tr.result)
-              : `[Output truncated for token efficiency (success)]`,
-          }));
+          msg.toolResults = msg.toolResults.map(truncateResult);
         }
       }
     }
