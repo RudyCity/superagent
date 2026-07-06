@@ -4,6 +4,20 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
+function logMouseDebug(msg: string) {
+  if (process.env.DEBUG_MOUSE !== "true") return;
+  try {
+    const logDir = path.join(os.homedir(), ".superagent-r");
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logPath = path.join(logDir, "superagent.log");
+    fs.appendFileSync(logPath, msg);
+  } catch (e) {
+    // ignore
+  }
+}
+
 export interface SectionBoundary {
   name: string;
   startRow: number;
@@ -97,21 +111,10 @@ export function useMouseScroll(
 
       const text = data.toString("utf8");
 
-      // Diagnostic mouse logging
-      try {
-        const logDir = path.join(os.homedir(), ".superagent-r");
-        if (!fs.existsSync(logDir)) {
-          fs.mkdirSync(logDir, { recursive: true });
-        }
-        const logPath = path.join(logDir, "superagent.log");
-        fs.appendFileSync(
-          logPath,
-          `[MOUSE DEBUG] Raw escape sequence: ${JSON.stringify(text)} (visible positions count: ${ctx.visibleLinePositions?.length || 0})\n` +
-          `[MOUSE DEBUG] Current sections: ${JSON.stringify(ctx.sections)}\n`
-        );
-      } catch (e) {
-        // ignore
-      }
+      logMouseDebug(
+        `[MOUSE DEBUG] Raw escape sequence: ${JSON.stringify(text)} (visible positions count: ${ctx.visibleLinePositions?.length || 0})\n` +
+        `[MOUSE DEBUG] Current sections: ${JSON.stringify(ctx.sections)}\n`
+      );
       const matches = text.matchAll(
         /\x1b\[<(?<btn>\d+);(?<col>\d+);(?<row>\d+)(?<action>[Mm])/g
       );
@@ -210,13 +213,7 @@ export function useMouseScroll(
             }
           }
 
-          try {
-            const logPath = path.join(os.homedir(), ".superagent-r", "superagent.log");
-            fs.appendFileSync(
-              logPath,
-              `[MOUSE DEBUG] Click at x=${x}, y=${y}. Matched section: ${clickedSection ? clickedSection.name : "none"}\n`
-            );
-          } catch (e) {}
+          logMouseDebug(`[MOUSE DEBUG] Click at x=${x}, y=${y}. Matched section: ${clickedSection ? clickedSection.name : "none"}\n`);
 
           if (!clickedSection) continue;
 
@@ -239,37 +236,19 @@ export function useMouseScroll(
               }
               // Check if clicked on a chat line
               let handledClick = false;
-              try {
-                const logPath = path.join(os.homedir(), ".superagent-r", "superagent.log");
-                fs.appendFileSync(
-                  logPath,
-                  `[MOUSE DEBUG] Chat click: visible positions are: ${JSON.stringify(ctx.visibleLinePositions)}\n`
-                );
-              } catch (e) {}
+              logMouseDebug(`[MOUSE DEBUG] Chat click: visible positions are: ${JSON.stringify(ctx.visibleLinePositions)}\n`);
               for (const pos of ctx.visibleLinePositions) {
                 if (y >= pos.startRow && y <= pos.endRow) {
-                  try {
-                    const logPath = path.join(os.homedir(), ".superagent-r", "superagent.log");
-                    fs.appendFileSync(
-                      logPath,
-                      `[MOUSE DEBUG] Matched position: index=${pos.index}, type=${pos.type}, isCollapsible=${pos.isCollapsible}, parentIndex=${pos.parentIndex}, childIndex=${pos.childIndex}\n`
-                    );
-                  } catch (e) {}
+                  logMouseDebug(`[MOUSE DEBUG] Matched position: index=${pos.index}, type=${pos.type}, isCollapsible=${pos.isCollapsible}, parentIndex=${pos.parentIndex}, childIndex=${pos.childIndex}\n`);
                   // Nested child line click → toggle child expand/collapse
                   if (pos.parentIndex !== undefined && pos.childIndex !== undefined && pos.isCollapsible && ctx.toggleChildExpand) {
-                    try {
-                      const logPath = path.join(os.homedir(), ".superagent-r", "superagent.log");
-                      fs.appendFileSync(logPath, `[MOUSE DEBUG] Toggling child expand for parent=${pos.parentIndex}, child=${pos.childIndex}\n`);
-                    } catch (e) {}
+                    logMouseDebug(`[MOUSE DEBUG] Toggling child expand for parent=${pos.parentIndex}, child=${pos.childIndex}\n`);
                     ctx.toggleChildExpand(pos.parentIndex, pos.childIndex);
                     handledClick = true;
                   }
                   // Collapsible line click → toggle expand/collapse
                   else if (pos.isCollapsible && ctx.toggleLineExpand) {
-                    try {
-                      const logPath = path.join(os.homedir(), ".superagent-r", "superagent.log");
-                      fs.appendFileSync(logPath, `[MOUSE DEBUG] Toggling line expand for index=${pos.index}\n`);
-                    } catch (e) {}
+                    logMouseDebug(`[MOUSE DEBUG] Toggling line expand for index=${pos.index}\n`);
                     ctx.toggleLineExpand(pos.index);
                     handledClick = true;
                   }

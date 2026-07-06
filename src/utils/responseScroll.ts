@@ -31,7 +31,16 @@ function visibleLength(str: string): number {
   return str.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").length;
 }
 
+const wrapCache = new Map<string, string[]>();
+const MAX_CACHE_SIZE = 4000;
+
 export function wrapTextForDisplay(text: string, width: number): string[] {
+  const cacheKey = `${width}:${text}`;
+  const cached = wrapCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const safeWidth = Math.max(10, width);
   const wrapped: string[] = [];
   // Normalize \r\n -> \n, strip bare \r (defensive: prevents col-0 bleed if \r slips through)
@@ -68,7 +77,17 @@ export function wrapTextForDisplay(text: string, width: number): string[] {
       wrapped.push(rawLine.slice(lineStart));
     }
   }
-  return wrapped.length > 0 ? wrapped : [""];
+  const result = wrapped.length > 0 ? wrapped : [""];
+
+  if (wrapCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = wrapCache.keys().next().value;
+    if (firstKey !== undefined) {
+      wrapCache.delete(firstKey);
+    }
+  }
+  wrapCache.set(cacheKey, result);
+
+  return result;
 }
 
 export function renderScrollBar(offset: number, windowHeight: number, totalLines: number): string {

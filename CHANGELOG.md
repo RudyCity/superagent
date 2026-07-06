@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.101] - 2026-07-06
+
+### Optimized
+- **Terminal Scroll Performance**:
+  - Implemented a Least-Recently-Used (LRU) style cache for `wrapTextForDisplay` inside `src/utils/responseScroll.ts` to skip character-by-character scan and wrap logic on subsequent renders of unchanged text.
+  - Resolved terminal scrolling lag in single-agent mode by adding a conditional `logMouseDebug` helper in `src/hooks/useMouseScroll.ts`. The helper suppresses synchronous directory/file checks and writes during mouse events unless explicitly enabled via `process.env.DEBUG_MOUSE === "true"`.
+
+---
+
 ## [1.2.100] - 2026-07-06
 
 ### Optimized
