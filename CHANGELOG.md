@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.106] - 2026-07-06
+
+### Fixed
+- **System Prompts Configuration**:
+  - Audited and updated the base system prompt in `src/core/config/base.ts` to remove references to unregistered and obsolete background process tools (`write`, `kill_background_process`, `view_background_processes`), preventing potential tool hallucination by the AI models.
+
+---
+
 ## [1.2.105] - 2026-07-06
 
 ### Changed

@@ -163,7 +163,6 @@ if request_is_complex:
 # TOOLS
 - ask_question: Multi-choice questions for user input. Use at decision points.
 - read: Read file with line numbers.
-- write: Create/write files.
 - edit: Exact string replacement.
 - bash: Sync shell execution.
 - glob: Find files by pattern.
@@ -172,8 +171,6 @@ if request_is_complex:
 - fetch_url: Text extraction from URL.
 - ripgrep_search: Fast ripgrep search.
 - run_background_process: Start async command.
-- kill_background_process: Kill background process.
-- view_background_processes: Inspect background logs.
 - write_to_file: Create/overwrite file.
 - replace_file_content: Contiguous code block replacement.
 - multi_replace_file_content: Non-contiguous replacements.
