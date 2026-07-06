@@ -81,7 +81,7 @@ export type QuestionHandler = (
 ) => Promise<string | string[]>;
 
 
-function formatError(err: unknown): string {
+export function formatError(err: unknown): string {
   if (!err) return "Unknown error";
   
   let baseMessage = "";
@@ -100,12 +100,38 @@ function formatError(err: unknown): string {
 
   if (baseMessage) {
     try {
-      const status = obj.statusCode || obj.status || (obj.error && (obj.error.statusCode || obj.error.status));
+      let status: number | undefined;
+      let bodyText: string | undefined;
+      let currentCause: any = obj.cause;
+      
+      let current = obj;
+      while (current && typeof current === "object") {
+        if (status === undefined) {
+          const s = current.statusCode || current.status || (current.error && (current.error.statusCode || current.error.status));
+          if (s) {
+            status = Number(s);
+          }
+        }
+        if (bodyText === undefined) {
+          const b = current.text || current.responseBody || (current.error && (current.error.text || current.error.responseBody));
+          if (typeof b === "string" && b.trim()) {
+            bodyText = b;
+          }
+        }
+        if (current.cause) {
+          currentCause = current.cause;
+          current = current.cause;
+        } else if (current.error && typeof current.error === "object" && current.error !== current) {
+          current = current.error;
+        } else {
+          break;
+        }
+      }
+
       if (status) {
         extra += ` (status: ${status})`;
       }
       
-      const bodyText = obj.text || obj.responseBody || (obj.error && (obj.error.text || obj.error.responseBody));
       if (bodyText && typeof bodyText === "string") {
         const trimmed = bodyText.trim();
         if (trimmed) {
@@ -115,9 +141,11 @@ function formatError(err: unknown): string {
         }
       }
       
-      if (obj.cause) {
-        const causeMsg = obj.cause instanceof Error ? obj.cause.message : String(obj.cause);
-        extra += ` - cause: ${causeMsg}`;
+      if (currentCause) {
+        const causeMsg = currentCause instanceof Error ? currentCause.message : String(currentCause);
+        if (causeMsg && causeMsg !== baseMessage) {
+          extra += ` - cause: ${causeMsg}`;
+        }
       }
     } catch {
       // Ignore extraction failures

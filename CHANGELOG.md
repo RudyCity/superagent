@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.141] - 2026-07-06
+
+### Changed
+- **Recursive Error Formatting**:
+  - Enhanced the `formatError` function to recursively traverse error causes (chains of `.cause` or `.error` properties) to extract underlying status codes, response bodies, and cause details from nested API/network errors.
+
+---
+
 ## [1.2.140] - 2026-07-06
 
 ### Fixed
