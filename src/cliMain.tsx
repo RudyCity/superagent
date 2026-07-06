@@ -6,8 +6,8 @@ const __dirname = path.dirname(__filename);
 
 import { getConfig } from "./core/config.js";
 import { isDirectoryTrusted, addTrustedDirectory, ensureDirectoryTrusted } from "./core/config/jsonConfig.js";
-import { backgroundTasks, killProcessTree, isTaskInWorkspace } from "./core/tools/index.js";
-import { subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
+import { backgroundTasks, isTaskInWorkspace, subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
+import { killProcessTree } from "./core/tools/shellTools.js";
 import { closeMcpServers } from "./core/mcp/McpManager.js";
 
 function cleanupBackgroundTasks() {
