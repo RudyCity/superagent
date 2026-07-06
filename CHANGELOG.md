@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.123] - 2026-07-06
+
+### Improved
+- **Image Prompt Context Headers**:
+  - Enhanced the headers and instruction text accompanying auto-vision token-saving image parts (system prompts, user inputs, memory context, and tool results).
+  - Explicitly instructs the vision-enabled models to read, transcribe, and follow instructions/data embedded within the images rather than treating them as generic user attachments.
+
+---
+
 ## [1.2.122] - 2026-07-06
 
 ### Changed

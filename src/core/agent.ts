@@ -1503,7 +1503,10 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             prependSystemMessage = {
               role: "user",
               content: [
-                { type: "text", text: "[System instructions rendered as images to save tokens]:" },
+                {
+                  type: "text",
+                  text: "CRITICAL: The following image(s) contain your core SYSTEM INSTRUCTIONS, RULES, and WORKFLOW guidelines. Read the text inside the image(s) carefully. You must strictly adhere to all instructions, constraints, and rules displayed in these images for this entire session. [System instructions rendered as images to save tokens]:"
+                },
                 ...base64List.map(base64 => ({ type: "image" as const, image: base64, mimeType: "image/png" }))
               ]
             };
@@ -1513,7 +1516,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               content: "I have read the system instructions rendered as images and will strictly follow all rules and guidelines."
             };
 
-            finalSystemPrompt = "[System instructions are rendered as images in the first user message to save tokens]";
+            finalSystemPrompt = "CRITICAL: System instructions are rendered as images in the first user message to save tokens. Do not ignore them. Treat the contents of those images as your active system prompt, rules, and guidelines.";
           } catch (err: any) {
             this.writeToLogFile("WARN", `Failed to automatically convert system prompt to image: ${err.message}. Falling back to text.`);
           }
@@ -2609,8 +2612,8 @@ for (const tc of toolCalls) {
           try {
             const pages = sliceTextIntoPages(rawContent);
             const headerText = isMemoryContext
-              ? `[TencentDB Agent Memory Context rendered as images to save tokens]:`
-              : `[Content of user message rendered as images to save tokens]:`;
+              ? "CRITICAL CONTEXT: The following image(s) contain the persistent TencentDB Agent Memory Context (system state and facts). Read the text in the image(s) to understand the background state. [TencentDB Agent Memory Context rendered as images to save tokens]:"
+              : "CRITICAL USER INPUT: The following image(s) contain the text content of the user message. Read the text in the image(s) carefully to understand the user's request and instructions. [Content of user message rendered as images to save tokens]:";
             const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
               { type: "text", text: headerText }
             ];
@@ -2706,7 +2709,10 @@ for (const tc of toolCalls) {
             try {
               const pages = sliceTextIntoPages(resultText);
               const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
-                { type: "text", text: `[Tool responses rendered as images to save tokens]:` }
+                {
+                  type: "text",
+                  text: "CRITICAL TOOL OUTPUT: The following image(s) contain the execution results/responses of your recently invoked tools. Read the text in the image(s) carefully to see the output. [Tool responses rendered as images to save tokens]:"
+                }
               ];
               for (const page of pages) {
                 const base64 = renderTextToImageBase64(page);
@@ -2808,7 +2814,10 @@ for (const tc of toolCalls) {
         if (pendingImagesToAppend.length > 0) {
           const appendParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [];
           for (const item of pendingImagesToAppend) {
-            appendParts.push({ type: "text", text: `[Tool output for "${item.toolName}" rendered as image]:` });
+            appendParts.push({
+              type: "text",
+              text: `CRITICAL TOOL OUTPUT: The following image(s) contain the actual execution output of the tool "${item.toolName}". Read the text inside the image(s) to see the result. [Tool output for "${item.toolName}" rendered as image]:`
+            });
             for (const base64 of item.base64List) {
               appendParts.push({ type: "image", image: base64, mimeType: "image/png" });
             }
