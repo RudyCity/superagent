@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.103] - 2026-07-06
+
+### Fixed
+- **Input Focus and Caret Display**:
+  - Separated the mouse click boundary handlers for `input` and `wizard` in `src/hooks/useMouseScroll.ts` to ensure that clicking the text input box always focuses it and displays the caret, even when a wizard dialog is active.
+  - Implemented focus-gaining cursor sync in `src/components/ChatTextInput.tsx` to automatically snap the cursor to the end of the text when the input field is focused.
+
+---
+
 ## [1.2.102] - 2026-07-06
 
 ### Fixed

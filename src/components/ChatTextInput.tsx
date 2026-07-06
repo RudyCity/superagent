@@ -70,6 +70,7 @@ export default function ChatTextInput({
 
   const lastSentValueRef = useRef(originalValue || "");
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const prevFocusRef = useRef(focus);
 
   const debounceOnChange = (val: string, forceImmediate = false) => {
     if (debounceTimerRef.current) {
@@ -127,10 +128,13 @@ export default function ChatTextInput({
   }, []);
 
   // Sync localValue with originalValue when it changes externally.
-  // Keep cursorOffset within bounds and snap cursor to end when value changes externally.
+  // Keep cursorOffset within bounds and snap cursor to end when value changes externally or when gaining focus.
   useEffect(() => {
     const currentVal = originalValue || "";
     const len = currentVal.length;
+    const gainedFocus = focus && !prevFocusRef.current;
+    prevFocusRef.current = focus;
+
     if (currentVal !== lastSentValueRef.current) {
       setLocalValue(currentVal);
       lastSentValueRef.current = currentVal;
@@ -138,7 +142,9 @@ export default function ChatTextInput({
         setCursorOffset(len);
       }
     } else {
-      if (focus && showCursor && cursorOffset > len) {
+      if (gainedFocus && showCursor) {
+        setCursorOffset(len);
+      } else if (focus && showCursor && cursorOffset > len) {
         setCursorOffset(len);
       }
     }

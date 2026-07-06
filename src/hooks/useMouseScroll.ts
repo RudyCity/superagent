@@ -290,6 +290,8 @@ export function useMouseScroll(
               ctx.setFocusMode("checklist");
               break;
             case "input":
+              ctx.setFocusMode("input");
+              break;
             case "wizard":
               if (ctx.activeWizard?.type === "plan_approve") {
                 if (ctx.activeWizard.step === 2) {
