@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.131] - 2026-07-06
+
+### Changed
+- **Footer (Status Bar)**:
+  - Replaced the simple flashing text spinner with a beautiful bouncing block spinner (`[▰▱▱▱▱]`) styled in solid `blueBright`.
+
+---
+
 ## [1.2.130] - 2026-07-06
 
 ### Changed

@@ -24,20 +24,28 @@ export interface StatusBarProps {
 }
 
 function LoadingIndicator() {
-  const [bright, setBright] = React.useState(true);
+  const [frame, setFrame] = React.useState(0);
+  const frames = [
+    "▰▱▱▱▱",
+    "▱▰▱▱▱",
+    "▱▱▰▱▱",
+    "▱▱▱▰▱",
+    "▱▱▱▱▰",
+    "▱▱▱▰▱",
+    "▱▱▰▱▱",
+    "▱▰▱▱▱",
+  ];
 
   React.useEffect(() => {
     const timer = setInterval(() => {
-      setBright((prev) => !prev);
-    }, 500);
+      setFrame((prev) => (prev + 1) % frames.length);
+    }, 100);
     return () => clearInterval(timer);
   }, []);
 
-  const color = bright ? "blueBright" : "blue";
-
   return (
-    <Text bold color={color}>
-      ⠿ Processing...
+    <Text bold color="blueBright">
+      [{frames[frame]}] Processing...
     </Text>
   );
 }
