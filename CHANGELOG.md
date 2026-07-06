@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.113] - 2026-07-06
+
+### Added
+- **Vision Token Saving Settings Commands**:
+  - Added new slash commands `/setting-auto-vision <on|off>` and `/setting-vision-threshold <number>`.
+  - Integrated the settings into the `/settings` display block.
+  - Added comprehensive test coverage in `tests/slashCommands.test.ts`.
+
+---
+
 ## [1.2.112] - 2026-07-06
 
 ### Changed

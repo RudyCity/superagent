@@ -145,6 +145,8 @@ export const settingsCommand: SlashCommand = {
         `│ • Focus Level (Depth): ${s.focus?.toUpperCase() ?? "OFF"}`,
         `│ • Focus Custom Budget: ${s.focusBudget} tokens`,
         `│ • Force Prompt Tools : ${s.forcePromptBasedToolCalling ? "ENABLED" : "DISABLED"}`,
+        `│ • Auto Vision Token  : ${s.autoVisionTokenSaving ?? true ? "ENABLED" : "DISABLED"}`,
+        `│ • Vision Threshold   : ${s.visionTokenSavingThreshold ?? 4000} chars`,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",
@@ -160,7 +162,9 @@ export const settingsCommand: SlashCommand = {
         "  /setting-tencentdb <on|off|status|show|hide> [gatewayUrl]",
         "  /setting-focus <off|low|medium|high|xhigh|max|custom>",
         "  /setting-focus-budget <number>",
-        "  /setting-force-prompt-tools <on|off>"
+        "  /setting-force-prompt-tools <on|off>",
+        "  /setting-auto-vision <on|off>",
+        "  /setting-vision-threshold <number>"
       ].join("\n"),
       timestamp: Date.now(),
     });
@@ -1233,6 +1237,88 @@ export const settingForcePromptToolsCommand: SlashCommand = {
   }
 };
 
+// /setting-auto-vision command
+export const settingAutoVisionCommand: SlashCommand = {
+  name: "setting-auto-vision",
+  description: "Enable or disable automatic text-to-image conversion for large prompt context",
+  execute(args, ctx) {
+    const now = Date.now();
+    const val = args.trim();
+    if (!val) {
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-auto-vision <on|off>\nCurrent value: ${getSettings().autoVisionTokenSaving ?? true ? "on" : "off"}`,
+        timestamp: now,
+      });
+      return;
+    }
+    if (val !== "on" && val !== "off") {
+      ctx.addLine({
+        type: "error",
+        content: "Invalid value. Must be 'on' or 'off'.",
+        timestamp: now,
+      });
+      return;
+    }
+    const enable = val === "on";
+    try {
+      updateSettings({ autoVisionTokenSaving: enable });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Automatic vision token saving set to: ${enable ? "ENABLED" : "DISABLED"}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
+// /setting-vision-threshold command
+export const settingVisionThresholdCommand: SlashCommand = {
+  name: "setting-vision-threshold",
+  description: "Set the character threshold above which prompt context is converted to image",
+  execute(args, ctx) {
+    const now = Date.now();
+    const val = args.trim();
+    if (!val) {
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-vision-threshold <number>\nCurrent value: ${getSettings().visionTokenSavingThreshold ?? 4000} chars`,
+        timestamp: now,
+      });
+      return;
+    }
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 0) {
+      ctx.addLine({
+        type: "error",
+        content: "Invalid value. Must be a non-negative number.",
+        timestamp: now,
+      });
+      return;
+    }
+    try {
+      updateSettings({ visionTokenSavingThreshold: num });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Vision token saving threshold set to: ${num} chars`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
 registry.register(settingsCommand);
 registry.register(settingConcurrencyCommand);
 registry.register(settingRpmCommand);
@@ -1247,3 +1333,5 @@ registry.register(settingTencentdbCommand);
 registry.register(settingFocusCommand);
 registry.register(settingFocusBudgetCommand);
 registry.register(settingForcePromptToolsCommand);
+registry.register(settingAutoVisionCommand);
+registry.register(settingVisionThresholdCommand);

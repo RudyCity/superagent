@@ -662,6 +662,37 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(getSettings().maxIterations).toBe(120);
     expect(addedLines[addedLines.length - 1].content).toContain("Max iterations set to: 120");
   });
+
+  it("should configure auto vision token saving when running /setting-auto-vision", () => {
+    handleSlashCommand("/setting-auto-vision", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-auto-vision");
+
+    handleSlashCommand("/setting-auto-vision invalid", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    handleSlashCommand("/setting-auto-vision off", mockCtx as any);
+    expect(getSettings().autoVisionTokenSaving).toBe(false);
+    expect(addedLines[addedLines.length - 1].content).toContain("Automatic vision token saving set to: DISABLED");
+
+    handleSlashCommand("/setting-auto-vision on", mockCtx as any);
+    expect(getSettings().autoVisionTokenSaving).toBe(true);
+    expect(addedLines[addedLines.length - 1].content).toContain("Automatic vision token saving set to: ENABLED");
+  });
+
+  it("should configure vision token saving threshold when running /setting-vision-threshold", () => {
+    handleSlashCommand("/setting-vision-threshold", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-vision-threshold");
+
+    handleSlashCommand("/setting-vision-threshold invalid", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    handleSlashCommand("/setting-vision-threshold -10", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    handleSlashCommand("/setting-vision-threshold 8000", mockCtx as any);
+    expect(getSettings().visionTokenSavingThreshold).toBe(8000);
+    expect(addedLines[addedLines.length - 1].content).toContain("Vision token saving threshold set to: 8000 chars");
+  });
 });
 
 describe("Slash Command: /worktree", () => {
