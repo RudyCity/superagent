@@ -2141,8 +2141,8 @@ export function App({
   const chatHeightLimit = Math.max(5, terminalHeight - chromeHeight - 1);
 
   // --- Calculate section boundaries for mouse click detection ---
-  // Layout from bottom: StatusBar(3) + margin(1) + bottomChrome(content + margin) + ChatArea
-  const statusBarTotalRows = 4; // 3 content + 1 marginTop
+  // Layout from bottom: StatusBar(1) + margin(1) + bottomChrome(content + margin) + ChatArea
+  const statusBarTotalRows = 2; // 1 content + 1 marginTop
   const mainContentHeight = terminalHeight - statusBarTotalRows;
 
   // Agent section heights (for boundary calc)
@@ -2268,7 +2268,7 @@ export function App({
   }
 
   // Status bar
-  sectionBounds.push({ name: "statusbar", startRow: terminalHeight - 2, endRow: terminalHeight });
+  sectionBounds.push({ name: "statusbar", startRow: terminalHeight - 1, endRow: terminalHeight });
 
   // Focused response scroll metrics
   const focusRespWidth = Math.max(20, terminalWidth - 6);

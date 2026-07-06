@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.124] - 2026-07-06
+
+### Changed
+- **Simplified Colorful Footer**:
+  - Replaced the multi-line stats footer with a simplified, 1-line layout.
+  - Added a colorful scanning spinner and animated rolling-rainbow loading text for the processing state.
+  - Kept a stable blank line when idle to prevent layout shifts.
+  - Reduced status bar height bounds and total rows to reclaim terminal rows for the chat view.
+
+---
+
 ## [1.2.123] - 2026-07-06
 
 ### Improved
