@@ -35,8 +35,6 @@ import {
   fetchUrlTool 
 } from "./networkTools.js";
 
-import { fastcontextTool } from "./fastcontextTool.js";
-
 import { 
   defineSubagentTool, 
   invokeSubagentTool, 
@@ -120,7 +118,6 @@ export const allTools: Tool[] = [
   listPeerSuperagentsTool,
   managePlanTool,
   getSkillsTool,
-  fastcontextTool,
   manageMcpTool,
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,

@@ -28,7 +28,6 @@ Unlike standard headless execution bots or basic shell wrappers, Superagent is d
 - **Visible, Non-Headless Interactive Terminals**: Most agents run shell commands in the background without visibility or interactivity. With `/terminal`, Superagent spawns a real, popped-up host emulator terminal window. This is perfect for running interactive servers, watch scripts, and commands that require manual inputs.
 - **Global Config & Repository Hygiene**: No messy `.env` or log files cluttering your project codebase. All API keys, environment settings, and session logs are kept safe and clean in your user's global directory (`~/.superagent-r/`).
 - **Smart Workspace Discovery & Automatic Directory Trust**: Automatically fingerprints and hashes the workspace files and structure on startup, caching results under `~/.superagent-r/workspace-caches/` to bypass redundant scans. It dynamically monitors and updates the cache when workspace changes occur in the agent loop. Additionally, git worktree directories created for Superagents (`~/.superagent-r/worktrees/<name>`) are automatically configured as trusted (`safe.directory`) in git to prevent "dubious ownership" warnings and errors.
-- **FastContext AI-Powered Repo Explorer**: Powered by [Microsoft's FastContext](https://github.com/microsoft/fastcontext), Superagent delegates broad codebase exploration to a dedicated, read-only sub-agent that uses parallel Read/Glob/Grep tool calls with multi-step reasoning to return compact file-line citations — keeping the main agent's context window clean and focused.
 - **Automatic Checkpointing**: In addition to manual checkpoints, Superagent automatically snapshots your session on every user message and before any destructive tool operation (file writes, deletions, etc.), with a built-in cooldown to avoid excessive snapshots. You always have a safe rollback point without lifting a finger.
 - **Mandatory Interactive Decision Points**: All agent tiers (Master, Superagent, Subagent) are required to use the `ask_question` tool at every decision point — choosing implementations, resolving ambiguity, or selecting approaches — ensuring the AI never guesses or assumes on the user's behalf.
 - **AI-Guided Preset Initialization**: Configure your workspace commands effortlessly. Superagent scans your codebase structure (such as dependencies, packages, and scripts) to automatically recommend, select, and construct terminal command presets with the `/terminal init` wizard.
@@ -61,7 +60,6 @@ superagent/
 │   │   ├── masterAgent.ts         # Master Agent orchestrator (3-tier entry point)
 │   │   ├── config.ts              # Environment variable and global config management
 │   │   ├── checkpoints.ts         # Conversation state checkpoint save/load logic
-│   │   ├── fastcontextSetup.ts    # Auto-detect and install FastContext on startup
 │   │   ├── slash-commands.ts      # Interactive command definitions
 │   │   └── tools/
 │   │       ├── types.ts           # Shared types: AgentTier, SubagentInstance, ToolSet
@@ -72,13 +70,9 @@ superagent/
 │   │       ├── systemTools.ts     # File operations, directory creation, port checks
 │   │       ├── subagentTools.ts   # Subagent instantiation (superagent tier)
 │   │       ├── superagentTools.ts # Superagent orchestration tools (master tier)
-│   │       ├── fastcontextTool.ts # FastContext AI-powered repo explorer tool
-│   │       ├── fastcontext_runner.py # Python wrapper for FastContext CLI
 │   │       ├── dynamicHooks.ts    # Internal hook discovery, loading, and active state
 │   │       └── networkTools.ts    # Web content fetch and browser integration
 │   └── components/                # React Ink components (visual stats, wizards)
-├── vendor/
-│   └── fastcontext/               # Vendored Microsoft FastContext source
 ├── bin/                           # Portable Python and setup scripts
 ├── tests/                         # Unit test suites using Vitest
 └── package.json                   # Project manifest and scripts
@@ -171,32 +165,14 @@ invoke_superagent({
 ### 8. Centralized Logging
 All agent operations, including single-agent and 3-tier multi-agent processes, are dynamically logged to a central log file in the user's home directory (`~/.superagent-r/superagent.log`). The log maintains tier-aware indentation to cleanly trace parallel execution branches.
 
-### 9. FastContext AI-Powered Repository Explorer
-Integrated across all agent tiers, Superagent wraps [Microsoft's FastContext](https://github.com/microsoft/fastcontext) as a dedicated read-only codebase exploration tool. Instead of spending the main agent's context window on broad file reads and grep chains, the agent delegates natural-language exploration queries to FastContext, which:
-
-- **Explores autonomously** with Read, Glob, and Grep tools using multi-step reasoning and parallel tool calls.
-- **Returns compact evidence** as `<final_answer>` blocks containing precise file-path and line-range citations.
-- **Streams progress** to the centralized master log with structured JSONL events (thinking, tool calls, dedup, retries, results, errors, and completion summaries).
-- **Resolves credentials** from the researcher tier model configuration (configurable via `/model`), falling back to subagent or active tier settings.
-- **Runs in a portable Python environment** (`bin/python/`) with vendored FastContext source (`vendor/fastcontext/`), requiring zero system-level Python dependencies.
-
-Usage example from within an agent session:
-```
-fastcontext({
-  query: "Find the files that implement authentication and explain where to make a change",
-  maxTurns: 6,
-  citation: true
-})
-```
-
-### 10. Automatic Checkpointing
+### 9. Automatic Checkpointing
 Beyond manual `/checkpoint` commands, Superagent creates checkpoints automatically:
 - **On every user message**: A snapshot is taken before processing each new user input, preserving the state prior to the agent's response.
 - **Before destructive operations**: File writes, deletions, and other state-modifying tool calls trigger a checkpoint before execution.
 - **Cooldown-based**: A configurable minimum interval between auto-checkpoints prevents excessive snapshots during rapid interactions.
 - **Non-blocking**: Auto-checkpoints run asynchronously in the background and never interrupt the conversation flow. A visible notification appears in the terminal UI when one is created.
 
-### 11. Illegal Operation Reporting & Auto-Escalation
+### 10. Illegal Operation Reporting & Auto-Escalation
 In multi-agent mode, the permission layer emits structured `ViolationRecord` events whenever a child agent attempts a blocked operation. These violations include:
 - **Severity levels**: `"warning"` for soft blocks (e.g., scope creep attempts) and `"critical"` for hard policy violations (e.g., unauthorized file modifications).
 - **Automatic propagation**: Violation events bubble up from Subagents → Superagents → Master Agent, allowing the parent agent to track, log, and take corrective action.
@@ -240,23 +216,17 @@ Superagent implements a background scheduler supporting:
 - **Asynchronous Timers**: One-shot background reminders and recurring interval cron checks (e.g., `5m` or `1h`).
 - **Full Abort Signal Propagation**: Timers immediately clean up processes and interval hooks upon getting a cancel or abort event from the agent core.
 
-### 5. FastContext Auto-Provisioning (`fastcontextSetup.ts`)
-On startup, Superagent checks whether the portable Python environment and vendored FastContext source are ready:
-- **Auto-Detection**: `isFastContextReady()` checks for the presence of the project-local Python binary (`bin/python/`).
-- **First-Time Setup**: If missing, a platform-specific setup script (`bin/setup-fastcontext.ps1` or `bin/setup-fastcontext.sh`) runs automatically, provisioning Python 3.12 and installing FastContext dependencies.
-- **Graceful Degradation**: If setup fails, a clear warning is printed and the `fastcontext` tool reports its unavailability — all other agent functionality continues normally.
-
-### 6. Auto-Checkpoint Engine
+### 5. Auto-Checkpoint Engine
 Built into the core agent loop (`agent.ts`), the auto-checkpoint system:
 - **Triggers on user messages**: A snapshot is taken before the agent processes each new user input.
 - **Triggers before destructive tools**: File writes, deletions, and other mutating tool calls create a checkpoint before execution begins.
 - **Cooldown mechanism**: A minimum time interval (`AUTO_CHECKPOINT_COOLDOWN_MS`) prevents excessive checkpoint creation during rapid interactions.
 - **Non-blocking**: Runs asynchronously and swallows errors — never interrupts the conversation flow. A visible notification event (`checkpoint_auto`) appears in the terminal UI.
 
-### 7. Atomic Config Persistence
+### 6. Atomic Config Persistence
 Model configuration (`model-config.json`) uses atomic write operations to prevent file corruption. If the process is interrupted (e.g., Ctrl+C), the config file remains intact — writes are first written to a temporary file and then atomically renamed, ensuring zero risk of partial/corrupt state.
 
-### 8. TencentDB Memory Gateway Integration & Auto-Setup
+### 7. TencentDB Memory Gateway Integration & Auto-Setup
 Superagent provides deep, local-first integration with the **TencentDB Agent Memory** gateway server:
 - **Zero-Config Self-Healing Startup**: When `enableTencentdbMemory` is set to `true`, launching Superagent triggers a fully asynchronous, non-blocking check. If the gateway is offline, it automatically clones the repository, installs all dependencies, and spawns the server in the background as a detached process on port 8420. The startup logic runs asynchronously in the background so it never blocks or slows down CLI boot.
 - **Strict Tag v1.0.0 Pinning**: To guarantee compatibility, the repository is automatically checked out to stable release tag `v1.0.0`. If the version mismatch is detected, existing `node_modules` are automatically cleaned up to force a fresh reinstall.

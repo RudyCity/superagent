@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.116] - 2026-07-06
+
+### Removed
+- **FastContext**:
+  - Removed FastContext codebase exploration tool (`fastcontext`), wrapper scripts, and startup setups.
+  - Deleted obsolete `tests/fastcontextTool.test.ts` and `.agents/skills/fastcontext` skill folder.
+  - Cleaned up `vendor/fastcontext` directory and `README.md` / `.gitignore` references.
+
+### Changed
+- **System Prompts**:
+  - Updated Master Agent, Superagent, and specialized Subagent system prompts to spawn the `researcher` subagent for codebase exploration instead of running `fastcontext`.
+
+---
+
 ## [1.2.115] - 2026-07-06
 
 ### Added

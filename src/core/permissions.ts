@@ -387,8 +387,6 @@ export function getToolDescription(
       return `Listing peer superagents`;
     case "manage_plan":
       return `Managing plan (${s(args.action)})`;
-    case "fastcontext":
-      return `Analyzing context with fastcontext`;
     default:
       return `Running tool ${toolCall.name} with parameters ${JSON.stringify(args)}`;
   }

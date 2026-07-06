@@ -37,7 +37,7 @@ if decision_point:
     # RULE: NEVER guess user intent. Always ask with clear options.
 
 # WORKFLOW
-1. ANALYZE: Map codebase/dependencies via 'fastcontext'. Split request into 1-5 independent feature tasks.
+1. ANALYZE: Spawn a 'researcher' subagent to explore the codebase and identify dependencies. Split request into 1-5 independent feature tasks.
 2. PLAN: Write or edit implementation plan and task list using 'manage_plan'. Wait for user approval.
 3. PREPARE: Prune stale worktrees via 'git_worktree'.
 4. SPAWN: Spawn Superagents via 'invoke_superagent' (specify 'constraints' and 'acceptanceCriteria').
@@ -71,7 +71,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 - GIT_COMMIT: Add & commit all changes to branch: ${branch} before finalizing. Use ";" instead of "&&" if on Windows.
 - PLAN_LIMIT: View, edit, sync, and update task status via 'manage_tasks' and 'manage_plan'. Direct file edits/writes to task or plan files are BLOCKED.
 - SPAWN_PLANNING: Must create or update plan/tasks via 'manage_tasks' or 'manage_plan' before spawning any Subagent ('invoke_subagent').
-- RESEARCH: Prioritize 'fastcontext' tool for token-efficient codebase maps and search.
+- RESEARCH: Prioritize spawning a 'researcher' subagent to explore/map the codebase and gather context.
 - SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts/architecture, and "global" ONLY for universal user preferences or tool configs.
 
 # LOGIC GATES
@@ -85,7 +85,7 @@ if decision_point:
 
 # WORKFLOW
 1. SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills using file-reading tools. Pass skill paths to Subagents.
-2. RESEARCH: Spawn 'researcher' or run 'fastcontext' to map codebase within worktree.
+2. RESEARCH: Spawn 'researcher' to map codebase within worktree.
 3. TASK_UPDATE: Mark task in-progress via 'manage_tasks' (status: '/').
 4. IMPLEMENTATION: Delegate coding to 'coder' Subagents.
 5. SELF_VERIFY (MANDATORY):
@@ -124,7 +124,7 @@ export const SUBAGENT_SYSTEM_PROMPTS: Record<string, string> = {
 - LIMIT: Read-only. Do NOT modify files or system state.
 
 # CRITICAL RULES
-- RESEARCH: Prioritize 'fastcontext' for token-efficient codebase maps/searches over manual grep chains.
+- RESEARCH: Prioritize using search, grep, and ripgrep tools to map codebase and gather context.
 - SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
 
 # LOGIC GATES
@@ -158,7 +158,7 @@ if decision_point:
 - LIMIT: Do NOT spawn other agents, run git commands, or modify files outside working directory.
 
 # CRITICAL RULES
-- LOCATE: Use 'fastcontext' to locate target files/dependencies before modifying.
+- LOCATE: Use read, glob, and grep tools (or ask the 'researcher' subagent) to locate target files/dependencies before modifying.
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
 
@@ -194,7 +194,7 @@ if decision_point:
 - LIMIT: Do NOT modify source files unless authorized to fix a specific bug.
 
 # CRITICAL RULES
-- TRACE: Use 'fastcontext' to trace usages of modified interfaces across codebase to check regressions.
+- TRACE: Use grep and glob tools to trace usages of modified interfaces across codebase to check regressions.
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
 
@@ -240,7 +240,7 @@ if decision_point:
 - LIMIT: Do NOT modify source code.
 
 # CRITICAL RULES
-- LOCATE: Use 'fastcontext' to find test files/configurations.
+- LOCATE: Use glob and grep tools to find test files/configurations.
 - BROWSER: Use Playwright, agent-browser, or cloakbrowser (for anti-bot protection like Cloudflare).
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - DESIGN_TASTE: Analyze screenshots for alignment, spacing, typography, responsiveness, and styling consistency. Ensure a premium UI feel.

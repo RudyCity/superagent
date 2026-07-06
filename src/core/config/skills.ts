@@ -147,7 +147,7 @@ export function getInstalledSkills(): LoadedSkill[] {
             const skillDir = path.join(dir, item.name);
             const skillMdPath = path.join(skillDir, "SKILL.md");
             if (fs.existsSync(skillMdPath)) {
-              // Flat structure: e.g. .agents/skills/fastcontext/SKILL.md
+              // Flat structure: e.g. .agents/skills/writing-plans/SKILL.md
               processSkillFile(skillMdPath, item.name, "local");
             } else {
               // Check for nested structure: e.g. .agents/skills/vercel-labs/find-skills/SKILL.md
