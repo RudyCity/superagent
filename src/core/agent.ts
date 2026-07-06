@@ -1506,6 +1506,26 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         // Inject dynamic context into the active messages list
         injectDynamicContext(messages);
 
+        // ── Pre-flight payload size (byte) safety check ───────────────────
+        // Prevents 413 Payload Too Large errors when large tool results or files
+        // converted to images exceed the API endpoint/gateway request body limit.
+        {
+          const payloadJson = JSON.stringify(messages);
+          const payloadBytes = Buffer.byteLength(payloadJson, "utf-8");
+          const maxPayloadBytes = 4 * 1024 * 1024; // 4 MB safety limit
+
+          if (payloadBytes > maxPayloadBytes) {
+            this.writeToLogFile(
+              "WARN",
+              `Pre-flight payload check: estimated payload size (${(payloadBytes / 1024 / 1024).toFixed(2)} MB) exceeds safety threshold (${(maxPayloadBytes / 1024 / 1024).toFixed(2)} MB). Triggering emergency compaction.`
+            );
+            await this.compactHistoryIfNeeded(signal, true);
+            // Rebuild messages from compacted conversation
+            messages = this.buildMessages(supportsNativeTools);
+            injectDynamicContext(messages);
+          }
+        }
+
         // ── Pre-flight context window safety check ──────────────────────────
         // Prevents 400 errors when total request (system + messages + tool schemas)
         // exceeds the model's context window limit. This catches edge cases where

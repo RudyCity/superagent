@@ -137,4 +137,40 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       expect(successDelta).toBe(true);
     });
   });
+
+  describe("Proactive Byte-Size Check", () => {
+    it("should trigger proactive compaction when messages size exceeds 4MB", async () => {
+      const onEvent = vi.fn();
+      const onPermission = vi.fn().mockResolvedValue(true);
+      const onQuestion = vi.fn();
+
+      const agent = new Agent(onEvent, onPermission, onQuestion);
+      agent.tier = "master";
+      agent.planState = "APPROVED";
+
+      // Mock Buffer.byteLength to return 5 MB to simulate a large payload
+      const byteLengthSpy = vi.spyOn(Buffer, "byteLength").mockImplementation((str) => {
+        if (typeof str === "string" && str.includes("test message")) {
+          return 5 * 1024 * 1024;
+        }
+        return 100;
+      });
+
+      vi.mocked(streamText).mockImplementation(() => {
+        return {
+          fullStream: (async function* () {
+            yield { type: "text-delta", textDelta: "Success" };
+          })(),
+          usage: Promise.resolve({ promptTokens: 10, completionTokens: 5 }),
+        } as any;
+      });
+
+      await agent.sendMessage("test message");
+
+      // Verify compact was triggered with force=true proactively
+      expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true);
+
+      byteLengthSpy.mockRestore();
+    });
+  });
 });
