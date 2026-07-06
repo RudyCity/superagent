@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.121] - 2026-07-06
+
+### Changed
+- **Subagent Spawning Plan Mandate**:
+  - Removed the check that blocked subagent spawning if the parent agent's implementation plan was pending approval or not approved. Spawning subagents is no longer constrained by the plan state.
+
+---
+
 ## [1.2.120] - 2026-07-06
 
 ### Added

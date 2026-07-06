@@ -320,6 +320,34 @@ describe("Superagent Proposed Enhancements Tests", () => {
       expect(res).toContain("Invoked subagent");
       expect(res).toContain("background");
     });
+
+    it("should allow spawning subagent even when planState is PLANNING_PENDING", async () => {
+      const onEvent = vi.fn();
+      const onPermission = vi.fn().mockResolvedValue(true);
+      const onQuestion = vi.fn();
+      const agent = new Agent(onEvent, onPermission, onQuestion);
+      agent.planState = "PLANNING_PENDING";
+
+      const { defineSubagentTool } = await import("../src/core/tools/subagentTools.js");
+      await defineSubagentTool.execute({ name: "researcher-pending", description: "research desc", systemPrompt: "system" }, process.cwd());
+
+      vi.spyOn(Agent.prototype, "sendMessage").mockImplementation(async () => {
+        return new Promise(() => {});
+      });
+
+      const { agentLocalStorage } = await import("../src/core/agent.js");
+      const res = await agentLocalStorage.run(agent, async () => {
+        return await invokeSubagentTool.execute({
+          typeName: "researcher-pending",
+          role: "researcher",
+          prompt: "do research",
+          mode: "background",
+        }, process.cwd());
+      });
+
+      expect(res).toContain("Invoked subagent");
+      expect(res).not.toContain("Spawning Subagents is blocked");
+    });
   });
 
   describe("4. Improved Background Process Lifecycle", () => {
