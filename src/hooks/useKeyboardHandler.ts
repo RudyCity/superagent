@@ -848,6 +848,22 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           setInput("");
           return;
         }
+      } else if (activeWizard.type === "model" && [60, 61, 62].includes(activeWizard.step) && wizardOptions.length > 0) {
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => Math.min(Math.max(0, wizardOptions.length - 1), prev + 1));
+          return;
+        }
+        if (key.return) {
+          const selectedVal = wizardOptions[wizardSelectedIndex];
+          if (selectedVal) {
+            handleWizardSubmit(selectedVal);
+          }
+          return;
+        }
       } else if (
         activeWizard.type === "model" && 
         (activeWizard.step === 2 || activeWizard.step === 22 || activeWizard.step === 23 || activeWizard.step === 32 || activeWizard.step === 33 || activeWizard.step === 41) && 
