@@ -210,11 +210,20 @@ export default function ChatTextInput({
 
   useInput(
     (input, key) => {
+      const isInternalCtrl = key.ctrl && (
+        input === "v" ||
+        input === "w" ||
+        input === "a" ||
+        input === "e" ||
+        input === "k" ||
+        input === "u"
+      );
+
       // Let parent handle these keys — do not consume them here.
       if (
         key.upArrow ||
         key.downArrow ||
-        (key.ctrl && (input === "c" || input === "\x03")) ||
+        (key.ctrl && !isInternalCtrl) ||
         key.tab ||
         (key.shift && key.tab)
       ) {
