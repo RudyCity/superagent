@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.119] - 2026-07-06
+
+### Added
+- **TencentDB Memory Context Vision Conversion**:
+  - Automatically convert TencentDB Agent Memory Context user messages into image pages when vision token saving is active.
+  - Ensures memory context is compressed into visual tokens for vision-supporting models to optimize context length.
+
+---
+
 ## [1.2.118] - 2026-07-06
 
 ### Fixed

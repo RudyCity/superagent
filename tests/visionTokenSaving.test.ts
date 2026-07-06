@@ -251,5 +251,30 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     expect(msgs[1].role).toBe("assistant");
     expect(msgs[1].content).toContain("read the system instructions rendered as images");
   });
+
+  it("converts a TencentDB Agent Memory Context user message to image parts even if it is shorter than the threshold", () => {
+    vi.mocked(configModule.getTierModelConfig).mockReturnValue({
+      providerProfileId: "fake-key",
+      model: "gpt-4o",
+      supportsVision: true,
+    });
+    vi.mocked(configModule.getSettings).mockReturnValue({
+      autoVisionTokenSaving: true,
+      visionTokenSavingThreshold: 10000, // Large threshold
+    });
+
+    const agent = new Agent("single");
+    const memoryMsg = "[TencentDB Agent Memory Context]:\n- L1 preference: user prefers TypeScript";
+    agent.conversation.addUserMessage(memoryMsg);
+
+    const messages = (agent as any).buildMessages(true);
+
+    expect(messages.length).toBe(1);
+    expect(messages[0].role).toBe("user");
+    expect(Array.isArray(messages[0].content)).toBe(true);
+    expect(messages[0].content[0].text).toContain("TencentDB Agent Memory Context rendered as images");
+    expect(messages[0].content[1].type).toBe("image");
+    expect(messages[0].content[1].image).toBe("MOCK_BASE64_IMAGE_DATA");
+  });
 });
 

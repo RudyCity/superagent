@@ -2603,12 +2603,16 @@ for (const tc of toolCalls) {
       if (m.role === "user") {
         let sdkContent: string | Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = "";
         const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
+        const isMemoryContext = rawContent.startsWith("[TencentDB Agent Memory Context]:");
 
-        if (useVisionTokenSaving && rawContent.length > threshold) {
+        if (useVisionTokenSaving && (rawContent.length > threshold || isMemoryContext)) {
           try {
             const pages = sliceTextIntoPages(rawContent);
+            const headerText = isMemoryContext
+              ? `[TencentDB Agent Memory Context rendered as images to save tokens]:`
+              : `[Content of user message rendered as images to save tokens]:`;
             const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
-              { type: "text", text: `[Content of user message rendered as images to save tokens]:` }
+              { type: "text", text: headerText }
             ];
             for (const page of pages) {
               const base64 = renderTextToImageBase64(page);
