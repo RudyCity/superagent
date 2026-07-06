@@ -1633,7 +1633,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 type: "text",
                 text: `[System Instructions Page ${index + 1} of ${base64List.length}]:`
               });
-              contentParts.push({ type: "image" as const, image: base64, mimeType: "image/png" });
+              contentParts.push({ type: "image" as const, image: base64, mimeType: "image/webp" });
             });
 
             prependSystemMessage = {
@@ -2804,7 +2804,7 @@ for (const tc of toolCalls) {
                 ? `[TencentDB Agent Memory Context Page ${index + 1} of ${totalPages}]:`
                 : `[User Message Page ${index + 1} of ${totalPages}]:`;
               contentParts.push({ type: "text", text: pageLabel });
-              contentParts.push({ type: "image", image: base64, mimeType: "image/png" });
+              contentParts.push({ type: "image", image: base64, mimeType: "image/webp" });
             });
             sdkContent = contentParts;
           } catch (err: any) {
@@ -2818,7 +2818,7 @@ for (const tc of toolCalls) {
                     }
                     return {
                       type: "text" as const,
-                      text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/png"};base64,${p.image}]`
+                      text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/webp"};base64,${p.image}]`
                     };
                   }
                   return { type: "text" as const, text: p.text };
@@ -2834,7 +2834,7 @@ for (const tc of toolCalls) {
                   }
                   return {
                     type: "text" as const,
-                    text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/png"};base64,${p.image}]`
+                    text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/webp"};base64,${p.image}]`
                   };
                 }
                 return { type: "text" as const, text: p.text };
@@ -2914,7 +2914,7 @@ for (const tc of toolCalls) {
                   type: "text",
                   text: `[Tool Responses Page ${index + 1} of ${totalPages}]:`
                 });
-                contentParts.push({ type: "image", image: base64, mimeType: "image/png" });
+                contentParts.push({ type: "image", image: base64, mimeType: "image/webp" });
               });
               coreMessages.push({
                 role: "user",
@@ -3026,7 +3026,7 @@ for (const tc of toolCalls) {
                 type: "text",
                 text: `[Tool Output for "${item.toolName}" Page ${index + 1} of ${totalPages}]:`
               });
-              appendParts.push({ type: "image", image: base64, mimeType: "image/png" });
+              appendParts.push({ type: "image", image: base64, mimeType: "image/webp" });
             });
           }
           coreMessages.push({

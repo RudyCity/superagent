@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.146] - 2026-07-07
+
+### Changed
+- **WebP Image Format for Prompt-Level Canvas Renders**:
+  - Changed prompt-level text-to-image canvas conversions from PNG to WebP format to reduce base64 transmission size and mitigate 413 errors.
+  - Updated all associated message mimeTypes to `image/webp`.
+
+---
+
 ## [1.2.145] - 2026-07-06
 
 ### Fixed

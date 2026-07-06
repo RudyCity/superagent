@@ -35,7 +35,7 @@ export function sliceTextIntoPages(text: string, maxLines = 150, maxPages = 3): 
 }
 
 /**
- * Render a text chunk into a PNG image synchronously and return its base64 data.
+ * Render a text chunk into a WebP image synchronously and return its base64 data.
  */
 export function renderTextToImageBase64(text: string): string {
   // Normalize paths before rendering so AI vision models read them correctly
@@ -77,6 +77,6 @@ export function renderTextToImageBase64(text: string): string {
     ctx.fillText(lines[i], padding, padding + i * lineHeight);
   }
 
-  const pngBuffer = canvas.toBuffer("image/png");
-  return pngBuffer.toString("base64");
+  const webpBuffer = canvas.toBuffer("image/webp");
+  return webpBuffer.toString("base64");
 }
