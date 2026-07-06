@@ -64,12 +64,12 @@ export function renderTextToImageBase64(text: string): string {
   const canvas = createCanvas(canvasWidth, canvasHeight);
   const ctx = canvas.getContext("2d");
 
-  // Draw background
-  ctx.fillStyle = "rgb(30, 30, 30)";
+  // Draw background (high-contrast white for optimal AI vision/OCR performance)
+  ctx.fillStyle = "rgb(255, 255, 255)";
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  // Draw text
-  ctx.fillStyle = "rgb(220, 220, 220)";
+  // Draw text (high-contrast black for maximum legibility)
+  ctx.fillStyle = "rgb(0, 0, 0)";
   ctx.font = `${fontSize}px Consolas, Courier New, Courier, monospace`;
   ctx.textBaseline = "top";
 

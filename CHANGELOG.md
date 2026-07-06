@@ -2,7 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.136] - 2026-07-06
+
+### Changed
+- **High-Contrast Vision Rendering**:
+  - Changed the background of converted prompt/message images in `textToImage.ts` from dark gray (`rgb(30, 30, 30)`) to high-contrast pure white (`rgb(255, 255, 255)`), and the text color to pure black (`rgb(0, 0, 0)`). This matches document OCR training distributions, significantly improving character recognition (OCR) reliability for vision models.
+
+### Fixed
+- **Flaky Hook Status Tests**:
+  - Replaced unstable fixed `setTimeout` checks (50ms) in `tests/useTencentdbStatus.test.ts` with clean, condition-based polling `waitForCondition()` to prevent asynchronous test flakes when the test runner runs under high CPU/disk load.
+
+---
+
 ## [1.2.135] - 2026-07-06
+
 
 ### Added
 - **Vision-Powered Tool Result Retention**:

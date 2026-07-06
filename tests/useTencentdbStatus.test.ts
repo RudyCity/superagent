@@ -44,6 +44,16 @@ describe("useTencentdbStatus Hook", () => {
     };
   });
 
+  const waitForCondition = async (fn: () => boolean, timeout = 1000) => {
+    const start = Date.now();
+    while (!fn()) {
+      if (Date.now() - start > timeout) {
+        throw new Error("Timeout waiting for condition in hook test");
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+
   it("should return disabled when enableTencentdbMemory is false", async () => {
     let hookStatus = "";
     const TestComponent = () => {
@@ -71,8 +81,8 @@ describe("useTencentdbStatus Hook", () => {
     // Starts checking
     expect(hookStatus).toBe("checking");
 
-    // Wait for the async checkHealth to complete
-    await new Promise((r) => setTimeout(r, 50));
+    // Wait for the async checkHealth to complete using condition-based waiting
+    await waitForCondition(() => hookStatus === "online");
     expect(hookStatus).toBe("online");
 
     unmount();
@@ -91,8 +101,8 @@ describe("useTencentdbStatus Hook", () => {
     const { unmount } = render(React.createElement(TestComponent));
     expect(hookStatus).toBe("checking");
 
-    // Wait for the async checkHealth to complete
-    await new Promise((r) => setTimeout(r, 50));
+    // Wait for the async checkHealth to complete using condition-based waiting
+    await waitForCondition(() => hookStatus === "offline");
     expect(hookStatus).toBe("offline");
 
     unmount();
