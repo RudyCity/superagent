@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.117] - 2026-07-06
+
+### Fixed
+- **Terminal UI Click & Focus Responsiveness**:
+  - Accounted for the `HistoryPanel` and active wizard question heights in layout and section boundary calculations to prevent input/statusbar clipping and alignment issues.
+  - Enhanced mouse click detection to robustly focus the text input when clicking on the statusbar or any empty bottom regions.
+  - Added click selection and mouse wheel scroll support for entries in the command history panel.
+
+---
+
 ## [1.2.116] - 2026-07-06
 
 ### Removed

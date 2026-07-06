@@ -2097,6 +2097,29 @@ export function App({
     chromeHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
   }
 
+  // Account for input history panel height
+  let historySectionHeight = 0;
+  if (focusMode === "history") {
+    const uniqueHistory = Array.from(new Set(history));
+    if (uniqueHistory.length === 0) {
+      historySectionHeight = 3;
+    } else {
+      const total = uniqueHistory.length;
+      const maxVisible = 10;
+      const half = Math.floor(maxVisible / 2);
+      let startIdx = Math.max(0, historySelectedIndex - half);
+      let endIdx = Math.min(total, startIdx + maxVisible);
+      startIdx = Math.max(0, endIdx - maxVisible);
+      const visibleCount = endIdx - startIdx;
+      const hiddenAbove = startIdx;
+      const hiddenBelow = total - endIdx;
+      historySectionHeight = 2 + visibleCount;
+      if (hiddenAbove > 0) historySectionHeight += 1;
+      if (hiddenBelow > 0) historySectionHeight += 1;
+    }
+  }
+  chromeHeight += historySectionHeight;
+
   let liveListHeight = 0;
   if (runningSuperagentsCount > 0 || runningSubagentsCount > 0 || runningTasksCount > 0) {
     if (runningSuperagentsCount > 0) {
@@ -2180,11 +2203,14 @@ export function App({
     wizardSectionHeight += 2;
   }
 
-  // Input section height (border line + input text lines) — hidden for selection-only wizard steps
-  const inputSectionHeight = isSelectionOnlyStep ? 0 : 1 + inputLinesCount;
+  // Input section height (border line + input text lines + optional wizard question) — hidden for selection-only wizard steps
+  let inputSectionHeight = isSelectionOnlyStep ? 0 : 1 + inputLinesCount;
+  if (!isSelectionOnlyStep && getWizardQuestion()) {
+    inputSectionHeight += 2; // 1 question line + 1 marginBottom line
+  }
 
-  // Bottom chrome: marginTop(1) + agents + checklist + wizard + input
-  const bottomChromeContentHeight = totalAgentsHeight + checklistSectionHeight + wizardSectionHeight + inputSectionHeight;
+  // Bottom chrome: marginTop(1) + agents + checklist + history + wizard + input
+  const bottomChromeContentHeight = totalAgentsHeight + checklistSectionHeight + historySectionHeight + wizardSectionHeight + inputSectionHeight;
   const bottomChromeTotalHeight = 1 + bottomChromeContentHeight; // +1 for marginTop of the chrome box
 
   // Chat area height on screen
@@ -2221,6 +2247,12 @@ export function App({
     sectionBounds.push({ name: "checklist_header", startRow: row, endRow: row, isHeader: true });
     sectionBounds.push({ name: "checklist", startRow: row, endRow: row + checklistSectionHeight - 1 });
     row += checklistSectionHeight;
+  }
+
+  // Input History Panel
+  if (historySectionHeight > 0) {
+    sectionBounds.push({ name: "history", startRow: row, endRow: row + historySectionHeight - 1 });
+    row += historySectionHeight;
   }
 
   // Wizard/suggestions
@@ -2336,6 +2368,9 @@ export function App({
     visibleLinePositions,
     toggleLineExpand,
     handleWizardSubmit,
+    history,
+    historySelectedIndex,
+    setHistorySelectedIndex,
   };
 
   return (

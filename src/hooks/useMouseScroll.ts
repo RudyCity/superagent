@@ -88,6 +88,11 @@ export interface SingleAgentMouseContext {
   setWizardSelectedIndex?: (val: number | ((prev: number) => number)) => void;
   planPath?: string;
   handleWizardSubmit?: (val: string) => void;
+
+  // History click/scroll support
+  history?: string[];
+  historySelectedIndex?: number;
+  setHistorySelectedIndex?: (val: number | ((prev: number) => number)) => void;
 }
 
 /**
@@ -169,7 +174,8 @@ export function useMouseScroll(
             sectionName === "superagents" ||
             sectionName === "subagents" ||
             sectionName === "procs" ||
-            sectionName === "checklist"
+            sectionName === "checklist" ||
+            sectionName === "history"
           ) {
             scrollSection(ctx, sectionName, isUp ? "up" : "down");
           } else {
@@ -191,7 +197,8 @@ export function useMouseScroll(
               ctx.focusMode === "superagents" ||
               ctx.focusMode === "subagents" ||
               ctx.focusMode === "procs" ||
-              ctx.focusMode === "checklist"
+              ctx.focusMode === "checklist" ||
+              ctx.focusMode === "history"
             ) {
               scrollSection(ctx, ctx.focusMode, isUp ? "up" : "down");
             } else {
@@ -219,7 +226,13 @@ export function useMouseScroll(
             logMouseDebug(`[MOUSE DEBUG] Click at x=${x}, y=${y}. Matched section: ${clickedSection ? clickedSection.name : "none"}\n`);
           }
 
-          if (!clickedSection) continue;
+          // If click is near the bottom (input/statusbar area), set focusMode to "input" immediately
+          if (!clickedSection) {
+            if (y >= ctx.terminalHeight - 3) {
+              ctx.setFocusMode("input");
+            }
+            continue;
+          }
 
           const name = clickedSection.name;
 
@@ -289,6 +302,39 @@ export function useMouseScroll(
             case "checklist":
               ctx.setFocusMode("checklist");
               break;
+            case "history": {
+              ctx.setFocusMode("history");
+              const historyList = ctx.history || [];
+              const uniqueHistory = Array.from(new Set(historyList));
+              const total = uniqueHistory.length;
+              if (total > 0) {
+                const maxVisible = 10;
+                const numericSelectedIndex = Math.min(Math.max(0, ctx.historySelectedIndex || 0), total - 1);
+                let start = 0;
+                let end = total;
+                if (total > maxVisible) {
+                  start = Math.max(0, numericSelectedIndex - Math.floor(maxVisible / 2));
+                  end = start + maxVisible;
+                  if (end > total) {
+                    end = total;
+                    start = Math.max(0, end - maxVisible);
+                  }
+                }
+                const visibleCount = end - start;
+                const hiddenAbove = start > 0;
+                const startRowOfEntries = clickedSection.startRow + 1 + (hiddenAbove ? 1 : 0);
+                const endRowOfEntries = startRowOfEntries + visibleCount - 1;
+
+                if (y >= startRowOfEntries && y <= endRowOfEntries) {
+                  const idx = start + (y - startRowOfEntries);
+                  if (idx >= 0 && idx < total) {
+                    ctx.setHistorySelectedIndex?.(idx);
+                  }
+                }
+              }
+              break;
+            }
+            case "statusbar":
             case "input":
               ctx.setFocusMode("input");
               break;
@@ -344,7 +390,6 @@ export function useMouseScroll(
                 ctx.setFocusMode("input");
               }
               break;
-            // statusbar: ignore clicks
           }
         }
       }
@@ -393,6 +438,21 @@ function scrollSection(
         const maxScroll = Math.max(0, ctx.checklistTasksCount - ctx.maxChecklistVisible);
         return Math.min(prev + 1, maxScroll);
       });
+      break;
+    case "history":
+      if (ctx.setHistorySelectedIndex && ctx.history) {
+        const uniqueHistory = Array.from(new Set(ctx.history));
+        const total = uniqueHistory.length;
+        if (total > 0) {
+          ctx.setHistorySelectedIndex((prev: number) => {
+            if (direction === "up") {
+              return Math.max(0, prev - 1);
+            } else {
+              return Math.min(total - 1, prev + 1);
+            }
+          });
+        }
+      }
       break;
   }
 }
