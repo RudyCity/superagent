@@ -110,6 +110,10 @@ export async function runCli() {
   const { runFastContextSetup } = await import("./core/fastcontextSetup.js");
   runFastContextSetup();
 
+  // Auto-setup ripgrep on startup
+  const { ensureRgInstalled } = await import("./core/androidSetup.js");
+  await ensureRgInstalled().catch(() => {});
+
   // Auto-setup TencentDB Memory Gateway if enabled
   const { runTencentdbSetup } = await import("./core/tencentdbSetup.js");
   runTencentdbSetup().catch(() => {});

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.107] - 2026-07-06
+
+### Changed
+- **Ripgrep Startup Setup**:
+  - Automatically download and configure ripgrep (`rg`) on application startup inside `src/cliMain.tsx` (using `ensureRgInstalled`), rather than waiting for it to be run lazily when `ripgrep_search` is first called, preventing potential delay or runtime setup errors when agents execute search commands.
+
+---
+
 ## [1.2.106] - 2026-07-06
 
 ### Fixed
