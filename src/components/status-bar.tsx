@@ -23,49 +23,21 @@ export interface StatusBarProps {
   isProcessing?: boolean;
 }
 
-function StatusBarSpinner() {
-  const [frame, setFrame] = React.useState(0);
-  const spinnerFrames = [0, 1, 2, 3, 4, 3, 2, 1];
-  const activeIdx = spinnerFrames[frame];
+function LoadingIndicator() {
+  const [bright, setBright] = React.useState(true);
 
   React.useEffect(() => {
     const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % 8);
-    }, 120);
+      setBright((prev) => !prev);
+    }, 500);
     return () => clearInterval(timer);
   }, []);
 
-  return (
-    <Text bold>
-      <Text color="gray">[</Text>
-      <Text color={activeIdx === 0 ? "redBright" : "gray"}>{activeIdx === 0 ? "▰" : "▱"}</Text>
-      <Text color={activeIdx === 1 ? "yellowBright" : "gray"}>{activeIdx === 1 ? "▰" : "▱"}</Text>
-      <Text color={activeIdx === 2 ? "greenBright" : "gray"}>{activeIdx === 2 ? "▰" : "▱"}</Text>
-      <Text color={activeIdx === 3 ? "cyanBright" : "gray"}>{activeIdx === 3 ? "▰" : "▱"}</Text>
-      <Text color={activeIdx === 4 ? "magentaBright" : "gray"}>{activeIdx === 4 ? "▰" : "▱"}</Text>
-      <Text color="gray">] </Text>
-    </Text>
-  );
-}
-
-function ColorfulLoadingText() {
-  const [frame, setFrame] = React.useState(0);
-  const colors = ["redBright", "yellowBright", "greenBright", "cyanBright", "blueBright", "magentaBright"];
-  const text = "Processing...";
-
-  React.useEffect(() => {
-    const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % colors.length);
-    }, 120);
-    return () => clearInterval(timer);
-  }, []);
+  const color = bright ? "blueBright" : "blue";
 
   return (
-    <Text bold>
-      {text.split("").map((char, idx) => {
-        const color = colors[(idx + frame) % colors.length];
-        return <Text key={idx} color={color}>{char}</Text>;
-      })}
+    <Text bold color={color}>
+      ⠿ Processing...
     </Text>
   );
 }
@@ -118,8 +90,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
       <Box>
-        <StatusBarSpinner />
-        <ColorfulLoadingText />
+        <LoadingIndicator />
       </Box>
     </Box>
   );
