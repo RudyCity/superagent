@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.102] - 2026-07-06
+
+### Fixed
+- **Terminal Scroll Functionality**:
+  - Restored full scroll capabilities by returning a copy of the cached text wrapping array (`[...cached]`) from `wrapTextForDisplay` inside `src/utils/responseScroll.ts` to prevent reference-sharing issues and potential mutations.
+  - Wrapped all `logMouseDebug` calls in `src/hooks/useMouseScroll.ts` with explicit `process.env.DEBUG_MOUSE === "true"` checks to prevent expensive template string evaluation, `JSON.stringify` overhead, and uncaught serialization exceptions on hover, click, and scroll events.
+
+---
+
 ## [1.2.101] - 2026-07-06
 
 ### Optimized

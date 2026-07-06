@@ -111,10 +111,12 @@ export function useMouseScroll(
 
       const text = data.toString("utf8");
 
-      logMouseDebug(
-        `[MOUSE DEBUG] Raw escape sequence: ${JSON.stringify(text)} (visible positions count: ${ctx.visibleLinePositions?.length || 0})\n` +
-        `[MOUSE DEBUG] Current sections: ${JSON.stringify(ctx.sections)}\n`
-      );
+      if (process.env.DEBUG_MOUSE === "true") {
+        logMouseDebug(
+          `[MOUSE DEBUG] Raw escape sequence: ${JSON.stringify(text)} (visible positions count: ${ctx.visibleLinePositions?.length || 0})\n` +
+          `[MOUSE DEBUG] Current sections: ${JSON.stringify(ctx.sections)}\n`
+        );
+      }
       const matches = text.matchAll(
         /\x1b\[<(?<btn>\d+);(?<col>\d+);(?<row>\d+)(?<action>[Mm])/g
       );
@@ -213,7 +215,9 @@ export function useMouseScroll(
             }
           }
 
-          logMouseDebug(`[MOUSE DEBUG] Click at x=${x}, y=${y}. Matched section: ${clickedSection ? clickedSection.name : "none"}\n`);
+          if (process.env.DEBUG_MOUSE === "true") {
+            logMouseDebug(`[MOUSE DEBUG] Click at x=${x}, y=${y}. Matched section: ${clickedSection ? clickedSection.name : "none"}\n`);
+          }
 
           if (!clickedSection) continue;
 
@@ -236,19 +240,27 @@ export function useMouseScroll(
               }
               // Check if clicked on a chat line
               let handledClick = false;
-              logMouseDebug(`[MOUSE DEBUG] Chat click: visible positions are: ${JSON.stringify(ctx.visibleLinePositions)}\n`);
+              if (process.env.DEBUG_MOUSE === "true") {
+                logMouseDebug(`[MOUSE DEBUG] Chat click: visible positions are: ${JSON.stringify(ctx.visibleLinePositions)}\n`);
+              }
               for (const pos of ctx.visibleLinePositions) {
                 if (y >= pos.startRow && y <= pos.endRow) {
-                  logMouseDebug(`[MOUSE DEBUG] Matched position: index=${pos.index}, type=${pos.type}, isCollapsible=${pos.isCollapsible}, parentIndex=${pos.parentIndex}, childIndex=${pos.childIndex}\n`);
+                  if (process.env.DEBUG_MOUSE === "true") {
+                    logMouseDebug(`[MOUSE DEBUG] Matched position: index=${pos.index}, type=${pos.type}, isCollapsible=${pos.isCollapsible}, parentIndex=${pos.parentIndex}, childIndex=${pos.childIndex}\n`);
+                  }
                   // Nested child line click → toggle child expand/collapse
                   if (pos.parentIndex !== undefined && pos.childIndex !== undefined && pos.isCollapsible && ctx.toggleChildExpand) {
-                    logMouseDebug(`[MOUSE DEBUG] Toggling child expand for parent=${pos.parentIndex}, child=${pos.childIndex}\n`);
+                    if (process.env.DEBUG_MOUSE === "true") {
+                      logMouseDebug(`[MOUSE DEBUG] Toggling child expand for parent=${pos.parentIndex}, child=${pos.childIndex}\n`);
+                    }
                     ctx.toggleChildExpand(pos.parentIndex, pos.childIndex);
                     handledClick = true;
                   }
                   // Collapsible line click → toggle expand/collapse
                   else if (pos.isCollapsible && ctx.toggleLineExpand) {
-                    logMouseDebug(`[MOUSE DEBUG] Toggling line expand for index=${pos.index}\n`);
+                    if (process.env.DEBUG_MOUSE === "true") {
+                      logMouseDebug(`[MOUSE DEBUG] Toggling line expand for index=${pos.index}\n`);
+                    }
                     ctx.toggleLineExpand(pos.index);
                     handledClick = true;
                   }

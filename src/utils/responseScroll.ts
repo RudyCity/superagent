@@ -38,7 +38,7 @@ export function wrapTextForDisplay(text: string, width: number): string[] {
   const cacheKey = `${width}:${text}`;
   const cached = wrapCache.get(cacheKey);
   if (cached) {
-    return cached;
+    return [...cached];
   }
 
   const safeWidth = Math.max(10, width);
