@@ -146,7 +146,6 @@ if request_is_complex:
   - 'multi_replace_file_content': Multiple non-contiguous edits in a file.
   - 'edit': Simple, unique string replacements.
 - Code Search:
-  - 'fastcontext': Primary tool for codebase maps, tracing dependencies, and locating logic. Efficient alternative to glob/grep chains.
   - 'ripgrep_search': Fast targeted text search.
   - 'glob': Find files by name pattern.
   - 'grep': Fallback search.

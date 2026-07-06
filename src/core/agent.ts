@@ -4,7 +4,7 @@ import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import { renderTextToImageBase64, sliceTextIntoPages } from "../utils/textToImage.js";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getTierModelConfig, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getTierModelConfig, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks, isTaskInWorkspace } from "./tools.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
@@ -1486,7 +1486,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         const supportsVision = this.modelSupportsVision(modelName);
         const settings = getSettings();
         const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
-        const threshold = settings.visionTokenSavingThreshold ?? 2000;
+        const threshold = settings.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD;
 
         const allowSystemPromptImage = !process.env.VITEST || process.env.SUPERAGENT_TEST_SYSTEM_PROMPT_IMAGE === "true";
 
@@ -2595,7 +2595,7 @@ for (const tc of toolCalls) {
 
     const settings = getSettings();
     const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
-    const threshold = settings.visionTokenSavingThreshold ?? 2000;
+    const threshold = settings.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD;
 
     for (const m of this.conversation.getMessages()) {
       if (m.role === "system") continue;

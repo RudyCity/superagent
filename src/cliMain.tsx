@@ -106,9 +106,7 @@ export async function runCli() {
     process.exit(1);
   }
 
-  // Auto-setup FastContext on first run (portable Python + vendor source)
-  const { runFastContextSetup } = await import("./core/fastcontextSetup.js");
-  runFastContextSetup();
+
 
   // Auto-setup ripgrep and Android CLI on startup
   const { ensureRgInstalled, ensureAndroidCliInstalled } = await import("./core/androidSetup.js");

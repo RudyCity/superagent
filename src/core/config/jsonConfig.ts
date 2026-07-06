@@ -84,6 +84,8 @@ export interface GlobalModelConfig {
   mcpServers?: Record<string, McpServerConfig>;
 }
 
+export const DEFAULT_VISION_TOKEN_SAVING_THRESHOLD = 2000;
+
 const DEFAULT_CONFIG: GlobalModelConfig = {
   settings: {
     concurrencyLimit: 0,
@@ -101,7 +103,7 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     focusBudget: 4000,
     forcePromptBasedToolCalling: false,
     autoVisionTokenSaving: true,
-    visionTokenSavingThreshold: 2000,
+    visionTokenSavingThreshold: DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
   },
   trustedDirectories: [],
   providers: [
@@ -747,7 +749,7 @@ export function getSettings(): SystemSettings {
     focus: s.focus ?? "off",
     focusBudget: s.focusBudget ?? 4000,
     autoVisionTokenSaving: s.autoVisionTokenSaving ?? true,
-    visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? 2000,
+    visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
   };
 }
 

@@ -1,6 +1,6 @@
 import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
-import { getSettings, updateSettings, getContextWindowLimit, getEffectiveMasterModel } from "../config.js";
+import { getSettings, updateSettings, getContextWindowLimit, getEffectiveMasterModel, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD } from "../config.js";
 import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts";
 import { getConfiguredProviders, getTierModelWithProvider } from "../config/providers.js";
 import fs from "fs";
@@ -146,7 +146,7 @@ export const settingsCommand: SlashCommand = {
         `│ • Focus Custom Budget: ${s.focusBudget} tokens`,
         `│ • Force Prompt Tools : ${s.forcePromptBasedToolCalling ? "ENABLED" : "DISABLED"}`,
         `│ • Auto Vision Token  : ${s.autoVisionTokenSaving ?? true ? "ENABLED" : "DISABLED"}`,
-        `│ • Vision Threshold   : ${s.visionTokenSavingThreshold ?? 2000} chars`,
+        `│ • Vision Threshold   : ${s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD} chars`,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",
@@ -1288,7 +1288,7 @@ export const settingVisionThresholdCommand: SlashCommand = {
     if (!val) {
       ctx.addLine({
         type: "system",
-        content: `Usage: /setting-vision-threshold <number>\nCurrent value: ${getSettings().visionTokenSavingThreshold ?? 2000} chars`,
+        content: `Usage: /setting-vision-threshold <number>\nCurrent value: ${getSettings().visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD} chars`,
         timestamp: now,
       });
       return;

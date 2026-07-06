@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { filterSuggestions } from "./text.js";
-import { getCachedModelIds, getInstalledSkills, listHistorySessions } from "../core/config.js";
+import { getCachedModelIds, getInstalledSkills, listHistorySessions, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD } from "../core/config.js";
 import { registry } from "../core/commands/registry.js";
 import { backgroundTasks } from "../core/tools.js";
 
@@ -214,7 +214,7 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
 
     if (mainCommand === "/setting-vision-threshold") {
       const possibilities = [
-        "/setting-vision-threshold 2000",
+        `/setting-vision-threshold ${DEFAULT_VISION_TOKEN_SAVING_THRESHOLD}`,
         "/setting-vision-threshold 4000",
         "/setting-vision-threshold 8000",
         "/setting-vision-threshold 0",
