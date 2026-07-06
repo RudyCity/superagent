@@ -294,8 +294,8 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     });
 
     expect(realGetDynamic("claude-3-5-sonnet")).toBe(6500);
-    expect(realGetDynamic("gemini-1.5-pro")).toBe(1000);
-    expect(realGetDynamic("gpt-4o")).toBe(2000);
+    expect(realGetDynamic("gemini-1.5-pro")).toBe(3000);
+    expect(realGetDynamic("gpt-4o")).toBe(3000);
   });
 
   it("estimates token count using simulated image token counts when vision saving is active", async () => {

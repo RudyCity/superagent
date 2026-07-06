@@ -84,7 +84,7 @@ export interface GlobalModelConfig {
   mcpServers?: Record<string, McpServerConfig>;
 }
 
-export const DEFAULT_VISION_TOKEN_SAVING_THRESHOLD = 2000;
+export const DEFAULT_VISION_TOKEN_SAVING_THRESHOLD = 3000;
 
 const DEFAULT_CONFIG: GlobalModelConfig = {
   settings: {
@@ -769,7 +769,7 @@ export function getDynamicVisionThreshold(modelName: string): number {
     return 6500;
   }
   if (name.includes("gemini")) {
-    return 1000;
+    return 3000;
   }
   return settings.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD;
 }
