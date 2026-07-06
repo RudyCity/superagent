@@ -1134,15 +1134,23 @@ CRITICAL GOAL MODE RULES:
             }))
           : getToolDefinitions();
 
+        // Helper to get file existence status label
+        const fileStatus = (filePath: string): string =>
+          fs.existsSync(filePath) ? "[EXISTS]" : "[NOT YET CREATED]";
+
         let planStateNotice = "";
         if (this.tier === "master" || this.tier === "single") {
+          const planPath = this.getPlanFilePath();
+          const taskPath = this.getTaskFilePath();
+          const taskHistoryPath = this.getTaskHistoryFilePath();
+          const walkthroughPath = this.getWalkthroughFilePath();
           planStateNotice = `
 
 PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
-- Implementation Plan File: ${this.getPlanFilePath()}
-- Task Tracking File: ${this.getTaskFilePath()}
-- Task History File: ${this.getTaskHistoryFilePath()}
-- Verification/Walkthrough File: ${this.getWalkthroughFilePath()}
+- Implementation Plan File: ${planPath} ${fileStatus(planPath)}
+- Task Tracking File: ${taskPath} ${fileStatus(taskPath)}
+- Task History File: ${taskHistoryPath} ${fileStatus(taskHistoryPath)}
+- Verification/Walkthrough File: ${walkthroughPath} ${fileStatus(walkthroughPath)}
 
 CRITICAL RULES FOR PLANNING:
 1. You MUST use the 'manage_plan' tool (action: 'create', 'edit', or 'sync') to create, edit, update, or synchronize the Implementation Plan and tasks.
@@ -1152,13 +1160,17 @@ CRITICAL RULES FOR PLANNING:
 5. Do NOT write or create plan or task files in the local workspace directory.
 6. Whenever you reference these files, always use their absolute paths or format them as absolute file:/// links.`;
         } else if (this.tier === "superagent") {
+          const planPath = this.getPlanFilePath();
+          const taskPath = this.getTaskFilePath();
+          const taskHistoryPath = this.getTaskHistoryFilePath();
+          const walkthroughPath = this.getWalkthroughFilePath();
           planStateNotice = `
 
 PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
-- Implementation Plan File: ${this.getPlanFilePath()}
-- Task Tracking File: ${this.getTaskFilePath()}
-- Task History File: ${this.getTaskHistoryFilePath()}
-- Verification/Walkthrough File: ${this.getWalkthroughFilePath()}
+- Implementation Plan File: ${planPath} ${fileStatus(planPath)}
+- Task Tracking File: ${taskPath} ${fileStatus(taskPath)}
+- Task History File: ${taskHistoryPath} ${fileStatus(taskHistoryPath)}
+- Verification/Walkthrough File: ${walkthroughPath} ${fileStatus(walkthroughPath)}
 
 CRITICAL RULES FOR PLANNING:
 1. You MUST use the 'manage_tasks' tool (action: 'update') to update the status of checklist tasks.
