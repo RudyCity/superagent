@@ -64,7 +64,8 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           "2. OpenAI",
           "3. Anthropic",
           "4. Custom OpenAI Endpoint",
-          "5. Custom Anthropic Endpoint"
+          "5. Custom Anthropic Endpoint",
+          "6. Google Gemini"
         ]);
         setWizardSelectedIndex(0);
       } else if (choice.includes("delete") || choice.includes("remove") || choice === "3") {
@@ -109,7 +110,7 @@ export function useLoginWizard(ctx: LoginWizardContext) {
       if (!provider) {
         addLine({
           type: "error",
-          content: "Invalid choice. Please select 1, 2, 3, or 4.",
+          content: "Invalid choice. Please select 1, 2, 3, 4, 5, or 6.",
           timestamp: now,
         });
         return;

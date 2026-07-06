@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getStaticModelLimit } from "../model_limits.js";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { getConfig } from "./base.js";
@@ -24,12 +25,15 @@ export async function fetchAndCacheModels(): Promise<void> {
       url = "https://openrouter.ai/api/v1/models";
     } else if (provider.type === "openai") {
       url = baseUrl ? `${baseUrl.replace(/\/+$/, "")}/models` : "https://api.openai.com/v1/models";
+    } else if (provider.type === "gemini") {
+      // Google Gemini: use the generativelanguage REST API models endpoint
+      url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
     } else if (provider.type === "custom" && baseUrl) {
       url = `${baseUrl.replace(/\/+$/, "")}/models`;
     }
 
     if (!url) return;
-    if (apiKey) {
+    if (apiKey && provider.type !== "gemini") {
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
 
@@ -37,9 +41,13 @@ export async function fetchAndCacheModels(): Promise<void> {
       const res = await fetch(url, { headers });
       if (!res.ok) return;
       const json = await res.json() as any;
-      if (json && Array.isArray(json.data)) {
-        for (const m of json.data) {
-          if (!m || !m.id) continue;
+      // Google Gemini models API returns { models: [{ name: "models/gemini-2.5-flash", ... }] }
+      const dataArr = Array.isArray(json.data) ? json.data : (Array.isArray(json.models) ? json.models : null);
+      if (dataArr) {
+        for (const m of dataArr) {
+          // OpenAI-style: { id: string } | Google-style: { name: "models/xxx" }
+          const rawId = m?.id || (typeof m?.name === "string" ? m.name.replace(/^models\//, "") : null);
+          if (!rawId) continue;
           const limit =
             m.context_length ||
             m.max_model_len ||
@@ -49,7 +57,7 @@ export async function fetchAndCacheModels(): Promise<void> {
                 m.metadata.max_model_len ||
                 m.metadata.max_position_embeddings));
           if (limit && typeof limit === "number") {
-            cache[m.id] = limit;
+            cache[rawId] = limit;
           }
         }
       }
@@ -204,6 +212,16 @@ export function getModelInstanceForString(modelStr: string) {
         apiKey = customProfile.apiKey;
         baseUrl = customProfile.baseUrl || undefined;
       }
+    } else if (prefix === "gemini") {
+      provider = "gemini";
+      modelName = rest;
+      baseUrl = undefined;
+      const geminiProfile = modelConfig.providers.find(
+        (p) => p.provider === "gemini" && p.apiKey && p.apiKey.trim() !== ""
+      );
+      if (geminiProfile) {
+        apiKey = geminiProfile.apiKey;
+      }
     } else {
       // Find provider by ID or name in JSON config
       const matchedProvider = modelConfig.providers?.find(
@@ -231,6 +249,9 @@ export function getModelInstanceForString(modelStr: string) {
           if (!baseUrl) {
             baseUrl = "https://openrouter.ai/api/v1";
           }
+        } else if (typeLower === "gemini") {
+          provider = "gemini";
+          baseUrl = undefined;
         } else if (typeLower === "anthropic") {
           // If the profile has a custom baseUrl that is NOT an official Anthropic endpoint,
           // treat it as an OpenAI-compatible (custom) provider. Local servers (e.g. Orbit,
@@ -286,6 +307,17 @@ export function getModelInstanceForString(modelStr: string) {
           apiKey = openaiProfile.apiKey;
           modelName = rest;
         }
+      } else if (prefix.startsWith("gemini")) {
+        // Find native gemini provider in JSON config
+        const geminiProfile = modelConfig.providers.find(
+          (p) => p.provider === "gemini" && p.apiKey && p.apiKey.trim() !== ""
+        );
+        if (geminiProfile) {
+          provider = "gemini";
+          baseUrl = undefined;
+          apiKey = geminiProfile.apiKey;
+          modelName = rest;
+        }
       }
     }
   }
@@ -312,6 +344,12 @@ export function getModelInstanceForString(modelStr: string) {
       ...(baseUrl && { baseURL: baseUrl }),
     });
     return anthropic(modelName);
+  }
+
+  // Native Google Gemini provider
+  if (provider === "gemini") {
+    const google = createGoogleGenerativeAI({ apiKey });
+    return google(modelName);
   }
 
   const openai = createOpenAI({

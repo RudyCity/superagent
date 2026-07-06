@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.111] - 2026-07-06
+
+### Added
+- **Google Gemini Native Provider**:
+  - Installed and integrated `@ai-sdk/google` (v1.x for compatibility with SDK v4.x).
+  - Added support for `gemini` in provider types and command-line `/login add gemini <api_key>` commands.
+  - Implemented auto-detection of Gemini keys (prefix `AIza`).
+  - Added native Gemini models (e.g., `gemini-2.5-flash`, `gemini-2.5-pro`) to provider wizards, fallback options, and static token limit configs.
+  - Resolved `gemini` provider prefix in runtime model instance creation.
+
+---
+
 ## [1.2.110] - 2026-07-06
 
 ### Added

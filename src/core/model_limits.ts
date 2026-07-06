@@ -113,6 +113,17 @@ export const MODEL_LIMITS: Record<string, number> = {
   "google/gemma-4-26b-a4b-it:free": 262144,
   "google/gemma-4-31b-it": 262144,
   "google/gemma-4-31b-it:free": 262144,
+
+  // Native Google Gemini models (direct API, no google/ prefix)
+  "gemini-2.5-flash": 1048576,
+  "gemini-2.5-flash-preview-05-20": 1048576,
+  "gemini-2.5-pro": 1048576,
+  "gemini-2.5-pro-preview-05-06": 1048576,
+  "gemini-2.0-flash": 1048576,
+  "gemini-2.0-flash-lite": 1048576,
+  "gemini-1.5-flash": 1048576,
+  "gemini-1.5-flash-8b": 1048576,
+  "gemini-1.5-pro": 2097152,
   "google/lyria-3-clip-preview": 1048576,
   "google/lyria-3-pro-preview": 1048576,
 

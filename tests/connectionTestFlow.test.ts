@@ -37,9 +37,15 @@ describe("loginWizardLogic — pure helper functions", () => {
       expect(resolveProviderType("Custom Anthropic Endpoint")).toBe("custom-anthropic");
     });
 
+    it("should resolve gemini from number or text", () => {
+      expect(resolveProviderType("6")).toBe("gemini");
+      expect(resolveProviderType("Google Gemini")).toBe("gemini");
+      expect(resolveProviderType("gemini")).toBe("gemini");
+    });
+
     it("should return null for invalid input", () => {
       expect(resolveProviderType("invalid")).toBeNull();
-      expect(resolveProviderType("6")).toBeNull();
+      expect(resolveProviderType("7")).toBeNull();
     });
   });
 

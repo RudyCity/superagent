@@ -1,4 +1,4 @@
-export type ProviderType = "openrouter" | "openai" | "anthropic" | "custom" | "custom-anthropic";
+export type ProviderType = "openrouter" | "openai" | "anthropic" | "gemini" | "custom" | "custom-anthropic";
 
 export interface ConfiguredProvider {
   id: string;
@@ -15,6 +15,7 @@ export function resolveProviderType(choice: string): ProviderType | null {
   if (lc === "1" || lc.includes("openrouter")) return "openrouter";
   if (lc === "2" || (lc.includes("openai") && !lc.includes("custom"))) return "openai";
   if (lc === "3" || (lc.includes("anthropic") && !lc.includes("custom"))) return "anthropic";
+  if (lc === "6" || lc.includes("gemini") || lc.includes("google")) return "gemini";
   if (lc.includes("custom anthropic") || lc === "5") return "custom-anthropic";
   if (lc.includes("custom openai") || lc.includes("custom") || lc === "4") return "custom";
   return null;
@@ -41,6 +42,15 @@ export function getFallbackModels(providerType: ProviderType): string[] {
       ];
     case "openai":
       return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"];
+    case "gemini":
+      return [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+      ];
     default:
       return ["gpt-4o", "gpt-4o-mini"];
   }
@@ -57,6 +67,9 @@ export function getModelOptions(providerType: string, cachedModels: string[]): s
       (m) => m.startsWith("gpt-") || m.startsWith("o1") || m.startsWith("o3")
     );
     models = filtered.length > 0 ? filtered : fallback;
+  } else if (providerType === "gemini") {
+    // For native Gemini provider, show only gemini-* models (not google/ prefixed OpenRouter ones)
+    models = fallback;
   }
   return models.slice(0, 15);
 }

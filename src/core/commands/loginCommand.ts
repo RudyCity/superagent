@@ -186,7 +186,7 @@ export const loginCommand: SlashCommand = {
         provider = "custom";
         baseUrl = subParts[1];
         apiKey = subParts[2];
-      } else if (["openrouter", "anthropic", "openai"].includes(subParts[0].toLowerCase())) {
+      } else if (["openrouter", "anthropic", "openai", "gemini"].includes(subParts[0].toLowerCase())) {
         if (subParts.length < 2) {
           ctx.addLine({
             type: "error",
@@ -203,6 +203,8 @@ export const loginCommand: SlashCommand = {
           provider = "openrouter";
         } else if (apiKey.startsWith("sk-ant-")) {
           provider = "anthropic";
+        } else if (apiKey.startsWith("AIza")) {
+          provider = "gemini";
         } else {
           provider = "openai";
         }
@@ -228,6 +230,8 @@ export const loginCommand: SlashCommand = {
           defaultModel = "google/gemini-2.5-flash";
         } else if (provider === "anthropic") {
           defaultModel = "claude-3-5-sonnet-20241022";
+        } else if (provider === "gemini") {
+          defaultModel = "gemini-2.5-flash";
         }
 
         const baseUrlInfo = baseUrl ? `\nBase URL: ${baseUrl}` : (provider === "openrouter" ? `\nBase URL: https://openrouter.ai/api/v1` : "");

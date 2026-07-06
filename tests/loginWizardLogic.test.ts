@@ -9,6 +9,7 @@ describe("loginWizardLogic", () => {
       expect(resolveProviderType("3")).toBe("anthropic");
       expect(resolveProviderType("4")).toBe("custom");
       expect(resolveProviderType("5")).toBe("custom-anthropic");
+      expect(resolveProviderType("6")).toBe("gemini");
     });
 
     it("resolves name choices case-insensitively", () => {
@@ -17,10 +18,11 @@ describe("loginWizardLogic", () => {
       expect(resolveProviderType("anthropic")).toBe("anthropic");
       expect(resolveProviderType("Custom Endpoint")).toBe("custom");
       expect(resolveProviderType("Custom Anthropic Endpoint")).toBe("custom-anthropic");
+      expect(resolveProviderType("Google Gemini")).toBe("gemini");
     });
 
     it("returns null for invalid choices", () => {
-      expect(resolveProviderType("6")).toBeNull();
+      expect(resolveProviderType("7")).toBeNull();
       expect(resolveProviderType("foo")).toBeNull();
     });
   });
