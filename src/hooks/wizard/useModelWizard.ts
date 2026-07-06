@@ -1657,7 +1657,15 @@ export function useModelWizard(ctx: ModelWizardContext) {
         return;
       }
 
-      const supportsVision = value === "1. Yes" || value.toLowerCase() === "yes" || value.toLowerCase() === "1. yes";
+      const lowerVal = value.toLowerCase().trim();
+      const supportsVision =
+        lowerVal === "1. yes" ||
+        lowerVal === "yes" ||
+        lowerVal === "y" ||
+        lowerVal === "ya" ||
+        lowerVal === "true" ||
+        lowerVal === "1" ||
+        lowerVal.startsWith("1.");
       const modelName = data.tempModelName;
 
       try {
@@ -1793,7 +1801,15 @@ export function useModelWizard(ctx: ModelWizardContext) {
         return;
       }
 
-      const supportsVision = value === "1. Yes" || value.toLowerCase() === "yes" || value.toLowerCase() === "1. yes";
+      const lowerVal = value.toLowerCase().trim();
+      const supportsVision =
+        lowerVal === "1. yes" ||
+        lowerVal === "yes" ||
+        lowerVal === "y" ||
+        lowerVal === "ya" ||
+        lowerVal === "true" ||
+        lowerVal === "1" ||
+        lowerVal.startsWith("1.");
       const finalModelName = data.tempFinalModelName;
       const tier = data.tempTier;
       const presetModels: Record<string, string> = data.tempPresetModels ? JSON.parse(data.tempPresetModels) : {};
