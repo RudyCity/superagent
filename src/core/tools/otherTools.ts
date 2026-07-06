@@ -783,14 +783,14 @@ export const gitWorktreeTool: Tool = {
 
 export const manageTasksTool: Tool = {
   name: "manage_tasks",
-  description: "Manage tasks in the active task list (_task.md). Actions: 'list', 'add', 'update', 'remove'.",
+  description: "Manage tasks in the active task list (_task.md). Actions: 'list', 'add', 'update', 'remove', 'update_bulk', 'remove_bulk'.",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["list", "add", "update", "remove"],
-        description: "The action to perform: 'list' (show all tasks), 'add' (add a new task), 'update' (change status of a task), 'remove' (remove a task)",
+        enum: ["list", "add", "update", "remove", "update_bulk", "remove_bulk"],
+        description: "The action to perform: 'list' (show all tasks), 'add' (add a new task), 'update' (change status of a task), 'remove' (remove a task), 'update_bulk' (change status of multiple tasks), 'remove_bulk' (remove multiple tasks)",
       },
       text: {
         type: "string",
@@ -798,12 +798,19 @@ export const manageTasksTool: Tool = {
       },
       index: {
         type: "number",
-        description: "1-based task index (required for actions 'update' and 'remove')",
+        description: "1-based task index (required for actions 'update' and 'remove' if 'indices' is not provided)",
+      },
+      indices: {
+        type: "array",
+        items: {
+          type: "number",
+        },
+        description: "1-based task indices (required for actions 'update_bulk' and 'remove_bulk', or when updating/removing multiple tasks)",
       },
       status: {
         type: "string",
         enum: [" ", "/", "x"],
-        description: "New status for the task: ' ' for pending, '/' for in progress, 'x' for completed (required for action 'update')",
+        description: "New status for the task: ' ' for pending, '/' for in progress, 'x' for completed (required for actions 'update' and 'update_bulk')",
       },
       sessionId: {
         type: "string",
@@ -816,6 +823,7 @@ export const manageTasksTool: Tool = {
     const action = args.action as string;
     const text = args.text as string | undefined;
     const index = args.index as number | undefined;
+    const indices = args.indices as number[] | undefined;
     const status = args.status as string | undefined;
     const sessionId = args.sessionId as string | undefined;
 
@@ -896,16 +904,28 @@ export const manageTasksTool: Tool = {
         return `Successfully added task: "${text.trim()}"`;
       }
 
-      if (action === "update") {
-        if (index === undefined || index <= 0) {
-          return "Error: A valid 1-based 'index' parameter is required for the 'update' action.";
-        }
+      if (action === "update" || action === "update_bulk") {
         if (!status) {
-          return "Error: The 'status' parameter is required for the 'update' action.";
+          return `Error: The 'status' parameter is required for the '${action}' action.`;
         }
         if (status !== " " && status !== "/" && status !== "x") {
           return `Error: Invalid status "${status}". Must be one of: ' ' (pending), '/' (in progress), 'x' (completed).`;
         }
+
+        const targetIndices: number[] = [];
+        if (action === "update_bulk" || indices !== undefined) {
+          if (!indices || !Array.isArray(indices) || indices.length === 0) {
+            return `Error: A non-empty 'indices' array parameter is required for the '${action}' action.`;
+          }
+          targetIndices.push(...indices);
+        } else {
+          if (index === undefined || index <= 0) {
+            return "Error: A valid 1-based 'index' parameter is required for the 'update' action.";
+          }
+          targetIndices.push(index);
+        }
+
+        const uniqueIndices = Array.from(new Set(targetIndices));
 
         let content = "";
         try {
@@ -918,31 +938,51 @@ export const manageTasksTool: Tool = {
         }
 
         const { lines, tasks } = parseTasks(content);
-        if (index > tasks.length) {
-          return `Error: Task index ${index} is out of bounds. There are only ${tasks.length} tasks in the list.`;
+        for (const idx of uniqueIndices) {
+          if (idx <= 0 || idx > tasks.length) {
+            return `Error: Task index ${idx} is out of bounds. There are only ${tasks.length} tasks in the list.`;
+          }
         }
 
-        const targetTask = tasks[index - 1];
-        const line = lines[targetTask.lineIndex];
-        const match = line.match(/^(\s*-\s*`?\[)([xX/ ])(\]`?\s*)(.*)$/);
-        
-        if (!match) {
-          return `Error: Failed to parse task line at index ${index} internally.`;
+        const updatedTaskTexts: string[] = [];
+        for (const idx of uniqueIndices) {
+          const targetTask = tasks[idx - 1];
+          const line = lines[targetTask.lineIndex];
+          const match = line.match(/^(\s*-\s*`?\[)([xX/ ])(\]`?\s*)(.*)$/);
+          
+          if (!match) {
+            return `Error: Failed to parse task line at index ${idx} internally.`;
+          }
+
+          const prefix = match[1];
+          const suffix = match[3] + match[4];
+          const newLine = `${prefix}${status}${suffix}`;
+          
+          lines[targetTask.lineIndex] = newLine;
+          updatedTaskTexts.push(`"${targetTask.text}"`);
         }
 
-        const prefix = match[1];
-        const suffix = match[3] + match[4];
-        const newLine = `${prefix}${status}${suffix}`;
-        
-        lines[targetTask.lineIndex] = newLine;
         await fs.writeFile(taskPath, lines.join("\n"), "utf-8");
-        return `Successfully updated task ${index} to [${status}]: "${targetTask.text}"`;
+        const joinedIndices = uniqueIndices.join(", ");
+        const joinedTexts = updatedTaskTexts.join(", ");
+        return `Successfully updated task${uniqueIndices.length > 1 ? "s" : ""} ${joinedIndices} to [${status}]: ${joinedTexts}`;
       }
 
-      if (action === "remove") {
-        if (index === undefined || index <= 0) {
-          return "Error: A valid 1-based 'index' parameter is required for the 'remove' action.";
+      if (action === "remove" || action === "remove_bulk") {
+        const targetIndices: number[] = [];
+        if (action === "remove_bulk" || indices !== undefined) {
+          if (!indices || !Array.isArray(indices) || indices.length === 0) {
+            return `Error: A non-empty 'indices' array parameter is required for the '${action}' action.`;
+          }
+          targetIndices.push(...indices);
+        } else {
+          if (index === undefined || index <= 0) {
+            return "Error: A valid 1-based 'index' parameter is required for the 'remove' action.";
+          }
+          targetIndices.push(index);
         }
+
+        const uniqueIndices = Array.from(new Set(targetIndices));
 
         let content = "";
         try {
@@ -955,15 +995,25 @@ export const manageTasksTool: Tool = {
         }
 
         const { lines, tasks } = parseTasks(content);
-        if (index > tasks.length) {
-          return `Error: Task index ${index} is out of bounds. There are only ${tasks.length} tasks in the list.`;
+        for (const idx of uniqueIndices) {
+          if (idx <= 0 || idx > tasks.length) {
+            return `Error: Task index ${idx} is out of bounds. There are only ${tasks.length} tasks in the list.`;
+          }
         }
 
-        const targetTask = tasks[index - 1];
-        lines.splice(targetTask.lineIndex, 1);
+        // Gather tasks to remove
+        const targets = uniqueIndices.map(idx => tasks[idx - 1]);
+        // Sort descending by lineIndex to prevent shifting issues during splicing
+        targets.sort((a, b) => b.lineIndex - a.lineIndex);
+
+        for (const targetTask of targets) {
+          lines.splice(targetTask.lineIndex, 1);
+        }
         
         await fs.writeFile(taskPath, lines.join("\n"), "utf-8");
-        return `Successfully removed task ${index}: "${targetTask.text}"`;
+        const joinedIndices = uniqueIndices.join(", ");
+        const joinedTexts = uniqueIndices.map(idx => `"${tasks[idx - 1].text}"`).join(", ");
+        return `Successfully removed task${uniqueIndices.length > 1 ? "s" : ""} ${joinedIndices}: ${joinedTexts}`;
       }
 
       return `Error: Unknown action "${action}"`;

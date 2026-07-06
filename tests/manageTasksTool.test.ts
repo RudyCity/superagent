@@ -125,6 +125,116 @@ describe("manageTasksTool", () => {
     });
   });
 
+  describe("bulk operations", () => {
+    beforeEach(async () => {
+      // Add a few initial tasks
+      await manageTasksTool.execute({ action: "add", text: "Task A" }, tempDir);
+      await manageTasksTool.execute({ action: "add", text: "Task B" }, tempDir);
+      await manageTasksTool.execute({ action: "add", text: "Task C" }, tempDir);
+    });
+
+    it("should update multiple tasks in bulk using update_bulk", async () => {
+      const result = await manageTasksTool.execute(
+        { action: "update_bulk", indices: [1, 3], status: "x" },
+        tempDir
+      );
+      expect(result).toContain('Successfully updated tasks 1, 3 to [x]: "Task A", "Task C"');
+
+      const listResult = await manageTasksTool.execute({ action: "list" }, tempDir);
+      expect(listResult).toBe("1. [x] Task A\n2. [ ] Task B\n3. [x] Task C");
+    });
+
+    it("should update multiple tasks using update with indices parameter", async () => {
+      const result = await manageTasksTool.execute(
+        { action: "update", indices: [2, 3], status: "/" },
+        tempDir
+      );
+      expect(result).toContain('Successfully updated tasks 2, 3 to [/]: "Task B", "Task C"');
+
+      const listResult = await manageTasksTool.execute({ action: "list" }, tempDir);
+      expect(listResult).toBe("1. [ ] Task A\n2. [/] Task B\n3. [/] Task C");
+    });
+
+    it("should remove multiple tasks in bulk using remove_bulk", async () => {
+      const result = await manageTasksTool.execute(
+        { action: "remove_bulk", indices: [1, 3] },
+        tempDir
+      );
+      expect(result).toContain('Successfully removed tasks 1, 3: "Task A", "Task C"');
+
+      const listResult = await manageTasksTool.execute({ action: "list" }, tempDir);
+      expect(listResult).toBe("1. [ ] Task B");
+    });
+
+    it("should remove multiple tasks using remove with indices parameter", async () => {
+      const result = await manageTasksTool.execute(
+        { action: "remove", indices: [1, 2] },
+        tempDir
+      );
+      expect(result).toContain('Successfully removed tasks 1, 2: "Task A", "Task B"');
+
+      const listResult = await manageTasksTool.execute({ action: "list" }, tempDir);
+      expect(listResult).toBe("1. [ ] Task C");
+    });
+
+    it("should deduplicate indices when performing bulk update or remove", async () => {
+      const updateResult = await manageTasksTool.execute(
+        { action: "update_bulk", indices: [1, 1, 2], status: "x" },
+        tempDir
+      );
+      expect(updateResult).toContain('Successfully updated tasks 1, 2 to [x]: "Task A", "Task B"');
+
+      const removeResult = await manageTasksTool.execute(
+        { action: "remove_bulk", indices: [1, 1, 2] },
+        tempDir
+      );
+      expect(removeResult).toContain('Successfully removed tasks 1, 2: "Task A", "Task B"');
+
+      const listResult = await manageTasksTool.execute({ action: "list" }, tempDir);
+      expect(listResult).toBe("1. [ ] Task C");
+    });
+
+    it("should validate out of bounds indices in bulk operations", async () => {
+      const updateErr = await manageTasksTool.execute(
+        { action: "update_bulk", indices: [1, 5], status: "x" },
+        tempDir
+      );
+      expect(updateErr).toContain("Error: Task index 5 is out of bounds");
+
+      const removeErr = await manageTasksTool.execute(
+        { action: "remove_bulk", indices: [1, 5] },
+        tempDir
+      );
+      expect(removeErr).toContain("Error: Task index 5 is out of bounds");
+    });
+
+    it("should error if indices parameter is missing or empty for bulk operations", async () => {
+      const updateErrEmpty = await manageTasksTool.execute(
+        { action: "update_bulk", indices: [] as any, status: "x" },
+        tempDir
+      );
+      expect(updateErrEmpty).toContain("Error: A non-empty 'indices' array parameter is required");
+
+      const updateErrMissing = await manageTasksTool.execute(
+        { action: "update_bulk", status: "x" },
+        tempDir
+      );
+      expect(updateErrMissing).toContain("Error: A non-empty 'indices' array parameter is required");
+
+      const removeErrEmpty = await manageTasksTool.execute(
+        { action: "remove_bulk", indices: [] as any },
+        tempDir
+      );
+      expect(removeErrEmpty).toContain("Error: A non-empty 'indices' array parameter is required");
+
+      const removeErrMissing = await manageTasksTool.execute(
+        { action: "remove_bulk" },
+        tempDir
+      );
+      expect(removeErrMissing).toContain("Error: A non-empty 'indices' array parameter is required");
+    });
+  });
+
   describe("with agent context", () => {
     it("should resolve and manage tasks at path returned by getTaskFilePath()", async () => {
       const mockAgent = {

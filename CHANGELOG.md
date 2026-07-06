@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.137] - 2026-07-06
+
+### Added
+- **Bulk Task Management**:
+  - Added support for bulk operations in the `manage_tasks` tool.
+  - Added new `update_bulk` and `remove_bulk` actions, and an `indices` array parameter.
+  - Allowed `update` and `remove` actions to also accept the `indices` parameter for backward compatibility.
+  - Handled index deduplication and safe descending line removal to prevent shifting bugs.
+  - Added comprehensive unit tests covering all bulk operations and validation edge cases.
+
+---
+
 ## [1.2.136] - 2026-07-06
 
 ### Changed
