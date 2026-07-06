@@ -15,6 +15,7 @@ export interface ProviderProfile {
 export interface TierModelConfig {
   providerProfileId: string;
   model: string;
+  supportsVision?: boolean;
 }
 
 export interface PresetModelsMulti {

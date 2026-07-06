@@ -4,7 +4,7 @@ import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import { renderTextToImageBase64, sliceTextIntoPages } from "../utils/textToImage.js";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache } from "./config.js";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getTierModelConfig, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks, isTaskInWorkspace } from "./tools.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
@@ -2504,6 +2504,18 @@ for (const tc of toolCalls) {
 
   private modelSupportsVision(modelName: string): boolean {
     if (!modelName) return false;
+
+    // Check configuration first
+    try {
+      const mode = (this.isMultiAgent && !process.env.SINGLE_AGENT_MODE) ? "multi" : "single";
+      const tierConfig = getTierModelConfig(mode, this.subagentType || this.tier);
+      if (tierConfig && tierConfig.supportsVision !== undefined) {
+        return tierConfig.supportsVision;
+      }
+    } catch (e) {
+      // Fallback to name check
+    }
+
     const name = modelName.toLowerCase();
     
     // Known vision-supporting models

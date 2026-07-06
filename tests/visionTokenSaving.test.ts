@@ -22,6 +22,7 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
       workingDirectory: process.cwd(),
     }),
     getTierModel: vi.fn().mockReturnValue("gpt-4o"),
+    getTierModelConfig: vi.fn().mockReturnValue({ model: "gpt-4o", supportsVision: true }),
     getSettings: vi.fn().mockReturnValue({
       autoVisionTokenSaving: true,
       visionTokenSavingThreshold: 100, // Small threshold for easy testing
@@ -145,4 +146,43 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     expect(messages[2].content[1].type).toBe("image");
     expect(messages[2].content[1].image).toBe("MOCK_BASE64_IMAGE_DATA");
   });
+
+  it("honors configured supportsVision: false even if model name suggests vision support", () => {
+    vi.mocked(configModule.getTierModelConfig).mockReturnValue({
+      providerProfileId: "fake-key",
+      model: "gpt-4o",
+      supportsVision: false,
+    });
+
+    const agent = new Agent("single");
+    const longText = "a".repeat(150);
+    agent.conversation.addUserMessage(longText);
+
+    const messages = (agent as any).buildMessages(true);
+
+    expect(messages.length).toBe(1);
+    expect(messages[0].role).toBe("user");
+    expect(messages[0].content).toBe(longText); // Stays as text because vision is configured to false
+  });
+
+  it("honors configured supportsVision: true even if model name does not suggest vision support", () => {
+    vi.mocked(configModule.getTierModel).mockReturnValue("custom-model-non-vision");
+    vi.mocked(configModule.getTierModelConfig).mockReturnValue({
+      providerProfileId: "fake-key",
+      model: "custom-model-non-vision",
+      supportsVision: true,
+    });
+
+    const agent = new Agent("single");
+    const longText = "a".repeat(150);
+    agent.conversation.addUserMessage(longText);
+
+    const messages = (agent as any).buildMessages(true);
+
+    expect(messages.length).toBe(1);
+    expect(messages[0].role).toBe("user");
+    expect(Array.isArray(messages[0].content)).toBe(true);
+    expect(messages[0].content[1].type).toBe("image");
+  });
 });
+

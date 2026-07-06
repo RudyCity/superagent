@@ -1,4 +1,4 @@
-import { getProviders, loadModelConfig, getActivePreset, mutateModelConfig } from "./jsonConfig.js";
+import { getProviders, loadModelConfig, getActivePreset, mutateModelConfig, TierModelConfig } from "./jsonConfig.js";
 
 export interface ConfiguredProvider {
   id: string;
@@ -195,6 +195,44 @@ export function getEffectiveMasterModel(mode: ModelMode | "auto" = "auto"): stri
 }
 
 /**
+ * Get a specific tier's model configuration object from JSON config.
+ * @param mode "multi" | "single" | "auto"
+ * @param tier Tier name
+ * @returns The TierModelConfig object, or undefined if not configured
+ */
+export function getTierModelConfig(mode: ModelMode | "auto", tier: string): TierModelConfig | undefined {
+  const m = resolveMode(mode);
+  const preset = getActivePreset<any>(m);
+  const key = tier.toLowerCase();
+
+  const pick = (...configs: (any | undefined)[]): any =>
+    configs.find((c) => c?.model);
+
+  let tierConfig: any;
+
+  if (key === "master") {
+    tierConfig = m === "multi" ? preset.models.master : preset.models.superagent;
+  } else if (key === "superagent") {
+    tierConfig = preset.models.superagent;
+  } else if (key === "subagent") {
+    tierConfig = pick(
+      preset.models.subagentDefault,
+      preset.models.superagent,
+      m === "multi" ? preset.models.master : undefined
+    );
+  } else {
+    tierConfig = pick(
+      preset.models.subagentDetails?.[key],
+      preset.models.subagentDefault,
+      preset.models.superagent,
+      m === "multi" ? preset.models.master : undefined
+    );
+  }
+
+  return tierConfig;
+}
+
+/**
  * Get a specific tier's model from JSON config.
  * @param mode "multi" | "single" | "auto"
  * @param tier Tier name: "master", "superagent", "subagent", "researcher", "coder", "reviewer", or any subagent name
@@ -276,8 +314,15 @@ export function getTierModelWithProvider(mode: ModelMode | "auto", tier: string)
  * @param tier Tier name
  * @param modelName The model string to set
  * @param providerProfileId Optional provider profile ID
+ * @param supportsVision Optional boolean to indicate if model supports vision
  */
-export function setTierModel(mode: ModelMode | "auto", tier: string, modelName: string, providerProfileId?: string): void {
+export function setTierModel(
+  mode: ModelMode | "auto",
+  tier: string,
+  modelName: string,
+  providerProfileId?: string,
+  supportsVision?: boolean
+): void {
   const m = resolveMode(mode);
   const key = tier.toLowerCase();
 
@@ -291,6 +336,7 @@ export function setTierModel(mode: ModelMode | "auto", tier: string, modelName: 
 
   const update: any = { model: parsedModel };
   if (parsedProviderId) update.providerProfileId = parsedProviderId;
+  if (supportsVision !== undefined) update.supportsVision = supportsVision;
 
   mutateModelConfig((config) => {
     const activeId = config.activePresetId?.[m];
@@ -317,8 +363,17 @@ export function setTierModel(mode: ModelMode | "auto", tier: string, modelName: 
 
 /**
  * Set ALL tiers' models at once in JSON config and persist.
+ * @param mode "multi" | "single" | "auto"
+ * @param modelName The model string to set
+ * @param providerProfileId Optional provider profile ID
+ * @param supportsVision Optional boolean to indicate if model supports vision
  */
-export function setAllTierModels(mode: ModelMode | "auto", modelName: string, providerProfileId?: string): void {
+export function setAllTierModels(
+  mode: ModelMode | "auto",
+  modelName: string,
+  providerProfileId?: string,
+  supportsVision?: boolean
+): void {
   const m = resolveMode(mode);
 
   let parsedModel = modelName;
@@ -331,6 +386,7 @@ export function setAllTierModels(mode: ModelMode | "auto", modelName: string, pr
 
   const update: any = { model: parsedModel };
   if (parsedProviderId) update.providerProfileId = parsedProviderId;
+  if (supportsVision !== undefined) update.supportsVision = supportsVision;
 
   mutateModelConfig((config) => {
     const activeId = config.activePresetId?.[m];

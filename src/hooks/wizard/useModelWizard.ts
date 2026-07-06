@@ -1588,177 +1588,280 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const tier = data.tier || "";
         
         const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
-
         const presetModels: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
+        const currentOptions = (ctx as any).wizardAllOptions && (ctx as any).wizardAllOptions.length > 0 ? (ctx as any).wizardAllOptions : wizardOptions;
 
-        if (tier === "master") {
-          presetModels.MODEL_MULTI_MASTER = finalModelName;
-        } else if (tier === "superagent") {
-          presetModels.MODEL_MULTI_SUPERAGENT = finalModelName;
-        } else if (tier === "subagent") {
-          if (isMulti) {
-            presetModels.MODEL_MULTI_SUBAGENT = finalModelName;
-          } else {
-            presetModels.MODEL_SINGLE_SUBAGENT = finalModelName;
-          }
-        } else if (tier === "researcher") {
-          if (isMulti) {
-            presetModels.MODEL_MULTI_SUBAGENT_RESEARCHER = finalModelName;
-          } else {
-            presetModels.MODEL_SINGLE_SUBAGENT_RESEARCHER = finalModelName;
-          }
-        } else if (tier === "coder") {
-          if (isMulti) {
-            presetModels.MODEL_MULTI_SUBAGENT_CODER = finalModelName;
-          } else {
-            presetModels.MODEL_SINGLE_SUBAGENT_CODER = finalModelName;
-          }
-        } else if (tier === "reviewer") {
-          if (isMulti) {
-            presetModels.MODEL_MULTI_SUBAGENT_REVIEWER = finalModelName;
-          } else {
-            presetModels.MODEL_SINGLE_SUBAGENT_REVIEWER = finalModelName;
-          }
-        } else if (tier === "default") {
-          presetModels.MODEL = finalModelName;
-          if (!isMulti) {
-            presetModels.MODEL_SINGLE_SUPERAGENT = finalModelName;
-          }
-        } else if (tier === "single") {
-          presetModels.MODEL_SINGLE_SUPERAGENT = finalModelName;
-          presetModels.MODEL_SINGLE = finalModelName;
-          presetModels.MODEL = finalModelName;
-        }
-
-        const nextStep = step === 24 ? 22 : 32;
+        // Transition to vision choice step for preset (step 61 for create, step 62 for edit)
         setActiveWizard({
           type: "model",
-          step: nextStep,
-          data: { ...data, presetModels: JSON.stringify(presetModels) },
+          step: step === 24 ? 61 : 62,
+          data: {
+            ...data,
+            tempFinalModelName: finalModelName,
+            tempTier: tier,
+            tempPresetModels: JSON.stringify(presetModels),
+            tempStep: String(step),
+            modelOptions: JSON.stringify(currentOptions),
+          },
         });
 
-        setWizardOptions(getPresetOptionsList(presetModels));
+        const opts = ["1. Yes", "2. No", "< Back"];
+        setWizardOptions(opts);
+        if (setWizardAllOptions) setWizardAllOptions(opts);
         setWizardSelectedIndex(0);
         setInput("");
+        addLine({
+          type: "system",
+          content: `Does the model "${modelName}" support vision/image inputs?`,
+          timestamp: now,
+        });
       } else {
-        // Direct flow: same as what step 5 used to do
+        // Direct flow: Transition to vision choice step for direct configure (step 60)
         const modelName = value;
-        try {
-          const profileName = data.provider;
-          const tier = data.tier;
-          let targetLabel = "";
-          if (tier === "default") {
-            switchActiveProvider(profileName);
-            setAllTierModels(presetMode, `${profileName.toLowerCase()}@${modelName}`);
-            targetLabel = "Default Model";
-          } else if (tier === "all_subagents") {
-            const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
-            setTierModel(presetMode, "subagent", finalModelName);
-            setTierModel(presetMode, "researcher", finalModelName);
-            setTierModel(presetMode, "coder", finalModelName);
-            setTierModel(presetMode, "reviewer", finalModelName);
-            targetLabel = "All Subagent Models";
-            switchActiveProvider(profileName);
-          } else if (tier === "all") {
-            const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
-            setAllTierModels(presetMode, finalModelName);
-            targetLabel = "All Tiers & Subagents";
-            switchActiveProvider(profileName);
-          } else {
-            const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
-            
-            if (tier === "master") {
-              setTierModel(presetMode, "master", finalModelName);
-              targetLabel = isMulti ? "Master Agent (depth 0) Model" : "Single Agent Model";
-            } else if (tier === "superagent") {
-              setTierModel(presetMode, "superagent", finalModelName);
-              targetLabel = "Superagent (depth 1) Model";
-            } else if (tier === "subagent") {
-              setTierModel(presetMode, "subagent", finalModelName);
-              targetLabel = "Subagent (depth 2) Model";
-            } else if (tier === "single") {
-              setTierModel(presetMode, "master", finalModelName);
-              targetLabel = "Single Agent Model";
-            } else {
-              setTierModel(presetMode, tier, finalModelName);
-              targetLabel = `Subagent "${tier}" Model`;
-            }
-          }
+        const currentOptions = (ctx as any).wizardAllOptions && (ctx as any).wizardAllOptions.length > 0 ? (ctx as any).wizardAllOptions : wizardOptions;
+        
+        setActiveWizard({
+          type: "model",
+          step: 60,
+          data: {
+            ...data,
+            tempModelName: modelName,
+            modelOptions: JSON.stringify(currentOptions),
+          },
+        });
 
-          const cleanModelName = modelName.includes("@") ? modelName.substring(modelName.indexOf("@") + 1) : modelName;
-          const limit = getContextWindowLimit(cleanModelName);
-          
-          const isSingle = !isMulti;
-          const effectiveModel = isSingle
-            ? (getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel())
-            : (getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel());
-          const cleanModel = effectiveModel.includes("@") ? effectiveModel.substring(effectiveModel.indexOf("@") + 1) : effectiveModel;
-          const newLimit = getContextWindowLimit(cleanModel);
-          setContextLimit(newLimit);
-          setActiveModel(effectiveModel);
-          syncContextManagerModel(cleanModel, newLimit);
-          
-          let updatedList = `\n\nUpdated Models:\n`;
-          if (isMulti) {
-            const masterModel = getTierModel("multi", "master") || "(use default)";
-            const superagentModel = getTierModel("multi", "superagent") || "(use default)";
-            const subagentModel = getTierModel("multi", "subagent") || "(use default)";
-            updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
-              `  Superagent (depth 1): ${superagentModel}\n` +
-              `  Subagent (depth 2): ${subagentModel}`;
-
-            const allModels = getAllTierModels("multi");
-            for (const [key, value] of Object.entries(allModels)) {
-              if (key.startsWith("subagent_") && value && value !== "(use default)") {
-                const name = key.replace("subagent_", "");
-                if (!updatedList.includes(`Subagent "${name}":`)) {
-                  updatedList += `\n  Subagent "${name}": ${value}`;
-                }
-              }
-            }
-          } else {
-            const singleModel = getEffectiveMasterModel("single") || "(use default)";
-            updatedList += `  Single Agent: ${singleModel}`;
-            const subagentModel = getTierModel("single", "subagent") || "";
-            if (subagentModel) {
-              updatedList += `\n  Subagent (depth 2): ${subagentModel}`;
-            }
-            const allModelsSingle = getAllTierModels("single");
-            for (const [key, value] of Object.entries(allModelsSingle)) {
-              if (key.startsWith("subagent_") && value && value !== "(use default)") {
-                const name = key.replace("subagent_", "");
-                updatedList += `\n  Subagent "${name}": ${value}`;
-              }
-            }
-          }
-
-          addLine({
-            type: "system",
-            content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSession only — use Save Preset to persist${updatedList}`,
-            timestamp: now,
-          });
-          
-          if (tier === "default" || tier === "all") {
-            fetchAndCacheModels()
-              .then(() => {
-                const newLimit = getContextWindowLimit(cleanModelName);
-                setContextLimit(newLimit);
-                syncContextManagerModel(cleanModelName, newLimit);
-              })
-              .catch(() => {});
-          }
-        } catch (err: any) {
-          addLine({
-            type: "error",
-            content: `Failed to set model: ${err.message}`,
-            timestamp: now,
-          });
-        }
-        setActiveWizard(null);
-        setWizardOptions([]);
+        const opts = ["1. Yes", "2. No", "< Back"];
+        setWizardOptions(opts);
+        if (setWizardAllOptions) setWizardAllOptions(opts);
         setWizardSelectedIndex(0);
-        setWizardIsLoadingModels(false);
+        setInput("");
+        addLine({
+          type: "system",
+          content: `Does the model "${modelName}" support vision/image inputs?`,
+          timestamp: now,
+        });
       }
+    } else if (step === 60) {
+      if (value === "< Back") {
+        // Return to step 15
+        setActiveWizard({
+          type: "model",
+          step: 15,
+          data: { ...data },
+        });
+        const opts = data.modelOptions ? JSON.parse(data.modelOptions) : [];
+        setWizardOptions(opts);
+        if (setWizardAllOptions) setWizardAllOptions(opts);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      const supportsVision = value === "1. Yes" || value.toLowerCase() === "yes" || value.toLowerCase() === "1. yes";
+      const modelName = data.tempModelName;
+
+      try {
+        const profileName = data.provider;
+        const tier = data.tier;
+        let targetLabel = "";
+        if (tier === "default") {
+          switchActiveProvider(profileName);
+          setAllTierModels(presetMode, `${profileName.toLowerCase()}@${modelName}`, undefined, supportsVision);
+          targetLabel = "Default Model";
+        } else if (tier === "all_subagents") {
+          const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
+          setTierModel(presetMode, "subagent", finalModelName, undefined, supportsVision);
+          setTierModel(presetMode, "researcher", finalModelName, undefined, supportsVision);
+          setTierModel(presetMode, "coder", finalModelName, undefined, supportsVision);
+          setTierModel(presetMode, "reviewer", finalModelName, undefined, supportsVision);
+          targetLabel = "All Subagent Models";
+          switchActiveProvider(profileName);
+        } else if (tier === "all") {
+          const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
+          setAllTierModels(presetMode, finalModelName, undefined, supportsVision);
+          targetLabel = "All Tiers & Subagents";
+          switchActiveProvider(profileName);
+        } else {
+          const finalModelName = `${profileName.toLowerCase()}@${modelName}`;
+          
+          if (tier === "master") {
+            setTierModel(presetMode, "master", finalModelName, undefined, supportsVision);
+            targetLabel = isMulti ? "Master Agent (depth 0) Model" : "Single Agent Model";
+          } else if (tier === "superagent") {
+            setTierModel(presetMode, "superagent", finalModelName, undefined, supportsVision);
+            targetLabel = "Superagent (depth 1) Model";
+          } else if (tier === "subagent") {
+            setTierModel(presetMode, "subagent", finalModelName, undefined, supportsVision);
+            targetLabel = "Subagent (depth 2) Model";
+          } else if (tier === "single") {
+            setTierModel(presetMode, "master", finalModelName, undefined, supportsVision);
+            targetLabel = "Single Agent Model";
+          } else {
+            setTierModel(presetMode, tier, finalModelName, undefined, supportsVision);
+            targetLabel = `Subagent "${tier}" Model`;
+          }
+        }
+
+        const cleanModelName = modelName.includes("@") ? modelName.substring(modelName.indexOf("@") + 1) : modelName;
+        const limit = getContextWindowLimit(cleanModelName);
+        
+        const isSingle = !isMulti;
+        const effectiveModel = isSingle
+          ? (getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel())
+          : (getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel());
+        const cleanModel = effectiveModel.includes("@") ? effectiveModel.substring(effectiveModel.indexOf("@") + 1) : effectiveModel;
+        const newLimit = getContextWindowLimit(cleanModel);
+        setContextLimit(newLimit);
+        setActiveModel(effectiveModel);
+        syncContextManagerModel(cleanModel, newLimit);
+        
+        let updatedList = `\n\nUpdated Models:\n`;
+        if (isMulti) {
+          const masterModel = getTierModel("multi", "master") || "(use default)";
+          const superagentModel = getTierModel("multi", "superagent") || "(use default)";
+          const subagentModel = getTierModel("multi", "subagent") || "(use default)";
+          updatedList += `  Master Agent (depth 0): ${masterModel}\n` +
+            `  Superagent (depth 1): ${superagentModel}\n` +
+            `  Subagent (depth 2): ${subagentModel}`;
+
+          const allModels = getAllTierModels("multi");
+          for (const [key, val] of Object.entries(allModels)) {
+            if (key.startsWith("subagent_") && val && val !== "(use default)") {
+              const name = key.replace("subagent_", "");
+              if (!updatedList.includes(`Subagent "${name}":`)) {
+                updatedList += `\n  Subagent "${name}": ${val}`;
+              }
+            }
+          }
+        } else {
+          const singleModel = getEffectiveMasterModel("single") || "(use default)";
+          updatedList += `  Single Agent: ${singleModel}`;
+          const subagentModel = getTierModel("single", "subagent") || "";
+          if (subagentModel) {
+            updatedList += `\n  Subagent (depth 2): ${subagentModel}`;
+          }
+          const allModelsSingle = getAllTierModels("single");
+          for (const [key, val] of Object.entries(allModelsSingle)) {
+            if (key.startsWith("subagent_") && val && val !== "(use default)") {
+              const name = key.replace("subagent_", "");
+              updatedList += `\n  Subagent "${name}": ${val}`;
+            }
+          }
+        }
+
+        addLine({
+          type: "system",
+          content: `${targetLabel} successfully changed to: ${modelName} (via provider ${profileName})\nContext limit: ${limit.toLocaleString()} tokens\nSupports Vision: ${supportsVision ? "Yes" : "No"}${updatedList}`,
+          timestamp: now,
+        });
+        
+        if (tier === "default" || tier === "all") {
+          fetchAndCacheModels()
+            .then(() => {
+              const newLimit = getContextWindowLimit(cleanModelName);
+              setContextLimit(newLimit);
+              syncContextManagerModel(cleanModelName, newLimit);
+            })
+            .catch(() => {});
+        }
+      } catch (err: any) {
+        addLine({
+          type: "error",
+          content: `Failed to set model: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      setActiveWizard(null);
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
+      setWizardIsLoadingModels(false);
+
+    } else if (step === 61 || step === 62) {
+      if (value === "< Back") {
+        // Return to step 24 or 34
+        const prevStep = step === 61 ? 24 : 34;
+        setActiveWizard({
+          type: "model",
+          step: prevStep,
+          data: { ...data },
+        });
+        const opts = data.modelOptions ? JSON.parse(data.modelOptions) : [];
+        setWizardOptions(opts);
+        if (setWizardAllOptions) setWizardAllOptions(opts);
+        setWizardSelectedIndex(0);
+        setInput("");
+        return;
+      }
+
+      const supportsVision = value === "1. Yes" || value.toLowerCase() === "yes" || value.toLowerCase() === "1. yes";
+      const finalModelName = data.tempFinalModelName;
+      const tier = data.tempTier;
+      const presetModels: Record<string, string> = data.tempPresetModels ? JSON.parse(data.tempPresetModels) : {};
+
+      if (tier === "master") {
+        presetModels.MODEL_MULTI_MASTER = finalModelName;
+        presetModels.MODEL_MULTI_MASTER_VISION = String(supportsVision);
+      } else if (tier === "superagent") {
+        presetModels.MODEL_MULTI_SUPERAGENT = finalModelName;
+        presetModels.MODEL_MULTI_SUPERAGENT_VISION = String(supportsVision);
+      } else if (tier === "subagent") {
+        if (isMulti) {
+          presetModels.MODEL_MULTI_SUBAGENT = finalModelName;
+          presetModels.MODEL_MULTI_SUBAGENT_VISION = String(supportsVision);
+        } else {
+          presetModels.MODEL_SINGLE_SUBAGENT = finalModelName;
+          presetModels.MODEL_SINGLE_SUBAGENT_VISION = String(supportsVision);
+        }
+      } else if (tier === "researcher") {
+        if (isMulti) {
+          presetModels.MODEL_MULTI_SUBAGENT_RESEARCHER = finalModelName;
+          presetModels.MODEL_MULTI_SUBAGENT_RESEARCHER_VISION = String(supportsVision);
+        } else {
+          presetModels.MODEL_SINGLE_SUBAGENT_RESEARCHER = finalModelName;
+          presetModels.MODEL_SINGLE_SUBAGENT_RESEARCHER_VISION = String(supportsVision);
+        }
+      } else if (tier === "coder") {
+        if (isMulti) {
+          presetModels.MODEL_MULTI_SUBAGENT_CODER = finalModelName;
+          presetModels.MODEL_MULTI_SUBAGENT_CODER_VISION = String(supportsVision);
+        } else {
+          presetModels.MODEL_SINGLE_SUBAGENT_CODER = finalModelName;
+          presetModels.MODEL_SINGLE_SUBAGENT_CODER_VISION = String(supportsVision);
+        }
+      } else if (tier === "reviewer") {
+        if (isMulti) {
+          presetModels.MODEL_MULTI_SUBAGENT_REVIEWER = finalModelName;
+          presetModels.MODEL_MULTI_SUBAGENT_REVIEWER_VISION = String(supportsVision);
+        } else {
+          presetModels.MODEL_SINGLE_SUBAGENT_REVIEWER = finalModelName;
+          presetModels.MODEL_SINGLE_SUBAGENT_REVIEWER_VISION = String(supportsVision);
+        }
+      } else if (tier === "default") {
+        presetModels.MODEL = finalModelName;
+        presetModels.MODEL_VISION = String(supportsVision);
+        if (!isMulti) {
+          presetModels.MODEL_SINGLE_SUPERAGENT = finalModelName;
+          presetModels.MODEL_SINGLE_SUPERAGENT_VISION = String(supportsVision);
+        }
+      } else if (tier === "single") {
+        presetModels.MODEL_SINGLE_SUPERAGENT = finalModelName;
+        presetModels.MODEL_SINGLE_SUPERAGENT_VISION = String(supportsVision);
+        presetModels.MODEL_SINGLE = finalModelName;
+        presetModels.MODEL_SINGLE_VISION = String(supportsVision);
+        presetModels.MODEL = finalModelName;
+        presetModels.MODEL_VISION = String(supportsVision);
+      }
+
+      const nextStep = step === 61 ? 22 : 32;
+      setActiveWizard({
+        type: "model",
+        step: nextStep,
+        data: { ...data, presetModels: JSON.stringify(presetModels) },
+      });
+
+      setWizardOptions(getPresetOptionsList(presetModels));
+      setWizardSelectedIndex(0);
+      setInput("");
     } else if (step === 30) {
       if (value === "< Back") {
         setActiveWizard({
