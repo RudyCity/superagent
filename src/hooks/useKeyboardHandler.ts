@@ -406,6 +406,22 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     }
 
     if (focusMode === "chat" && !activeWizard) {
+      if (key.pageUp) {
+        scrollChat("up", 10);
+        return;
+      }
+      if (key.pageDown) {
+        scrollChat("down", 10);
+        return;
+      }
+      if ((key.ctrl && key.upArrow) || (key.shift && key.upArrow)) {
+        scrollChat("up", 1);
+        return;
+      }
+      if ((key.ctrl && key.downArrow) || (key.shift && key.downArrow)) {
+        scrollChat("down", 1);
+        return;
+      }
       if (key.upArrow) {
         scrollChat("up");
         return;

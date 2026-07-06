@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.118] - 2026-07-06
+
+### Fixed
+- **Conversation Log Scrolling**:
+  - Ensured that clicking anywhere in the conversation log (including collapsible tool output headers) correctly activates `"chat"` focus mode.
+  - Added full PageUp, PageDown, Ctrl+Arrows, and Shift+Arrows keyboard scrolling support when in `"chat"` focus mode.
+
+---
+
 ## [1.2.117] - 2026-07-06
 
 ### Fixed
