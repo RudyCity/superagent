@@ -1739,9 +1739,13 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 throw err;
               }
               const rawMsg = formatError(err);
+              const isPayloadTooLarge = rawMsg.toLowerCase().includes("payload too large") || 
+                                        rawMsg.toLowerCase().includes("request entity too large") || 
+                                        rawMsg.toLowerCase().includes("status 413") ||
+                                        rawMsg.toLowerCase().includes("status: 413");
               const isOverloaded = rawMsg.toLowerCase().includes("our servers are currently overloaded") || rawMsg.toLowerCase().includes("overloaded_error");
               const isEmptyResponse = err instanceof Error && err.message === "Empty response from model";
-              const isRetryable = isRetryableError(err) || isEmptyResponse || isOverloaded;
+              const isRetryable = isRetryableError(err) || isEmptyResponse || isOverloaded || isPayloadTooLarge;
               let currentMaxRetries = isEmptyResponse ? 3 : (isOverloaded ? 5 : maxRetries);
               attempt++;
               if (attempt > currentMaxRetries || !isRetryable) {
@@ -1760,7 +1764,14 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 await this.saveHistory();
                 return;
               }
-              this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${rawMsg}. Retrying attempt ${attempt}/${currentMaxRetries}...\n` });
+              if (isPayloadTooLarge) {
+                this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
+                await this.compactHistoryIfNeeded(signal, true);
+                messages = this.buildMessages(supportsNativeTools);
+                injectDynamicContext(messages);
+              } else {
+                this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${rawMsg}. Retrying attempt ${attempt}/${currentMaxRetries}...\n` });
+              }
               let delayMs = baseDelay * Math.pow(2, attempt - 1);
               if (isEmptyResponse) {
                 if (attempt === 1) delayMs = 10000;
@@ -1769,6 +1780,8 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               } else if (isOverloaded) {
                 const overloadedDelays = [5000, 10000, 20000, 50000, 100000];
                 delayMs = overloadedDelays[attempt - 1] ?? 100000;
+              } else if (isPayloadTooLarge) {
+                delayMs = 1000;
               }
               await this.delayWithCountdown(attempt, delayMs, signal);
             } finally {
@@ -1982,9 +1995,13 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 throw err;
               }
               const rawMsg = formatError(err);
+              const isPayloadTooLarge = rawMsg.toLowerCase().includes("payload too large") || 
+                                        rawMsg.toLowerCase().includes("request entity too large") || 
+                                        rawMsg.toLowerCase().includes("status 413") ||
+                                        rawMsg.toLowerCase().includes("status: 413");
               const isOverloaded = rawMsg.toLowerCase().includes("our servers are currently overloaded") || rawMsg.toLowerCase().includes("overloaded_error");
               const isEmptyResponse = err instanceof Error && err.message === "Empty response from model";
-              const isRetryable = isRetryableError(err) || isEmptyResponse || isOverloaded;
+              const isRetryable = isRetryableError(err) || isEmptyResponse || isOverloaded || isPayloadTooLarge;
               let currentMaxRetries = isEmptyResponse ? 3 : (isOverloaded ? 5 : maxRetries);
               attempt++;
               if (attempt > currentMaxRetries || !isRetryable) {
@@ -2003,7 +2020,14 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 await this.saveHistory();
                 return;
               }
-              this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${rawMsg}. Retrying attempt ${attempt}/${currentMaxRetries}...\n` });
+              if (isPayloadTooLarge) {
+                this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
+                await this.compactHistoryIfNeeded(signal, true);
+                messages = this.buildMessages(supportsNativeTools);
+                injectDynamicContext(messages);
+              } else {
+                this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${rawMsg}. Retrying attempt ${attempt}/${currentMaxRetries}...\n` });
+              }
               let delayMs = baseDelay * Math.pow(2, attempt - 1);
               if (isEmptyResponse) {
                 if (attempt === 1) delayMs = 10000;
@@ -2012,6 +2036,8 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               } else if (isOverloaded) {
                 const overloadedDelays = [5000, 10000, 20000, 50000, 100000];
                 delayMs = overloadedDelays[attempt - 1] ?? 100000;
+              } else if (isPayloadTooLarge) {
+                delayMs = 1000;
               }
               await this.delayWithCountdown(attempt, delayMs, signal);
             } finally {
@@ -3038,16 +3064,16 @@ for (const tc of toolCalls) {
     return coreMessages;
   }
 
-  async compactHistoryIfNeeded(signal?: AbortSignal): Promise<void> {
+  async compactHistoryIfNeeded(signal?: AbortSignal, force: boolean = false): Promise<void> {
     await this.ensureContextManager();
     const contextManager = this.conversation.getContextManager();
 
     if (contextManager) {
-      await this.contextManagerCompact(signal);
+      await this.contextManagerCompact(signal, force);
       return;
     }
 
-    await this.legacyCompactHistory(signal);
+    await this.legacyCompactHistory(signal, force);
   }
 
   private async ensureContextManager(): Promise<void> {
@@ -3062,7 +3088,7 @@ for (const tc of toolCalls) {
     }
   }
 
-  private async contextManagerCompact(signal?: AbortSignal): Promise<void> {
+  private async contextManagerCompact(signal?: AbortSignal, force: boolean = false): Promise<void> {
     const contextManager = this.conversation.getContextManager()!;
     if (signal) {
       await this.conversation.updateContextManagerLLM(this.getModel(), signal);
@@ -3070,17 +3096,23 @@ for (const tc of toolCalls) {
     const messages = this.conversation.getMessages();
     const decision = contextManager.shouldCompact(messages);
 
-    if (!decision.shouldCompact) {
+    if (!decision.shouldCompact && !force) {
       return;
     }
 
     try {
       this.writeToLogFile(
         "INFO",
-        `Context compaction triggered: ${decision.reason} (strategy: ${decision.recommendedStrategy?.name || "auto"})`
+        `Context compaction triggered: ${force ? "forced-413" : decision.reason} (strategy: ${force ? "pruning" : (decision.recommendedStrategy?.name || "auto")})`
       );
 
-      const result = await contextManager.compact(messages, undefined, signal);
+      let strategy;
+      if (force) {
+        const { PruningStrategy } = await import("./context/strategies/PruningStrategy.js");
+        strategy = new PruningStrategy();
+      }
+
+      const result = await contextManager.compact(messages, strategy, signal);
 
       this.conversation.replaceMessages(result.messages);
       await this.saveHistory();
@@ -3092,22 +3124,27 @@ for (const tc of toolCalls) {
     } catch (error) {
       console.error("ContextManager compaction failed:", error);
       this.writeToLogFile("ERROR", `ContextManager compaction failed: ${(error as Error).message}`);
-      await this.legacyCompactHistory(signal);
+      await this.legacyCompactHistory(signal, force);
     }
   }
 
-  private async legacyCompactHistory(signal?: AbortSignal): Promise<void> {
+  private async legacyCompactHistory(signal?: AbortSignal, force: boolean = false): Promise<void> {
     const modelLimit = getContextWindowLimit(this.config.model);
-    const maxHistoryTokens = Math.floor(modelLimit * 0.5);
+    const maxHistoryTokens = Math.floor(modelLimit * (force ? 0.3 : 0.5));
 
-    if (this.conversation.getTokenEstimate() > maxHistoryTokens) {
+    if (force || this.conversation.getTokenEstimate() > maxHistoryTokens) {
       const allMsgs = this.conversation.getMessages();
       if (allMsgs.length > 20) {
         const toSummarize = allMsgs.slice(0, 20);
         try {
-          const summary = await this.summarizeMessages(toSummarize, signal);
-          this.conversation.replaceOldMessagesWithSummary(20, summary);
-          await this.saveHistory();
+          if (force) {
+            this.conversation.pruneToTokenLimit(maxHistoryTokens);
+            await this.saveHistory();
+          } else {
+            const summary = await this.summarizeMessages(toSummarize, signal);
+            this.conversation.replaceOldMessagesWithSummary(20, summary);
+            await this.saveHistory();
+          }
         } catch (err) {
           console.error("Failed to summarize and compact conversation history:", err);
           this.conversation.pruneToTokenLimit(maxHistoryTokens);

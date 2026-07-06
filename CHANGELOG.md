@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.144] - 2026-07-06
+
+### Added
+- **413 Payload Too Large Recovery**:
+  - Implemented automatic context compaction and retry when model generation (streaming or non-streaming) fails with a `Payload Too Large (status: 413)` or `Request entity too large` error.
+  - Compaction is forced using the local, LLM-free `PruningStrategy` to guarantee rapid recovery without making further model calls.
+  - Added unit test coverage to verify recovery in both streaming and non-streaming modes.
+
+---
+
 ## [1.2.143] - 2026-07-06
 
 ### Changed
