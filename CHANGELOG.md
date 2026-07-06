@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.112] - 2026-07-06
+
+### Changed
+- **Refactored Text-to-Image Rendering**:
+  - Replaced platform-specific OS-dependent text-to-image rendering (using PowerShell on Windows and Python/Pillow on Linux/Mac) with the high-performance `@napi-rs/canvas` library.
+  - Implemented inline HTML5-compatible Canvas text rendering using the `@napi-rs/canvas` API.
+  - Removed temporary file storage logic and directly generated base64 PNG data in memory.
+
+---
+
 ## [1.2.111] - 2026-07-06
 
 ### Added
