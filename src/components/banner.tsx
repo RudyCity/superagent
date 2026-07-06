@@ -35,22 +35,6 @@ export function Banner() {
   return (
     <Box flexDirection="column" paddingX={1} marginY={1}>
       <Box flexDirection="row" alignItems="center">
-        {/* Mascot Column - Simple Garuda Mascot (Yellow/Gold) */}
-        <Box flexDirection="column" marginRight={3} alignItems="center">
-          <Box flexDirection="row">
-            <Text color="yellow" bold> ◥█◣  ▲  ◢█◤ </Text>
-          </Box>
-          <Box flexDirection="row">
-            <Text color="yellow" bold>  ◥██ █ ██◤  </Text>
-          </Box>
-          <Box flexDirection="row">
-            <Text color="yellow" bold>   ◥█████◤   </Text>
-          </Box>
-          <Box flexDirection="row">
-            <Text color="yellow" bold>     ◥█◤     </Text>
-          </Box>
-        </Box>
-
         {/* Info Column */}
         <Box flexDirection="column" justifyContent="center">
           <Box flexDirection="row" marginBottom={1} alignItems="center">
@@ -58,8 +42,6 @@ export function Banner() {
             <Text color="white" bold>A G E N T</Text>
             <Text color="gray"> │ </Text>
             <Text color="yellow" bold>COGNITIVE SYSTEM v{version}</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="green" bold>● READY</Text>
           </Box>
           <Box flexDirection="row">
             <Text dimColor>Type your query or </Text>

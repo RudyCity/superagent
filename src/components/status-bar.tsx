@@ -71,12 +71,46 @@ function ColorfulLoadingText() {
 }
 
 export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
-  const { isProcessing = false } = props;
+  const {
+    modelName,
+    contextPercentage,
+    activeContextUsage,
+    contextLimit,
+    messageCount,
+    runningTasksCount,
+    runningSubagentsCount,
+    gitBranch,
+    formatCompactNumber,
+    isProcessing = false,
+  } = props;
 
   if (!isProcessing) {
     return (
       <Box flexDirection="column" paddingX={1} marginTop={1}>
-        <Text> </Text>
+        <Box justifyContent="space-between">
+          <Box>
+            <Text color="greenBright" bold>● READY</Text>
+            <Text color="gray"> │ </Text>
+            <Text color="cyanBright" bold>{modelName}</Text>
+            {gitBranch && (
+              <>
+                <Text color="gray"> │ </Text>
+                <Text color="gray">🌿 {gitBranch}</Text>
+              </>
+            )}
+            <Text color="gray"> │ </Text>
+            <Text color="white">Msg: {messageCount}</Text>
+            <Text color="gray"> │ </Text>
+            <Text color={runningTasksCount > 0 ? "yellowBright" : "gray"}>Proc: {runningTasksCount}</Text>
+            <Text color="gray"> • </Text>
+            <Text color={runningSubagentsCount > 0 ? "cyanBright" : "gray"}>Sub: {runningSubagentsCount}</Text>
+          </Box>
+          <Box>
+            <Text color="blueBright" bold>
+              Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})
+            </Text>
+          </Box>
+        </Box>
       </Box>
     );
   }

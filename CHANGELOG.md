@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.127] - 2026-07-06
+
+### Changed
+- **Header (Banner)**:
+  - Removed logo/mascot (garuda ASCII art) from the header.
+  - Removed `│ ● READY` indicator from the header title row.
+- **Footer (Status Bar)**:
+  - Added `Proc` (running tasks) and `Sub` (running subagents) counters to the idle status bar.
+  - Proc and Sub counts highlight in color (yellow/cyan) when > 0, remain gray when idle.
+
+---
+
+## [1.2.126] - 2026-07-06
+
+### Fixed
+- **Idle Status Bar**:
+  - Restored a clean, one-line status bar when idle (`!isProcessing`) displaying ready state, model name, branch, message count, and context token percentage.
+
+---
+
 ## [1.2.125] - 2026-07-06
 
 ### Added
