@@ -60,6 +60,17 @@ export class Conversation {
   public lastCapturedTimestamp = 0;
   /** Pinned messages loaded from file, waiting for ContextManager to be initialized */
   private pendingPinnedMessages: PinnedMessage[] | null = null;
+  /**
+   * When true, buildMessages() in agent.ts converts large tool results to images
+   * on-the-fly via vision token saving. stripOldToolResults uses a much higher
+   * keepCycles so the AI can see full outputs via vision rather than a text preview.
+   */
+  private visionMode = false;
+
+  /** Called by agent.ts each iteration once vision capability is known. */
+  setVisionMode(enabled: boolean): void {
+    this.visionMode = enabled;
+  }
 
   async initContextManager(config: ContextManagerConfig): Promise<void> {
     const { ContextManager: CM } = await import("./context/index.js");
@@ -261,8 +272,25 @@ export class Conversation {
    * - Errors always keep at least 300 chars so failure reasons remain visible.
    * - Routine read/list/grep tools age out one cycle sooner (keepCycles - 1)
    *   because their outputs are usually large and transient.
+   *
+   * VISION MODE (setVisionMode(true)):
+   * When the active model supports vision and autoVisionTokenSaving is on,
+   * agent.ts buildMessages() converts large tool results to PNG images
+   * on-the-fly before sending to the API. In this mode we keep results
+   * intact for VISION_KEEP_CYCLES rounds so the AI can always read full
+   * outputs through vision — no preview truncation until results are truly
+   * ancient. The storage overhead is acceptable because images are generated
+   * dynamically (never stored in history), and ContextManager handles
+   * compaction for very long sessions.
    */
   stripOldToolResults(keepCycles = 2): void {
+    /**
+     * How many full cycles to retain when vision token saving is active.
+     * buildMessages() will image-convert anything large within this window.
+     */
+    const VISION_KEEP_CYCLES = 8;
+    /** Effective keep threshold — higher when vision handles large content. */
+    const effectiveKeepCycles = this.visionMode ? VISION_KEEP_CYCLES : keepCycles;
     /** Max lines to keep in the preview snippet */
     const PREVIEW_LINES = 20;
     /** Hard character cap for the preview snippet */
@@ -309,7 +337,7 @@ export class Conversation {
           ["read_file", "list_directory", "grep", "list_dir", "grep_search"].includes(tr.name)
         ) || false;
 
-        const currentKeepCycles = isRoutine ? Math.max(1, keepCycles - 1) : keepCycles;
+        const currentKeepCycles = isRoutine ? Math.max(1, effectiveKeepCycles - 1) : effectiveKeepCycles;
 
         if (toolMessagesSeen > currentKeepCycles && msg.toolResults) {
           msg.toolResults = msg.toolResults.map(truncateResult);
@@ -318,7 +346,7 @@ export class Conversation {
         const isRoutine = msg.toolCalls?.some(tc =>
           ["read_file", "list_directory", "grep", "list_dir", "grep_search"].includes(tc.name)
         ) || false;
-        const currentKeepCycles = isRoutine ? Math.max(1, keepCycles - 1) : keepCycles;
+        const currentKeepCycles = isRoutine ? Math.max(1, effectiveKeepCycles - 1) : effectiveKeepCycles;
 
         if (msg.toolResults && toolMessagesSeen > currentKeepCycles) {
           msg.toolResults = msg.toolResults.map(truncateResult);

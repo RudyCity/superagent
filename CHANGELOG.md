@@ -2,7 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.135] - 2026-07-06
+
+### Added
+- **Vision-Powered Tool Result Retention**:
+  - Added `visionMode` property and `setVisionMode(enabled)` method to `Conversation`. When the active model supports vision and `autoVisionTokenSaving` is on, `stripOldToolResults` now retains full tool results for 8 cycles (up from 2) instead of truncating them to a 20-line preview.
+  - In vision mode, `buildMessages()` in `agent.ts` already converts large tool results to PNG images on-the-fly before sending to the API. This means the AI can read the complete output of any old tool call through vision — no blindness, no context loss.
+  - Images are generated dynamically at API call time and are never stored in the history file, so disk usage is not affected.
+  - In text-only mode (model does not support vision), the 20-line / 800-char preview strategy from v1.2.134 is still used as a fallback.
+  - `agent.ts` calls `this.conversation.setVisionMode(useVisionTokenSaving)` once per iteration, immediately after the vision capability check, so the mode always reflects the actual model in use.
+
+---
+
 ## [1.2.134] - 2026-07-06
+
 
 ### Fixed
 - **Tool Result Truncation — AI Blindness**:
