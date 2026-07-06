@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.140] - 2026-07-06
+
+### Fixed
+- **Custom Provider Response Cleaning**:
+  - Implemented a custom `fetch` interceptor in the OpenAI provider configuration (`models.ts`) that sanitizes incoming HTTP response bodies by stripping trailing non-JSON artifacts (such as buggy `data: [DONE]` text blocks appended by some API endpoints or proxies) before JSON parsing.
+
+---
+
 ## [1.2.139] - 2026-07-06
 
 ### Changed

@@ -359,6 +359,35 @@ export function getModelInstanceForString(modelStr: string) {
       "HTTP-Referer": "https://github.com/RudyCity/superagent",
       "X-Title": "SuperAgent CLI",
     },
+    fetch: async (url, options) => {
+      const response = await globalThis.fetch(url, options);
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("text/event-stream")) {
+        try {
+          let text = await response.text();
+          const firstBrace = text.indexOf("{");
+          const lastBrace = text.lastIndexOf("}");
+          const firstBracket = text.indexOf("[");
+          const lastBracket = text.lastIndexOf("]");
+          
+          const startIdx = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
+          const endIdx = (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) ? lastBrace : lastBracket;
+          
+          if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+            text = text.substring(startIdx, endIdx + 1);
+          }
+          
+          return new Response(text, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
+        } catch {
+          // Ignore failures and fall back to original response
+        }
+      }
+      return response;
+    },
   });
   return openai(modelName);
 }
