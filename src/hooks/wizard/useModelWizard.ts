@@ -25,6 +25,7 @@ import {
   getAllTierModels
 } from "../../core/config.js";
 import type { PresetMode } from "../../core/config.js";
+import { getTierModelConfig } from "../../core/config/providers.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import type { ChatLine } from "../../core/slash-commands.js";
 
@@ -1743,7 +1744,13 @@ export function useModelWizard(ctx: ModelWizardContext) {
           }
         } else {
           const singleModel = getEffectiveMasterModel("single") || "(use default)";
-          updatedList += `  Single Agent: ${singleModel}`;
+          const singleCfg = getTierModelConfig("single", "superagent");
+          const visionTag = singleCfg?.supportsVision === true
+            ? " [👁 Vision: ON]"
+            : singleCfg?.supportsVision === false
+            ? " [Vision: OFF]"
+            : "";
+          updatedList += `  Single Agent: ${singleModel}${visionTag}`;
           const subagentModel = getTierModel("single", "subagent") || "";
           if (subagentModel) {
             updatedList += `\n  Subagent (depth 2): ${subagentModel}`;

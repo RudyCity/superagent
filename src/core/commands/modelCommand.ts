@@ -10,7 +10,7 @@ import {
 import type { PresetMode } from "../config.js";
 import { loadModelConfig, getActivePreset, savePreset } from "../config/jsonConfig.js";
 
-import { getEffectiveMasterModel } from "../config/providers.js";
+import { getEffectiveMasterModel, getTierModelConfig } from "../config/providers.js";
 
 function formatModelWithProvider(tier: any, config: any): string {
   if (!tier?.model) return "(use default)";
@@ -51,7 +51,13 @@ function formatModelList(info: ReturnType<typeof getActiveModelInfo>, isMulti: b
     list += `  Subagent (depth 2): ${info.subagentDefault}`;
   } else {
     const singleAgent = info.superagent === "(use default)" ? getEffectiveMasterModel("single") : info.superagent;
-    list += `  Single Agent: ${singleAgent}`;
+    const singleTierCfg = getTierModelConfig("single", "superagent");
+    const visionTag = singleTierCfg?.supportsVision === true
+      ? " [👁 Vision: ON]"
+      : singleTierCfg?.supportsVision === false
+      ? " [Vision: OFF]"
+      : "";
+    list += `  Single Agent: ${singleAgent}${visionTag}`;
     if (info.subagentDefault !== "(use default)") {
       list += `\n  Subagent (depth 2): ${info.subagentDefault}`;
     }
