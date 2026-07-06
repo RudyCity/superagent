@@ -2035,7 +2035,7 @@ export function App({
     }
     if (activeWizard.type === "model") {
       // Steps 15,24,34 = model search/filter (needs input); others with options are pure selection
-      return [1, 2, 22, 23, 32, 33, 41, 50].includes(activeWizard.step);
+      return [1, 2, 22, 23, 32, 33, 41, 50, 60, 61, 62].includes(activeWizard.step);
     }
     return false;
   })();
