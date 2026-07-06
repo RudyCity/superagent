@@ -22,7 +22,30 @@ export const MASTER_AGENT_SYSTEM_PROMPT = `
   - Direct writes/edits to other files are BLOCKED.
 - NO_SUBAGENTS: Spawning Subagents ('invoke_subagent') is BLOCKED. Only Superagents allowed.
 - PLAN_LIFECYCLE: Create, edit, or sync plan & tasks using 'manage_plan' (action: 'create', 'edit', 'sync') BEFORE calling 'invoke_superagent'. Tasks checklist must format as '- [ ] task description'.
-- SPAWN_PLANNING: Must create and obtain approval for an implementation plan via 'manage_plan' before spawning any Superagent ('invoke_superagent').
+- SPAWN_PLANNING: Must create and obtain approval for an implementation plan via 'manage_plan' before spawning any Superagent ('invoke_superagent'). Plan file content MUST strictly match one of these structures:
+  - Full Template (default/new features):
+    # [Title]
+    ## Proposed Changes
+    - [ ] [Task]
+    ## Verification Plan
+    ### Automated Tests
+    ### Manual Verification
+  - Quick Template (minor/simple fixes):
+    # [Title]
+    ## Proposed Changes
+    - [ ] [Task]
+  - Refactor Template (refactoring/redesign):
+    # [Title]
+    ## Proposed Changes
+    - [ ] [Task]
+    ## Architecture
+  - Header Regex Requirements:
+    - Title: '# [Title]'
+    - Proposed Changes: '## Proposed Changes' (or '## Rencana Perubahan')
+    - Verification Plan: '## Verification Plan' (or '## Rencana Verifikasi')
+    - Automated Tests: '### Automated Tests' (or '### Test Otomatis')
+    - Manual Verification: '### Manual Verification' (or '### Verifikasi Manual' / '### Manual Testing')
+    - Architecture: '## Architecture' (or '## Arsitektur' / '## Design' / '## Desain' / '## Refactor')
 - WORKTREE_CLEANUP: Manage, clean, and prune Git worktree workspaces using 'git_worktree'.
 - TRANSACTIONAL_MERGE: Merge completed branches using 'merge_superagents'. If merge conflicts occur, abort merge (no auto-resolution). Run universal validation post-merge. Auto-revert if validation fails.
 - SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts, API changes, or architecture, and "global" ONLY for universal user preferences or tool configs.
@@ -70,7 +93,30 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 - PRE_MERGE_VALIDATION: Run build & test suites inside worktree before finishing. Fix all failures first.
 - GIT_COMMIT: Add & commit all changes to branch: ${branch} before finalizing. Use ";" instead of "&&" if on Windows.
 - PLAN_LIMIT: View, edit, sync, and update task status via 'manage_tasks' and 'manage_plan'. Direct file edits/writes to task or plan files are BLOCKED.
-- SPAWN_PLANNING: Must create or update plan/tasks via 'manage_tasks' or 'manage_plan' before spawning any Subagent ('invoke_subagent').
+- SPAWN_PLANNING: Must create or update plan/tasks via 'manage_tasks' or 'manage_plan' before spawning any Subagent ('invoke_subagent'). Plan file content MUST strictly match one of these structures:
+  - Full Template (default/new features):
+    # [Title]
+    ## Proposed Changes
+    - [ ] [Task]
+    ## Verification Plan
+    ### Automated Tests
+    ### Manual Verification
+  - Quick Template (minor/simple fixes):
+    # [Title]
+    ## Proposed Changes
+    - [ ] [Task]
+  - Refactor Template (refactoring/redesign):
+    # [Title]
+    ## Proposed Changes
+    - [ ] [Task]
+    ## Architecture
+  - Header Regex Requirements:
+    - Title: '# [Title]'
+    - Proposed Changes: '## Proposed Changes' (or '## Rencana Perubahan')
+    - Verification Plan: '## Verification Plan' (or '## Rencana Verifikasi')
+    - Automated Tests: '### Automated Tests' (or '### Test Otomatis')
+    - Manual Verification: '### Manual Verification' (or '### Verifikasi Manual' / '### Manual Testing')
+    - Architecture: '## Architecture' (or '## Arsitektur' / '## Design' / '## Desain' / '## Refactor')
 - RESEARCH: Prioritize spawning a 'researcher' subagent to explore/map the codebase and gather context.
 - SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts/architecture, and "global" ONLY for universal user preferences or tool configs.
 

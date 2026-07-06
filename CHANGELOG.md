@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.122] - 2026-07-06
+
+### Changed
+- **Implementation Plan Prompting**:
+  - Added clear instructions, structures, and regular expression requirements for the three valid implementation plan templates (Full, Quick, Refactor) into all system prompts (`MASTER_AGENT_SYSTEM_PROMPT`, `SUPERAGENT_SYSTEM_PROMPT`, and base config prompt).
+  - Resolves plan validation wizard rejections by ensuring agents always construct plans matching the expected templates.
+
+---
+
 ## [1.2.121] - 2026-07-06
 
 ### Changed
