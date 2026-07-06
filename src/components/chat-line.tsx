@@ -475,7 +475,7 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
           return (
             <Box key={`child-${childIdx}`} flexDirection="column">
               <Text color={statusColor}>
-                {indent}<Text bold color={statusColor}>{statusIcon} ❓ </Text><Text color="yellow">{questionText}</Text><Text bold color={statusColor}> → </Text><Text color={statusColor}>{answerText || "N/A"}</Text> <Text dimColor italic>(click to expand)</Text>
+                {indent}<Text bold color={statusColor}>{statusIcon} ❓ </Text><Text color="yellow">{questionText}</Text><Text bold color={statusColor}> → </Text><Text color={statusColor}>{answerText || "N/A"}</Text> <Text dimColor italic>(Ctrl+O)</Text>
               </Text>
             </Box>
           );
@@ -495,7 +495,7 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
                 </Text>
               ) : null}
               <Text bold color={statusColor}> {statusIcon} {statusLabel}</Text>
-              <Text dimColor italic>  (click to expand)</Text>
+              <Text dimColor italic>  (Ctrl+O)</Text>
             </Text>
           </Box>
         );
@@ -509,7 +509,7 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
             </Text>
           ) : (
             <Text color="yellow">
-              {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
+              {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(Ctrl+O)</Text>
             </Text>
           )}
         </Box>
@@ -546,7 +546,7 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
               <Text bold color="red"> -{expandedDiffStats.removed}</Text>
             </Text>
           )}
-          <Text dimColor italic> (click to collapse)</Text>
+          <Text dimColor italic> (Ctrl+O)</Text>
         </Box>
         {/* Input lines */}
         {inputLines.map((l, idx) => {
@@ -783,7 +783,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
         return (
           <Box flexDirection="column">
             <Text color="yellow">
-              ├─── [ <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>click to expand</Text>
+              ├─── [ <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -791,7 +791,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       return (
         <Box flexDirection="column">
           <Text color="yellow">
-            ├─── [ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>click to collapse</Text>
+            ├─── [ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>Ctrl+O</Text>
           </Text>
           {renderToolStart(content)}
           <Box flexDirection="row">
@@ -811,7 +811,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
         return (
           <Box flexDirection="column">
             <Text color={themeColor}>
-              ├─── [ <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>click to expand</Text>
+              ├─── [ <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -819,7 +819,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       return (
         <Box flexDirection="column">
           <Text color={themeColor}>
-            ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>click to collapse</Text>
+            ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>Ctrl+O</Text>
           </Text>
           {renderToolEnd(contentText, isError)}
           <Box flexDirection="row">
@@ -836,7 +836,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
         return (
           <Box flexDirection="column">
             <Text color="red">
-              ├─── [ <Text bold color="red">▶ 🚨 Error:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>click to expand</Text>
+              ├─── [ <Text bold color="red">▶ 🚨 Error:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -844,7 +844,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       return (
         <Box flexDirection="column">
           <Text color="red">
-            ├─── [ <Text bold color="red">🚨 ERROR_REPORT</Text> ] <Text dimColor italic>click to collapse</Text>
+            ├─── [ <Text bold color="red">🚨 ERROR_REPORT</Text> ] <Text dimColor italic>Ctrl+O</Text>
           </Text>
           {contentText.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
@@ -865,7 +865,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
         return (
           <Box flexDirection="column">
             <Text color="gray">
-              ├─── [ <Text bold color="gray">▶ ℹ️ System:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>click to expand</Text>
+              ├─── [ <Text bold color="gray">▶ ℹ️ System:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -873,7 +873,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       return (
         <Box flexDirection="column">
           <Text color="gray">
-            ├─── [ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ] <Text dimColor italic>click to collapse</Text>
+            ├─── [ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ] <Text dimColor italic>Ctrl+O</Text>
           </Text>
           {line.content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">

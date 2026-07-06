@@ -347,7 +347,7 @@ export function computeWrappedLogs(
               <Text color={group.color} dimColor={group.dimColor} wrap="truncate-end">
                 {nestPrefix}    <Text bold color="cyan">↳ ⚙️ </Text><Text color={group.color}>{preview}</Text>
                 <Text bold color={statusColor}> {statusIcon} {statusLabel}</Text>
-                <Text dimColor italic>  (click to expand)</Text>
+                <Text dimColor italic>  (Ctrl+O)</Text>
               </Text>
             </Box>
           );
@@ -387,7 +387,7 @@ export function computeWrappedLogs(
         wrappedLines.push(
           <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>
             <Text color={group.color} dimColor={group.dimColor} wrap="truncate-end">
-              {nestPrefix}    <Text bold color={group.color}>↳ {icon}</Text><Text color={group.color}>{preview}</Text> <Text dimColor italic>{group.label.includes("FAIL") ? "(click to view error)" : group.label.includes("START") ? "(click to view inputs)" : "(click to view output)"}</Text>
+              {nestPrefix}    <Text bold color={group.color}>↳ {icon}</Text><Text color={group.color}>{preview}</Text> <Text dimColor italic>(Ctrl+O)</Text>
             </Text>
           </Box>
         );
@@ -400,7 +400,7 @@ export function computeWrappedLogs(
       wrappedLines.push(
         <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>
           <Text color={group.color} dimColor wrap="truncate-end">
-            {prefix} [ <Text bold color={group.color}>▶ {group.label}</Text> ] <Text dimColor>{preview}</Text> <Text italic dimColor>click to expand</Text>
+            {prefix} [ <Text bold color={group.color}>▶ {group.label}</Text> ] <Text dimColor>{preview}</Text> <Text italic dimColor>Ctrl+O</Text>
           </Text>
         </Box>
       );
@@ -423,7 +423,7 @@ export function computeWrappedLogs(
           <Text color={group.color} bold={group.isBold} dimColor={group.dimColor} wrap={useTruncate ? "truncate-end" : undefined}>
             {nestPrefix}    <Text bold color={group.color}>▼ {icon}</Text><Text color={group.color}>{firstLineText}</Text>
             {merged && <Text bold color={mergedColor}> {mergedIcon}</Text>}
-            <Text dimColor italic> (click to collapse)</Text>
+            <Text dimColor italic> (Ctrl+O)</Text>
           </Text>
         </Box>
       );
@@ -435,7 +435,7 @@ export function computeWrappedLogs(
             <Text color={group.color === "gray" ? "gray" : group.color} bold>{group.label}</Text>
             <Text color="white" bold> ]</Text>
           </Text>
-          {groupIsCollapsible && <Text dimColor italic> click to collapse</Text>}
+          {groupIsCollapsible && <Text dimColor italic> Ctrl+O</Text>}
         </Box>
       );
     }

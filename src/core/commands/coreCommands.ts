@@ -193,6 +193,7 @@ export const helpCommand: SlashCommand = {
         "  Ctrl+P    - Show checkpoints interactive wizard dialog",
         "  Ctrl+H    - Toggle search history panel",
         "  Ctrl+T    - Toggle checklist focus mode (when plan is approved)",
+        "  Ctrl+O    - Cycle through and toggle expand/collapse of tool/system entries",
         "  Esc       - Reset input focus, cancel active wizard, or reset scroll",
         "  ↑/▼       - Scroll message viewer or navigate CLI history",
         "  Tab       - Autocomplete slash commands or cycle suggestions",

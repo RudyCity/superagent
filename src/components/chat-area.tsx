@@ -370,7 +370,7 @@ function wrapNestedChild(
           const node = (
             <Box flexDirection="row">
               <Text color={statusColor}>
-                {indent}<Text bold color={statusColor}>{statusIcon} ❓ </Text><Text color="yellow">{questionText}</Text><Text bold color={statusColor}> → </Text><Text color={statusColor}>{answerText || "N/A"}</Text> <Text dimColor italic>(click to expand)</Text>
+                {indent}<Text bold color={statusColor}>{statusIcon} ❓ </Text><Text color="yellow">{questionText}</Text><Text bold color={statusColor}> → </Text><Text color={statusColor}>{answerText || "N/A"}</Text> <Text dimColor italic>(Ctrl+O)</Text>
               </Text>
             </Box>
           );
@@ -392,7 +392,7 @@ function wrapNestedChild(
                   </Text>
                 ) : null}
                 <Text bold color={statusColor}> {statusIcon} {statusLabel}</Text>
-                <Text dimColor italic>  (click to expand)</Text>
+                <Text dimColor italic>  (Ctrl+O)</Text>
               </Text>
             </Box>
           );
@@ -724,7 +724,7 @@ export function wrapChatLineToLines({
         const node = (
           <Box flexDirection="row">
             <Text color="yellow">
-              ├─── [ <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>click to expand</Text>
+              ├─── [ <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -733,7 +733,7 @@ export function wrapChatLineToLines({
         const headerNode = (
           <Box flexDirection="row">
             <Text color="yellow">
-              ├─── [ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>click to collapse</Text>
+              ├─── [ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -824,7 +824,7 @@ export function wrapChatLineToLines({
         const node = (
           <Box flexDirection="row">
             <Text color={themeColor}>
-              ├─── [ <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>click to expand</Text>
+              ├─── [ <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -833,7 +833,7 @@ export function wrapChatLineToLines({
         const headerNode = (
           <Box flexDirection="row">
             <Text color={themeColor}>
-              ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>click to collapse</Text>
+              ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -900,7 +900,7 @@ export function wrapChatLineToLines({
         const node = (
           <Box flexDirection="row">
             <Text color="red">
-              ├─── [ <Text bold color="red">▶ 🚨 Error:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>click to expand</Text>
+              ├─── [ <Text bold color="red">▶ 🚨 Error:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -909,7 +909,7 @@ export function wrapChatLineToLines({
         const headerNode = (
           <Box flexDirection="row">
             <Text color="red">
-              ├─── [ <Text bold color="red">🚨 ERROR_REPORT</Text> ] <Text dimColor italic>click to collapse</Text>
+              ├─── [ <Text bold color="red">🚨 ERROR_REPORT</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -945,7 +945,7 @@ export function wrapChatLineToLines({
         const node = (
           <Box flexDirection="row">
             <Text color="gray">
-              ├─── [ <Text bold color="gray">▶ ℹ️ System:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>click to expand</Text>
+              ├─── [ <Text bold color="gray">▶ ℹ️ System:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -954,7 +954,7 @@ export function wrapChatLineToLines({
         const headerNode = (
           <Box flexDirection="row">
             <Text color="gray">
-              ├─── [ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ] <Text dimColor italic>click to collapse</Text>
+              ├─── [ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );

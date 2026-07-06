@@ -243,6 +243,7 @@ export function App({
   const [expandedLines, setExpandedLines] = useState<Set<number>>(new Set());
   // Expanded children: Map<parentLineIndex, Set<childIndex>>
   const [expandedChildren, setExpandedChildren] = useState<Map<number, Set<number>>>(new Map());
+  const expandCursorRef = useRef<number>(-1);
 
 
   // Smart collapse: auto-collapse completed tool calls, keep active ones expanded
@@ -1258,6 +1259,10 @@ export function App({
     setLastTabPrefix,
     commands,
     suggestions,
+    visibleLinePositions,
+    toggleLineExpand,
+    toggleChildExpand,
+    expandCursorRef,
   });
 
   // Handle active outputs and task checklist updates

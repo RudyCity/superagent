@@ -69,6 +69,9 @@ export interface DashboardKeyboardContext {
   agent?: Agent;
   checkpointsList?: any[];
   setCheckpointsList?: React.Dispatch<React.SetStateAction<any[]>>;
+  groupBoundaries: any[];
+  toggleGroupCollapse: (groupIndex: number) => void;
+  expandCursorRef: React.MutableRefObject<number>;
 }
 
 export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
@@ -133,6 +136,9 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     agent,
     checkpointsList,
     setCheckpointsList,
+    groupBoundaries,
+    toggleGroupCollapse,
+    expandCursorRef,
   } = ctx;
 
   const handlerRef = React.useRef<(input: string, key: any) => void>();
@@ -202,6 +208,18 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
       if (runningTasksCount > 0) {
         setFocusArea((prev: any) => (prev === "procs" ? "input" : "procs"));
         setProcsSelectedIndex(0);
+      }
+      return;
+    }
+
+    // Ctrl+O: Cycle-expand tool/system log groups
+    if (key.ctrl && input === "o" && !activeWizard) {
+      const collapsibles = groupBoundaries.filter((g) => g.isCollapsible);
+      if (collapsibles.length > 0) {
+        const nextCursor = (expandCursorRef.current + 1) % collapsibles.length;
+        expandCursorRef.current = nextCursor;
+        const target = collapsibles[nextCursor];
+        toggleGroupCollapse(target.groupIndex);
       }
       return;
     }

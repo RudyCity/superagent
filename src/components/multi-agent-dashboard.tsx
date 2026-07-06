@@ -800,6 +800,7 @@ export function MultiAgentDashboard({
   // Collapsible log groups state (for multi-agent tool/think groups)
   // Tracks which groups are EXPANDED (all collapsible groups are collapsed by default)
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+  const expandCursorRef = useRef<number>(-1);
 
   // Reset expanded groups when switching sessions
   useEffect(() => {
@@ -1154,6 +1155,9 @@ export function MultiAgentDashboard({
     agent,
     checkpointsList,
     setCheckpointsList,
+    groupBoundaries,
+    toggleGroupCollapse,
+    expandCursorRef,
   });
 
   useDashboardMouse({

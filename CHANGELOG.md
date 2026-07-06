@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.99] - 2026-07-06
+
+### Added
+- **Ctrl+O Cycling Expand Keyboard Shortcut**: Replaced click-to-toggle tool entry log panels with the Ctrl+O keyboard shortcut. Toggling via Ctrl+O cycles through each visible collapsible log entry in both single-agent and multi-agent dashboard interfaces.
+- **Ctrl+O UI Hint Labels**: Updated all tool logs, system information blocks, and question prompts to guide the user to toggle logs using the `Ctrl+O` shortcut instead of mouse clicks.
+
+### Changed
+- Refactored `useKeyboardHandler` and `useDashboardKeyboard` hooks to receive context refs for visible elements, group log boundaries, and expand toggle states to support the keyboard cycling logic.
+
+---
+
 ## [1.2.98] - 2026-07-04
 
 ### Fixed

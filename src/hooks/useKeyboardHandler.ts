@@ -1,5 +1,6 @@
 import { useInput } from "ink";
 import { useRef, useCallback } from "react";
+import type { ChatLinePosition } from "./useMouseScroll.js";
 import path from "path";
 import fs from "fs";
 import { getTruncatedAssistantIndexes, wrapTextForDisplay } from "../utils/responseScroll.js";
@@ -113,6 +114,10 @@ export interface KeyboardHandlerContext {
   setLastTabPrefix: React.Dispatch<React.SetStateAction<string | null>>;
   commands: string[];
   suggestions?: string[];
+  visibleLinePositions: ChatLinePosition[];
+  toggleLineExpand: (index: number) => void;
+  toggleChildExpand: (parentIndex: number, childIndex: number) => void;
+  expandCursorRef: React.MutableRefObject<number>;
 }
 
 export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
@@ -188,6 +193,10 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     setLastTabPrefix,
     commands,
     suggestions = [],
+    visibleLinePositions,
+    toggleLineExpand,
+    toggleChildExpand,
+    expandCursorRef,
   } = ctx;
 
   const settings = getSettings();
@@ -440,6 +449,22 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       if (runningTasksCount > 0) {
         setFocusMode((prev: any) => (prev === "procs" ? "input" : "procs"));
         setProcsSelectedIndex(0);
+      }
+      return;
+    }
+
+    // Ctrl+O: Cycle-expand tool/system entries
+    if (key.ctrl && inputChar === "o" && !activeWizard) {
+      const collapsibles = visibleLinePositions.filter((pos) => pos.isCollapsible);
+      if (collapsibles.length > 0) {
+        const nextCursor = (expandCursorRef.current + 1) % collapsibles.length;
+        expandCursorRef.current = nextCursor;
+        const target = collapsibles[nextCursor];
+        if (target.parentIndex !== undefined && target.childIndex !== undefined && toggleChildExpand) {
+          toggleChildExpand(target.parentIndex, target.childIndex);
+        } else if (toggleLineExpand) {
+          toggleLineExpand(target.index);
+        }
       }
       return;
     }
