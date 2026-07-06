@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.138] - 2026-07-06
+
+### Added
+- **Manual Custom Model Entry**:
+  - Added a "+ Custom Model (Input manually)" option to the model selection list in both the login setup wizard and the model selection wizard.
+  - Added a new input step (step 16) in both wizards to capture manual model ID input when the custom model option is selected.
+  - Added transition logic from step 16 to the test message connection check (for login) or to the vision compatibility query (for model configuration).
+
+---
+
 ## [1.2.137] - 2026-07-06
 
 ### Added

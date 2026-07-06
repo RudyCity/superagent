@@ -498,11 +498,35 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
 
         setWizardIsLoadingModels(false);
         setActiveWizard({ type: "login", step: 8, data: activeWizard.data });
-        setWizardOptions(models);
+        setWizardOptions([...models, "+ Custom Model (Input manually)"]);
         setWizardSelectedIndex(0);
       } else if (activeWizard.step === 8) {
         const selectedModel = value;
+        if (selectedModel === "+ Custom Model (Input manually)") {
+          setActiveWizard({
+            type: "login",
+            step: 16,
+            data: { ...activeWizard.data },
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          setMasterLogs((prev) => [...prev, "[SYSTEM] Please enter the custom model ID manually (e.g., meta-llama/llama-3-70b-instruct):"].slice(-500));
+          return;
+        }
         setMasterLogs((prev) => [...prev, `[MASTER] Model selected: ${selectedModel}\nNow type a test message to verify the connection works (e.g. "hi"), or type /skip to finish setup.`].slice(-500));
+        setActiveWizard({ type: "login", step: 9, data: { ...activeWizard.data, selectedModel } });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setQuery("");
+      } else if (activeWizard.step === 16) {
+        // Step 16: User inputs custom model name manually
+        const selectedModel = value.trim();
+        if (!selectedModel) {
+          setMasterLogs((prev) => [...prev, "[ERROR] Model ID cannot be empty. Please enter a valid model ID:"].slice(-500));
+          return;
+        }
+        setMasterLogs((prev) => [...prev, `[MASTER] Custom model selected: ${selectedModel}\nNow type a test message to verify the connection works (e.g. "hi"), or type /skip to finish setup.`].slice(-500));
         setActiveWizard({ type: "login", step: 9, data: { ...activeWizard.data, selectedModel } });
         setWizardOptions([]);
         setWizardSelectedIndex(0);

@@ -593,14 +593,54 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
 
       setWizardIsLoadingModels(false);
       setActiveWizard({ type: "login", step: 8, data });
-      setWizardOptions(models);
+      setWizardOptions([...models, "+ Custom Model (Input manually)"]);
       setWizardSelectedIndex(0);
     } else if (step === 8) {
       // Step 8: User selects model
       const selectedModel = value;
+      if (selectedModel === "+ Custom Model (Input manually)") {
+        setActiveWizard({
+          type: "login",
+          step: 16,
+          data: { ...data },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        addLine({
+          type: "system",
+          content: "Please enter the custom model ID manually (e.g., meta-llama/llama-3-70b-instruct):",
+          timestamp: now,
+        });
+        return;
+      }
       addLine({
         type: "system",
         content: `Model selected: ${selectedModel}\nNow type a test message to verify the connection works (e.g. "hi"), or type /skip to finish setup.`,
+        timestamp: now,
+      });
+      setActiveWizard({
+        type: "login",
+        step: 9,
+        data: { ...data, selectedModel },
+      });
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
+      setInput("");
+    } else if (step === 16) {
+      // Step 16: User inputs custom model name manually
+      const selectedModel = value.trim();
+      if (!selectedModel) {
+        addLine({
+          type: "error",
+          content: "Model ID cannot be empty. Please enter a valid model ID:",
+          timestamp: now,
+        });
+        return;
+      }
+      addLine({
+        type: "system",
+        content: `Custom model selected: ${selectedModel}\nNow type a test message to verify the connection works (e.g. "hi"), or type /skip to finish setup.`,
         timestamp: now,
       });
       setActiveWizard({

@@ -655,7 +655,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
               const data = await res.json() as any;
               if (data && Array.isArray(data.data)) {
                 const modelsList = data.data.map((m: any) => m.id);
-                const opts = [...modelsList, "< Back"];
+                const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                 setWizardOptions(opts);
                 setWizardAllOptions?.(opts);
               }
@@ -677,7 +677,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  const opts = [...modelsList, "< Back"];
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                   setWizardOptions(opts);
                   setWizardAllOptions?.(opts);
                 }
@@ -711,7 +711,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.models)) {
                   const modelsList = data.models.map((m: any) => m.name.replace(/^models\//, ""));
-                  const opts = [...modelsList, "< Back"];
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                   setWizardOptions(opts);
                   setWizardAllOptions?.(opts);
                 }
@@ -736,7 +736,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  const opts = [...modelsList, "< Back"];
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                   setWizardOptions(opts);
                   setWizardAllOptions?.(opts);
                 }
@@ -759,7 +759,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  const opts = [...modelsList, "< Back"];
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                   setWizardOptions(opts);
                   setWizardAllOptions?.(opts);
                 }
@@ -770,7 +770,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
       }
 
-      const initialOpts = [...initialModels, "< Back"];
+      const initialOpts = [...initialModels, "+ Custom Model (Input manually)", "< Back"];
       setWizardOptions(initialOpts);
       setWizardAllOptions?.(initialOpts);
       setWizardSelectedIndex(0);
@@ -941,7 +941,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  const opts = [...modelsList, "< Back"];
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                   setWizardOptions(opts);
                   setWizardAllOptions?.(opts);
                 }
@@ -961,12 +961,12 @@ export function useModelWizard(ctx: ModelWizardContext) {
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
-                  if (data && Array.isArray(data.data)) {
-                    const modelsList = data.data.map((m: any) => m.id);
-                    const opts = [...modelsList, "< Back"];
-                    setWizardOptions(opts);
-                    setWizardAllOptions?.(opts);
-                  }
+                if (data && Array.isArray(data.data)) {
+                  const modelsList = data.data.map((m: any) => m.id);
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
+                }
                 }
               })
               .catch(() => {})
@@ -987,12 +987,12 @@ export function useModelWizard(ctx: ModelWizardContext) {
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
-                  if (data && Array.isArray(data.models)) {
-                    const modelsList = data.models.map((m: any) => m.name.replace(/^models\//, ""));
-                    const opts = [...modelsList, "< Back"];
-                    setWizardOptions(opts);
-                    setWizardAllOptions?.(opts);
-                  }
+                if (data && Array.isArray(data.models)) {
+                  const modelsList = data.models.map((m: any) => m.name.replace(/^models\//, ""));
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
+                }
                 }
               })
               .catch(() => {})
@@ -1014,7 +1014,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                   const data = await res.json() as any;
                   if (data && Array.isArray(data.data)) {
                     const modelsList = data.data.map((m: any) => m.id);
-                    const opts = [...modelsList, "< Back"];
+                    const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                     setWizardOptions(opts);
                     setWizardAllOptions?.(opts);
                   }
@@ -1037,7 +1037,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                   const data = await res.json() as any;
                   if (data && Array.isArray(data.data)) {
                     const modelsList = data.data.map((m: any) => m.id);
-                    const opts = [...modelsList, "< Back"];
+                    const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                     setWizardOptions(opts);
                     setWizardAllOptions?.(opts);
                   }
@@ -1048,7 +1048,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           }
         }
 
-        const initialOpts = [...initialModels, "< Back"];
+        const initialOpts = [...initialModels, "+ Custom Model (Input manually)", "< Back"];
         setWizardOptions(initialOpts);
         setWizardAllOptions?.(initialOpts);
         setWizardSelectedIndex(0);
@@ -1507,7 +1507,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
               const data = await res.json() as any;
               if (data && Array.isArray(data.data)) {
                 const modelsList = data.data.map((m: any) => m.id);
-                const opts = [...modelsList, "< Back"];
+                const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                 setWizardOptions(opts);
                 setWizardAllOptions?.(opts);
               }
@@ -1529,7 +1529,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  const opts = [...modelsList, "< Back"];
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                   setWizardOptions(opts);
                   setWizardAllOptions?.(opts);
                 }
@@ -1555,7 +1555,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.models)) {
                   const modelsList = data.models.map((m: any) => m.name.replace(/^models\//, ""));
-                  const opts = [...modelsList, "< Back"];
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                   setWizardOptions(opts);
                   setWizardAllOptions?.(opts);
                 }
@@ -1580,7 +1580,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  const opts = [...modelsList, "< Back"];
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                   setWizardOptions(opts);
                   setWizardAllOptions?.(opts);
                 }
@@ -1603,7 +1603,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
                 const data = await res.json() as any;
                 if (data && Array.isArray(data.data)) {
                   const modelsList = data.data.map((m: any) => m.id);
-                  const opts = [...modelsList, "< Back"];
+                  const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
                   setWizardOptions(opts);
                   setWizardAllOptions?.(opts);
                 }
@@ -1614,7 +1614,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         }
       }
 
-      const initialOpts = [...initialModels, "< Back"];
+      const initialOpts = [...initialModels, "+ Custom Model (Input manually)", "< Back"];
       setWizardOptions(initialOpts);
       setWizardAllOptions?.(initialOpts);
       setWizardSelectedIndex(0);
@@ -1649,6 +1649,25 @@ export function useModelWizard(ctx: ModelWizardContext) {
         setWizardAllOptions?.(opts);
         setWizardSelectedIndex(0);
         setInput("");
+        return;
+      }
+
+      if (value === "+ Custom Model (Input manually)") {
+        const isPreset = step === 24 || step === 34;
+        const currentOptions = (ctx as any).wizardAllOptions && (ctx as any).wizardAllOptions.length > 0 ? (ctx as any).wizardAllOptions : wizardOptions;
+        setActiveWizard({
+          type: "model",
+          step: 16,
+          data: { ...data, isPreset: String(isPreset), prevStep: String(step), modelOptions: JSON.stringify(currentOptions) },
+        });
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        setInput("");
+        addLine({
+          type: "system",
+          content: "Please enter the custom model ID manually (e.g., meta-llama/llama-3-70b-instruct):",
+          timestamp: now,
+        });
         return;
       }
 
@@ -1861,6 +1880,78 @@ export function useModelWizard(ctx: ModelWizardContext) {
       setWizardOptions([]);
       setWizardSelectedIndex(0);
       setWizardIsLoadingModels(false);
+
+    } else if (step === 16) {
+      // Step 16: Capture manually entered model ID
+      const selectedModel = value.trim();
+      if (!selectedModel) {
+        addLine({
+          type: "error",
+          content: "Model ID cannot be empty. Please enter a valid model ID:",
+          timestamp: now,
+        });
+        return;
+      }
+      
+      const isPreset = data.isPreset === "true";
+      const prevStep = parseInt(data.prevStep || "15", 10);
+      
+      if (isPreset) {
+        const profileName = data.provider || "";
+        const tier = data.tier || "";
+        const finalModelName = `${profileName.toLowerCase()}@${selectedModel}`;
+        const presetModels: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
+        const currentOptions = data.modelOptions ? JSON.parse(data.modelOptions) : [];
+
+        // Transition to vision choice step for preset (step 61 for create, step 62 for edit)
+        setActiveWizard({
+          type: "model",
+          step: prevStep === 24 ? 61 : 62,
+          data: {
+            ...data,
+            tempFinalModelName: finalModelName,
+            tempTier: tier,
+            tempPresetModels: JSON.stringify(presetModels),
+            tempStep: String(prevStep),
+            modelOptions: JSON.stringify(currentOptions),
+          },
+        });
+
+        const opts = ["1. Yes", "2. No", "< Back"];
+        setWizardOptions(opts);
+        if (setWizardAllOptions) setWizardAllOptions(opts);
+        setWizardSelectedIndex(0);
+        setInput("");
+        addLine({
+          type: "system",
+          content: `Does the model "${selectedModel}" support vision/image inputs?`,
+          timestamp: now,
+        });
+      } else {
+        // Direct flow: Transition to vision choice step for direct configure (step 60)
+        const currentOptions = data.modelOptions ? JSON.parse(data.modelOptions) : [];
+        
+        setActiveWizard({
+          type: "model",
+          step: 60,
+          data: {
+            ...data,
+            tempModelName: selectedModel,
+            modelOptions: JSON.stringify(currentOptions),
+          },
+        });
+
+        const opts = ["1. Yes", "2. No", "< Back"];
+        setWizardOptions(opts);
+        if (setWizardAllOptions) setWizardAllOptions(opts);
+        setWizardSelectedIndex(0);
+        setInput("");
+        addLine({
+          type: "system",
+          content: `Does the model "${selectedModel}" support vision/image inputs?`,
+          timestamp: now,
+        });
+      }
 
     } else if (step === 61 || step === 62) {
       if (value === "< Back") {
