@@ -107,8 +107,9 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     expect(Array.isArray(messages[1].content)).toBe(true);
     expect(messages[1].content[0].type).toBe("text");
     expect(messages[1].content[0].text).toContain("rendered as images");
-    expect(messages[1].content[1].type).toBe("image");
-    expect(messages[1].content[1].image).toBe("MOCK_BASE64_IMAGE_DATA");
+    const imagePart = messages[1].content.find((p: any) => p.type === "image");
+    expect(imagePart).toBeDefined();
+    expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
   });
 
   it("does not convert user message to image if feature is disabled", async () => {
@@ -172,8 +173,9 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     // The appended User message should contain the image
     expect(messages[2].role).toBe("user");
     expect(messages[2].content[0].text).toContain("rendered as image");
-    expect(messages[2].content[1].type).toBe("image");
-    expect(messages[2].content[1].image).toBe("MOCK_BASE64_IMAGE_DATA");
+    const imagePart = messages[2].content.find((p: any) => p.type === "image");
+    expect(imagePart).toBeDefined();
+    expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
   });
 
   it("honors configured supportsVision: false even if model name suggests vision support", () => {
@@ -211,7 +213,8 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     expect(messages.length).toBe(1);
     expect(messages[0].role).toBe("user");
     expect(Array.isArray(messages[0].content)).toBe(true);
-    expect(messages[0].content[1].type).toBe("image");
+    const imagePart = messages[0].content.find((p: any) => p.type === "image");
+    expect(imagePart).toBeDefined();
   });
 
   it("converts a large system prompt to image and prepends it to messages during execution", async () => {
@@ -245,8 +248,9 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     expect(msgs.length).toBeGreaterThanOrEqual(3); // prepend user + prepend assistant + original user message
     expect(msgs[0].role).toBe("user");
     expect(msgs[0].content[0].text).toContain("System instructions rendered as images");
-    expect(msgs[0].content[1].type).toBe("image");
-    expect(msgs[0].content[1].image).toBe("MOCK_BASE64_IMAGE_DATA");
+    const imagePart = msgs[0].content.find((p: any) => p.type === "image");
+    expect(imagePart).toBeDefined();
+    expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
 
     expect(msgs[1].role).toBe("assistant");
     expect(msgs[1].content).toContain("read the system instructions rendered as images");
@@ -273,8 +277,9 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     expect(messages[0].role).toBe("user");
     expect(Array.isArray(messages[0].content)).toBe(true);
     expect(messages[0].content[0].text).toContain("TencentDB Agent Memory Context rendered as images");
-    expect(messages[0].content[1].type).toBe("image");
-    expect(messages[0].content[1].image).toBe("MOCK_BASE64_IMAGE_DATA");
+    const imagePart = messages[0].content.find((p: any) => p.type === "image");
+    expect(imagePart).toBeDefined();
+    expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
   });
 });
 

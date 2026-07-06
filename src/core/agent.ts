@@ -1512,15 +1512,23 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               base64List.push(base64);
             }
             
+            const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
+              {
+                type: "text",
+                text: `CRITICAL: The following image(s) contain your core SYSTEM INSTRUCTIONS, RULES, and WORKFLOW guidelines. Read the text inside the image(s) carefully. You must strictly adhere to all instructions, constraints, and rules displayed in these images for this entire session. [System instructions rendered as images to save tokens, split into ${base64List.length} pages]:`
+              }
+            ];
+            base64List.forEach((base64, index) => {
+              contentParts.push({
+                type: "text",
+                text: `[System Instructions Page ${index + 1} of ${base64List.length}]:`
+              });
+              contentParts.push({ type: "image" as const, image: base64, mimeType: "image/png" });
+            });
+
             prependSystemMessage = {
               role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: "CRITICAL: The following image(s) contain your core SYSTEM INSTRUCTIONS, RULES, and WORKFLOW guidelines. Read the text inside the image(s) carefully. You must strictly adhere to all instructions, constraints, and rules displayed in these images for this entire session. [System instructions rendered as images to save tokens]:"
-                },
-                ...base64List.map(base64 => ({ type: "image" as const, image: base64, mimeType: "image/png" }))
-              ]
+              content: contentParts
             };
 
             prependSystemAssistantMessage = {
@@ -2639,16 +2647,21 @@ for (const tc of toolCalls) {
         if (useVisionTokenSaving && (rawContent.length > threshold || isMemoryContext)) {
           try {
             const pages = sliceTextIntoPages(rawContent);
+            const totalPages = pages.length;
             const headerText = isMemoryContext
-              ? "CRITICAL CONTEXT: The following image(s) contain the persistent TencentDB Agent Memory Context (system state and facts). Read the text in the image(s) to understand the background state. [TencentDB Agent Memory Context rendered as images to save tokens]:"
-              : "CRITICAL USER INPUT: The following image(s) contain the text content of the user message. Read the text in the image(s) carefully to understand the user's request and instructions. [Content of user message rendered as images to save tokens]:";
+              ? `CRITICAL CONTEXT: The following image(s) contain the persistent TencentDB Agent Memory Context (system state and facts). Read the text in the image(s) to understand the background state. [TencentDB Agent Memory Context rendered as images to save tokens, split into ${totalPages} pages]:`
+              : `CRITICAL USER INPUT: The following image(s) contain the text content of the user message. Read the text in the image(s) carefully to understand the user's request and instructions. [Content of user message rendered as images to save tokens, split into ${totalPages} pages]:`;
             const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
               { type: "text", text: headerText }
             ];
-            for (const page of pages) {
+            pages.forEach((page, index) => {
               const base64 = renderTextToImageBase64(page);
+              const pageLabel = isMemoryContext
+                ? `[TencentDB Agent Memory Context Page ${index + 1} of ${totalPages}]:`
+                : `[User Message Page ${index + 1} of ${totalPages}]:`;
+              contentParts.push({ type: "text", text: pageLabel });
               contentParts.push({ type: "image", image: base64, mimeType: "image/png" });
-            }
+            });
             sdkContent = contentParts;
           } catch (err: any) {
             this.writeToLogFile("WARN", `Failed to automatically convert user message to image: ${err.message}. Falling back to text.`);
@@ -2736,16 +2749,21 @@ for (const tc of toolCalls) {
           if (useVisionTokenSaving && resultText.length > threshold) {
             try {
               const pages = sliceTextIntoPages(resultText);
+              const totalPages = pages.length;
               const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
                 {
                   type: "text",
-                  text: "CRITICAL TOOL OUTPUT: The following image(s) contain the execution results/responses of your recently invoked tools. Read the text in the image(s) carefully to see the output. [Tool responses rendered as images to save tokens]:"
+                  text: `CRITICAL TOOL OUTPUT: The following image(s) contain the execution results/responses of your recently invoked tools. Read the text in the image(s) carefully to see the output. [Tool responses rendered as images to save tokens, split into ${totalPages} pages]:`
                 }
               ];
-              for (const page of pages) {
+              pages.forEach((page, index) => {
                 const base64 = renderTextToImageBase64(page);
+                contentParts.push({
+                  type: "text",
+                  text: `[Tool Responses Page ${index + 1} of ${totalPages}]:`
+                });
                 contentParts.push({ type: "image", image: base64, mimeType: "image/png" });
-              }
+              });
               coreMessages.push({
                 role: "user",
                 content: contentParts as any,
@@ -2842,13 +2860,18 @@ for (const tc of toolCalls) {
         if (pendingImagesToAppend.length > 0) {
           const appendParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [];
           for (const item of pendingImagesToAppend) {
+            const totalPages = item.base64List.length;
             appendParts.push({
               type: "text",
-              text: `CRITICAL TOOL OUTPUT: The following image(s) contain the actual execution output of the tool "${item.toolName}". Read the text inside the image(s) to see the result. [Tool output for "${item.toolName}" rendered as image]:`
+              text: `CRITICAL TOOL OUTPUT: The following image(s) contain the actual execution output of the tool "${item.toolName}". Read the text inside the image(s) to see the result. [Tool output for "${item.toolName}" rendered as image, split into ${totalPages} pages]:`
             });
-            for (const base64 of item.base64List) {
+            item.base64List.forEach((base64, index) => {
+              appendParts.push({
+                type: "text",
+                text: `[Tool Output for "${item.toolName}" Page ${index + 1} of ${totalPages}]:`
+              });
               appendParts.push({ type: "image", image: base64, mimeType: "image/png" });
-            }
+            });
           }
           coreMessages.push({
             role: "user",

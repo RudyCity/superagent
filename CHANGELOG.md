@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.132] - 2026-07-06
+
+### Changed
+- **Workspace State Context**:
+  - Injected workspace CWD, agent tier, and active Git branch directly to the top of the live workspace state block to prevent agent context drift.
+- **Vision Token Saving**:
+  - Split and paired multi-page text-to-image conversions (system prompt, user messages, TencentDB memory, tool outputs) with explicit page numbers and contextual labels (e.g. `[Page X of Y]`) to improve vision model layout processing and prevent page-ordering confusion.
+
+---
+
 ## [1.2.131] - 2026-07-06
 
 ### Changed
