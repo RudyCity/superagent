@@ -1378,8 +1378,10 @@ export function MultiAgentDashboard({
                   ? "└──[ PRESET_DESC ] ❯ "
                   : activeWizard?.type === "model" && activeWizard.step === 41
                   ? "└──[ CONFIRM ] ❯ "
-                  : activeWizard?.type === "model" && activeWizard.step === 50
+                   : activeWizard?.type === "model" && activeWizard.step === 50
                   ? "└──[ CONFIGURE ] ❯ "
+                  : activeWizard?.type === "model" && [60, 61, 62].includes(activeWizard.step)
+                  ? "└──[ VISION ] ❯ "
                   : activeWizard?.type === "model" && activeWizard.step === 16
                   ? "└──[ PROFILE_NAME ] ❯ "
                   : activeWizard?.type === "model" && activeWizard.step === 17

@@ -704,6 +704,16 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
+        {activeWizard && activeWizard.type === "model" && [60, 61, 62].includes(activeWizard.step) && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="📷 VISION CAPABILITY SETUP"
+            description={`Does the model "${activeWizard.data.tempModelName || (activeWizard.data.tempFinalModelName && activeWizard.data.tempFinalModelName.includes("@") ? activeWizard.data.tempFinalModelName.split("@")[1] : activeWizard.data.tempFinalModelName) || ""}" support vision/image inputs?`}
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+          />
+        )}
+
         {activeWizard && activeWizard.type === "resume" && wizardOptions.length > 0 && (
           <WizardDialog
             title="📚 RESUME SESSION — Select session to resume (↑/↓ Navigate, Enter: Load, Esc: Cancel):"

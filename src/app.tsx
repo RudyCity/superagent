@@ -1124,6 +1124,11 @@ export function App({
       if (activeWizard.step === 7) return "Enter the custom endpoint base URL.";
       if (activeWizard.step === 8) return "Paste the API key for the new provider profile.";
       if (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34) return "Select an available model (type to filter).";
+      if (activeWizard.step === 60 || activeWizard.step === 61 || activeWizard.step === 62) {
+        const modelName = activeWizard.data.tempModelName || activeWizard.data.tempFinalModelName || "";
+        const cleanName = modelName.includes("@") ? modelName.split("@")[1] : modelName;
+        return `Does the model "${cleanName}" support vision/image inputs?`;
+      }
     }
     if (activeWizard.type === "question") {
       return pendingQuestion?.question || "Select an option or type a custom answer.";
