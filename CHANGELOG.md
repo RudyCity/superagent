@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
   - Implemented automatic conversion of large system prompts to image parts when vision token saving is enabled and threshold is exceeded.
   - Prepended system prompt images inside a user message to `generateText` and `streamText` calls.
   - Added unit test in `tests/visionTokenSaving.test.ts` to verify correct conversion behavior.
+  - Reduced the default vision saving threshold fallback from 4000 to 2000 characters for earlier token saving optimization.
 
 ---
 
