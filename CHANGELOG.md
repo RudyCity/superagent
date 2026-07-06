@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.125] - 2026-07-06
+
+### Added
+- **Log Execution Summary**:
+  - Automatically generate a concise summary of the active session actions, changed files, and workspace state using the LLM when execution completes successfully.
+  - Write this summary to the global execution log (`superagent.log`) under a `SUMMARY` prefix.
+  - Injected this real execution summary into the `goal_done` event payload instead of a generic static message.
+  - Disabled summary generation during Vitest unit testing to prevent test failures or unexpected model calls.
+
+---
+
 ## [1.2.124] - 2026-07-06
 
 ### Changed

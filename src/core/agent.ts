@@ -2546,11 +2546,27 @@ for (const tc of toolCalls) {
         }
       }
     } finally {
+      let finalSummary = "Agent has finished executing. Check the output above for GOAL_COMPLETE or GOAL_PARTIAL status.";
+      if (!process.env.VITEST) {
+        try {
+          const messages = this.conversation.getMessages();
+          if (messages.length > 0) {
+            const lastUserIdx = messages.map(m => m.role).lastIndexOf("user");
+            const sessionMsgs = lastUserIdx >= 0 ? messages.slice(lastUserIdx) : messages;
+            this.writeToLogFile("INFO", "Generating execution summary for log...");
+            finalSummary = await this.summarizeMessages(sessionMsgs, signal);
+            this.writeToLogFile("SUMMARY", finalSummary);
+          }
+        } catch (sumErr: any) {
+          this.writeToLogFile("WARN", `Failed to generate execution summary for log: ${sumErr.message}`);
+        }
+      }
+
       if (isGoalMode && this.goalMode) {
         this.onEvent({
           type: "goal_done",
           goal: this.goalMode,
-          summary: "Agent has finished executing. Check the output above for GOAL_COMPLETE or GOAL_PARTIAL status.",
+          summary: finalSummary,
         });
       }
     }
