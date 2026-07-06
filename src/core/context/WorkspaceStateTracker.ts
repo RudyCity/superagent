@@ -9,6 +9,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { execSync } from "child_process";
 
 export interface WorkspaceStateOptions {
   /** Absolute path to active task file */
@@ -140,6 +141,18 @@ export function writeSubagentReport(
 }
 
 /**
+ * Try to get the current git branch name for the given directory.
+ * Returns empty string if not in a git repo or git is unavailable.
+ */
+function getGitBranch(cwd: string): string {
+  try {
+    return execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Build the live WORKSPACE STATE context block for injection into dynamicContext.
  */
 export function buildWorkspaceStateBlock(opts: WorkspaceStateOptions): WorkspaceStateBlock {
@@ -147,6 +160,12 @@ export function buildWorkspaceStateBlock(opts: WorkspaceStateOptions): Workspace
   if (opts.tier === "subagent") return { text: "", charCount: 0 };
 
   const parts: string[] = [];
+
+  // ── Workspace identity ─────────────────────────────────────────────────────
+  const gitBranch = getGitBranch(opts.cwd);
+  const tierLabel = opts.tier === "master" ? "Master Agent" : opts.tier === "single" ? "Single Agent" : "Superagent";
+  const branchInfo = gitBranch ? ` | git: ${gitBranch}` : "";
+  parts.push(`📁 WORKSPACE: ${opts.cwd} | tier: ${tierLabel}${branchInfo}`);
 
   // ── Task progress ──────────────────────────────────────────────────────────
   const { done, total } = countTasks(opts.taskFilePath);
@@ -185,8 +204,7 @@ export function buildWorkspaceStateBlock(opts: WorkspaceStateOptions): Workspace
     }
   }
 
-  if (parts.length === 0) return { text: "", charCount: 0 };
-
+  // Always at least the workspace identity line exists, so parts.length >= 1
   const text = `\n\n⚡ LIVE WORKSPACE STATE:\n${parts.join("\n")}`;
   return { text, charCount: text.length };
 }
