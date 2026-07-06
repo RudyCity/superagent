@@ -1,0 +1,1 @@
+docker build -t fastcontext-ubuntu24.04:latest .

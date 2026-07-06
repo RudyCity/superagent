@@ -24,13 +24,17 @@ Write-Host ""
 # == Step 1: Clone FastContext source ========================================
 Write-Host "[1/5] Cloning FastContext source..." -ForegroundColor Yellow
 if (Test-Path $FastContextDir) {
-    Write-Host "  Already exists at vendor/fastcontext/ - pulling latest..."
-    $OldEAP = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    git -C $FastContextDir pull --ff-only 2>$null
-    $ErrorActionPreference = $OldEAP
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  Pull failed, keeping existing source." -ForegroundColor DarkYellow
+    if (Test-Path (Join-Path $FastContextDir ".git")) {
+        Write-Host "  Already exists at vendor/fastcontext/ - pulling latest..."
+        $OldEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        git -C $FastContextDir pull --ff-only 2>$null
+        $ErrorActionPreference = $OldEAP
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  Pull failed, keeping existing source." -ForegroundColor DarkYellow
+        }
+    } else {
+        Write-Host "  Already exists at vendor/fastcontext/ (vendored version)."
     }
 } else {
     New-Item -ItemType Directory -Path $VendorDir -Force | Out-Null

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.104] - 2026-07-06
+
+### Fixed
+- **FastContext Setup & Vendoring**:
+  - Removed `.git` from `vendor/fastcontext` and updated `.gitignore` to track `vendor/fastcontext` to vendor the FastContext repository explorer source code. This prevents GitHub credentials prompts during startup setup since Microsoft took down the public `microsoft/fastcontext` repository.
+  - Modified `bin/setup-fastcontext.ps1` and `bin/setup-fastcontext.sh` to bypass Git pull checks if the directory does not contain a `.git` subfolder, ensuring the setup runs successfully offline/from vendored files.
+
+---
+
 ## [1.2.103] - 2026-07-06
 
 ### Fixed

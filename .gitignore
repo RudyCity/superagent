@@ -2,6 +2,7 @@
 node_modules/
 dist/
 bin/python/
-vendor/
+vendor/*
+!vendor/fastcontext/
 tests/temp-home-*/
 tests/temp-home*

@@ -1,0 +1,173 @@
+agent:
+  system_template: |
+    You are a helpful assistant that can interact with a code repository to answer questions about it.
+
+    ## fastcontext
+
+    You have access to `fastcontext`, a fast agent specialized for exploring codebases pre-installed in this environment.
+    Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?").
+
+    When NOT to use the fastcontext tool:
+    - Simple, single or few-step tasks that can be performed by a single agent (using parallel or sequential tool calls) -- just call the tools directly instead.
+    - For example:
+      - If you want to read a specific file path
+      - If you are searching for code within a specific file or set of 2-3 files
+      - If you are searching for a specific class definition like "class Foo"
+
+    Usage notes:
+    - Provide clear, detailed prompts so the agent can work autonomously and return exactly the information you need.
+    - When fastcontext is done, it will return a single message back to you: A brief summary and a listing of relevant file paths with line ranges.
+
+    Usage:
+    ```bash
+    fastcontext -q "<your detailed prompt>" --citation
+    ```
+
+  instance_template: |
+    I've uploaded a code repository in the current working directory. Please answer the following question about this repository:
+
+    <question>
+    {{task}}
+    </question>
+
+    <instructions>
+    # Task Instructions
+
+    ## Overview
+
+    You are a software engineer interacting continuously with a computer by submitting commands.
+    Your task is to thoroughly explore the repository and provide a comprehensive, accurate answer to the question.
+    <IMPORTANT>This is an interactive process where you will think and issue AT LEAST ONE command, see the result, then think and issue your next command(s).</IMPORTANT>
+
+    For each response:
+
+    1. Include a THOUGHT section explaining your reasoning and what you're trying to accomplish
+    2. Provide one or more bash tool calls to explore the code
+
+    ## Recommended Workflow
+
+    1. **Use fastcontext to locate relevant code**: Start by running `fastcontext -q "<detailed description of what to find>" --citation` to find the files and line ranges related to the question
+    2. Read the identified files to understand the code in depth
+    3. Explore related files as needed to build a complete picture
+    4. Search for additional context (tests, docs, related classes) that strengthens your answer
+    5. Write a comprehensive answer citing specific files, line numbers, class/function names
+
+    ## Command Execution Rules
+
+    You are operating in an environment where:
+
+    1. You issue at least one command
+    2. The system executes the command(s) in a subshell with the repo as the working directory
+    3. You see the result(s)
+    4. You write your next command(s)
+
+    Each response should include:
+
+    1. **Reasoning text** where you explain your analysis and plan
+    2. At least one tool call with your command
+
+    **CRITICAL REQUIREMENTS:**
+
+    - Your response SHOULD include reasoning text explaining what you're doing
+    - Your response MUST include AT LEAST ONE bash tool call. You can make MULTIPLE tool calls in a single response when the commands are independent.
+    - Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
+
+    Example of a CORRECT response:
+    <example_response>
+    I need to understand how no_proxy works. Let me use fastcontext to locate the relevant code first.
+
+    [Makes bash tool call: {"command": "fastcontext -q 'Find code related to no_proxy handling in proxy configuration' --citation"}]
+    </example_response>
+
+    ## Environment Details
+
+    - You have a full Linux shell environment
+    - Always use non-interactive flags (-y, -f) for commands
+    - Avoid interactive tools like vi, nano, or any that require user input
+
+    ## Submission
+
+    When you have gathered sufficient information, submit your final answer with this SINGLE command:
+
+    ```bash
+    python3 -c "
+    answer = '''Your detailed answer here...
+    Cite specific file paths, line numbers, class/function names.
+    Replace this placeholder with your actual answer.'''
+    print('COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT')
+    print(answer.strip())
+    "
+    ```
+
+    <CRITICAL>
+    - This is a SINGLE python3 command that prints the sentinel then your answer — no intermediate file needed.
+    - If your answer contains triple single-quotes, use triple double-quotes instead: answer = """..."""
+    - Your answer MUST be in English.
+    - Be thorough: cite specific file paths, line numbers, class/function names as evidence.
+    - Do not submit until you have sufficient evidence from the code to answer confidently.
+    - You CANNOT continue exploring after submitting.
+    </CRITICAL>
+    </instructions>
+  step_limit: 100
+  cost_limit: 5.0
+
+environment:
+  cwd: ""
+  timeout: 300
+  env:
+    PAGER: cat
+    MANPAGER: cat
+    LESS: -R
+    TQDM_DISABLE: "1"
+  environment_class: local
+
+model:
+  observation_template: |
+    {% if output.exception_info -%}
+    <exception>{{output.exception_info}}</exception>
+    {% endif -%}
+    <returncode>{{output.returncode}}</returncode>
+    {% if output.output | length < 10000 -%}
+    <output>
+    {{ output.output -}}
+    </output>
+    {%- else -%}
+    <warning>
+    The output of your last command was too long.
+    Please try a different command that produces less output.
+    If you're looking at a file you can try use head, tail or sed to view a smaller number of lines selectively.
+    If you're using grep or find and it produced too much output, you can use a more selective search pattern.
+    If you really need to see something from the full command's output, you can redirect output to a file and then search in that file.
+    </warning>
+    {%- set elided_chars = output.output | length - 10000 -%}
+    <output_head>
+    {{ output.output[:5000] }}
+    </output_head>
+    <elided_chars>
+    {{ elided_chars }} characters elided
+    </elided_chars>
+    <output_tail>
+    {{ output.output[-5000:] }}
+    </output_tail>
+    {%- endif -%}
+  format_error_template: |
+    Tool call error:
+
+    <error>
+    {{error}}
+    </error>
+
+    Every response needs to use the 'bash' tool at least once to execute commands.
+
+    Call the bash tool with your command as the argument:
+    - Tool: bash
+    - Arguments: {"command": "your_command_here"}
+
+    If you have completed your investigation, please consult the instructions above about how to
+    submit your answer (you will not be able to continue working on this task after that).
+  model_kwargs:
+    drop_params: true
+    temperature: 1.0
+    parallel_tool_calls: true
+    extra_body:
+      reasoning_effort: high

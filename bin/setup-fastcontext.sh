@@ -31,8 +31,12 @@ echo ""
 # ── Step 1: Clone FastContext source ────────────────────────────────────────
 echo "[1/4] Cloning FastContext source..."
 if [ -d "$FC_DIR" ]; then
-    echo "  Already exists at vendor/fastcontext/ — pulling latest..."
-    git -C "$FC_DIR" pull --ff-only 2>/dev/null || echo "  Pull failed, keeping existing source."
+    if [ -d "$FC_DIR/.git" ]; then
+        echo "  Already exists at vendor/fastcontext/ — pulling latest..."
+        git -C "$FC_DIR" pull --ff-only 2>/dev/null || echo "  Pull failed, keeping existing source."
+    else
+        echo "  Already exists at vendor/fastcontext/ (vendored version)."
+    fi
 else
     mkdir -p "$VENDOR_DIR"
     git clone https://github.com/microsoft/fastcontext.git "$FC_DIR"

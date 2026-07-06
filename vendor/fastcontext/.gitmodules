@@ -1,0 +1,4 @@
+[submodule "third_party/mini-swe-agent"]
+	path = third_party/mini-swe-agent
+	url = https://github.com/SWE-agent/mini-swe-agent.git
+	ignore = dirty
