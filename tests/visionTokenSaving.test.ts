@@ -27,6 +27,9 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
       autoVisionTokenSaving: true,
       visionTokenSavingThreshold: 100, // Small threshold for easy testing
     }),
+    getDynamicVisionThreshold: vi.fn().mockImplementation((modelName) => {
+      return 100; // Force threshold of 100 for all models in tests
+    }),
   };
 });
 
@@ -280,6 +283,35 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     const imagePart = messages[0].content.find((p: any) => p.type === "image");
     expect(imagePart).toBeDefined();
     expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
+  });
+
+  it("uses the correct dynamic threshold based on model provider in getDynamicVisionThreshold", async () => {
+    const { getDynamicVisionThreshold: realGetDynamic } = await import("../src/core/config/jsonConfig.js");
+    
+    vi.mocked(configModule.getSettings).mockReturnValue({
+      autoVisionTokenSaving: true,
+      visionTokenSavingThreshold: 2000,
+    });
+
+    expect(realGetDynamic("claude-3-5-sonnet")).toBe(6500);
+    expect(realGetDynamic("gemini-1.5-pro")).toBe(1000);
+    expect(realGetDynamic("gpt-4o")).toBe(2000);
+  });
+
+  it("estimates token count using simulated image token counts when vision saving is active", async () => {
+    const { TokenTracker } = await import("../src/core/context/TokenTracker.js");
+    const tracker = new TokenTracker("claude-3-5-sonnet");
+
+    const msg = {
+      role: "user",
+      content: "a".repeat(150),
+      timestamp: Date.now()
+    };
+
+    await tracker.ensureEncoder();
+    const count = tracker.estimateTokens(msg as any);
+
+    expect(count).toBeGreaterThan(1000); // 1600 image tokens + 150 header tokens
   });
 });
 

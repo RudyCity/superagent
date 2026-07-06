@@ -1,4 +1,5 @@
 import { Message, MessageContent, contentToString } from "../conversation.js";
+import { getSettings, getDynamicVisionThreshold } from "../config.js";
 
 export interface TokenBreakdown {
   systemPrompt: number;
@@ -57,12 +58,29 @@ export class TokenTracker {
     return this.model;
   }
 
+  private modelSupportsVision(modelName: string): boolean {
+    if (!modelName) return false;
+    const name = modelName.toLowerCase();
+    if (name.includes("claude-3")) return true;
+    if (name.includes("gpt-4o")) return true;
+    if (name.includes("gpt-4-vision")) return true;
+    if (name.includes("gemini")) return true;
+    if (name.includes("gemma-3")) return true;
+    if (name.includes("vision")) return true;
+    return false;
+  }
+
   estimateTokens(message: Message): number {
     const hash = this.hashMessage(message);
 
     if (this.cache.has(hash)) {
       return this.cache.get(hash)!;
     }
+
+    const settings = getSettings();
+    const supportsVision = this.modelSupportsVision(this.model);
+    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? true);
+    const threshold = getDynamicVisionThreshold(this.model);
 
     let tokens = this.countContent(message.content);
 
@@ -74,7 +92,14 @@ export class TokenTracker {
 
     if (message.toolResults) {
       for (const result of message.toolResults) {
-        tokens += this.countText(result.result);
+        const resultStr = typeof result.result === "string" ? result.result : JSON.stringify(result.result);
+        if (useVision && resultStr.length > threshold) {
+          const lines = resultStr.split(/\r?\n/);
+          const pageCount = Math.min(3, Math.ceil(lines.length / 150));
+          tokens += pageCount * 1600 + 150;
+        } else {
+          tokens += this.countText(resultStr);
+        }
       }
     }
 
@@ -87,6 +112,11 @@ export class TokenTracker {
     let messagesTokens = 0;
     let toolCalls = 0;
     let toolResults = 0;
+
+    const settings = getSettings();
+    const supportsVision = this.modelSupportsVision(this.model);
+    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? true);
+    const threshold = getDynamicVisionThreshold(this.model);
 
     for (const msg of messages) {
       const hash = this.hashMessage(msg);
@@ -103,7 +133,14 @@ export class TokenTracker {
         let trTokens = 0;
         if (msg.toolResults) {
           for (const result of msg.toolResults) {
-            trTokens += this.countText(result.result);
+            const resultStr = typeof result.result === "string" ? result.result : JSON.stringify(result.result);
+            if (useVision && resultStr.length > threshold) {
+              const lines = resultStr.split(/\r?\n/);
+              const pageCount = Math.min(3, Math.ceil(lines.length / 150));
+              trTokens += pageCount * 1600 + 150;
+            } else {
+              trTokens += this.countText(resultStr);
+            }
           }
         }
         cached = { content, toolCalls: tcTokens, toolResults: trTokens };
@@ -132,7 +169,19 @@ export class TokenTracker {
     const breakdown = this.estimateTokensForAll(messages);
 
     if (systemPrompt) {
-      const sysTokens = this.countText(systemPrompt);
+      const settings = getSettings();
+      const supportsVision = this.modelSupportsVision(this.model);
+      const useVision = supportsVision && (settings.autoVisionTokenSaving ?? true);
+      const threshold = getDynamicVisionThreshold(this.model);
+
+      let sysTokens = 0;
+      if (useVision && systemPrompt.length > threshold) {
+        const lines = systemPrompt.split(/\r?\n/);
+        const pageCount = Math.min(3, Math.ceil(lines.length / 150));
+        sysTokens = pageCount * 1600 + 150;
+      } else {
+        sysTokens = this.countText(systemPrompt);
+      }
       breakdown.systemPrompt += sysTokens;
       breakdown.total += sysTokens;
     }
@@ -142,9 +191,22 @@ export class TokenTracker {
 
   private countContent(content: MessageContent): number {
     if (!content) return 0;
+    
+    const settings = getSettings();
+    const supportsVision = this.modelSupportsVision(this.model);
+    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? true);
+    const threshold = getDynamicVisionThreshold(this.model);
+
     if (typeof content === "string") {
+      const isMemoryContext = content.startsWith("[TencentDB Agent Memory Context]:");
+      if (useVision && (content.length > threshold || isMemoryContext)) {
+        const lines = content.split(/\r?\n/);
+        const pageCount = Math.min(3, Math.ceil(lines.length / 150));
+        return pageCount * 1600 + 150;
+      }
       return this.countText(content);
     }
+
     let tokens = 0;
     for (const part of content) {
       if (part.type === "text") {

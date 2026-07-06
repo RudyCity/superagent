@@ -4,7 +4,8 @@ import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import { renderTextToImageBase64, sliceTextIntoPages } from "../utils/textToImage.js";
 import fs from "fs";
-import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getTierModelConfig, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD } from "./config.js";
+import crypto from "crypto";
+import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getTierModelConfig, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD, getDynamicVisionThreshold } from "./config.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks, isTaskInWorkspace } from "./tools.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
@@ -227,6 +228,22 @@ function isRetryableError(err: unknown): boolean {
 
 
 export class Agent {
+  private static imageCache: Map<string, string[]> = new Map();
+
+  private getCachedImages(text: string): string[] | null {
+    const hash = crypto.createHash("sha256").update(text).digest("hex");
+    return Agent.imageCache.get(hash) || null;
+  }
+
+  private setCachedImages(text: string, images: string[]): void {
+    const hash = crypto.createHash("sha256").update(text).digest("hex");
+    if (Agent.imageCache.size >= 500) {
+      const oldest = Agent.imageCache.keys().next().value;
+      if (oldest) Agent.imageCache.delete(oldest);
+    }
+    Agent.imageCache.set(hash, images);
+  }
+
   public delegationDepth = 0;
   /** Agent tier in the 3-tier hierarchy: master | superagent | subagent */
   public tier: AgentTier = "master";
@@ -1567,18 +1584,22 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         // Inform the conversation so stripOldToolResults retains more cycles
         // when vision is active — buildMessages() will image-convert large results.
         this.conversation.setVisionMode(useVisionTokenSaving);
-        const threshold = settings.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD;
+        const threshold = getDynamicVisionThreshold(modelName);
 
         const allowSystemPromptImage = !process.env.VITEST || process.env.SUPERAGENT_TEST_SYSTEM_PROMPT_IMAGE === "true";
 
         if (useVisionTokenSaving && finalSystemPrompt.length > threshold && allowSystemPromptImage) {
           try {
             this.writeToLogFile("INFO", `Automatically converting system prompt (size ${finalSystemPrompt.length} chars) to image.`);
-            const pages = sliceTextIntoPages(finalSystemPrompt);
-            const base64List: string[] = [];
-            for (const page of pages) {
-              const base64 = renderTextToImageBase64(page);
-              base64List.push(base64);
+            let base64List = this.getCachedImages(finalSystemPrompt);
+            if (!base64List) {
+              const pages = sliceTextIntoPages(finalSystemPrompt);
+              base64List = [];
+              for (const page of pages) {
+                const base64 = renderTextToImageBase64(page);
+                base64List.push(base64);
+              }
+              this.setCachedImages(finalSystemPrompt, base64List);
             }
             
             const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
@@ -2703,7 +2724,7 @@ for (const tc of toolCalls) {
 
     const settings = getSettings();
     const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
-    const threshold = settings.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD;
+    const threshold = getDynamicVisionThreshold(modelName);
 
     for (const m of this.conversation.getMessages()) {
       if (m.role === "system") continue;
@@ -2715,16 +2736,24 @@ for (const tc of toolCalls) {
 
         if (useVisionTokenSaving && (rawContent.length > threshold || isMemoryContext)) {
           try {
-            const pages = sliceTextIntoPages(rawContent);
-            const totalPages = pages.length;
+            let base64List = this.getCachedImages(rawContent);
+            if (!base64List) {
+              const pages = sliceTextIntoPages(rawContent);
+              base64List = [];
+              for (const page of pages) {
+                const base64 = renderTextToImageBase64(page);
+                base64List.push(base64);
+              }
+              this.setCachedImages(rawContent, base64List);
+            }
+            const totalPages = base64List.length;
             const headerText = isMemoryContext
               ? `CRITICAL CONTEXT: The following image(s) contain the persistent TencentDB Agent Memory Context (system state and facts). Read the text in the image(s) to understand the background state. [TencentDB Agent Memory Context rendered as images to save tokens, split into ${totalPages} pages]:`
               : `CRITICAL USER INPUT: The following image(s) contain the text content of the user message. Read the text in the image(s) carefully to understand the user's request and instructions. [Content of user message rendered as images to save tokens, split into ${totalPages} pages]:`;
             const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
               { type: "text", text: headerText }
             ];
-            pages.forEach((page, index) => {
-              const base64 = renderTextToImageBase64(page);
+            base64List.forEach((base64, index) => {
               const pageLabel = isMemoryContext
                 ? `[TencentDB Agent Memory Context Page ${index + 1} of ${totalPages}]:`
                 : `[User Message Page ${index + 1} of ${totalPages}]:`;
@@ -2817,16 +2846,24 @@ for (const tc of toolCalls) {
           
           if (useVisionTokenSaving && resultText.length > threshold) {
             try {
-              const pages = sliceTextIntoPages(resultText);
-              const totalPages = pages.length;
+              let base64List = this.getCachedImages(resultText);
+              if (!base64List) {
+                const pages = sliceTextIntoPages(resultText);
+                base64List = [];
+                for (const page of pages) {
+                  const base64 = renderTextToImageBase64(page);
+                  base64List.push(base64);
+                }
+                this.setCachedImages(resultText, base64List);
+              }
+              const totalPages = base64List.length;
               const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
                 {
                   type: "text",
                   text: `CRITICAL TOOL OUTPUT: The following image(s) contain the execution results/responses of your recently invoked tools. Read the text in the image(s) carefully to see the output. [Tool responses rendered as images to save tokens, split into ${totalPages} pages]:`
                 }
               ];
-              pages.forEach((page, index) => {
-                const base64 = renderTextToImageBase64(page);
+              base64List.forEach((base64, index) => {
                 contentParts.push({
                   type: "text",
                   text: `[Tool Responses Page ${index + 1} of ${totalPages}]:`
@@ -2888,11 +2925,15 @@ for (const tc of toolCalls) {
           if (useVisionTokenSaving && resultStr.length > threshold) {
             try {
               this.writeToLogFile("INFO", `Automatically converting tool result of "${tr.name}" (size ${resultStr.length} chars) to image.`);
-              const pages = sliceTextIntoPages(resultStr);
-              const base64List: string[] = [];
-              for (const page of pages) {
-                const base64 = renderTextToImageBase64(page);
-                base64List.push(base64);
+              let base64List = this.getCachedImages(resultStr);
+              if (!base64List) {
+                const pages = sliceTextIntoPages(resultStr);
+                base64List = [];
+                for (const page of pages) {
+                  const base64 = renderTextToImageBase64(page);
+                  base64List.push(base64);
+                }
+                this.setCachedImages(resultStr, base64List);
               }
               
               pendingImagesToAppend.push({ toolName: tr.name, base64List });

@@ -7,10 +7,10 @@ import { createCanvas } from "@napi-rs/canvas";
  */
 export function normalizePathsForImage(text: string): string {
   // Match Windows absolute paths (drive letter + colon + backslash)
-  // and any remaining backslashes within those paths, converting to forward slash.
-  return text
-    .replace(/([A-Za-z]):\\/g, "$1:/")
-    .replace(/\\/g, "/");
+  // or relative paths with directory components, and convert only their backslashes.
+  return text.replace(/([A-Za-z]:\\[^\s"'`<>|]*|(?:\.\.?|[a-zA-Z0-9_.-]+)(?:\\[a-zA-Z0-9_.-]+)+)/g, (match) => {
+    return match.replace(/\\/g, "/");
+  });
 }
 
 

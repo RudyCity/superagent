@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.143] - 2026-07-06
+
+### Changed
+- **Image Prompt and Vision Token Saving System Enhancements**:
+  - Implemented dynamic vision token saving thresholds tailored by provider (6,500 characters for Anthropic, 1,000 for Gemini).
+  - Added a static, hash-backed image rendering cache in `Agent` to prevent redundant canvas drawing and PNG encoding.
+  - Refined path normalization in `textToImage` to avoid mutating code-level backslashes (escape sequences, regex patterns).
+  - Updated `TokenTracker` to simulate vision token pricing when active, aligning compaction estimates with actual API payloads.
+
+---
+
 ## [1.2.142] - 2026-07-06
 
 ### Fixed

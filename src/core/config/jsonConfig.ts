@@ -754,6 +754,27 @@ export function getSettings(): SystemSettings {
 }
 
 /**
+ * Get dynamic vision token saving threshold based on model provider.
+ * Anthropic uses a high image token overhead (1600 tokens), so it needs a higher threshold.
+ * Gemini has a low image token overhead, so it can use a lower threshold.
+ */
+export function getDynamicVisionThreshold(modelName: string): number {
+  const settings = getSettings();
+  if (settings.visionTokenSavingThreshold !== undefined && settings.visionTokenSavingThreshold !== DEFAULT_VISION_TOKEN_SAVING_THRESHOLD) {
+    return settings.visionTokenSavingThreshold;
+  }
+  if (!modelName) return settings.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD;
+  const name = modelName.toLowerCase();
+  if (name.includes("claude")) {
+    return 6500;
+  }
+  if (name.includes("gemini")) {
+    return 1000;
+  }
+  return settings.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD;
+}
+
+/**
  * Update one or more settings and persist to model-config.json.
  */
 export function updateSettings(updates: Partial<SystemSettings>): void {
