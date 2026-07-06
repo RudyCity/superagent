@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.108] - 2026-07-06
+
+### Changed
+- **Android CLI Startup Setup**:
+  - Automatically check and download/configure the Android CLI dependencies (including curl and Android CLI itself) on application startup inside `src/cliMain.tsx` (using `ensureAndroidCliInstalled`), rather than waiting for it to be run lazily when `android_cli` is first called, ensuring a smooth and uninterrupted experience when using mobile/emulator commands.
+
+---
+
 ## [1.2.107] - 2026-07-06
 
 ### Changed
