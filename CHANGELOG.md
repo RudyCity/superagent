@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.139] - 2026-07-06
+
+### Changed
+- **Enhanced Error Formatting**:
+  - Improved `formatError` in `agent.ts` to extract and print additional error details such as HTTP status codes, raw response body snippets, and error causes (for example, when parsing invalid JSON response bodies from proxy/server gateway failures).
+
+---
+
 ## [1.2.138] - 2026-07-06
 
 ### Added

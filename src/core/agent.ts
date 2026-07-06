@@ -83,18 +83,50 @@ export type QuestionHandler = (
 
 function formatError(err: unknown): string {
   if (!err) return "Unknown error";
+  
+  let baseMessage = "";
+  let extra = "";
+  const obj = err as any;
+
   if (err instanceof Error) {
-    return err.message;
+    baseMessage = err.message;
+  } else if (typeof err === "object") {
+    if (obj.message && typeof obj.message === "string") {
+      baseMessage = obj.message;
+    } else if (obj.error && typeof obj.error === "object" && obj.error.message && typeof obj.error.message === "string") {
+      baseMessage = obj.error.message;
+    }
   }
+
+  if (baseMessage) {
+    try {
+      const status = obj.statusCode || obj.status || (obj.error && (obj.error.statusCode || obj.error.status));
+      if (status) {
+        extra += ` (status: ${status})`;
+      }
+      
+      const bodyText = obj.text || obj.responseBody || (obj.error && (obj.error.text || obj.error.responseBody));
+      if (bodyText && typeof bodyText === "string") {
+        const trimmed = bodyText.trim();
+        if (trimmed) {
+          const snippet = trimmed.length > 150 ? trimmed.substring(0, 150) + "..." : trimmed;
+          const cleanSnippet = snippet.replace(/\r?\n|\r/g, " ");
+          extra += ` - response body snippet: "${cleanSnippet}"`;
+        }
+      }
+      
+      if (obj.cause) {
+        const causeMsg = obj.cause instanceof Error ? obj.cause.message : String(obj.cause);
+        extra += ` - cause: ${causeMsg}`;
+      }
+    } catch {
+      // Ignore extraction failures
+    }
+    return baseMessage + extra;
+  }
+
   if (typeof err === "object") {
     try {
-      const obj = err as any;
-      if (obj.message && typeof obj.message === "string") {
-        return obj.message;
-      }
-      if (obj.error && typeof obj.error === "object" && obj.error.message && typeof obj.error.message === "string") {
-        return obj.error.message;
-      }
       const codePart = obj.code || obj.status || (obj.error && (obj.error.code || obj.error.status))
         ? ` (status/code: ${obj.code || obj.status || (obj.error && (obj.error.code || obj.error.status))})`
         : "";
@@ -103,6 +135,7 @@ function formatError(err: unknown): string {
       // Fallback if JSON.stringify fails
     }
   }
+
   return String(err);
 }
 
