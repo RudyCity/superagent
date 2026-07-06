@@ -1,5 +1,18 @@
 import { createCanvas } from "@napi-rs/canvas";
 
+/**
+ * Normalize Windows-style backslash paths to forward slashes so that
+ * AI vision models can reliably read paths from rendered PNG images.
+ * Example: "C:\\Users\\foo" → "C:/Users/foo"
+ */
+export function normalizePathsForImage(text: string): string {
+  // Match Windows absolute paths (drive letter + colon + backslash)
+  // and any remaining backslashes within those paths, converting to forward slash.
+  return text
+    .replace(/([A-Za-z]):\\/g, "$1:/")
+    .replace(/\\/g, "/");
+}
+
 
 /**
  * Slice text into readable pages
@@ -25,10 +38,12 @@ export function sliceTextIntoPages(text: string, maxLines = 150, maxPages = 3): 
  * Render a text chunk into a PNG image synchronously and return its base64 data.
  */
 export function renderTextToImageBase64(text: string): string {
-  const lines = text.split(/\r?\n/);
-  const fontSize = 14;
-  const lineHeight = 18;
-  const padding = 15;
+  // Normalize paths before rendering so AI vision models read them correctly
+  const normalized = normalizePathsForImage(text);
+  const lines = normalized.split(/\r?\n/);
+  const fontSize = 15;
+  const lineHeight = 20;
+  const padding = 16;
 
   // Create temporary canvas to measure text
   const tempCanvas = createCanvas(1, 1);

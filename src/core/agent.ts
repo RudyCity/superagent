@@ -1360,7 +1360,7 @@ CRITICAL TASK EXECUTION CONTEXT:
 - MANDATORY: For any task that is complex, multi-step, or touches multiple files/components — you MUST spawn subagents via 'invoke_subagent'. Doing it yourself is forbidden for such tasks.
 - Spawn subagents in parallel whenever tasks are independent. This is the primary way to complete large tasks within the iteration limit.
 - After spawning, wait for results, integrate them, and report back to the user.
-${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}${workspaceBoundaryNotice}`;
+${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}`;
 
         // Build dynamic context to inject into messages array
         const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - currentStep);
@@ -1390,7 +1390,12 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           } catch { /* non-critical */ }
         }
 
-        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]${stepNotice}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${workspaceStateText}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
+        // dynamicContext is injected as plaintext into the messages array every iteration.
+        // IMPORTANT: path-sensitive content (workspaceBoundaryNotice, planStateNotice) lives
+        // HERE — never inside systemPrompt — so it is never converted to a PNG image.
+        // planStateAddendum and followUpTaskAddendum remain here because they are
+        // truly per-iteration state (approval status, task-reset notices).
+        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]${stepNotice}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${workspaceStateText}${workspaceBoundaryNotice}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
 
         const injectDynamicContext = (msgs: CoreMessage[]) => {
           if (msgs.length > 0) {

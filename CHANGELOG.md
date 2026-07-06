@@ -2,7 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.133] - 2026-07-06
+
+### Fixed
+- **Image Prompt System — Path Issues**:
+  - `workspaceBoundaryNotice` (workspace root path) moved from `systemPrompt` into `dynamicContext` so it is always delivered as plaintext and never converted to a PNG image. Previously the AI had to OCR workspace paths from rendered images, causing path misreads.
+  - `planStateNotice` (plan/task file absolute paths) similarly moved exclusively to `dynamicContext`, eliminating a duplication bug where the same paths appeared both in the system prompt image and in plaintext with potentially different `[EXISTS]` / `[NOT YET CREATED]` statuses between the two — creating conflicting information for the AI.
+  - Added `normalizePathsForImage()` in `textToImage.ts` that converts Windows-style backslash separators (`C:\foo\bar`) to forward slashes (`C:/foo/bar`) before rendering any text to PNG. This prevents AI vision models from misreading ambiguous backslash characters in path strings.
+  - Increased canvas font size from `14px → 15px` and line height from `18 → 20` in `textToImage.ts` for improved legibility of rendered text images.
+
+---
+
 ## [1.2.132] - 2026-07-06
+
 
 ### Changed
 - **Workspace State Context**:
