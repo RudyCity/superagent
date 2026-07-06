@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.120] - 2026-07-06
+
+### Added
+- **Maximum Compression Mode Rules**:
+  - Inserted maximum compression mode guidelines into the base system prompt in `base.ts`.
+  - Added specific directives to minimize token usage, prefer noun phrases & imperative fragments, omit filler, pronouns, articles, and apply strict symbol mappings.
+
+---
+
 ## [1.2.119] - 2026-07-06
 
 ### Added
