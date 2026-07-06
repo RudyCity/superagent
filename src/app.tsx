@@ -1170,6 +1170,7 @@ export function App({
       if (activeWizard.step === 31) return "Type new description and press Enter (or type 'back' to go back)...";
       if (activeWizard.step === 41) return "Select confirmation using arrows and Enter...";
       if (activeWizard.step === 50) return "Select agent tier using arrows and Enter...";
+      if (activeWizard.step === 60 || activeWizard.step === 61 || activeWizard.step === 62) return "Select Yes or No using arrows and Enter...";
       if (activeWizard.step === 6) return "Enter config profile name (or press Enter for default)...";
       if (activeWizard.step === 7) return "Enter Custom Base URL...";
       if (activeWizard.step === 8) return "Paste API key...";
