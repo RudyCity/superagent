@@ -146,7 +146,7 @@ export const settingsCommand: SlashCommand = {
         `│ • Focus Custom Budget: ${s.focusBudget} tokens`,
         `│ • Force Prompt Tools : ${s.forcePromptBasedToolCalling ? "ENABLED" : "DISABLED"}`,
         `│ • Auto Vision Token  : ${s.autoVisionTokenSaving ?? true ? "ENABLED" : "DISABLED"}`,
-        `│ • Vision Threshold   : ${s.visionTokenSavingThreshold ?? 4000} chars`,
+        `│ • Vision Threshold   : ${s.visionTokenSavingThreshold ?? 2000} chars`,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",
@@ -1288,7 +1288,7 @@ export const settingVisionThresholdCommand: SlashCommand = {
     if (!val) {
       ctx.addLine({
         type: "system",
-        content: `Usage: /setting-vision-threshold <number>\nCurrent value: ${getSettings().visionTokenSavingThreshold ?? 4000} chars`,
+        content: `Usage: /setting-vision-threshold <number>\nCurrent value: ${getSettings().visionTokenSavingThreshold ?? 2000} chars`,
         timestamp: now,
       });
       return;

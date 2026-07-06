@@ -214,6 +214,7 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
 
     if (mainCommand === "/setting-vision-threshold") {
       const possibilities = [
+        "/setting-vision-threshold 2000",
         "/setting-vision-threshold 4000",
         "/setting-vision-threshold 8000",
         "/setting-vision-threshold 0",

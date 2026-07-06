@@ -101,7 +101,7 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     focusBudget: 4000,
     forcePromptBasedToolCalling: false,
     autoVisionTokenSaving: true,
-    visionTokenSavingThreshold: 4000,
+    visionTokenSavingThreshold: 2000,
   },
   trustedDirectories: [],
   providers: [
@@ -747,7 +747,7 @@ export function getSettings(): SystemSettings {
     focus: s.focus ?? "off",
     focusBudget: s.focusBudget ?? 4000,
     autoVisionTokenSaving: s.autoVisionTokenSaving ?? true,
-    visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? 4000,
+    visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? 2000,
   };
 }
 

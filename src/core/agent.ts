@@ -1486,7 +1486,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         const supportsVision = this.modelSupportsVision(modelName);
         const settings = getSettings();
         const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
-        const threshold = settings.visionTokenSavingThreshold ?? 4000;
+        const threshold = settings.visionTokenSavingThreshold ?? 2000;
 
         const allowSystemPromptImage = !process.env.VITEST || process.env.SUPERAGENT_TEST_SYSTEM_PROMPT_IMAGE === "true";
 
@@ -2595,7 +2595,7 @@ for (const tc of toolCalls) {
 
     const settings = getSettings();
     const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
-    const threshold = settings.visionTokenSavingThreshold ?? 4000;
+    const threshold = settings.visionTokenSavingThreshold ?? 2000;
 
     for (const m of this.conversation.getMessages()) {
       if (m.role === "system") continue;
