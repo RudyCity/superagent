@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.145] - 2026-07-06
+
+### Fixed
+- **Compaction Loop and Byte-Size Enforcement in PruningStrategy**:
+  - Enhanced `PruningStrategy` to support byte budget enforcement via `options.byteBudget` to prevent and resolve `413 Payload Too Large` loops.
+  - Added aggressive message truncation for individual text fields and tool results exceeding 50KB to keep context under the limit without discarding whole messages.
+  - Updated `ContextManager.compact` and `Agent`'s forced compaction path to propagate a 3.0 MB byte limit during emergency compaction.
+  - Added full test coverage for the byte-size check and truncation routines.
+
+---
+
 ## [1.2.144] - 2026-07-06
 
 ### Added

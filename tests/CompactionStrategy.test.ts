@@ -121,4 +121,43 @@ describe("CompactionStrategy", () => {
     };
     expect(strategy.canHandle(smallContext)).toBe(false);
   });
+
+  it("should enforce byte budget in pruning strategy by truncating large contents and pruning if necessary", async () => {
+    const strategy = new PruningStrategy();
+    const messages: Message[] = [
+      {
+        role: "user",
+        content: "normal user input",
+        timestamp: 100,
+      },
+      {
+        role: "assistant",
+        content: "a".repeat(60000), // very large content
+        timestamp: 101,
+      },
+      {
+        role: "tool",
+        content: "tool message",
+        toolResults: [
+          {
+            toolCallId: "call1",
+            name: "run_command",
+            result: "b".repeat(60000), // very large result
+          }
+        ],
+        timestamp: 102,
+      }
+    ];
+
+    const result = await strategy.execute(messages, {
+      preserveRecent: 5,
+      byteBudget: 70 * 1024,
+    });
+
+    expect(result.metadata.strategy).toBe("pruning-with-emergency-summary");
+    const lastMsg = result.messages[result.messages.length - 1];
+    expect(lastMsg.role).toBe("tool");
+    expect(lastMsg.toolResults?.[0].result).toContain("TRUNCATED");
+    expect(lastMsg.toolResults?.[0].result.length).toBeLessThan(60000);
+  });
 });

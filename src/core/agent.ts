@@ -3127,12 +3127,16 @@ for (const tc of toolCalls) {
       );
 
       let strategy;
+      let compactionOptions;
       if (force) {
         const { PruningStrategy } = await import("./context/strategies/PruningStrategy.js");
         strategy = new PruningStrategy();
+        compactionOptions = {
+          byteBudget: 3 * 1024 * 1024, // 3.0 MB safety threshold
+        };
       }
 
-      const result = await contextManager.compact(messages, strategy, signal);
+      const result = await contextManager.compact(messages, strategy, signal, compactionOptions);
 
       this.conversation.replaceMessages(result.messages);
       await this.saveHistory();

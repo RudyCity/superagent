@@ -5,6 +5,7 @@ import {
   CompactionStrategy,
   CompactionResult,
   CompactionContext,
+  CompactionOptions,
 } from "./CompactionStrategy.js";
 import { SummarizationStrategy } from "./strategies/SummarizationStrategy.js";
 import { PruningStrategy } from "./strategies/PruningStrategy.js";
@@ -159,7 +160,8 @@ export class ContextManager {
   async compact(
     messages: Message[],
     strategy?: CompactionStrategy,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    options?: Partial<CompactionOptions>
   ): Promise<CompactionResult> {
     this.setState("CHECKING");
     this.autoPinKeyMessages(messages);
@@ -178,9 +180,11 @@ export class ContextManager {
       this.emit("compaction:start", { strategy: selectedStrategy.name });
 
       const result = await selectedStrategy.execute(messages, {
-        tokenBudget: this.calculateThreshold(),
-        pinnedMessageIds: new Set(this.pinnedMessages.keys()),
-        abortSignal,
+        tokenBudget: options?.tokenBudget ?? this.calculateThreshold(),
+        pinnedMessageIds: options?.pinnedMessageIds ?? new Set(this.pinnedMessages.keys()),
+        byteBudget: options?.byteBudget,
+        preserveRecent: options?.preserveRecent,
+        abortSignal: options?.abortSignal ?? abortSignal,
       });
 
       this.setState("VALIDATING");

@@ -42,6 +42,42 @@ export class PruningStrategy implements CompactionStrategy {
       }
     }
 
+    // Enforce byte budget: reduce preserved messages/truncate contents if they exceed byte budget
+    const byteBudget = options.byteBudget || 0;
+    if (byteBudget > 0) {
+      let currentBytes = Buffer.byteLength(JSON.stringify(toKeep), "utf-8");
+
+      // First, truncate very large fields within toKeep message objects to avoid throwing away everything.
+      if (currentBytes > byteBudget) {
+        for (const msg of toKeep) {
+          if (typeof msg.content === "string" && msg.content.length > 50000) {
+            msg.content = msg.content.slice(0, 50000) + "\n\n[... TRUNCATED DUE TO PAYLOAD SIZE LIMITS ...]";
+          } else if (Array.isArray(msg.content)) {
+            for (const part of msg.content) {
+              if (part.type === "text" && part.text && part.text.length > 50000) {
+                part.text = part.text.slice(0, 50000) + "\n\n[... TRUNCATED DUE TO PAYLOAD SIZE LIMITS ...]";
+              }
+            }
+          }
+          if (msg.toolResults) {
+            for (const tr of msg.toolResults) {
+              if (typeof tr.result === "string" && tr.result.length > 50000) {
+                tr.result = tr.result.slice(0, 50000) + "\n\n[... TRUNCATED DUE TO PAYLOAD SIZE LIMITS ...]";
+              }
+            }
+          }
+        }
+        currentBytes = Buffer.byteLength(JSON.stringify(toKeep), "utf-8");
+      }
+
+      // If still exceeding, prune older messages
+      while (currentBytes > byteBudget && toKeep.length > 0) {
+        const moved = toKeep.shift()!;
+        toPrune.push(moved);
+        currentBytes = Buffer.byteLength(JSON.stringify(toKeep), "utf-8");
+      }
+    }
+
     const emergencySummary = this.createEmergencySummary(toPrune);
 
     const summaryMessage: Message = {
