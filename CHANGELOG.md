@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.129] - 2026-07-06
+
+### Changed
+- **Header (Banner)**:
+  - Removed `COGNITIVE SYSTEM` text from the header title row, keeping only `v{version}`.
+
+---
+
 ## [1.2.127] - 2026-07-06
 
 ### Changed

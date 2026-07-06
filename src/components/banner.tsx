@@ -41,7 +41,7 @@ export function Banner() {
             <Text color="red" bold>S U P E R</Text>
             <Text color="white" bold>A G E N T</Text>
             <Text color="gray"> │ </Text>
-            <Text color="yellow" bold>COGNITIVE SYSTEM v{version}</Text>
+            <Text color="yellow" bold>v{version}</Text>
           </Box>
           <Box flexDirection="row">
             <Text dimColor>Type your query or </Text>
