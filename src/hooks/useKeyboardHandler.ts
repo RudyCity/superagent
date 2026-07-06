@@ -593,6 +593,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             else if (choice.includes("custom")) provider = "custom";
             else if (choice.includes("openai")) provider = "openai";
             else if (choice.includes("anthropic")) provider = "anthropic";
+            else if (choice.includes("gemini") || choice.includes("google")) provider = "gemini";
 
             addLine({
               type: "system",

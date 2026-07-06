@@ -301,7 +301,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
             "3. Anthropic",
             "4. Custom OpenAI Endpoint",
             "5. Custom Anthropic Endpoint",
-            "6. Not Set (Clear Override)",
+            "6. Google Gemini",
+            "7. Not Set (Clear Override)",
             "< Back"
           ]);
         }
@@ -407,7 +408,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         "3. Anthropic",
         "4. Custom OpenAI Endpoint",
         "5. Custom Anthropic Endpoint",
-        "6. Not Set (Clear Override)",
+        "6. Google Gemini",
+        "7. Not Set (Clear Override)",
         "< Back"
       ]);
       setWizardSelectedIndex(0);
@@ -469,7 +471,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         return;
       }
 
-      if (value.toLowerCase().includes("not set") || value === "5" || value === "6") {
+      if (value.toLowerCase().includes("not set") || value === "5" || value === "6" || value === "7") {
         const tier = data.tier || "";
         let targetLabel = "";
         let didClear = false;
@@ -541,6 +543,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         providerType = "custom";
       } else if ((choice.includes("custom") && choice.includes("anthropic")) || choice === "5") {
         providerType = "custom-anthropic";
+      } else if (choice.includes("gemini") || choice.includes("google") || choice === "6") {
+        providerType = "gemini";
       } else {
         addLine({
           type: "error",
@@ -590,7 +594,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           "3. Anthropic",
           "4. Custom OpenAI Endpoint",
           "5. Custom Anthropic Endpoint",
-          "6. Not Set (Clear Override)",
+          "6. Google Gemini",
+          "7. Not Set (Clear Override)",
           "< Back"
         ]);
         setWizardSelectedIndex(0);
@@ -689,6 +694,32 @@ export function useModelWizard(ctx: ModelWizardContext) {
           "claude-3-5-haiku-20241022",
           "claude-3-opus-20240229",
         ];
+      } else if (providerType === "gemini") {
+        initialModels = [
+          "gemini-2.5-flash",
+          "gemini-2.5-pro",
+          "gemini-2.0-flash",
+          "gemini-2.0-flash-lite",
+          "gemini-1.5-flash",
+          "gemini-1.5-pro",
+        ];
+        if (resolvedApiKey) {
+          setWizardIsLoadingModels(true);
+          fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${resolvedApiKey}`)
+            .then(async (res) => {
+              if (res.ok) {
+                const data = await res.json() as any;
+                if (data && Array.isArray(data.models)) {
+                  const modelsList = data.models.map((m: any) => m.name.replace(/^models\//, ""));
+                  const opts = [...modelsList, "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
+                }
+              }
+            })
+            .catch(() => {})
+            .finally(() => setWizardIsLoadingModels(false));
+        }
       } else if (providerType === "custom-anthropic") {
         initialModels = [
           "claude-3-5-sonnet-20241022",
@@ -941,14 +972,32 @@ export function useModelWizard(ctx: ModelWizardContext) {
               .catch(() => {})
               .finally(() => setWizardIsLoadingModels(false));
           }
-        } else if (providerType === "anthropic") {
+        } else if (providerType === "gemini") {
           initialModels = [
-            "claude-opus-4-5",
-            "claude-sonnet-4-5",
-            "claude-3-5-sonnet-20241022",
-            "claude-3-5-haiku-20241022",
-            "claude-3-opus-20240229",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
           ];
+          if (apiKey) {
+            setWizardIsLoadingModels(true);
+            fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
+              .then(async (res) => {
+                if (res.ok) {
+                  const data = await res.json() as any;
+                  if (data && Array.isArray(data.models)) {
+                    const modelsList = data.models.map((m: any) => m.name.replace(/^models\//, ""));
+                    const opts = [...modelsList, "< Back"];
+                    setWizardOptions(opts);
+                    setWizardAllOptions?.(opts);
+                  }
+                }
+              })
+              .catch(() => {})
+              .finally(() => setWizardIsLoadingModels(false));
+          }
         } else if (providerType === "custom-anthropic") {
           initialModels = [
             "claude-3-5-sonnet-20241022",
@@ -1270,7 +1319,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         "3. Anthropic",
         "4. Custom OpenAI Endpoint",
         "5. Custom Anthropic Endpoint",
-        "6. Not Set (Clear Override)",
+        "6. Google Gemini",
+        "7. Not Set (Clear Override)",
         "< Back"
       ]);
       setWizardSelectedIndex(0);
@@ -1290,7 +1340,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
         return;
       }
 
-      if (value.toLowerCase().includes("not set") || value === "5" || value === "6") {
+      if (value.toLowerCase().includes("not set") || value === "5" || value === "6" || value === "7") {
         const tier = data.tier || "";
         const presetModels: Record<string, string> = data.presetModels ? JSON.parse(data.presetModels) : {};
         if (tier === "master") {
@@ -1351,6 +1401,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         providerType = "custom";
       } else if ((choice.includes("custom") && choice.includes("anthropic")) || choice === "5") {
         providerType = "custom-anthropic";
+      } else if (choice.includes("gemini") || choice.includes("google") || choice === "6") {
+        providerType = "gemini";
       } else {
         addLine({
           type: "error",
@@ -1392,7 +1444,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           "3. Anthropic",
           "4. Custom OpenAI Endpoint",
           "5. Custom Anthropic Endpoint",
-          "6. Not Set (Clear Override)",
+          "6. Google Gemini",
+          "7. Not Set (Clear Override)",
           "< Back"
         ]);
         setWizardSelectedIndex(0);
@@ -1485,14 +1538,32 @@ export function useModelWizard(ctx: ModelWizardContext) {
             .catch(() => {})
             .finally(() => setWizardIsLoadingModels(false));
         }
-      } else if (providerType === "anthropic") {
+      } else if (providerType === "gemini") {
         initialModels = [
-          "claude-opus-4-5",
-          "claude-sonnet-4-5",
-          "claude-3-5-sonnet-20241022",
-          "claude-3-5-haiku-20241022",
-          "claude-3-opus-20240229",
+          "gemini-2.5-flash",
+          "gemini-2.5-pro",
+          "gemini-2.0-flash",
+          "gemini-2.0-flash-lite",
+          "gemini-1.5-flash",
+          "gemini-1.5-pro",
         ];
+        if (resolvedApiKey) {
+          setWizardIsLoadingModels(true);
+          fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${resolvedApiKey}`)
+            .then(async (res) => {
+              if (res.ok) {
+                const data = await res.json() as any;
+                if (data && Array.isArray(data.models)) {
+                  const modelsList = data.models.map((m: any) => m.name.replace(/^models\//, ""));
+                  const opts = [...modelsList, "< Back"];
+                  setWizardOptions(opts);
+                  setWizardAllOptions?.(opts);
+                }
+              }
+            })
+            .catch(() => {})
+            .finally(() => setWizardIsLoadingModels(false));
+        }
       } else if (providerType === "custom-anthropic") {
         initialModels = [
           "claude-3-5-sonnet-20241022",

@@ -389,7 +389,7 @@ describe("Model Wizard Back Navigation", () => {
 
     // Simulate step 2 active with tier=master and existing preset models
     activeWizard = { type: "model", step: 2, data: { tier: "master", presetModels: JSON.stringify({ MODEL_MULTI_MASTER: "openrouter:google/gemini-2.5-flash", MODEL: "test-model" }) } };
-    await capturedHandler("6. Not Set (Clear Override)", 2, { tier: "master", presetModels: JSON.stringify({ MODEL_MULTI_MASTER: "openrouter:google/gemini-2.5-flash", MODEL: "test-model" }) });
+    await capturedHandler("7. Not Set (Clear Override)", 2, { tier: "master", presetModels: JSON.stringify({ MODEL_MULTI_MASTER: "openrouter:google/gemini-2.5-flash", MODEL: "test-model" }) });
 
     // Should close wizard
     expect(activeWizard).toBeNull();
@@ -420,7 +420,7 @@ describe("Model Wizard Back Navigation", () => {
     const { unmount } = render(React.createElement(TestComponent));
 
     activeWizard = { type: "model", step: 2, data: { tier: "all", presetModels: JSON.stringify(presetModels) } };
-    await capturedHandler("6. Not Set (Clear Override)", 2, { tier: "all", presetModels: JSON.stringify(presetModels) });
+    await capturedHandler("7. Not Set (Clear Override)", 2, { tier: "all", presetModels: JSON.stringify(presetModels) });
 
     expect(activeWizard).toBeNull();
     expect(addedLines.some(l => l.content.includes("All Tiers model override cleared"))).toBe(true);
@@ -446,7 +446,7 @@ describe("Model Wizard Back Navigation", () => {
       step: 23,
       data: { tier: "master", presetModels: JSON.stringify(presetModels), presetName: "test" },
     };
-    await capturedHandler("6. Not Set (Clear Override)", 23, activeWizard.data);
+    await capturedHandler("7. Not Set (Clear Override)", 23, activeWizard.data);
 
     // Should navigate back to step 22 (tier selection for preset)
     expect(activeWizard).not.toBeNull();
@@ -480,7 +480,7 @@ describe("Model Wizard Back Navigation", () => {
 
     // Step 2 should now be active
     expect(activeWizard.step).toBe(2);
-    expect(wizardOptions).toContain("6. Not Set (Clear Override)");
+    expect(wizardOptions).toContain("7. Not Set (Clear Override)");
     expect(wizardOptions).toContain("< Back");
 
     unmount();
