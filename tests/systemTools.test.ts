@@ -359,6 +359,66 @@ describe("System Tools Optimizations", () => {
         await fs.unlink(tempFilePath).catch(() => {});
       }
     });
+
+    it("should reject out of bounds line ranges in multi_replace_file_content", async () => {
+      const tempFilePath = path.resolve(__dirname, "temp-multi-oob.txt");
+      await fs.writeFile(tempFilePath, "foo\nbar\nfoo\n", "utf-8");
+
+      try {
+        // startLine < 1
+        const result1 = await multiReplaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            chunks: [
+              {
+                startLine: 0,
+                endLine: 2,
+                targetContent: "bar",
+                replacementContent: "new-bar"
+              }
+            ]
+          },
+          process.cwd()
+        );
+        expect(result1).toContain("Error: Invalid line range");
+
+        // endLine > lines.length
+        const result2 = await multiReplaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            chunks: [
+              {
+                startLine: 2,
+                endLine: 5,
+                targetContent: "bar",
+                replacementContent: "new-bar"
+              }
+            ]
+          },
+          process.cwd()
+        );
+        expect(result2).toContain("Error: Invalid line range");
+
+        // endLine < startLine
+        const result3 = await multiReplaceFileContentTool.execute(
+          {
+            filePath: tempFilePath,
+            chunks: [
+              {
+                startLine: 2,
+                endLine: 1,
+                targetContent: "bar",
+                replacementContent: "new-bar"
+              }
+            ]
+          },
+          process.cwd()
+        );
+        expect(result3).toContain("Error: Invalid line range");
+      } finally {
+        await fs.unlink(tempFilePath).catch(() => {});
+      }
+    });
   });
 });
 

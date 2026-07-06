@@ -122,7 +122,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 
 # LOGIC GATES
 if spawning_subagent:
-    CALL manage_tasks() or manage_plan() to document task/plan FIRST.
+    CALL manage_tasks(action: 'add') or manage_plan(action: 'create') to document task/plan FIRST.
 
 if decision_point:
     CALL ask_question()
@@ -132,7 +132,7 @@ if decision_point:
 # WORKFLOW
 1. SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills using file-reading tools. Pass skill paths to Subagents.
 2. RESEARCH: Spawn 'researcher' to map codebase within worktree.
-3. TASK_UPDATE: Mark task in-progress via 'manage_tasks' (status: '/').
+3. TASK_UPDATE: Mark task in-progress via 'manage_tasks' (action: 'update', index: <1-based_index>, status: '/').
 4. IMPLEMENTATION: Delegate coding to 'coder' Subagents.
 5. SELF_VERIFY (MANDATORY):
     - Build: Run 'npm run build'. Fix compile/TS errors.

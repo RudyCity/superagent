@@ -823,8 +823,19 @@ export const multiReplaceFileContentTool: Tool = {
       if (!targetContent) {
         return "Error: targetContent in chunk cannot be empty.";
       }
-      const sl = Math.max(1, Number(c.startLine ?? c.StartLine ?? 0));
-      const el = Math.max(sl, Number(c.endLine ?? c.EndLine ?? 0));
+      const startLineVal = c.startLine ?? c.StartLine;
+      const endLineVal = c.endLine ?? c.EndLine;
+      if (startLineVal === undefined || startLineVal === null) {
+        return "Error: Missing required parameter 'startLine' in chunk.";
+      }
+      if (endLineVal === undefined || endLineVal === null) {
+        return "Error: Missing required parameter 'endLine' in chunk.";
+      }
+      const sl = Number(startLineVal);
+      const el = Number(endLineVal);
+      if (isNaN(sl) || isNaN(el)) {
+        return "Error: 'startLine' and 'endLine' must be valid numbers in chunk.";
+      }
       const allowMultiple = !!(c.allowMultiple ?? c.AllowMultiple);
       chunks.push({
         targetContent,

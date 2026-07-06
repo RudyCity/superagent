@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.142] - 2026-07-06
+
+### Fixed
+- **Multi-Replace Line Range Rejection**:
+  - Updated `multi_replace_file_content` to reject out-of-bounds startLine or endLine parameters in chunks instead of silently coercing them.
+  - Added robust validation and unit tests to verify out-of-bounds rejection behavior.
+
+### Changed
+- **Explicit Task Management Prompts**:
+  - Updated system prompt guides for task tracking to explicitly specify action parameters, index structure, and valid status values for the `manage_tasks` tool.
+
+---
+
 ## [1.2.141] - 2026-07-06
 
 ### Changed
