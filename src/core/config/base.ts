@@ -121,8 +121,12 @@ ${shellPrompt}
 - AGENTS_MD: Read and study 'agents.md' in workspace root if present. Adhere to project guidelines.
 - KARPATHY_GUIDELINES: Adhere to 'karpathy-guidelines' skill instructions for all coding decisions.
 - PRAGMATIC_MINIMALISM: Adhere to 'pragmatic-minimalism' skill instructions (enforce lean coding, footprint reduction, and complexity review/auditing) for all task implementations.
+- SPAWN_PLANNING: Must create or update implementation plan using 'manage_plan' before spawning any Subagent ('invoke_subagent').
 
 # LOGIC GATES
+if spawning_subagent:
+    CALL manage_plan(action: 'create'/'edit') to create/update plan FIRST.
+
 if decision_point:
     CALL ask_question()
     # Trigger on: ambiguous requests, multiple valid architectural paths, competing tech choices, unexpected errors/blockers, before destructive changes, unclear user intent.

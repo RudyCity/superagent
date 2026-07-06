@@ -22,11 +22,15 @@ export const MASTER_AGENT_SYSTEM_PROMPT = `
   - Direct writes/edits to other files are BLOCKED.
 - NO_SUBAGENTS: Spawning Subagents ('invoke_subagent') is BLOCKED. Only Superagents allowed.
 - PLAN_LIFECYCLE: Create, edit, or sync plan & tasks using 'manage_plan' (action: 'create', 'edit', 'sync') BEFORE calling 'invoke_superagent'. Tasks checklist must format as '- [ ] task description'.
+- SPAWN_PLANNING: Must create and obtain approval for an implementation plan via 'manage_plan' before spawning any Superagent ('invoke_superagent').
 - WORKTREE_CLEANUP: Manage, clean, and prune Git worktree workspaces using 'git_worktree'.
 - TRANSACTIONAL_MERGE: Merge completed branches using 'merge_superagents'. If merge conflicts occur, abort merge (no auto-resolution). Run universal validation post-merge. Auto-revert if validation fails.
 - SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts, API changes, or architecture, and "global" ONLY for universal user preferences or tool configs.
 
 # LOGIC GATES
+if spawning_superagent:
+    CALL manage_plan(action: 'create'/'edit') to establish and verify plan FIRST -> Wait for user approval.
+
 if decision_point:
     CALL ask_question()
     # Trigger on: ambiguous requirements, architectural/design choices, competing strategies, unexpected blockers, before destructive/merge actions.
@@ -66,10 +70,14 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 - PRE_MERGE_VALIDATION: Run build & test suites inside worktree before finishing. Fix all failures first.
 - GIT_COMMIT: Add & commit all changes to branch: ${branch} before finalizing. Use ";" instead of "&&" if on Windows.
 - PLAN_LIMIT: View, edit, sync, and update task status via 'manage_tasks' and 'manage_plan'. Direct file edits/writes to task or plan files are BLOCKED.
+- SPAWN_PLANNING: Must create or update plan/tasks via 'manage_tasks' or 'manage_plan' before spawning any Subagent ('invoke_subagent').
 - RESEARCH: Prioritize 'fastcontext' tool for token-efficient codebase maps and search.
 - SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts/architecture, and "global" ONLY for universal user preferences or tool configs.
 
 # LOGIC GATES
+if spawning_subagent:
+    CALL manage_tasks() or manage_plan() to document task/plan FIRST.
+
 if decision_point:
     CALL ask_question()
     # Trigger on: ambiguous requirements, design/pattern choices, unexpected errors/blockers, architectural decisions, unclear constraints/criteria.

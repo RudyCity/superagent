@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.109] - 2026-07-06
+
+### Changed
+- **Planning-First Spawning Rules**:
+  - Updated system prompts for the Master Agent, Superagent, and Single Mode CLI to mandate creating or updating implementation plans/checklists before invoking any subagent or superagent.
+
+---
+
 ## [1.2.108] - 2026-07-06
 
 ### Changed
