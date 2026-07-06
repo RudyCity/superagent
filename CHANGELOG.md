@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.130] - 2026-07-06
+
+### Changed
+- **Header (Banner)**:
+  - Replaced the pipe separator (`│`) with a bullet point (`●`).
+
+---
+
 ## [1.2.129] - 2026-07-06
 
 ### Changed
