@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.110] - 2026-07-06
+
+### Added
+- **Automatic Context-to-Image Conversion**:
+  - Implemented automatic text-to-image conversion for prompt context (user prompts and tool results) exceeding a configured character threshold.
+  - Slices text blocks into 150-line pages (up to 3 pages) and renders them using PowerShell (.NET `System.Drawing`) on Windows or Python (`Pillow`) on macOS/Linux.
+  - Replaces large tool results with placeholders and appends the rendered images in immediate subsequent user messages to satisfy provider API protocols.
+  - Added new configuration settings: `autoVisionTokenSaving` and `visionTokenSavingThreshold`.
+  - Added unit test suite in `tests/visionTokenSaving.test.ts`.
+
+---
+
 ## [1.2.109] - 2026-07-06
 
 ### Changed

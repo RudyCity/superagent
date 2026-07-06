@@ -2,6 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
+import { renderTextToImageBase64, sliceTextIntoPages } from "../utils/textToImage.js";
 import fs from "fs";
 import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache } from "./config.js";
 import { Conversation } from "./conversation.js";
@@ -2529,13 +2530,47 @@ for (const tc of toolCalls) {
       // Default to true to keep original behavior if model config loading/resolution fails
     }
 
+    const settings = getSettings();
+    const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
+    const threshold = settings.visionTokenSavingThreshold ?? 4000;
+
     for (const m of this.conversation.getMessages()) {
       if (m.role === "system") continue;
 
       if (m.role === "user") {
-        // Map MessageContent (string | Part[]) to Vercel AI SDK CoreMessage format
-        const sdkContent: string | Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> =
-          typeof m.content === "string"
+        let sdkContent: string | Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = "";
+        const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
+
+        if (useVisionTokenSaving && rawContent.length > threshold) {
+          try {
+            const pages = sliceTextIntoPages(rawContent);
+            const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
+              { type: "text", text: `[Content of user message rendered as images to save tokens]:` }
+            ];
+            for (const page of pages) {
+              const base64 = renderTextToImageBase64(page);
+              contentParts.push({ type: "image", image: base64, mimeType: "image/png" });
+            }
+            sdkContent = contentParts;
+          } catch (err: any) {
+            this.writeToLogFile("WARN", `Failed to automatically convert user message to image: ${err.message}. Falling back to text.`);
+            sdkContent = typeof m.content === "string"
+              ? m.content
+              : (m.content as any[]).map((p: any) => {
+                  if (p.type === "image") {
+                    if (supportsVision) {
+                      return { type: "image" as const, image: p.image, mimeType: p.mimeType };
+                    }
+                    return {
+                      type: "text" as const,
+                      text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/png"};base64,${p.image}]`
+                    };
+                  }
+                  return { type: "text" as const, text: p.text };
+                });
+          }
+        } else {
+          sdkContent = typeof m.content === "string"
             ? m.content
             : (m.content as any[]).map((p: any) => {
                 if (p.type === "image") {
@@ -2549,6 +2584,8 @@ for (const tc of toolCalls) {
                 }
                 return { type: "text" as const, text: p.text };
               });
+        }
+
         coreMessages.push({
           role: "user",
           content: sdkContent as any,
@@ -2597,10 +2634,34 @@ for (const tc of toolCalls) {
           // Reconstruct XML responses for prompt-based tool calling
           const results = m.toolResults || [];
           const resultText = results.map(tr => `<tool_response name="${tr.name}">\n${tr.result}\n</tool_response>`).join("\n");
-          coreMessages.push({
-            role: "user",
-            content: resultText,
-          });
+          
+          if (useVisionTokenSaving && resultText.length > threshold) {
+            try {
+              const pages = sliceTextIntoPages(resultText);
+              const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
+                { type: "text", text: `[Tool responses rendered as images to save tokens]:` }
+              ];
+              for (const page of pages) {
+                const base64 = renderTextToImageBase64(page);
+                contentParts.push({ type: "image", image: base64, mimeType: "image/png" });
+              }
+              coreMessages.push({
+                role: "user",
+                content: contentParts as any,
+              });
+            } catch (err: any) {
+              this.writeToLogFile("WARN", `Failed to automatically convert XML tool results to image: ${err.message}. Falling back to text.`);
+              coreMessages.push({
+                role: "user",
+                content: resultText,
+              });
+            }
+          } else {
+            coreMessages.push({
+              role: "user",
+              content: resultText,
+            });
+          }
           continue;
         }
 
@@ -2632,19 +2693,64 @@ for (const tc of toolCalls) {
         }> = [];
 
         const results = m.toolResults || [];
+        let pendingImagesToAppend: Array<{ toolName: string; base64List: string[] }> = [];
+
         for (const tr of results) {
-          contentParts.push({
-            type: "tool-result",
-            toolCallId: tr.toolCallId,
-            toolName: tr.name,
-            result: tr.result,
-          });
+          const resultStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
+          if (useVisionTokenSaving && resultStr.length > threshold) {
+            try {
+              this.writeToLogFile("INFO", `Automatically converting tool result of "${tr.name}" (size ${resultStr.length} chars) to image.`);
+              const pages = sliceTextIntoPages(resultStr);
+              const base64List: string[] = [];
+              for (const page of pages) {
+                const base64 = renderTextToImageBase64(page);
+                base64List.push(base64);
+              }
+              
+              pendingImagesToAppend.push({ toolName: tr.name, base64List });
+              contentParts.push({
+                type: "tool-result",
+                toolCallId: tr.toolCallId,
+                toolName: tr.name,
+                result: `[Tool result for "${tr.name}" rendered as image in the subsequent message to save tokens]`,
+              });
+            } catch (err: any) {
+              this.writeToLogFile("WARN", `Failed to automatically convert native tool result of "${tr.name}" to image: ${err.message}. Falling back to text.`);
+              contentParts.push({
+                type: "tool-result",
+                toolCallId: tr.toolCallId,
+                toolName: tr.name,
+                result: tr.result,
+              });
+            }
+          } else {
+            contentParts.push({
+              type: "tool-result",
+              toolCallId: tr.toolCallId,
+              toolName: tr.name,
+              result: tr.result,
+            });
+          }
         }
 
         coreMessages.push({
           role: "tool",
           content: contentParts,
         });
+
+        if (pendingImagesToAppend.length > 0) {
+          const appendParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [];
+          for (const item of pendingImagesToAppend) {
+            appendParts.push({ type: "text", text: `[Tool output for "${item.toolName}" rendered as image]:` });
+            for (const base64 of item.base64List) {
+              appendParts.push({ type: "image", image: base64, mimeType: "image/png" });
+            }
+          }
+          coreMessages.push({
+            role: "user",
+            content: appendParts as any,
+          });
+        }
       }
     }
 

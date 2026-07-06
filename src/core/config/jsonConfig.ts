@@ -57,6 +57,8 @@ export interface SystemSettings {
   focus?: "off" | "low" | "medium" | "high" | "xhigh" | "max" | "custom";
   focusBudget?: number;
   forcePromptBasedToolCalling?: boolean;
+  autoVisionTokenSaving?: boolean;
+  visionTokenSavingThreshold?: number;
 }
 
 export interface McpServerConfig {
@@ -97,6 +99,8 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     focus: "off",
     focusBudget: 4000,
     forcePromptBasedToolCalling: false,
+    autoVisionTokenSaving: true,
+    visionTokenSavingThreshold: 4000,
   },
   trustedDirectories: [],
   providers: [
@@ -741,6 +745,8 @@ export function getSettings(): SystemSettings {
     maxProcsVisible: s.maxProcsVisible ?? 3,
     focus: s.focus ?? "off",
     focusBudget: s.focusBudget ?? 4000,
+    autoVisionTokenSaving: s.autoVisionTokenSaving ?? true,
+    visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? 4000,
   };
 }
 
