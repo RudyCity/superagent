@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.147] - 2026-07-07
+
+### Changed
+- **Limit Session History List in Resume Wizard**:
+  - Limited the number of displayed history sessions to the 10 newest in the `/resume` command and wizard dialog.
+  - Sliced the session lists in `useKeyboardHandler.ts`, `useDashboardWizard.ts`, and `dashboardSuggestions.ts` to ensure consistent indexing and select operations.
+
+---
+
 ## [1.2.146] - 2026-07-07
 
 ### Changed

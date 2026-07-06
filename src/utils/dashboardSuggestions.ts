@@ -131,7 +131,7 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
     }
     
     if (mainCommand === "/resume") {
-      const sessionsList = listHistorySessions(true);
+      const sessionsList = listHistorySessions(true).slice(0, 10);
       const possibilities = sessionsList.map((s, idx) => `/resume ${idx + 1}`);
       return filterSuggestions(possibilities, query);
     }

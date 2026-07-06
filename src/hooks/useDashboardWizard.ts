@@ -1524,7 +1524,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           if (val && val.type === "goal") return;
           setActiveWizard(val);
           if (val && val.type === "resume") {
-            setCachedSessions(listHistorySessions(true));
+            setCachedSessions(listHistorySessions(true).slice(0, 10));
           }
         },
         setWizardOptions,

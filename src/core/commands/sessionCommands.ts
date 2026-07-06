@@ -17,7 +17,7 @@ export const resumeCommand: SlashCommand = {
   description: "Resume a conversation session from history via wizard dialog",
   execute(args, ctx) {
     const isMulti = ctx.agent?.isMultiAgent || false;
-    const sessions = listHistorySessions(isMulti);
+    const sessions = listHistorySessions(isMulti).slice(0, 10);
     const now = Date.now();
     if (sessions.length === 0) {
       ctx.addLine({ type: "system", content: "No previous sessions found. Start a conversation first!", timestamp: now });

@@ -1269,7 +1269,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.return) {
-          const sessions = listHistorySessions();
+          const sessions = listHistorySessions().slice(0, 10);
           const chosen = sessions[wizardSelectedIndex];
           if (!chosen) return;
           const now = Date.now();
