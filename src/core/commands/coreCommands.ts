@@ -183,6 +183,8 @@ export const helpCommand: SlashCommand = {
         "  /setting-tencentdb <on|off|status|show-bg-procs|hide-bg-procs> [gatewayUrl] - Configure TencentDB Memory Gateway",
         "  /setting-focus <off|low|medium|high|xhigh|max|custom> - Set reasoning focus depth level (alias: /focus)",
         "  /setting-focus-budget <number> - Set reasoning focus custom budget tokens",
+        "  /setting-auto-vision <on|off> - Enable or disable automatic vision token saving",
+        "  /setting-vision-threshold <number> - Set characters threshold for auto vision token saving",
         "  /memory   - Manage and inspect TencentDB long-term memory",
         "              Usage: /memory [status|list|search <query>|add <id> <val>|delete <id>|help]",
         "  /help     - Show this help",

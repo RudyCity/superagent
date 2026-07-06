@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.114] - 2026-07-06
+
+### Added
+- **Help and Autocomplete for Vision Settings**:
+  - Updated the `/help` command output to describe `/setting-auto-vision` and `/setting-vision-threshold`.
+  - Added autocomplete support (with subcommands) for both slash settings inside `dashboardSuggestions.ts`.
+  - Added unit tests for new autocomplete suggestions inside `tests/slashCommands.test.ts`.
+
+---
+
 ## [1.2.113] - 2026-07-06
 
 ### Added

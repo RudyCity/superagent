@@ -10,6 +10,7 @@ vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { Agent } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
+import { getDashboardSuggestions } from "../src/utils/dashboardSuggestions.js";
 import { getModelConfigPath, ensureGlobalConfigDir } from "../src/core/config/paths.js";
 import { clearModelConfigCache, getSettings } from "../src/core/config/jsonConfig.js";
 import { execa } from "execa";
@@ -692,6 +693,22 @@ describe("Slash Commands: /settings & /setting-*", () => {
     handleSlashCommand("/setting-vision-threshold 8000", mockCtx as any);
     expect(getSettings().visionTokenSavingThreshold).toBe(8000);
     expect(addedLines[addedLines.length - 1].content).toContain("Vision token saving threshold set to: 8000 chars");
+  });
+
+  it("should return autocomplete suggestions for setting-auto-vision and setting-vision-threshold", () => {
+    const s1 = getDashboardSuggestions("/setting-auto");
+    expect(s1).toContain("/setting-auto-vision");
+
+    const s2 = getDashboardSuggestions("/setting-auto-vision ");
+    expect(s2).toContain("/setting-auto-vision on");
+    expect(s2).toContain("/setting-auto-vision off");
+
+    const s3 = getDashboardSuggestions("/setting-vision");
+    expect(s3).toContain("/setting-vision-threshold");
+
+    const s4 = getDashboardSuggestions("/setting-vision-threshold ");
+    expect(s4).toContain("/setting-vision-threshold 4000");
+    expect(s4).toContain("/setting-vision-threshold 8000");
   });
 });
 

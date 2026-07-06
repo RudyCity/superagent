@@ -43,6 +43,8 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-tencentdb": "Configure TencentDB memory strategy and gateway URL",
   "/setting-focus": "Set reasoning focus depth level (alias: /focus)",
   "/setting-focus-budget": "Set reasoning focus custom budget tokens",
+  "/setting-auto-vision": "Enable or disable automatic vision token saving (on or off)",
+  "/setting-vision-threshold": "Set characters threshold for auto vision token saving",
   "/memory": "Manage and inspect TencentDB long-term memory",
 };
 
@@ -198,6 +200,23 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
         `${parts[0]} xhigh`,
         `${parts[0]} max`,
         `${parts[0]} custom`,
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/setting-auto-vision") {
+      const possibilities = [
+        "/setting-auto-vision on",
+        "/setting-auto-vision off",
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/setting-vision-threshold") {
+      const possibilities = [
+        "/setting-vision-threshold 4000",
+        "/setting-vision-threshold 8000",
+        "/setting-vision-threshold 0",
       ];
       return filterSuggestions(possibilities, query);
     }
