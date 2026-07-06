@@ -1478,6 +1478,47 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           }
         }
 
+        let prependSystemMessage: any = null;
+        let prependSystemAssistantMessage: any = null;
+
+        const modelInstance = this.getModel();
+        const modelName = modelInstance ? modelInstance.modelId : "";
+        const supportsVision = this.modelSupportsVision(modelName);
+        const settings = getSettings();
+        const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
+        const threshold = settings.visionTokenSavingThreshold ?? 4000;
+
+        const allowSystemPromptImage = !process.env.VITEST || process.env.SUPERAGENT_TEST_SYSTEM_PROMPT_IMAGE === "true";
+
+        if (useVisionTokenSaving && finalSystemPrompt.length > threshold && allowSystemPromptImage) {
+          try {
+            this.writeToLogFile("INFO", `Automatically converting system prompt (size ${finalSystemPrompt.length} chars) to image.`);
+            const pages = sliceTextIntoPages(finalSystemPrompt);
+            const base64List: string[] = [];
+            for (const page of pages) {
+              const base64 = renderTextToImageBase64(page);
+              base64List.push(base64);
+            }
+            
+            prependSystemMessage = {
+              role: "user",
+              content: [
+                { type: "text", text: "[System instructions rendered as images to save tokens]:" },
+                ...base64List.map(base64 => ({ type: "image" as const, image: base64, mimeType: "image/png" }))
+              ]
+            };
+
+            prependSystemAssistantMessage = {
+              role: "assistant",
+              content: "I have read the system instructions rendered as images and will strictly follow all rules and guidelines."
+            };
+
+            finalSystemPrompt = "[System instructions are rendered as images in the first user message to save tokens]";
+          } catch (err: any) {
+            this.writeToLogFile("WARN", `Failed to automatically convert system prompt to image: ${err.message}. Falling back to text.`);
+          }
+        }
+
         let textContent = "";
         let reasoningContent = ""; // DeepSeek R1 thinking tokens — displayed in UI but NOT stored in history
         const toolCalls: ToolCall[] = [];
@@ -1501,10 +1542,15 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               const isTest = !!process.env.VITEST;
               const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
 
+              const callMessages = [...messages];
+              if (prependSystemMessage && prependSystemAssistantMessage) {
+                callMessages.unshift(prependSystemMessage, prependSystemAssistantMessage);
+              }
+
               const result = await generateText({
                 model: modelInstance,
                 system: finalSystemPrompt,
-                messages,
+                messages: callMessages,
                 ...(supportsNativeTools && {
                   tools: Object.fromEntries(
                     toolDefs.map((t) => [
@@ -1704,10 +1750,15 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 };
               }
 
+              const callMessages = [...messages];
+              if (prependSystemMessage && prependSystemAssistantMessage) {
+                callMessages.unshift(prependSystemMessage, prependSystemAssistantMessage);
+              }
+
               const result = streamText({
                 model: modelInstance,
                 system: finalSystemPrompt,
-                messages,
+                messages: callMessages,
                 ...(supportsNativeTools && {
                   tools: Object.fromEntries(
                     toolDefs.map((t) => [

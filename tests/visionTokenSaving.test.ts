@@ -40,6 +40,35 @@ vi.mock("../src/utils/textToImage.js", () => {
   };
 });
 
+let lastGenerateTextOptions: any = null;
+vi.mock("ai", async (importOriginal) => {
+  const original = await importOriginal<any>();
+  return {
+    ...original,
+    generateText: vi.fn(async (options: any) => {
+      lastGenerateTextOptions = options;
+      return {
+        text: "Mocked response",
+        toolCalls: [],
+        usage: { promptTokens: 10, completionTokens: 2 }
+      };
+    }),
+    streamText: vi.fn((options: any) => {
+      lastGenerateTextOptions = options;
+      const mockStream = (async function* () {
+        yield { type: "text-delta", textDelta: "Mocked stream response" };
+      })();
+      return {
+        fullStream: mockStream,
+        usage: Promise.resolve({
+          promptTokens: 10,
+          completionTokens: 2
+        })
+      };
+    })
+  };
+});
+
 describe("Agent - Vision Token Saving Auto-Conversion", () => {
   beforeEach(() => {
     if (fs.existsSync(tempHome)) {
@@ -183,6 +212,44 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     expect(messages[0].role).toBe("user");
     expect(Array.isArray(messages[0].content)).toBe(true);
     expect(messages[0].content[1].type).toBe("image");
+  });
+
+  it("converts a large system prompt to image and prepends it to messages during execution", async () => {
+    process.env.SUPERAGENT_TEST_SYSTEM_PROMPT_IMAGE = "true";
+    try {
+      vi.mocked(configModule.getSettings).mockReturnValue({
+        autoVisionTokenSaving: true,
+        visionTokenSavingThreshold: 100, // Small threshold
+      });
+
+      const agent = new Agent(
+        vi.fn(),
+        vi.fn().mockResolvedValue(true),
+        vi.fn().mockResolvedValue("yes")
+      );
+      agent.tier = "master";
+      agent.planState = "APPROVED"; // skip planning to go straight to execution loop
+
+      await agent.sendMessage("hello");
+    } finally {
+      delete process.env.SUPERAGENT_TEST_SYSTEM_PROMPT_IMAGE;
+    }
+
+    // Check if generateText or streamText was called and captured options
+    expect(lastGenerateTextOptions).not.toBeNull();
+    // System parameter should be the placeholder
+    expect(lastGenerateTextOptions.system).toContain("rendered as images in the first user message");
+    
+    // Messages array should contain prepended user and assistant messages with the images
+    const msgs = lastGenerateTextOptions.messages;
+    expect(msgs.length).toBeGreaterThanOrEqual(3); // prepend user + prepend assistant + original user message
+    expect(msgs[0].role).toBe("user");
+    expect(msgs[0].content[0].text).toContain("System instructions rendered as images");
+    expect(msgs[0].content[1].type).toBe("image");
+    expect(msgs[0].content[1].image).toBe("MOCK_BASE64_IMAGE_DATA");
+
+    expect(msgs[1].role).toBe("assistant");
+    expect(msgs[1].content).toContain("read the system instructions rendered as images");
   });
 });
 
