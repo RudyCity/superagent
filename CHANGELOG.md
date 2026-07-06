@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.100] - 2026-07-06
+
+### Optimized
+- **CLI Startup Performance**: Restructured CLI entrypoint and lazy-loaded dependencies (React, Ink, App, MultiAgentDashboard, TrustPrompt) to improve startup performance. The help command (`--help` / `-h`) now executes instantly without parsing or evaluating heavy UI framework files.
+- **Lazy Initialization**: Shifted all runtime initialization operations (FastContext setup, TencentDB setup, MCP initialization) to be deferred until after the arguments have been parsed and the runner is ready to boot, saving startup overhead.
+- **CLI Execution Restructuring**: Moved CLI runner execution logic into `src/cliMain.tsx` to enable cleaner dynamic imports and modular boot execution.
+
+---
+
 ## [1.2.99] - 2026-07-06
 
 ### Added
