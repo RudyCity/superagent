@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.164] - 2026-07-07
+
+### Added
+- **Wait Action in manage_background_process**:
+  - Implemented a synchronous `wait` action in `manageBackgroundProcessTool` inside [shellTools.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/tools/shellTools.ts) to block and await a background process's completion.
+  - Added a `timeout` option to configure wait duration limits (defaulting to 10 minutes).
+  - Integrated `AbortSignal` listener support for wait cancellation.
+  - Documented the wait action inside the guidelines in [base.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/config/base.ts) and added a `BACKGROUND_WAIT` critical system prompt rule in [prompts.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/prompts.ts) so agents leverage the wait action instead of polling.
+  - Added a robust unit test verifying wait action timeout and completion behaviors.
+
+### Fixed
+- **Mock Background Task Check race condition**:
+  - Fixed a race condition in [state.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/tools/state.ts) where background task PID synchronization logic incorrectly marked mock background processes (pid 0) as exited with code `-1` under Vitest.
+
+---
+
 ## [1.2.163] - 2026-07-07
 
 ### Fixed
