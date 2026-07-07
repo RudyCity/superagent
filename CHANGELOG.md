@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.160] - 2026-07-07
+
+### Added
+- **AI Semantic Search in get_skills**:
+  - Implemented AI semantic filtering in the `get_skills` tool. It now sends candidate skills to the LLM to find semantically relevant matches, falling back to keyword substring matching if AI search fails or returns no results.
+
+### Fixed
+- **Flaky Mocks in MasterAgent Tests**:
+  - Isolated mock counters (`genCallCount` and `streamCallCount`) in `tests/masterAgentWorkflow.test.ts` to prevent test failures caused by background model calls.
+
+---
+
 ## [1.2.159] - 2026-07-07
 
 ### Changed

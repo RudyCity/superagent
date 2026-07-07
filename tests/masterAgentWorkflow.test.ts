@@ -95,11 +95,12 @@ describe("Master Agent Workflow & Guardrails", () => {
     agent.tier = "master";
     agent.planState = "APPROVED";
 
-    let callCount = 0;
+    let genCallCount = 0;
+    let streamCallCount = 0;
 
     vi.mocked(generateText).mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
+      genCallCount++;
+      if (genCallCount === 1) {
         return {
           text: "",
           toolCalls: [
@@ -122,8 +123,8 @@ describe("Master Agent Workflow & Guardrails", () => {
     });
 
     vi.mocked(streamText).mockImplementation(() => {
-      callCount++;
-      const current = callCount;
+      streamCallCount++;
+      const current = streamCallCount;
       return {
         fullStream: (async function* () {
           if (current === 1) {
@@ -171,11 +172,12 @@ describe("Master Agent Workflow & Guardrails", () => {
 
     const validPlanContent = `# My Plan\n## Proposed Changes\n- Invoke developer superagent\n## Verification Plan\n### Automated Tests\n- npm test\n### Manual Verification\n- verify dashboard UI`;
 
-    let callCount = 0;
+    let genCallCount = 0;
+    let streamCallCount = 0;
 
     vi.mocked(generateText).mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
+      genCallCount++;
+      if (genCallCount === 1) {
         return {
           text: "",
           toolCalls: [
@@ -198,8 +200,8 @@ describe("Master Agent Workflow & Guardrails", () => {
     });
 
     vi.mocked(streamText).mockImplementation(() => {
-      callCount++;
-      const current = callCount;
+      streamCallCount++;
+      const current = streamCallCount;
       return {
         fullStream: (async function* () {
           if (current === 1) {
@@ -243,11 +245,12 @@ describe("Master Agent Workflow & Guardrails", () => {
 
     const shallowPlanContent = "# Shallow Plan\n## Proposed Changes\n- Invoke developer";
 
-    let callCount = 0;
+    let genCallCount = 0;
+    let streamCallCount = 0;
 
     vi.mocked(generateText).mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
+      genCallCount++;
+      if (genCallCount === 1) {
         return {
           text: "",
           toolCalls: [
@@ -270,8 +273,8 @@ describe("Master Agent Workflow & Guardrails", () => {
     });
 
     vi.mocked(streamText).mockImplementation(() => {
-      callCount++;
-      const current = callCount;
+      streamCallCount++;
+      const current = streamCallCount;
       return {
         fullStream: (async function* () {
           if (current === 1) {
@@ -312,11 +315,12 @@ describe("Master Agent Workflow & Guardrails", () => {
       return String(filePath).endsWith("_implementation_plan.md");
     });
 
-    let callCount = 0;
+    let genCallCount = 0;
+    let streamCallCount = 0;
 
     vi.mocked(generateText).mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
+      genCallCount++;
+      if (genCallCount === 1) {
         return {
           text: "",
           toolCalls: [
@@ -343,8 +347,8 @@ describe("Master Agent Workflow & Guardrails", () => {
     });
 
     vi.mocked(streamText).mockImplementation(() => {
-      callCount++;
-      const current = callCount;
+      streamCallCount++;
+      const current = streamCallCount;
       return {
         fullStream: (async function* () {
           if (current === 1) {
@@ -397,10 +401,11 @@ describe("Master Agent Workflow & Guardrails", () => {
 
     const planWithoutSuperagent = `# My Plan\n## Proposed Changes\n- Modify local file directly\n## Verification Plan\n### Automated Tests\n- npm test\n### Manual Verification\n- test UI`;
 
-    let callCount = 0;
+    let genCallCount = 0;
+    let streamCallCount = 0;
     vi.mocked(generateText).mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
+      genCallCount++;
+      if (genCallCount === 1) {
         return {
           text: "",
           toolCalls: [
@@ -423,8 +428,8 @@ describe("Master Agent Workflow & Guardrails", () => {
     });
 
     vi.mocked(streamText).mockImplementation(() => {
-      callCount++;
-      const current = callCount;
+      streamCallCount++;
+      const current = streamCallCount;
       return {
         fullStream: (async function* () {
           if (current === 1) {
@@ -476,10 +481,11 @@ describe("Master Agent Workflow & Guardrails", () => {
 
     const taskWithoutSuperagent = `- [ ] Edit index.ts\n- [ ] Edit config.ts`;
 
-    let callCount = 0;
+    let genCallCount = 0;
+    let streamCallCount = 0;
     vi.mocked(generateText).mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
+      genCallCount++;
+      if (genCallCount === 1) {
         return {
           text: "",
           toolCalls: [
@@ -502,8 +508,8 @@ describe("Master Agent Workflow & Guardrails", () => {
     });
 
     vi.mocked(streamText).mockImplementation(() => {
-      callCount++;
-      const current = callCount;
+      streamCallCount++;
+      const current = streamCallCount;
       return {
         fullStream: (async function* () {
           if (current === 1) {
@@ -557,10 +563,11 @@ describe("Master Agent Workflow & Guardrails", () => {
 
     const taskWithSuperagent = `- [ ] Spawn superagent coder\n- [ ] Merge completed branch`;
 
-    let callCount = 0;
+    let genCallCount = 0;
+    let streamCallCount = 0;
     vi.mocked(generateText).mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
+      genCallCount++;
+      if (genCallCount === 1) {
         return {
           text: "",
           toolCalls: [
@@ -583,8 +590,8 @@ describe("Master Agent Workflow & Guardrails", () => {
     });
 
     vi.mocked(streamText).mockImplementation(() => {
-      callCount++;
-      const current = callCount;
+      streamCallCount++;
+      const current = streamCallCount;
       return {
         fullStream: (async function* () {
           if (current === 1) {

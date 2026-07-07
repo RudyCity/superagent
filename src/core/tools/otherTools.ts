@@ -1468,13 +1468,60 @@ export const getSkillsTool: Tool = {
       const skills = getInstalledSkills();
       const query = typeof args.query === "string" ? args.query.trim().toLowerCase() : undefined;
 
-      const filtered = query
-        ? skills.filter(
+      let filtered = skills;
+
+      if (query) {
+        let aiFiltered: any[] = [];
+        let aiSuccess = false;
+
+        try {
+          const { getModelInstance } = await import("../config.js");
+          const { generateText } = await import("ai");
+          const model = getModelInstance();
+
+          if (model) {
+            const candidates = skills.map((s, idx) => ({
+              index: idx,
+              name: s.name,
+              description: s.description,
+            }));
+
+            const prompt = `You are a developer assistant analyzing a list of available specialized skills.
+The user is searching for skills relevant to the query: "${args.query}".
+
+Here is the list of available skills:
+${JSON.stringify(candidates, null, 2)}
+
+Identify the indices of the skills that are semantically relevant to the user's query.
+Return ONLY a JSON array of numbers representing the relevant skill indices. Example: [0, 2]
+If no skills are relevant, return an empty array: []`;
+
+            const result = await generateText({
+              model,
+              prompt,
+            });
+
+            const filterResult = result.text;
+            const jsonMatch = filterResult.match(/\[\s*\d*\s*(?:,\s*\d*\s*)*\]/);
+            const indices: number[] = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+            aiFiltered = indices.map(idx => skills[idx]).filter(Boolean);
+            aiSuccess = true;
+          }
+        } catch (err) {
+          // Gracefully ignore AI search errors and fallback to keyword search
+        }
+
+        if (aiSuccess && aiFiltered.length > 0) {
+          filtered = aiFiltered;
+        } else {
+          // Fallback to substring matching if AI search failed or returned no results
+          filtered = skills.filter(
             (s) =>
               s.name.toLowerCase().includes(query) ||
               s.description.toLowerCase().includes(query)
-          )
-        : skills;
+          );
+        }
+      }
 
       if (filtered.length === 0) {
         if (query) {

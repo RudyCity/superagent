@@ -5,6 +5,14 @@ import { getSkillsTool } from "../src/core/tools/otherTools.js";
 vi.mock("../src/core/config.js", () => {
   return {
     getInstalledSkills: vi.fn(),
+    getModelInstance: vi.fn(),
+  };
+});
+
+// Mock ai SDK
+vi.mock("ai", () => {
+  return {
+    generateText: vi.fn(),
   };
 });
 
@@ -41,7 +49,42 @@ describe("get_skills Tool", () => {
   });
 
   it("should filter skills by query correctly case-insensitively", async () => {
-    const { getInstalledSkills } = await import("../src/core/config.js");
+    const { getInstalledSkills, getModelInstance } = await import("../src/core/config.js");
+    vi.mocked(getInstalledSkills).mockReturnValue([
+      {
+        name: "React Basics",
+        description: "Learn standard react components",
+        author: "web-dev",
+        path: "/path/to/react-basics/SKILL.md",
+      },
+      {
+        name: "Vue Basics",
+        description: "Learn Vue framework essentials",
+        author: "web-dev",
+        path: "/path/to/vue-basics/SKILL.md",
+      },
+    ]);
+    vi.mocked(getModelInstance).mockReturnValue(undefined); // ensure fallback path is used
+
+    // Test filtering matching React
+    const reactResult = await getSkillsTool.execute({ query: "React" }, "/cwd");
+    expect(reactResult).toContain("React Basics");
+    expect(reactResult).not.toContain("Vue Basics");
+
+    // Test filtering matching basics
+    const basicsResult = await getSkillsTool.execute({ query: "basics" }, "/cwd");
+    expect(basicsResult).toContain("React Basics");
+    expect(basicsResult).toContain("Vue Basics");
+
+    // Test filtering matching nothing
+    const emptyResult = await getSkillsTool.execute({ query: "angular" }, "/cwd");
+    expect(emptyResult).toBe("No skills found matching query: angular");
+  });
+
+  it("should support AI semantic filtering when model is configured", async () => {
+    const { getInstalledSkills, getModelInstance } = await import("../src/core/config.js");
+    const { generateText } = await import("ai");
+
     vi.mocked(getInstalledSkills).mockReturnValue([
       {
         name: "React Basics",
@@ -57,18 +100,17 @@ describe("get_skills Tool", () => {
       },
     ]);
 
-    // Test filtering matching React
-    const reactResult = await getSkillsTool.execute({ query: "React" }, "/cwd");
-    expect(reactResult).toContain("React Basics");
-    expect(reactResult).not.toContain("Vue Basics");
+    const fakeModel = { modelId: "fake-model" };
+    vi.mocked(getModelInstance).mockReturnValue(fakeModel as any);
 
-    // Test filtering matching basics
-    const basicsResult = await getSkillsTool.execute({ query: "basics" }, "/cwd");
-    expect(basicsResult).toContain("React Basics");
-    expect(basicsResult).toContain("Vue Basics");
+    // Mock semantic filter to only match Vue Basics (index 1)
+    vi.mocked(generateText).mockResolvedValue({
+      text: "[1]",
+    } as any);
 
-    // Test filtering matching nothing
-    const emptyResult = await getSkillsTool.execute({ query: "angular" }, "/cwd");
-    expect(emptyResult).toBe("No skills found matching query: angular");
+    const result = await getSkillsTool.execute({ query: "Vue UI library" }, "/cwd");
+    expect(result).toContain("Vue Basics");
+    expect(result).not.toContain("React Basics");
+    expect(generateText).toHaveBeenCalled();
   });
 });
