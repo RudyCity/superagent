@@ -88,13 +88,20 @@ function resolveFilePathFromArgs(args: Record<string, unknown>, cwd: string): st
 
 export const readTool: Tool = {
   name: "read",
-  description: "Read file contents. Returns lines with line numbers.",
+  description: "Read file contents. Returns lines with line numbers. Supports bulk reading.",
   parameters: {
     type: "object",
     properties: {
       filePath: {
         type: "string",
-        description: "Absolute or relative path to the file",
+        description: "Absolute or relative path to the file (optional if filePaths is provided)",
+      },
+      filePaths: {
+        type: "array",
+        description: "Optional list of absolute or relative paths to read in bulk.",
+        items: {
+          type: "string",
+        },
       },
       offset: {
         type: "number",
@@ -105,15 +112,60 @@ export const readTool: Tool = {
         description: "Max lines to read (default 800)",
       },
     },
-    required: ["filePath"],
   },
   async execute(args, cwd, signal) {
-    const filePath = resolveFilePathFromArgs(args, cwd);
-    if (!filePath) {
-      return "Error: Missing required parameter 'filePath'. Provide the path to the file to read, e.g. { \"filePath\": \"path/to/file\" }.";
-    }
+    const filePaths = args.filePaths as string[] | undefined;
     const offset = Math.max(1, (args.offset as number) || 1);
     const limit = (args.limit as number) || 800;
+
+    if (filePaths && Array.isArray(filePaths)) {
+      if (filePaths.length === 0) {
+        return "Error: 'filePaths' parameter is empty.";
+      }
+      const results: string[] = [];
+      for (const rawPath of filePaths) {
+        const filePath = normalizePath(path.resolve(cwd, rawPath));
+        try {
+          const stat = await fs.stat(filePath);
+          if (stat.isDirectory()) {
+            results.push(`--- File: ${rawPath} (Directory) ---\nError: Cannot read directory in bulk mode.`);
+            continue;
+          }
+          const buffer = await fs.readFile(filePath);
+          const checkLimit = Math.min(buffer.length, 1024);
+          let isBinary = false;
+          for (let i = 0; i < checkLimit; i++) {
+            if (buffer[i] === 0) {
+              isBinary = true;
+              break;
+            }
+          }
+          if (isBinary) {
+            results.push(`--- File: ${rawPath} ---\nError: Cannot read binary file`);
+            continue;
+          }
+          const content = buffer.toString("utf-8");
+          const lines = content.replace(/\r\n/g, "\n").split("\n");
+          const sliced = lines.slice(offset - 1, offset - 1 + limit);
+          const output = sliced.map((line, i) => `${offset + i}: ${line}`).join("\n");
+          let fileOutput = `--- File: ${rawPath} ---\n${output}`;
+          if (lines.length > offset - 1 + limit) {
+            const remaining = lines.length - (offset - 1 + limit);
+            fileOutput += `\n... (output truncated, showing ${limit} of ${lines.length} lines. There are ${remaining} more lines)`;
+          }
+          results.push(fileOutput);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          results.push(`--- File: ${rawPath} ---\nError: ${message}`);
+        }
+      }
+      return results.join("\n\n");
+    }
+
+    const filePath = resolveFilePathFromArgs(args, cwd);
+    if (!filePath) {
+      return "Error: Missing required parameter 'filePath' or 'filePaths'. Provide the path to the file to read.";
+    }
 
     try {
       // Check if path is a directory — list contents instead of failing
@@ -198,21 +250,21 @@ export const writeTool: Tool = {
 export const editTool: Tool = {
   name: "edit",
   description:
-    "Edit a file by replacing an exact string match (CRLF/LF and trailing whitespace tolerant). Use read first to see content.",
+    "Edit a file by replacing an exact string match (CRLF/LF and trailing whitespace tolerant). Supports bulk editing.",
   parameters: {
     type: "object",
     properties: {
       filePath: {
         type: "string",
-        description: "Path to the file",
+        description: "Path to the file (optional if edits is provided)",
       },
       oldString: {
         type: "string",
-        description: "Exact string to find and replace",
+        description: "Exact string to find and replace (optional if edits is provided)",
       },
       newString: {
         type: "string",
-        description: "Replacement string",
+        description: "Replacement string (optional if edits is provided)",
       },
       startLine: {
         type: "number",
@@ -222,13 +274,156 @@ export const editTool: Tool = {
         type: "number",
         description: "Optional line number to end searching at (1-indexed)",
       },
+      edits: {
+        type: "array",
+        description: "Optional list of edits to apply across files.",
+        items: {
+          type: "object",
+          properties: {
+            filePath: {
+              type: "string",
+              description: "Path to the file to edit",
+            },
+            oldString: {
+              type: "string",
+              description: "Exact string to find and replace",
+            },
+            newString: {
+              type: "string",
+              description: "Replacement string",
+            },
+            startLine: {
+              type: "number",
+              description: "Optional line number to start searching from (1-indexed)",
+            },
+            endLine: {
+              type: "number",
+              description: "Optional line number to end searching at (1-indexed)",
+            },
+          },
+          required: ["filePath", "oldString", "newString"],
+        },
+      },
     },
-    required: ["filePath", "oldString", "newString"],
   },
   async execute(args, cwd, signal) {
+    const edits = args.edits as Array<{ filePath: string; oldString: string; newString: string; startLine?: number; endLine?: number }> | undefined;
+    if (edits && Array.isArray(edits)) {
+      if (edits.length === 0) {
+        return "Error: 'edits' parameter is empty.";
+      }
+      const sortedEdits = edits.map(edit => {
+        const raw = edit.filePath;
+        const resolved = normalizePath(path.resolve(cwd, raw));
+        return { ...edit, resolvedPath: resolved };
+      }).sort((a, b) => a.resolvedPath.localeCompare(b.resolvedPath));
+
+      const releases: (() => void)[] = [];
+      const results: string[] = [];
+      try {
+        const uniquePaths = Array.from(new Set(sortedEdits.map(e => e.resolvedPath))).sort();
+        for (const p of uniquePaths) {
+          releases.push(await fileLockManager.acquire(p));
+        }
+
+        const editsByFile = new Map<string, typeof sortedEdits>();
+        for (const edit of sortedEdits) {
+          const list = editsByFile.get(edit.resolvedPath) || [];
+          list.push(edit);
+          editsByFile.set(edit.resolvedPath, list);
+        }
+
+        for (const [filePath, fileEdits] of editsByFile.entries()) {
+          try {
+            let content = await fs.readFile(filePath, "utf-8");
+            for (const edit of fileEdits) {
+              const oldStr = edit.oldString;
+              const newStr = edit.newString;
+              const startLine = edit.startLine ? Math.max(1, edit.startLine) : undefined;
+              const endLine = edit.endLine ? edit.endLine : undefined;
+
+              const normContent = normalizeForMatching(content);
+              const normOldStr = normalizeForMatching(oldStr);
+
+              let updated: string;
+              if (startLine !== undefined || endLine !== undefined) {
+                const lines = content.split(/\r?\n/);
+                const normLines = normContent.split("\n");
+                const startIdx = startLine !== undefined ? startLine - 1 : 0;
+                const endIdx = endLine !== undefined ? Math.min(lines.length, endLine) : lines.length;
+
+                const targetSubNormContent = normLines.slice(startIdx, endIdx).join("\n");
+                if (!targetSubNormContent.includes(normOldStr)) {
+                  throw new Error(`oldString not found within lines ${startLine || 1} to ${endLine || lines.length} of ${edit.filePath} (matching normalized content)`);
+                }
+                const count = targetSubNormContent.split(normOldStr).length - 1;
+                if (count > 1) {
+                  throw new Error(`Found ${count} matches for oldString in the specified line range of ${edit.filePath}. Provide more context or a narrower range.`);
+                }
+
+                const subContentStartOffset = normLines.slice(0, startIdx).join("\n").length + (startIdx > 0 ? 1 : 0);
+                const matchIndexInNorm = normContent.indexOf(normOldStr, subContentStartOffset);
+                
+                const normToOrigMap = mapNormToOrigIndices(content, normContent);
+                const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+                const matchOrigEnd = normToOrigMap[matchIndexInNorm + normOldStr.length] ?? -1;
+
+                if (matchOrigStart === -1 || matchOrigEnd === -1) {
+                  updated = content.replace(oldStr, newStr);
+                } else {
+                  updated = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
+                }
+              } else {
+                if (!normContent.includes(normOldStr)) {
+                  throw new Error(`oldString not found in ${edit.filePath} (matching normalized content)`);
+                }
+
+                const count = normContent.split(normOldStr).length - 1;
+                if (count > 1) {
+                  throw new Error(`Found ${count} matches for oldString in ${edit.filePath}. Provide more context to make it unique, or specify startLine/endLine.`);
+                }
+
+                const matchIndexInNorm = normContent.indexOf(normOldStr);
+                
+                const normToOrigMap = mapNormToOrigIndices(content, normContent);
+                const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+                const matchOrigEnd = normToOrigMap[matchIndexInNorm + normOldStr.length] ?? -1;
+
+                if (matchOrigStart === -1 || matchOrigEnd === -1) {
+                  updated = content.replace(oldStr, newStr);
+                } else {
+                  updated = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
+                }
+              }
+              content = updated;
+            }
+
+            await fs.writeFile(filePath, content, "utf-8");
+            const syntaxError = await verifySyntax(filePath);
+            if (syntaxError) {
+              results.push(`Warning: ${syntaxError}. Files edited: ${fileEdits[0].filePath}`);
+            } else {
+              results.push(`File edited: ${fileEdits[0].filePath}`);
+            }
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            results.push(`Error editing file ${filePath}: ${message}`);
+          }
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return `Error in bulk editing: ${message}`;
+      } finally {
+        for (const release of releases.reverse()) {
+          release();
+        }
+      }
+      return results.join("\n");
+    }
+
     const filePath = resolveFilePathFromArgs(args, cwd);
     if (!filePath) {
-      return "Error: Missing required parameter 'filePath'. Provide the path to the file to edit.";
+      return "Error: Missing required parameter 'filePath' or 'edits'. Provide the path to the file to edit.";
     }
     const release = await fileLockManager.acquire(filePath);
     try {
@@ -549,29 +744,116 @@ export const ripgrepSearchTool: Tool = {
 
 export const writeToFileTool: Tool = {
   name: "write_to_file",
-  description: "Create a new file or overwrite an existing file's content entirely.",
+  description: "Create a new file or overwrite an existing file's content entirely. Supports bulk writing.",
   parameters: {
     type: "object",
     properties: {
       filePath: {
         type: "string",
-        description: "Path to the file to write to",
+        description: "Path to the file to write to (optional if files is provided)",
       },
       content: {
         type: "string",
-        description: "The complete content to write to the file",
+        description: "The complete content to write to the file (optional if files is provided)",
       },
       overwrite: {
         type: "boolean",
         description: "If true, will overwrite an existing file. If false, will error if the file exists.",
       },
+      files: {
+        type: "array",
+        description: "Optional list of files to write in bulk.",
+        items: {
+          type: "object",
+          properties: {
+            filePath: {
+              type: "string",
+              description: "Path to the file to write to",
+            },
+            content: {
+              type: "string",
+              description: "The complete content to write to the file",
+            },
+            overwrite: {
+              type: "boolean",
+              description: "If true, will overwrite an existing file. If false, will error if the file exists.",
+            },
+          },
+          required: ["filePath", "content"],
+        },
+      },
     },
-    required: ["filePath", "content"],
   },
   async execute(args, cwd, signal) {
+    const files = args.files as Array<{ filePath: string; content: string; overwrite?: boolean }> | undefined;
+    if (files && Array.isArray(files)) {
+      if (files.length === 0) {
+        return "Error: 'files' parameter is empty.";
+      }
+      const sortedFiles = files.map(file => {
+        const raw = file.filePath;
+        const resolved = normalizePath(path.resolve(cwd, raw));
+        return { ...file, resolvedPath: resolved };
+      }).sort((a, b) => a.resolvedPath.localeCompare(b.resolvedPath));
+
+      const releases: (() => void)[] = [];
+      const results: string[] = [];
+      try {
+        for (const file of sortedFiles) {
+          releases.push(await fileLockManager.acquire(file.resolvedPath));
+        }
+        for (const file of sortedFiles) {
+          const overwrite = !!file.overwrite;
+          const nextContent = file.content;
+          if (nextContent === undefined || nextContent === null) {
+            results.push(`Error: Missing 'content' for file ${file.filePath}`);
+            continue;
+          }
+          if (!overwrite) {
+            try {
+              await fs.access(file.resolvedPath);
+              results.push(`Error: File already exists and overwrite was set to false for ${file.filePath}`);
+              continue;
+            } catch {
+              // File does not exist, safe to write
+            }
+          }
+          let previousContent = "";
+          let existedBefore = true;
+          try {
+            previousContent = await fs.readFile(file.resolvedPath, "utf-8");
+          } catch {
+            existedBefore = false;
+          }
+          const summary = buildEditSummary(previousContent, nextContent, file.resolvedPath, existedBefore);
+          if (previousContent === nextContent && existedBefore) {
+            results.push(summary);
+            continue;
+          }
+          await fs.mkdir(path.dirname(file.resolvedPath), { recursive: true });
+          await fs.writeFile(file.resolvedPath, nextContent, "utf-8");
+          const syntaxError = await verifySyntax(file.resolvedPath);
+          const action = existedBefore ? "File written successfully" : "Created file";
+          if (syntaxError) {
+            results.push(`Warning: ${syntaxError}. ${action}: ${file.filePath}\n${summary}`);
+          } else {
+            results.push(`${action}: ${file.filePath}\n${summary}`);
+          }
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return `Error in bulk writing files: ${message}`;
+      } finally {
+        for (const release of releases.reverse()) {
+          release();
+        }
+      }
+      return results.join("\n\n");
+    }
+
     const filePath = resolveFilePathFromArgs(args, cwd);
     if (!filePath) {
-      return "Error: Missing required parameter 'filePath'. Provide the path to the file to write to.";
+      return "Error: Missing required parameter 'filePath' or 'files'. Provide the path to the file to write to.";
     }
     const overwrite = !!args.overwrite;
     const nextContent = args.content as string | undefined;
@@ -619,29 +901,29 @@ export const writeToFileTool: Tool = {
 
 export const replaceFileContentTool: Tool = {
   name: "replace_file_content",
-  description: "Edit a single contiguous block of code in a file by specifying line ranges and target content.",
+  description: "Edit a single contiguous block of code in a file by specifying line ranges and target content. Supports bulk edits.",
   parameters: {
     type: "object",
     properties: {
       filePath: {
         type: "string",
-        description: "Path to the file to edit",
+        description: "Path to the file to edit (optional if edits is provided)",
       },
       targetContent: {
         type: "string",
-        description: "The exact target content to replace (including whitespace)",
+        description: "The exact target content to replace (including whitespace) (optional if edits is provided)",
       },
       replacementContent: {
         type: "string",
-        description: "The replacement content",
+        description: "The replacement content (optional if edits is provided)",
       },
       startLine: {
         type: "number",
-        description: "Start line number of the block to replace (1-indexed)",
+        description: "Start line number of the block to replace (1-indexed) (optional if edits is provided)",
       },
       endLine: {
         type: "number",
-        description: "End line number of the block to replace (1-indexed)",
+        description: "End line number of the block to replace (1-indexed) (optional if edits is provided)",
       },
       allowMultiple: {
         type: "boolean",
@@ -651,13 +933,177 @@ export const replaceFileContentTool: Tool = {
         type: "boolean",
         description: "Alias for allowMultiple.",
       },
+      edits: {
+        type: "array",
+        description: "Optional list of replacements to perform across multiple files.",
+        items: {
+          type: "object",
+          properties: {
+            filePath: {
+              type: "string",
+              description: "Path to the file to edit",
+            },
+            targetContent: {
+              type: "string",
+              description: "Exact target content to replace",
+            },
+            replacementContent: {
+              type: "string",
+              description: "Replacement content",
+            },
+            startLine: {
+              type: "number",
+              description: "Start line number (1-indexed)",
+            },
+            endLine: {
+              type: "number",
+              description: "End line number (1-indexed)",
+            },
+            allowMultiple: {
+              type: "boolean",
+              description: "Allow multiple replacements within range",
+            },
+            AllowMultiple: {
+              type: "boolean",
+              description: "Alias for allowMultiple",
+            },
+          },
+          required: ["filePath", "targetContent", "replacementContent", "startLine", "endLine"],
+        },
+      },
     },
-    required: ["filePath", "targetContent", "replacementContent", "startLine", "endLine"],
   },
   async execute(args, cwd, signal) {
+    const edits = args.edits as Array<{ filePath: string; targetContent: string; replacementContent: string; startLine: number; endLine: number; allowMultiple?: boolean; AllowMultiple?: boolean }> | undefined;
+    if (edits && Array.isArray(edits)) {
+      if (edits.length === 0) {
+        return "Error: 'edits' parameter is empty.";
+      }
+      const sortedEdits = edits.map(edit => {
+        const raw = edit.filePath;
+        const resolved = normalizePath(path.resolve(cwd, raw));
+        return { ...edit, resolvedPath: resolved };
+      }).sort((a, b) => a.resolvedPath.localeCompare(b.resolvedPath));
+
+      const releases: (() => void)[] = [];
+      const results: string[] = [];
+      try {
+        const uniquePaths = Array.from(new Set(sortedEdits.map(e => e.resolvedPath))).sort();
+        for (const p of uniquePaths) {
+          releases.push(await fileLockManager.acquire(p));
+        }
+
+        const editsByFile = new Map<string, typeof sortedEdits>();
+        for (const edit of sortedEdits) {
+          const list = editsByFile.get(edit.resolvedPath) || [];
+          list.push(edit);
+          editsByFile.set(edit.resolvedPath, list);
+        }
+
+        for (const [filePath, fileEdits] of editsByFile.entries()) {
+          try {
+            let content = await fs.readFile(filePath, "utf-8");
+            const sortedFileEdits = [...fileEdits].sort((a, b) => b.startLine - a.startLine);
+            let lines = content.split(/\r?\n/);
+            const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
+
+            for (const edit of sortedFileEdits) {
+               const targetContent = edit.targetContent;
+               const replacementContent = edit.replacementContent;
+               const startLine = Math.max(1, Number(edit.startLine));
+               const endLine = Math.max(startLine, Number(edit.endLine));
+               const allowMultiple = !!(edit.allowMultiple ?? edit.AllowMultiple);
+
+               if (startLine < 1 || startLine > lines.length || endLine < startLine || endLine > lines.length) {
+                 throw new Error(`Invalid line range [${startLine}, ${endLine}]. File has ${lines.length} lines.`);
+               }
+
+               const sliceOfLines = lines.slice(startLine - 1, endLine);
+               const sliceText = sliceOfLines.join("\n");
+               const normSliceText = normalizeForMatching(sliceText);
+               const normTargetContent = normalizeForMatching(targetContent);
+
+               if (!normSliceText.includes(normTargetContent)) {
+                 throw new Error(`targetContent not found in specified line range [${startLine}, ${endLine}] (matching normalized content)`);
+               }
+
+               const occurrences = countOccurrences(normSliceText, normTargetContent);
+               if (occurrences > 1 && !allowMultiple) {
+                 throw new Error(`Multiple occurrences of targetContent found in line range [${startLine}, ${endLine}] (matching normalized content). Set allowMultiple to true.`);
+               }
+
+               let replacedSlice: string;
+               if (occurrences > 1 && allowMultiple) {
+                 const matchIndices: number[] = [];
+                 let pos = normSliceText.indexOf(normTargetContent);
+                 while (pos !== -1) {
+                   matchIndices.push(pos);
+                   pos = normSliceText.indexOf(normTargetContent, pos + normTargetContent.length);
+                 }
+
+                 const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
+                 let tempSlice = sliceText;
+                 for (let i = matchIndices.length - 1; i >= 0; i--) {
+                   const mIdx = matchIndices[i];
+                   const origStart = normToOrigMap[mIdx] ?? -1;
+                   const origEnd = normToOrigMap[mIdx + normTargetContent.length] ?? -1;
+                   if (origStart !== -1 && origEnd !== -1) {
+                     tempSlice = tempSlice.slice(0, origStart) + replacementContent + tempSlice.slice(origEnd);
+                   }
+                 }
+                 replacedSlice = tempSlice;
+               } else {
+                 const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
+                 const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
+                 const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+                 const matchOrigEnd = normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1;
+
+                 if (matchOrigStart === -1 || matchOrigEnd === -1) {
+                   replacedSlice = sliceText.replace(targetContent, replacementContent);
+                 } else {
+                   replacedSlice = sliceText.slice(0, matchOrigStart) + replacementContent + sliceText.slice(matchOrigEnd);
+                 }
+               }
+
+               lines = [
+                 ...lines.slice(0, startLine - 1),
+                 ...replacedSlice.split(/\r?\n/),
+                 ...lines.slice(endLine),
+               ];
+            }
+
+            const nextContent = lines.join(originalEnding);
+            const summary = buildEditSummary(content, nextContent, filePath);
+            if (content === nextContent) {
+              results.push(summary);
+              continue;
+            }
+            await fs.writeFile(filePath, nextContent, "utf-8");
+            const syntaxError = await verifySyntax(filePath);
+            if (syntaxError) {
+              results.push(`Warning: ${syntaxError}. File updated: ${fileEdits[0].filePath}\n${summary}`);
+            } else {
+              results.push(`File updated successfully: ${fileEdits[0].filePath}\n${summary}`);
+            }
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            results.push(`Error in replacing content for ${filePath}: ${message}`);
+          }
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return `Error in bulk replacing: ${message}`;
+      } finally {
+        for (const release of releases.reverse()) {
+          release();
+        }
+      }
+      return results.join("\n\n");
+    }
+
     const filePath = resolveFilePathFromArgs(args, cwd);
     if (!filePath) {
-      return "Error: Missing required parameter 'filePath'. Provide the path to the file to edit.";
+      return "Error: Missing required parameter 'filePath' or 'edits'. Provide the path to the file to edit.";
     }
     const targetContent = (args.targetContent ?? args.TargetContent ?? "") as string;
     const replacementContent = (args.replacementContent ?? args.ReplacementContent ?? "") as string;
@@ -756,17 +1202,17 @@ export const replaceFileContentTool: Tool = {
 
 export const multiReplaceFileContentTool: Tool = {
   name: "multi_replace_file_content",
-  description: "Perform multiple non-contiguous edits across a single file simultaneously.",
+  description: "Perform multiple non-contiguous edits across a single file simultaneously. Supports bulk multi-file edits.",
   parameters: {
     type: "object",
     properties: {
       filePath: {
         type: "string",
-        description: "Path to the file to edit",
+        description: "Path to the file to edit (optional if files is provided)",
       },
       chunks: {
         type: "array",
-        description: "List of replacement chunks to apply",
+        description: "List of replacement chunks to apply (optional if files is provided)",
         items: {
           type: "object",
           properties: {
@@ -798,14 +1244,57 @@ export const multiReplaceFileContentTool: Tool = {
           required: ["targetContent", "replacementContent", "startLine", "endLine"],
         },
       },
+      files: {
+        type: "array",
+        description: "Optional list of files to edit, each with multiple chunks.",
+        items: {
+          type: "object",
+          properties: {
+            filePath: {
+              type: "string",
+              description: "Path to the file to edit",
+            },
+            chunks: {
+              type: "array",
+              description: "List of replacement chunks to apply",
+              items: {
+                type: "object",
+                properties: {
+                  targetContent: {
+                    type: "string",
+                    description: "The exact content to replace",
+                  },
+                  replacementContent: {
+                    type: "string",
+                    description: "The replacement content",
+                  },
+                  startLine: {
+                    type: "number",
+                    description: "Start line number of the block to replace (1-indexed)",
+                  },
+                  endLine: {
+                    type: "number",
+                    description: "End line number of the block to replace (1-indexed)",
+                  },
+                  allowMultiple: {
+                    type: "boolean",
+                    description: "If true, allow multiple occurrences of targetContent within the line range to be replaced. Default is false.",
+                  },
+                  AllowMultiple: {
+                    type: "boolean",
+                    description: "Alias for allowMultiple.",
+                  },
+                },
+                required: ["targetContent", "replacementContent", "startLine", "endLine"],
+              },
+            },
+          },
+          required: ["filePath", "chunks"],
+        },
+      },
     },
-    required: ["filePath", "chunks"],
   },
   async execute(args, cwd, signal) {
-    const filePath = resolveFilePathFromArgs(args, cwd);
-    if (!filePath) {
-      return "Error: Missing required parameter 'filePath'. Provide the path to the file to edit.";
-    }
     interface Chunk {
       targetContent: string;
       replacementContent: string;
@@ -813,6 +1302,255 @@ export const multiReplaceFileContentTool: Tool = {
       endLine: number;
       allowMultiple?: boolean;
       AllowMultiple?: boolean;
+    }
+    interface ResolvedChunk {
+      originalChunk: Chunk;
+      actualStartLine: number;
+      actualEndLine: number;
+      matchOrigStart: number;
+      matchOrigEnd: number;
+      minSliceText: string;
+    }
+
+    const files = args.files as Array<{ filePath: string; chunks: Chunk[] }> | undefined;
+    if (files && Array.isArray(files)) {
+      if (files.length === 0) {
+        return "Error: 'files' parameter is empty.";
+      }
+      const sortedFiles = files.map(file => {
+        const raw = file.filePath;
+        const resolved = normalizePath(path.resolve(cwd, raw));
+        return { ...file, resolvedPath: resolved };
+      }).sort((a, b) => a.resolvedPath.localeCompare(b.resolvedPath));
+
+      const releases: (() => void)[] = [];
+      const results: string[] = [];
+      try {
+        for (const file of sortedFiles) {
+          releases.push(await fileLockManager.acquire(file.resolvedPath));
+        }
+
+        for (const file of sortedFiles) {
+          try {
+            const rawChunks = file.chunks;
+            const chunks: Chunk[] = [];
+            for (const c of rawChunks as any[]) {
+              if (!c || typeof c !== "object") {
+                throw new Error("Invalid chunk element: expected an object.");
+              }
+              const targetContent = c.targetContent ?? c.TargetContent;
+              const replacementContent = c.replacementContent ?? c.ReplacementContent;
+              if (typeof targetContent !== "string") {
+                throw new Error(`Missing or invalid 'targetContent' in chunk.`);
+              }
+              if (typeof replacementContent !== "string") {
+                throw new Error(`Missing or invalid 'replacementContent' in chunk.`);
+              }
+              if (!targetContent) {
+                throw new Error("targetContent in chunk cannot be empty.");
+              }
+              const startLineVal = c.startLine ?? c.StartLine;
+              const endLineVal = c.endLine ?? c.EndLine;
+              if (startLineVal === undefined || startLineVal === null) {
+                throw new Error("Missing required parameter 'startLine' in chunk.");
+              }
+              if (endLineVal === undefined || endLineVal === null) {
+                throw new Error("Missing required parameter 'endLine' in chunk.");
+              }
+              const sl = Number(startLineVal);
+              const el = Number(endLineVal);
+              if (isNaN(sl) || isNaN(el)) {
+                throw new Error("'startLine' and 'endLine' must be valid numbers in chunk.");
+              }
+              const allowMultiple = !!(c.allowMultiple ?? c.AllowMultiple);
+              chunks.push({
+                targetContent,
+                replacementContent,
+                startLine: sl,
+                endLine: el,
+                allowMultiple,
+              });
+            }
+
+            if (chunks.length === 0) {
+              throw new Error("No chunks provided or invalid format.");
+            }
+
+            let content = await fs.readFile(file.resolvedPath, "utf-8");
+            const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
+            let lines = content.split(/\r?\n/);
+
+            const resolvedChunks: ResolvedChunk[] = [];
+            for (const chunk of chunks) {
+              const { targetContent, replacementContent, startLine, endLine, allowMultiple } = chunk;
+              if (startLine < 1 || startLine > lines.length || endLine < startLine || endLine > lines.length) {
+                throw new Error(`Invalid line range [${startLine}, ${endLine}] in chunk. File has ${lines.length} lines.`);
+              }
+
+              const sliceOfLines = lines.slice(startLine - 1, endLine);
+              const sliceText = sliceOfLines.join("\n");
+              const normSliceText = normalizeForMatching(sliceText);
+              const normTargetContent = normalizeForMatching(targetContent);
+
+              if (!normSliceText.includes(normTargetContent)) {
+                throw new Error(`targetContent not found in specified line range [${startLine}, ${endLine}] for a chunk.`);
+              }
+
+              const occurrences = countOccurrences(normSliceText, normTargetContent);
+              if (occurrences > 1 && !allowMultiple) {
+                throw new Error(`Multiple occurrences of targetContent found in line range [${startLine}, ${endLine}] for a chunk. Set 'allowMultiple' to true.`);
+              }
+
+              const matchIndexInNorm = normSliceText.indexOf(normTargetContent);
+              let actualStartLine = startLine;
+              let actualEndLine = endLine;
+              let matchOrigStart = -1;
+              let matchOrigEnd = -1;
+              let minSliceText = sliceText;
+
+              if (matchIndexInNorm !== -1) {
+                const normToOrigMap = mapNormToOrigIndices(sliceText, normSliceText);
+
+                if (occurrences > 1) {
+                  const firstMatchIdx = normSliceText.indexOf(normTargetContent);
+                  const lastMatchIdx = normSliceText.lastIndexOf(normTargetContent);
+                  
+                  const firstOrigStart = normToOrigMap[firstMatchIdx] ?? -1;
+                  const lastOrigEnd = normToOrigMap[lastMatchIdx + normTargetContent.length] ?? -1;
+                  
+                  if (firstOrigStart !== -1 && lastOrigEnd !== -1) {
+                    const startLineOffset = sliceText.slice(0, firstOrigStart).split("\n").length - 1;
+                    actualStartLine = startLine + startLineOffset;
+
+                    const endLineOffset = sliceText.slice(0, lastOrigEnd).split("\n").length - 1;
+                    actualEndLine = startLine + endLineOffset;
+
+                    const minSliceOfLines = lines.slice(actualStartLine - 1, actualEndLine);
+                    minSliceText = minSliceOfLines.join("\n");
+                  }
+                } else {
+                  matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+                  matchOrigEnd = normToOrigMap[matchIndexInNorm + normTargetContent.length] ?? -1;
+
+                  if (matchOrigStart !== -1 && matchOrigEnd !== -1) {
+                    const startLineOffset = sliceText.slice(0, matchOrigStart).split("\n").length - 1;
+                    actualStartLine = startLine + startLineOffset;
+
+                    const endLineOffset = sliceText.slice(0, matchOrigEnd).split("\n").length - 1;
+                    actualEndLine = startLine + endLineOffset;
+
+                    const minSliceOfLines = lines.slice(actualStartLine - 1, actualEndLine);
+                    minSliceText = minSliceOfLines.join("\n");
+
+                    const normMinSliceText = normalizeForMatching(minSliceText);
+                    const matchIndexInMinNorm = normMinSliceText.indexOf(normTargetContent);
+                    if (matchIndexInMinNorm !== -1) {
+                      const minNormToOrigMap = mapNormToOrigIndices(minSliceText, normMinSliceText);
+                      matchOrigStart = minNormToOrigMap[matchIndexInMinNorm] ?? -1;
+                      matchOrigEnd = minNormToOrigMap[matchIndexInMinNorm + normTargetContent.length] ?? -1;
+                    } else {
+                      matchOrigStart = -1;
+                      matchOrigEnd = -1;
+                    }
+                  }
+                }
+              }
+
+              resolvedChunks.push({
+                originalChunk: chunk,
+                actualStartLine,
+                actualEndLine,
+                matchOrigStart,
+                matchOrigEnd,
+                minSliceText,
+              });
+            }
+
+            const sortedForOverlapCheck = [...resolvedChunks].sort((a, b) => a.actualStartLine - b.actualStartLine);
+            for (let i = 0; i < sortedForOverlapCheck.length - 1; i++) {
+              const current = sortedForOverlapCheck[i];
+              const next = sortedForOverlapCheck[i + 1];
+              if (current.actualEndLine >= next.actualStartLine) {
+                throw new Error(`Overlapping line ranges detected between chunks: [${current.originalChunk.startLine}, ${current.originalChunk.endLine}] and [${next.originalChunk.startLine}, ${next.originalChunk.endLine}].`);
+              }
+            }
+
+            const sortedChunks = [...resolvedChunks].sort((a, b) => b.actualStartLine - a.actualStartLine);
+            for (const resolved of sortedChunks) {
+              const { originalChunk, matchOrigStart, matchOrigEnd, minSliceText, actualStartLine, actualEndLine } = resolved;
+              const { targetContent, replacementContent, allowMultiple } = originalChunk;
+
+              let replacedSlice: string;
+              const normMinSliceText = normalizeForMatching(minSliceText);
+              const normTargetContent = normalizeForMatching(targetContent);
+              const chunkOccurrences = countOccurrences(normMinSliceText, normTargetContent);
+
+              if (chunkOccurrences > 1 && allowMultiple) {
+                const matchIndices: number[] = [];
+                let pos = normMinSliceText.indexOf(normTargetContent);
+                while (pos !== -1) {
+                  matchIndices.push(pos);
+                  pos = normMinSliceText.indexOf(normTargetContent, pos + normTargetContent.length);
+                }
+
+                const minNormToOrigMap = mapNormToOrigIndices(minSliceText, normMinSliceText);
+                let tempSlice = minSliceText;
+                for (let i = matchIndices.length - 1; i >= 0; i--) {
+                  const mIdx = matchIndices[i];
+                  const origStart = minNormToOrigMap[mIdx] ?? -1;
+                  const origEnd = minNormToOrigMap[mIdx + normTargetContent.length] ?? -1;
+                  if (origStart !== -1 && origEnd !== -1) {
+                    tempSlice = tempSlice.slice(0, origStart) + replacementContent + tempSlice.slice(origEnd);
+                  }
+                }
+                replacedSlice = tempSlice;
+              } else {
+                if (matchOrigStart === -1 || matchOrigEnd === -1) {
+                  replacedSlice = minSliceText.replace(targetContent, replacementContent);
+                } else {
+                  replacedSlice = minSliceText.slice(0, matchOrigStart) + replacementContent + minSliceText.slice(matchOrigEnd);
+                }
+              }
+
+              lines = [
+                ...lines.slice(0, actualStartLine - 1),
+                ...replacedSlice.split(/\r?\n/),
+                ...lines.slice(actualEndLine),
+              ];
+            }
+
+            const nextContent = lines.join(originalEnding);
+            const summary = buildEditSummary(content, nextContent, file.resolvedPath);
+            if (content === nextContent) {
+              results.push(summary);
+              continue;
+            }
+            await fs.writeFile(file.resolvedPath, nextContent, "utf-8");
+            const syntaxError = await verifySyntax(file.resolvedPath);
+            if (syntaxError) {
+              results.push(`Warning: ${syntaxError}. File updated successfully with ${chunks.length} changes: ${file.filePath}\n${summary}`);
+            } else {
+              results.push(`File updated successfully with ${chunks.length} changes: ${file.filePath}\n${summary}`);
+            }
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            results.push(`Error in multi-replace for ${file.filePath}: ${message}`);
+          }
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return `Error in bulk multi-replace: ${message}`;
+      } finally {
+        for (const release of releases.reverse()) {
+          release();
+        }
+      }
+      return results.join("\n\n");
+    }
+
+    const filePath = resolveFilePathFromArgs(args, cwd);
+    if (!filePath) {
+      return "Error: Missing required parameter 'filePath' or 'files'. Provide the path to the file to edit.";
     }
     let rawChunks = args.chunks || args.ReplacementChunks || args.replacementChunks || [];
     if (typeof rawChunks === "string") {
@@ -876,14 +1614,6 @@ export const multiReplaceFileContentTool: Tool = {
       const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
       let lines = content.split(/\r?\n/);
 
-      interface ResolvedChunk {
-        originalChunk: Chunk;
-        actualStartLine: number;
-        actualEndLine: number;
-        matchOrigStart: number;
-        matchOrigEnd: number;
-        minSliceText: string;
-      }
       const resolvedChunks: ResolvedChunk[] = [];
 
       for (const chunk of chunks) {
