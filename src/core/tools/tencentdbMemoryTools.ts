@@ -100,8 +100,11 @@ export const tdaiReadCosTool: Tool = {
     const client = getClient();
 
     try {
-      const content = await client.readFile(filePath);
-      return `=== File: ${filePath} ===\n\n${content}`;
+      const res = await client.readScenario({ path: filePath });
+      if (!res || res.content === null) {
+        return `Failed to read scenario block file: File not found: ${filePath}`;
+      }
+      return `=== File: ${filePath} ===\n\n${res.content}`;
     } catch (err) {
       return `Failed to read scenario block file: ${formatError(err)}. Make sure the path is correct and the gateway is running.`;
     }

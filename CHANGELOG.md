@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.149] - 2026-07-07
+
+### Fixed
+- **TencentDB Memory Gateway Scenario Read**:
+  - Replaced client.readFile with client.readScenario in tdai_read_cos to fix the 404 error when running in local-first standalone mode.
+  - Added scenario block file validation to correctly handle files that do not exist by returning a clean file not found message.
+
+---
+
 ## [1.2.148] - 2026-07-07
 
 ### Performance

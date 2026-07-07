@@ -12,6 +12,7 @@ const mockSearchAtomic = vi.fn();
 const mockSearchConversation = vi.fn();
 const mockReadFile = vi.fn();
 const mockUpdateAtomic = vi.fn();
+const mockReadScenario = vi.fn();
 
 vi.mock("@tencentdb-agent-memory/memory-sdk-ts", () => {
   class MockMemoryClient {
@@ -20,6 +21,7 @@ vi.mock("@tencentdb-agent-memory/memory-sdk-ts", () => {
     searchConversation = mockSearchConversation;
     readFile = mockReadFile;
     updateAtomic = mockUpdateAtomic;
+    readScenario = mockReadScenario;
   }
   return {
     MemoryClient: MockMemoryClient,
@@ -81,15 +83,31 @@ describe("TencentDB Memory Tools", () => {
 
   describe("tdai_read_cos", () => {
     it("should successfully read scenario file content", async () => {
-      mockReadFile.mockResolvedValue("Coding style: use tabs instead of spaces");
+      mockReadScenario.mockResolvedValue({
+        path: "scene_blocks/style.md",
+        content: "Coding style: use tabs instead of spaces",
+        created_at: "2026-06-26T10:00:00.000Z",
+        updated_at: "2026-06-26T10:00:00.000Z"
+      });
       const result = await tdaiReadCosTool.execute({ path: "scene_blocks/style.md" }, ".");
       expect(result).toContain("=== File: scene_blocks/style.md ===");
       expect(result).toContain("use tabs instead of spaces");
-      expect(mockReadFile).toHaveBeenCalledWith("scene_blocks/style.md");
+      expect(mockReadScenario).toHaveBeenCalledWith({ path: "scene_blocks/style.md" });
+    });
+
+    it("should return error message when file is not found (content is null)", async () => {
+      mockReadScenario.mockResolvedValue({
+        path: "scene_blocks/style.md",
+        content: null,
+        created_at: null,
+        updated_at: null
+      });
+      const result = await tdaiReadCosTool.execute({ path: "scene_blocks/style.md" }, ".");
+      expect(result).toContain("Failed to read scenario block file: File not found");
     });
 
     it("should handle error when file read fails", async () => {
-      mockReadFile.mockRejectedValue(new Error("File not found"));
+      mockReadScenario.mockRejectedValue(new Error("Network error"));
       const result = await tdaiReadCosTool.execute({ path: "scene_blocks/style.md" }, ".");
       expect(result).toContain("Failed to read scenario block file");
     });
