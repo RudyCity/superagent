@@ -1232,7 +1232,11 @@ PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
 
 CRITICAL RULES FOR PLANNING:
 1. You MUST use the 'manage_plan' tool (action: 'create', 'edit', or 'sync') to create, edit, update, or synchronize the Implementation Plan and tasks.
-2. You MUST use the 'manage_tasks' tool (action: 'update') to update the status of checklist tasks.
+2. You MUST use the 'manage_tasks' tool to manage checklist tasks:
+   - 'add' (single task) or 'add_bulk' with 'texts' array (multiple tasks at once).
+   - 'update' (single) or 'update_bulk' with 'indices' array (multiple tasks at once) to change task status.
+   - 'remove' (single) or 'remove_bulk' with 'indices' array to delete tasks.
+   - 'list' to inspect current tasks.
 3. DO NOT use 'write_to_file', 'replace_file_content', 'multi_replace_file_content', or 'edit' to create, modify, or update the Implementation Plan File or the Task Tracking File directly. Doing so is strictly forbidden.
 4. For the Verification/Walkthrough File, you may use 'write_to_file' directly.
 5. Do NOT write or create plan or task files in the local workspace directory.
@@ -1251,7 +1255,11 @@ PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
 - Verification/Walkthrough File: ${walkthroughPath} ${fileStatus(walkthroughPath)}
 
 CRITICAL RULES FOR PLANNING:
-1. You MUST use the 'manage_tasks' tool (action: 'update') to update the status of checklist tasks.
+1. You MUST use the 'manage_tasks' tool to manage checklist tasks:
+   - 'add' (single task) or 'add_bulk' with 'texts' array (multiple tasks at once).
+   - 'update' (single) or 'update_bulk' with 'indices' array (multiple tasks at once) to change task status.
+   - 'remove' (single) or 'remove_bulk' with 'indices' array to delete tasks.
+   - 'list' to inspect current tasks.
 2. DO NOT attempt to directly modify the Implementation Plan File or Task Tracking File using 'write_to_file', 'replace_file_content', or other file writing tools. Direct modification of these files is strictly blocked by the system's security boundaries.
 3. For the Verification/Walkthrough File, you may use 'write_to_file' directly.
 4. Do NOT write or create plan or task files in the local workspace directory.

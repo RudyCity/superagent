@@ -139,6 +139,8 @@ if decision_point:
 1. SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills using file-reading tools. Pass skill paths to Subagents.
 2. RESEARCH: Spawn 'researcher' to map codebase within worktree.
 3. TASK_UPDATE: Mark task in-progress via 'manage_tasks' (action: 'update', index: <1-based_index>, status: '/').
+   - Bulk: Use action 'update_bulk' with 'indices' array to update multiple tasks at once.
+   - Remove finished tasks with 'remove' (single) or 'remove_bulk' with 'indices' array.
 4. IMPLEMENTATION: Delegate coding to 'coder' Subagents.
 5. SELF_VERIFY (MANDATORY):
     - Build: Run 'npm run build'. Fix compile/TS errors.

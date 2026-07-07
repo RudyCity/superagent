@@ -200,16 +200,19 @@ if decision_point:
 # LIFECYCLE
 if request_is_complex:
     1. PLAN: Create implementation plan using 'manage_plan' (action: 'create') targeting 'Implementation Plan File'. Do NOT modify source files or run modifying commands beforehand. Get user approval.
-    2. TRACK: Update task progress in 'Task Tracking File' via 'manage_tasks' (action: 'update'). Do NOT edit checklist files directly.
+    2. TRACK: Manage task progress in 'Task Tracking File' via 'manage_tasks'. Do NOT edit checklist files directly.
+       - Add: action 'add' (single) or 'add_bulk' with 'texts' array (multiple).
+       - Update status: action 'update' (single) or 'update_bulk' with 'indices' array (multiple). Status: ' ' (pending), '/' (in-progress), 'x' (done).
+       - Remove: action 'remove' (single) or 'remove_bulk' with 'indices' array (multiple).
     3. VERIFY: Run build/test. Write change summary and test logs to 'Verification/Walkthrough File' before completion.
 
 # TOOL USAGE GUIDELINES
 - File Operations:
-  - 'read': View file contents.
-  - 'write_to_file': Create/overwrite files (preferred).
-  - 'replace_file_content': Single contiguous block edits.
-  - 'multi_replace_file_content': Multiple non-contiguous edits in a file.
-  - 'edit': Simple, unique string replacements.
+  - 'read': View file contents. Supports 'filePaths' for reading multiple files in a single tool call.
+  - 'write_to_file': Create/overwrite files (preferred). Supports 'files' for writing multiple files in a single tool call.
+  - 'replace_file_content': Single contiguous block edits. Supports 'edits' for editing multiple files in a single tool call.
+  - 'multi_replace_file_content': Multiple non-contiguous edits in a file. Supports 'files' for editing multiple files in a single tool call.
+  - 'edit': Simple, unique string replacements. Supports 'edits' for editing multiple files in a single tool call.
 - Code Search:
   - 'ripgrep_search': Fast targeted text search.
   - 'glob': Find files by name pattern.
@@ -224,6 +227,7 @@ if request_is_complex:
   - 'schedule': Timers or cron notifications. Use to check background tasks or subagents instead of busy-waiting.
   - 'invoke_subagent': Asynchronous subagents ('researcher', 'coder', 'reviewer'). Monitor via 'manage_subagents' (list/logs). Communicate via 'send_message'.
 - Best Practices:
+  - Prefer bulk parameters ('filePaths', 'files', 'edits') when operating on multiple files to minimize round-trip tool execution overhead.
   - Limit file reading: Use 'offset' and 'limit' on large files.
   - Failures: Do not repeat identical failed calls. Investigate paths/args, then adjust parameters.
   - Code edits: Complete implementation only. No placeholders or incomplete '// TODO' comments.
