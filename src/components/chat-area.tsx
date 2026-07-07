@@ -299,12 +299,9 @@ export function wrapMarkdownToLines(
             <Text color={themeColor}>│    </Text>
             {isSysLine ? (
               isFirstSubLine ? (
-                <Text>
-                  {listPrefix}
-                  <Text bold color="yellow">[SYS]</Text>
-                </Text>
+                <Text>{listPrefix}</Text>
               ) : (
-                <Text>{" ".repeat(listPrefix.length + 5)}</Text>
+                <Text>{" ".repeat(listPrefix.length)}</Text>
               )
             ) : listPrefix ? (
               isFirstSubLine ? (

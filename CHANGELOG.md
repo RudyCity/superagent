@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.159] - 2026-07-07
+
+### Changed
+- **Removed System [SYS] Tag Rendering**:
+  - Removed the bold yellow `[SYS]` prefix tag from system line displays in both `chat-area.tsx` and `chat-line.tsx` rendering layouts, leaving only the clean message content.
+
+---
+
 ## [1.2.158] - 2026-07-07
 
 ### Changed

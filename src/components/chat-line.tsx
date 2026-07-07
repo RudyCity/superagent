@@ -353,7 +353,6 @@ export function renderMarkdown(content: string, themeColor: string = "blue", sho
             {isSysLine ? (
               <Text>
                 {listPrefix}
-                <Text bold color="yellow">[SYS]</Text>
               </Text>
             ) : listPrefix ? (
               <Text color="blue" bold>{listPrefix}</Text>
