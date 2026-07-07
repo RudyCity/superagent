@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.155] - 2026-07-07
+
+### Fixed
+- **Terminal Chat Height limit**:
+  - Fixed an issue where the conversation log lines would not extend down to the active task checklist or input area, causing a large empty gap.
+  - Calculated `chatHeightLimit` using the exact bottom chrome height and banner height dynamically rather than using static/heuristic-based `chromeHeight` estimations.
+
+---
+
 ## [1.2.154] - 2026-07-07
 
 ### Changed

@@ -2045,58 +2045,6 @@ export function App({
     return false;
   })();
 
-  let chromeHeight = (showBanner ? 15 : 8) + (isSelectionOnlyStep ? 0 : inputLinesCount);
-  if (isExecutingTool) {
-    chromeHeight += 3;
-    if (activeToolLinesCount > 0) chromeHeight += activeToolLinesCount + 1;
-  }
-  if (planState === "PLANNING_PENDING") {
-    chromeHeight += activeWizard?.type === "plan_approve"
-      ? planApprovalChromeHeight(planPath, activeWizard.step)
-      : 6;
-  }
-  if (activeWizard) {
-    chromeHeight += 3;
-    if (activeWizard.type === "login") {
-      if (activeWizard.step === 1 || activeWizard.step === 2) chromeHeight += 8;
-      else if (activeWizard.step === 10) chromeHeight += 8 + Math.min(6, wizardOptions.length);
-      else if (
-        activeWizard.step === 3 ||
-        activeWizard.step === 4 ||
-        activeWizard.step === 5 ||
-        activeWizard.step === 9 ||
-        activeWizard.step === 11 ||
-        activeWizard.step === 12 ||
-        activeWizard.step === 13
-      ) chromeHeight += 6;
-      else if (
-        activeWizard.step === 6 ||
-        activeWizard.step === 7 ||
-        activeWizard.step === 8
-      ) chromeHeight += 8 + Math.min(6, wizardOptions.length);
-    } else if (activeWizard.type === "model") {
-      chromeHeight += wizardOptions.length > 0 ? 13 : 6;
-    } else if (activeWizard.type === "permission") {
-      chromeHeight += 9;
-    } else if (activeWizard.type === "question") {
-      chromeHeight += 8 + Math.min(6, wizardOptions.length);
-    }
-  } else if ((input.startsWith("/") || input.startsWith("!")) && suggestions.length > 0) {
-    chromeHeight += 2;
-  }
-  if (isProcessing) {
-    if (streamDisplay && streamDisplay.trim().length > 0) chromeHeight += 2;
-    else if (activeWizard?.type !== "permission" && !isExecutingTool) chromeHeight += 3;
-  }
-  if (planState === "APPROVED" && checklistTasks.length > 0) {
-    chromeHeight += 1 + Math.min(checklistTasks.length, maxChecklistVisible);
-  }
-  // Account for completed history section height
-  if (planState === "APPROVED" && completedHistory.length > 0) {
-    const historyVisible = Math.min(completedHistory.length, 3);
-    chromeHeight += 1 + historyVisible + (completedHistory.length > 3 ? 1 : 0);
-  }
-
   // Account for input history panel height
   let historySectionHeight = 0;
   if (focusMode === "history") {
@@ -2118,27 +2066,6 @@ export function App({
       if (hiddenBelow > 0) historySectionHeight += 1;
     }
   }
-  chromeHeight += historySectionHeight;
-
-  let liveListHeight = 0;
-  if (runningSuperagentsCount > 0 || runningSubagentsCount > 0 || runningTasksCount > 0) {
-    if (runningSuperagentsCount > 0) {
-      liveListHeight += collapsedSections.superagents
-        ? 1
-        : 1 + Math.min(runningSuperagentsCount, maxSuperagentsVisible) * 3;
-    }
-    if (runningSubagentsCount > 0) {
-      liveListHeight += collapsedSections.subagents
-        ? 1
-        : 1 + Math.min(runningSubagentsCount, maxSubagentsVisible);
-    }
-    if (runningTasksCount > 0) {
-      liveListHeight += 1 + Math.min(runningTasksCount, maxProcsVisible);
-    }
-  }
-  chromeHeight += liveListHeight;
-
-  const chatHeightLimit = Math.max(5, terminalHeight - chromeHeight - 1);
 
   // --- Calculate section boundaries for mouse click detection ---
   // Layout from bottom: StatusBar(1) + margin(1) + bottomChrome(content + margin) + ChatArea
@@ -2209,12 +2136,20 @@ export function App({
     inputSectionHeight += 2; // 1 question line + 1 marginBottom line
   }
 
+  // Banner: marginY(1) + inner_row(4) + marginY(1) = 6 rows; +1 header row → content starts at row 8
+  // No git warning adds ~2 extra rows (marginY(1) + 1 content row)
+  const bannerHeight = showBanner ? (gitBranch ? 6 : 8) : 0;
+  const chatContentStartRow = bannerHeight + 1 /* header */ + 1 /* first content row */;
+
   // Bottom chrome: marginTop(1) + agents + checklist + history + wizard + input
   const bottomChromeContentHeight = totalAgentsHeight + checklistSectionHeight + historySectionHeight + wizardSectionHeight + inputSectionHeight;
   const bottomChromeTotalHeight = 1 + bottomChromeContentHeight; // +1 for marginTop of the chrome box
 
   // Chat area height on screen
   const chatAreaScreenHeight = mainContentHeight - bottomChromeTotalHeight;
+
+  // Exact height limit for the scrollable chat messages to prevent any empty terminal gap
+  const chatHeightLimit = Math.max(5, chatAreaScreenHeight - bannerHeight - 1);
 
   // Build section boundaries (row numbers 1-indexed from top)
   const sectionBounds: SectionBoundary[] = [];
@@ -2279,11 +2214,7 @@ export function App({
     responseLinesCount = wrapTextForDisplay(lines[focusedResponseIndex].content, focusRespWidth).length;
   }
 
-  // Chat content start row (after header, for visible line position calculation)
-  // Banner: marginY(1) + inner_row(4) + marginY(1) = 6 rows; +1 header row → content starts at row 8
-  // No git warning adds ~2 extra rows (marginY(1) + 1 content row)
-  const bannerHeight = showBanner ? (gitBranch ? 6 : 8) : 0;
-  const chatContentStartRow = bannerHeight + 1 /* header */ + 1 /* first content row */;
+
 
   const wrappedLines = useMemo(() => {
     return computeWrappedLines({
