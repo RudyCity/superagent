@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.163] - 2026-07-07
+
+### Fixed
+- **Conversation History Persistence on Interruption**:
+  - Implemented synchronous file writes (`saveToFileSync`) and agent-level `saveHistorySync()` to ensure history is persisted to disk on forced exits (Ctrl+C, SIGINT, SIGTERM, or general exit).
+  - Modified the catch block in the agent's run loop to save history asynchronously on `AbortError` (e.g. first Ctrl+C in a TTY).
+  - Added synchronous saving in the CLI abort/exit handlers to guarantee state is saved before process termination.
+
+---
+
 ## [1.2.162] - 2026-07-07
 
 ### Changed

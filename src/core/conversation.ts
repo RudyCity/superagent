@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 import {
   superagentInstances,
@@ -144,6 +145,50 @@ export class Conversation {
       await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
     } catch (err) {
       console.error("Failed to save history:", err);
+    }
+  }
+
+  saveToFileSync(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED", workingDirectory?: string): void {
+    try {
+      fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
+
+      const serializedSuperagents = Array.from(superagentInstances.values()).map(inst => {
+        const { agent, ...rest } = inst;
+        return {
+          ...rest,
+          historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
+        };
+      });
+
+      const serializedSubagents = Array.from(subagentInstances.values()).map(inst => {
+        const { agent, ...rest } = inst;
+        return {
+          ...rest,
+          historyFilePath: inst.historyFilePath || (agent && typeof agent.getCurrentHistoryFilePath === "function" ? agent.getCurrentHistoryFilePath() : undefined)
+        };
+      });
+
+      // Serialize pinned messages from ContextManager (if available)
+      const pinnedMessages = this.contextManager
+        ? this.contextManager.serializePinnedMessages()
+        : (this.pendingPinnedMessages || []);
+
+      const data = {
+        messages: this.messages,
+        planState,
+        workingDirectory,
+        superagents: serializedSuperagents,
+        subagents: serializedSubagents,
+        historicalSuperagentTokens,
+        masterPromptTokens,
+        masterCompletionTokens,
+        lastMasterPromptTokens,
+        pinnedMessages,
+        lastCapturedTimestamp: this.lastCapturedTimestamp,
+      };
+      fsSync.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+    } catch (err) {
+      console.error("Failed to save history synchronously:", err);
     }
   }
 

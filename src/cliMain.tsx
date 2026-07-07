@@ -46,6 +46,7 @@ function abortAllAgents() {
       try { inst.agent.abort(); } catch {}
       inst.status = "completed";
       inst.result = "[Cancelled by user (SIGINT)]";
+      try { inst.agent.saveHistorySync(); } catch {}
     }
   }
   // Abort all running superagents
@@ -55,11 +56,13 @@ function abortAllAgents() {
       inst.status = "error";
       inst.result = "[Cancelled by user (SIGINT)]";
       inst.completedAt = Date.now();
+      try { inst.agent.saveHistorySync(); } catch {}
     }
   }
   // Abort master agent
   if (masterAgentRef && masterAgentRef.isAgentRunning && masterAgentRef.isAgentRunning()) {
     try { masterAgentRef.abort(); } catch {}
+    try { masterAgentRef.saveHistorySync(); } catch {}
   }
 }
 
@@ -67,6 +70,9 @@ let sigintCount = 0;
 
 export async function runCli() {
   process.on("exit", () => {
+    if (masterAgentRef) {
+      try { masterAgentRef.saveHistorySync(); } catch {}
+    }
     cleanupBackgroundTasks();
     showCursor();
   });

@@ -464,5 +464,25 @@ describe("Agent – tier-specific model resolution", () => {
 
     process.cwd = originalCwd;
   });
+
+  it("should save history synchronously using saveHistorySync", () => {
+    const { onEvent, onPermission, onQuestion } = makeHandlers();
+    const agent = new Agent(onEvent, onPermission, onQuestion);
+    
+    // Add a message
+    agent.getHistory().addUserMessage("Hello synchronous world");
+    
+    // Save history synchronously
+    agent.saveHistorySync();
+    
+    const filePath = agent.getCurrentHistoryFilePath();
+    expect(filePath).toBeTruthy();
+    expect(fs.existsSync(filePath)).toBe(true);
+    
+    // Load it back and verify
+    const loadedData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    expect(loadedData.messages).toHaveLength(1);
+    expect(loadedData.messages[0].content).toBe("Hello synchronous world");
+  });
 });
 

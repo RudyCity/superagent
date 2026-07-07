@@ -902,6 +902,16 @@ If none of the options are suitable, still pick the closest one.`;
     clearHistoryCache();
   }
 
+  saveHistorySync(): void {
+    if (!this.currentHistoryFilePath) {
+      this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
+    }
+    process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
+
+    this.conversation.saveToFileSync(this.currentHistoryFilePath, this.planState, this.workingDirectory);
+    clearHistoryCache();
+  }
+
   private getModel() {
     return getModelInstanceForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
   }
@@ -1023,6 +1033,7 @@ Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply wit
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         this.onEvent({ type: "text", content: "\n\n[Interrupted]" });
+        await this.saveHistory();
       } else {
         const message = formatError(err);
         this.writeToLogFile("AGENT_ERROR", message);

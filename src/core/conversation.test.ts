@@ -135,4 +135,18 @@ describe("Conversation", () => {
     expect(msgs.find(m => m.toolResults?.[0]?.name === "run_command" && m.toolResults?.[0]?.toolCallId === "c1")?.toolResults?.[0]?.result).toContain("truncated");
     expect(msgs.find(m => m.toolResults?.[0]?.name === "run_command" && m.toolResults?.[0]?.toolCallId === "c3")?.toolResults?.[0]?.result).toBe("tests passed");
   });
+
+  it("should save and load conversation history synchronously to/from file", () => {
+    const conv = new Conversation();
+    conv.addUserMessage("Test sync file save");
+    conv.saveToFileSync(tempConvPath);
+
+    const loadedConv = new Conversation();
+    // loadFromFile is async, but we can verify it loads the synchronously saved file successfully
+    return loadedConv.loadFromFile(tempConvPath).then(() => {
+      const msgs = loadedConv.getMessages();
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0].content).toBe("Test sync file save");
+    });
+  });
 });
