@@ -1,6 +1,14 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [1.2.154] - 2026-07-07
+
+### Changed
+- **Subagent Planning Requirements**:
+  - Removed the requirement that spawning a Subagent (`invoke_subagent`) is blocked by implementation plan approval.
+  - Spawning subagents now only requires tasks to be documented first via `manage_tasks(action: 'add' or 'add_bulk')`.
+  - Updated system prompts and orchestration logic in `agent.ts`, `base.ts`, and `prompts.ts` to reflect this change.
+
+---
 
 ## [1.2.153] - 2026-07-07
 

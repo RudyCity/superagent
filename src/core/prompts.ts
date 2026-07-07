@@ -93,30 +93,6 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 - PRE_MERGE_VALIDATION: Run build & test suites inside worktree before finishing. Fix all failures first.
 - GIT_COMMIT: Add & commit all changes to branch: ${branch} before finalizing. Use ";" instead of "&&" if on Windows.
 - PLAN_LIMIT: View, edit, sync, and update task status via 'manage_tasks' and 'manage_plan'. Direct file edits/writes to task or plan files are BLOCKED.
-- SPAWN_PLANNING: Must create or update plan/tasks via 'manage_tasks' or 'manage_plan' before spawning any Subagent ('invoke_subagent'). Plan file content MUST strictly match one of these structures:
-  - Full Template (default/new features):
-    # [Title]
-    ## Proposed Changes
-    - [ ] [Task]
-    ## Verification Plan
-    ### Automated Tests
-    ### Manual Verification
-  - Quick Template (minor/simple fixes):
-    # [Title]
-    ## Proposed Changes
-    - [ ] [Task]
-  - Refactor Template (refactoring/redesign):
-    # [Title]
-    ## Proposed Changes
-    - [ ] [Task]
-    ## Architecture
-  - Header Regex Requirements:
-    - Title: '# [Title]'
-    - Proposed Changes: '## Proposed Changes' (or '## Rencana Perubahan')
-    - Verification Plan: '## Verification Plan' (or '## Rencana Verifikasi')
-    - Automated Tests: '### Automated Tests' (or '### Test Otomatis')
-    - Manual Verification: '### Manual Verification' (or '### Verifikasi Manual' / '### Manual Testing')
-    - Architecture: '## Architecture' (or '## Arsitektur' / '## Design' / '## Desain' / '## Refactor')
 - FILE_EDIT_SAFETY:
   - Read latest file content via 'read' before editing (prevents stale line range errors).
   - Prefer using bulk/multi-file parameters (e.g. 'filePaths' in 'read', 'files' in 'write_to_file' / 'multi_replace_file_content', and 'edits' in 'edit' / 'replace_file_content') when operating on multiple files to avoid tool-call round-trips.
@@ -127,7 +103,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 
 # LOGIC GATES
 if spawning_subagent:
-    CALL manage_tasks(action: 'add' or 'add_bulk') or manage_plan(action: 'create') to document task/plan FIRST.
+    CALL manage_tasks(action: 'add' or 'add_bulk') to document task FIRST.
     # Use 'add_bulk' with 'texts' array when adding multiple tasks at once (more efficient than multiple 'add' calls).
 
 if decision_point:

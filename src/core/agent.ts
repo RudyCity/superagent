@@ -2232,13 +2232,13 @@ for (const tc of toolCalls) {
             }
           }
 
-          if (tc.name === "invoke_superagent" || tc.name === "merge_superagents" || tc.name === "invoke_subagent") {
+          if (tc.name === "invoke_superagent" || tc.name === "merge_superagents") {
             if (this.planState !== "APPROVED") {
               let msg = "";
               if (this.planState === "PLANNING_PENDING") {
-                msg = `Error: Spawning Superagents or Subagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
+                msg = `Error: Spawning or merging Superagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
               } else {
-                msg = `Error: Spawning Superagents or Subagents is blocked. You must first write an implementation plan to '${this.getPlanFilePath()}' and have the user approve it before you can invoke any agents.`;
+                msg = `Error: Spawning or merging Superagents is blocked. You must first write an implementation plan to '${this.getPlanFilePath()}' and have the user approve it before you can invoke any Superagents.`;
               }
               const blocked: ToolResult = {
                 toolCallId: tc.id,
