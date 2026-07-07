@@ -9,7 +9,7 @@ vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
 import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, clearHistoryCache, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset, getModelConnectionDetailsForTier } from "./config.js";
 import { getModelConfigPath } from "./config/paths.js";
-import { clearModelConfigCache, loadModelConfig, addProvider, saveModelConfig, getProviders, removeProvider } from "./config/jsonConfig.js";
+import { clearModelConfigCache, loadModelConfig, addProvider, saveModelConfig, getProviders, removeProvider, clearSessionActivePreset } from "./config/jsonConfig.js";
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -25,6 +25,7 @@ describe("config", () => {
     }
     ensureGlobalConfigDir();
     clearModelConfigCache();
+    clearSessionActivePreset();
   });
 
   afterEach(() => {
@@ -36,6 +37,7 @@ describe("config", () => {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
     clearModelConfigCache();
+    clearSessionActivePreset();
   });
 
   it("should get global config directory containing expected name", () => {

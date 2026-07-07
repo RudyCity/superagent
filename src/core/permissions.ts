@@ -106,6 +106,22 @@ export function isSuperagentOutOfBounds(
     }
   }
 
+  if (args.edits && Array.isArray(args.edits)) {
+    for (const edit of args.edits) {
+      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
+        candidatePaths.push((edit as any).filePath);
+      }
+    }
+  }
+
+  if (args.files && Array.isArray(args.files)) {
+    for (const file of args.files) {
+      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
+        candidatePaths.push((file as any).filePath);
+      }
+    }
+  }
+
   // If no path is specified for search tools, they default to cwd (which is the worktree)
   if (candidatePaths.length === 0 && ["glob", "grep", "ripgrep_search"].includes(toolCall.name)) {
     return false;
@@ -157,6 +173,22 @@ export function isToolCallOutOfBounds(
     for (const fp of args.filePaths) {
       if (typeof fp === "string") {
         candidatePaths.push(fp);
+      }
+    }
+  }
+
+  if (args.edits && Array.isArray(args.edits)) {
+    for (const edit of args.edits) {
+      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
+        candidatePaths.push((edit as any).filePath);
+      }
+    }
+  }
+
+  if (args.files && Array.isArray(args.files)) {
+    for (const file of args.files) {
+      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
+        candidatePaths.push((file as any).filePath);
       }
     }
   }
@@ -240,6 +272,30 @@ export function isModelConfigAccess(
     args.cwd, args.DirectoryPath, args.SearchPath, args.AbsolutePath,
   ].filter((v): v is string => typeof v === "string");
 
+  if (args.filePaths && Array.isArray(args.filePaths)) {
+    for (const fp of args.filePaths) {
+      if (typeof fp === "string") {
+        candidatePaths.push(fp);
+      }
+    }
+  }
+
+  if (args.edits && Array.isArray(args.edits)) {
+    for (const edit of args.edits) {
+      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
+        candidatePaths.push((edit as any).filePath);
+      }
+    }
+  }
+
+  if (args.files && Array.isArray(args.files)) {
+    for (const file of args.files) {
+      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
+        candidatePaths.push((file as any).filePath);
+      }
+    }
+  }
+
   for (const fp of candidatePaths) {
     const isAbs = path.isAbsolute(fp) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(fp));
     const resolved = isAbs
@@ -280,6 +336,30 @@ export function isSensitiveEnvFileAccess(
     args.filePath, args.file_path, args.TargetFile, args.path,
     args.AbsolutePath,
   ].filter((v): v is string => typeof v === "string");
+
+  if (args.filePaths && Array.isArray(args.filePaths)) {
+    for (const fp of args.filePaths) {
+      if (typeof fp === "string") {
+        candidatePaths.push(fp);
+      }
+    }
+  }
+
+  if (args.edits && Array.isArray(args.edits)) {
+    for (const edit of args.edits) {
+      if (edit && typeof edit === "object" && typeof (edit as any).filePath === "string") {
+        candidatePaths.push((edit as any).filePath);
+      }
+    }
+  }
+
+  if (args.files && Array.isArray(args.files)) {
+    for (const file of args.files) {
+      if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
+        candidatePaths.push((file as any).filePath);
+      }
+    }
+  }
 
   for (const fp of candidatePaths) {
     const normalized = fp.replace(/\\/g, "/");
@@ -329,6 +409,22 @@ export function getToolDescription(
       fp = args.filePaths[0];
     } else {
       fp = `${args.filePaths[0]} and ${args.filePaths.length - 1} more files`;
+    }
+  }
+  if (!fp && args.edits && Array.isArray(args.edits) && args.edits.length > 0) {
+    const uniquePaths = Array.from(new Set(args.edits.map((e: any) => e.filePath).filter(Boolean)));
+    if (uniquePaths.length === 1) {
+      fp = uniquePaths[0] as string;
+    } else if (uniquePaths.length > 1) {
+      fp = `${uniquePaths[0]} and ${uniquePaths.length - 1} more files`;
+    }
+  }
+  if (!fp && args.files && Array.isArray(args.files) && args.files.length > 0) {
+    const uniquePaths = Array.from(new Set(args.files.map((f: any) => f.filePath).filter(Boolean)));
+    if (uniquePaths.length === 1) {
+      fp = uniquePaths[0] as string;
+    } else if (uniquePaths.length > 1) {
+      fp = `${uniquePaths[0]} and ${uniquePaths.length - 1} more files`;
     }
   }
   if (!fp) {

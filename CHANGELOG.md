@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.168] - 2026-07-07
+
+### Fixed
+- **Bulk Edits File Path Resolution and Permission Checks**:
+  - Fixed an issue where getToolDescription resolved file paths as `(missing)` for bulk edits targeting nested paths inside `edits` or `files` arrays.
+  - Enhanced `isSuperagentOutOfBounds`, `isToolCallOutOfBounds`, `isModelConfigAccess`, and `isSensitiveEnvFileAccess` in [permissions.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/permissions.ts) to correctly inspect nested paths within `edits` and `files` arrays.
+  - Prevented model preset test failures by isolating test presets using `clearSessionActivePreset` in test hooks rather than aggressively clearing it inside `clearModelConfigCache`.
+  - Added unit test coverage in [permissions.test.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/permissions.test.ts).
+
+---
+
 ## [1.2.167] - 2026-07-07
 
 ### Added

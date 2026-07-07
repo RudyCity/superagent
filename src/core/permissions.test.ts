@@ -296,6 +296,60 @@ describe("isToolCallOutOfBounds", () => {
       expect(isSuperagentOutOfBounds(toolCall, worktreePath)).toBe(false);
       expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(false);
     });
+
+    it("should describe edit tool with edits array", () => {
+      const toolCall = {
+        name: "edit",
+        args: {
+          edits: [
+            { filePath: "src/app.ts", oldString: "a", newString: "b" },
+            { filePath: "src/config.ts", oldString: "x", newString: "y" }
+          ]
+        }
+      };
+      expect(getToolDescription(toolCall as any)).toBe("Editing file: src/app.ts and 1 more files");
+    });
+
+    it("should describe multi_replace_file_content tool with files array", () => {
+      const toolCall = {
+        name: "multi_replace_file_content",
+        args: {
+          files: [
+            { filePath: "src/app.ts", chunks: [] },
+            { filePath: "src/config.ts", chunks: [] }
+          ]
+        }
+      };
+      expect(getToolDescription(toolCall as any)).toBe("Replacing multiple blocks in file: src/app.ts and 1 more files");
+    });
+
+    it("should block out of bounds edit calls using edits array", () => {
+      const toolCall = {
+        name: "edit",
+        args: {
+          edits: [
+            { filePath: "src/app.ts" },
+            { filePath: "../escaped.ts" }
+          ]
+        }
+      };
+      expect(isSuperagentOutOfBounds(toolCall as any, worktreePath)).toBe(true);
+      expect(isToolCallOutOfBounds(toolCall as any, workspacePath)).toBe(true);
+    });
+
+    it("should block out of bounds replace calls using files array", () => {
+      const toolCall = {
+        name: "multi_replace_file_content",
+        args: {
+          files: [
+            { filePath: "src/app.ts" },
+            { filePath: "../escaped.ts" }
+          ]
+        }
+      };
+      expect(isSuperagentOutOfBounds(toolCall as any, worktreePath)).toBe(true);
+      expect(isToolCallOutOfBounds(toolCall as any, workspacePath)).toBe(true);
+    });
   });
 });
 

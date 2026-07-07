@@ -9,7 +9,7 @@ vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
 import { Agent } from "./agent.js";
 import type { AgentEvent } from "./agent.js";
-import { savePreset, setActivePresetId, clearModelConfigCache, getConfig, getGlobalConfigDir } from "./config.js";
+import { savePreset, setActivePresetId, clearModelConfigCache, getConfig, getGlobalConfigDir, clearSessionActivePreset } from "./config.js";
 import { getModelConfigPath, ensureGlobalConfigDir } from "./config/paths.js";
 
 const configPath = getModelConfigPath();
@@ -21,6 +21,7 @@ beforeEach(() => {
   }
   ensureGlobalConfigDir();
   clearModelConfigCache();
+  clearSessionActivePreset();
 });
 
 afterEach(() => {
@@ -29,6 +30,7 @@ afterEach(() => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   }
   clearModelConfigCache();
+  clearSessionActivePreset();
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
