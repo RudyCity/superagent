@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.161] - 2026-07-07
+
+### Fixed
+- **Support filePaths Array in Permission Boundary and Descriptions**:
+  - Fixed issues where bulk file reading tool calls using the `filePaths` array parameter resolved to `"(missing)"` in tool descriptions and bypassed out-of-bounds safety boundary checks. Now, all file paths inside the `filePaths` array are correctly description-formatted and strictly verified against worktree/workspace bounds.
+
+---
+
 ## [1.2.160] - 2026-07-07
 
 ### Added

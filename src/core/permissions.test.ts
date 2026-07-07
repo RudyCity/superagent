@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { isDangerousCommand, isPathInWorktree, isSuperagentOutOfBounds, isToolCallOutOfBounds } from "./permissions.js";
+import { isDangerousCommand, isPathInWorktree, isSuperagentOutOfBounds, isToolCallOutOfBounds, getToolDescription } from "./permissions.js";
 import path from "path";
 
 vi.mock("./config.js", async (importOriginal) => {
@@ -257,6 +257,45 @@ describe("isToolCallOutOfBounds", () => {
       args: { command: `cat ${modelConfigPath}` }
     };
     expect(isToolCallOutOfBounds(commandToolCall, workspacePath)).toBe(true);
+  });
+
+  describe("getToolDescription & bulk file paths support", () => {
+    const worktreePath = path.resolve("/dummy/worktree");
+    const workspacePath = path.resolve("/dummy/workspace");
+
+    it("should describe read tool with single filePath", () => {
+      const toolCall = {
+        name: "read",
+        args: { filePath: "src/app.ts" }
+      };
+      expect(getToolDescription(toolCall as any)).toBe("Reading file: src/app.ts");
+    });
+
+    it("should describe read tool with filePaths array", () => {
+      const toolCall = {
+        name: "read",
+        args: { filePaths: ["src/app.ts", "src/config.ts"] }
+      };
+      expect(getToolDescription(toolCall as any)).toBe("Reading file: src/app.ts and 1 more files");
+    });
+
+    it("should block out of bounds read calls using filePaths array", () => {
+      const toolCall = {
+        name: "read",
+        args: { filePaths: ["src/app.ts", "../escaped.ts"] }
+      };
+      expect(isSuperagentOutOfBounds(toolCall, worktreePath)).toBe(true);
+      expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(true);
+    });
+
+    it("should allow safe read calls using filePaths array", () => {
+      const toolCall = {
+        name: "read",
+        args: { filePaths: ["src/app.ts", "src/config.ts"] }
+      };
+      expect(isSuperagentOutOfBounds(toolCall, worktreePath)).toBe(false);
+      expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(false);
+    });
   });
 });
 

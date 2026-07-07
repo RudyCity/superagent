@@ -98,6 +98,14 @@ export function isSuperagentOutOfBounds(
     args.path,
   ].filter((v): v is string => typeof v === "string");
 
+  if (args.filePaths && Array.isArray(args.filePaths)) {
+    for (const fp of args.filePaths) {
+      if (typeof fp === "string") {
+        candidatePaths.push(fp);
+      }
+    }
+  }
+
   // If no path is specified for search tools, they default to cwd (which is the worktree)
   if (candidatePaths.length === 0 && ["glob", "grep", "ripgrep_search"].includes(toolCall.name)) {
     return false;
@@ -144,6 +152,14 @@ export function isToolCallOutOfBounds(
     args.SearchPath,
     args.AbsolutePath,
   ].filter((v): v is string => typeof v === "string");
+
+  if (args.filePaths && Array.isArray(args.filePaths)) {
+    for (const fp of args.filePaths) {
+      if (typeof fp === "string") {
+        candidatePaths.push(fp);
+      }
+    }
+  }
 
   const rootConfig = resolveNormalizedPath(getRootConfigDir());
 
@@ -306,8 +322,18 @@ export function getToolDescription(
   toolCall: ToolCall
 ): string {
   const args = toolCall.args;
-  /** Safely resolve file path from common LLM aliases (filePath, file_path, TargetFile) */
-  const fp = (args.filePath ?? args.file_path ?? args.TargetFile ?? "(missing)") as string;
+  /** Safely resolve file path from common LLM aliases (filePath, file_path, TargetFile, filePaths) */
+  let fp = (args.filePath ?? args.file_path ?? args.TargetFile) as string | undefined;
+  if (!fp && args.filePaths && Array.isArray(args.filePaths) && args.filePaths.length > 0) {
+    if (args.filePaths.length === 1) {
+      fp = args.filePaths[0];
+    } else {
+      fp = `${args.filePaths[0]} and ${args.filePaths.length - 1} more files`;
+    }
+  }
+  if (!fp) {
+    fp = "(missing)";
+  }
   /** Safe string fallback helper for description interpolation */
   const s = (v: unknown) => (v !== undefined && v !== null ? String(v) : "(missing)");
   switch (toolCall.name) {
