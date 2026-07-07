@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.152] - 2026-07-07
+
+### Optimized
+- **Grep Tool Cache Interception**:
+  - Intercepted [grepTool](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/tools/systemTools.ts) to filter files in-memory using picomatch over the cached file list from getWorkspaceCachePath, bypassing filesystem walking when cache is present.
+  - Normalized path outputs in grep results to use forward slashes consistently across platforms.
+
+- **Git-based Workspace Discovery**:
+  - Enhanced [getWorkspaceFingerprint](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/workspaceDiscovery.ts) to check if the directory is a Git repository, and if so, query files using git ls-files.
+  - Added concurrent fs.promises.stat execution in batches of 100 to gather metadata efficiently and generate MD5 fingerprints quickly.
+
+---
+
 ## [1.2.151] - 2026-07-07
 
 ### Changed

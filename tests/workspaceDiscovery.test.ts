@@ -103,6 +103,37 @@ describe("workspaceDiscovery", () => {
     });
   });
 
+  describe("Git-based workspace discovery", () => {
+    it("should discover files using git ls-files if inside a git repository", async () => {
+      const { execSync } = await import("child_process");
+      try {
+        execSync("git init", { cwd: testWorkspaceDir, stdio: "ignore" });
+        execSync("git config user.name 'Test'", { cwd: testWorkspaceDir, stdio: "ignore" });
+        execSync("git config user.email 'test@test.com'", { cwd: testWorkspaceDir, stdio: "ignore" });
+        fs.writeFileSync(path.join(testWorkspaceDir, ".gitignore"), "node_modules/\n");
+        execSync("git add .", { cwd: testWorkspaceDir, stdio: "ignore" });
+        execSync("git commit -m 'initial'", { cwd: testWorkspaceDir, stdio: "ignore" });
+      } catch (gitErr) {
+        return;
+      }
+
+      const { fingerprint, fileList, files } = await getWorkspaceFingerprint(testWorkspaceDir);
+      
+      expect(fileList).toContain("agents.md");
+      expect(fileList).toContain("package.json");
+      expect(fileList).toContain("src/index.ts");
+      expect(fileList).toContain(".gitignore");
+      
+      expect(fileList).not.toContain(".git/config");
+      expect(fileList).not.toContain("node_modules/package.json");
+
+      expect(files["agents.md"]).toBeDefined();
+      expect(files["agents.md"].size).toBeGreaterThan(0);
+      expect(fingerprint).toBeDefined();
+      expect(fingerprint.length).toBe(32);
+    });
+  });
+
   describe("discoverWorkspace", () => {
     it("should run full scan and return isIdentical = false on first call", async () => {
       const { isIdentical, cache } = await discoverWorkspace(testWorkspaceDir);
