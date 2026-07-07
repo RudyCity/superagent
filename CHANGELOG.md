@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.157] - 2026-07-07
+
+### Added
+- **Diff Stats to Edit Tool**:
+  - Integrated `buildEditSummary` support into the `edit` tool (both bulk and single-file options) in `systemTools.ts`. It now computes and appends diff summaries (e.g. `+45 -10`) when editing files.
+  - Cleaned up tool start/auto-approve colors and icons in `dashboardLogFormatter.tsx` to align with the soft gray design guidelines.
+
+---
+
 ## [1.2.156] - 2026-07-07
 
 ### Changed

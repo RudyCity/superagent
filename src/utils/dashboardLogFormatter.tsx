@@ -93,7 +93,7 @@ export function parseLogGroups(selectedSession: AgentSession): LogGroup[] {
     } else if (logStr.startsWith("[TOOL START]")) {
       label = "🔧 TOOL START";
       content = logStr.replace("[TOOL START]", "").trim();
-      color = "blue";
+      color = "gray";
       noTruncate = true;
     } else if (logStr.startsWith("[TOOL END]")) {
       label = "✅ TOOL DONE";
@@ -107,9 +107,9 @@ export function parseLogGroups(selectedSession: AgentSession): LogGroup[] {
       isBold = true;
       noTruncate = true;
     } else if (logStr.startsWith("[AUTO-APPROVE]")) {
-      label = "⚙️ AUTO-APPROVE";
+      label = "AUTO-APPROVE";
       content = logStr.replace("[AUTO-APPROVE]", "").trim();
-      color = "blue";
+      color = "gray";
       dimColor = true;
     } else if (logStr.startsWith("[QUESTION]")) {
       label = "❓ QUESTION";
@@ -124,7 +124,7 @@ export function parseLogGroups(selectedSession: AgentSession): LogGroup[] {
     } else if (logStr.startsWith("[TOOL:START]")) {
       label = "🔧 TOOL START";
       content = logStr.replace("[TOOL:START]", "").trim();
-      color = "cyan";
+      color = "gray";
       noTruncate = true;
     } else if (logStr.startsWith("[TOOL:OK]")) {
       label = "✅ TOOL OK";
@@ -344,8 +344,8 @@ export function computeWrappedLogs(
           const preview = firstContent.length > 50 ? firstContent.slice(0, 47) + "..." : firstContent;
           wrappedLines.push(
             <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>
-              <Text color={group.color} dimColor={group.dimColor} wrap="truncate-end">
-                {nestPrefix}    <Text bold color="cyan">↳ ⚙️ </Text><Text color={group.color}>{preview}</Text>
+              <Text color="gray" dimColor={group.dimColor} wrap="truncate-end">
+                {nestPrefix}    <Text bold color="gray">↳ </Text><Text color="gray">{preview}</Text>
                 <Text bold color={statusColor}> {statusIcon} {statusLabel}</Text>
                 <Text dimColor italic>  (Ctrl+O)</Text>
               </Text>
@@ -381,13 +381,14 @@ export function computeWrappedLogs(
           continue;
         }
 
-        const icon = group.label.includes("TOOL START") ? "⚙️ " :
+        const icon = group.label.includes("TOOL START") ? "▶ " :
                      group.label.includes("FAIL") ? "✗ " : "✓ ";
         const preview = firstContent.length > 50 ? firstContent.slice(0, 47) + "..." : firstContent;
+        const displayColor = isTool ? "gray" : group.color;
         wrappedLines.push(
           <Box flexDirection="row" key={`log-collapsed-${groupIdx}`} width={feedWidth}>
-            <Text color={group.color} dimColor={group.dimColor} wrap="truncate-end">
-              {nestPrefix}    <Text bold color={group.color}>↳ {icon}</Text><Text color={group.color}>{preview}</Text> <Text dimColor italic>(Ctrl+O)</Text>
+            <Text color={displayColor} dimColor={group.dimColor} wrap="truncate-end">
+              {nestPrefix}    <Text bold color={displayColor}>↳ {icon}</Text><Text color={displayColor}>{preview}</Text> <Text dimColor italic>(Ctrl+O)</Text>
             </Text>
           </Box>
         );
@@ -414,14 +415,15 @@ export function computeWrappedLogs(
       const merged = group.mergedResult;
       const mergedColor = merged?.isError ? "red" : "green";
       const mergedIcon = merged?.isError ? "✗" : "✓";
-      const icon = "\u2699\ufe0f ";
+      const icon = "";
       const firstContent = group.rawLines[0] || "";
       const cleaned = firstContent.replace(/\r\n/g, "\n").replace(/\r/g, "");
       const firstLineText = cleaned.split("\n")[0] || "";
+      const displayColor = "gray";
       wrappedLines.push(
         <Box flexDirection="row" key={`log-header-${groupIdx}`} width={feedWidth}>
-          <Text color={group.color} bold={group.isBold} dimColor={group.dimColor} wrap={useTruncate ? "truncate-end" : undefined}>
-            {nestPrefix}    <Text bold color={group.color}>▼ {icon}</Text><Text color={group.color}>{firstLineText}</Text>
+          <Text color={displayColor} bold={group.isBold} dimColor={group.dimColor} wrap={useTruncate ? "truncate-end" : undefined}>
+            {nestPrefix}    <Text bold color={displayColor}>▼ {icon}</Text><Text color={displayColor}>{firstLineText}</Text>
             {merged && <Text bold color={mergedColor}> {mergedIcon}</Text>}
             <Text dimColor italic> (Ctrl+O)</Text>
           </Text>

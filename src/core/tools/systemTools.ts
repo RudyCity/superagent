@@ -336,6 +336,7 @@ export const editTool: Tool = {
         for (const [filePath, fileEdits] of editsByFile.entries()) {
           try {
             let content = await fs.readFile(filePath, "utf-8");
+            const originalContent = content;
             for (const edit of fileEdits) {
               const oldStr = edit.oldString;
               const newStr = edit.newString;
@@ -399,11 +400,12 @@ export const editTool: Tool = {
             }
 
             await fs.writeFile(filePath, content, "utf-8");
+            const summary = buildEditSummary(originalContent, content, filePath);
             const syntaxError = await verifySyntax(filePath);
             if (syntaxError) {
-              results.push(`Warning: ${syntaxError}. Files edited: ${fileEdits[0].filePath}`);
+              results.push(`Warning: ${syntaxError}. Files edited: ${fileEdits[0].filePath}\n${summary}`);
             } else {
-              results.push(`File edited: ${fileEdits[0].filePath}`);
+              results.push(`File edited: ${fileEdits[0].filePath}\n${summary}`);
             }
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
@@ -428,6 +430,7 @@ export const editTool: Tool = {
     const release = await fileLockManager.acquire(filePath);
     try {
       const content = await fs.readFile(filePath, "utf-8");
+      const originalContent = content;
       const oldStr = args.oldString as string;
       const newStr = args.newString as string;
       const startLine = args.startLine ? Math.max(1, args.startLine as number) : undefined;
@@ -488,13 +491,14 @@ export const editTool: Tool = {
       }
 
       await fs.writeFile(filePath, updated, "utf-8");
+      const summary = buildEditSummary(originalContent, updated, filePath);
       
       const syntaxError = await verifySyntax(filePath);
       if (syntaxError) {
-        return `Warning: ${syntaxError}. Changes applied to file: ${filePath}`;
+        return `Warning: ${syntaxError}. Changes applied to file: ${filePath}\n${summary}`;
       }
 
-      return `File edited: ${filePath}`;
+      return `File edited: ${filePath}\n${summary}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error editing file: ${message}`;
