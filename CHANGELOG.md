@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.156] - 2026-07-07
+
+### Changed
+- **Tool UI Icons and Color**:
+  - Removed the gear icon (⚙️) from the tool execution titles and descriptions in the chat log, active tool views, and inspector panel.
+  - Updated the color of executing tool descriptions, border lines, and arguments from bright yellow to a softer dimmed gray (slightly dark white) to clean up terminal UI visuals.
+
+---
+
 ## [1.2.155] - 2026-07-07
 
 ### Fixed

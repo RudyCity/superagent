@@ -392,11 +392,11 @@ export function renderToolStart(content: string): React.ReactNode {
             }
             return (
               <Box key={idx} flexDirection="row">
-                <Text color="yellow">│    </Text>
+                <Text color="gray">│    </Text>
                 <Text dimColor>{prefix}</Text>
                 <Text bold color="green">{toolName}</Text>
                 <Text color="cyan">(</Text>
-                <Text color="yellow">{remaining}</Text>
+                <Text color="gray">{remaining}</Text>
                 {hasClose && <Text color="cyan">)</Text>}
               </Box>
             );
@@ -404,7 +404,7 @@ export function renderToolStart(content: string): React.ReactNode {
         }
         return (
           <Box key={idx} flexDirection="row">
-            <Text color="yellow">│    </Text>
+            <Text color="gray">│    </Text>
             <Text bold color="white">{l}</Text>
           </Box>
         );
@@ -486,8 +486,8 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
           : null;
         return (
           <Box key={`child-${childIdx}`} flexDirection="column">
-            <Text color="yellow">
-              {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{displayDesc}</Text>
+            <Text color="gray">
+              {indent}<Text bold color="gray">↳ </Text><Text color="gray">{displayDesc}</Text>
               {diffStats && diffStats.added === 0 && diffStats.removed === 0 ? null : diffStats ? (
                 <Text>
                   <Text bold color="green"> +{diffStats.added}</Text>
@@ -508,8 +508,8 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
               {indent}<Text bold color="yellow">↳ ❓ Question: </Text><Text color="yellow">{questionText}</Text>
             </Text>
           ) : (
-            <Text color="yellow">
-              {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(Ctrl+O)</Text>
+            <Text color="gray">
+              {indent}<Text bold color="gray">↳ </Text><Text color="gray">{cleanDesc}</Text> <Text dimColor italic>(Ctrl+O)</Text>
             </Text>
           )}
         </Box>
@@ -531,10 +531,10 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
       <Box key={`child-${childIdx}`} flexDirection="column">
         {/* Header */}
         <Box flexDirection="row">
-          <Text color="yellow">
-            {indent}{"▼ ⚙️ "}
+          <Text color="gray">
+            {indent}{"▼ "}
           </Text>
-          <Text color="yellow">
+          <Text color="gray">
             {cleanDesc}
           </Text>
           {merged && (
@@ -553,7 +553,7 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
           if (idx === 0) return null; // skip first line (already shown in header)
           return (
             <Box key={`in-${idx}`} flexDirection="row">
-              <Text color="yellow">{indent}{"    "}</Text>
+              <Text color="gray">{indent}{"    "}</Text>
               <Text bold color="white">{l}</Text>
             </Box>
           );
@@ -782,20 +782,20 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
         const desc = extractDescription(content);
         return (
           <Box flexDirection="column">
-            <Text color="yellow">
-              ├─── [ <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>Ctrl+O</Text>
+            <Text color="gray">
+              ├─── [ <Text bold color="gray">▶ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
       }
       return (
         <Box flexDirection="column">
-          <Text color="yellow">
-            ├─── [ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>Ctrl+O</Text>
+          <Text color="gray">
+            ├─── [ <Text bold color="gray">SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>Ctrl+O</Text>
           </Text>
           {renderToolStart(content)}
           <Box flexDirection="row">
-            <Text color="yellow">│ </Text>
+            <Text color="gray">│ </Text>
           </Box>
         </Box>
       );

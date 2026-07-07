@@ -383,8 +383,8 @@ function wrapNestedChild(
             : null;
           const node = (
             <Box flexDirection="row">
-              <Text color="yellow">
-                {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{displayDesc}</Text>
+              <Text color="gray">
+                {indent}<Text bold color="gray">↳ </Text><Text color="gray">{displayDesc}</Text>
                 {diffStats && diffStats.added === 0 && diffStats.removed === 0 ? null : diffStats ? (
                   <Text>
                     <Text bold color="green"> +{diffStats.added}</Text>
@@ -408,8 +408,8 @@ function wrapNestedChild(
           </Box>
         ) : (
           <Box flexDirection="row">
-            <Text color="yellow">
-              {indent}<Text bold color="yellow">↳ ⚙️ </Text><Text color="yellow">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
+            <Text color="gray">
+              {indent}<Text bold color="gray">↳ </Text><Text color="gray">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
             </Text>
           </Box>
         );
@@ -429,8 +429,8 @@ function wrapNestedChild(
         : null;
       const headerNode = (
         <Box flexDirection="row">
-          <Text color="yellow">{indent}{"▼ ⚙️ "}</Text>
-          <Text color="yellow">{cleanDesc}</Text>
+          <Text color="gray">{indent}{"▼ "}</Text>
+          <Text color="gray">{cleanDesc}</Text>
           {merged && <Text bold color={mergedColor}> {mergedIcon}</Text>}
           {expandedDiffStats && !(expandedDiffStats.added === 0 && expandedDiffStats.removed === 0) && (
             <Text>
@@ -450,7 +450,7 @@ function wrapNestedChild(
         for (const subLine of subLines) {
           const node = (
             <Box flexDirection="row">
-              <Text color="yellow">{indent}{"    "}</Text>
+              <Text color="gray">{indent}{"    "}</Text>
               <Text bold color="white">{subLine}</Text>
             </Box>
           );
@@ -723,8 +723,8 @@ export function wrapChatLineToLines({
         const desc = extractDescription(content);
         const node = (
           <Box flexDirection="row">
-            <Text color="yellow">
-              ├─── [ <Text bold color="yellow">▶ ⚙️ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>Ctrl+O</Text>
+            <Text color="gray">
+              ├─── [ <Text bold color="gray">▶ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -732,8 +732,8 @@ export function wrapChatLineToLines({
       } else {
         const headerNode = (
           <Box flexDirection="row">
-            <Text color="yellow">
-              ├─── [ <Text bold color="yellow">⚙️ SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>Ctrl+O</Text>
+            <Text color="gray">
+              ├─── [ <Text bold color="gray">SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -762,19 +762,19 @@ export function wrapChatLineToLines({
 
                 const node = (
                   <Box flexDirection="row">
-                    <Text color="yellow">│    </Text>
+                    <Text color="gray">│    </Text>
                     {isFirstSub ? (
                       <Text>
                         <Text dimColor>{prefix}</Text>
                         <Text bold color="green">{toolName}</Text>
                         <Text color="cyan">(</Text>
-                        <Text color="yellow">{sub}</Text>
+                        <Text color="gray">{sub}</Text>
                         {hasClose && detailSubLines.length === 1 && <Text color="cyan">)</Text>}
                       </Text>
                     ) : (
                       <Text>
                         {" ".repeat(prefix.length + toolName.length + 1)}
-                        <Text color="yellow">{sub}</Text>
+                        <Text color="gray">{sub}</Text>
                         {hasClose && sIdx === detailSubLines.length - 1 && <Text color="cyan">)</Text>}
                       </Text>
                     )}
@@ -790,7 +790,7 @@ export function wrapChatLineToLines({
           for (const subLine of subLines) {
             const node = (
               <Box flexDirection="row">
-                <Text color="yellow">│    </Text>
+                <Text color="gray">│    </Text>
                 <Text bold color="white">{subLine}</Text>
               </Box>
             );
@@ -800,7 +800,7 @@ export function wrapChatLineToLines({
 
         const separatorNode = (
           <Box flexDirection="row">
-            <Text color="yellow">│ </Text>
+            <Text color="gray">│ </Text>
           </Box>
         );
         result.push({ node: separatorNode, lineIndex, type: "tool_start", isSeparator: true, isCollapsible: true });
@@ -1168,8 +1168,8 @@ export function computeWrappedLines({
   if (isExecutingTool) {
     const headerNode = (
       <Box flexDirection="row">
-        <Text color="yellow">
-          {borderPrefix}─── [ <Text bold color="yellow">⚙️ SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
+        <Text color="gray">
+          {borderPrefix}─── [ <Text bold color="gray">SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
         </Text>
       </Box>
     );
@@ -1177,7 +1177,7 @@ export function computeWrappedLines({
 
     const spinnerNode = (
       <Box flexDirection="row">
-        <Text color="yellow">│    </Text>
+        <Text color="gray">│    </Text>
         <ToolLoadingIndicator />
       </Box>
     );
@@ -1187,7 +1187,7 @@ export function computeWrappedLines({
     if (activeToolLines.length > 0) {
       const liveOutputHeader = (
         <Box flexDirection="row">
-          <Text color="yellow">├─── [ <Text bold color="yellow">⚙️ SYSTEM_CALL_OUTPUT (LIVE)</Text> ]</Text>
+          <Text color="gray">├─── [ <Text bold color="gray">SYSTEM_CALL_OUTPUT (LIVE)</Text> ]</Text>
         </Box>
       );
       result.push({ node: liveOutputHeader, lineIndex: -1, type: "tool_start" });
@@ -1197,7 +1197,7 @@ export function computeWrappedLines({
         for (const subLine of subLines) {
           const node = (
             <Box flexDirection="row">
-              <Text color="yellow">│    </Text>
+              <Text color="gray">│    </Text>
               <Text color="gray">{subLine}</Text>
             </Box>
           );
