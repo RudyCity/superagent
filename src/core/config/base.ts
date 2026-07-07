@@ -14,7 +14,7 @@ export interface Config {
   disableStreaming?: boolean;
 }
 
-import { loadModelConfig, getActivePreset, savePreset, getSettings } from "./jsonConfig.js";
+import { loadModelConfig, getActivePreset, savePreset, getSettings, saveSessionPreset } from "./jsonConfig.js";
 
 export function getConfig(): Config {
   const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
@@ -59,7 +59,7 @@ export function getConfig(): Config {
             preset.models.subagentDetails[key] = { ...preset.models.subagentDetails[key], ...tierUpdate };
           }
         }
-        savePreset(mode, preset);
+        saveSessionPreset(mode, preset);
       } catch {
         // Ignore auto-repair errors
       }

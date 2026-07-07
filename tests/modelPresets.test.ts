@@ -20,7 +20,7 @@ import {
 } from "../src/core/config.js";
 import { handleSlashCommand, getDefaultModel } from "../src/core/slash-commands.js";
 import { getModelConfigPath } from "../src/core/config/paths.js";
-import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
+import { clearModelConfigCache, clearSessionActivePreset, getActivePreset } from "../src/core/config/jsonConfig.js";
 
 const configPath = getModelConfigPath();
 
@@ -37,6 +37,7 @@ describe("Model Presets", () => {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
     ensureGlobalConfigDir();
+    clearSessionActivePreset();
   });
 
   afterEach(() => {
@@ -129,6 +130,55 @@ describe("Model Presets", () => {
     expect(appliedPreset?.models.MODEL_MULTI_MASTER).toBe("openai:gpt-4o");
     expect(appliedPreset?.models.MODEL_MULTI_SUBAGENT).toBe("openai:gpt-4o-mini");
     expect(getActivePresetId("multi")).toBe("openai-full");
+  });
+
+  it("should apply a model preset in-memory by default and to disk only when persist is true", () => {
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "openai", model: "gpt-4o" },
+            superagent: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "test-single" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
+    saveModelPreset("openai-session", "OpenAI session stack", {
+      MODEL_MULTI_MASTER: "openai:gpt-4-session",
+      MODEL_MULTI_SUBAGENT: "openai:gpt-4o-mini",
+    });
+
+    // 1. Apply without persisting (persist = false)
+    applyModelPreset("openai-session", "multi", false);
+
+    // Verify it is active in session memory
+    expect(getActivePresetId("multi")).toBe("openai-session");
+    expect(getActivePreset<any>("multi")?.models.master.model).toBe("gpt-4-session");
+
+    // But verify it is NOT written to activePresetId on disk
+    const diskConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    expect(diskConfig.activePresetId.multi).toBe("test-multi");
+
+    // 2. Apply with persisting (persist = true)
+    applyModelPreset("openai-session", "multi", true);
+    
+    // Verify it is now updated on disk
+    const updatedDiskConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    expect(updatedDiskConfig.activePresetId.multi).toBe("openai-session");
   });
 
   it("should execute slash commands for listing, saving and loading presets", () => {

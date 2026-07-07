@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { switchActiveProvider } from "./providers.js";
-import { loadModelConfig, getActivePreset, savePreset, setActivePresetId } from "./jsonConfig.js";
+import { loadModelConfig, getActivePreset, savePreset, setActivePresetId, setActivePreset } from "./jsonConfig.js";
 import type { ProviderProfile } from "./jsonConfig.js";
 
 export type PresetMode = "multi" | "single";
@@ -296,7 +296,7 @@ export function saveModelPreset(name: string, description: string, models?: Reco
  * - mode is REQUIRED to know which section to search.
  *   Defaults to "multi" if not provided.
  */
-export function applyModelPreset(name: string, mode?: PresetMode): void {
+export function applyModelPreset(name: string, mode?: PresetMode, persist?: boolean): void {
   const targetMode: PresetMode = mode || "multi";
   const fileData = readPresetsFile();
   const targetName = name.toLowerCase().trim();
@@ -373,8 +373,13 @@ export function applyModelPreset(name: string, mode?: PresetMode): void {
     description: preset.description || "",
     models: newPreset,
   };
-  savePreset(targetMode, jsonPreset);
-  setActivePresetId(targetMode, targetName);
+  const shouldPersist = persist ?? true;
+  if (shouldPersist) {
+    savePreset(targetMode, jsonPreset);
+    setActivePresetId(targetMode, targetName);
+  } else {
+    setActivePreset(targetMode, jsonPreset);
+  }
 
   // Switch active provider if model has a provider prefix
   const mainModel = preset.models.MODEL_MULTI_MASTER || preset.models.MODEL_SINGLE_SUPERAGENT || "";

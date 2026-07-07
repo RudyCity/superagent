@@ -8,7 +8,7 @@ import {
   fetchAndCacheModels,
 } from "../config.js";
 import type { PresetMode } from "../config.js";
-import { loadModelConfig, getActivePreset, savePreset } from "../config/jsonConfig.js";
+import { loadModelConfig, getActivePreset, savePreset, saveSessionPreset } from "../config/jsonConfig.js";
 
 import { getEffectiveMasterModel, getTierModelConfig } from "../config/providers.js";
 
@@ -77,9 +77,17 @@ export const modelCommand: SlashCommand = {
     const now = Date.now();
     if (args) {
       try {
+        let persist = false;
+        const rawParts = args.split(/\s+/);
+        const saveIndex = rawParts.findIndex(p => p.toLowerCase() === "--save" || p.toLowerCase() === "--global");
+        if (saveIndex !== -1) {
+          persist = true;
+          rawParts.splice(saveIndex, 1);
+        }
+        const parts = rawParts;
+
         let tierArg = "";
         let modelName = "";
-        const parts = args.split(/\s+/);
         
         const firstWord = parts[0].toLowerCase();
         if (firstWord === "preset") {
@@ -120,7 +128,7 @@ export const modelCommand: SlashCommand = {
             saveModelPreset(presetName, desc, undefined, presetMode);
 
             // Auto-apply after save
-            applyModelPreset(presetName, presetMode);
+            applyModelPreset(presetName, presetMode, true);
             const info = getActiveModelInfo(isMulti);
             const nextModel = (isMulti ? info.master : info.superagent) || "gpt-4o";
             const limit = getContextWindowLimit(nextModel);
@@ -143,7 +151,7 @@ export const modelCommand: SlashCommand = {
             return;
           } else {
             const presetName = parts.slice(1).join(" ");
-            applyModelPreset(presetName, presetMode);
+            applyModelPreset(presetName, presetMode, persist);
             const info = getActiveModelInfo(isMulti);
             const nextModel = (isMulti ? info.master : info.superagent) || "gpt-4o";
             const limit = getContextWindowLimit(nextModel);
@@ -225,7 +233,11 @@ export const modelCommand: SlashCommand = {
           }
         }
 
-        savePreset(mode, preset);
+        if (persist) {
+          savePreset(mode, preset);
+        } else {
+          saveSessionPreset(mode, preset);
+        }
         const cleanModelName = modelName.includes("@") ? modelName.substring(modelName.indexOf("@") + 1) : modelName;
         const limit = getContextWindowLimit(cleanModelName);
         

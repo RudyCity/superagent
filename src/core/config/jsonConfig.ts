@@ -177,6 +177,11 @@ let cachedConfig: GlobalModelConfig | null = null;
 // providers another process added. -1 means "unknown".
 let cachedConfigMtimeMs = -1;
 
+let sessionActivePreset: {
+  multi?: JSONModelPreset<PresetModelsMulti>;
+  single?: JSONModelPreset<PresetModelsSingle>;
+} = {};
+
 function safeMtimeMs(p: string): number {
   try {
     return fs.statSync(p).mtimeMs;
@@ -831,6 +836,9 @@ export function deletePreset(mode: "multi" | "single", id: string): void {
 }
 
 export function getActivePresetId(mode: "multi" | "single"): string {
+  if (sessionActivePreset[mode]) {
+    return sessionActivePreset[mode].id;
+  }
   const config = loadModelConfig();
   return config.activePresetId?.[mode] || DEFAULT_CONFIG.activePresetId[mode];
 }
@@ -841,22 +849,42 @@ export function setActivePresetId(mode: "multi" | "single", id: string): void {
   });
 }
 
+export function setActivePreset<T>(mode: "multi" | "single", preset: JSONModelPreset<T>): void {
+  sessionActivePreset[mode] = JSON.parse(JSON.stringify(preset));
+}
+
+export function saveSessionPreset<T>(mode: "multi" | "single", preset: JSONModelPreset<T>): void {
+  sessionActivePreset[mode] = JSON.parse(JSON.stringify(preset));
+}
+
+export function clearSessionActivePreset(mode?: "multi" | "single"): void {
+  if (mode) {
+    delete sessionActivePreset[mode];
+  } else {
+    sessionActivePreset = {};
+  }
+}
+
 export function getActivePreset<T>(mode: "multi" | "single"): JSONModelPreset<T> {
+  if (sessionActivePreset[mode]) {
+    return sessionActivePreset[mode] as any;
+  }
   const config = loadModelConfig();
   const activeId = getActivePresetId(mode);
   const presetsList = config.presets?.[mode] as any[] | undefined;
+  let preset: any;
   if (presetsList) {
-    const preset = presetsList.find((p) => p.id === activeId);
-    if (preset) {
-      return preset;
-    }
-    // Fallback to the first preset in the list
-    if (presetsList.length > 0) {
-      return presetsList[0] as any;
-    }
+    preset = presetsList.find((p) => p.id === activeId);
   }
-  // Last resort: return a DEEP COPY of the default to prevent mutating DEFAULT_CONFIG
-  return JSON.parse(JSON.stringify(DEFAULT_CONFIG.presets[mode][0])) as any;
+  if (!preset && presetsList && presetsList.length > 0) {
+    preset = presetsList[0];
+  }
+  if (!preset) {
+    preset = JSON.parse(JSON.stringify(DEFAULT_CONFIG.presets[mode][0]));
+  }
+  // Cache a deep copy in memory so that subsequent calls return the same session preset
+  sessionActivePreset[mode] = JSON.parse(JSON.stringify(preset));
+  return sessionActivePreset[mode] as any;
 }
 
 export function getActiveConfigAudit(overrideMode?: "multi" | "single"): string {

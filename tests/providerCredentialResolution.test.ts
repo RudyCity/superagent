@@ -13,6 +13,7 @@ import {
   clearModelConfigCache,
   savePreset,
   setActivePresetId,
+  clearSessionActivePreset,
 } from "../src/core/config/jsonConfig";
 import { getModelConfigPath } from "../src/core/config/paths";
 import { switchActiveProvider } from "../src/core/config/providers";
@@ -37,6 +38,7 @@ describe("Provider Credential Resolution Fixes", () => {
     }
     ensureGlobalConfigDir();
     clearModelConfigCache();
+    clearSessionActivePreset();
 
     configPath = getModelConfigPath();
     presetsPath = getCustomPresetsPath();

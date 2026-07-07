@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.166] - 2026-07-07
+
+### Added
+- **Session-Isolated Model Configuration and Presets**:
+  - Implemented session-level model configuration isolation. When presets or individual models are modified via the `/model` or `/model preset` slash command, they are stored in the session memory instead of being written directly to the global `model-config.json` file.
+  - Added support for a `--save` or `--global` option to the `/model` and `/model preset` commands to persist active preset changes globally to disk when desired.
+  - Modified auto-repair config logic to update active presets in-memory for the current session.
+  - Added comprehensive test coverage in [modelPresets.test.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/tests/modelPresets.test.ts).
+
+---
+
 ## [1.2.165] - 2026-07-07
 
 ### Fixed
