@@ -64,7 +64,7 @@ export function ChecklistPanel({
         <>
           {/* Header */}
           <Box flexDirection="row" justifyContent="space-between">
-            <Text bold color={focusArea === "checklist" ? "green" : "cyan"}>
+            <Text bold color={focusArea === "checklist" ? "gray" : "cyan"}>
               📋 ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}
             </Text>
           </Box>
@@ -107,7 +107,7 @@ export function ChecklistPanel({
             if (status === "x") {
               statusIcon = "◉";
               taskColor = "gray";
-              connectorColor = "green";
+              connectorColor = "gray";
             } else if (status === "/") {
               statusIcon = "●";
               taskColor = "yellow";

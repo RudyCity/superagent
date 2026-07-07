@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.158] - 2026-07-07
+
+### Changed
+- **UI Theme Colors**:
+  - Replaced bright green accents and highlights throughout the terminal UI (focused panels, borders, status bars, and cursors) with a softer, darker gray to fit the dark console styling.
+  - Updated code block highlights and successful tool statuses to use gray instead of green.
+  - Used white circle emoji (⚪) instead of green circle (🟢) for successful tool call indicators.
+
+---
+
 ## [1.2.157] - 2026-07-07
 
 ### Added

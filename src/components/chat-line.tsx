@@ -166,8 +166,8 @@ export function renderMarkdown(content: string, themeColor: string = "blue", sho
           return (
             <Box key={idx} flexDirection="row">
               <Text color={themeColor}>│    │  </Text>
-              <Text color="green">{l}</Text>
-              {showCursor && idx === processedLines.length - 1 && <Text color="green">█</Text>}
+              <Text color="gray">{l}</Text>
+              {showCursor && idx === processedLines.length - 1 && <Text color="gray">█</Text>}
             </Box>
           );
         }
@@ -465,7 +465,7 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
       if (merged) {
         const statusIcon = merged.isError ? "✗" : "✓";
         const statusLabel = merged.isError ? "failed" : "done";
-        const statusColor = merged.isError ? "red" : "green";
+        const statusColor = merged.isError ? "red" : "gray";
         const mergedDesc = minimizePathInDescription(merged.description);
         const displayDesc = mergedDesc.length > 55 ? mergedDesc.slice(0, 52) + "..." : mergedDesc;
         if (isAskQuestion) {
@@ -519,7 +519,7 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
     // ── Expanded view: Input block + divider + Output block ──────────
     const inputLines = content.split("\n");
     const mergedOutputLines = merged ? merged.content.split("\n") : [];
-    const mergedColor = merged?.isError ? "red" : "green";
+    const mergedColor = merged?.isError ? "red" : "gray";
     const mergedIcon = merged?.isError ? "✗" : "✓";
 
     const expandedDiffMatch = merged ? merged.content.match(/\+(\d+)\s+-(\d+)/) : null;
@@ -594,7 +594,7 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
   if (child.type === "tool_end") {
     const isError = child.content.startsWith("✗") || child.content.startsWith("🚨");
     const contentText = child.content.substring(2);
-    const themeColor = isError ? "red" : "green";
+    const themeColor = isError ? "red" : "gray";
     const firstLine = contentText.split("\n")[0];
     const cleanDescRaw = firstLine.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
     const minimizedDesc = minimizePathInDescription(cleanDescRaw);
@@ -803,10 +803,10 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
     case "tool_end": {
       const isError = line.content.startsWith("✗");
       const contentText = line.content.substring(2);
-      const themeColor = isError ? "red" : "green";
+      const themeColor = isError ? "red" : "gray";
       if (isCollapsed) {
         const desc = extractDescription(contentText);
-        const icon = isError ? "🔴" : "🟢";
+        const icon = isError ? "🔴" : "⚪";
         const status = isError ? "Failed" : "Done";
         return (
           <Box flexDirection="column">
@@ -819,7 +819,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       return (
         <Box flexDirection="column">
           <Text color={themeColor}>
-            ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>Ctrl+O</Text>
+            ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "⚪ SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>Ctrl+O</Text>
           </Text>
           {renderToolEnd(contentText, isError)}
           <Box flexDirection="row">

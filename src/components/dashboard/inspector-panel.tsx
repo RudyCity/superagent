@@ -234,7 +234,7 @@ export function InspectorPanel({
     >
       <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
         <Box flexDirection="row">
-          <Text bold color={focusArea === "logs" ? "green" : "cyan"}>
+          <Text bold color={focusArea === "logs" ? "gray" : "cyan"}>
             🔎 INSPECT: {selectedSession.id.slice(0, 20)}
             <Text color="gray" dimColor> {isHistoryTruncated ? "(Truncated)" : "(Full)"}</Text>
           </Text>

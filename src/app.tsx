@@ -45,7 +45,7 @@ import { useTencentdbStatus } from "./hooks/useTencentdbStatus.js";
 
 export { stripSgrMouseSequences } from "./utils/text.js";
 
-function getWizardBorderColor(activeWizard: any): "yellow" | "cyan" | "blue" | "green" | "red" {
+function getWizardBorderColor(activeWizard: any): "yellow" | "cyan" | "blue" | "gray" | "red" {
   if (!activeWizard) return "cyan";
   switch (activeWizard.type) {
     case "permission":
@@ -58,7 +58,7 @@ function getWizardBorderColor(activeWizard: any): "yellow" | "cyan" | "blue" | "
     case "resume":
       return "blue";
     case "checkpoint":
-      return activeWizard.step === 2 ? "yellow" : "green";
+      return activeWizard.step === 2 ? "yellow" : "gray";
     case "login":
       return activeWizard.step === 13 ? "blue" : "cyan";
     case "model":
@@ -2407,13 +2407,13 @@ export function App({
                 if (!question) return null;
                 return (
                   <Box flexDirection="row" marginBottom={1}>
-                    <Text color={activeWizard ? getWizardBorderColor(activeWizard) : "green"}>│ </Text>
+                    <Text color={activeWizard ? getWizardBorderColor(activeWizard) : "gray"}>│ </Text>
                     <Text color="cyan" wrap="truncate-end">{question}</Text>
                   </Box>
                 );
               })()}
-              <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "green"}>
-                └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "green"}>
+              <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
+                └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
                   {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : "⌨️ COMM_LINK: ACTIVE"}
                 </Text> ]
                 {isProcessing && displayPrompt && (
@@ -2421,7 +2421,7 @@ export function App({
                 )}
               </Text>
               <Box flexDirection="row">
-                <Text color={activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "green"}>│ ❯ </Text>
+                <Text color={activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>│ ❯ </Text>
                 {(() => {
                   const { prefix, inserted, suffix } = getPasteSplit(input, pastePrefixLength, pasteSuffixLength);
                   const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));

@@ -70,7 +70,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
       <Box flexDirection="column" paddingX={1} marginTop={1}>
         <Box justifyContent="space-between">
           <Box>
-            <Text color="greenBright" bold>● READY</Text>
+            <Text color="gray" bold>● READY</Text>
             <Text color="gray"> │ </Text>
             <Text color="cyanBright" bold>{modelName}</Text>
             {gitBranch && (

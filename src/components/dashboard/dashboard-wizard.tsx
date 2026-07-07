@@ -141,7 +141,7 @@ export function DashboardWizard({
                   const displayAns = ans ? ` (${ans.length > 10 ? ans.slice(0, 8) + "..." : ans})` : "";
                   return (
                     <Box key={idx} marginRight={2}>
-                      <Text color="green" dimColor>
+                      <Text color="gray" dimColor>
                         [✔ {num}. {label}{displayAns}]
                       </Text>
                     </Box>

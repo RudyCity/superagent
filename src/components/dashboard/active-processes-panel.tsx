@@ -38,7 +38,7 @@ export const ActiveProcessesPanel = memo(function ActiveProcessesPanel({
 
   return (
     <Box flexDirection="column" marginTop={0}>
-      <Text color={focusArea === "procs" ? "green" : "cyan"} bold>
+      <Text color={focusArea === "procs" ? "gray" : "cyan"} bold>
         {isFirstHeader ? "┌───" : "├───"}[ ⚙️ ACTIVE PROCESSES ]{scrollIndicator}{helpText}
       </Text>
       {visibleProcs.map(([id, task], index) => {

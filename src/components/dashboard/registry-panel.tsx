@@ -42,7 +42,7 @@ export function renderStatusBadge(status: AgentSession["status"]) {
     return <ActiveStatusBadge />;
   }
   if (status === "PAUSED") return <Text color="black" backgroundColor="blue" bold> PAUSE </Text>;
-  if (status === "COMPLETED") return <Text color="black" backgroundColor="green" bold> DONE </Text>;
+  if (status === "COMPLETED") return <Text color="white" backgroundColor="gray" bold> DONE </Text>;
   if (status === "ERROR") return <Text color="black" backgroundColor="red" bold> FAIL </Text>;
   return <Text color="black" backgroundColor="gray" bold> IDLE </Text>;
 }
@@ -90,7 +90,7 @@ export function RegistryPanel({
       marginBottom={1}
     >
       <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
-        <Text bold color={focusArea === "list" ? "green" : "cyan"}>📡 WORKSPACE REGISTRY | {sessions.length} threads</Text>
+        <Text bold color={focusArea === "list" ? "gray" : "cyan"}>📡 WORKSPACE REGISTRY | {sessions.length} threads</Text>
         {focusArea === "list" && (
           <Text color="gray" dimColor> [↑/▼ Navigate • Enter Inspect]</Text>
         )}
@@ -103,10 +103,10 @@ export function RegistryPanel({
         visibleSessions.map((session, index) => {
           const globalIndex = startIdx + index;
           const isSelected = globalIndex === selectedIndex;
-          const color = isSelected ? (focusArea === "list" ? "green" : "cyan") : tierColor[session.type];
+          const color = isSelected ? (focusArea === "list" ? "gray" : "cyan") : tierColor[session.type];
           
           const isFocused = focusArea === "list";
-          const rowBg = isSelected && isFocused ? "green" : undefined;
+          const rowBg = isSelected && isFocused ? "gray" : undefined;
           const rowTextColor = isSelected && isFocused ? "white" : color;
           const tokenColor = isSelected && isFocused ? "white" : "cyan";
           
@@ -179,7 +179,7 @@ export function RegistryPanel({
           const isActive = session.status === "WORKING";
           const isSpinner = !isSelected && isActive;
           const indicatorColor = isSelected
-            ? (focusArea === "list" ? "green" : "cyan")
+            ? (focusArea === "list" ? "gray" : "cyan")
             : (isActive ? "yellow" : "gray");
 
           return (

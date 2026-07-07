@@ -1227,7 +1227,7 @@ export function MultiAgentDashboard({
             </Box>
           </Box>
         </Box>
-        <Text color="green" bold>● ONLINE</Text>
+        <Text color="gray" bold>● ONLINE</Text>
       </Box>
 
       {/* Main Workspace Split */}
@@ -1361,7 +1361,7 @@ export function MultiAgentDashboard({
           )}
           <Box flexDirection="row" marginTop={0} paddingX={1} width="100%">
             <Box flexShrink={0}>
-              <Text bold color={activeWizard ? "blue" : isProcessing ? "gray" : (focusArea === "input" ? "green" : "cyan")}>
+              <Text bold color={activeWizard ? "blue" : isProcessing ? "gray" : (focusArea === "input" ? "gray" : "cyan")}>
                 {activeWizard?.type === "model" && (activeWizard.step === 15 || activeWizard.step === 24 || activeWizard.step === 34)
                   ? "└──[ MODEL ] ❯ "
                   : activeWizard?.type === "model" && (activeWizard.step === 3 || activeWizard.step === 25 || activeWizard.step === 35)

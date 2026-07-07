@@ -226,7 +226,7 @@ export function wrapMarkdownToLines(
         const node = (
           <Box flexDirection="row">
             <Text color={themeColor}>│    │  </Text>
-            <Text color="green">{subLine}</Text>
+            <Text color="gray">{subLine}</Text>
           </Box>
         );
         lineResult.push({ node, lineIndex, type: "assistant" });
@@ -361,7 +361,7 @@ function wrapNestedChild(
       if (merged) {
         const statusIcon = merged.isError ? "✗" : "✓";
         const statusLabel = merged.isError ? "failed" : "done";
-        const statusColor = merged.isError ? "red" : "green";
+        const statusColor = merged.isError ? "red" : "gray";
         const mergedDesc = minimizePathInDescription(merged.description);
         const displayDesc = mergedDesc.length > 55 ? mergedDesc.slice(0, 52) + "..." : mergedDesc;
         if (isAskQuestion) {
@@ -419,7 +419,7 @@ function wrapNestedChild(
       // ── Expanded: Input block + divider + Output block ─────────────
       const inputLines = content.split("\n");
       const mergedOutputLines = merged ? merged.content.split("\n") : [];
-      const mergedColor = merged?.isError ? "red" : "green";
+      const mergedColor = merged?.isError ? "red" : "gray";
       const mergedIcon = merged?.isError ? "✗" : "✓";
 
       // Header row
@@ -511,7 +511,7 @@ function wrapNestedChild(
   } else if (child.type === "tool_end") {
     const isError = child.content.startsWith("✗") || child.content.startsWith("🚨");
     const contentText = child.content.substring(2);
-    const themeColor = isError ? "red" : "green";
+    const themeColor = isError ? "red" : "gray";
     const firstLine = contentText.split("\n")[0];
     const cleanDescRaw = firstLine.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
     const minimizedDesc = minimizePathInDescription(cleanDescRaw);
@@ -810,7 +810,7 @@ export function wrapChatLineToLines({
     case "tool_end": {
       const isError = line.content.startsWith("✗");
       const contentText = line.content.substring(2);
-      const themeColor = isError ? "red" : "green";
+      const themeColor = isError ? "red" : "gray";
       const extractDescription = (str: string): string => {
         const firstLine = str.split("\n")[0].replace(/^[⚡✓✗📖🚨]\s*/, "").trim();
         const minimized = minimizePathInDescription(firstLine);
@@ -819,7 +819,7 @@ export function wrapChatLineToLines({
 
       if (isCollapsed) {
         const desc = extractDescription(contentText);
-        const icon = isError ? "🔴" : "🟢";
+        const icon = isError ? "🔴" : "⚪";
         const status = isError ? "Failed" : "Done";
         const node = (
           <Box flexDirection="row">
@@ -833,7 +833,7 @@ export function wrapChatLineToLines({
         const headerNode = (
           <Box flexDirection="row">
             <Text color={themeColor}>
-              ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "🟢 SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>Ctrl+O</Text>
+              ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "⚪ SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
@@ -1397,8 +1397,8 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
 
       {/* Messages Header */}
       <Box flexDirection="row" justifyContent="space-between" paddingX={1} marginBottom={0}>
-        <Text color={focusMode === "chat" ? "green" : "cyan"}>
-          ┌─── [ <Text bold color={focusMode === "chat" ? "green" : "cyan"}>💬 CONVERSATION LOG</Text>
+        <Text color={focusMode === "chat" ? "gray" : "cyan"}>
+          ┌─── [ <Text bold color={focusMode === "chat" ? "gray" : "cyan"}>💬 CONVERSATION LOG</Text>
           {focusMode === "chat" && <Text dimColor> [↑/▼ Scroll • Esc Exit]</Text>} ]
         </Text>
         {scrollOffset > 0 && (

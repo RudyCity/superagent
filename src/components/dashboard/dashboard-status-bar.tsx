@@ -79,7 +79,7 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
         )}
         <Text color="cyan" bold>🤖 {activeModel}</Text>
         <Text color="gray"> │ </Text>
-        <Text color="green" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
+        <Text color="gray" bold>Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})</Text>
         {lastSpeed !== null && (
           <>
             <Text color="gray"> │ </Text>
@@ -117,7 +117,7 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
         <Text color="gray" dimColor>({runningSubagentsCount} run)</Text>
         <Text color="gray"> │ </Text>
         <Text color="white">Proc: </Text>
-        <Text color="green" bold>{runningTasksCount}</Text>
+        <Text color="gray" bold>{runningTasksCount}</Text>
         <Text color="gray"> │ </Text>
         <Text color="white">WT: </Text>
         <Text color="cyan" bold>{worktreeCount}</Text>

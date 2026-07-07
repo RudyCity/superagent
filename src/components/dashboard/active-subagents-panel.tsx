@@ -31,7 +31,7 @@ export const ActiveSubagentsPanel = memo(function ActiveSubagentsPanel({
 
   return (
     <Box flexDirection="column">
-      <Text color={focusArea === "agents" ? "green" : "yellow"} bold>
+      <Text color={focusArea === "agents" ? "gray" : "yellow"} bold>
         ┌───[ 🤖 ACTIVE SUBAGENTS ]{scrollIndicator}{helpText}
       </Text>
       {visibleAgents.map((inst, index) => {

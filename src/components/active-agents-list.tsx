@@ -91,7 +91,7 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
         const isCollapsed = collapsedSections.superagents;
         const isFocused = focusMode === "superagents";
         const collapseIcon = isCollapsed ? "▶" : "▼";
-        const headerColor = isFocused ? "green" : "cyan";
+        const headerColor = isFocused ? "gray" : "cyan";
 
         if (isCollapsed) {
           return (
@@ -137,7 +137,7 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
         const isCollapsed = collapsedSections.subagents;
         const isFocused = focusMode === "subagents";
         const collapseIcon = isCollapsed ? "▶" : "▼";
-        const headerColor = isFocused ? "green" : "yellow";
+        const headerColor = isFocused ? "gray" : "yellow";
         const isFirstHeader = runningSuperagentsCount === 0;
         const branchPrefix = isFirstHeader ? "┌───" : "├───";
 
@@ -182,7 +182,7 @@ export const ActiveAgentsList = memo(function ActiveAgentsList({
         const isCollapsed = collapsedSections.procs;
         const isFocused = focusMode === "procs";
         const collapseIcon = isCollapsed ? "▶" : "▼";
-        const headerColor = isFocused ? "green" : "cyan";
+        const headerColor = isFocused ? "gray" : "cyan";
         const isFirstHeader = runningSuperagentsCount === 0 && runningSubagentsCount === 0;
         const branchPrefix = isFirstHeader ? "┌───" : "├───";
 
