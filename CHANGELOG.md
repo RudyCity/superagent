@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.148] - 2026-07-07
+
+### Performance
+- **Cache Installed Skills**:
+  - Implemented 5-second TTL cache for `getInstalledSkills` to resolve input typing lag/latency.
+  - Automatically bypasses caching during test execution under Vitest.
+
+---
+
 ## [1.2.147] - 2026-07-07
 
 ### Changed

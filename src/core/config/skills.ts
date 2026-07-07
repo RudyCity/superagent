@@ -54,7 +54,22 @@ const OBRA_SKILLS = new Set([
   "writing-skills"
 ]);
 
+let cachedSkills: LoadedSkill[] | null = null;
+let lastSkillsFetchTime = 0;
+const SKILLS_CACHE_TTL_MS = 5000;
+
+export function clearSkillsCache(): void {
+  cachedSkills = null;
+  lastSkillsFetchTime = 0;
+}
+
 export function getInstalledSkills(): LoadedSkill[] {
+  const isTesting = process.env.VITEST === "true";
+  const now = Date.now();
+  if (!isTesting && cachedSkills && (now - lastSkillsFetchTime < SKILLS_CACHE_TTL_MS)) {
+    return cachedSkills;
+  }
+
   const skills: LoadedSkill[] = [];
   const packageRootDir = getPackageRootDir();
 
@@ -232,6 +247,11 @@ export function getInstalledSkills(): LoadedSkill[] {
     } catch (e) {
       // Ignore parsing errors for individual files
     }
+  }
+
+  if (!isTesting) {
+    cachedSkills = skills;
+    lastSkillsFetchTime = now;
   }
 
   return skills;
