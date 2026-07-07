@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.165] - 2026-07-07
+
+### Fixed
+- **OpenAI Custom Endpoint JSON Response Parsing**:
+  - Implemented a robust [extractJSON](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/config/models.ts#L149-L215) function in [models.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/config/models.ts) to find matching braces/brackets while ignoring literals and escapes.
+  - Updated the custom OpenAI fetch interceptor to execute this JSON cleaning on all non-streaming response bodies, preventing "Unexpected non-whitespace character after JSON" errors from endpoints like Cloudflare Workers AI that append trailing garbage.
+  - Added unit test coverage in [openaiJsonParsingFix.test.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/tests/openaiJsonParsingFix.test.ts).
+
+---
+
 ## [1.2.164] - 2026-07-07
 
 ### Added

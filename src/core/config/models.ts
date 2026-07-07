@@ -146,10 +146,78 @@ export function isAnthropicCompatible(baseUrl: string, modelName: string): boole
   return modelLower.includes("claude");
 }
 
+export function extractJSON(text: string): string {
+  const firstBrace = text.indexOf("{");
+  const firstBracket = text.indexOf("[");
+  let startIdx = -1;
+
+  if (firstBrace !== -1 && firstBracket !== -1) {
+    startIdx = firstBrace < firstBracket ? firstBrace : firstBracket;
+  } else if (firstBrace !== -1) {
+    startIdx = firstBrace;
+  } else if (firstBracket !== -1) {
+    startIdx = firstBracket;
+  }
+
+  if (startIdx === -1) {
+    return text;
+  }
+
+  let braceCount = 0;
+  let bracketCount = 0;
+  let inString = false;
+  let stringChar = "";
+  let escaped = false;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const char = text[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (inString) {
+      if (char === stringChar) {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      inString = true;
+      stringChar = char;
+      continue;
+    }
+
+    if (char === "{") {
+      braceCount++;
+    } else if (char === "}") {
+      braceCount--;
+    } else if (char === "[") {
+      bracketCount++;
+    } else if (char === "]") {
+      bracketCount--;
+    }
+
+    if (braceCount === 0 && bracketCount === 0) {
+      return text.substring(startIdx, i + 1);
+    }
+  }
+
+  return text;
+}
+
 export function getModelInstance() {
   const config = getConfig();
   return getModelInstanceForString(config.model);
 }
+
 
 export function getModelInstanceForString(modelStr: string) {
   const config = getConfig();
@@ -361,20 +429,28 @@ export function getModelInstanceForString(modelStr: string) {
     },
     fetch: async (url, options) => {
       const response = await globalThis.fetch(url, options);
-      const contentType = response.headers.get("content-type") || "";
-      if (!contentType.includes("text/event-stream")) {
+      
+      let isStreamingRequest = false;
+      if (options && typeof options.body === "string") {
+        try {
+          const bodyJson = JSON.parse(options.body);
+          if (bodyJson.stream === true) {
+            isStreamingRequest = true;
+          }
+        } catch {
+          // Ignore parsing errors
+        }
+      }
+
+      if (!isStreamingRequest) {
         try {
           let text = await response.text();
-          const firstBrace = text.indexOf("{");
-          const lastBrace = text.lastIndexOf("}");
-          const firstBracket = text.indexOf("[");
-          const lastBracket = text.lastIndexOf("]");
-          
-          const startIdx = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
-          const endIdx = (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) ? lastBrace : lastBracket;
-          
-          if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-            text = text.substring(startIdx, endIdx + 1);
+          const cleanedText = extractJSON(text);
+          try {
+            JSON.parse(cleanedText);
+            text = cleanedText;
+          } catch {
+            // Ignore failures and fall back to original text
           }
           
           return new Response(text, {
