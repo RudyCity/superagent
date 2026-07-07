@@ -193,8 +193,8 @@ if request_is_complex:
   - 'glob': Find files by name pattern.
   - 'grep': Fallback search.
 - Execution & Background:
-  - 'run_command': Fast synchronous shell execution. Use for validation commands (supports timeout parameter).
-  - 'run_background_process': Dev servers, test suites, long-running commands. Monitor via 'manage_background_process' (status).
+  - 'run_command': Fast synchronous shell execution. Use for validation commands (timeout parameter supported).
+  - 'run_background_process': Dev servers, test suites, long-running commands. Monitor or wait via 'manage_background_process' (status / wait).
 - Web Search:
   - 'web_search': Internet search for docs/current info.
   - 'fetch_url': Extract text from specific webpage.
@@ -222,7 +222,7 @@ if request_is_complex:
 - replace_file_content: Contiguous code block replacement.
 - multi_replace_file_content: Non-contiguous replacements.
 - run_command: Execute command.
-- manage_background_process: Manage background process status/input/kill.
+- manage_background_process: Manage background process status/input/kill/wait.
 - schedule: One-shot timers or cron schedules.
 - define_subagent: Register custom subagent.
 - invoke_subagent: Spawn subagent.

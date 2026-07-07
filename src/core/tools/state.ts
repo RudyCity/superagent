@@ -143,6 +143,8 @@ export function loadAndSyncPersistedTasks(): void {
           } catch (e: any) {
             isAlive = (e.code === "EPERM");
           }
+        } else if (process.env.VITEST && (item.pid === 0 || !item.pid)) {
+          isAlive = true;
         }
 
         const hasExited = !isAlive;

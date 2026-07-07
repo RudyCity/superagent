@@ -766,13 +766,13 @@ export const viewBackgroundProcessesTool: Tool = {
 
 export const manageBackgroundProcessTool: Tool = {
   name: "manage_background_process",
-  description: "Manage background processes: list them, check status/output, send input, or kill them.",
+  description: "Manage background processes: list them, check status/output, send input, wait for completion, or kill them.",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["list", "status", "send_input", "kill"],
+        enum: ["list", "status", "send_input", "kill", "wait"],
         description: "Action to perform",
       },
       processId: {
@@ -782,6 +782,10 @@ export const manageBackgroundProcessTool: Tool = {
       input: {
         type: "string",
         description: "The input string to send (required for send_input)",
+      },
+      timeout: {
+        type: "number",
+        description: "Timeout in milliseconds to wait for the process (default 600000 / 10 minutes)",
       },
     },
     required: ["action"],
@@ -801,7 +805,7 @@ export const manageBackgroundProcessTool: Tool = {
     }
 
     if (!processId) {
-      return "Error: processId is required for status, send_input, and kill actions.";
+      return "Error: processId is required for status, send_input, kill, and wait actions.";
     }
 
     const task = backgroundTasks.get(processId);
@@ -837,6 +841,84 @@ export const manageBackgroundProcessTool: Tool = {
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return `Error killing process: ${message}`;
+      }
+    }
+
+    if (action === "wait") {
+      if (task.hasExited) {
+        const logs = task.output.join("");
+        const formattedLogs = formatAndTruncateOutput(logs, 50, task.logPath || "");
+        return `Process has completed with exit code ${task.exitCode}.\nOutput:\n${formattedLogs}`;
+      }
+
+      const timeoutMs = (args.timeout as number) || 600000;
+      let timeoutId: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          const err = new Error("TimeoutError");
+          err.name = "TimeoutError";
+          reject(err);
+        }, timeoutMs);
+      });
+
+      const exitPromise = new Promise<void>((resolve) => {
+        const check = () => {
+          if (task.hasExited) {
+            resolve();
+            return true;
+          }
+          return false;
+        };
+
+        if (check()) return;
+
+        const interval = setInterval(() => {
+          if (check()) {
+            clearInterval(interval);
+          }
+        }, 50);
+
+        try {
+          task.process.once("close", () => {
+            clearInterval(interval);
+            resolve();
+          });
+        } catch {
+          // ignore if process emitter not available
+        }
+      });
+
+      const onAbort = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        const err = new Error("AbortError");
+        err.name = "AbortError";
+        throw err;
+      };
+
+      if (signal) {
+        if (signal.aborted) {
+          if (timeoutId) clearTimeout(timeoutId);
+          throw new Error("AbortError");
+        }
+        signal.addEventListener("abort", onAbort);
+      }
+
+      try {
+        await Promise.race([exitPromise, timeoutPromise]);
+        if (timeoutId) clearTimeout(timeoutId);
+        const logs = task.output.join("");
+        const formattedLogs = formatAndTruncateOutput(logs, 50, task.logPath || "");
+        return `Process completed with exit code ${task.exitCode}.\nOutput:\n${formattedLogs}`;
+      } catch (err: any) {
+        if (timeoutId) clearTimeout(timeoutId);
+        if (err && err.name === "TimeoutError") {
+          return `Error: Timeout of ${timeoutMs}ms exceeded while waiting for background process "${processId}".`;
+        }
+        throw err;
+      } finally {
+        if (signal) {
+          signal.removeEventListener("abort", onAbort);
+        }
       }
     }
 

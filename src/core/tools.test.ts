@@ -412,6 +412,33 @@ describe("Command execution and Task management tools", () => {
     expect(killResult).toContain("killed successfully");
   });
 
+  it("should run a background command and synchronously wait for its completion", async () => {
+    const runBg = getToolByName("run_background_process");
+    const manageTask = getToolByName("manage_background_process");
+
+    const runResult = await runBg?.execute({ command: "sleep 10", cwd: "src" }, process.cwd());
+    expect(runResult).toContain("Started background process");
+
+    const processId = runResult?.split("ID: ")[1]?.trim() || "";
+
+    // Test timeout behavior
+    const waitTimeoutResult = await manageTask?.execute({ action: "wait", processId, timeout: 50 }, process.cwd());
+    expect(waitTimeoutResult).toContain("Timeout of 50ms exceeded");
+
+    // Manually mark the task as exited to test successful completion wait path
+    const { backgroundTasks } = await import("./tools/state.js");
+    const task = backgroundTasks.get(processId);
+    if (task) {
+      task.hasExited = true;
+      task.exitCode = 0;
+      task.output = ["completed mock output"];
+    }
+
+    const waitSuccessResult = await manageTask?.execute({ action: "wait", processId }, process.cwd());
+    expect(waitSuccessResult).toContain("Process has completed with exit code 0");
+    expect(waitSuccessResult).toContain("completed mock output");
+  });
+
   it("should fail instantly for bad background commands", async () => {
     const runBg = getToolByName("run_background_process");
     const result = await runBg?.execute({ command: "invalid_command" }, process.cwd());

@@ -93,6 +93,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 - PRE_MERGE_VALIDATION: Run build & test suites inside worktree before finishing. Fix all failures first.
 - GIT_COMMIT: Add & commit all changes to branch: ${branch} before finalizing. Use ";" instead of "&&" if on Windows.
 - PLAN_LIMIT: View, edit, sync, and update task status via 'manage_tasks' and 'manage_plan'. Direct file edits/writes to task or plan files are BLOCKED.
+- BACKGROUND_WAIT: When running a long-running process in the background via 'run_background_process', always use 'manage_background_process' (action: 'wait') to block and await its completion instead of polling 'status' in a loop to conserve resources and avoid step limit issues.
 - FILE_EDIT_SAFETY:
   - Read latest file content via 'read' before editing (prevents stale line range errors).
   - Prefer using bulk/multi-file parameters (e.g. 'filePaths' in 'read', 'files' in 'write_to_file' / 'multi_replace_file_content', and 'edits' in 'edit' / 'replace_file_content') when operating on multiple files to avoid tool-call round-trips.
