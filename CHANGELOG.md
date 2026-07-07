@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.150] - 2026-07-07
+
+### Added
+- **Speed Display in Status Bar Footer**:
+  - Destructured and displayed lastSpeed (generation speed in tokens per second) in the primary StatusBar component's ready state layout in the CLI terminal footer.
+
+---
+
 ## [1.2.149] - 2026-07-07
 
 ### Fixed

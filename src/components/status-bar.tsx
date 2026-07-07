@@ -61,6 +61,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
     runningSubagentsCount,
     gitBranch,
     formatCompactNumber,
+    lastSpeed,
     isProcessing = false,
   } = props;
 
@@ -84,6 +85,12 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
             <Text color={runningTasksCount > 0 ? "yellowBright" : "gray"}>Proc: {runningTasksCount}</Text>
             <Text color="gray"> • </Text>
             <Text color={runningSubagentsCount > 0 ? "cyanBright" : "gray"}>Sub: {runningSubagentsCount}</Text>
+            {lastSpeed !== null && (
+              <>
+                <Text color="gray"> │ </Text>
+                <Text color="yellowBright" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
+              </>
+            )}
           </Box>
           <Box>
             <Text color="blueBright" bold>
