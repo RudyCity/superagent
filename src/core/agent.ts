@@ -1279,7 +1279,8 @@ The user has APPROVED your implementation plan. You are now fully authorized to 
           followUpTaskAddendum = `\n\n🔄 TASK CHECKLIST RESET NOTICE:
 All ${this.archivedTaskCount} previous tasks were completed and have been archived to the task history file.
 The active task list has been cleared and is ready for new tasks.
-You SHOULD use the 'manage_tasks' tool (action: 'add') or 'manage_plan' tool (action: 'create') to create fresh tasks for the user's new request.
+You SHOULD use the 'manage_tasks' tool (action: 'add' or 'add_bulk') or 'manage_plan' tool (action: 'create') to create fresh tasks for the user's new request.
+Use 'add_bulk' with a 'texts' array to add multiple tasks in a single call (more efficient than repeated 'add' calls).
 This ensures the ACTIVE TASK CHECKLIST stays up-to-date with the current work.`;
           // Reset the flag after injecting on first iteration only
           this.tasksJustArchived = false;

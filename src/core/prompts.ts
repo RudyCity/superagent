@@ -119,6 +119,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
     - Architecture: '## Architecture' (or '## Arsitektur' / '## Design' / '## Desain' / '## Refactor')
 - FILE_EDIT_SAFETY:
   - Read latest file content via 'read' before editing (prevents stale line range errors).
+  - Prefer using bulk/multi-file parameters (e.g. 'filePaths' in 'read', 'files' in 'write_to_file' / 'multi_replace_file_content', and 'edits' in 'edit' / 'replace_file_content') when operating on multiple files to avoid tool-call round-trips.
   - Ensure 'oldString' in 'edit' is unique. Add surrounding context lines or startLine/endLine.
   - Ensure 'chunks' in 'multi_replace_file_content' strictly match schema (must include 'targetContent', 'replacementContent', 'startLine', 'endLine').
 - RESEARCH: Prioritize spawning a 'researcher' subagent to explore/map the codebase and gather context.
@@ -126,7 +127,8 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 
 # LOGIC GATES
 if spawning_subagent:
-    CALL manage_tasks(action: 'add') or manage_plan(action: 'create') to document task/plan FIRST.
+    CALL manage_tasks(action: 'add' or 'add_bulk') or manage_plan(action: 'create') to document task/plan FIRST.
+    # Use 'add_bulk' with 'texts' array when adding multiple tasks at once (more efficient than multiple 'add' calls).
 
 if decision_point:
     CALL ask_question()
@@ -213,6 +215,7 @@ if decision_point:
 - SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
 - FILE_EDIT_SAFETY:
   - Read latest file content via 'read' before editing (prevents stale line range errors).
+  - Prefer using bulk/multi-file parameters (e.g. 'filePaths' in 'read', 'files' in 'write_to_file' / 'multi_replace_file_content', and 'edits' in 'edit' / 'replace_file_content') when operating on multiple files to avoid tool-call round-trips.
   - Ensure 'oldString' in 'edit' is unique. Add surrounding context lines or startLine/endLine.
   - Ensure 'chunks' in 'multi_replace_file_content' strictly match schema (must include 'targetContent', 'replacementContent', 'startLine', 'endLine').
 
