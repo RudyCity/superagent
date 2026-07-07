@@ -233,6 +233,37 @@ describe("manageTasksTool", () => {
       );
       expect(removeErrMissing).toContain("Error: A non-empty 'indices' array parameter is required");
     });
+
+    it("should add multiple tasks in bulk using add_bulk", async () => {
+      const result = await manageTasksTool.execute(
+        { action: "add_bulk", texts: ["Task D", "Task E"] },
+        tempDir
+      );
+      expect(result).toContain('Successfully added tasks: "Task D", "Task E"');
+
+      const listResult = await manageTasksTool.execute({ action: "list" }, tempDir);
+      expect(listResult).toBe("1. [ ] Task A\n2. [ ] Task B\n3. [ ] Task C\n4. [ ] Task D\n5. [ ] Task E");
+    });
+
+    it("should validate missing or empty texts parameter in add_bulk", async () => {
+      const errEmpty = await manageTasksTool.execute(
+        { action: "add_bulk", texts: [] as any },
+        tempDir
+      );
+      expect(errEmpty).toContain("Error: The 'texts' array parameter is required");
+
+      const errMissing = await manageTasksTool.execute(
+        { action: "add_bulk" },
+        tempDir
+      );
+      expect(errMissing).toContain("Error: The 'texts' array parameter is required");
+
+      const errOnlyWhitespace = await manageTasksTool.execute(
+        { action: "add_bulk", texts: ["   ", ""] },
+        tempDir
+      );
+      expect(errOnlyWhitespace).toContain("Error: The 'texts' parameter must contain at least one non-empty task description");
+    });
   });
 
   describe("with agent context", () => {

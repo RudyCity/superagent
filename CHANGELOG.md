@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.153] - 2026-07-07
+
+### Added
+- **Bulk Add in manage_tasks Tool**:
+  - Added support for bulk adding multiple tasks via the new `add_bulk` action in [manageTasksTool](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/tools/otherTools.ts).
+  - Introduced the `texts` array parameter to allow specifying multiple task descriptions at once.
+  - Added unit test coverage in [manageTasksTool.test.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/tests/manageTasksTool.test.ts) for validation and logic of `add_bulk`.
+
+---
+
 ## [1.2.152] - 2026-07-07
 
 ### Optimized

@@ -783,18 +783,25 @@ export const gitWorktreeTool: Tool = {
 
 export const manageTasksTool: Tool = {
   name: "manage_tasks",
-  description: "Manage tasks in the active task list (_task.md). Actions: 'list', 'add', 'update', 'remove', 'update_bulk', 'remove_bulk'.",
+  description: "Manage tasks in the active task list (_task.md). Actions: 'list', 'add', 'add_bulk', 'update', 'remove', 'update_bulk', 'remove_bulk'.",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["list", "add", "update", "remove", "update_bulk", "remove_bulk"],
-        description: "The action to perform: 'list' (show all tasks), 'add' (add a new task), 'update' (change status of a task), 'remove' (remove a task), 'update_bulk' (change status of multiple tasks), 'remove_bulk' (remove multiple tasks)",
+        enum: ["list", "add", "add_bulk", "update", "remove", "update_bulk", "remove_bulk"],
+        description: "The action to perform: 'list' (show all tasks), 'add' (add a new task), 'add_bulk' (add multiple new tasks), 'update' (change status of a task), 'remove' (remove a task), 'update_bulk' (change status of multiple tasks), 'remove_bulk' (remove multiple tasks)",
       },
       text: {
         type: "string",
         description: "Task description (required for action 'add')",
+      },
+      texts: {
+        type: "array",
+        items: {
+          type: "string",
+        },
+        description: "List of task descriptions (required for action 'add_bulk')",
       },
       index: {
         type: "number",
@@ -822,6 +829,7 @@ export const manageTasksTool: Tool = {
   async execute(args, cwd, signal) {
     const action = args.action as string;
     const text = args.text as string | undefined;
+    const texts = args.texts as string[] | undefined;
     const index = args.index as number | undefined;
     const indices = args.indices as number[] | undefined;
     const status = args.status as string | undefined;
@@ -902,6 +910,40 @@ export const manageTasksTool: Tool = {
 
         await fs.writeFile(taskPath, updatedContent, "utf-8");
         return `Successfully added task: "${text.trim()}"`;
+      }
+
+      if (action === "add_bulk") {
+        if (!texts || !Array.isArray(texts) || texts.length === 0) {
+          return "Error: The 'texts' array parameter is required and must not be empty for the 'add_bulk' action.";
+        }
+
+        let content = "";
+        try {
+          content = await fs.readFile(taskPath, "utf-8");
+        } catch (err: any) {
+          if (err.code !== "ENOENT") {
+            throw err;
+          }
+          await fs.mkdir(path.dirname(taskPath), { recursive: true });
+        }
+
+        const trimmedTexts = texts.map(t => t.trim()).filter(t => t !== "");
+        if (trimmedTexts.length === 0) {
+          return "Error: The 'texts' parameter must contain at least one non-empty task description.";
+        }
+
+        let updatedContent = content;
+        for (const tText of trimmedTexts) {
+          const newTaskLine = `- [ ] ${tText}`;
+          if (updatedContent.length > 0 && !updatedContent.endsWith("\n")) {
+            updatedContent += "\n";
+          }
+          updatedContent += newTaskLine + "\n";
+        }
+
+        await fs.writeFile(taskPath, updatedContent, "utf-8");
+        const joinedTexts = trimmedTexts.map(t => `"${t}"`).join(", ");
+        return `Successfully added tasks: ${joinedTexts}`;
       }
 
       if (action === "update" || action === "update_bulk") {
