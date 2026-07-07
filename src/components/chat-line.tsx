@@ -153,7 +153,7 @@ export function renderMarkdown(content: string, themeColor: string = "blue", sho
           inCode = !inCode;
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│    </Text>
+              <Text color="gray" dimColor>│    </Text>
               <Text color="gray" italic>
                 {inCode ? `┌─── [ CODE: ${item.codeLanguage || "TEXT"} ]` : "└─── [ END CODE ]"}
               </Text>
@@ -165,7 +165,7 @@ export function renderMarkdown(content: string, themeColor: string = "blue", sho
         if (inCode) {
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│    │  </Text>
+              <Text color="gray" dimColor>│    │  </Text>
               <Text color="gray">{l}</Text>
               {showCursor && idx === processedLines.length - 1 && <Text color="gray">█</Text>}
             </Box>
@@ -175,7 +175,7 @@ export function renderMarkdown(content: string, themeColor: string = "blue", sho
         if (l.startsWith("# ")) {
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│    </Text>
+              <Text color="gray" dimColor>│    </Text>
               <Text bold color="yellow">{l.slice(2)}</Text>
               {showCursor && idx === processedLines.length - 1 && <Text bold color="yellow">█</Text>}
             </Box>
@@ -184,7 +184,7 @@ export function renderMarkdown(content: string, themeColor: string = "blue", sho
         if (l.startsWith("## ")) {
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│    </Text>
+              <Text color="gray" dimColor>│    </Text>
               <Text bold color="cyan">{l.slice(3)}</Text>
               {showCursor && idx === processedLines.length - 1 && <Text bold color="cyan">█</Text>}
             </Box>
@@ -193,7 +193,7 @@ export function renderMarkdown(content: string, themeColor: string = "blue", sho
         if (l.startsWith("### ")) {
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│    </Text>
+              <Text color="gray" dimColor>│    </Text>
               <Text bold color="blue">{l.slice(4)}</Text>
               {showCursor && idx === processedLines.length - 1 && <Text bold color="blue">█</Text>}
             </Box>
@@ -349,7 +349,7 @@ export function renderMarkdown(content: string, themeColor: string = "blue", sho
 
         return (
           <Box key={idx} flexDirection="row">
-            <Text color={themeColor}>│    </Text>
+            <Text color="gray" dimColor>│    </Text>
             {isSysLine ? (
               <Text>
                 {listPrefix}
@@ -391,7 +391,7 @@ export function renderToolStart(content: string): React.ReactNode {
             }
             return (
               <Box key={idx} flexDirection="row">
-                <Text color="gray">│    </Text>
+                <Text color="gray" dimColor>│    </Text>
                 <Text dimColor>{prefix}</Text>
                 <Text bold color="green">{toolName}</Text>
                 <Text color="cyan">(</Text>
@@ -403,7 +403,7 @@ export function renderToolStart(content: string): React.ReactNode {
         }
         return (
           <Box key={idx} flexDirection="row">
-            <Text color="gray">│    </Text>
+            <Text color="gray" dimColor>│    </Text>
             <Text bold color="white">{l}</Text>
           </Box>
         );
@@ -424,7 +424,7 @@ export function renderToolEnd(content: string, isError: boolean): React.ReactNod
           const rest = l.substring(type.length);
           return (
             <Box key={idx} flexDirection="row">
-              <Text color={themeColor}>│    </Text>
+              <Text color="gray" dimColor>│    </Text>
               <Text bold color={isError ? "cyan" : "gray"} dimColor={!isError}>{type}</Text>
               <Text dimColor>{rest}</Text>
             </Box>
@@ -432,7 +432,7 @@ export function renderToolEnd(content: string, isError: boolean): React.ReactNod
         }
         return (
           <Box key={idx} flexDirection="row">
-            <Text color={themeColor}>│    </Text>
+            <Text color="gray" dimColor>│    </Text>
             <Text color={isError ? "white" : "gray"} dimColor={!isError}>{l}</Text>
           </Box>
         );
@@ -443,7 +443,6 @@ export function renderToolEnd(content: string, isError: boolean): React.ReactNod
 
 /** Render a nested child line with extra indentation under a parent */
 function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: boolean, parentColor: string): React.ReactNode {
-  const indent = "│        ";  // Parent's content indent + 4 spaces
   const child = {
     ...rawChild,
     content: rawChild.content.replace(/\r\n/g, "\n").replace(/\r/g, "")
@@ -472,9 +471,10 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
           const outputLine = merged.content.split("\n").find(l => l.startsWith("Output:"));
           const answerText = outputLine ? outputLine.substring("Output:".length).trim() : "";
           return (
-            <Box key={`child-${childIdx}`} flexDirection="column">
+            <Box key={`child-${childIdx}`} flexDirection="row">
+              <Text color="gray" dimColor>│        </Text>
               <Text color={statusColor}>
-                {indent}<Text bold color={statusColor}>{statusIcon} ❓ </Text><Text color="yellow">{questionText}</Text><Text bold color={statusColor}> → </Text><Text color={statusColor}>{answerText || "N/A"}</Text> <Text dimColor italic>(Ctrl+O)</Text>
+                <Text bold color={statusColor}>{statusIcon} ❓ </Text><Text color="yellow">{questionText}</Text><Text bold color={statusColor}> → </Text><Text color={statusColor}>{answerText || "N/A"}</Text> <Text dimColor italic>(Ctrl+O)</Text>
               </Text>
             </Box>
           );
@@ -484,9 +484,10 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
           ? { added: parseInt(diffMatch[1], 10), removed: parseInt(diffMatch[2], 10) }
           : null;
         return (
-          <Box key={`child-${childIdx}`} flexDirection="column">
+          <Box key={`child-${childIdx}`} flexDirection="row">
+            <Text color="gray" dimColor>│        </Text>
             <Text color="gray">
-              {indent}<Text bold color="gray">↳ </Text><Text color="gray">{displayDesc}</Text>
+              <Text bold color="gray">↳ </Text><Text color="gray">{displayDesc}</Text>
               {diffStats && diffStats.added === 0 && diffStats.removed === 0 ? null : diffStats ? (
                 <Text>
                   <Text bold color="green"> +{diffStats.added}</Text>
@@ -503,13 +504,19 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
       return (
         <Box key={`child-${childIdx}`} flexDirection="column">
           {isAskQuestion ? (
-            <Text color="yellow">
-              {indent}<Text bold color="yellow">↳ ❓ Question: </Text><Text color="yellow">{questionText}</Text>
-            </Text>
+            <Box flexDirection="row">
+              <Text color="gray" dimColor>│        </Text>
+              <Text color="yellow">
+                <Text bold color="yellow">↳ ❓ Question: </Text><Text color="yellow">{questionText}</Text>
+              </Text>
+            </Box>
           ) : (
-            <Text color="gray">
-              {indent}<Text bold color="gray">↳ </Text><Text color="gray">{cleanDesc}</Text> <Text dimColor italic>(Ctrl+O)</Text>
-            </Text>
+            <Box flexDirection="row">
+              <Text color="gray" dimColor>│        </Text>
+              <Text color="gray">
+                <Text bold color="gray">↳ </Text><Text color="gray">{cleanDesc}</Text> <Text dimColor italic>(Ctrl+O)</Text>
+              </Text>
+            </Box>
           )}
         </Box>
       );
@@ -530,9 +537,8 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
       <Box key={`child-${childIdx}`} flexDirection="column">
         {/* Header */}
         <Box flexDirection="row">
-          <Text color="gray">
-            {indent}{"▼ "}
-          </Text>
+          <Text color="gray" dimColor>│        </Text>
+          <Text color="gray">▼ </Text>
           <Text color="gray">
             {cleanDesc}
           </Text>
@@ -552,7 +558,8 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
           if (idx === 0) return null; // skip first line (already shown in header)
           return (
             <Box key={`in-${idx}`} flexDirection="row">
-              <Text color="gray">{indent}{"    "}</Text>
+              <Text color="gray" dimColor>│        </Text>
+              <Text color="gray">    </Text>
               <Text bold color="white">{l}</Text>
             </Box>
           );
@@ -561,7 +568,8 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
         {merged && (
           <>
             <Box flexDirection="row">
-              <Text color={mergedColor}>{indent}{"    "}{"─".repeat(30)}</Text>
+              <Text color="gray" dimColor>│        </Text>
+              <Text color={mergedColor}>    {"─".repeat(30)}</Text>
             </Box>
             {mergedOutputLines.map((l, idx) => {
               if (l.startsWith("Output:") || l.startsWith("Detail:")) {
@@ -569,7 +577,8 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
                 const rest = l.substring(labelType.length);
                 return (
                   <Box key={`out-${idx}`} flexDirection="row">
-                    <Text color={mergedColor}>{indent}{"    "}</Text>
+                    <Text color="gray" dimColor>│        </Text>
+                    <Text color={mergedColor}>    </Text>
                     <Text bold color={merged.isError ? "cyan" : "gray"} dimColor={!merged.isError}>{labelType}</Text>
                     <Text dimColor>{rest}</Text>
                   </Box>
@@ -577,7 +586,8 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
               }
               return (
                 <Box key={`out-${idx}`} flexDirection="row">
-                  <Text color={mergedColor}>{indent}{"    "}</Text>
+                  <Text color="gray" dimColor>│        </Text>
+                  <Text color={mergedColor}>    </Text>
                   <Text color={merged.isError ? "white" : "gray"} dimColor={!merged.isError}>{l}</Text>
                 </Box>
               );
@@ -610,14 +620,20 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
             const outputLine = lines.find(l => l.startsWith("Output:"));
             const answerText = outputLine ? outputLine.substring("Output:".length).trim() : "";
             return (
-              <Text color={themeColor}>
-                {indent}<Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text bold color={themeColor}>Question: </Text><Text color={themeColor}>{questionText}</Text><Text bold color={themeColor}> | Answer: </Text><Text color={themeColor}>{answerText || "N/A"}</Text>
-              </Text>
+              <Box flexDirection="row">
+                <Text color="gray" dimColor>│        </Text>
+                <Text color={themeColor}>
+                  <Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text bold color={themeColor}>Question: </Text><Text color={themeColor}>{questionText}</Text><Text bold color={themeColor}> | Answer: </Text><Text color={themeColor}>{answerText || "N/A"}</Text>
+                </Text>
+              </Box>
             );
           })() : (
-            <Text color={themeColor}>
-              {indent}<Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text color={themeColor}>{cleanDesc}</Text> <Text dimColor italic>{isError ? "(click to view error)" : "(click to view output)"}</Text>
-            </Text>
+            <Box flexDirection="row">
+              <Text color="gray" dimColor>│        </Text>
+              <Text color={themeColor}>
+                <Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text color={themeColor}>{cleanDesc}</Text> <Text dimColor italic>{isError ? "(click to view error)" : "(click to view output)"}</Text>
+              </Text>
+            </Box>
           )}
         </Box>
       );
@@ -629,8 +645,9 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
           const cleanLine = l.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
           return (
             <Box key={idx} flexDirection="row">
+              <Text color="gray" dimColor>│        </Text>
               <Text color={themeColor}>
-                {indent}{isFirstLine ? (isError ? "▼ ✗ " : "▼ ✓ ") : "    "}
+                {isFirstLine ? (isError ? "▼ ✗ " : "▼ ✓ ") : "    "}
               </Text>
               {isFirstLine ? (
                 <Text color={themeColor}>
@@ -661,7 +678,7 @@ function renderNestedChild(rawChild: ChatLine, childIdx: number, isCollapsed: bo
     <Box key={`child-${childIdx}`} flexDirection="column">
       {child.content.split("\n").map((l, idx) => (
         <Box key={idx} flexDirection="row">
-          <Text color="gray">{indent}│    </Text>
+          <Text color="gray" dimColor>│        │    </Text>
           <Text>{l}</Text>
         </Box>
       ))}
@@ -732,17 +749,17 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       const content = line.content.replace(/^❯ /, "");
       return (
         <Box flexDirection="column">
-          <Text color="cyan">
+          <Text color="gray" dimColor>
             {isFirst ? "┌" : "├"}─── [ <Text bold color="cyan">👤 ACCESS_POINT: USER</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
           </Text>
           {content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
-              <Text color="cyan">│    </Text>
+              <Text color="gray" dimColor>│    </Text>
               <Text>{renderBoldTargetText(l)}</Text>
             </Box>
           ))}
           <Box flexDirection="row">
-            <Text color="cyan">│ </Text>
+            <Text color="gray" dimColor>│ </Text>
           </Box>
         </Box>
       );
@@ -754,13 +771,13 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       const children = line.children || [];
       return (
         <Box flexDirection="column">
-          <Text color="gray">
+          <Text color="gray" dimColor>
             {isFirst ? "┌" : "├"}─── [ <Text bold color="gray">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
           </Text>
           {renderMarkdown(capped.text, "gray")}
           {capped.truncated && (
             <Box flexDirection="row">
-              <Text color="gray">│    </Text>
+              <Text color="gray" dimColor>│    </Text>
               <Text color="yellow">... [long response truncated; click to open scroll view, mouse scroll / ↑↓] ...</Text>
             </Box>
           )}
@@ -769,7 +786,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
             return renderNestedChild(child, childIdx, isChildCollapsed, "gray");
           })}
           <Box flexDirection="row">
-            <Text color="gray">│ </Text>
+            <Text color="gray" dimColor>│ </Text>
           </Box>
         </Box>
       );
@@ -781,7 +798,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
         const desc = extractDescription(content);
         return (
           <Box flexDirection="column">
-            <Text color="gray">
+            <Text color="gray" dimColor>
               ├─── [ <Text bold color="gray">▶ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
@@ -789,12 +806,12 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       }
       return (
         <Box flexDirection="column">
-          <Text color="gray">
+          <Text color="gray" dimColor>
             ├─── [ <Text bold color="gray">SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>Ctrl+O</Text>
           </Text>
           {renderToolStart(content)}
           <Box flexDirection="row">
-            <Text color="gray">│ </Text>
+            <Text color="gray" dimColor>│ </Text>
           </Box>
         </Box>
       );
@@ -809,7 +826,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
         const status = isError ? "Failed" : "Done";
         return (
           <Box flexDirection="column">
-            <Text color={themeColor}>
+            <Text color="gray" dimColor>
               ├─── [ <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
@@ -817,12 +834,12 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       }
       return (
         <Box flexDirection="column">
-          <Text color={themeColor}>
+          <Text color="gray" dimColor>
             ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "⚪ SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>Ctrl+O</Text>
           </Text>
           {renderToolEnd(contentText, isError)}
           <Box flexDirection="row">
-            <Text color={themeColor}>│ </Text>
+            <Text color="gray" dimColor>│ </Text>
           </Box>
         </Box>
       );
@@ -834,7 +851,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
         const preview = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
         return (
           <Box flexDirection="column">
-            <Text color="red">
+            <Text color="gray" dimColor>
               ├─── [ <Text bold color="red">▶ 🚨 Error:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
@@ -842,17 +859,17 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       }
       return (
         <Box flexDirection="column">
-          <Text color="red">
+          <Text color="gray" dimColor>
             ├─── [ <Text bold color="red">🚨 ERROR_REPORT</Text> ] <Text dimColor italic>Ctrl+O</Text>
           </Text>
           {contentText.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
-              <Text color="red">│    </Text>
+              <Text color="gray" dimColor>│    </Text>
               <Text color="red">{l}</Text>
             </Box>
           ))}
           <Box flexDirection="row">
-            <Text color="red">│ </Text>
+            <Text color="gray" dimColor>│ </Text>
           </Box>
         </Box>
       );
@@ -863,7 +880,7 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
         const preview = firstLine.length > 50 ? firstLine.slice(0, 47) + "..." : firstLine;
         return (
           <Box flexDirection="column">
-            <Text color="gray">
+            <Text color="gray" dimColor>
               ├─── [ <Text bold color="gray">▶ ℹ️ System:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
@@ -871,34 +888,34 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
       }
       return (
         <Box flexDirection="column">
-          <Text color="gray">
+          <Text color="gray" dimColor>
             ├─── [ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ] <Text dimColor italic>Ctrl+O</Text>
           </Text>
           {line.content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
-              <Text color="gray">│    </Text>
+              <Text color="gray" dimColor>│    </Text>
               <Text color="gray" italic>{l}</Text>
             </Box>
           ))}
           <Box flexDirection="row">
-            <Text color="gray">│ </Text>
+            <Text color="gray" dimColor>│ </Text>
           </Box>
         </Box>
       );
     default:
       return (
         <Box flexDirection="column">
-          <Text color="gray">
+          <Text color="gray" dimColor>
             ├─── [ <Text bold color="gray">COMM_PACKET</Text> ]
           </Text>
           {line.content.split("\n").map((l, idx) => (
             <Box key={idx} flexDirection="row">
-              <Text color="gray">│    </Text>
+              <Text color="gray" dimColor>│    </Text>
               <Text>{l}</Text>
             </Box>
           ))}
           <Box flexDirection="row">
-            <Text color="gray">│ </Text>
+            <Text color="gray" dimColor>│ </Text>
           </Box>
         </Box>
       );

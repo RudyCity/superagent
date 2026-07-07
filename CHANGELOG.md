@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.162] - 2026-07-07
+
+### Changed
+- **Dimmed UI Terminal Borders and Separators**:
+  - Softened terminal UI aesthetics by dimming connection/border lines, error borders, info borders, and other system/default lines using dimColor.
+
+---
+
 ## [1.2.161] - 2026-07-07
 
 ### Fixed
