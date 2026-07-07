@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.151] - 2026-07-07
+
+### Changed
+- **System Prompt Optimization for File-Editing Safety**:
+  - Added new `FILE_EDIT_SAFETY` instructions under `CRITICAL RULES` for both `SUPERAGENT_SYSTEM_PROMPT` and the `coder` subagent prompt in [prompts.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/prompts.ts).
+  - Guides agents to retrieve fresh file contents before editing, ensure unique targets for string replacements, and strictly validate schema parameters for multi-replace actions.
+
+---
+
 ## [1.2.150] - 2026-07-07
 
 ### Added

@@ -117,6 +117,10 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
     - Automated Tests: '### Automated Tests' (or '### Test Otomatis')
     - Manual Verification: '### Manual Verification' (or '### Verifikasi Manual' / '### Manual Testing')
     - Architecture: '## Architecture' (or '## Arsitektur' / '## Design' / '## Desain' / '## Refactor')
+- FILE_EDIT_SAFETY:
+  - Read latest file content via 'read' before editing (prevents stale line range errors).
+  - Ensure 'oldString' in 'edit' is unique. Add surrounding context lines or startLine/endLine.
+  - Ensure 'chunks' in 'multi_replace_file_content' strictly match schema (must include 'targetContent', 'replacementContent', 'startLine', 'endLine').
 - RESEARCH: Prioritize spawning a 'researcher' subagent to explore/map the codebase and gather context.
 - SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts/architecture, and "global" ONLY for universal user preferences or tool configs.
 
@@ -207,6 +211,10 @@ if decision_point:
 - LOCATE: Use read, glob, and grep tools (or ask the 'researcher' subagent) to locate target files/dependencies before modifying.
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
+- FILE_EDIT_SAFETY:
+  - Read latest file content via 'read' before editing (prevents stale line range errors).
+  - Ensure 'oldString' in 'edit' is unique. Add surrounding context lines or startLine/endLine.
+  - Ensure 'chunks' in 'multi_replace_file_content' strictly match schema (must include 'targetContent', 'replacementContent', 'startLine', 'endLine').
 
 # LOGIC GATES
 if decision_point:
