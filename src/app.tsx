@@ -4,7 +4,7 @@ import ChatTextInput from "./components/ChatTextInput.js";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler, QuestionItem } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
-import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel, getSettings } from "./core/config.js";
+import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel, getSettings, getModelPresets } from "./core/config.js";
 import { type MessageContent, contentToString } from "./core/conversation.js";
 import ImageAttachmentBar from "./components/ImageAttachmentBar.js";
 import {
@@ -963,13 +963,48 @@ export function App({
       }
 
       if (mainCommand === "/model") {
+        const isMultiAgent = !!agentRef.current?.isMultiAgent;
+        const currentParts = currentInput.trim().split(/\s+/);
+        const endsWithSpace = currentInput.endsWith(" ");
+
         if (currentInput.startsWith(`${mainCommand} preset`)) {
+          if (currentParts.length >= 3 && !["list", "save"].includes(currentParts[2])) {
+            const prefix = currentParts.slice(0, 3).join(" ");
+            const flagSuggestions = [
+              `${prefix} --save`,
+              `${prefix} --global`
+            ];
+            return filterSuggestions(flagSuggestions, currentInput);
+          }
+          
+          const mode = isMultiAgent ? "multi" : "single";
+          const presets = getModelPresets(mode).map(p => `${mainCommand} preset ${p.name}`);
           const presetSuggestions = [
             `${mainCommand} preset list`,
             `${mainCommand} preset save`,
+            ...presets
           ];
           return filterSuggestions(presetSuggestions, currentInput);
         }
+
+        if (currentParts.length >= 3 && ["master", "superagent", "subagent"].includes(currentParts[1])) {
+          if (currentParts.length === 3 && endsWithSpace) {
+            const prefix = currentParts.join(" ");
+            return [
+              `${prefix} --save`,
+              `${prefix} --global`
+            ];
+          }
+          if (currentParts.length === 4) {
+            const prefix = currentParts.slice(0, 3).join(" ");
+            const flagSuggestions = [
+              `${prefix} --save`,
+              `${prefix} --global`
+            ];
+            return filterSuggestions(flagSuggestions, currentInput);
+          }
+        }
+
         const modelSuggestions = [
           `${mainCommand} preset`,
           `${mainCommand} master`,

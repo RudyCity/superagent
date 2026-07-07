@@ -72,7 +72,7 @@ function formatModelList(info: ReturnType<typeof getActiveModelInfo>, isMulti: b
 
 export const modelCommand: SlashCommand = {
   name: "model",
-  description: "Set or list active AI models (e.g. /model openai/gpt-4o)",
+  description: "Set or list active AI models (e.g. /model openai/gpt-4o [--save])",
   async execute(args, ctx) {
     const now = Date.now();
     if (args) {
@@ -97,7 +97,7 @@ export const modelCommand: SlashCommand = {
               content: `Model Preset Commands (mode-aware):\n` +
                        `  /model preset list                      - List presets for current mode\n` +
                        `  /model preset save <name> [description]  - Save & apply preset for current mode\n` +
-                       `  /model preset <name>                     - Load/apply preset for current mode`,
+                       `  /model preset <name> [--save]            - Load/apply preset for current mode (append --save to persist globally)`,
               timestamp: now,
             });
             return;

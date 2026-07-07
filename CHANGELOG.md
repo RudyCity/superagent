@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.167] - 2026-07-07
+
+### Added
+- **Help Text and Autocomplete Suggestions for Session Presets**:
+  - Updated `/model` slash command description and help texts in [modelCommand.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/commands/modelCommand.ts) to detail the new `--save` and `--global` flags.
+  - Enhanced slash command autocomplete suggestions inside [app.tsx](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/app.tsx) to dynamically include available presets (e.g. `Rudy`, `nuzi`) and suggest the `--save` and `--global` options when writing commands.
+
+---
+
 ## [1.2.166] - 2026-07-07
 
 ### Added
