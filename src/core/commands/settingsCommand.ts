@@ -1361,6 +1361,7 @@ export const settingHideTimelineCommand: SlashCommand = {
 // /setting-classifier command
 export const settingClassifierCommand: SlashCommand = {
   name: "setting-classifier",
+  aliases: ["classifier"],
   description: "Enable or disable the multi-category request classifier for token optimization",
   execute(args, ctx) {
     const now = Date.now();
@@ -1403,6 +1404,7 @@ export const settingClassifierCommand: SlashCommand = {
 // /setting-classifier-threshold command
 export const settingClassifierThresholdCommand: SlashCommand = {
   name: "setting-classifier-threshold",
+  aliases: ["classifier-threshold"],
   description: "Set the minimum heuristic confidence level to skip LLM classification (high|medium|low)",
   execute(args, ctx) {
     const now = Date.now();

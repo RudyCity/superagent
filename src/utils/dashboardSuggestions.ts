@@ -233,19 +233,19 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
       return filterSuggestions(possibilities, query);
     }
 
-    if (mainCommand === "/setting-classifier") {
+    if (mainCommand === "/setting-classifier" || mainCommand === "/classifier") {
       const possibilities = [
-        "/setting-classifier on",
-        "/setting-classifier off",
+        `${parts[0]} on`,
+        `${parts[0]} off`,
       ];
       return filterSuggestions(possibilities, query);
     }
 
-    if (mainCommand === "/setting-classifier-threshold") {
+    if (mainCommand === "/setting-classifier-threshold" || mainCommand === "/classifier-threshold") {
       const possibilities = [
-        "/setting-classifier-threshold high",
-        "/setting-classifier-threshold medium",
-        "/setting-classifier-threshold low",
+        `${parts[0]} high`,
+        `${parts[0]} medium`,
+        `${parts[0]} low`,
       ];
       return filterSuggestions(possibilities, query);
     }
