@@ -90,7 +90,7 @@ export const TaskChecklist = memo(function TaskChecklist({
   }, undefined as number | undefined);
   const headerTimeText = maxRemaining !== undefined ? ` ~ Hide in (${maxRemaining}s)` : "";
 
-  const statusText = `(${completedTasks}/${totalTasks} comp. | ${ongoingTasks}/${totalTasks} ongoing)`;
+  const statusText = `(${completedTasks}/${totalTasks} completed | ${ongoingTasks} ongoing)`;
 
   if (isCollapsed) {
     return (

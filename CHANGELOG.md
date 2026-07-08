@@ -1,6 +1,11 @@
 # Changelog
 
-## [1.2.179] - 2026-07-08
+## [1.2.180] - 2026-07-08
+
+### Changed
+- Updated the task checklist status text in the terminal UI to use full text "completed" instead of "comp." and to only display the raw count of ongoing tasks.
+
+---
 
 ### Added
 - Added an option in settings to hide timeline connecting lines in the terminal-based UI.
