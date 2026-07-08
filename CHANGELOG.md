@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.171] - 2026-07-08
+
+### Fixed
+- **Collapsible Logs Click Area**:
+  - Restructured collapsible chat/log click handling in [useMouseScroll.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/hooks/useMouseScroll.ts) and [chat-area.tsx](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/components/chat-area.tsx) to check horizontal cursor position (`x`) and limit clicks to the visual length of the toggle header text.
+  - Restricted click-to-expand / click-to-collapse behavior to only trigger on the first (header) line of collapsible groups, preventing inadvertent collapsing when clicking or highlighting text inside expanded content blocks.
+
+---
+
 ## [1.2.170] - 2026-07-08
 
 ### Fixed

@@ -17,6 +17,7 @@ export interface WrappedChatLine {
   isSeparator?: boolean;
   isCollapsible?: boolean;
   isTruncated?: boolean;
+  length?: number;
 }
 
 function visibleLength(str: string): number {
@@ -371,7 +372,8 @@ function wrapNestedChild(
               </Text>
             </Box>
           );
-          result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+          const plainText = "│        " + statusIcon + " ❓ " + questionText + " → " + (answerText || "N/A") + " (Ctrl+O)";
+          result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true, length: visibleLength(plainText) });
         } else {
           // Parse diff stats from tool result (format: "Changed: +7 -2\nFile: ...")
           const diffMatch = merged.content.match(/\+(\d+)\s+-(\d+)/);
@@ -394,7 +396,9 @@ function wrapNestedChild(
               </Text>
             </Box>
           );
-          result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+          const diffStatsText = diffStats && diffStats.added === 0 && diffStats.removed === 0 ? "" : diffStats ? (" +" + diffStats.added + " -" + diffStats.removed) : "";
+          const plainText = "│        ↳ " + displayDesc + diffStatsText + " " + statusIcon + " " + statusLabel + "  (Ctrl+O)";
+          result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true, length: visibleLength(plainText) });
         }
       } else {
         // ── Collapsed, tool still running ────────────────────────────
@@ -413,7 +417,8 @@ function wrapNestedChild(
             </Text>
           </Box>
         );
-        result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
+        const plainText = isAskQuestion ? ("│        ↳ ❓ Question: " + questionText) : ("│        ↳ " + cleanDesc + " (click to view inputs)");
+        result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true, length: visibleLength(plainText) });
       }
     } else {
       // ── Expanded: Input block + divider + Output block ─────────────
@@ -442,7 +447,9 @@ function wrapNestedChild(
           <Text dimColor italic> (click to collapse)</Text>
         </Box>
       );
-      result.push({ node: headerNode, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isHeader: true, isCollapsible: true });
+      const diffStatsText = expandedDiffStats && !(expandedDiffStats.added === 0 && expandedDiffStats.removed === 0) ? (" +" + expandedDiffStats.added + " -" + expandedDiffStats.removed) : "";
+      const plainText = "│        ▼ " + cleanDesc + (merged ? " " + mergedIcon : "") + diffStatsText + " (click to collapse)";
+      result.push({ node: headerNode, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isHeader: true, isCollapsible: true, length: visibleLength(plainText) });
 
       // Input lines (skip line 0, already in header)
       for (let idx = 1; idx < inputLines.length; idx++) {
@@ -527,19 +534,20 @@ function wrapNestedChild(
     const questionText = isAskQuestion ? cleanDescRaw.replace(/^Asking user:\s*/i, "").trim() : "";
 
     if (isCollapsed) {
-      const node = isAskQuestion ? (() => {
+      let answerText = "";
+      if (isAskQuestion) {
         const lines = contentText.split("\n");
         const outputLine = lines.find(l => l.startsWith("Output:"));
-        const answerText = outputLine ? outputLine.substring("Output:".length).trim() : "";
-        return (
-          <Box flexDirection="row">
-            <Text color="gray" dimColor>│        </Text>
-            <Text color={themeColor}>
-              <Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text bold color={themeColor}>Question: </Text><Text color={themeColor}>{questionText}</Text><Text bold color={themeColor}> | Answer: </Text><Text color={themeColor}>{answerText || "N/A"}</Text>
-            </Text>
-          </Box>
-        );
-      })() : (
+        answerText = outputLine ? outputLine.substring("Output:".length).trim() : "";
+      }
+      const node = isAskQuestion ? (
+        <Box flexDirection="row">
+          <Text color="gray" dimColor>│        </Text>
+          <Text color={themeColor}>
+            <Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text bold color={themeColor}>Question: </Text><Text color={themeColor}>{questionText}</Text><Text bold color={themeColor}> | Answer: </Text><Text color={themeColor}>{answerText || "N/A"}</Text>
+          </Text>
+        </Box>
+      ) : (
         <Box flexDirection="row">
           <Text color="gray" dimColor>│        </Text>
           <Text color={themeColor}>
@@ -547,7 +555,10 @@ function wrapNestedChild(
           </Text>
         </Box>
       );
-      result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_end", isCollapsible: true });
+      const plainText = isAskQuestion
+        ? ("│        " + (isError ? "↳ ✗ " : "↳ ✓ ") + "Question: " + questionText + " | Answer: " + (answerText || "N/A"))
+        : ("│        " + (isError ? "↳ ✗ " : "↳ ✓ ") + cleanDesc + " " + (isError ? "(click to view error)" : "(click to view output)"));
+      result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_end", isCollapsible: true, length: visibleLength(plainText) });
     } else {
       const contentLines = contentText.split("\n");
       for (let idx = 0; idx < contentLines.length; idx++) {
@@ -585,7 +596,10 @@ function wrapNestedChild(
               )}
             </Box>
           );
-          result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_end", isCollapsible: true });
+          const length = isFirstSub
+            ? visibleLength("│        " + (isError ? "▼ ✗ " : "▼ ✓ ") + subLine + " (click to collapse)")
+            : undefined;
+          result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_end", isCollapsible: true, length });
         }
       }
     }
@@ -737,7 +751,8 @@ export function wrapChatLineToLines({
             </Text>
           </Box>
         );
-        result.push({ node, lineIndex, type: "tool_start", isCollapsible: true });
+        const plainText = `├─── [ ▶ ${desc} (${toolName}) ] Ctrl+O`;
+        result.push({ node, lineIndex, type: "tool_start", isCollapsible: true, length: visibleLength(plainText) });
       } else {
         const headerNode = (
           <Box flexDirection="row">
@@ -746,7 +761,8 @@ export function wrapChatLineToLines({
             </Text>
           </Box>
         );
-        result.push({ node: headerNode, lineIndex, type: "tool_start", isHeader: true, isCollapsible: true });
+        const plainText = "├─── [ SYSTEM_INVOKING_MODULE ] Ctrl+O";
+        result.push({ node: headerNode, lineIndex, type: "tool_start", isHeader: true, isCollapsible: true, length: visibleLength(plainText) });
 
         const contentLines = content.split("\n");
         for (const l of contentLines) {
@@ -837,7 +853,8 @@ export function wrapChatLineToLines({
             </Text>
           </Box>
         );
-        result.push({ node, lineIndex, type: "tool_end", isCollapsible: true });
+        const plainText = `├─── [ ▶ ${icon} ${status}: ${desc} ] Ctrl+O`;
+        result.push({ node, lineIndex, type: "tool_end", isCollapsible: true, length: visibleLength(plainText) });
       } else {
         const headerNode = (
           <Box flexDirection="row">
@@ -846,7 +863,9 @@ export function wrapChatLineToLines({
             </Text>
           </Box>
         );
-        result.push({ node: headerNode, lineIndex, type: "tool_end", isHeader: true, isCollapsible: true });
+        const label = isError ? "🔴 SYSTEM_CALL_FAILED" : "⚪ SYSTEM_CALL_SUCCESS";
+        const plainText = `├─── [ ${label} ] Ctrl+O`;
+        result.push({ node: headerNode, lineIndex, type: "tool_end", isHeader: true, isCollapsible: true, length: visibleLength(plainText) });
 
         const contentLines = contentText.split("\n");
         for (const l of contentLines) {
@@ -913,7 +932,8 @@ export function wrapChatLineToLines({
             </Text>
           </Box>
         );
-        result.push({ node, lineIndex, type: "error", isCollapsible: true });
+        const plainText = `├─── [ ▶ 🚨 Error: ${preview} ] Ctrl+O`;
+        result.push({ node, lineIndex, type: "error", isCollapsible: true, length: visibleLength(plainText) });
       } else {
         const headerNode = (
           <Box flexDirection="row">
@@ -922,7 +942,8 @@ export function wrapChatLineToLines({
             </Text>
           </Box>
         );
-        result.push({ node: headerNode, lineIndex, type: "error", isHeader: true, isCollapsible: true });
+        const plainText = "├─── [ 🚨 ERROR_REPORT ] Ctrl+O";
+        result.push({ node: headerNode, lineIndex, type: "error", isHeader: true, isCollapsible: true, length: visibleLength(plainText) });
 
         const contentLines = contentText.split("\n");
         for (const l of contentLines) {
@@ -958,7 +979,8 @@ export function wrapChatLineToLines({
             </Text>
           </Box>
         );
-        result.push({ node, lineIndex, type: "system", isCollapsible: true });
+        const plainText = `├─── [ ▶ ℹ️ System: ${preview} ] Ctrl+O`;
+        result.push({ node, lineIndex, type: "system", isCollapsible: true, length: visibleLength(plainText) });
       } else {
         const headerNode = (
           <Box flexDirection="row">
@@ -967,7 +989,8 @@ export function wrapChatLineToLines({
             </Text>
           </Box>
         );
-        result.push({ node: headerNode, lineIndex, type: "system", isHeader: true, isCollapsible: true });
+        const plainText = "├─── [ ℹ️ SYSTEM_INFO ] Ctrl+O";
+        result.push({ node: headerNode, lineIndex, type: "system", isHeader: true, isCollapsible: true, length: visibleLength(plainText) });
 
         const contentLines = line.content.split("\n");
         for (const l of contentLines) {
@@ -1367,6 +1390,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
           isTruncated: line.isTruncated || false,
           type: line.type,
           isCollapsible: line.isCollapsible || false,
+          length: line.length,
         };
         currentBlockIndex = line.lineIndex;
         currentChildIndex = hasChild ? (line.childIndex ?? -1) : -1;

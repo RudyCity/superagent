@@ -36,6 +36,8 @@ export interface ChatLinePosition {
   parentIndex?: number;
   /** If this position represents a nested child line, the child index within parent */
   childIndex?: number;
+  /** The horizontal character length of the clickable area */
+  length?: number;
 }
 
 export interface SingleAgentMouseContext {
@@ -257,9 +259,12 @@ export function useMouseScroll(
                 logMouseDebug(`[MOUSE DEBUG] Chat click: visible positions are: ${JSON.stringify(ctx.visibleLinePositions)}\n`);
               }
               for (const pos of ctx.visibleLinePositions) {
-                if (y >= pos.startRow && y <= pos.endRow) {
+                const isCollapsibleClick = pos.isCollapsible ? y === pos.startRow : (y >= pos.startRow && y <= pos.endRow);
+                const isWithinWidth = pos.length === undefined || x <= pos.length;
+
+                if (isCollapsibleClick && isWithinWidth) {
                   if (process.env.DEBUG_MOUSE === "true") {
-                    logMouseDebug(`[MOUSE DEBUG] Matched position: index=${pos.index}, type=${pos.type}, isCollapsible=${pos.isCollapsible}, parentIndex=${pos.parentIndex}, childIndex=${pos.childIndex}\n`);
+                    logMouseDebug(`[MOUSE DEBUG] Matched position: index=${pos.index}, type=${pos.type}, isCollapsible=${pos.isCollapsible}, parentIndex=${pos.parentIndex}, childIndex=${pos.childIndex}, length=${pos.length}\n`);
                   }
                   // Nested child line click → toggle child expand/collapse
                   if (pos.parentIndex !== undefined && pos.childIndex !== undefined && pos.isCollapsible && ctx.toggleChildExpand) {
