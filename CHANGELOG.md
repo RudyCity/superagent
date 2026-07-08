@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.178] - 2026-07-08
+
+### Added
+- **Base Prompt Updates for Performance & Generic Builds**:
+  - Added mandatory BULK_READ guidelines to base prompts to batch multiple file reads into a single call.
+  - Added FAST_ANALYSIS guidelines to search/grep to locate targets before reading, read specific line ranges for large files, and exclude build/dependency directories.
+  - Made compile and test validation commands generic (e.g. cargo build, pytest, go test) in base prompts instead of NPM-specific.
+  - Added package manager auto-detection (bun/pnpm/yarn/npm) in master agent tools for executing build and test commands in worktrees.
+
+---
+
 ## [1.2.177] - 2026-07-08
 
 ### Fixed

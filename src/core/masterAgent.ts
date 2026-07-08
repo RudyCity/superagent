@@ -705,7 +705,7 @@ Instructions:
 1. Examine the conflicted files and look for git conflict markers (<<<<<<<, =======, >>>>>>>).
 2. Use the BRANCH INTENT CONTEXT above to understand the purpose of each change from both sides.
 3. Edit the file(s) to resolve the conflicts cleanly, preserving the correct logic from both branches, and completely remove all conflict markers.
-4. Run validation (e.g. 'npm run build' or check files) to ensure the code compiles and is free of syntax errors.
+4. Run validation (e.g. the project's build command or check files) to ensure the code compiles and is free of syntax errors.
 5. Report back when all conflicts are resolved.`;
 
             const { agentLocalStorage } = await import("./agent.js");

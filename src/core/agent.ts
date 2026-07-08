@@ -1360,10 +1360,23 @@ Skill categories to always check:
 - Research/exploration → 'dispatching-parallel-agents'
 DO NOT skip skill reading. Instruct your subagents to also read and follow the relevant SKILL.md.
 
+BULK READ — MANDATORY:
+When you need to read or analyze multiple files, ALWAYS batch them into a single tool call using the 'filePaths' array — NEVER read files one at a time in sequential calls.
+- Identify ALL files needed upfront, then read them all in one call before processing.
+- If reading related files (e.g. types, imports, tests, configs), include them all in the same batch.
+- This applies to you and all subagents you spawn.
+
+FAST ANALYSIS — MANDATORY:
+To reduce latency, prevent timeout issues, and save tokens:
+1. PINPOINT FIRST: ALWAYS use 'grep' or 'ripgrep' search tools to locate exact files/lines containing target symbols (e.g. methods, classes, variables) before reading files. Do NOT use recursive directory listings or read large files blindly.
+2. TARGETED READING: If a file is large (>200 lines), only view/read the specific line range (using StartLine/EndLine parameters) containing the code you actually need to examine.
+3. EXCLUDE GENERIC DIRECTORIES: Filter out dependency/build folders ('node_modules', 'dist', 'build', '.git', etc.) in glob/search path arguments.
+
+
 POST-CHANGE VERIFICATION — MANDATORY AFTER ANY CODE MODIFICATION:
 Whenever you (or any subagent) modify source files, you MUST run verification before responding to the user:
-1. BUILD: Run 'npm run build'. If it fails, fix all TypeScript/compile errors before proceeding.
-2. TEST: Run 'npm test'. If tests fail, diagnose and fix them. Do NOT skip this step.
+1. BUILD: Run the project's build command (e.g. 'npm run build', 'cargo build', 'go build', 'mvn compile'). If it fails, fix all compile errors before proceeding.
+2. TEST: Run the project's test suite (e.g. 'npm test', 'cargo test', 'pytest', 'go test ./...'). If tests fail, diagnose and fix them. Do NOT skip this step.
 3. if verification_failed: fix errors → re-run build + test → repeat until both pass.
 4. ONLY respond to the user AFTER build and test both pass.
 

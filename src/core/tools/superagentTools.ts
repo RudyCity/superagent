@@ -116,6 +116,13 @@ function checkCycle(proposedRole: string, proposedBranch: string, proposedDeps: 
   return null;
 }
 
+function detectPackageManager(cwd: string): string {
+  if (fs.existsSync(path.join(cwd, "bun.lockb"))) return "bun";
+  if (fs.existsSync(path.join(cwd, "pnpm-lock.yaml"))) return "pnpm";
+  if (fs.existsSync(path.join(cwd, "yarn.lock"))) return "yarn";
+  return "npm";
+}
+
 const SUPERAGENT_REPORT_INSTRUCTION = `
 When you have completed your task, provide a final report formatted exactly as:
 
@@ -578,13 +585,15 @@ export const invokeSuperagentTool: Tool = {
             try {
               const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
               if (pkg.scripts) {
+                const pm = detectPackageManager(worktreePath);
                 if (pkg.scripts.build) {
-                  appendMasterLog(`[INFO] Executing "npm run build" in worktree...`);
-                  await execa("npm", ["run", "build"], { cwd: worktreePath });
+                  appendMasterLog(`[INFO] Executing "${pm} run build" in worktree...`);
+                  await execa(pm, ["run", "build"], { cwd: worktreePath });
                 }
                 if (pkg.scripts.test) {
-                  appendMasterLog(`[INFO] Executing "npm test" in worktree...`);
-                  await execa("npm", ["test"], { cwd: worktreePath });
+                  const testArgs = pm === "npm" ? ["test"] : ["run", "test"];
+                  appendMasterLog(`[INFO] Executing "${pm} ${testArgs.join(" ")}" in worktree...`);
+                  await execa(pm, testArgs, { cwd: worktreePath });
                 }
               }
             } catch (testErr: any) {
@@ -1324,13 +1333,15 @@ export const sendMessageToSuperagentTool: Tool = {
             try {
               const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
               if (pkg.scripts) {
+                const pm = detectPackageManager(inst.worktreePath);
                 if (pkg.scripts.build) {
-                  appendMasterLog(`[INFO] Executing "npm run build" in worktree...`);
-                  await execa("npm", ["run", "build"], { cwd: inst.worktreePath });
+                  appendMasterLog(`[INFO] Executing "${pm} run build" in worktree...`);
+                  await execa(pm, ["run", "build"], { cwd: inst.worktreePath });
                 }
                 if (pkg.scripts.test) {
-                  appendMasterLog(`[INFO] Executing "npm test" in worktree...`);
-                  await execa("npm", ["test"], { cwd: inst.worktreePath });
+                  const testArgs = pm === "npm" ? ["test"] : ["run", "test"];
+                  appendMasterLog(`[INFO] Executing "${pm} ${testArgs.join(" ")}" in worktree...`);
+                  await execa(pm, testArgs, { cwd: inst.worktreePath });
                 }
               }
             } catch (testErr: any) {
