@@ -1940,28 +1940,6 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     const { inserted: currentInserted } = getPasteSplit(input, pastePrefixLength, pasteSuffixLength);
     const isPasteActive = isPasted && (currentInserted.length > 200 || currentInserted.includes("\n"));
 
-    if (
-      (key.backspace || key.delete) &&
-      isPasteActive
-    ) {
-      setInput((prev) => {
-        const next = prev.slice(0, -1);
-        const { inserted: nextInserted } = getPasteSplit(next, pastePrefixLength, pasteSuffixLength);
-        if (next.length <= pastePrefixLength + pasteSuffixLength || (nextInserted.length <= 200 && !nextInserted.includes("\n"))) {
-          setIsPasted(false);
-        }
-        return next;
-      });
-      return;
-    }
-
-    if (key.return) {
-      if (isPasteActive) {
-        handleSubmit(input);
-        return;
-      }
-    }
-
     if (isEscape) {
       if (isPasteActive) {
         setInput("");

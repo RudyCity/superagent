@@ -199,18 +199,31 @@ export function MultiAgentDashboard({
     const sanitizedVal = stripSgrMouseSequences(val);
     const lengthDiff = sanitizedVal.length - query.length;
     const containsNewline = sanitizedVal.includes("\n");
-    if (lengthDiff < 0) {
-      setIsPasted(false);
-    } else if (lengthDiff > 15 || containsNewline) {
-      setIsPasted(true);
-      const { prefix, suffix } = getInsertion(query, sanitizedVal);
-      setPastePrefixLength(prefix.length);
-      setPasteSuffixLength(suffix.length);
-    } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
-      setIsPasted(false);
-    } else if (lengthDiff > 0 && lengthDiff <= 15 && !containsNewline) {
-      // Normal typing resumes after paste — clear paste state
-      setIsPasted(false);
+    if (isPasted) {
+      const { inserted: oldInserted } = getPasteSplit(query, pastePrefixLength, pasteSuffixLength);
+      const newIdx = sanitizedVal.indexOf(oldInserted);
+      if (newIdx !== -1 && oldInserted.length > 0) {
+        // Paste block is intact, update lengths
+        setPastePrefixLength(newIdx);
+        setPasteSuffixLength(sanitizedVal.length - (newIdx + oldInserted.length));
+      } else {
+        // Paste block modified or deleted, clear paste state
+        setIsPasted(false);
+      }
+    } else {
+      if (lengthDiff < 0) {
+        setIsPasted(false);
+      } else if (lengthDiff > 15 || containsNewline) {
+        setIsPasted(true);
+        const { prefix, suffix } = getInsertion(query, sanitizedVal);
+        setPastePrefixLength(prefix.length);
+        setPasteSuffixLength(suffix.length);
+      } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
+        setIsPasted(false);
+      } else if (lengthDiff > 0 && lengthDiff <= 15 && !containsNewline) {
+        // Normal typing resumes after paste — clear paste state
+        setIsPasted(false);
+      }
     }
     setQuery(sanitizedVal);
     if (lastTabPrefix) {
@@ -222,7 +235,7 @@ export function MultiAgentDashboard({
     if (activeWizard?.type === "model" && wizardOptions.length > 0) {
       setWizardSelectedIndex(0);
     }
-  }, [query, activeWizard, wizardOptions, lastTabPrefix]);
+  }, [query, activeWizard, wizardOptions, lastTabPrefix, isPasted, pastePrefixLength, pasteSuffixLength]);
 
   const [wizardAllOptions, setWizardAllOptions] = useState<string[]>([]);
   const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
@@ -1404,21 +1417,6 @@ export function MultiAgentDashboard({
               </Text>
             </Box>
             <Box flexGrow={1}>
-              {(() => {
-                const { prefix, inserted, suffix } = getPasteSplit(query, pastePrefixLength, pasteSuffixLength);
-                const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
-                if (isPasteActive) {
-                  const lineCount = inserted.split("\n").length;
-                  return (
-                    <Box flexDirection="row">
-                      {prefix ? <Text>{prefix}</Text> : null}
-                      <Text color="yellow" bold>[Pasted Text: {inserted.length} chars, {lineCount} lines] </Text>
-                      {suffix ? <Text>{suffix}</Text> : null}
-                      <Text dimColor>(Press Enter to send, Esc to clear)</Text>
-                    </Box>
-                  );
-                }
-                return (
                   <Box flexDirection="column">
                     {attachments.length > 0 && (
                       <ImageAttachmentBar
@@ -1437,10 +1435,11 @@ export function MultiAgentDashboard({
                       onRemoveLastAttachment={handleRemoveLastAttachment}
                       attachmentCount={attachments.length}
                       immediate={!!activeWizard}
+                      isPasted={isPasted}
+                      pastePrefixLength={pastePrefixLength}
+                      pasteSuffixLength={pasteSuffixLength}
                     />
                   </Box>
-                );
-              })()}
             </Box>
           </Box>
         </>

@@ -1120,18 +1120,31 @@ export function App({
 
     const lengthDiff = sanitizedVal.length - input.length;
     const containsNewline = sanitizedVal.includes("\n");
-    if (lengthDiff < 0) {
-      setIsPasted(false);
-    } else if (lengthDiff > 15 || containsNewline) {
-      setIsPasted(true);
-      const { prefix, suffix } = getInsertion(input, sanitizedVal);
-      setPastePrefixLength(prefix.length);
-      setPasteSuffixLength(suffix.length);
-    } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
-      setIsPasted(false);
-    } else if (lengthDiff > 0 && lengthDiff <= 15 && !containsNewline) {
-      // Normal typing resumes after paste — clear paste state
-      setIsPasted(false);
+    if (isPasted) {
+      const { inserted: oldInserted } = getPasteSplit(input, pastePrefixLength, pasteSuffixLength);
+      const newIdx = sanitizedVal.indexOf(oldInserted);
+      if (newIdx !== -1 && oldInserted.length > 0) {
+        // Paste block is intact, update lengths
+        setPastePrefixLength(newIdx);
+        setPasteSuffixLength(sanitizedVal.length - (newIdx + oldInserted.length));
+      } else {
+        // Paste block modified or deleted, clear paste state
+        setIsPasted(false);
+      }
+    } else {
+      if (lengthDiff < 0) {
+        setIsPasted(false);
+      } else if (lengthDiff > 15 || containsNewline) {
+        setIsPasted(true);
+        const { prefix, suffix } = getInsertion(input, sanitizedVal);
+        setPastePrefixLength(prefix.length);
+        setPasteSuffixLength(suffix.length);
+      } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
+        setIsPasted(false);
+      } else if (lengthDiff > 0 && lengthDiff <= 15 && !containsNewline) {
+        // Normal typing resumes after paste — clear paste state
+        setIsPasted(false);
+      }
     }
     setInput(sanitizedVal);
     if (lastTabPrefix) {
@@ -1143,7 +1156,7 @@ export function App({
     if (activeWizard?.type === "model" && wizardOptions.length > 0) {
       setWizardSelectedIndex(0);
     }
-  }, [input, lastTabPrefix, activeWizard, wizardOptions]);
+  }, [input, lastTabPrefix, activeWizard, wizardOptions, isPasted, pastePrefixLength, pasteSuffixLength]);
 
   const getWizardQuestion = () => {
     if (!activeWizard) return null;
@@ -2471,44 +2484,30 @@ export function App({
               </Text>
               <Box flexDirection="row">
                 <Text color={activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>│ ❯ </Text>
-                {(() => {
-                  const { prefix, inserted, suffix } = getPasteSplit(input, pastePrefixLength, pasteSuffixLength);
-                  const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
-                  if (isPasteActive) {
-                    const lineCount = inserted.split("\n").length;
-                    return (
-                      <Box flexDirection="row">
-                        {prefix ? <Text>{prefix}</Text> : null}
-                        <Text color="yellow" bold>[Pasted Text: {inserted.length} chars, {lineCount} lines] </Text>
-                        {suffix ? <Text>{suffix}</Text> : null}
-                        <Text dimColor>(Press Enter to send, Esc to clear)</Text>
-                      </Box>
-                    );
-                  }
-                  return (
-                    <Box flexDirection="column">
-                      {attachments.length > 0 && (
-                        <ImageAttachmentBar
-                          attachments={attachments}
-                          onRemove={handleRemoveAttachment}
-                          focused={focusMode === "input"}
-                        />
-                      )}
-                      <ChatTextInput
-                        focus={focusMode === "input"}
-                        value={input}
-                        onChange={handleInputChange}
-                        onSubmit={handleSubmit}
-                        placeholder={getWizardPlaceholder()}
-                        onAttachImage={handleAttachImage}
-                        onPasteImage={handlePasteImage}
-                        onRemoveLastAttachment={handleRemoveLastAttachment}
-                        attachmentCount={attachments.length}
-                        immediate={!!activeWizard}
-                      />
-                    </Box>
-                  );
-                })()}
+                <Box flexDirection="column" flexGrow={1}>
+                  {attachments.length > 0 && (
+                    <ImageAttachmentBar
+                      attachments={attachments}
+                      onRemove={handleRemoveAttachment}
+                      focused={focusMode === "input"}
+                    />
+                  )}
+                  <ChatTextInput
+                    focus={focusMode === "input"}
+                    value={input}
+                    onChange={handleInputChange}
+                    onSubmit={handleSubmit}
+                    placeholder={getWizardPlaceholder()}
+                    onAttachImage={handleAttachImage}
+                    onPasteImage={handlePasteImage}
+                    onRemoveLastAttachment={handleRemoveLastAttachment}
+                    attachmentCount={attachments.length}
+                    immediate={!!activeWizard}
+                    isPasted={isPasted}
+                    pastePrefixLength={pastePrefixLength}
+                    pasteSuffixLength={pasteSuffixLength}
+                  />
+                </Box>
               </Box>
             </Box>
             )}

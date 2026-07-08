@@ -22,6 +22,7 @@ import { Text, useInput, useStdin } from "ink";
 import chalk from "chalk";
 import type { ImageAttachment } from "../utils/imageUtils.js";
 import { isImageFilePath } from "../utils/imageUtils.js";
+import { getPasteSplit } from "../utils/text.js";
 
 type Props = {
   value: string;
@@ -41,6 +42,9 @@ type Props = {
   attachmentCount?: number;
   /** Force immediate (non-debounced) parent state updates (e.g., active wizard) */
   immediate?: boolean;
+  isPasted?: boolean;
+  pastePrefixLength?: number;
+  pasteSuffixLength?: number;
 };
 
 const BLINK_ON = "\x1b[5m";
@@ -62,6 +66,9 @@ export default function ChatTextInput({
   onRemoveLastAttachment,
   attachmentCount = 0,
   immediate = false,
+  isPasted = false,
+  pastePrefixLength = 0,
+  pasteSuffixLength = 0,
 }: Props) {
   const [localValue, setLocalValue] = useState(originalValue || "");
   const [cursorOffset, setCursorOffset] = useState(
@@ -172,7 +179,50 @@ export default function ChatTextInput({
   let renderedValue = value;
   let renderedPlaceholder = placeholder ? chalk.grey(placeholder) : undefined;
 
-  if (showCursor && focus) {
+  const { prefix, inserted, suffix } = getPasteSplit(localValue, pastePrefixLength, pasteSuffixLength);
+  const isPasteActive = isPasted && (inserted.length > 200 || inserted.includes("\n"));
+
+  if (isPasteActive) {
+    const lineCount = inserted.split("\n").length;
+    const placeholderText = `[Pasted Text: ${inserted.length} chars, ${lineCount} lines] `;
+    
+    let renderedPrefix = "";
+    let renderedSuffix = "";
+    let renderedPlaceholderPart = chalk.yellow.bold(placeholderText);
+
+    if (showCursor && focus) {
+      if (cursorOffset <= prefix.length) {
+        let i = 0;
+        for (const char of prefix) {
+          renderedPrefix += i === cursorOffset ? blinkInverse(char) : char;
+          i++;
+        }
+        if (cursorOffset === prefix.length) {
+          renderedPlaceholderPart = chalk.yellow.bold(blinkInverse(placeholderText[0]) + placeholderText.slice(1));
+        }
+        renderedSuffix = suffix;
+      } else if (cursorOffset >= prefix.length + inserted.length) {
+        renderedPrefix = prefix;
+        const suffixCursor = cursorOffset - prefix.length - inserted.length;
+        let i = 0;
+        for (const char of suffix) {
+          renderedSuffix += i === suffixCursor ? blinkInverse(char) : char;
+          i++;
+        }
+        if (suffixCursor === suffix.length) {
+          renderedSuffix += blinkInverse(" ");
+        }
+      } else {
+        renderedPrefix = prefix;
+        renderedPlaceholderPart = chalk.yellow.bold(placeholderText.slice(0, -1) + blinkInverse(placeholderText[placeholderText.length - 1]));
+        renderedSuffix = suffix;
+      }
+    } else {
+      renderedPrefix = prefix;
+      renderedSuffix = suffix;
+    }
+    renderedValue = renderedPrefix + renderedPlaceholderPart + renderedSuffix + chalk.dim(" (Press Enter to send, Esc to clear)");
+  } else if (showCursor && focus) {
     renderedPlaceholder =
       placeholder.length > 0
         ? blinkInverse(placeholder[0]) + chalk.grey(placeholder.slice(1))

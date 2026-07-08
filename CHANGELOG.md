@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.185] - 2026-07-08
+
+### Fixed
+- Fixed terminal input freeze where pasting text blocked all normal typing and editing by keeping the `ChatTextInput` component mounted when paste is active.
+- Added paste preservation logic in input change handlers (`app.tsx` and `multi-agent-dashboard.tsx`) to update prefix and suffix lengths if the pasted block remains intact, or clear paste status if the pasted block is modified or deleted.
+- Added props `isPasted`, `pastePrefixLength`, and `pasteSuffixLength` to `ChatTextInput` and implemented custom rendering for active paste placeholders showing logical cursor positions within the prefix or suffix.
+- Removed duplicate paste-related key handlers for backspace, delete, and return from `useKeyboardHandler.ts` and `useDashboardKeyboard.ts`.
+
+---
+
 ## [1.2.184] - 2026-07-08
 
 ### Fixed

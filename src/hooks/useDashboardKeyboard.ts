@@ -259,31 +259,6 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
     const { inserted: currentInserted } = getPasteSplit(query, pastePrefixLength, pasteSuffixLength);
     const isPasteActive = isPasted && (currentInserted.length > 200 || currentInserted.includes("\n"));
 
-    if (
-      (key.backspace || key.delete) &&
-      isPasteActive
-    ) {
-      setQuery((prev) => {
-        const next = prev.slice(0, -1);
-        const { inserted: nextInserted } = getPasteSplit(next, pastePrefixLength, pasteSuffixLength);
-        if (next.length <= pastePrefixLength + pasteSuffixLength || (nextInserted.length <= 200 && !nextInserted.includes("\n"))) {
-          setIsPasted(false);
-        }
-        return next;
-      });
-      return;
-    }
-
-    if (key.return) {
-      if (setLastTabPrefix) {
-        setLastTabPrefix(null);
-      }
-      if (isPasteActive) {
-        handleQuerySubmit(query);
-        return;
-      }
-    }
-
     if (isEscape) {
       if (isPasteActive) {
         setQuery("");
