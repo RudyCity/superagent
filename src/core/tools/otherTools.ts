@@ -1493,7 +1493,10 @@ Here is the list of available skills:
 ${JSON.stringify(candidates, null, 2)}
 
 Identify the indices of the skills that are semantically relevant to the user's query.
-Return ONLY a JSON array of numbers representing the relevant skill indices. Example: [0, 2]
+A skill is relevant if its name or description covers, or is closely related to, the topics, technologies, tasks, or concepts mentioned in the query.
+Be inclusive: if the query mentions specific terms (like "rbac" or "role" or "user management"), then skills about authentication/authorization, security policies, identity management, or user databases are highly relevant.
+
+Return ONLY a JSON array of numbers representing the relevant skill indices (from the index field of each item in the list above). Example: [0, 2]
 If no skills are relevant, return an empty array: []`;
 
             const result = await generateText({
@@ -1514,12 +1517,72 @@ If no skills are relevant, return an empty array: []`;
         if (aiSuccess && aiFiltered.length > 0) {
           filtered = aiFiltered;
         } else {
-          // Fallback to substring matching if AI search failed or returned no results
-          filtered = skills.filter(
+          // Fallback to keyword matching if AI search failed or returned no results
+          const exactMatches = skills.filter(
             (s) =>
               s.name.toLowerCase().includes(query) ||
               s.description.toLowerCase().includes(query)
           );
+
+          if (exactMatches.length > 0) {
+            filtered = exactMatches;
+          } else {
+            const stopWords = new Set(["a", "an", "the", "and", "or", "but", "if", "then", "else", "of", "at", "by", "for", "with", "about", "against", "between", "into", "through", "during", "before", "after", "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over", "under", "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very", "can", "will", "just", "should", "now", "use", "when", "using", "your", "custom", "skills"]);
+            const keywords = query
+              .replace(/[^\w\s-]/g, "")
+              .split(/\s+/)
+              .filter((k) => k.length > 2 && !stopWords.has(k));
+
+            if (keywords.length > 0) {
+              const docFreqs: Record<string, number> = {};
+              for (const kw of keywords) {
+                let count = 0;
+                for (const s of skills) {
+                  if (s.name.toLowerCase().includes(kw) || s.description.toLowerCase().includes(kw)) {
+                    count++;
+                  }
+                }
+                docFreqs[kw] = count;
+              }
+
+              const scored = skills
+                .map((s) => {
+                  let score = 0;
+                  let matchedKeywordCount = 0;
+                  const nameLower = s.name.toLowerCase();
+                  const descLower = s.description.toLowerCase();
+
+                  for (const kw of keywords) {
+                    let keywordMatched = false;
+                    const idf = Math.log(skills.length / (docFreqs[kw] || 1)) + 1;
+
+                    if (nameLower.includes(kw)) {
+                      score += 3 * idf;
+                      keywordMatched = true;
+                    }
+                    if (descLower.includes(kw)) {
+                      score += 1 * idf;
+                      keywordMatched = true;
+                    }
+                    if (keywordMatched) {
+                      matchedKeywordCount++;
+                    }
+                  }
+
+                  if (matchedKeywordCount > 1) {
+                    score += matchedKeywordCount * 5;
+                  }
+
+                  return { skill: s, score };
+                })
+                .filter((item) => item.score > 0);
+
+              scored.sort((a, b) => b.score - a.score);
+              filtered = scored.slice(0, 15).map((item) => item.skill);
+            } else {
+              filtered = [];
+            }
+          }
         }
       }
 

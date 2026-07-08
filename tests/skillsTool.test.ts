@@ -113,4 +113,27 @@ describe("get_skills Tool", () => {
     expect(result).not.toContain("React Basics");
     expect(generateText).toHaveBeenCalled();
   });
+
+  it("should fall back to smart keyword matching when AI returns empty or fails", async () => {
+    const { getInstalledSkills, getModelInstance } = await import("../src/core/config.js");
+    vi.mocked(getInstalledSkills).mockReturnValue([
+      {
+        name: "auth-implementation-patterns",
+        description: "Master authentication and authorization patterns including JWT, OAuth2, session management, and RBAC to build secure, scalable access control systems.",
+        author: "wshobson",
+        path: "/path/to/auth/SKILL.md",
+      },
+      {
+        name: "istio-traffic-management",
+        description: "Configure Istio traffic management including routing, load balancing, circuit breakers, and canary deployments.",
+        author: "wshobson",
+        path: "/path/to/istio/SKILL.md",
+      },
+    ]);
+    vi.mocked(getModelInstance).mockReturnValue(undefined);
+
+    const result = await getSkillsTool.execute({ query: "rbac role user management" }, "/cwd");
+    expect(result).toContain("auth-implementation-patterns");
+    expect(result).toContain("istio-traffic-management");
+  });
 });

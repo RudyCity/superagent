@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.187] - 2026-07-08
+
+### Changed
+- Improved `get_skills` tool:
+  - Updated LLM semantic filtering prompt to be more inclusive when searching for skills with concepts/synonyms (e.g. mapping "rbac" or "role" queries to authentication/authorization, security policies, identity management, etc.).
+  - Replaced strict full-string substring matching fallback with a smart IDF-weighted keyword scoring algorithm to rank relevant skills correctly even when semantic search fails or is disabled.
+
+---
+
 ## [1.2.186] - 2026-07-08
 
 ### Changed
