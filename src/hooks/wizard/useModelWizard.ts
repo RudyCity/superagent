@@ -1079,7 +1079,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       const presetChoice = value;
       const presetName = presetChoice.split(" - ")[0].trim();
       try {
-        applyModelPreset(presetName, presetMode);
+        applyModelPreset(presetName, presetMode, false);
         const isSingle = !isMulti;
         const nextActiveModel = isSingle
           ? (getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel())
@@ -1219,7 +1219,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           const savedPath = saveModelPreset(presetName, presetDescription, models, presetMode);
 
           // Auto-apply the preset after saving
-          applyModelPreset(presetName, presetMode);
+          applyModelPreset(presetName, presetMode, false);
           const isSingle = !isMulti;
           const nextActiveModel = isSingle
             ? (getEffectiveMasterModel(isMulti ? "multi" : "single") || getDefaultModel())

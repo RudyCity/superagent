@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.173] - 2026-07-08
+
+### Fixed
+- **Session-Specific Model Preset Loading**:
+  - Modified the 1. Load/Apply Model Preset option in the /model wizard to load presets locally (persist: false) instead of globally.
+  - Updated [conversation.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/conversation.ts) to serialize and store the active preset config inside the session's history JSON files.
+  - Restored the active preset from history files back into memory upon session resume.
+
+---
+
 ## [1.2.172] - 2026-07-08
 
 ### Fixed

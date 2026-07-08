@@ -15,6 +15,7 @@ import {
   setLastMasterPromptTokens
 } from "./tools/state.js";
 import type { ContextManager, ContextManagerConfig, PinnedMessage } from "./context/index.js";
+import { getActivePreset, saveSessionPreset } from "./config/jsonConfig.js";
 
 export type TextPart = { type: "text"; text: string };
 export type ImagePart = { type: "image"; image: string; mimeType: string }; // image is base64 string
@@ -129,6 +130,15 @@ export class Conversation {
         ? this.contextManager.serializePinnedMessages()
         : (this.pendingPinnedMessages || []);
 
+      let activePreset: any = undefined;
+      try {
+        const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+        const mode = isMulti ? "multi" : "single";
+        activePreset = getActivePreset(mode);
+      } catch {
+        // Ignore configuration loading issues during serialization
+      }
+
       const data = {
         messages: this.messages,
         planState,
@@ -141,6 +151,7 @@ export class Conversation {
         lastMasterPromptTokens,
         pinnedMessages,
         lastCapturedTimestamp: this.lastCapturedTimestamp,
+        activePreset,
       };
       await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
     } catch (err) {
@@ -173,6 +184,15 @@ export class Conversation {
         ? this.contextManager.serializePinnedMessages()
         : (this.pendingPinnedMessages || []);
 
+      let activePreset: any = undefined;
+      try {
+        const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+        const mode = isMulti ? "multi" : "single";
+        activePreset = getActivePreset(mode);
+      } catch {
+        // Ignore configuration loading issues during serialization
+      }
+
       const data = {
         messages: this.messages,
         planState,
@@ -185,6 +205,7 @@ export class Conversation {
         lastMasterPromptTokens,
         pinnedMessages,
         lastCapturedTimestamp: this.lastCapturedTimestamp,
+        activePreset,
       };
       fsSync.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
     } catch (err) {
@@ -200,6 +221,16 @@ export class Conversation {
         this.messages = parsed.messages;
         this.loadedPlanState = parsed.planState;
         this.lastCapturedTimestamp = parsed.lastCapturedTimestamp || 0;
+
+        if (parsed.activePreset) {
+          try {
+            const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+            const mode = isMulti ? "multi" : "single";
+            saveSessionPreset(mode, parsed.activePreset);
+          } catch {
+            // Ignore preset load/restore errors
+          }
+        }
 
         // Restore historical superagent tokens
         setHistoricalSuperagentTokens(parsed.historicalSuperagentTokens || 0);
