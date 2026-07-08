@@ -376,6 +376,47 @@ describe("isToolCallOutOfBounds", () => {
       expect(isSuperagentOutOfBounds(toolCall as any, worktreePath)).toBe(true);
       expect(isToolCallOutOfBounds(toolCall as any, workspacePath)).toBe(true);
     });
+
+    it("should describe apply_patch tool with patches array", () => {
+      const toolCall = {
+        name: "apply_patch",
+        args: {
+          patches: [
+            { filePath: "src/app.ts", patchContent: "diff" },
+            { filePath: "src/config.ts", patchContent: "diff" }
+          ]
+        }
+      };
+      expect(getToolDescription(toolCall as any)).toBe("Applying patch to file: src/app.ts and 1 more files");
+    });
+
+    it("should block out of bounds apply_patch calls using patches array", () => {
+      const toolCall = {
+        name: "apply_patch",
+        args: {
+          patches: [
+            { filePath: "src/app.ts", patchContent: "diff" },
+            { filePath: "../escaped.ts", patchContent: "diff" }
+          ]
+        }
+      };
+      expect(isSuperagentOutOfBounds(toolCall as any, worktreePath)).toBe(true);
+      expect(isToolCallOutOfBounds(toolCall as any, workspacePath)).toBe(true);
+    });
+
+    it("should allow safe apply_patch calls using patches array", () => {
+      const toolCall = {
+        name: "apply_patch",
+        args: {
+          patches: [
+            { filePath: "src/app.ts", patchContent: "diff" },
+            { filePath: "src/config.ts", patchContent: "diff" }
+          ]
+        }
+      };
+      expect(isSuperagentOutOfBounds(toolCall as any, worktreePath)).toBe(false);
+      expect(isToolCallOutOfBounds(toolCall as any, workspacePath)).toBe(false);
+    });
   });
 });
 

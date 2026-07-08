@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.197] - 2026-07-09
+
+### Fixed
+- Fixed a security/boundary check bypass in permissions.ts where the bulk patches array parameter (used by the apply_patch tool) was not evaluated during tool description, out-of-bounds, model-config, and sensitive environment file checks.
+
+---
+
 ## [1.2.196] - 2026-07-09
 
 ### Fixed

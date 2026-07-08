@@ -133,6 +133,14 @@ export function isSuperagentOutOfBounds(
     }
   }
 
+  if (args.patches && Array.isArray(args.patches)) {
+    for (const patch of args.patches) {
+      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
+        candidatePaths.push((patch as any).filePath);
+      }
+    }
+  }
+
   // If no path is specified for search tools, they default to cwd (which is the worktree)
   if (candidatePaths.length === 0 && ["glob", "grep", "ripgrep_search"].includes(toolCall.name)) {
     return false;
@@ -201,6 +209,14 @@ export function isToolCallOutOfBounds(
     for (const file of args.files) {
       if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
         candidatePaths.push((file as any).filePath);
+      }
+    }
+  }
+
+  if (args.patches && Array.isArray(args.patches)) {
+    for (const patch of args.patches) {
+      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
+        candidatePaths.push((patch as any).filePath);
       }
     }
   }
@@ -309,6 +325,14 @@ export function isModelConfigAccess(
     }
   }
 
+  if (args.patches && Array.isArray(args.patches)) {
+    for (const patch of args.patches) {
+      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
+        candidatePaths.push((patch as any).filePath);
+      }
+    }
+  }
+
   for (const fp of candidatePaths) {
     const isAbs = path.isAbsolute(fp) || (process.platform === "win32" && /^\/[a-zA-Z]\//.test(fp));
     const resolved = isAbs
@@ -371,6 +395,14 @@ export function isSensitiveEnvFileAccess(
     for (const file of args.files) {
       if (file && typeof file === "object" && typeof (file as any).filePath === "string") {
         candidatePaths.push((file as any).filePath);
+      }
+    }
+  }
+
+  if (args.patches && Array.isArray(args.patches)) {
+    for (const patch of args.patches) {
+      if (patch && typeof patch === "object" && typeof (patch as any).filePath === "string") {
+        candidatePaths.push((patch as any).filePath);
       }
     }
   }
@@ -462,6 +494,14 @@ export function getToolDescription(
       fp = uniquePaths[0] as string;
     } else if (uniquePaths.length > 1) {
       fp = `${uniquePaths[0]} and ${uniquePaths.length - 1} more files`;
+    }
+  }
+  if (!fp && args.patches && Array.isArray(args.patches) && args.patches.length > 0) {
+    const uniquePaths = Array.from(new Set(args.patches.map((p: any) => p.filePath).filter(Boolean)));
+    if (uniquePaths.length === 1) {
+      fp = uniquePaths[0] as string;
+    } else if (uniquePaths.length > 1) {
+      fp = `${uniquePaths[0]} and ${args.patches.length - 1} more files`;
     }
   }
   if (!fp) {
