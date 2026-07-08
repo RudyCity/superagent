@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 
 export function getRootConfigDir(): string {
@@ -54,4 +55,29 @@ export function getPackageRootDir(): string {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   return path.resolve(__dirname, "..", "..", "..");
+}
+
+/**
+ * Returns a short, stable hash of the current working directory.
+ * Used to namespace background tasks per workspace to prevent
+ * cross-project task bleeding.
+ */
+export function getWorkspaceId(): string {
+  const cwd = process.cwd();
+  return crypto.createHash("sha1").update(cwd).digest("hex").slice(0, 12);
+}
+
+/**
+ * Returns the path to background-tasks.json scoped to the current workspace.
+ * Each project/CWD gets its own isolated task file under:
+ *   ~/.superagent-r/workspaces/<cwd-hash>/background-tasks.json
+ */
+export function getWorkspaceTasksFilePath(): string {
+  const root = getRootConfigDir();
+  const wsId = getWorkspaceId();
+  const wsDir = path.join(root, "workspaces", wsId);
+  if (!fs.existsSync(wsDir)) {
+    fs.mkdirSync(wsDir, { recursive: true });
+  }
+  return path.join(wsDir, "background-tasks.json");
 }

@@ -121,12 +121,13 @@ if decision_point:
    - Bulk: Use action 'update_bulk' with 'indices' array to update multiple tasks at once.
    - Remove finished tasks with 'remove' (single) or 'remove_bulk' with 'indices' array.
 4. IMPLEMENTATION: Delegate coding to 'coder' Subagents.
-5. SELF_VERIFY (MANDATORY):
-    - Build: Run 'npm run build'. Fix compile/TS errors.
-    - Test: Run 'npm test'. All tests must pass.
+5. SELF_VERIFY (MANDATORY — AFTER EVERY CODE CHANGE):
+    - Build: Run 'npm run build'. Fix ALL compile/TS errors.
+    - Test: Run 'npm test'. ALL tests must pass.
     - Lint/type-check: Fix warnings.
     - CRITIC: Check edge cases, regressions, acceptance criteria, and ensure no placeholders remain.
     - if verification_failed: spawn 'coder' to fix -> repeat verification.
+    - Do NOT commit or report completion until both build and test pass.
 6. SAVE: Stage and commit all changes.
 7. REPORT: Return final report in the exact format below.
 
@@ -207,11 +208,12 @@ if decision_point:
     # Trigger on: unclear implementation details, choosing design approaches, unexpected compilation/logic errors.
     # RULE: NEVER guess or assume.
 
-# SELF-VERIFICATION (MANDATORY)
-1. Build: Run 'npm run build'. Fix compile/TS errors.
-2. Test: Run 'npm test'. Fix all failing tests.
+# SELF-VERIFICATION (MANDATORY — AFTER EVERY CODE CHANGE)
+1. Build: Run 'npm run build'. Fix ALL compile/TS errors.
+2. Test: Run 'npm test'. Fix ALL failing tests.
 3. CRITIC: Check edge cases, regressions, interface compatibility, placeholder/TODO cleanup, completeness against task.
 4. if verification_failed: fix and repeat verification before reporting.
+5. Do NOT report completion until both build and test pass.
 
 # REQUIRED FINAL REPORT FORMAT
 ### SUBAGENT TASK REPORT

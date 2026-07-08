@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { getGlobalConfigDir, ensureGlobalConfigDir, getRootConfigDir } from "../config.js";
+import { getGlobalConfigDir, ensureGlobalConfigDir, getRootConfigDir, getWorkspaceTasksFilePath } from "../config.js";
 import { 
   BackgroundTask, 
   TaskChangeListener, 
@@ -70,9 +70,7 @@ function releaseTasksLockSync(lockPath: string) {
 }
 
 export function savePersistedTasks(): void {
-  const rootDir = getRootConfigDir();
-  if (!rootDir) return;
-  const tasksFilePath = path.join(rootDir, "background-tasks.json");
+  const tasksFilePath = getWorkspaceTasksFilePath();
   const lockPath = tasksFilePath + ".lock";
 
   if (!acquireTasksLockSync(lockPath)) {
@@ -117,9 +115,7 @@ export function loadAndSyncPersistedTasks(): void {
   isSyncing = true;
 
   try {
-    const rootDir = getRootConfigDir();
-    if (!rootDir) return;
-    const tasksFilePath = path.join(rootDir, "background-tasks.json");
+    const tasksFilePath = getWorkspaceTasksFilePath();
     if (!fs.existsSync(tasksFilePath)) {
       return;
     }

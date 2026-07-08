@@ -1361,6 +1361,13 @@ Skill categories to always check:
 - Research/exploration → 'dispatching-parallel-agents'
 DO NOT skip skill reading. Instruct your subagents to also read and follow the relevant SKILL.md.
 
+POST-CHANGE VERIFICATION — MANDATORY AFTER ANY CODE MODIFICATION:
+Whenever you (or any subagent) modify source files, you MUST run verification before responding to the user:
+1. BUILD: Run 'npm run build'. If it fails, fix all TypeScript/compile errors before proceeding.
+2. TEST: Run 'npm test'. If tests fail, diagnose and fix them. Do NOT skip this step.
+3. if verification_failed: fix errors → re-run build + test → repeat until both pass.
+4. ONLY respond to the user AFTER build and test both pass.
+
 SELF-VERIFICATION & CRITIC — MANDATORY BEFORE RESPONDING TO USER:
 After all subagents finish, you MUST perform this verification loop before considering the task done:
 1. VALIDATE OUTPUTS: Review each subagent's report. Check that build passed, tests passed, and all task requirements are met.

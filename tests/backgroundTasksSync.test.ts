@@ -13,7 +13,7 @@ import {
   loadAndSyncPersistedTasks,
   isTaskInWorkspace
 } from "../src/core/tools/state";
-import { getRootConfigDir } from "../src/core/config/paths";
+import { getRootConfigDir, getWorkspaceTasksFilePath } from "../src/core/config/paths";
 
 describe("Background Tasks Persistence & Sync Tests", () => {
   beforeEach(() => {
@@ -49,8 +49,7 @@ describe("Background Tasks Persistence & Sync Tests", () => {
     backgroundTasks.set(taskId, dummyTask);
     savePersistedTasks();
 
-    const rootDir = getRootConfigDir();
-    const tasksFilePath = path.join(rootDir, "background-tasks.json");
+    const tasksFilePath = getWorkspaceTasksFilePath();
     expect(fs.existsSync(tasksFilePath)).toBe(true);
 
     const content = fs.readFileSync(tasksFilePath, "utf-8");
@@ -64,9 +63,9 @@ describe("Background Tasks Persistence & Sync Tests", () => {
   });
 
   it("should restore and sync tasks, marking dead processes as exited", () => {
-    const rootDir = getRootConfigDir();
-    fs.mkdirSync(rootDir, { recursive: true });
-    const tasksFilePath = path.join(rootDir, "background-tasks.json");
+    const tasksFilePath = getWorkspaceTasksFilePath();
+    // Ensure the workspace dir exists (getWorkspaceTasksFilePath creates it)
+    fs.mkdirSync(path.dirname(tasksFilePath), { recursive: true });
 
     // Create a mock list with two processes: one active (this process PID) and one dead (pid 99999)
     const list = [

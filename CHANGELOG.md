@@ -1,6 +1,19 @@
 # Changelog
 
+## [1.2.175] - 2026-07-08
+
+### Fixed
+- **Workspace-Isolated Background Tasks**:
+  - Background tasks are now namespaced per working directory using a CWD hash.
+  - Each project gets its own `~/.superagent-r/workspaces/<cwd-hash>/background-tasks.json` file.
+  - Prevents tasks from unrelated projects (e.g. a different dev server) bleeding into task notifications of another workspace.
+  - Added `getWorkspaceId()` and `getWorkspaceTasksFilePath()` helpers to `src/core/config/paths.ts`.
+  - Updated `savePersistedTasks()` and `loadAndSyncPersistedTasks()` in `state.ts` to use the scoped path.
+
+---
+
 ## [1.2.174] - 2026-07-08
+
 
 ### Added
 - **Active Preset Name in Status Bar Footer**:
