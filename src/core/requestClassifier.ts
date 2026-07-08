@@ -307,6 +307,9 @@ Reply with EXACTLY one word from: conversation, question, simple_edit, research,
 - debug: bug fixing, error resolution, troubleshooting.
 - command: direct commands (run test, build, deploy, commit).
 
+# COMPOUND REQUESTS
+For compound requests containing multiple intents (e.g. asking a question but also requesting a code fix or command execution), always classify using the category that permits the required tools (e.g. debug, complex_task, command) rather than read-only categories (question, research).
+
 # CONTEXT
 Heuristic guess: ${heuristicResult.category} (${heuristicResult.confidence})
 User request: "${userInput.substring(0, 500)}"
