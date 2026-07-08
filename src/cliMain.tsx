@@ -241,6 +241,8 @@ export async function runCli() {
           }
           if (event.type === "text" && event.content !== "") {
             logHandler?.(`[AGENT]${event.content}`);
+          } else if (event.type === "reasoning" && event.content !== "") {
+            logHandler?.(`[REASONING]${event.content}`);
           } else if (event.type === "tool_start") {
             logHandler?.(`[TOOL START] ${event.description}`);
           } else if (event.type === "tool_end") {
@@ -375,13 +377,29 @@ export async function runCli() {
     }
   } else {
     const readline = (await import("readline")).default;
+    let inReasoning = false;
     const agent = new Agent(
       (event: any) => {
         switch (event.type) {
           case "text":
+            if (inReasoning) {
+              process.stdout.write("\n[/Reasoning]\n");
+              inReasoning = false;
+            }
             process.stdout.write(event.content);
             break;
+          case "reasoning":
+            if (!inReasoning) {
+              process.stdout.write("\n [Reasoning]\n   ");
+              inReasoning = true;
+            }
+            process.stdout.write(event.content.replace(/\n/g, "\n   "));
+            break;
           case "tool_start":
+            if (inReasoning) {
+              process.stdout.write("\n[/Reasoning]\n");
+              inReasoning = false;
+            }
             console.log(`\n⚡ ${event.description}`);
             break;
           case "tool_end":
@@ -393,9 +411,17 @@ export async function runCli() {
             }
             break;
           case "error":
+            if (inReasoning) {
+              process.stdout.write("\n[/Reasoning]\n");
+              inReasoning = false;
+            }
             console.error(`\nError: ${event.message}`);
             break;
           case "done":
+            if (inReasoning) {
+              process.stdout.write("\n[/Reasoning]\n");
+              inReasoning = false;
+            }
             process.stdout.write("\n❯ ");
             break;
           case "token_usage":

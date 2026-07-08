@@ -25,6 +25,17 @@ describe("Conversation", () => {
     expect(msgs[1].content).toBe("Hi! How can I help you?");
   });
 
+  it("should add assistant message with reasoning and retrieve it", () => {
+    const conv = new Conversation();
+    conv.addAssistantMessage("Response text", undefined, undefined, "Reasoning details");
+
+    const msgs = conv.getMessages();
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("assistant");
+    expect(msgs[0].content).toBe("Response text");
+    expect(msgs[0].reasoning).toBe("Reasoning details");
+  });
+
   it("should filter system messages in getApiMessages", () => {
     const conv = new Conversation();
     conv.addMessage({

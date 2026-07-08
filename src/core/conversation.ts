@@ -39,6 +39,7 @@ export interface Message {
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
   timestamp: number;
+  reasoning?: string;
 }
 
 export interface ToolCall {
@@ -450,7 +451,8 @@ export class Conversation {
   addAssistantMessage(
     content: string,
     toolCalls?: ToolCall[],
-    toolResults?: ToolResult[]
+    toolResults?: ToolResult[],
+    reasoning?: string
   ): void {
     this.addMessage({
       role: "assistant",
@@ -458,6 +460,7 @@ export class Conversation {
       toolCalls,
       toolResults,
       timestamp: Date.now(),
+      reasoning,
     });
   }
 

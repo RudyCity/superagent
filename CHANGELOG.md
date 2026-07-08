@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.190] - 2026-07-08
+
+### Added
+- Added support for capturing, logging, and displaying AI model reasoning/thinking tokens (such as DeepSeek R1 and Anthropic Claude 3.7) in both single-agent and multi-agent CLI modes.
+- Added completed reasoning block formatted as `[Reasoning] ... [/Reasoning]` under assistant message header in CLI chat.
+- Added live reasoning streaming updates in single-agent interactive chat.
+- Added `🧠 REASONING` as a collapsible log group in the multi-agent dashboard log view.
+
+---
+
 ## [1.2.189] - 2026-07-08
 
 ### Changed

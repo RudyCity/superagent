@@ -386,7 +386,7 @@ export const invokeSuperagentTool: Tool = {
 
     const agentInstance = new Agent(
       (event) => {
-        if (event.type === "text") {
+        if (event.type === "text" || event.type === "reasoning") {
           appendToThinkingNode(event.content);
           notifySuperagentsChanged();
         } else if (event.type === "error") {
@@ -1185,7 +1185,7 @@ export const sendMessageToSuperagentTool: Tool = {
 
       agentInstance = new Agent(
         (event) => {
-          if (event.type === "text") {
+          if (event.type === "text" || event.type === "reasoning") {
             appendToThinkingNode(event.content);
             notifySuperagentsChanged();
           } else if (event.type === "error") {

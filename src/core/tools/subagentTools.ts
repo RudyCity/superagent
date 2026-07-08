@@ -361,7 +361,7 @@ export const invokeSubagentTool: Tool = {
 
     const agentInstance = new Agent(
       (event) => {
-        if (event.type === "text") {
+        if (event.type === "text" || event.type === "reasoning") {
           appendToThinkingNode(event.content);
           notifySubagentsChanged();
         } else if (event.type === "error") {
@@ -667,7 +667,7 @@ export const sendMessageTool: Tool = {
       const { Agent } = await import("../agent.js");
       agentInstance = new Agent(
         (event) => {
-          if (event.type === "text") {
+          if (event.type === "text" || event.type === "reasoning") {
             appendToThinkingNode(event.content);
             notifySubagentsChanged();
           } else if (event.type === "error") {

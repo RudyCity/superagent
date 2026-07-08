@@ -98,4 +98,24 @@ describe("dashboardLogFormatter", () => {
     const lastBoundaryExpanded = boundariesExpanded[boundariesExpanded.length - 1];
     expect(lastBoundaryExpanded.endLine).toBe(wrappedExpanded.length - 1);
   });
+
+  it("should parse [REASONING] logs correctly", () => {
+    const sessionWithReasoning: AgentSession = {
+      id: "session-2",
+      type: "MASTER",
+      task: "Test reasoning",
+      status: "WORKING",
+      tokens: 100,
+      logs: [
+        "[REASONING] Let me analyze the issue.",
+      ],
+      branch: "main",
+    };
+    const groups = parseLogGroups(sessionWithReasoning);
+    expect(groups.length).toBe(1);
+    expect(groups[0].label).toBe("🧠 REASONING");
+    expect(groups[0].rawLines).toEqual(["Let me analyze the issue."]);
+    expect(groups[0].color).toBe("gray");
+    expect(groups[0].dimColor).toBe(true);
+  });
 });

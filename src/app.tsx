@@ -152,6 +152,11 @@ export function App({
   const streamTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const deferredStreamTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
+  const [reasoningDisplay, setReasoningDisplay] = useState("");
+  const reasoningBufferRef = useRef("");
+  const lastReasoningUpdateRef = useRef<number>(0);
+  const deferredReasoningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const [tempInput, setTempInput] = useState("");
@@ -430,19 +435,25 @@ export function App({
       clearTimeout(deferredStreamTimeoutRef.current);
       deferredStreamTimeoutRef.current = null;
     }
+    if (deferredReasoningTimeoutRef.current) {
+      clearTimeout(deferredReasoningTimeoutRef.current);
+      deferredReasoningTimeoutRef.current = null;
+    }
     const rawContent = streamBufferRef.current.trim();
-    if (rawContent) {
+    const reasoning = reasoningBufferRef.current.trim();
+    if (rawContent || reasoning) {
       const content = cleanXmlForDisplay(rawContent).trim();
-      if (content) {
-        addLine({
-          type: "assistant",
-          content,
-          timestamp: Date.now(),
-        });
-      }
+      addLine({
+        type: "assistant",
+        content,
+        reasoning: reasoning || undefined,
+        timestamp: Date.now(),
+      });
     }
     streamBufferRef.current = "";
+    reasoningBufferRef.current = "";
     setStreamDisplay("");
+    setReasoningDisplay("");
   }, [addLine]);
 
   const stopRunningSubagents = useCallback(() => {
@@ -778,7 +789,9 @@ export function App({
 
       setIsProcessing(true);
       streamBufferRef.current = "";
+      reasoningBufferRef.current = "";
       setStreamDisplay("");
+      setReasoningDisplay("");
 
       // Build MessageContent — plain string or multimodal array
       let messageContent: MessageContent = trimmed;
@@ -1486,13 +1499,40 @@ export function App({
           }
           break;
         }
+        case "reasoning": {
+          if (streamTimeoutRef.current) {
+            clearTimeout(streamTimeoutRef.current);
+            streamTimeoutRef.current = null;
+          }
+          reasoningBufferRef.current = resolveCarriageReturns(reasoningBufferRef.current + event.content);
+          
+          const now = Date.now();
+          if (now - lastReasoningUpdateRef.current > 40) {
+            setReasoningDisplay(reasoningBufferRef.current);
+            lastReasoningUpdateRef.current = now;
+            if (deferredReasoningTimeoutRef.current) {
+              clearTimeout(deferredReasoningTimeoutRef.current);
+              deferredReasoningTimeoutRef.current = null;
+            }
+          } else {
+            if (!deferredReasoningTimeoutRef.current) {
+              deferredReasoningTimeoutRef.current = setTimeout(() => {
+                setReasoningDisplay(reasoningBufferRef.current);
+                lastReasoningUpdateRef.current = Date.now();
+                deferredReasoningTimeoutRef.current = null;
+              }, 40);
+            }
+          }
+          break;
+        }
         case "tool_start": {
           if (streamTimeoutRef.current) {
             clearTimeout(streamTimeoutRef.current);
             streamTimeoutRef.current = null;
           }
           const content = streamBufferRef.current.trim();
-          if (content) {
+          const reasoning = reasoningBufferRef.current.trim();
+          if (content || reasoning) {
             flushBuffer();
           } else {
             const fallbackNarrative = `[SYS] Initiating action: ${event.description}...`;
@@ -1502,7 +1542,9 @@ export function App({
               timestamp: Date.now(),
             });
             streamBufferRef.current = "";
+            reasoningBufferRef.current = "";
             setStreamDisplay("");
+            setReasoningDisplay("");
           }
           const timeoutArg = event.toolCall.args?.timeout;
           if (typeof timeoutArg === "number") {
@@ -1600,10 +1642,19 @@ export function App({
             clearTimeout(deferredStreamTimeoutRef.current);
             deferredStreamTimeoutRef.current = null;
           }
+          if (deferredReasoningTimeoutRef.current) {
+            clearTimeout(deferredReasoningTimeoutRef.current);
+            deferredReasoningTimeoutRef.current = null;
+          }
           setIsExecutingTool(false);
           setToolTimeout(null);
           setToolStartTime(null);
           setTimeLeft(null);
+          flushBuffer();
+          streamBufferRef.current = "";
+          reasoningBufferRef.current = "";
+          setStreamDisplay("");
+          setReasoningDisplay("");
           addLine({
             type: "error",
             content: `Error: ${event.message}`,
@@ -1616,6 +1667,10 @@ export function App({
             streamTimeoutRef.current = null;
           }
           flushBuffer();
+          streamBufferRef.current = "";
+          reasoningBufferRef.current = "";
+          setStreamDisplay("");
+          setReasoningDisplay("");
           setIsExecutingTool(false);
           setToolTimeout(null);
           setToolStartTime(null);
@@ -1812,8 +1867,10 @@ export function App({
           },
         ]);
         setIsProcessing(true);
-        streamBufferRef.current = "";
-        setStreamDisplay("");
+         streamBufferRef.current = "";
+         reasoningBufferRef.current = "";
+         setStreamDisplay("");
+         setReasoningDisplay("");
         agent.sendMessage(prompt).then(() => {
           const nextState = agent.planState;
           setPlanState(nextState);
@@ -2290,6 +2347,7 @@ export function App({
       modelName: activeModel,
       isProcessing,
       streamDisplay,
+      reasoningDisplay,
       isExecutingTool,
       activeToolOutput,
       timeLeft,
@@ -2305,6 +2363,7 @@ export function App({
     activeModel,
     isProcessing,
     streamDisplay,
+    reasoningDisplay,
     isExecutingTool,
     activeToolOutput,
     timeLeft,
@@ -2386,6 +2445,7 @@ export function App({
             terminalWidth={terminalWidth}
             isProcessing={isProcessing}
             streamDisplay={streamDisplay}
+            reasoningDisplay={reasoningDisplay}
             tokensUp={tokensUp}
             tokensDown={tokensDown}
             liveStreamTokens={liveStreamTokens}

@@ -28,6 +28,7 @@ const COLLAPSIBLE_LABELS = new Set([
   "✅ TOOL OK",
   "🚨 TOOL FAIL",
   "🧠 THINK",
+  "🧠 REASONING",
   "⚙️ AUTO-APPROVE",
 ]);
 
@@ -119,6 +120,12 @@ export function parseLogGroups(selectedSession: AgentSession): LogGroup[] {
       label = "🧠 THINK";
       content = logStr.replace("[THINK]", "").trim();
       color = "blue";
+      dimColor = true;
+      parseMarkdown = true;
+    } else if (logStr.startsWith("[REASONING]")) {
+      label = "🧠 REASONING";
+      content = logStr.replace("[REASONING]", "").trim();
+      color = "gray";
       dimColor = true;
       parseMarkdown = true;
     } else if (logStr.startsWith("[TOOL:START]")) {

@@ -52,6 +52,7 @@ export const agentLocalStorage = new AsyncLocalStorage<Agent>();
 
 export type AgentEvent =
   | { type: "text"; content: string }
+  | { type: "reasoning"; content: string }
   | { type: "tool_start"; toolCall: ToolCall; description: string }
   | { type: "tool_end"; toolResult: ToolResult; description: string }
   | { type: "error"; message: string }
@@ -1842,6 +1843,10 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               });
 
               textContent = result.text || "";
+              reasoningContent = (result as any).reasoning || "";
+              if (reasoningContent) {
+                this.onEvent({ type: "reasoning", content: reasoningContent });
+              }
               if (textContent) {
                 if (!supportsNativeTools) {
                   try {
@@ -2096,7 +2101,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                   const reasoningText = (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
                   if (reasoningText) {
                     reasoningContent += reasoningText;
-                    this.onEvent({ type: "text", content: reasoningText });
+                    this.onEvent({ type: "reasoning", content: reasoningText });
                   }
                 } else if (delta.type === "tool-call") {
                   const tc: ToolCall = {
@@ -2239,7 +2244,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             });
             await this.saveHistory();
           } else {
-            this.conversation.addAssistantMessage(textContent);
+            this.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
             await this.saveHistory();
           }
           break;
@@ -2762,7 +2767,8 @@ for (const tc of toolCalls) {
         this.conversation.addAssistantMessage(
           textContent,
           toolCalls,
-          toolResults
+          toolResults,
+          reasoningContent
         );
 
         this.conversation.addMessage({

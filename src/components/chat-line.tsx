@@ -774,6 +774,24 @@ export const ChatLineComponent = React.memo(function ChatLineComponent({
           <Text color="gray" dimColor>
             {isFirst ? "┌" : "├"}─── [ <Text bold color="gray">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
           </Text>
+          {line.reasoning && (
+            <Box flexDirection="column">
+              <Box flexDirection="row">
+                <Text color="gray" dimColor>│    </Text>
+                <Text color="gray" italic>[Reasoning]</Text>
+              </Box>
+              {line.reasoning.split("\n").map((rLine, rIdx) => (
+                <Box key={rIdx} flexDirection="row">
+                  <Text color="gray" dimColor>│    </Text>
+                  <Text color="gray" dimColor>  {rLine}</Text>
+                </Box>
+              ))}
+              <Box flexDirection="row">
+                <Text color="gray" dimColor>│    </Text>
+                <Text color="gray" italic>[/Reasoning]</Text>
+              </Box>
+            </Box>
+          )}
           {renderMarkdown(capped.text, "gray")}
           {capped.truncated && (
             <Box flexDirection="row">

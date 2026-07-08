@@ -1100,6 +1100,7 @@ export function computeWrappedLines({
   modelName,
   isProcessing,
   streamDisplay,
+  reasoningDisplay,
   isExecutingTool,
   activeToolOutput,
   timeLeft,
@@ -1115,6 +1116,7 @@ export function computeWrappedLines({
   modelName: string;
   isProcessing: boolean;
   streamDisplay: string;
+  reasoningDisplay?: string;
   isExecutingTool: boolean;
   activeToolOutput: string;
   timeLeft: number | null;
@@ -1206,13 +1208,37 @@ export function computeWrappedLines({
     );
     result.push({ node: headerNode, lineIndex: -1, type: "assistant", isHeader: true });
 
-    const bodyNode = (
-      <Box flexDirection="row">
-        <Text color="gray" dimColor>{marginSpaces}</Text>
-        <LoadingIndicator />
-      </Box>
-    );
-    result.push({ node: bodyNode, lineIndex: -1, type: "assistant" });
+    if (reasoningDisplay && reasoningDisplay.trim().length > 0) {
+      const rLines = reasoningDisplay.trim().split("\n");
+      const reasoningHeader = (
+        <Box flexDirection="row">
+          <Text color="gray" dimColor>{marginSpaces}</Text>
+          <Text color="gray" italic>[Reasoning]</Text>
+        </Box>
+      );
+      result.push({ node: reasoningHeader, lineIndex: -1, type: "assistant" });
+
+      for (const rLine of rLines) {
+        const subLines = wrapTextForDisplay(rLine, chatWidth - marginSpaces.length - 2);
+        for (const subLine of subLines) {
+          const bodyNode = (
+            <Box flexDirection="row">
+              <Text color="gray" dimColor>{marginSpaces}</Text>
+              <Text color="gray" dimColor>  {subLine}</Text>
+            </Box>
+          );
+          result.push({ node: bodyNode, lineIndex: -1, type: "assistant" });
+        }
+      }
+    } else {
+      const bodyNode = (
+        <Box flexDirection="row">
+          <Text color="gray" dimColor>{marginSpaces}</Text>
+          <LoadingIndicator />
+        </Box>
+      );
+      result.push({ node: bodyNode, lineIndex: -1, type: "assistant" });
+    }
   }
 
   if (isExecutingTool) {
@@ -1274,6 +1300,7 @@ export interface ChatAreaProps {
   terminalWidth: number;
   isProcessing: boolean;
   streamDisplay: string;
+  reasoningDisplay?: string;
   tokensUp: number;
   tokensDown: number;
   liveStreamTokens: number;
@@ -1307,6 +1334,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     terminalWidth,
     isProcessing,
     streamDisplay,
+    reasoningDisplay,
     tokensUp,
     tokensDown,
     liveStreamTokens,
@@ -1340,6 +1368,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
       modelName,
       isProcessing,
       streamDisplay,
+      reasoningDisplay,
       isExecutingTool,
       activeToolOutput,
       timeLeft,
@@ -1357,6 +1386,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
     modelName,
     isProcessing,
     streamDisplay,
+    reasoningDisplay,
     isExecutingTool,
     activeToolOutput,
     timeLeft,

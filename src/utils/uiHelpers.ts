@@ -149,6 +149,7 @@ export function reconstructChatLines(msgs: Message[]): ChatLine[] {
           type: "assistant",
           content: stringContent,
           timestamp: m.timestamp,
+          reasoning: m.reasoning,
           children: [],
         };
       } else if (m.toolCalls && m.toolCalls.length > 0) {
@@ -157,6 +158,7 @@ export function reconstructChatLines(msgs: Message[]): ChatLine[] {
           type: "assistant",
           content: `[SYS] Initiating action: ${desc}...`,
           timestamp: m.timestamp,
+          reasoning: m.reasoning,
           children: [],
         };
       }
