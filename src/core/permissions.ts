@@ -387,12 +387,34 @@ export function isSensitiveEnvFileAccess(
 function truncateCommand(cmd: string, maxLen = 80): string {
   // Normalise: collapse all whitespace/newlines to single spaces
   const flat = cmd.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+
+  // Parse cd command with optional chained commands:
+  // e.g. cd "path" && command
+  const cdRegex = /^[cC][dD]\s+("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;&|]+)\s*(?:(&&|;|\||&)\s*(.*))?$/;
+  const cdMatch = cdRegex.exec(flat);
+
+  let formatted = flat;
+  if (cdMatch) {
+    let rawPath = cdMatch[1];
+    if ((rawPath.startsWith('"') && rawPath.endsWith('"')) || (rawPath.startsWith("'") && rawPath.endsWith("'"))) {
+      rawPath = rawPath.slice(1, -1);
+    }
+    const normalized = rawPath.replace(/\\/g, "/");
+    const parts = normalized.split("/");
+    const basename = parts[parts.length - 1] || rawPath;
+
+    const separator = cdMatch[2] ? ` ${cdMatch[2]} ` : "";
+    const remaining = cdMatch[3] ? cdMatch[3].trim() : "";
+
+    formatted = `cd ".../${basename}"${separator}${remaining}`;
+  }
+
   // Check if the original command was multi-line or chained
   const isMultiPart = /[\n;&&|]/.test(cmd);
-  const truncated = flat.length > maxLen ? flat.slice(0, maxLen - 3) + "..." : flat;
+  const truncated = formatted.length > maxLen ? formatted.slice(0, maxLen - 3) + "..." : formatted;
   // If multi-line / chained, always show ellipsis to signal there's more
   if (isMultiPart && !truncated.endsWith("...")) {
-    const short = flat.slice(0, maxLen - 3);
+    const short = formatted.slice(0, maxLen - 3);
     return short + "...";
   }
   return truncated;

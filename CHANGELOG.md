@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.182] - 2026-07-08
+
+### Changed
+- Added single character spacing to separator lines when `hideTimeline` is enabled in `src/components/chat-area.tsx` to provide visual separation between turns (e.g. between user and assistant blocks).
+
+---
+
 ## [1.2.181] - 2026-07-08
 
 ### Changed

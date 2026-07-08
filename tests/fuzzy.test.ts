@@ -97,5 +97,20 @@ describe("Fuzzy Matching Utilities", () => {
       const input = "Applying patch to file: src/app.tsx";
       expect(minimizePathInDescription(input)).toBe("Applying patch to file: app.tsx");
     });
+
+    it("should minimize quoted Windows paths in cd command descriptions", () => {
+      const input = 'Running command: cd "D:\\backup from pc asus\\Documents Development\\UB\\surat-bebas-tanggungan" && npm run dev';
+      expect(minimizePathInDescription(input)).toBe('Running command: cd ".../surat-bebas-tanggungan" && npm run dev');
+    });
+
+    it("should minimize unquoted Windows paths in cd command descriptions", () => {
+      const input = 'Running command: cd C:\\Users\\USER\\project && npm run dev';
+      expect(minimizePathInDescription(input)).toBe('Running command: cd .../project && npm run dev');
+    });
+
+    it("should minimize single quoted Unix paths in cd command descriptions", () => {
+      const input = "Running command: cd '/var/www/html' ; ls";
+      expect(minimizePathInDescription(input)).toBe("Running command: cd '.../html' ; ls");
+    });
   });
 });

@@ -654,7 +654,7 @@ export function wrapChatLineToLines({
   const result: WrappedChatLine[] = [];
 
   const marginSpaces = hideTimeline ? "  " : "│    ";
-  const separatorSpaces = hideTimeline ? "" : "│ ";
+  const separatorSpaces = hideTimeline ? " " : "│ ";
   const connectorPrefix = hideTimeline ? "  [ " : "├─── [ ";
   const connectorPlain = hideTimeline ? "  " : "├───";
 

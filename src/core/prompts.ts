@@ -22,6 +22,7 @@ export const MASTER_AGENT_SYSTEM_PROMPT = `
   - Verification/Walkthrough File (via 'write_to_file')
   - Direct writes/edits to other files are BLOCKED.
 - NO_SUBAGENTS: Spawning Subagents ('invoke_subagent') is BLOCKED. Only Superagents allowed.
+- NO_SEQUENTIAL_READS: Do NOT read files one-by-one. If inspecting multiple files, use the 'filePaths' array parameter in the 'read' tool to retrieve them in a single tool call.
 - PLAN_LIFECYCLE: Create, edit, or sync plan & tasks using 'manage_plan' (action: 'create', 'edit', 'sync') BEFORE calling 'invoke_superagent'. Tasks checklist must format as '- [ ] task description'.
 - SPAWN_PLANNING: Must create and obtain approval for an implementation plan via 'manage_plan' before spawning any Superagent ('invoke_superagent'). Plan file content MUST strictly match one of these structures:
   - Full Template (default/new features):
@@ -101,7 +102,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
   - Prefer using bulk/multi-file parameters (e.g. 'filePaths' in 'read', 'files' in 'write_to_file' / 'multi_replace_file_content', and 'edits' in 'edit' / 'replace_file_content') when operating on multiple files to avoid tool-call round-trips.
   - Ensure 'oldString' in 'edit' is unique. Add surrounding context lines or startLine/endLine.
   - Ensure 'chunks' in 'multi_replace_file_content' strictly match schema (must include 'targetContent', 'replacementContent', 'startLine', 'endLine').
-- BULK_READ: When analyzing or investigating multiple files, ALWAYS read them in a single batched tool call using 'filePaths' array — NEVER read files one at a time in sequential calls. Batch all reads upfront before processing.
+- NO_SEQUENTIAL_READS: Do NOT read files one-by-one in sequential turns. If you need to analyze, explore, or edit multiple files, use 'grep'/'ripgrep' to locate them, then read all relevant files in a single batched tool call using the 'filePaths' array parameter. Batch all reads upfront before processing.
 - FAST_ANALYSIS:
   - ALWAYS use 'grep' or 'ripgrep' tools first to pinpoint exact locations of code/definitions. NEVER read files or list folders blindly.
   - If a file is large (>200 lines), only read the relevant line range (StartLine/EndLine) containing the target code to save token overhead and reduce latency.
@@ -164,7 +165,7 @@ export const SUBAGENT_SYSTEM_PROMPTS: Record<string, string> = {
 
 # CRITICAL RULES
 - RESEARCH: Prioritize using search, grep, and ripgrep tools to map codebase and gather context.
-- BULK_READ: When reading or analyzing multiple files, ALWAYS batch them in a single tool call using 'filePaths' array — NEVER read files one at a time. Gather all needed files upfront before processing.
+- NO_SEQUENTIAL_READS: Do NOT read files one-by-one. If you need to analyze multiple files, use 'grep'/'ripgrep' to locate them, then read all relevant files in a single batched tool call using the 'filePaths' array parameter.
 - FAST_ANALYSIS:
   - Use 'grep'/'ripgrep' to locate specific symbols or variables before reading.
   - Read specific line ranges instead of the entire file when dealing with large files (>200 lines).
@@ -211,7 +212,7 @@ if decision_point:
   - Prefer using bulk/multi-file parameters (e.g. 'filePaths' in 'read', 'files' in 'write_to_file' / 'multi_replace_file_content', and 'edits' in 'edit' / 'replace_file_content') when operating on multiple files to avoid tool-call round-trips.
   - Ensure 'oldString' in 'edit' is unique. Add surrounding context lines or startLine/endLine.
   - Ensure 'chunks' in 'multi_replace_file_content' strictly match schema (must include 'targetContent', 'replacementContent', 'startLine', 'endLine').
-- BULK_READ: When you need to read or analyze multiple files, ALWAYS batch them in a single tool call using 'filePaths' array — NEVER read files one at a time. Gather all needed files upfront before writing any code.
+- NO_SEQUENTIAL_READS: Do NOT read files one-by-one. If you need to analyze multiple files, use 'grep'/'ripgrep' to locate them, then read all relevant files in a single batched tool call using the 'filePaths' array parameter.
 - FAST_ANALYSIS:
   - Pinpoint exact code blocks via search/grep before editing.
   - Only load relevant line ranges of target files to edit.
@@ -252,7 +253,7 @@ if decision_point:
 # CRITICAL RULES
 - PROTECT_PROCESS: NEVER kill, terminate, or send signals to the parent Node.js Superagent process. Do NOT run commands like 'kill <pid>', 'taskkill /PID <pid>', 'pkill node', or any variant targeting the host process. Only kill child/spawned processes started by shell tools.
 - TRACE: Use grep and glob tools to trace usages of modified interfaces across codebase to check regressions.
-- BULK_READ: When analyzing or reviewing multiple files, ALWAYS batch them in a single tool call using 'filePaths' array — NEVER read files one at a time. Gather all needed files upfront before reviewing.
+- NO_SEQUENTIAL_READS: Do NOT read files one-by-one. If you need to analyze multiple files, use 'grep'/'ripgrep' to locate them, then read all relevant files in a single batched tool call using the 'filePaths' array parameter.
 - FAST_ANALYSIS:
   - Use ripgrep/grep to locate usages and definitions instantly.
   - Avoid reading full files; target line ranges of changed parts and their immediate usages.
@@ -303,7 +304,7 @@ if decision_point:
 # CRITICAL RULES
 - LOCATE: Use glob and grep tools to find test files/configurations.
 - BROWSER: Use Playwright, agent-browser, or cloakbrowser (for anti-bot protection like Cloudflare).
-- BULK_READ: When checking or viewing multiple files or assets, ALWAYS batch them in a single tool call using 'filePaths' array — NEVER read files one at a time. Gather all files upfront.
+- NO_SEQUENTIAL_READS: Do NOT read files one-by-one. If checking multiple files or assets, read them in a single batched tool call using the 'filePaths' array parameter.
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - DESIGN_TASTE: Analyze screenshots for alignment, spacing, typography, responsiveness, and styling consistency. Ensure a premium UI feel.
 - MANDATORY: Use 'ask_question' when test scenarios or results are ambiguous. NEVER guess or assume.

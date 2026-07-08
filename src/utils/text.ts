@@ -144,17 +144,37 @@ export function unicodeStrikethrough(text: string): string {
 }
 
 export function minimizePathInDescription(str: string): string {
+  // 1. Handle "file: " pattern
   const fileKeyword = "file: ";
   const idx = str.indexOf(fileKeyword);
-  if (idx === -1) return str;
+  if (idx !== -1) {
+    const prefix = str.slice(0, idx + fileKeyword.length);
+    const path = str.slice(idx + fileKeyword.length).trim();
+    const normalizedPath = path.replace(/\\/g, "/");
+    const parts = normalizedPath.split("/");
+    const filename = parts[parts.length - 1] || path;
+    return prefix + filename;
+  }
 
-  const prefix = str.slice(0, idx + fileKeyword.length);
-  const path = str.slice(idx + fileKeyword.length).trim();
+  // 2. Handle cd command pattern: cd "path" or cd path
+  const cdRegex = /(cd\s+)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;&|]+)/i;
+  const match = cdRegex.exec(str);
+  if (match) {
+    const prefix = match[1];
+    let rawPath = match[2];
+    let isQuoted = false;
+    let quoteChar = "";
+    if ((rawPath.startsWith('"') && rawPath.endsWith('"')) || (rawPath.startsWith("'") && rawPath.endsWith("'"))) {
+      quoteChar = rawPath[0];
+      rawPath = rawPath.slice(1, -1);
+      isQuoted = true;
+    }
+    const normalizedPath = rawPath.replace(/\\/g, "/");
+    const parts = normalizedPath.split("/");
+    const basename = parts[parts.length - 1] || rawPath;
+    const replacementPath = isQuoted ? `${quoteChar}.../${basename}${quoteChar}` : `.../${basename}`;
+    return str.replace(match[0], prefix + replacementPath);
+  }
 
-  // Extract basename
-  const normalizedPath = path.replace(/\\/g, "/");
-  const parts = normalizedPath.split("/");
-  const filename = parts[parts.length - 1] || path;
-
-  return prefix + filename;
+  return str;
 }
