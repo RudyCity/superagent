@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.192] - 2026-07-08
+
+### Changed
+- Added reasoning guidelines block to Master, Superagent, and Subagent system prompts to guide active models to think and verify assumptions when available.
+
+---
+
 ## [1.2.191] - 2026-07-08
 
 ### Fixed
