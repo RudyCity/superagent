@@ -1,9 +1,10 @@
 # Changelog
 
-## [1.2.194] - 2026-07-08
+## [1.2.195] - 2026-07-08
 
 ### Changed
-- Updated the `PROTECT_PROCESS_RULE` in `src/core/prompts.ts` to instruct the agent to kill all `node`/`bun`/`tsx` processes and retry if the terminal or process is locked.
+- Strengthened the `PROTECT_PROCESS_RULE` in `src/core/prompts.ts` to explicitly forbid global taskkill or pkill commands on `node` / `node.exe` processes (which terminates the parent process and crashes the session).
+- Instructed agents to only kill child processes by specific PID, or safely terminate `bun` / `tsx` processes globally if a process is locked.
 
 ---
 
