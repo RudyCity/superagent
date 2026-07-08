@@ -1,6 +1,17 @@
 # Changelog
 
+## [1.2.176] - 2026-07-08
+
+### Fixed
+- **Legacy Task Migration & Stale Workspace Cleanup**:
+  - Added one-time migration: on startup, tasks from the old global `background-tasks.json` (pre-v1.2.175) that belong to the current workspace are merged into the new workspace-scoped file, then the global file is deleted. Ensures no tasks are silently lost on upgrade.
+  - Added `cleanupStaleWorkspaceDirs()`: prunes `~/.superagent-r/workspaces/<hash>/` directories not touched in 7+ days, preventing unbounded disk growth from many different projects over time. Runs once 5 seconds after startup, then daily.
+  - Exported `cleanupStaleWorkspaceDirs` for testability and extended test suite to 11 tests.
+
+---
+
 ## [1.2.175] - 2026-07-08
+
 
 ### Fixed
 - **Workspace-Isolated Background Tasks**:

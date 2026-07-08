@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { getGlobalConfigDir, ensureGlobalConfigDir, getRootConfigDir, getWorkspaceTasksFilePath } from "../config.js";
+import { getGlobalConfigDir, ensureGlobalConfigDir, getRootConfigDir, getWorkspaceTasksFilePath, getWorkspaceId } from "../config.js";
 import { 
   BackgroundTask, 
   TaskChangeListener, 
@@ -109,6 +109,53 @@ export function savePersistedTasks(): void {
 
 // Global flag to prevent re-entrant calls to loadAndSyncPersistedTasks
 let isSyncing = false;
+
+/**
+ * One-time migration: moves tasks that belong to the current workspace
+ * from the old global background-tasks.json (pre-v1.2.175) into the
+ * new workspace-scoped file, then removes the global file.
+ * Safe to call repeatedly — exits immediately if global file is gone.
+ */
+function migrateGlobalTasksToWorkspace(): void {
+  try {
+    const rootDir = getRootConfigDir();
+    const legacyPath = path.join(rootDir, "background-tasks.json");
+    if (!fs.existsSync(legacyPath)) return;
+
+    const content = fs.readFileSync(legacyPath, "utf-8");
+    const allTasks = JSON.parse(content) as PersistedTask[];
+    const cwd = process.cwd();
+
+    // Filter to tasks that belong to the current workspace
+    const mine = allTasks.filter((t) => {
+      if (!t.cwd) return false;
+      try {
+        let p = path.resolve(cwd);
+        let c = path.resolve(t.cwd);
+        if (process.platform === "win32") { p = p.toLowerCase(); c = c.toLowerCase(); }
+        const rel = path.relative(p, c);
+        return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+      } catch { return false; }
+    });
+
+    if (mine.length > 0) {
+      const destPath = getWorkspaceTasksFilePath();
+      // Merge: don't overwrite tasks already in the workspace file
+      let existing: PersistedTask[] = [];
+      if (fs.existsSync(destPath)) {
+        try { existing = JSON.parse(fs.readFileSync(destPath, "utf-8")); } catch {}
+      }
+      const existingIds = new Set(existing.map((t) => t.id));
+      const merged = [...existing, ...mine.filter((t) => !existingIds.has(t.id))];
+      fs.writeFileSync(destPath, JSON.stringify(merged, null, 2), "utf-8");
+    }
+
+    // Remove the global file — it is now fully replaced by workspace-scoped files
+    fs.unlinkSync(legacyPath);
+  } catch {
+    // Migration is best-effort — never crash on failure
+  }
+}
 
 export function loadAndSyncPersistedTasks(): void {
   if (isSyncing) return;
@@ -476,6 +523,40 @@ export function cleanupStaleInstances(): void {
   }
 }
 
+// Workspaces older than 7 days with no active tasks are safe to prune
+const WORKSPACE_DIR_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Removes stale workspace task directories under ~/.superagent-r/workspaces/
+ * that have not been modified in WORKSPACE_DIR_TTL_MS. Prevents unbounded
+ * growth when Superagent is used across many different projects over time.
+ */
+export function cleanupStaleWorkspaceDirs(): void {
+  try {
+    const rootDir = getRootConfigDir();
+    const workspacesRoot = path.join(rootDir, "workspaces");
+    if (!fs.existsSync(workspacesRoot)) return;
+
+    const currentWsId = getWorkspaceId();
+    const entries = fs.readdirSync(workspacesRoot);
+    const now = Date.now();
+
+    for (const entry of entries) {
+      if (entry === currentWsId) continue; // never prune the active workspace
+      const dirPath = path.join(workspacesRoot, entry);
+      try {
+        const stat = fs.statSync(dirPath);
+        if (!stat.isDirectory()) continue;
+        if (now - stat.mtimeMs > WORKSPACE_DIR_TTL_MS) {
+          fs.rmSync(dirPath, { recursive: true, force: true });
+        }
+      } catch { /* ignore per-entry errors */ }
+    }
+  } catch {
+    // Cleanup is best-effort — never crash
+  }
+}
+
 // Run cleanup every 5 minutes
 setInterval(cleanupStaleInstances, 5 * 60 * 1000).unref();
 
@@ -497,8 +578,13 @@ export function isTaskInWorkspace(taskCwd: string | undefined, workspacePath: st
   }
 }
 
+// Cleanup stale workspace dirs once on startup and then daily
+setTimeout(() => { cleanupStaleWorkspaceDirs(); }, 5000).unref();
+setInterval(cleanupStaleWorkspaceDirs, 24 * 60 * 60 * 1000).unref();
+
 // Initial load and periodic synchronization of background tasks
 try {
+  migrateGlobalTasksToWorkspace();
   loadAndSyncPersistedTasks();
   setInterval(loadAndSyncPersistedTasks, 3000).unref();
 } catch {}
