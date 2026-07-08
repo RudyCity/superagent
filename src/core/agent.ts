@@ -217,7 +217,9 @@ function isRetryableError(err: unknown): boolean {
     msg.includes("status 400") ||
     msg.includes("status: 400") ||
     msg.includes("invalid_request_error") ||
-    msg.includes("empty response from model")
+    msg.includes("empty response from model") ||
+    msg.includes("tried to call unavailable tool") ||
+    msg.includes("tried to call tool that is not available")
   ) {
     return false;
   }
@@ -1277,7 +1279,7 @@ CRITICAL GOAL MODE RULES:
         // ── Classifier-based toolset filtering ──────────────────────────────
         // Reduce tool definitions based on the request category to save tokens.
         let filteredToolDefs = toolDefs;
-        if (this.currentClassification && i === 0) {
+        if (this.currentClassification) {
           try {
             const { getToolsetForCategory } = await import("./requestClassifier.js");
             const filteredTools = getToolsetForCategory(this.currentClassification.category, toolsToUse || []);
@@ -1287,7 +1289,9 @@ CRITICAL GOAL MODE RULES:
                 description: t.description,
                 input_schema: t.parameters,
               }));
-              this.writeToLogFile("INFO", `Classifier reduced toolset: ${toolDefs.length} -> ${filteredToolDefs.length} tools for category '${this.currentClassification.category}'`);
+              if (i === 0) {
+                this.writeToLogFile("INFO", `Classifier reduced toolset: ${toolDefs.length} -> ${filteredToolDefs.length} tools for category '${this.currentClassification.category}'`);
+              }
             }
           } catch {
             // Non-critical: fall back to full toolset
@@ -1541,7 +1545,14 @@ After all subagents finish, you MUST perform this verification loop before consi
 - If a shell command reveals a path on a different drive or directory than the workspace, DO NOT write files there.`
           : "";
 
-        const systemPrompt = `${activeSystemPrompt}
+        const hasRunCommand = filteredToolDefs.some(t => t.name === "run_command");
+        const hasRunBackground = filteredToolDefs.some(t => t.name === "run_background_process");
+        let toolRestrictionNotice = "";
+        if (!hasRunCommand && !hasRunBackground) {
+          toolRestrictionNotice = `\n\n⚠️ CRITICAL RESTRICTION: Terminal/shell command execution is currently DISABLED for this request. Do NOT attempt to use 'run_command', 'run_background_process', or any terminal/shell execution tools, as they are not available in your tool schema.`;
+        }
+
+        const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}
 
 CRITICAL TASK EXECUTION CONTEXT:
 - You are running with a strict step limit of ${maxIterationsStr} agent iterations per request.
@@ -1588,7 +1599,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         // ── Classifier-based plan state injection skip ──────────────────────
         let classifierSkipPlan = false;
         let classifierPromptAddendum = "";
-        if (this.currentClassification && i === 0) {
+        if (this.currentClassification) {
           try {
             const { shouldSkipPlanInjection, getCategoryPromptAddendum } = await import("./requestClassifier.js");
             classifierSkipPlan = shouldSkipPlanInjection(this.currentClassification.category);

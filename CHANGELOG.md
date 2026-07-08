@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.184] - 2026-07-08
+
+### Fixed
+- Fixed tool list mismatch and infinite retry loops by refining request classifier and agent execution behavior.
+- Added command detection heuristics to classifyHeuristic (recognizing keywords like pnpm, npm, git, coba, jalanin for Indonesian and English) to prevent command requests from being incorrectly classified as questions.
+- Applied request classifier toolset filtering and plan settings consistently across all iterations of the agent loop instead of just the first turn.
+- Injected a critical tool restriction warning into the system prompt when terminal execution tools (run_command and run_background_process) are stripped from the active tool schema to prevent the model from calling them.
+- Classified "tried to call unavailable tool" errors as non-retryable in isRetryableError to immediately abort and cleanly report schema mismatch errors instead of retrying 10 times.
+- Fixed vitest tests in tests/enhancedFeatures.test.ts to mock getSettings with classifierEnabled: false so they correctly test simple task behavior in isolation.
+
+---
+
 ## [1.2.183] - 2026-07-08
 
 ### Added

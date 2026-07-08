@@ -100,6 +100,13 @@ const COMPLEX_KEYWORDS: readonly string[] = [
   "buat", "bikin", "tambahkan", "tambah fitur",
 ];
 
+/** Command action indicator keywords */
+const COMMAND_KEYWORDS: readonly string[] = [
+  "run", "execute", "start", "stop", "test", "deploy", "commit", "push", "pull",
+  "install", "pnpm", "npm", "yarn", "bun", "git", "docker", "cargo", "pip", "npx",
+  "jalankan", "jalanin", "coba", "running", "runnign",
+];
+
 // ─── Heuristic Classifier ────────────────────────────────────────────────────
 
 /**
@@ -227,6 +234,20 @@ export function classifyHeuristic(
       category: "complex_task",
       confidence: complexScore + customComplex >= 2 ? "high" : "medium",
       reason: `Complex task keywords detected (${complexScore + customComplex} matches, ${wordCount} words)`,
+      heuristicOnly: true,
+      classificationTokens: 0,
+    };
+  }
+
+
+  // ── Command detection ─────────────────────────────────────────────────
+  const commandScore = COMMAND_KEYWORDS.filter(kw => lower.includes(kw)).length;
+  const customCommand = (customKeywords?.command || []).filter(kw => lower.includes(kw.toLowerCase())).length;
+  if (commandScore + customCommand >= 1) {
+    return {
+      category: "command",
+      confidence: wordCount <= 10 ? "high" : "medium",
+      reason: `Command keywords detected (${commandScore + customCommand} matches, ${wordCount} words)`,
       heuristicOnly: true,
       classificationTokens: 0,
     };

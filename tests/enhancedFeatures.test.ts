@@ -81,6 +81,17 @@ describe("Superagent Proposed Enhancements Tests", () => {
       disableStreaming: true,
       workingDirectory: process.cwd(),
     } as any);
+    vi.spyOn(configModule, "getSettings").mockReturnValue({
+      concurrencyLimit: 0,
+      rateLimitRpm: 60,
+      rateLimitCapacity: 60,
+      disableStreaming: true,
+      contextWindowLimit: 0,
+      maxIterations: 50,
+      simpleTaskFileThreshold: 3,
+      simpleTaskKeywords: ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
+      classifierEnabled: false,
+    } as any);
   });
 
   afterEach(() => {
@@ -205,6 +216,7 @@ describe("Superagent Proposed Enhancements Tests", () => {
       vi.spyOn(configModule, "getSettings").mockReturnValue({
         simpleTaskFileThreshold: 5,
         simpleTaskKeywords: ["jalan", "mulai"],
+        classifierEnabled: false,
       } as any);
 
       const onEvent = vi.fn();
