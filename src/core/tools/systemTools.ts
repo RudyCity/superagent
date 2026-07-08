@@ -88,7 +88,7 @@ function resolveFilePathFromArgs(args: Record<string, unknown>, cwd: string): st
 
 export const readTool: Tool = {
   name: "read",
-  description: "Read file contents. Returns lines with line numbers. Supports bulk reading.",
+  description: "Read file contents with line numbers. PREFER 'filePaths' array to batch multiple reads into ONE call — never read files one-by-one. Each entry can be a string (uses global offset/limit) or {path, offset?, limit?} for per-file ranges.",
   parameters: {
     type: "object",
     properties: {
@@ -98,18 +98,16 @@ export const readTool: Tool = {
       },
       filePaths: {
         type: "array",
-        description: "Optional list of absolute or relative paths to read in bulk.",
-        items: {
-          type: "string",
-        },
+        description: "List of paths to read in bulk. Each entry: a string (uses global offset/limit) OR an object {path: string, offset?: number, limit?: number} for per-file line ranges.",
+        items: {},
       },
       offset: {
         type: "number",
-        description: "Line number to start from (1-indexed)",
+        description: "Global line number to start from (1-indexed). Overridden by per-file offset.",
       },
       limit: {
         type: "number",
-        description: "Max lines to read (default 800)",
+        description: "Global max lines to read (default 800). Overridden by per-file limit.",
       },
     },
   },
@@ -123,7 +121,24 @@ export const readTool: Tool = {
         return "Error: 'filePaths' parameter is empty.";
       }
       const results: string[] = [];
-      for (const rawPath of filePaths) {
+      for (const entry of filePaths) {
+        // Support mixed: string or {path, offset?, limit?}
+        let rawPath: string;
+        let fileOffset: number;
+        let fileLimit: number;
+        if (typeof entry === "string") {
+          rawPath = entry;
+          fileOffset = offset;
+          fileLimit = limit;
+        } else if (entry && typeof entry === "object" && typeof (entry as any).path === "string") {
+          const obj = entry as { path: string; offset?: number; limit?: number };
+          rawPath = obj.path;
+          fileOffset = Math.max(1, obj.offset || offset);
+          fileLimit = obj.limit || limit;
+        } else {
+          results.push(`--- Entry: ${JSON.stringify(entry)} ---\nError: Invalid entry. Use a string path or {path, offset?, limit?}.`);
+          continue;
+        }
         const filePath = normalizePath(path.resolve(cwd, rawPath));
         try {
           const stat = await fs.stat(filePath);
@@ -146,12 +161,12 @@ export const readTool: Tool = {
           }
           const content = buffer.toString("utf-8");
           const lines = content.replace(/\r\n/g, "\n").split("\n");
-          const sliced = lines.slice(offset - 1, offset - 1 + limit);
-          const output = sliced.map((line, i) => `${offset + i}: ${line}`).join("\n");
+          const sliced = lines.slice(fileOffset - 1, fileOffset - 1 + fileLimit);
+          const output = sliced.map((line, i) => `${fileOffset + i}: ${line}`).join("\n");
           let fileOutput = `--- File: ${rawPath} ---\n${output}`;
-          if (lines.length > offset - 1 + limit) {
-            const remaining = lines.length - (offset - 1 + limit);
-            fileOutput += `\n... (output truncated, showing ${limit} of ${lines.length} lines. There are ${remaining} more lines)`;
+          if (lines.length > fileOffset - 1 + fileLimit) {
+            const remaining = lines.length - (fileOffset - 1 + fileLimit);
+            fileOutput += `\n... (output truncated, showing ${fileLimit} of ${lines.length} lines. There are ${remaining} more lines)`;
           }
           results.push(fileOutput);
         } catch (err: unknown) {
@@ -250,7 +265,7 @@ export const writeTool: Tool = {
 export const editTool: Tool = {
   name: "edit",
   description:
-    "Edit a file by replacing an exact string match (CRLF/LF and trailing whitespace tolerant). Supports bulk editing.",
+    "Edit a file by replacing an exact string match (CRLF/LF tolerant). PREFER 'edits' array to batch multiple edits across files in ONE call — never edit files one-by-one.",
   parameters: {
     type: "object",
     properties: {
@@ -748,7 +763,7 @@ export const ripgrepSearchTool: Tool = {
 
 export const writeToFileTool: Tool = {
   name: "write_to_file",
-  description: "Create a new file or overwrite an existing file's content entirely. Supports bulk writing.",
+  description: "Create or overwrite file content entirely. PREFER 'files' array to batch create/overwrite multiple files in ONE call — never write files one-by-one.",
   parameters: {
     type: "object",
     properties: {
@@ -905,7 +920,7 @@ export const writeToFileTool: Tool = {
 
 export const replaceFileContentTool: Tool = {
   name: "replace_file_content",
-  description: "Edit a single contiguous block of code in a file by specifying line ranges and target content. Supports bulk edits.",
+  description: "Edit a single contiguous block in a file by line range + target content. PREFER 'edits' array to batch replacements across files in ONE call.",
   parameters: {
     type: "object",
     properties: {
@@ -1206,7 +1221,7 @@ export const replaceFileContentTool: Tool = {
 
 export const multiReplaceFileContentTool: Tool = {
   name: "multi_replace_file_content",
-  description: "Perform multiple non-contiguous edits across a single file simultaneously. Supports bulk multi-file edits.",
+  description: "Perform multiple non-contiguous edits in a file. PREFER 'files' array to batch multi-chunk edits across files in ONE call.",
   parameters: {
     type: "object",
     properties: {
@@ -1782,156 +1797,236 @@ export const multiReplaceFileContentTool: Tool = {
   },
 };
 
+// Helper: Apply patch content to file content string, returns patched content or error string
+async function applyPatchToContent(content: string, patchContent: string, filePath: string): Promise<{ result: string; error?: string }> {
+  const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
+  
+  // If it looks like a unified diff
+  if (patchContent.includes("@@ ") || patchContent.startsWith("---") || patchContent.startsWith("diff")) {
+    const matchAt = (lines: string[], start: number, target: string[]): boolean => {
+      if (start + target.length > lines.length) return false;
+      for (let idx = 0; idx < target.length; idx++) {
+        if (lines[start + idx].trimEnd() !== target[idx].trimEnd()) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    const lines = content.replace(/\r\n/g, "\n").split("\n");
+    const patchLines = patchContent.split(/\r?\n/);
+    let i = 0;
+    while (i < patchLines.length) {
+      const line = patchLines[i];
+      if (line.startsWith("@@")) {
+        const match = /@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@/.exec(line);
+        if (match) {
+          const oldStart = parseInt(match[1], 10) - 1;
+          
+          i++;
+          const hunkOld: string[] = [];
+          const hunkNew: string[] = [];
+          
+          while (
+            i < patchLines.length &&
+            !patchLines[i].startsWith("@@") &&
+            !patchLines[i].startsWith("diff") &&
+            !patchLines[i].startsWith("---") &&
+            !patchLines[i].startsWith("+++")
+          ) {
+            const hLine = patchLines[i];
+            if (hLine.startsWith("-")) {
+              hunkOld.push(hLine.slice(1));
+            } else if (hLine.startsWith("+")) {
+              hunkNew.push(hLine.slice(1));
+            } else if (hLine.startsWith(" ")) {
+              hunkOld.push(hLine.slice(1));
+              hunkNew.push(hLine.slice(1));
+            } else {
+              hunkOld.push(hLine);
+              hunkNew.push(hLine);
+            }
+            i++;
+          }
+          
+          let foundIdx = -1;
+          const radius = 100;
+          const searchStart = Math.max(0, oldStart - radius);
+          const searchEnd = Math.min(lines.length - hunkOld.length + 1, oldStart + radius);
+          
+          for (let j = oldStart; j >= searchStart; j--) {
+            if (matchAt(lines, j, hunkOld)) {
+              foundIdx = j;
+              break;
+            }
+          }
+          if (foundIdx === -1) {
+            for (let j = oldStart + 1; j < searchEnd; j++) {
+              if (matchAt(lines, j, hunkOld)) {
+                foundIdx = j;
+                break;
+              }
+            }
+          }
+          
+          if (foundIdx === -1) {
+            return { result: content, error: `Could not find matching lines for patch hunk around line ${oldStart + 1}` };
+          }
+          
+          lines.splice(foundIdx, hunkOld.length, ...hunkNew);
+          continue;
+        }
+      }
+      i++;
+    }
+    content = lines.join(originalEnding);
+  } else {
+    const lines = patchContent.split(/\r?\n/);
+    let targetLines: string[] = [];
+    let replacementLines: string[] = [];
+    let mode: "search" | "replace" | "idle" = "idle";
+
+    for (const line of lines) {
+      if (line.startsWith("<<<<<<<")) {
+        mode = "search";
+        targetLines = [];
+      } else if (line.startsWith("=======")) {
+        mode = "replace";
+        replacementLines = [];
+      } else if (line.startsWith(">>>>>>>")) {
+        mode = "idle";
+        const oldStr = targetLines.join(originalEnding);
+        const newStr = replacementLines.join(originalEnding);
+        const normContent = normalizeForMatching(content);
+        const normOldStr = normalizeForMatching(oldStr);
+        if (normContent.includes(normOldStr)) {
+          const matchIndexInNorm = normContent.indexOf(normOldStr);
+          
+          const normToOrigMap = mapNormToOrigIndices(content, normContent);
+          const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
+          const matchOrigEnd = normToOrigMap[matchIndexInNorm + normOldStr.length] ?? -1;
+          
+          if (matchOrigStart !== -1 && matchOrigEnd !== -1) {
+            content = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
+          } else {
+            content = content.replace(oldStr, newStr);
+          }
+        } else {
+          return { result: content, error: `Patch search block not found in target file: ${filePath}` };
+        }
+      } else {
+        if (mode === "search") {
+          targetLines.push(line);
+        } else if (mode === "replace") {
+          replacementLines.push(line);
+        }
+      }
+    }
+  }
+
+  return { result: content };
+}
+
 export const applyPatchTool: Tool = {
   name: "apply_patch",
-  description: "Apply a unified diff or patch pattern to modify a file.",
+  description: "Apply a unified diff or patch pattern to modify a file. PREFER 'patches' array to batch patches across multiple files in ONE call.",
   parameters: {
     type: "object",
     properties: {
       filePath: {
         type: "string",
-        description: "Path to the file to patch",
+        description: "Path to the file to patch (optional if patches is provided)",
       },
       patchContent: {
         type: "string",
-        description: "Unified diff or search-replace format block",
+        description: "Unified diff or search-replace format block (optional if patches is provided)",
+      },
+      patches: {
+        type: "array",
+        description: "List of patches to apply across multiple files in bulk.",
+        items: {
+          type: "object",
+          properties: {
+            filePath: {
+              type: "string",
+              description: "Path to the file to patch",
+            },
+            patchContent: {
+              type: "string",
+              description: "Unified diff or search-replace format block",
+            },
+          },
+          required: ["filePath", "patchContent"],
+        },
       },
     },
-    required: ["filePath", "patchContent"],
   },
   async execute(args, cwd, signal) {
+    const patches = args.patches as Array<{ filePath: string; patchContent: string }> | undefined;
+    if (patches && Array.isArray(patches)) {
+      if (patches.length === 0) {
+        return "Error: 'patches' parameter is empty.";
+      }
+      const sortedPatches = patches.map(p => {
+        const resolved = normalizePath(path.resolve(cwd, p.filePath));
+        return { ...p, resolvedPath: resolved };
+      }).sort((a, b) => a.resolvedPath.localeCompare(b.resolvedPath));
+
+      const releases: (() => void)[] = [];
+      const results: string[] = [];
+      try {
+        const uniquePaths = Array.from(new Set(sortedPatches.map(p => p.resolvedPath))).sort();
+        for (const p of uniquePaths) {
+          releases.push(await fileLockManager.acquire(p));
+        }
+
+        for (const patch of sortedPatches) {
+          try {
+            const originalContent = await fs.readFile(patch.resolvedPath, "utf-8");
+            const { result: content, error } = await applyPatchToContent(originalContent, patch.patchContent, patch.resolvedPath);
+            if (error) {
+              results.push(`Error patching ${patch.filePath}: ${error}`);
+              continue;
+            }
+            const summary = buildEditSummary(originalContent, content, patch.resolvedPath);
+            if (originalContent === content) {
+              results.push(summary);
+              continue;
+            }
+            await fs.writeFile(patch.resolvedPath, content, "utf-8");
+            const syntaxError = await verifySyntax(patch.resolvedPath);
+            if (syntaxError) {
+              results.push(`Warning: ${syntaxError}. Applied patch to: ${patch.filePath}\n${summary}`);
+            } else {
+              results.push(`Patch applied: ${patch.filePath}\n${summary}`);
+            }
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            results.push(`Error patching ${patch.filePath}: ${message}`);
+          }
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return `Error in bulk patching: ${message}`;
+      } finally {
+        for (const release of releases.reverse()) {
+          release();
+        }
+      }
+      return results.join("\n\n");
+    }
+
     const filePath = resolveFilePathFromArgs(args, cwd);
     if (!filePath) {
-      return "Error: Missing required parameter 'filePath'. Provide the path to the file to patch.";
+      return "Error: Missing required parameter 'filePath' or 'patches'. Provide the path to the file to patch.";
     }
     const patchContent = args.patchContent as string;
     const release = await fileLockManager.acquire(filePath);
     try {
       const originalContent = await fs.readFile(filePath, "utf-8");
-      let content = originalContent;
-      const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
-      
-      // If it looks like a unified diff
-      if (patchContent.includes("@@ ") || patchContent.startsWith("---") || patchContent.startsWith("diff")) {
-        const matchAt = (lines: string[], start: number, target: string[]): boolean => {
-          if (start + target.length > lines.length) return false;
-          for (let idx = 0; idx < target.length; idx++) {
-            if (lines[start + idx].trimEnd() !== target[idx].trimEnd()) {
-              return false;
-            }
-          }
-          return true;
-        };
-
-        const lines = content.replace(/\r\n/g, "\n").split("\n");
-        const patchLines = patchContent.split(/\r?\n/);
-        let i = 0;
-        while (i < patchLines.length) {
-          const line = patchLines[i];
-          if (line.startsWith("@@")) {
-            const match = /@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@/.exec(line);
-            if (match) {
-              const oldStart = parseInt(match[1], 10) - 1;
-              
-              i++;
-              const hunkOld: string[] = [];
-              const hunkNew: string[] = [];
-              
-              while (
-                i < patchLines.length &&
-                !patchLines[i].startsWith("@@") &&
-                !patchLines[i].startsWith("diff") &&
-                !patchLines[i].startsWith("---") &&
-                !patchLines[i].startsWith("+++")
-              ) {
-                const hLine = patchLines[i];
-                if (hLine.startsWith("-")) {
-                  hunkOld.push(hLine.slice(1));
-                } else if (hLine.startsWith("+")) {
-                  hunkNew.push(hLine.slice(1));
-                } else if (hLine.startsWith(" ")) {
-                  hunkOld.push(hLine.slice(1));
-                  hunkNew.push(hLine.slice(1));
-                } else {
-                  hunkOld.push(hLine);
-                  hunkNew.push(hLine);
-                }
-                i++;
-              }
-              
-              let foundIdx = -1;
-              const radius = 100;
-              const searchStart = Math.max(0, oldStart - radius);
-              const searchEnd = Math.min(lines.length - hunkOld.length + 1, oldStart + radius);
-              
-              for (let j = oldStart; j >= searchStart; j--) {
-                if (matchAt(lines, j, hunkOld)) {
-                  foundIdx = j;
-                  break;
-                }
-              }
-              if (foundIdx === -1) {
-                for (let j = oldStart + 1; j < searchEnd; j++) {
-                  if (matchAt(lines, j, hunkOld)) {
-                    foundIdx = j;
-                    break;
-                  }
-                }
-              }
-              
-              if (foundIdx === -1) {
-                return `Error: Could not find matching lines for patch hunk around line ${oldStart + 1}`;
-              }
-              
-              lines.splice(foundIdx, hunkOld.length, ...hunkNew);
-              continue;
-            }
-          }
-          i++;
-        }
-        content = lines.join(originalEnding);
-      } else {
-        const lines = patchContent.split(/\r?\n/);
-        let targetLines: string[] = [];
-        let replacementLines: string[] = [];
-        let mode: "search" | "replace" | "idle" = "idle";
-
-        for (const line of lines) {
-          if (line.startsWith("<<<<<<<")) {
-            mode = "search";
-            targetLines = [];
-          } else if (line.startsWith("=======")) {
-            mode = "replace";
-            replacementLines = [];
-          } else if (line.startsWith(">>>>>>>")) {
-            mode = "idle";
-            const oldStr = targetLines.join(originalEnding);
-            const newStr = replacementLines.join(originalEnding);
-            const normContent = normalizeForMatching(content);
-            const normOldStr = normalizeForMatching(oldStr);
-            if (normContent.includes(normOldStr)) {
-              const matchIndexInNorm = normContent.indexOf(normOldStr);
-              
-              const normToOrigMap = mapNormToOrigIndices(content, normContent);
-              const matchOrigStart = normToOrigMap[matchIndexInNorm] ?? -1;
-              const matchOrigEnd = normToOrigMap[matchIndexInNorm + normOldStr.length] ?? -1;
-              
-              if (matchOrigStart !== -1 && matchOrigEnd !== -1) {
-                content = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
-              } else {
-                content = content.replace(oldStr, newStr);
-              }
-            } else {
-              return `Error: Patch search block not found in target file: ${filePath}`;
-            }
-          } else {
-            if (mode === "search") {
-              targetLines.push(line);
-            } else if (mode === "replace") {
-              replacementLines.push(line);
-            }
-          }
-        }
+      const { result: content, error } = await applyPatchToContent(originalContent, patchContent, filePath);
+      if (error) {
+        return `Error: ${error}`;
       }
 
       const summary = buildEditSummary(originalContent, content, filePath);
@@ -1952,3 +2047,4 @@ export const applyPatchTool: Tool = {
     }
   },
 };
+

@@ -6,6 +6,31 @@
  * Subagent      (depth 2): specialized worker with a restricted role
  */
 
+// ─── Shared Prompt Rule Blocks (defined once, injected into multiple prompts) ──
+
+const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill/terminate parent Node.js Superagent process. Do NOT run 'kill <pid>', 'taskkill /PID <pid>', 'pkill node'. Only kill child/spawned processes.`;
+
+const BATCH_OPS_RULE = `- BATCH_OPS: Use bulk/array parameters for ALL multi-file operations in ONE call:
+  - read: 'filePaths' array (supports per-file {path, offset, limit} objects)
+  - edit: 'edits' array
+  - write_to_file: 'files' array
+  - replace_file_content: 'edits' array
+  - multi_replace_file_content: 'files' array
+  - apply_patch: 'patches' array
+  NEVER call file tools sequentially for multiple files. Batch all reads upfront before processing.`;
+
+const FAST_ANALYSIS_RULE = `- FAST_ANALYSIS:
+  - ALWAYS use grep/ripgrep to pinpoint exact locations first. NEVER read files or list folders blindly.
+  - For large files (>200 lines), only read the relevant line range (offset/limit or startLine/endLine).
+  - Exclude generated folders (node_modules, dist, build, .git, venv) from all searches.`;
+
+const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY:
+  - Read latest file content via 'read' before editing (prevents stale line range errors).
+  - Ensure 'oldString' in 'edit' is unique. Add surrounding context lines or startLine/endLine.
+  - Ensure 'chunks' in 'multi_replace_file_content' strictly match schema (must include 'targetContent', 'replacementContent', 'startLine', 'endLine').`;
+
+const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts, API changes, or architecture, and "global" ONLY for universal user preferences or tool configs.`;
+
 // ─── Master Agent ─────────────────────────────────────────────────────────────
 
 export const MASTER_AGENT_SYSTEM_PROMPT = `
@@ -15,14 +40,15 @@ export const MASTER_AGENT_SYSTEM_PROMPT = `
 - LIMIT: Do NOT write code or modify codebase files directly. Delegate ALL implementation to Superagents.
 
 # CRITICAL RULES
-- PROTECT_PROCESS: NEVER kill, terminate, or send signals to the parent Node.js Superagent process. Do NOT run commands like 'kill <pid>', 'taskkill /PID <pid>', 'pkill node', or any variant targeting the host process. Only kill child/spawned processes started by shell tools.
+${PROTECT_PROCESS_RULE}
 - WORKSPACE_LIMIT: Direct file modification allowed ONLY on:
   - Implementation Plan File (via 'manage_plan')
   - Task Tracking File (via 'manage_plan' and 'manage_tasks')
   - Verification/Walkthrough File (via 'write_to_file')
   - Direct writes/edits to other files are BLOCKED.
 - NO_SUBAGENTS: Spawning Subagents ('invoke_subagent') is BLOCKED. Only Superagents allowed.
-- NO_SEQUENTIAL_READS: Do NOT read files one-by-one. If inspecting multiple files, use the 'filePaths' array parameter in the 'read' tool to retrieve them in a single tool call.
+${BATCH_OPS_RULE}
+${FAST_ANALYSIS_RULE}
 - PLAN_LIFECYCLE: Create, edit, or sync plan & tasks using 'manage_plan' (action: 'create', 'edit', 'sync') BEFORE calling 'invoke_superagent'. Tasks checklist must format as '- [ ] task description'.
 - SPAWN_PLANNING: Must create and obtain approval for an implementation plan via 'manage_plan' before spawning any Superagent ('invoke_superagent'). Plan file content MUST strictly match one of these structures:
   - Full Template (default/new features):
@@ -50,7 +76,7 @@ export const MASTER_AGENT_SYSTEM_PROMPT = `
     - Architecture: '## Architecture' (or '## Arsitektur' / '## Design' / '## Desain' / '## Refactor')
 - WORKTREE_CLEANUP: Manage, clean, and prune Git worktree workspaces using 'git_worktree'.
 - TRANSACTIONAL_MERGE: Merge completed branches using 'merge_superagents'. If merge conflicts occur, abort merge (no auto-resolution). Run universal validation post-merge. Auto-revert if validation fails.
-- SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts, API changes, or architecture, and "global" ONLY for universal user preferences or tool configs.
+${SHARED_MEMORY_RULE}
 
 # LOGIC GATES
 if spawning_superagent:
@@ -89,7 +115,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 - Context: Isolated git worktree developer & coordinator.
 
 # CRITICAL RULES
-- PROTECT_PROCESS: NEVER kill, terminate, or send signals to the parent Node.js Superagent process. Do NOT run commands like 'kill <pid>', 'taskkill /PID <pid>', 'pkill node', or any variant targeting the host process. Only kill child/spawned processes started by shell tools.
+${PROTECT_PROCESS_RULE}
 - WORKSPACE_LIMIT: Only access, read, or modify files within: ${worktreePath}. Do NOT touch parent/sibling directories.
 - NO_NESTED_SUPERAGENTS: Calling 'invoke_superagent' is strictly blocked.
 - LEADERSHIP & DELEGATION: Maintain coordinator mindset. Delegate atomic tasks to Subagents ('researcher', 'coder', 'reviewer', 'manual-tester') via 'invoke_subagent'. Direct, review, and integrate their outputs.
@@ -97,18 +123,11 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 - GIT_COMMIT: Add & commit all changes to branch: ${branch} before finalizing. Use ";" instead of "&&" if on Windows.
 - PLAN_LIMIT: View, edit, sync, and update task status via 'manage_tasks' and 'manage_plan'. Direct file edits/writes to task or plan files are BLOCKED.
 - BACKGROUND_WAIT: When running a long-running process in the background via 'run_background_process', always use 'manage_background_process' (action: 'wait') to block and await its completion instead of polling 'status' in a loop to conserve resources and avoid step limit issues.
-- FILE_EDIT_SAFETY:
-  - Read latest file content via 'read' before editing (prevents stale line range errors).
-  - Prefer using bulk/multi-file parameters (e.g. 'filePaths' in 'read', 'files' in 'write_to_file' / 'multi_replace_file_content', and 'edits' in 'edit' / 'replace_file_content') when operating on multiple files to avoid tool-call round-trips.
-  - Ensure 'oldString' in 'edit' is unique. Add surrounding context lines or startLine/endLine.
-  - Ensure 'chunks' in 'multi_replace_file_content' strictly match schema (must include 'targetContent', 'replacementContent', 'startLine', 'endLine').
-- NO_SEQUENTIAL_READS: Do NOT read files one-by-one in sequential turns. If you need to analyze, explore, or edit multiple files, use 'grep'/'ripgrep' to locate them, then read all relevant files in a single batched tool call using the 'filePaths' array parameter. Batch all reads upfront before processing.
-- FAST_ANALYSIS:
-  - ALWAYS use 'grep' or 'ripgrep' tools first to pinpoint exact locations of code/definitions. NEVER read files or list folders blindly.
-  - If a file is large (>200 lines), only read the relevant line range (StartLine/EndLine) containing the target code to save token overhead and reduce latency.
-  - Exclude common generated/compiled folders ('node_modules', 'dist', 'build', '.git', etc.) from all file searches.
+${FILE_EDIT_SAFETY_RULE}
+${BATCH_OPS_RULE}
+${FAST_ANALYSIS_RULE}
 - RESEARCH: Prioritize spawning a 'researcher' subagent to explore/map the codebase and gather context.
-- SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts/architecture, and "global" ONLY for universal user preferences or tool configs.
+${SHARED_MEMORY_RULE}
 
 # LOGIC GATES
 if spawning_subagent:
@@ -165,11 +184,8 @@ export const SUBAGENT_SYSTEM_PROMPTS: Record<string, string> = {
 
 # CRITICAL RULES
 - RESEARCH: Prioritize using search, grep, and ripgrep tools to map codebase and gather context.
-- NO_SEQUENTIAL_READS: Do NOT read files one-by-one. If you need to analyze multiple files, use 'grep'/'ripgrep' to locate them, then read all relevant files in a single batched tool call using the 'filePaths' array parameter.
-- FAST_ANALYSIS:
-  - Use 'grep'/'ripgrep' to locate specific symbols or variables before reading.
-  - Read specific line ranges instead of the entire file when dealing with large files (>200 lines).
-  - Explicitly filter out folders like 'node_modules', 'dist', 'build', 'venv', and '.git' in search paths.
+${BATCH_OPS_RULE}
+${FAST_ANALYSIS_RULE}
 - SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
 
 # LOGIC GATES
@@ -203,20 +219,13 @@ if decision_point:
 - LIMIT: Do NOT spawn other agents, run git commands, or modify files outside working directory.
 
 # CRITICAL RULES
-- PROTECT_PROCESS: NEVER kill, terminate, or send signals to the parent Node.js Superagent process. Do NOT run commands like 'kill <pid>', 'taskkill /PID <pid>', 'pkill node', or any variant targeting the host process. Only kill child/spawned processes started by shell tools.
+${PROTECT_PROCESS_RULE}
 - LOCATE: Use read, glob, and grep tools (or ask the 'researcher' subagent) to locate target files/dependencies before modifying.
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
-- FILE_EDIT_SAFETY:
-  - Read latest file content via 'read' before editing (prevents stale line range errors).
-  - Prefer using bulk/multi-file parameters (e.g. 'filePaths' in 'read', 'files' in 'write_to_file' / 'multi_replace_file_content', and 'edits' in 'edit' / 'replace_file_content') when operating on multiple files to avoid tool-call round-trips.
-  - Ensure 'oldString' in 'edit' is unique. Add surrounding context lines or startLine/endLine.
-  - Ensure 'chunks' in 'multi_replace_file_content' strictly match schema (must include 'targetContent', 'replacementContent', 'startLine', 'endLine').
-- NO_SEQUENTIAL_READS: Do NOT read files one-by-one. If you need to analyze multiple files, use 'grep'/'ripgrep' to locate them, then read all relevant files in a single batched tool call using the 'filePaths' array parameter.
-- FAST_ANALYSIS:
-  - Pinpoint exact code blocks via search/grep before editing.
-  - Only load relevant line ranges of target files to edit.
-  - Exclude build/dependency directories in search configurations.
+${FILE_EDIT_SAFETY_RULE}
+${BATCH_OPS_RULE}
+${FAST_ANALYSIS_RULE}
 
 # LOGIC GATES
 if decision_point:
@@ -251,12 +260,10 @@ if decision_point:
 - LIMIT: Do NOT modify source files unless authorized to fix a specific bug.
 
 # CRITICAL RULES
-- PROTECT_PROCESS: NEVER kill, terminate, or send signals to the parent Node.js Superagent process. Do NOT run commands like 'kill <pid>', 'taskkill /PID <pid>', 'pkill node', or any variant targeting the host process. Only kill child/spawned processes started by shell tools.
+${PROTECT_PROCESS_RULE}
 - TRACE: Use grep and glob tools to trace usages of modified interfaces across codebase to check regressions.
-- NO_SEQUENTIAL_READS: Do NOT read files one-by-one. If you need to analyze multiple files, use 'grep'/'ripgrep' to locate them, then read all relevant files in a single batched tool call using the 'filePaths' array parameter.
-- FAST_ANALYSIS:
-  - Use ripgrep/grep to locate usages and definitions instantly.
-  - Avoid reading full files; target line ranges of changed parts and their immediate usages.
+${BATCH_OPS_RULE}
+${FAST_ANALYSIS_RULE}
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
 
@@ -304,7 +311,7 @@ if decision_point:
 # CRITICAL RULES
 - LOCATE: Use glob and grep tools to find test files/configurations.
 - BROWSER: Use Playwright, agent-browser, or cloakbrowser (for anti-bot protection like Cloudflare).
-- NO_SEQUENTIAL_READS: Do NOT read files one-by-one. If checking multiple files or assets, read them in a single batched tool call using the 'filePaths' array parameter.
+${BATCH_OPS_RULE}
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - DESIGN_TASTE: Analyze screenshots for alignment, spacing, typography, responsiveness, and styling consistency. Ensure a premium UI feel.
 - MANDATORY: Use 'ask_question' when test scenarios or results are ambiguous. NEVER guess or assume.

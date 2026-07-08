@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.188] - 2026-07-08
+
+### Changed
+- Optimized prompts and system tool descriptions to accelerate multi-file workflows by ensuring agents prioritize bulk/array operations (`filePaths`, `edits`, `files`, `patches`) instead of sequential one-by-one tool calls.
+- Consolidated `prompts.ts` by extracting highly duplicated system prompt rules (`PROTECT_PROCESS`, `BATCH_OPS`, `FAST_ANALYSIS`, `FILE_EDIT_SAFETY`, `SHARED_MEMORY_SCOPING`) into shared constants, saving 800+ tokens per LLM invocation.
+- Enhanced `readTool` (`filePaths`) to support per-file targeted offsets and limits using `{path, offset, limit}` objects in bulk mode.
+- Added multi-file bulk patching support to `applyPatchTool` via the new `patches` parameter and extracted patch logic into `applyPatchToContent` helper.
+
+---
+
 ## [1.2.187] - 2026-07-08
 
 ### Changed
