@@ -338,4 +338,48 @@ describe("Model Presets", () => {
     // Clean up
     saveModelConfig(originalConfig);
   });
+
+  it("should correctly update active preset even if getActivePreset was previously cached", () => {
+    const testConfig = {
+      settings: { concurrencyLimit: 0, rateLimitRpm: 60, rateLimitCapacity: 60 },
+      providers: [
+        { id: "openai", name: "OpenAI", provider: "openai", apiKey: "sk-test", baseUrl: "" }
+      ],
+      presets: {
+        multi: [{
+          id: "test-multi",
+          name: "Test Multi",
+          description: "Test",
+          models: {
+            master: { providerProfileId: "openai", model: "gpt-4o" },
+            superagent: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDefault: { providerProfileId: "openai", model: "gpt-4o" },
+            subagentDetails: {}
+          }
+        }],
+        single: []
+      },
+      activePresetId: { multi: "test-multi", single: "" }
+    };
+    fs.writeFileSync(configPath, JSON.stringify(testConfig, null, 2), "utf-8");
+    clearModelConfigCache();
+
+    // 1. Simulate startup by calling getActivePreset (populates cache)
+    const initialPreset = getActivePreset<any>("multi");
+    expect(initialPreset.id).toBe("test-multi");
+
+    // 2. Save and apply a new preset with persist = true
+    saveModelPreset("new-preset-on-disk", "New preset on disk", {
+      MODEL_MULTI_MASTER: "openai:gpt-4o-new",
+      MODEL_MULTI_SUBAGENT: "openai:gpt-4o-mini-new",
+    });
+    applyModelPreset("new-preset-on-disk", "multi", true);
+
+    // 3. Verify getActivePresetId and getActivePreset return the new preset
+    expect(getActivePresetId("multi")).toBe("new-preset-on-disk");
+    const activePreset = getActivePreset<any>("multi");
+    expect(activePreset.id).toBe("new-preset-on-disk");
+    expect(activePreset.models.master.model).toBe("gpt-4o-new");
+  });
 });
+

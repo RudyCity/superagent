@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.169] - 2026-07-08
+
+### Fixed
+- **Model Preset Loading Cache Invalidation**:
+  - Fixed a critical issue where loaded/applied presets (either via `/model preset <name> --save` or `/model <tier> <model> --save`) failed to propagate to the current session due to an invalid memory cache in `sessionActivePreset`.
+  - Updated `savePreset`, `deletePreset`, and `setActivePresetId` in [jsonConfig.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/config/jsonConfig.ts) to correctly clear/invalidate `sessionActivePreset` when presets are modified or switched.
+  - Modified `getActivePreset` to avoid caching the default disk configuration directly into `sessionActivePreset` on first read, preventing it from shadowing subsequent disk changes.
+  - Added unit test coverage in [modelPresets.test.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/tests/modelPresets.test.ts).
+
+---
+
 ## [1.2.168] - 2026-07-07
 
 ### Fixed

@@ -826,6 +826,9 @@ export function savePreset<T>(mode: "multi" | "single", preset: JSONModelPreset<
       presetsList.push(preset);
     }
   });
+  if (sessionActivePreset[mode]?.id === preset.id) {
+    delete sessionActivePreset[mode];
+  }
 }
 
 export function deletePreset(mode: "multi" | "single", id: string): void {
@@ -833,6 +836,9 @@ export function deletePreset(mode: "multi" | "single", id: string): void {
   mutateModelConfig((config) => {
     config.presets[mode] = (config.presets[mode] as any[]).filter((p) => p.id !== id);
   }, { mergePresets: false });
+  if (sessionActivePreset[mode]?.id === id) {
+    delete sessionActivePreset[mode];
+  }
 }
 
 export function getActivePresetId(mode: "multi" | "single"): string {
@@ -847,6 +853,7 @@ export function setActivePresetId(mode: "multi" | "single", id: string): void {
   mutateModelConfig((config) => {
     config.activePresetId[mode] = id;
   });
+  delete sessionActivePreset[mode];
 }
 
 export function setActivePreset<T>(mode: "multi" | "single", preset: JSONModelPreset<T>): void {
@@ -882,9 +889,7 @@ export function getActivePreset<T>(mode: "multi" | "single"): JSONModelPreset<T>
   if (!preset) {
     preset = JSON.parse(JSON.stringify(DEFAULT_CONFIG.presets[mode][0]));
   }
-  // Cache a deep copy in memory so that subsequent calls return the same session preset
-  sessionActivePreset[mode] = JSON.parse(JSON.stringify(preset));
-  return sessionActivePreset[mode] as any;
+  return JSON.parse(JSON.stringify(preset)) as any;
 }
 
 export function getActiveConfigAudit(overrideMode?: "multi" | "single"): string {
