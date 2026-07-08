@@ -51,6 +51,16 @@ function resolveNormalizedPath(fp: string, baseDir?: string): string {
   return baseDir ? path.resolve(baseDir, normalized) : path.resolve(normalized);
 }
 
+function extractFilePath(entry: unknown): string | undefined {
+  if (typeof entry === "string") {
+    return entry;
+  }
+  if (entry && typeof entry === "object" && typeof (entry as any).path === "string") {
+    return (entry as any).path;
+  }
+  return undefined;
+}
+
 export function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolean {
   let resolvedChild = resolveNormalizedPath(childPath);
   let resolvedParent = resolveNormalizedPath(parentPath);
@@ -100,8 +110,9 @@ export function isSuperagentOutOfBounds(
 
   if (args.filePaths && Array.isArray(args.filePaths)) {
     for (const fp of args.filePaths) {
-      if (typeof fp === "string") {
-        candidatePaths.push(fp);
+      const resolvedFp = extractFilePath(fp);
+      if (resolvedFp) {
+        candidatePaths.push(resolvedFp);
       }
     }
   }
@@ -171,8 +182,9 @@ export function isToolCallOutOfBounds(
 
   if (args.filePaths && Array.isArray(args.filePaths)) {
     for (const fp of args.filePaths) {
-      if (typeof fp === "string") {
-        candidatePaths.push(fp);
+      const resolvedFp = extractFilePath(fp);
+      if (resolvedFp) {
+        candidatePaths.push(resolvedFp);
       }
     }
   }
@@ -274,8 +286,9 @@ export function isModelConfigAccess(
 
   if (args.filePaths && Array.isArray(args.filePaths)) {
     for (const fp of args.filePaths) {
-      if (typeof fp === "string") {
-        candidatePaths.push(fp);
+      const resolvedFp = extractFilePath(fp);
+      if (resolvedFp) {
+        candidatePaths.push(resolvedFp);
       }
     }
   }
@@ -339,8 +352,9 @@ export function isSensitiveEnvFileAccess(
 
   if (args.filePaths && Array.isArray(args.filePaths)) {
     for (const fp of args.filePaths) {
-      if (typeof fp === "string") {
-        candidatePaths.push(fp);
+      const resolvedFp = extractFilePath(fp);
+      if (resolvedFp) {
+        candidatePaths.push(resolvedFp);
       }
     }
   }
@@ -427,10 +441,11 @@ export function getToolDescription(
   /** Safely resolve file path from common LLM aliases (filePath, file_path, TargetFile, filePaths) */
   let fp = (args.filePath ?? args.file_path ?? args.TargetFile) as string | undefined;
   if (!fp && args.filePaths && Array.isArray(args.filePaths) && args.filePaths.length > 0) {
+    const firstPath = extractFilePath(args.filePaths[0]) ?? "(invalid)";
     if (args.filePaths.length === 1) {
-      fp = args.filePaths[0];
+      fp = firstPath;
     } else {
-      fp = `${args.filePaths[0]} and ${args.filePaths.length - 1} more files`;
+      fp = `${firstPath} and ${args.filePaths.length - 1} more files`;
     }
   }
   if (!fp && args.edits && Array.isArray(args.edits) && args.edits.length > 0) {

@@ -279,6 +279,14 @@ describe("isToolCallOutOfBounds", () => {
       expect(getToolDescription(toolCall as any)).toBe("Reading file: src/app.ts and 1 more files");
     });
 
+    it("should describe read tool with filePaths array containing objects", () => {
+      const toolCall = {
+        name: "read",
+        args: { filePaths: [{ path: "src/app.ts" }, { path: "src/config.ts" }] }
+      };
+      expect(getToolDescription(toolCall as any)).toBe("Reading file: src/app.ts and 1 more files");
+    });
+
     it("should block out of bounds read calls using filePaths array", () => {
       const toolCall = {
         name: "read",
@@ -288,10 +296,28 @@ describe("isToolCallOutOfBounds", () => {
       expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(true);
     });
 
+    it("should block out of bounds read calls using filePaths array containing objects", () => {
+      const toolCall = {
+        name: "read",
+        args: { filePaths: [{ path: "src/app.ts" }, { path: "../escaped.ts" }] }
+      };
+      expect(isSuperagentOutOfBounds(toolCall, worktreePath)).toBe(true);
+      expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(true);
+    });
+
     it("should allow safe read calls using filePaths array", () => {
       const toolCall = {
         name: "read",
         args: { filePaths: ["src/app.ts", "src/config.ts"] }
+      };
+      expect(isSuperagentOutOfBounds(toolCall, worktreePath)).toBe(false);
+      expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(false);
+    });
+
+    it("should allow safe read calls using filePaths array containing objects", () => {
+      const toolCall = {
+        name: "read",
+        args: { filePaths: [{ path: "src/app.ts" }, { path: "src/config.ts" }] }
       };
       expect(isSuperagentOutOfBounds(toolCall, worktreePath)).toBe(false);
       expect(isToolCallOutOfBounds(toolCall, workspacePath)).toBe(false);

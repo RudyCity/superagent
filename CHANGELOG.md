@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.196] - 2026-07-09
+
+### Fixed
+- Fixed a bug where `args.filePaths` containing per-file option objects (e.g., `{ path, offset, limit }`) were incorrectly serialized as `[object Object]` in tool descriptions and bypassed out-of-bounds safety boundary checks. Now, file path objects are correctly extracted and checked.
+
+---
+
 ## [1.2.195] - 2026-07-08
 
 ### Changed
