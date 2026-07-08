@@ -10,14 +10,16 @@
 
 const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill/terminate parent Node.js Superagent process. Do NOT run 'kill <pid>', 'taskkill /PID <pid>', 'pkill node'. Only kill child/spawned processes.`;
 
-const BATCH_OPS_RULE = `- BATCH_OPS: Use bulk/array parameters for ALL multi-file operations in ONE call:
+const BATCH_OPS_RULE = `- BATCH_OPS: Use bulk/array parameters for ALL multi-file and multi-task operations in ONE call:
   - read: 'filePaths' array (supports per-file {path, offset, limit} objects)
   - edit: 'edits' array
   - write_to_file: 'files' array
   - replace_file_content: 'edits' array
   - multi_replace_file_content: 'files' array
   - apply_patch: 'patches' array
-  NEVER call file tools sequentially for multiple files. Batch all reads upfront before processing.`;
+  - invoke_subagent: 'Subagents' array (pass multiple entries to spawn independent subagents concurrently)
+  - manage_tasks / manage_tasks_bulk: use bulk actions ('add_bulk', 'update_bulk', 'remove_bulk') instead of looping single task updates
+  NEVER call file or task tools sequentially when operating on multiple items. Batch all operations upfront.`;
 
 const FAST_ANALYSIS_RULE = `- FAST_ANALYSIS:
   - ALWAYS use grep/ripgrep to pinpoint exact locations first. NEVER read files or list folders blindly.
@@ -91,7 +93,7 @@ if decision_point:
 1. ANALYZE: Spawn a 'researcher' subagent to explore the codebase and identify dependencies. Split request into 1-5 independent feature tasks.
 2. PLAN: Write or edit implementation plan and task list using 'manage_plan'. Wait for user approval.
 3. PREPARE: Prune stale worktrees via 'git_worktree'.
-4. SPAWN: Spawn Superagents via 'invoke_superagent' (specify 'constraints' and 'acceptanceCriteria').
+4. SPAWN: Spawn Superagents via 'invoke_superagent' (specify 'constraints' and 'acceptanceCriteria'). If there are multiple independent tasks/features, spawn their respective Superagents concurrently (by calling 'invoke_superagent' for each one without waiting) before calling 'await_superagents' to enable parallel feature execution.
 5. MONITOR: Check progress via 'manage_superagents'.
 6. Await: Wait for completions via 'await_superagents'.
 7. MERGE: Run transactional 'merge_superagents'.
@@ -118,7 +120,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 ${PROTECT_PROCESS_RULE}
 - WORKSPACE_LIMIT: Only access, read, or modify files within: ${worktreePath}. Do NOT touch parent/sibling directories.
 - NO_NESTED_SUPERAGENTS: Calling 'invoke_superagent' is strictly blocked.
-- LEADERSHIP & DELEGATION: Maintain coordinator mindset. Delegate atomic tasks to Subagents ('researcher', 'coder', 'reviewer', 'manual-tester') via 'invoke_subagent'. Direct, review, and integrate their outputs.
+- LEADERSHIP & DELEGATION: Maintain coordinator mindset. Delegate atomic tasks to Subagents ('researcher', 'coder', 'reviewer', 'manual-tester') via 'invoke_subagent'. If there are multiple independent tasks, spawn their respective subagents concurrently in a single 'invoke_subagent' call using the 'Subagents' array parameter. Direct, review, and integrate their outputs.
 - PRE_MERGE_VALIDATION: Run build & test suites inside worktree before finishing. Fix all failures first.
 - GIT_COMMIT: Add & commit all changes to branch: ${branch} before finalizing. Use ";" instead of "&&" if on Windows.
 - PLAN_LIMIT: View, edit, sync, and update task status via 'manage_tasks' and 'manage_plan'. Direct file edits/writes to task or plan files are BLOCKED.
@@ -145,7 +147,7 @@ if decision_point:
 3. TASK_UPDATE: Mark task in-progress via 'manage_tasks' (action: 'update', index: <1-based_index>, status: '/').
    - Bulk: Use action 'update_bulk' with 'indices' array to update multiple tasks at once.
    - Remove finished tasks with 'remove' (single) or 'remove_bulk' with 'indices' array.
-4. IMPLEMENTATION: Delegate coding to 'coder' Subagents.
+4. IMPLEMENTATION: Delegate coding to 'coder' Subagents. If multiple independent tasks exist, spawn coding subagents concurrently.
 5. SELF_VERIFY (MANDATORY — AFTER EVERY CODE CHANGE):
     - Build: Run the project's build command (e.g. 'npm run build', 'cargo build', 'go build', 'mvn compile'). Fix ALL compile errors.
     - Test: Run the project's test suite (e.g. 'npm test', 'cargo test', 'pytest', 'go test ./...'). ALL tests must pass.

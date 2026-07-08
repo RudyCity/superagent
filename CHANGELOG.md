@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.189] - 2026-07-08
+
+### Changed
+- Optimized system prompts to strongly encourage parallel execution of independent tasks (e.g. concurrent subagent spawning via the 'Subagents' array parameter in 'invoke_subagent', and concurrent superagent spawning).
+- Prescribed bulk actions ('add_bulk', 'update_bulk', 'remove_bulk') inside BATCH_OPS prompt instructions to minimize sequential task updates.
+
+---
+
 ## [1.2.188] - 2026-07-08
 
 ### Changed
