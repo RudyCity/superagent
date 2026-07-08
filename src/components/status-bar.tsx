@@ -67,53 +67,48 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
     isProcessing = false,
   } = props;
 
-  if (!isProcessing) {
-    return (
-      <Box flexDirection="column" paddingX={1} marginTop={1}>
-        <Box justifyContent="space-between">
-          <Box>
-            <Text color="gray" bold>● READY</Text>
-            <Text color="gray"> │ </Text>
-            <Text color="cyanBright" bold>{modelName}</Text>
-            {presetName && (
-              <>
-                <Text color="gray"> │ </Text>
-                <Text color="gray">◆ {presetName}</Text>
-              </>
-            )}
-            {gitBranch && (
-              <>
-                <Text color="gray"> │ </Text>
-                <Text color="gray">🌿 {gitBranch}</Text>
-              </>
-            )}
-            <Text color="gray"> │ </Text>
-            <Text color="white">Msg: {messageCount}</Text>
-            <Text color="gray"> │ </Text>
-            <Text color={runningTasksCount > 0 ? "yellowBright" : "gray"}>Proc: {runningTasksCount}</Text>
-            <Text color="gray"> • </Text>
-            <Text color={runningSubagentsCount > 0 ? "cyanBright" : "gray"}>Sub: {runningSubagentsCount}</Text>
-            {lastSpeed !== null && (
-              <>
-                <Text color="gray"> │ </Text>
-                <Text color="yellowBright" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
-              </>
-            )}
-          </Box>
-          <Box>
-            <Text color="blueBright" bold>
-              Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})
-            </Text>
-          </Box>
-        </Box>
-      </Box>
-    );
-  }
-
   return (
     <Box flexDirection="column" paddingX={1} marginTop={1}>
-      <Box>
-        <LoadingIndicator />
+      <Box justifyContent="space-between">
+        <Box>
+          {/* Left badge: spinner when processing, READY when idle */}
+          {isProcessing ? (
+            <LoadingIndicator />
+          ) : (
+            <Text color="gray" bold>● READY</Text>
+          )}
+          <Text color="gray"> │ </Text>
+          <Text color="cyanBright" bold>{modelName}</Text>
+          {presetName && (
+            <>
+              <Text color="gray"> │ </Text>
+              <Text color="gray">◆ {presetName}</Text>
+            </>
+          )}
+          {gitBranch && (
+            <>
+              <Text color="gray"> │ </Text>
+              <Text color="gray">🌿 {gitBranch}</Text>
+            </>
+          )}
+          <Text color="gray"> │ </Text>
+          <Text color="white">Msg: {messageCount}</Text>
+          <Text color="gray"> │ </Text>
+          <Text color={runningTasksCount > 0 ? "yellowBright" : "gray"}>Proc: {runningTasksCount}</Text>
+          <Text color="gray"> • </Text>
+          <Text color={runningSubagentsCount > 0 ? "cyanBright" : "gray"}>Sub: {runningSubagentsCount}</Text>
+          {lastSpeed !== null && (
+            <>
+              <Text color="gray"> │ </Text>
+              <Text color="yellowBright" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
+            </>
+          )}
+        </Box>
+        <Box>
+          <Text color="blueBright" bold>
+            Ctx: {contextPercentage}% ({formatCompactNumber(activeContextUsage)}/{formatCompactNumber(contextLimit)})
+          </Text>
+        </Box>
       </Box>
     </Box>
   );
