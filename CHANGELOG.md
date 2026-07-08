@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.181] - 2026-07-08
+
+### Changed
+- Improved formatting when the timeline is hidden: decreased leading spacing/indentation in the terminal UI and adjusted line wrapping accordingly to shift conversation text closer to the left edge.
+
+---
+
 ## [1.2.180] - 2026-07-08
 
 ### Changed

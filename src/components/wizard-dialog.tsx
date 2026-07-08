@@ -110,7 +110,7 @@ export function WizardDialog({
       {/* Top border connecting to the timeline */}
       <Box flexDirection="row" width="100%">
         <Text color={borderColor} wrap="truncate-end">
-          {hideTimeline ? "     [ " : "├───[ "}<Text bold color={borderColor}>{renderDialogBodyText(title)}</Text> ]
+          {hideTimeline ? "  [ " : "├───[ "}<Text bold color={borderColor}>{renderDialogBodyText(title)}</Text> ]
         </Text>
       </Box>
 
@@ -161,7 +161,7 @@ export function WizardDialog({
 
       {/* Spacer after search/loading */}
       {(searchQuery !== undefined || isLoading) && (
-        <Box flexDirection="row"><Text color={borderColor}>{hideTimeline ? " " : "│"}</Text></Box>
+        <Box flexDirection="row"><Text color={borderColor}>{marginPrefix}</Text></Box>
       )}
 
       {/* Options prefixed with timeline line */}

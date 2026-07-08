@@ -189,8 +189,8 @@ export function wrapMarkdownToLines(
   let inCodeBlock = false;
   let codeLanguage = "";
 
-  const marginSpaces = hideTimeline ? "     " : "│    ";
-  const innerCodeSpaces = hideTimeline ? "        " : "│    │  ";
+  const marginSpaces = hideTimeline ? "  " : "│    ";
+  const innerCodeSpaces = hideTimeline ? "     " : "│    │  ";
 
   for (let idx = 0; idx < rawLines.length; idx++) {
     const l = rawLines[idx];
@@ -227,7 +227,7 @@ export function wrapMarkdownToLines(
       );
       lineResult.push({ node, lineIndex, type: "assistant" });
     } else if (inCodeBlock) {
-      const subLines = wrapTextForDisplay(l, chatWidth - 8);
+      const subLines = wrapTextForDisplay(l, chatWidth - innerCodeSpaces.length);
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
@@ -238,7 +238,7 @@ export function wrapMarkdownToLines(
         lineResult.push({ node, lineIndex, type: "assistant" });
       }
     } else if (l.startsWith("# ")) {
-      const subLines = wrapTextForDisplay(l.slice(2), chatWidth - 5);
+      const subLines = wrapTextForDisplay(l.slice(2), chatWidth - marginSpaces.length);
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
@@ -249,7 +249,7 @@ export function wrapMarkdownToLines(
         lineResult.push({ node, lineIndex, type: "assistant" });
       }
     } else if (l.startsWith("## ")) {
-      const subLines = wrapTextForDisplay(l.slice(3), chatWidth - 5);
+      const subLines = wrapTextForDisplay(l.slice(3), chatWidth - marginSpaces.length);
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
@@ -260,7 +260,7 @@ export function wrapMarkdownToLines(
         lineResult.push({ node, lineIndex, type: "assistant" });
       }
     } else if (l.startsWith("### ")) {
-      const subLines = wrapTextForDisplay(l.slice(4), chatWidth - 5);
+      const subLines = wrapTextForDisplay(l.slice(4), chatWidth - marginSpaces.length);
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
@@ -295,7 +295,7 @@ export function wrapMarkdownToLines(
         }
       }
 
-      const subLines = wrapTextForDisplay(remainingText, chatWidth - 5 - visibleLength(listPrefix));
+      const subLines = wrapTextForDisplay(remainingText, chatWidth - marginSpaces.length - visibleLength(listPrefix));
       for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
         const subLine = subLines[sIdx];
         const isFirstSubLine = sIdx === 0;
@@ -348,8 +348,8 @@ function wrapNestedChild(
   };
   const result: WrappedChatLine[] = [];
 
-  const childPrefix = hideTimeline ? "         " : "│        ";
-  const nestedChildPrefix = hideTimeline ? "              " : "│        │    ";
+  const childPrefix = hideTimeline ? "      " : "│        ";
+  const nestedChildPrefix = hideTimeline ? "           " : "│        │    ";
 
   if (child.type === "tool_start") {
     const content = child.content.replace(/^[⚡📖] /, "");
@@ -457,7 +457,7 @@ function wrapNestedChild(
 
       for (let idx = 1; idx < inputLines.length; idx++) {
         const l = inputLines[idx];
-        const subLines = wrapTextForDisplay(l, chatWidth - 14);
+        const subLines = wrapTextForDisplay(l, chatWidth - nestedChildPrefix.length);
         for (const subLine of subLines) {
           const node = (
             <Box flexDirection="row">
@@ -483,7 +483,7 @@ function wrapNestedChild(
           if (l.startsWith("Output:") || l.startsWith("Detail:")) {
             const labelType = l.startsWith("Output:") ? "Output: " : "Detail: ";
             const rest = l.substring(labelType.length);
-            const subLines = wrapTextForDisplay(rest, chatWidth - 14 - labelType.length);
+            const subLines = wrapTextForDisplay(rest, chatWidth - nestedChildPrefix.length - labelType.length);
             for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
               const sub = subLines[sIdx];
               const isFirstSub = sIdx === 0;
@@ -508,7 +508,7 @@ function wrapNestedChild(
               result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true });
             }
           } else {
-            const subLines = wrapTextForDisplay(l, chatWidth - 14);
+            const subLines = wrapTextForDisplay(l, chatWidth - nestedChildPrefix.length);
             for (const subLine of subLines) {
               const node = (
                 <Box flexDirection="row">
@@ -568,7 +568,7 @@ function wrapNestedChild(
         const isFirstLine = idx === 0;
         const cleanLine = l.replace(/^(Completed|Failed|Loaded instructions)\s*-\s*/i, "").trim();
 
-        const subLines = wrapTextForDisplay(isFirstLine ? cleanLine : l, chatWidth - 14);
+        const subLines = wrapTextForDisplay(isFirstLine ? cleanLine : l, chatWidth - nestedChildPrefix.length);
         for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
           const subLine = subLines[sIdx];
           const isFirstSub = isFirstLine && sIdx === 0;
@@ -608,7 +608,7 @@ function wrapNestedChild(
   } else {
     const contentLines = child.content.split("\n");
     for (const l of contentLines) {
-      const subLines = wrapTextForDisplay(l, chatWidth - 14);
+      const subLines = wrapTextForDisplay(l, chatWidth - nestedChildPrefix.length);
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
@@ -653,10 +653,10 @@ export function wrapChatLineToLines({
 }): WrappedChatLine[] {
   const result: WrappedChatLine[] = [];
 
-  const marginSpaces = hideTimeline ? "     " : "│    ";
-  const separatorSpaces = hideTimeline ? "  " : "│ ";
-  const connectorPrefix = hideTimeline ? "     [ " : "├─── [ ";
-  const connectorPlain = hideTimeline ? "     " : "├───";
+  const marginSpaces = hideTimeline ? "  " : "│    ";
+  const separatorSpaces = hideTimeline ? "" : "│ ";
+  const connectorPrefix = hideTimeline ? "  [ " : "├─── [ ";
+  const connectorPlain = hideTimeline ? "  " : "├───";
 
   switch (line.type) {
     case "user": {
@@ -664,13 +664,13 @@ export function wrapChatLineToLines({
       const headerNode = (
         <Box flexDirection="row">
           <Text color="gray" dimColor>
-            {hideTimeline ? "     [ " : `${isFirst ? "┌" : "├"}─── [ `}<Text bold color="cyan">👤 ACCESS_POINT: USER</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
+            {hideTimeline ? "  [ " : `${isFirst ? "┌" : "├"}─── [ `}<Text bold color="cyan">👤 ACCESS_POINT: USER</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
           </Text>
         </Box>
       );
       result.push({ node: headerNode, lineIndex, type: "user", isHeader: true });
 
-      const subLines = wrapTextForDisplay(content, chatWidth - 5);
+      const subLines = wrapTextForDisplay(content, chatWidth - marginSpaces.length);
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
@@ -697,7 +697,7 @@ export function wrapChatLineToLines({
       const headerNode = (
         <Box flexDirection="row">
           <Text color="gray" dimColor>
-            {hideTimeline ? "     [ " : `${isFirst ? "┌" : "├"}─── [ `}<Text bold color="gray">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
+            {hideTimeline ? "  [ " : `${isFirst ? "┌" : "├"}─── [ `}<Text bold color="gray">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
           </Text>
         </Box>
       );
@@ -789,7 +789,7 @@ export function wrapChatLineToLines({
                 hasClose = true;
               }
 
-              const detailSubLines = wrapTextForDisplay(remaining, chatWidth - 5 - (prefix.length + toolName.length + 2));
+              const detailSubLines = wrapTextForDisplay(remaining, chatWidth - marginSpaces.length - (prefix.length + toolName.length + 2));
               for (let sIdx = 0; sIdx < detailSubLines.length; sIdx++) {
                 const sub = detailSubLines[sIdx];
                 const isFirstSub = sIdx === 0;
@@ -820,7 +820,7 @@ export function wrapChatLineToLines({
             }
           }
 
-          const subLines = wrapTextForDisplay(l, chatWidth - 5);
+          const subLines = wrapTextForDisplay(l, chatWidth - marginSpaces.length);
           for (const subLine of subLines) {
             const node = (
               <Box flexDirection="row">
@@ -882,7 +882,7 @@ export function wrapChatLineToLines({
             const type = l.startsWith("Output:") ? "Output: " : "Detail: ";
             const rest = l.substring(type.length);
 
-            const subLines = wrapTextForDisplay(rest, chatWidth - 5 - type.length);
+            const subLines = wrapTextForDisplay(rest, chatWidth - marginSpaces.length - type.length);
             for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
               const sub = subLines[sIdx];
               const isFirstSub = sIdx === 0;
@@ -908,7 +908,7 @@ export function wrapChatLineToLines({
             continue;
           }
 
-          const subLines = wrapTextForDisplay(l, chatWidth - 5);
+          const subLines = wrapTextForDisplay(l, chatWidth - marginSpaces.length);
           for (const subLine of subLines) {
             const node = (
               <Box flexDirection="row">
@@ -956,7 +956,7 @@ export function wrapChatLineToLines({
 
         const contentLines = contentText.split("\n");
         for (const l of contentLines) {
-          const subLines = wrapTextForDisplay(l, chatWidth - 5);
+          const subLines = wrapTextForDisplay(l, chatWidth - marginSpaces.length);
           for (const subLine of subLines) {
             const node = (
               <Box flexDirection="row">
@@ -1003,7 +1003,7 @@ export function wrapChatLineToLines({
 
         const contentLines = line.content.split("\n");
         for (const l of contentLines) {
-          const subLines = wrapTextForDisplay(l, chatWidth - 5);
+          const subLines = wrapTextForDisplay(l, chatWidth - marginSpaces.length);
           for (const subLine of subLines) {
             const node = (
               <Box flexDirection="row">
@@ -1036,7 +1036,7 @@ export function wrapChatLineToLines({
 
       const contentLines = line.content.split("\n");
       for (const l of contentLines) {
-        const subLines = wrapTextForDisplay(l, chatWidth - 5);
+        const subLines = wrapTextForDisplay(l, chatWidth - marginSpaces.length);
         for (const subLine of subLines) {
           const node = (
             <Box flexDirection="row">
@@ -1176,16 +1176,16 @@ export function computeWrappedLines({
   const isLastLinesEmpty = lines.length === 0;
   const borderPrefix = isLastLinesEmpty ? "┌" : "├";
 
-  const marginSpaces = hideTimeline ? "     " : "│    ";
-  const connectorPrefix = hideTimeline ? "     [ " : "├─── [ ";
-  const connectorPlain = hideTimeline ? "     " : "├───";
+  const marginSpaces = hideTimeline ? "  " : "│    ";
+  const connectorPrefix = hideTimeline ? "  [ " : "├─── [ ";
+  const connectorPlain = hideTimeline ? "  " : "├───";
 
   const shouldRenderStream = isProcessing && streamDisplay && streamDisplay.trim().length > 0;
   if (shouldRenderStream) {
     const headerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>
-          {hideTimeline ? "     [ " : `${borderPrefix}─── [ `}<Text bold color="gray">✦ SUPERAGENT (STREAMING...)</Text> ]
+          {hideTimeline ? "  [ " : `${borderPrefix}─── [ `}<Text bold color="gray">✦ SUPERAGENT (STREAMING...)</Text> ]
         </Text>
       </Box>
     );
@@ -1200,7 +1200,7 @@ export function computeWrappedLines({
     const headerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>
-          {hideTimeline ? "     [ " : `${borderPrefix}─── [ `}<Text bold color="gray">✦ SUPERAGENT (THINKING...)</Text> ]
+          {hideTimeline ? "  [ " : `${borderPrefix}─── [ `}<Text bold color="gray">✦ SUPERAGENT (THINKING...)</Text> ]
         </Text>
       </Box>
     );
@@ -1219,7 +1219,7 @@ export function computeWrappedLines({
     const headerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>
-          {hideTimeline ? "     [ " : `${borderPrefix}─── [ `}<Text bold color="gray">SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
+          {hideTimeline ? "  [ " : `${borderPrefix}─── [ `}<Text bold color="gray">SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
         </Text>
       </Box>
     );
@@ -1243,7 +1243,7 @@ export function computeWrappedLines({
       result.push({ node: liveOutputHeader, lineIndex: -1, type: "tool_start" });
 
       for (const line of activeToolLines) {
-        const subLines = wrapTextForDisplay(line, chatWidth - 5);
+        const subLines = wrapTextForDisplay(line, chatWidth - marginSpaces.length);
         for (const subLine of subLines) {
           const node = (
             <Box flexDirection="row">
