@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.191] - 2026-07-08
+
+### Fixed
+- Fixed stray `[/SYS]` tag leak in assistant message text streaming and final responses by adding handling for square brackets in `StreamXmlFilter` and cleaning `[/SYS]` tags case-insensitively in `parseXmlToolCalls`.
+- Ensured `StreamXmlFilter` is always active during streamed responses to strip stray/verbose XML tags and `[/SYS]` tags even when native tool calling is supported/enabled.
+- Ensured `parseXmlToolCalls` is always run on streamed and non-streamed text responses to clean up leftover tags and avoid duplicate tool call registrations.
+
+---
+
 ## [1.2.190] - 2026-07-08
 
 ### Added

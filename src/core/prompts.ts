@@ -10,6 +10,8 @@
 
 const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill/terminate parent Node.js Superagent process. Do NOT run 'kill <pid>', 'taskkill /PID <pid>', 'pkill node'. Only kill child/spawned processes.`;
 
+const REASONING_RULE = `- REASONING: If your active model supports reasoning/thinking, utilize it to think through complex problems, verify assumptions, plan tasks, and explain design choices before acting.`;
+
 const BATCH_OPS_RULE = `- BATCH_OPS: Use bulk/array parameters for ALL multi-file and multi-task operations in ONE call:
   - read: 'filePaths' array (supports per-file {path, offset, limit} objects)
   - edit: 'edits' array
@@ -43,6 +45,7 @@ export const MASTER_AGENT_SYSTEM_PROMPT = `
 
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}
+${REASONING_RULE}
 - WORKSPACE_LIMIT: Direct file modification allowed ONLY on:
   - Implementation Plan File (via 'manage_plan')
   - Task Tracking File (via 'manage_plan' and 'manage_tasks')
@@ -118,6 +121,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}
+${REASONING_RULE}
 - WORKSPACE_LIMIT: Only access, read, or modify files within: ${worktreePath}. Do NOT touch parent/sibling directories.
 - NO_NESTED_SUPERAGENTS: Calling 'invoke_superagent' is strictly blocked.
 - LEADERSHIP & DELEGATION: Maintain coordinator mindset. Delegate atomic tasks to Subagents ('researcher', 'coder', 'reviewer', 'manual-tester') via 'invoke_subagent'. If there are multiple independent tasks, spawn their respective subagents concurrently in a single 'invoke_subagent' call using the 'Subagents' array parameter. Direct, review, and integrate their outputs.
@@ -185,6 +189,7 @@ export const SUBAGENT_SYSTEM_PROMPTS: Record<string, string> = {
 - LIMIT: Read-only. Do NOT modify files or system state.
 
 # CRITICAL RULES
+${REASONING_RULE}
 - RESEARCH: Prioritize using search, grep, and ripgrep tools to map codebase and gather context.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
@@ -222,6 +227,7 @@ if decision_point:
 
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}
+${REASONING_RULE}
 - LOCATE: Use read, glob, and grep tools (or ask the 'researcher' subagent) to locate target files/dependencies before modifying.
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
@@ -263,6 +269,7 @@ if decision_point:
 
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}
+${REASONING_RULE}
 - TRACE: Use grep and glob tools to trace usages of modified interfaces across codebase to check regressions.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
@@ -311,6 +318,7 @@ if decision_point:
 - LIMIT: Do NOT modify source code.
 
 # CRITICAL RULES
+${REASONING_RULE}
 - LOCATE: Use glob and grep tools to find test files/configurations.
 - BROWSER: Use Playwright, agent-browser, or cloakbrowser (for anti-bot protection like Cloudflare).
 ${BATCH_OPS_RULE}

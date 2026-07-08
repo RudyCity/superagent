@@ -1848,21 +1848,28 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 this.onEvent({ type: "reasoning", content: reasoningContent });
               }
               if (textContent) {
-                if (!supportsNativeTools) {
-                  try {
-                    const { parseXmlToolCalls } = await import("../utils/xmlToolParser.js");
-                    const parsed = parseXmlToolCalls(textContent, toolDefs);
-                    if (parsed.toolCalls.length > 0) {
-                      this.writeToLogFile(
-                        "INFO",
-                        `Parsed ${parsed.toolCalls.length} XML tool calls from non-streamed response`
+                try {
+                  const { parseXmlToolCalls } = await import("../utils/xmlToolParser.js");
+                  const parsed = parseXmlToolCalls(textContent, toolDefs);
+                  if (parsed.toolCalls.length > 0) {
+                    this.writeToLogFile(
+                      "INFO",
+                      `Parsed ${parsed.toolCalls.length} XML tool calls from non-streamed response`
+                    );
+                    for (const tc of parsed.toolCalls) {
+                      const isDuplicate = toolCalls.some(
+                        (existing) =>
+                          existing.name === tc.name &&
+                          JSON.stringify(existing.args) === JSON.stringify(tc.args)
                       );
-                      toolCalls.push(...parsed.toolCalls);
-                      textContent = parsed.cleanText;
+                      if (!isDuplicate) {
+                        toolCalls.push(tc);
+                      }
                     }
-                  } catch (err: any) {
-                    this.writeToLogFile("WARN", `Failed to parse XML tool calls: ${err.message}`);
                   }
+                  textContent = parsed.cleanText;
+                } catch (err: any) {
+                  this.writeToLogFile("WARN", `Failed to parse XML tool calls: ${err.message}`);
                 }
                 if (textContent) {
                   this.onEvent({ type: "text", content: textContent });
@@ -2073,11 +2080,13 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               });
 
               let xmlFilter: any = null;
-              if (!supportsNativeTools) {
+              try {
                 const { StreamXmlFilter } = await import("../utils/xmlToolParser.js");
                 xmlFilter = new StreamXmlFilter((text) => {
                   this.onEvent({ type: "text", content: text });
                 }, toolDefs);
+              } catch (err: any) {
+                this.writeToLogFile("WARN", `Failed to initialize StreamXmlFilter: ${err.message}`);
               }
 
               for await (const delta of result.fullStream) {
@@ -2213,7 +2222,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             }
           }
         }
-        if (toolCalls.length === 0 && textContent.trim()) {
+        if (textContent.trim()) {
           try {
             const { parseXmlToolCalls } = await import("../utils/xmlToolParser.js");
             const parsed = parseXmlToolCalls(textContent, toolDefs);
@@ -2222,9 +2231,18 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 "INFO",
                 `Parsed ${parsed.toolCalls.length} XML tool calls from model response text`
               );
-              toolCalls.push(...parsed.toolCalls);
-              textContent = parsed.cleanText;
+              for (const tc of parsed.toolCalls) {
+                const isDuplicate = toolCalls.some(
+                  (existing) =>
+                    existing.name === tc.name &&
+                    JSON.stringify(existing.args) === JSON.stringify(tc.args)
+                );
+                if (!isDuplicate) {
+                  toolCalls.push(tc);
+                }
+              }
             }
+            textContent = parsed.cleanText;
           } catch (err: any) {
             this.writeToLogFile("WARN", `Failed to parse XML tool calls: ${err.message}`);
           }

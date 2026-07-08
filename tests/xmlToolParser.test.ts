@@ -277,6 +277,24 @@ Let me execute these in sequence:
 
       expect(output).toBe("Before  After");
     });
+
+    it("should filter out [/SYS] and [/sys] tags during streaming", () => {
+      let output = "";
+      const filter = new StreamXmlFilter((text) => {
+        output += text;
+      }, toolDefs);
+
+      filter.push("Hello [/SYS]world![/sys]");
+      filter.flush();
+
+      expect(output).toBe("Hello world!");
+    });
+  });
+
+  it("should clean up [/SYS] tags from response text", () => {
+    const text = "Some intro [/SYS]text with [/sys] tags.";
+    const result = parseXmlToolCalls(text, toolDefs);
+    expect(result.cleanText).toBe("Some intro text with  tags.");
   });
 
   describe("DSML tool calls parsing", () => {

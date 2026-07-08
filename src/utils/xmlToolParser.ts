@@ -387,14 +387,15 @@ export function parseXmlToolCalls(
     }
   }
 
-  // Clean up any leftover/stray XML tool tags
+  // Clean up any leftover/stray XML tool tags and model system tags like [/SYS]
   cleanText = cleanText
     .replace(/([ \t]*│)?[ \t]*<\/function_calls\s*>/gi, "")
     .replace(/([ \t]*│)?[ \t]*<function_calls(?:\s+[^>]*)?>/gi, "")
     .replace(/([ \t]*│)?[ \t]*<\/tool_calls?\s*>/gi, "")
     .replace(/([ \t]*│)?[ \t]*<tool_calls?(?:\s+[^>]*)?>/gi, "")
     .replace(/([ \t]*│)?[ \t]*<\/tool_call\s*>/gi, "")
-    .replace(/([ \t]*│)?[ \t]*<tool_call(?:\s+[^>]*)?>/gi, "");
+    .replace(/([ \t]*│)?[ \t]*<tool_call(?:\s+[^>]*)?>/gi, "")
+    .replace(/\[\/SYS\]/gi, "");
 
   // Remove lines containing only space/tab and a vertical line
   cleanText = cleanText.replace(/^[ \t]*│[ \t]*(?:\r?\n|$)/gm, "");
@@ -513,7 +514,13 @@ export class StreamXmlFilter {
 
   flush() {
     if (this.buffer) {
-      this.onText(this.buffer);
+      const lower = this.buffer.toLowerCase();
+      if (lower.includes("[/sys]")) {
+        this.buffer = this.buffer.replace(/\[\/sys\]/gi, "");
+      }
+      if (this.buffer) {
+        this.onText(this.buffer);
+      }
       this.buffer = "";
     }
   }
@@ -521,55 +528,95 @@ export class StreamXmlFilter {
   private process() {
     while (true) {
       const ltIndex = this.buffer.indexOf("<");
-      if (ltIndex === -1) {
-        // No opening bracket, everything currently in buffer can be emitted
+      const sqIndex = this.buffer.indexOf("[");
+
+      let targetIndex = -1;
+      let isSquare = false;
+
+      if (ltIndex !== -1 && sqIndex !== -1) {
+        if (ltIndex < sqIndex) {
+          targetIndex = ltIndex;
+        } else {
+          targetIndex = sqIndex;
+          isSquare = true;
+        }
+      } else if (ltIndex !== -1) {
+        targetIndex = ltIndex;
+      } else if (sqIndex !== -1) {
+        targetIndex = sqIndex;
+        isSquare = true;
+      }
+
+      if (targetIndex === -1) {
+        // No opening tag or bracket, everything currently in buffer can be emitted
         this.onText(this.buffer);
         this.buffer = "";
         break;
       }
 
-      // We have an opening bracket.
-      if (ltIndex > 0) {
-        const rest = this.buffer.substring(ltIndex);
-        const isClosingTag = rest.startsWith("</");
-        const nameStart = isClosingTag ? 2 : 1;
-        let nameEnd = nameStart;
-        while (nameEnd < rest.length) {
-          const char = rest[nameEnd];
-          if (/[a-zA-Z0-9_-]/.test(char) || char === "｜" || char === "|") {
-            nameEnd++;
-          } else {
+      // We have an opening bracket or tag.
+      if (targetIndex > 0) {
+        const prefixText = this.buffer.substring(0, targetIndex);
+        let prefixLen = 0;
+
+        if (!isSquare) {
+          const rest = this.buffer.substring(targetIndex);
+          const isClosingTag = rest.startsWith("</");
+          const nameStart = isClosingTag ? 2 : 1;
+          let nameEnd = nameStart;
+          while (nameEnd < rest.length) {
+            const char = rest[nameEnd];
+            if (/[a-zA-Z0-9_-]/.test(char) || char === "｜" || char === "|") {
+              nameEnd++;
+            } else {
+              break;
+            }
+          }
+          if (nameEnd === rest.length) {
+            // Tag name is incomplete, wait for more data
             break;
           }
-        }
-        if (nameEnd === rest.length) {
-          // Tag name is incomplete, wait for more data
-          break;
-        }
 
-        const rawTagName = rest.substring(nameStart, nameEnd).trim();
-        const tagName = rawTagName
-          .replace(/｜｜DSML｜｜/gi, "")
-          .replace(/｜DSML｜/gi, "")
-          .replace(/\|\|DSML\|\|/gi, "")
-          .replace(/\|DSML\|/gi, "");
-        
-        const isToolTag = this.activeTags.includes(tagName) || tagName === "tool" || tagName === "tool_name";
-        
-        let prefixLen = 0;
-        if (isToolTag) {
-          const prefixText = this.buffer.substring(0, ltIndex);
-          const match = /[ \t]*│[ \t]*$/.exec(prefixText);
-          if (match) {
-            prefixLen = match[0].length;
+          const rawTagName = rest.substring(nameStart, nameEnd).trim();
+          const tagName = rawTagName
+            .replace(/｜｜DSML｜｜/gi, "")
+            .replace(/｜DSML｜/gi, "")
+            .replace(/\|\|DSML\|\|/gi, "")
+            .replace(/\|DSML\|/gi, "");
+
+          const isToolTag = this.activeTags.includes(tagName) || tagName === "tool" || tagName === "tool_name";
+
+          if (isToolTag) {
+            const match = /[ \t]*│[ \t]*$/.exec(prefixText);
+            if (match) {
+              prefixLen = match[0].length;
+            }
           }
         }
 
-        this.onText(this.buffer.substring(0, ltIndex - prefixLen));
-        this.buffer = this.buffer.substring(ltIndex);
+        this.onText(this.buffer.substring(0, targetIndex - prefixLen));
+        this.buffer = this.buffer.substring(targetIndex);
       }
 
-      // Now the buffer starts with '<'.
+      // Now the buffer starts with the character ('<' or '[') at index 0.
+
+      if (isSquare) {
+        const lowerBuf = this.buffer.toLowerCase();
+        const targetTag = "[/sys]";
+        if (lowerBuf.startsWith(targetTag)) {
+          // Match! Discard the tag
+          this.buffer = this.buffer.substring(targetTag.length);
+          continue;
+        }
+        if (targetTag.startsWith(lowerBuf)) {
+          // It's a prefix but incomplete, wait for more data
+          break;
+        }
+        // Not a match, emit the first character
+        this.onText(this.buffer[0]);
+        this.buffer = this.buffer.substring(1);
+        continue;
+      }
 
       // Check if it is a malformed tool call starting at index 0
       const malformedRegex = /^<tool(?:_name|\s+name)\s*=\s*"([^"]+)"\s*,?\s*["']arguments["']\s*:\s*/i;
