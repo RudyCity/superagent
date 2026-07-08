@@ -47,6 +47,12 @@ export interface SystemSettings {
   maxIterations: number;
   simpleTaskFileThreshold?: number;
   simpleTaskKeywords?: string[];
+  /** Enable multi-category request classifier for token optimization (default: true) */
+  classifierEnabled?: boolean;
+  /** Minimum heuristic confidence to skip LLM classification phase (default: "high") */
+  classifierConfidenceThreshold?: "high" | "medium" | "low";
+  /** Custom keyword overrides per request category */
+  classifierKeywords?: Record<string, string[]>;
   tencentdbGatewayUrl?: string;
   tencentdbGatewayApiKey?: string;
   tencentdbServiceId?: string;
@@ -745,6 +751,9 @@ export function getSettings(): SystemSettings {
     maxIterations: s.maxIterations ?? 50,
     simpleTaskFileThreshold: s.simpleTaskFileThreshold ?? 3,
     simpleTaskKeywords: s.simpleTaskKeywords ?? ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
+    classifierEnabled: s.classifierEnabled ?? true,
+    classifierConfidenceThreshold: s.classifierConfidenceThreshold ?? "high",
+    classifierKeywords: s.classifierKeywords ?? {},
     tencentdbGatewayUrl: s.tencentdbGatewayUrl ?? "http://127.0.0.1:8420",
     tencentdbGatewayApiKey: s.tencentdbGatewayApiKey ?? "sk-xxxx",
     tencentdbServiceId: s.tencentdbServiceId ?? "default",

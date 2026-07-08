@@ -256,6 +256,8 @@ export class Agent {
   public planState: "IDLE" | "PLANNING_PENDING" | "APPROVED" = "IDLE";
   public isSimpleTask: boolean = false;
   public simpleTaskApproved: boolean = false;
+  /** Multi-category classification result from the request classifier */
+  public currentClassification: import("./requestClassifier.js").ClassificationResult | null = null;
   public lastSpeed: number | null = null;
   public goalMode: string | null = null;
   public goalMaxIterations: number = 200;
@@ -928,9 +930,55 @@ If none of the options are suitable, still pick the closest one.`;
 
     if (this.planState === "IDLE" && (!process.env.VITEST || process.env.SUPERAGENT_TEST_SIMPLE_TASK === "true")) {
       try {
-        const model = this.getModel();
-        const threshold = getSettings().simpleTaskFileThreshold ?? 3;
-        const classificationPrompt = `You are a helper that classifies if a user request is a "simple task".
+        const settings = getSettings();
+        if (settings.classifierEnabled !== false) {
+          // Multi-category request classification for token optimization
+          const { classifyRequest } = await import("./requestClassifier.js");
+          const model = this.getModel();
+          const classification = await classifyRequest(userInput, model, {
+            confidenceThreshold: settings.classifierConfidenceThreshold ?? "high",
+            customKeywords: settings.classifierKeywords as any,
+            skipLLM: false,
+          });
+          this.currentClassification = classification;
+          this.writeToLogFile("INFO", `Request classified: category=${classification.category}, confidence=${classification.confidence}, heuristicOnly=${classification.heuristicOnly}, tokens=${classification.classificationTokens}, reason=${classification.reason}`);
+
+          // Track tokens for the classification call if LLM was used
+          if (!classification.heuristicOnly && classification.classificationTokens > 0) {
+            try {
+              const { addMasterTokens } = await import("./tools/state.js");
+              addMasterTokens(classification.classificationTokens, 0);
+            } catch {}
+          }
+
+          // Backward-compatible: set isSimpleTask for categories that skip planning
+          const skipPlanningCategories = ["conversation", "question", "simple_edit", "research", "debug", "command"];
+          if (skipPlanningCategories.includes(classification.category)) {
+            this.isSimpleTask = true;
+            this.planState = "APPROVED";
+
+            // Check for pre-approval keywords (auto-approve modifications)
+            const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
+            const lowerInput = userInputText.toLowerCase();
+            const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
+            const preApprovalWords = settings.simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
+            const hasPreApproval = preApprovalWords.some(word => {
+              if (word.includes(' ')) {
+                return lowerInput.includes(word);
+              }
+              return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
+            });
+
+            // For conversation/question categories, auto-approve since they won't modify files
+            if (classification.category === "conversation" || classification.category === "question" || classification.category === "research" || hasPreApproval) {
+              this.simpleTaskApproved = true;
+            }
+          }
+        } else {
+          // Fallback to legacy simpleTask classification when classifier is disabled
+          const model = this.getModel();
+          const threshold = settings.simpleTaskFileThreshold ?? 3;
+          const classificationPrompt = `You are a helper that classifies if a user request is a "simple task".
 A request is a "simple task" if it expects modification or creation of fewer than ${threshold} files and does NOT introduce any new architecture, major system changes, or complex orchestration.
 For example, simple refactorings, adding single simple functions, modifying specific existing logic, or fixing a simple bug are simple tasks.
 
@@ -938,40 +986,41 @@ User request: "${userInput}"
 
 Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply with nothing else.`;
 
-        const response = await generateText({
-          model,
-          prompt: classificationPrompt,
-        });
-
-        // Track tokens for the classification call
-        try {
-          const { addMasterTokens } = await import("./tools/state.js");
-          addMasterTokens(response.usage?.promptTokens || 0, response.usage?.completionTokens || 0);
-        } catch {}
-
-        const classification = response.text.trim().toLowerCase();
-        if (classification === "yes" || classification.includes("yes")) {
-          this.isSimpleTask = true;
-          this.planState = "APPROVED";
-          
-          const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
-          const lowerInput = userInputText.toLowerCase();
-          const words = lowerInput.split(/[^a-zA-Z0-9'’]+/).filter(Boolean);
-          const preApprovalWords = getSettings().simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
-          const hasPreApproval = preApprovalWords.some(word => {
-            if (word.includes(' ')) {
-              return lowerInput.includes(word);
-            }
-            return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
+          const response = await generateText({
+            model,
+            prompt: classificationPrompt,
           });
-          if (hasPreApproval) {
-            this.simpleTaskApproved = true;
+
+          try {
+            const { addMasterTokens } = await import("./tools/state.js");
+            addMasterTokens(response.usage?.promptTokens || 0, response.usage?.completionTokens || 0);
+          } catch {}
+
+          const classification = response.text.trim().toLowerCase();
+          if (classification === "yes" || classification.includes("yes")) {
+            this.isSimpleTask = true;
+            this.planState = "APPROVED";
+            
+            const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
+            const lowerInput = userInputText.toLowerCase();
+            const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
+            const preApprovalWords = settings.simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
+            const hasPreApproval = preApprovalWords.some(word => {
+              if (word.includes(' ')) {
+                return lowerInput.includes(word);
+              }
+              return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
+            });
+            if (hasPreApproval) {
+              this.simpleTaskApproved = true;
+            }
           }
         }
       } catch (err: any) {
         this.writeToLogFile("WARN", `Failed to classify user request: ${err.message}`);
       }
     }
+
 
     this.isRunning = true;
     this.abortController = new AbortController();
@@ -1141,7 +1190,10 @@ CRITICAL GOAL MODE RULES:
         }
 
         // Run workspace discovery and load/update cache if workspace files changed
-        if (!this.disableWorkspaceDiscovery && this.tier !== "subagent") {
+        const classifierSkipWsDiscovery = this.currentClassification
+          ? (await import("./requestClassifier.js")).shouldSkipWorkspaceDiscovery(this.currentClassification.category)
+          : false;
+        if (!this.disableWorkspaceDiscovery && this.tier !== "subagent" && !classifierSkipWsDiscovery) {
           const shouldScan = !this.workspaceCache || this.workspaceCacheNeedsUpdate;
           if (shouldScan) {
             try {
@@ -1221,6 +1273,26 @@ CRITICAL GOAL MODE RULES:
               input_schema: t.parameters,
             }))
           : getToolDefinitions();
+
+        // ── Classifier-based toolset filtering ──────────────────────────────
+        // Reduce tool definitions based on the request category to save tokens.
+        let filteredToolDefs = toolDefs;
+        if (this.currentClassification && i === 0) {
+          try {
+            const { getToolsetForCategory } = await import("./requestClassifier.js");
+            const filteredTools = getToolsetForCategory(this.currentClassification.category, toolsToUse || []);
+            if (filteredTools.length !== (toolsToUse?.length ?? toolDefs.length)) {
+              filteredToolDefs = filteredTools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                input_schema: t.parameters,
+              }));
+              this.writeToLogFile("INFO", `Classifier reduced toolset: ${toolDefs.length} -> ${filteredToolDefs.length} tools for category '${this.currentClassification.category}'`);
+            }
+          } catch {
+            // Non-critical: fall back to full toolset
+          }
+        }
 
         // Helper to get file existence status label
         const fileStatus = (filePath: string): string =>
@@ -1512,7 +1584,22 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         // HERE — never inside systemPrompt — so it is never converted to a PNG image.
         // planStateAddendum and followUpTaskAddendum remain here because they are
         // truly per-iteration state (approval status, task-reset notices).
-        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]${stepNotice}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${workspaceStateText}${workspaceBoundaryNotice}${planStateNotice}${planStateAddendum}${followUpTaskAddendum}`;
+
+        // ── Classifier-based plan state injection skip ──────────────────────
+        let classifierSkipPlan = false;
+        let classifierPromptAddendum = "";
+        if (this.currentClassification && i === 0) {
+          try {
+            const { shouldSkipPlanInjection, getCategoryPromptAddendum } = await import("./requestClassifier.js");
+            classifierSkipPlan = shouldSkipPlanInjection(this.currentClassification.category);
+            classifierPromptAddendum = getCategoryPromptAddendum(this.currentClassification.category);
+          } catch {}
+        }
+
+        const effectivePlanStateNotice = classifierSkipPlan ? "" : planStateNotice;
+        const effectivePlanStateAddendum = classifierSkipPlan ? "" : planStateAddendum;
+
+        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]${stepNotice}${classifierPromptAddendum}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${workspaceStateText}${workspaceBoundaryNotice}${effectivePlanStateNotice}${effectivePlanStateAddendum}${followUpTaskAddendum}`;
 
         const injectDynamicContext = (msgs: CoreMessage[]) => {
           if (msgs.length > 0) {
@@ -1620,7 +1707,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         if (!supportsNativeTools) {
           try {
             const { buildToolsSystemPromptBlock } = await import("../utils/promptBasedToolCalling.js");
-            const toolDefsForPrompt = toolDefs.map((t) => ({
+            const toolDefsForPrompt = filteredToolDefs.map((t) => ({
               name: t.name,
               description: t.description,
               input_schema: t.input_schema as any,
@@ -1725,7 +1812,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 messages: callMessages,
                 ...(supportsNativeTools && {
                   tools: Object.fromEntries(
-                    toolDefs.map((t) => [
+                    filteredToolDefs.map((t) => [
                       t.name,
                       {
                         description: t.description,
@@ -1948,7 +2035,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 messages: callMessages,
                 ...(supportsNativeTools && {
                   tools: Object.fromEntries(
-                    toolDefs.map((t) => [
+                    filteredToolDefs.map((t) => [
                       t.name,
                       {
                         description: t.description,

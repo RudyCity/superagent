@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.183] - 2026-07-08
+
+### Added
+- Multi-category request classifier (`src/core/requestClassifier.ts`) that classifies user input before the main agent loop into 7 categories: conversation, question, simple_edit, research, complex_task, debug, command.
+- Two-phase classification: zero-cost heuristic keyword matching first, optional LLM fallback for ambiguous inputs.
+- Category-based toolset filtering: conversation uses 0 tools, question/research use read-only tools, saving 8K-20K tokens per turn.
+- Workspace discovery skip for conversation category (no file scan needed for "ok"/"yes"/"thanks").
+- Plan state injection skip for conversation and question categories.
+- Category-specific prompt addendums for focused model behavior.
+- Settings: `classifierEnabled`, `classifierConfidenceThreshold`, `classifierKeywords` in `SystemSettings`.
+- Slash commands: `/setting-classifier <on|off>` and `/setting-classifier-threshold <high|medium|low>`.
+- 85 unit tests in `tests/requestClassifier.test.ts`.
+
+---
+
 ## [1.2.182] - 2026-07-08
 
 ### Changed

@@ -1354,6 +1354,88 @@ export const settingHideTimelineCommand: SlashCommand = {
   }
 };
 
+// /setting-classifier command
+export const settingClassifierCommand: SlashCommand = {
+  name: "setting-classifier",
+  description: "Enable or disable the multi-category request classifier for token optimization",
+  execute(args, ctx) {
+    const now = Date.now();
+    const val = args.trim();
+    if (!val) {
+      const settings = getSettings();
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-classifier <on|off>\nCurrent value: ${settings.classifierEnabled !== false ? "on" : "off"}\nConfidence threshold: ${settings.classifierConfidenceThreshold ?? "high"}`,
+        timestamp: now,
+      });
+      return;
+    }
+    if (val !== "on" && val !== "off") {
+      ctx.addLine({
+        type: "error",
+        content: "Invalid value. Must be 'on' or 'off'.",
+        timestamp: now,
+      });
+      return;
+    }
+    const enable = val === "on";
+    try {
+      updateSettings({ classifierEnabled: enable });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Request classifier set to: ${enable ? "ENABLED" : "DISABLED"}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
+// /setting-classifier-threshold command
+export const settingClassifierThresholdCommand: SlashCommand = {
+  name: "setting-classifier-threshold",
+  description: "Set the minimum heuristic confidence level to skip LLM classification (high|medium|low)",
+  execute(args, ctx) {
+    const now = Date.now();
+    const val = args.trim().toLowerCase();
+    if (!val) {
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-classifier-threshold <high|medium|low>\nCurrent value: ${getSettings().classifierConfidenceThreshold ?? "high"}\n\n- high: Only skip LLM when heuristic is very confident (most LLM calls, highest accuracy)\n- medium: Skip LLM for medium+ confidence (balanced)\n- low: Skip LLM for any heuristic match (fewest LLM calls, fastest but less accurate)`,
+        timestamp: now,
+      });
+      return;
+    }
+    if (val !== "high" && val !== "medium" && val !== "low") {
+      ctx.addLine({
+        type: "error",
+        content: "Invalid value. Must be 'high', 'medium', or 'low'.",
+        timestamp: now,
+      });
+      return;
+    }
+    try {
+      updateSettings({ classifierConfidenceThreshold: val as any });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Classifier confidence threshold set to: ${val}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
 registry.register(settingsCommand);
 registry.register(settingConcurrencyCommand);
 registry.register(settingRpmCommand);
@@ -1371,3 +1453,5 @@ registry.register(settingForcePromptToolsCommand);
 registry.register(settingAutoVisionCommand);
 registry.register(settingVisionThresholdCommand);
 registry.register(settingHideTimelineCommand);
+registry.register(settingClassifierCommand);
+registry.register(settingClassifierThresholdCommand);
