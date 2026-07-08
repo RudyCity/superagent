@@ -78,7 +78,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
             {presetName && (
               <>
                 <Text color="gray"> │ </Text>
-                <Text color="magentaBright">⚙ {presetName}</Text>
+                <Text color="gray">◆ {presetName}</Text>
               </>
             )}
             {gitBranch && (
