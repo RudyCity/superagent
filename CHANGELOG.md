@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.194] - 2026-07-08
+
+### Changed
+- Updated the `PROTECT_PROCESS_RULE` in `src/core/prompts.ts` to instruct the agent to kill all `node`/`bun`/`tsx` processes and retry if the terminal or process is locked.
+
+---
+
 ## [1.2.193] - 2026-07-08
 
 ### Fixed

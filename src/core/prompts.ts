@@ -8,7 +8,7 @@
 
 // ─── Shared Prompt Rule Blocks (defined once, injected into multiple prompts) ──
 
-const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill/terminate parent Node.js Superagent process. Do NOT run 'kill <pid>', 'taskkill /PID <pid>', 'pkill node'. Only kill child/spawned processes.`;
+const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill/terminate parent Node.js Superagent process. Do NOT run 'kill <pid>', 'taskkill /PID <pid>', 'pkill node'. Only kill child/spawned processes. If still locked, kill ALL bun/tsx processes and retry. Command details: 'taskkill //F //IM node.exe 2>&1 || true; taskkill //F //IM bun.exe 2>&1 || true;' (Windows Git Bash format) or 'pkill -f bun; pkill -f tsx; pkill -f node' (Unix format).`;
 
 const REASONING_RULE = `- REASONING: If your active model supports reasoning/thinking, utilize it to think through complex problems, verify assumptions, plan tasks, and explain design choices before acting.`;
 
