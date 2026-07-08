@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.193] - 2026-07-08
+
+### Fixed
+- Fixed a bug in `normalizePathsForImage` where Windows backslash paths containing brackets or parentheses (e.g. `Program Files (x86)`) were not normalized to forward slashes before text-to-image rendering, causing AI models to misread file paths.
+
+---
+
 ## [1.2.192] - 2026-07-08
 
 ### Changed

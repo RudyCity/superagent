@@ -9,6 +9,7 @@ import {
   attachmentToImagePart,
   formatFileSize,
 } from "../src/utils/imageUtils.js";
+import { normalizePathsForImage } from "../src/utils/textToImage.js";
 
 describe("imageUtils", () => {
   describe("isImageFilePath", () => {
@@ -100,4 +101,24 @@ describe("imageUtils", () => {
       }
     });
   });
+
+  describe("normalizePathsForImage", () => {
+    it("should normalize Windows absolute paths with backslashes to forward slashes", () => {
+      expect(normalizePathsForImage("C:\\Users\\foo")).toBe("C:/Users/foo");
+      expect(normalizePathsForImage("d:\\backup from pc asus\\Documents Development\\superagent\\src\\app.tsx"))
+        .toBe("d:/backup from pc asus/Documents Development/superagent/src/app.tsx");
+      expect(normalizePathsForImage("C:\\Program Files (x86)\\My-Folder(sub)\\test.png"))
+        .toBe("C:/Program Files (x86)/My-Folder(sub)/test.png");
+    });
+
+    it("should normalize Windows relative paths with backslashes to forward slashes", () => {
+      expect(normalizePathsForImage("Some relative path: .\\src\\app.tsx")).toBe("Some relative path: ./src/app.tsx");
+    });
+
+    it("should not mutate non-path backslash strings like escape sequences or regexes", () => {
+      expect(normalizePathsForImage("escaped characters \\n and \\t")).toBe("escaped characters \\n and \\t");
+      expect(normalizePathsForImage("regex like /\\\\/g")).toBe("regex like /\\\\/g");
+    });
+  });
 });
+
