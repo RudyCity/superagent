@@ -213,6 +213,88 @@ export function extractJSON(text: string): string {
   return text;
 }
 
+export function reconstructChatCompletionFromSse(rawText: string): any {
+  let accumulatedText = "";
+  const toolCallsMap = new Map<number, { id?: string; type?: string; name?: string; arguments: string }>();
+  let firstChunkJson: any = {};
+
+  for (const line of rawText.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    try {
+      const json = JSON.parse(payload);
+      if (!firstChunkJson.id && json.id) {
+        firstChunkJson = json;
+      }
+      
+      const choice = Array.isArray(json?.choices) ? json.choices[0] : undefined;
+      if (choice) {
+        const content = choice.delta?.content ?? choice.message?.content ?? choice.text;
+        if (typeof content === "string") {
+          accumulatedText += content;
+        } else if (Array.isArray(content)) {
+          accumulatedText += content
+            .map((part) => part?.text ?? part?.content ?? "")
+            .filter((part) => typeof part === "string" && part.length > 0)
+            .join("");
+        }
+
+        const deltaToolCalls = choice.delta?.tool_calls ?? choice.message?.tool_calls;
+        if (Array.isArray(deltaToolCalls)) {
+          for (const tc of deltaToolCalls) {
+            const idx = typeof tc.index === "number" ? tc.index : 0;
+            if (!toolCallsMap.has(idx)) {
+              toolCallsMap.set(idx, { arguments: "" });
+            }
+            const current = toolCallsMap.get(idx)!;
+            if (tc.id) current.id = tc.id;
+            if (tc.type) current.type = tc.type;
+            if (tc.function?.name) current.name = tc.function.name;
+            if (tc.function?.arguments) current.arguments += tc.function.arguments;
+          }
+        }
+      }
+    } catch {
+      // Ignore parsing errors of individual lines
+    }
+  }
+
+  const choicesMessage: any = {
+    role: "assistant",
+    content: accumulatedText || null,
+  };
+
+  if (toolCallsMap.size > 0) {
+    const toolCalls = Array.from(toolCallsMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([_, tc]) => ({
+        id: tc.id || `call_${Math.random().toString(36).substring(2, 11)}`,
+        type: tc.type || "function",
+        function: {
+          name: tc.name || "",
+          arguments: tc.arguments,
+        },
+      }));
+    choicesMessage.tool_calls = toolCalls;
+  }
+
+  return {
+    id: firstChunkJson.id || "chatcmpl-mock",
+    object: "chat.completion",
+    created: firstChunkJson.created || Math.floor(Date.now() / 1000),
+    model: firstChunkJson.model || "custom-model",
+    choices: [
+      {
+        index: 0,
+        message: choicesMessage,
+        finish_reason: toolCallsMap.size > 0 ? "tool_calls" : "stop",
+      },
+    ],
+  };
+}
+
 export function getModelInstance() {
   const config = getConfig();
   return getModelInstanceForString(config.model);
@@ -431,11 +513,24 @@ export function getModelInstanceForString(modelStr: string) {
       const response = await globalThis.fetch(url, options);
       
       let isStreamingRequest = false;
-      if (options && typeof options.body === "string") {
+      if (options && options.body) {
         try {
-          const bodyJson = JSON.parse(options.body);
-          if (bodyJson.stream === true) {
-            isStreamingRequest = true;
+          let bodyStr: string | null = null;
+          if (typeof options.body === "string") {
+            bodyStr = options.body;
+          } else if (options.body instanceof ArrayBuffer) {
+            bodyStr = new TextDecoder().decode(options.body);
+          } else if (ArrayBuffer.isView(options.body)) {
+            bodyStr = new TextDecoder().decode(options.body);
+          } else if (typeof (options.body as any).toString === "function") {
+            bodyStr = (options.body as any).toString();
+          }
+
+          if (bodyStr) {
+            const bodyJson = JSON.parse(bodyStr);
+            if (bodyJson.stream === true) {
+              isStreamingRequest = true;
+            }
           }
         } catch {
           // Ignore parsing errors
@@ -445,18 +540,27 @@ export function getModelInstanceForString(modelStr: string) {
       if (!isStreamingRequest) {
         try {
           let text = await response.text();
-          const cleanedText = extractJSON(text);
-          try {
-            JSON.parse(cleanedText);
-            text = cleanedText;
-          } catch {
-            // Ignore failures and fall back to original text
+          const contentType = response.headers.get("content-type") || "";
+          const isEventStream = contentType.includes("text/event-stream") || text.trim().startsWith("data:");
+
+          const headers = new Headers(response.headers);
+          if (isEventStream) {
+            headers.set("content-type", "application/json");
+            text = JSON.stringify(reconstructChatCompletionFromSse(text));
+          } else {
+            const cleanedText = extractJSON(text);
+            try {
+              JSON.parse(cleanedText);
+              text = cleanedText;
+            } catch {
+              // Ignore failures and fall back to original text
+            }
           }
           
           return new Response(text, {
             status: response.status,
             statusText: response.statusText,
-            headers: response.headers,
+            headers,
           });
         } catch {
           // Ignore failures and fall back to original response
@@ -465,7 +569,8 @@ export function getModelInstanceForString(modelStr: string) {
       return response;
     },
   });
-  return openai(modelName);
+  // Use .chat() to explicitly force Chat Completions API for custom base URLs/non-standard model names
+  return baseUrl ? openai.chat(modelName) : openai(modelName);
 }
 
 /**

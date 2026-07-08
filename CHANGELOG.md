@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.170] - 2026-07-08
+
+### Fixed
+- **Custom Provider SSE/Stream Interception and Parsing**:
+  - Resolved a Zod validation error (`choices[0].message: Required`) occurring when custom OpenAI-compatible provider endpoints returned SSE stream chunks for non-streaming requests.
+  - Implemented `reconstructChatCompletionFromSse` in [models.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/config/models.ts) to accumulate streamed content and tool calls from SSE chunks into a standard, valid OpenAI non-streaming chat completion JSON response.
+  - Enhanced body payload decoding in the custom fetch interceptor to support `ArrayBuffer` and `ArrayBufferView` (e.g. `Uint8Array`) formats, correctly identifying streaming requests.
+  - Changed custom provider wrappers to use `openai.chat(modelName)` when custom `baseUrl` is configured, explicitly forcing the Chat Completions protocol.
+  - Added test coverage in [openaiJsonParsingFix.test.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/tests/openaiJsonParsingFix.test.ts).
+
+---
+
 ## [1.2.169] - 2026-07-08
 
 ### Fixed
