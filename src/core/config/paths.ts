@@ -81,3 +81,19 @@ export function getWorkspaceTasksFilePath(): string {
   }
   return path.join(wsDir, "background-tasks.json");
 }
+
+/**
+ * Returns the directory for task log files scoped to the current workspace.
+ * Each project/CWD gets its own isolated log directory under:
+ *   ~/.superagent-r/workspaces/<cwd-hash>/tasks/
+ * This prevents log files from different projects mixing in a shared directory.
+ */
+export function getWorkspaceTasksLogDir(): string {
+  const root = getRootConfigDir();
+  const wsId = getWorkspaceId();
+  const logDir = path.join(root, "workspaces", wsId, "tasks");
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+  return logDir;
+}

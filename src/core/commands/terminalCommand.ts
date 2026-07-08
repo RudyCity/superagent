@@ -10,7 +10,7 @@ import {
   getPresetLabel, 
   findPreset 
 } from "./types.js";
-import { getGlobalConfigDir } from "../config.js";
+import { getGlobalConfigDir, getWorkspaceTasksLogDir } from "../config.js";
 import { 
   backgroundTasks, 
   notifyTasksChanged, 
@@ -217,7 +217,7 @@ export const terminalCommand: SlashCommand = {
 
         const tasksLogDir = sessionPath
           ? path.join(path.dirname(sessionPath), "tasks")
-          : path.join(getGlobalConfigDir(), "tasks");
+          : getWorkspaceTasksLogDir();
         if (!fsCb.existsSync(tasksLogDir)) fsCb.mkdirSync(tasksLogDir, { recursive: true });
         const logPath = path.join(tasksLogDir, `${taskId}.log`);
         try { fsCb.writeFileSync(logPath, ""); } catch { /* ignore */ }
@@ -367,7 +367,7 @@ export const terminalCommand: SlashCommand = {
         const taskId = `term-${Math.random().toString(36).substring(2, 9)}`;
         const windowLabel = labelOverride || presetName || commandStr.split(" ")[0];
 
-        const logDir = path.join(getGlobalConfigDir(), "tasks");
+        const logDir = getWorkspaceTasksLogDir();
         if (!fsCb.existsSync(logDir)) fsCb.mkdirSync(logDir, { recursive: true });
         const logPath = path.join(logDir, `${taskId}.log`);
         const closeSignalPath = path.join(logDir, `${taskId}.closed.json`);

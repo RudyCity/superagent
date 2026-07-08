@@ -1,6 +1,19 @@
 # Changelog
 
+## [1.2.177] - 2026-07-08
+
+### Fixed
+- **Workspace-Scoped Task Log Files**:
+  - Task log files previously stored in a global shared `~/.superagent-r/tasks/` directory.
+  - Now stored in `~/.superagent-r/workspaces/<cwd-hash>/tasks/` — fully isolated per project.
+  - Added `getWorkspaceTasksLogDir()` helper to `src/core/config/paths.ts`.
+  - Updated `shellTools.ts` (`run_background_process` fallback) and both log dir usages in `terminalCommand.ts` (inline bg-terminal + detached terminal) to use the scoped path.
+  - Stale log files are now automatically pruned together with their workspace directory after 7 days.
+
+---
+
 ## [1.2.176] - 2026-07-08
+
 
 ### Fixed
 - **Legacy Task Migration & Stale Workspace Cleanup**:

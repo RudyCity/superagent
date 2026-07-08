@@ -9,6 +9,7 @@ import {
   getGlobalConfigDir,
   ensureGlobalConfigDir,
   listHistorySessions,
+  getWorkspaceTasksLogDir,
 } from "../src/core/config.js";
 import {
   createCheckpoint,
@@ -239,7 +240,7 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
       expect(fs.existsSync(expectedLogPath)).toBe(true);
     });
 
-    it("should fallback to global config's 'tasks' folder when SUPERAGENT_SESSION_PATH is not set", async () => {
+    it("should fallback to workspace-scoped 'tasks' folder when SUPERAGENT_SESSION_PATH is not set", async () => {
       // Unset SUPERAGENT_SESSION_PATH
       delete process.env.SUPERAGENT_SESSION_PATH;
 
@@ -251,8 +252,8 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
       const taskId = result.split("ID: ")[1]?.trim() || "";
       expect(taskId).toBeTruthy();
 
-      // Log path should be under getGlobalConfigDir()/tasks/
-      const expectedLogDir = path.join(getGlobalConfigDir(), "tasks");
+      // Log path should now be under workspace-scoped tasks dir, not global
+      const expectedLogDir = getWorkspaceTasksLogDir();
       const expectedLogPath = path.join(expectedLogDir, `${taskId}.log`);
 
       expect(fs.existsSync(expectedLogPath)).toBe(true);

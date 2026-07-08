@@ -3,7 +3,7 @@ import { exec } from "child_process";
 import path from "path";
 import fs from "fs";
 import { Tool, BackgroundTask } from "./types.js";
-import { getGlobalConfigDir, getRootConfigDir } from "../config.js";
+import { getGlobalConfigDir, getRootConfigDir, getWorkspaceTasksLogDir } from "../config.js";
 import { 
   formatCommandForPowerShell, 
   truncateOutput, 
@@ -480,7 +480,7 @@ export const runBackgroundProcessTool: Tool = {
 
     const tasksLogDir = sessionPath
       ? path.join(path.dirname(sessionPath), "tasks")
-      : path.join(getGlobalConfigDir(), "tasks");
+      : getWorkspaceTasksLogDir();
     if (!fs.existsSync(tasksLogDir)) {
       fs.mkdirSync(tasksLogDir, { recursive: true });
     }
