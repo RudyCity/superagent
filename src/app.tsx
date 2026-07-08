@@ -4,7 +4,7 @@ import ChatTextInput from "./components/ChatTextInput.js";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler, QuestionItem } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
-import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel, getSettings, getModelPresets } from "./core/config.js";
+import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel, getSettings, getModelPresets, getActivePreset } from "./core/config.js";
 import { type MessageContent, contentToString } from "./core/conversation.js";
 import ImageAttachmentBar from "./components/ImageAttachmentBar.js";
 import {
@@ -204,6 +204,9 @@ export function App({
   const [wizardIsLoadingModels, setWizardIsLoadingModels] = useState(false);
   const [planState, setPlanState] = useState<"IDLE" | "PLANNING_PENDING" | "APPROVED">("IDLE");
   const [activeModel, setActiveModel] = useState(() => getEffectiveMasterModel("single") || getDefaultModel());
+  const [activePresetName, setActivePresetName] = useState(() => {
+    try { return getActivePreset<any>("single")?.name || ""; } catch { return ""; }
+  });
   const [activeFocus, setActiveFocus] = useState(() => getSettings().focus || "off");
   const [checklistTasks, setChecklistTasks] = useState<{ status: string; text: string }[]>([]);
   const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string; remainingSeconds?: number }[]>([]);
@@ -217,6 +220,15 @@ export function App({
       setFocusMode("input");
     }
   }, [activeWizard]);
+
+  // Refresh active preset name whenever model changes (e.g. after /model or /login)
+  useEffect(() => {
+    try {
+      setActivePresetName(getActivePreset<any>("single")?.name || "");
+    } catch {
+      setActivePresetName("");
+    }
+  }, [activeModel]);
 
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
 
@@ -2506,6 +2518,7 @@ export function App({
       {/* Render Status Bar */}
       <StatusBar
         modelName={activeModel}
+        presetName={activePresetName}
         contextPercentage={contextPercentage}
         tokensUp={tokensUp}
         tokensDown={tokensDown}

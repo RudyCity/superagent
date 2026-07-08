@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.174] - 2026-07-08
+
+### Added
+- **Active Preset Name in Status Bar Footer**:
+  - Added `presetName` prop to `StatusBar` component.
+  - Displays the current active model preset name (⚙ preset-name) in the footer between the model name and git branch.
+  - Automatically refreshes when the model changes (e.g. after `/model` or `/login` wizard).
+
+---
+
 ## [1.2.173] - 2026-07-08
 
 ### Fixed

@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 
 export interface StatusBarProps {
   modelName: string;
+  presetName?: string;
   contextPercentage: number;
   tokensUp: number;
   tokensDown: number;
@@ -53,6 +54,7 @@ function LoadingIndicator() {
 export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
   const {
     modelName,
+    presetName,
     contextPercentage,
     activeContextUsage,
     contextLimit,
@@ -73,6 +75,12 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
             <Text color="gray" bold>● READY</Text>
             <Text color="gray"> │ </Text>
             <Text color="cyanBright" bold>{modelName}</Text>
+            {presetName && (
+              <>
+                <Text color="gray"> │ </Text>
+                <Text color="magentaBright">⚙ {presetName}</Text>
+              </>
+            )}
             {gitBranch && (
               <>
                 <Text color="gray"> │ </Text>
