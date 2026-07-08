@@ -221,14 +221,16 @@ export function App({
     }
   }, [activeWizard]);
 
-  // Refresh active preset name whenever model changes (e.g. after /model or /login)
+  // Refresh active preset name whenever model changes OR wizard closes (e.g. after /model or /login).
+  // Dual dependency covers: (1) model changed → activeModel differs, (2) same model but different
+  // preset → activeModel is unchanged but activeWizard just turned null.
   useEffect(() => {
     try {
       setActivePresetName(getActivePreset<any>("single")?.name || "");
     } catch {
       setActivePresetName("");
     }
-  }, [activeModel]);
+  }, [activeModel, activeWizard]);
 
   const [historySelectedIndex, setHistorySelectedIndex] = useState<number>(0);
 
