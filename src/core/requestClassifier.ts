@@ -52,14 +52,14 @@ const CONVERSATION_EXACT: ReadonlySet<string> = new Set([
 const CONVERSATION_PHRASES: readonly string[] = [
   "go ahead", "let's go", "do it", "sounds good", "that's fine",
   "no problem", "alright", "fine by me", "i agree", "approved",
-  "looks good", "lgtm",
+  "looks good", "lgtm", "thank you very much", "terima kasih banyak", "makasih banyak",
 ];
 
 /** Question starter words */
 const QUESTION_STARTERS: readonly string[] = [
   "what", "where", "how", "why", "when", "which", "who",
   "explain", "describe", "tell me", "show me", "can you explain",
-  "apa", "dimana", "bagaimana", "kenapa", "kapan",
+  "apa", "dimana", "bagaimana", "kenapa", "kapan", "apakah", "siapa", "siapakah", "mengapa",
   "is it", "is there", "are there", "does it", "do we",
   "could you", "would you",
 ];
@@ -80,6 +80,7 @@ const DEBUG_KEYWORDS: readonly string[] = [
   "throw", "thrown", "stacktrace", "stack trace",
   "debug", "diagnose", "troubleshoot",
   "TypeError", "ReferenceError", "SyntaxError",
+  "gagal", "rusak", "salah", "bermasalah",
 ];
 
 /** Research/exploration indicator keywords */
@@ -88,7 +89,7 @@ const RESEARCH_KEYWORDS: readonly string[] = [
   "where is", "where are", "locate", "explore",
   "show me all", "list all", "find all",
   "grep", "cari", "cek", "check if",
-  "investigate", "scan", "audit",
+  "investigate", "scan", "audit", "temukan", "telusuri",
 ];
 
 /** Complex task indicator keywords */
@@ -98,13 +99,14 @@ const COMPLEX_KEYWORDS: readonly string[] = [
   "add feature", "new feature", "migrate", "upgrade",
   "architecture", "system", "module", "integration",
   "buat", "bikin", "tambahkan", "tambah fitur",
+  "schema", "database", "auth", "oauth", "docker", "kubernetes", "migrasi", "integrasi", "refaktor", "rancang",
 ];
 
 /** Command action indicator keywords */
 const COMMAND_KEYWORDS: readonly string[] = [
   "run", "execute", "start", "stop", "test", "deploy", "commit", "push", "pull",
   "install", "pnpm", "npm", "yarn", "bun", "git", "docker", "cargo", "pip", "npx",
-  "jalankan", "jalanin", "coba", "running", "runnign",
+  "jalankan", "jalanin", "coba", "running", "runnign", "tes", "uji",
 ];
 
 // ─── Heuristic Classifier ────────────────────────────────────────────────────
@@ -120,13 +122,16 @@ export function classifyHeuristic(
   const text = typeof userInput === "string" ? userInput : "";
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
-  const words = lower.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
+  
+  // Clean punctuation from start/end of string for exact matching
+  const cleanLower = lower.replace(/^[!?.,\s()'"-]+|[!?.,\s()'"-]+$/g, "").trim();
+  const words = cleanLower.split(/[^a-zA-Z0-9']+/).filter(Boolean);
   const wordCount = words.length;
 
   // ── Ultra-short messages (1-3 words) ──────────────────────────────────
   if (wordCount <= 3) {
     // Check exact match against conversation tokens
-    if (CONVERSATION_EXACT.has(lower) || words.every(w => CONVERSATION_EXACT.has(w))) {
+    if (CONVERSATION_EXACT.has(cleanLower) || words.every(w => CONVERSATION_EXACT.has(w))) {
       return {
         category: "conversation",
         confidence: "high",
@@ -138,7 +143,7 @@ export function classifyHeuristic(
 
     // Merge custom conversation keywords
     const customConv = customKeywords?.conversation || [];
-    if (customConv.some(kw => lower === kw.toLowerCase() || words.includes(kw.toLowerCase()))) {
+    if (customConv.some(kw => cleanLower === kw.toLowerCase() || words.includes(kw.toLowerCase()))) {
       return {
         category: "conversation",
         confidence: "high",
@@ -151,7 +156,7 @@ export function classifyHeuristic(
 
   // ── Conversation phrase matching ──────────────────────────────────────
   if (wordCount <= 6) {
-    if (CONVERSATION_PHRASES.some(phrase => lower.includes(phrase))) {
+    if (CONVERSATION_PHRASES.some(phrase => cleanLower.includes(phrase))) {
       return {
         category: "conversation",
         confidence: "high",
@@ -163,13 +168,13 @@ export function classifyHeuristic(
   }
 
   // ── Question detection (high confidence for clear patterns) ───────────
-  const startsWithQuestion = QUESTION_STARTERS.some(q => lower.startsWith(q));
-  const hasQuestionPhrase = QUESTION_PHRASES.some(p => lower.includes(p));
-  const endsWithQuestion = trimmed.endsWith("?");
+  const startsWithQuestion = QUESTION_STARTERS.some(q => cleanLower.startsWith(q));
+  const hasQuestionPhrase = QUESTION_PHRASES.some(p => cleanLower.includes(p));
+  const endsWithQuestion = cleanLower.endsWith("?") || trimmed.endsWith("?");
 
   if ((startsWithQuestion && endsWithQuestion) || hasQuestionPhrase) {
     // Strong question signal: question word + question mark, or explicit question phrase
-    const hasEditIntent = /\b(change|edit|modify|update|add|remove|delete|fix|replace)\b/i.test(trimmed);
+    const hasEditIntent = /\b(change|edit|modify|update|add|remove|delete|fix|replace|write|create|make|run|test|execute)\b/i.test(trimmed);
     if (!hasEditIntent) {
       return {
         category: "question",
@@ -181,19 +186,9 @@ export function classifyHeuristic(
     }
   }
 
-  if (startsWithQuestion || endsWithQuestion) {
-    return {
-      category: "question",
-      confidence: "medium",
-      reason: `Possible question: starts with question word=${startsWithQuestion}, ends with ?=${endsWithQuestion}`,
-      heuristicOnly: true,
-      classificationTokens: 0,
-    };
-  }
-
   // ── Debug detection ───────────────────────────────────────────────────
-  const debugScore = DEBUG_KEYWORDS.filter(kw => lower.includes(kw)).length;
-  const customDebug = (customKeywords?.debug || []).filter(kw => lower.includes(kw.toLowerCase())).length;
+  const debugScore = DEBUG_KEYWORDS.filter(kw => cleanLower.includes(kw)).length;
+  const customDebug = (customKeywords?.debug || []).filter(kw => cleanLower.includes(kw.toLowerCase())).length;
   if (debugScore + customDebug >= 2) {
     return {
       category: "debug",
@@ -214,8 +209,8 @@ export function classifyHeuristic(
   }
 
   // ── Research detection ────────────────────────────────────────────────
-  const researchScore = RESEARCH_KEYWORDS.filter(kw => lower.includes(kw)).length;
-  const customResearch = (customKeywords?.research || []).filter(kw => lower.includes(kw.toLowerCase())).length;
+  const researchScore = RESEARCH_KEYWORDS.filter(kw => cleanLower.includes(kw)).length;
+  const customResearch = (customKeywords?.research || []).filter(kw => cleanLower.includes(kw.toLowerCase())).length;
   if (researchScore + customResearch >= 1 && wordCount <= 15) {
     return {
       category: "research",
@@ -227,8 +222,8 @@ export function classifyHeuristic(
   }
 
   // ── Complex task detection ────────────────────────────────────────────
-  const complexScore = COMPLEX_KEYWORDS.filter(kw => lower.includes(kw)).length;
-  const customComplex = (customKeywords?.complex_task || []).filter(kw => lower.includes(kw.toLowerCase())).length;
+  const complexScore = COMPLEX_KEYWORDS.filter(kw => cleanLower.includes(kw)).length;
+  const customComplex = (customKeywords?.complex_task || []).filter(kw => cleanLower.includes(kw.toLowerCase())).length;
   if (complexScore + customComplex >= 2 || (complexScore + customComplex >= 1 && wordCount > 15)) {
     return {
       category: "complex_task",
@@ -239,10 +234,9 @@ export function classifyHeuristic(
     };
   }
 
-
   // ── Command detection ─────────────────────────────────────────────────
-  const commandScore = COMMAND_KEYWORDS.filter(kw => lower.includes(kw)).length;
-  const customCommand = (customKeywords?.command || []).filter(kw => lower.includes(kw.toLowerCase())).length;
+  const commandScore = COMMAND_KEYWORDS.filter(kw => cleanLower.includes(kw)).length;
+  const customCommand = (customKeywords?.command || []).filter(kw => cleanLower.includes(kw.toLowerCase())).length;
   if (commandScore + customCommand >= 1) {
     return {
       category: "command",
@@ -260,6 +254,17 @@ export function classifyHeuristic(
       category: "simple_edit",
       confidence: "medium",
       reason: `Edit verb detected in short message (${wordCount} words)`,
+      heuristicOnly: true,
+      classificationTokens: 0,
+    };
+  }
+
+  // ── Weak/Possible question detection (Moved to bottom to prevent hijacking) ──
+  if (startsWithQuestion || endsWithQuestion) {
+    return {
+      category: "question",
+      confidence: "medium",
+      reason: `Possible question: starts with question word=${startsWithQuestion}, ends with ?=${endsWithQuestion}`,
       heuristicOnly: true,
       classificationTokens: 0,
     };
@@ -289,19 +294,21 @@ export async function classifyWithLLM(
   try {
     const { generateText } = await import("ai");
 
-    const classificationPrompt = `Classify user request intent. Reply with EXACTLY one word from: conversation, question, simple_edit, research, complex_task, debug, command
+    const classificationPrompt = `# ROLE
+Classify user request intent.
+Reply with EXACTLY one word from: conversation, question, simple_edit, research, complex_task, debug, command.
 
-Rules:
-- conversation: greetings, acknowledgments, yes/no, thanks, approval
-- question: asking about code/concepts/explanations (no file changes)
-- simple_edit: small code change affecting 1-3 files
-- research: codebase exploration, finding/searching, investigation
-- complex_task: major feature, refactor, architecture, multi-file work
-- debug: bug fixing, error investigation, troubleshooting
-- command: direct action (run test, build, deploy, commit)
+# RULES
+- conversation: greetings, acknowledgments, yes/no, thanks, approval, proceed signals.
+- question: asking about code/concepts/explanations. NO file changes.
+- simple_edit: minor code changes affecting 1-3 files.
+- research: searching, finding, exploration, audits.
+- complex_task: major features, refactoring, migrations, multi-file architecture.
+- debug: bug fixing, error resolution, troubleshooting.
+- command: direct commands (run test, build, deploy, commit).
 
+# CONTEXT
 Heuristic guess: ${heuristicResult.category} (${heuristicResult.confidence})
-
 User request: "${userInput.substring(0, 500)}"
 
 Category:`;
@@ -359,28 +366,27 @@ export async function classifyRequest(
     ? userInput
     : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
 
-  const threshold = options?.confidenceThreshold ?? "medium";
+  const trimmedText = text.trim();
 
-  // Phase 1: Heuristic
-  const heuristic = classifyHeuristic(text, options?.customKeywords);
-
-  // Determine if LLM phase is needed
-  const confidenceRank: Record<ClassificationConfidence, number> = {
-    high: 3,
-    medium: 2,
-    low: 1,
-  };
-
-  const needsLLM = !options?.skipLLM &&
-    confidenceRank[heuristic.confidence] < confidenceRank[threshold] &&
-    model;
-
-  if (!needsLLM) {
-    return heuristic;
+  // If input is empty/whitespace, classify as conversation immediately (no LLM call needed)
+  if (!trimmedText) {
+    return {
+      category: "conversation",
+      confidence: "high",
+      reason: "Empty or whitespace-only input",
+      heuristicOnly: true,
+      classificationTokens: 0,
+    };
   }
 
-  // Phase 2: LLM classification
-  return classifyWithLLM(text, model, heuristic);
+  // AI-First Classification: If AI classification is enabled and a model is provided, go straight to LLM
+  if (!options?.skipLLM && model) {
+    const heuristicGuess = classifyHeuristic(text, options?.customKeywords);
+    return classifyWithLLM(text, model, heuristicGuess);
+  }
+
+  // Fallback to heuristic
+  return classifyHeuristic(text, options?.customKeywords);
 }
 
 // ─── Toolset Filtering ──────────────────────────────────────────────────────

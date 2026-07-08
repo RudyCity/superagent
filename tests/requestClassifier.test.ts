@@ -5,9 +5,11 @@
  * skip flags, and edge cases.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { generateText } from "ai";
 import {
   classifyHeuristic,
+  classifyRequest,
   getToolsetForCategory,
   shouldSkipWorkspaceDiscovery,
   shouldSkipPlanInjection,
@@ -15,6 +17,10 @@ import {
   type RequestCategory,
   type ClassificationResult,
 } from "../src/core/requestClassifier.js";
+
+vi.mock("ai", () => ({
+  generateText: vi.fn(),
+}));
 
 // ─── Heuristic Classifier Tests ─────────────────────────────────────────────
 
@@ -323,5 +329,97 @@ describe("getCategoryPromptAddendum", () => {
 
   it("should return empty string for simple_edit", () => {
     expect(getCategoryPromptAddendum("simple_edit")).toBe("");
+  });
+});
+
+// ─── Heuristic Enhancement Tests ──────────────────────────────────────────────
+
+describe("classifyHeuristic Enhancements", () => {
+  describe("punctuation and spacing fixes", () => {
+    it("should classify 'thank you!' as conversation", () => {
+      const result = classifyHeuristic("thank you!");
+      expect(result.category).toBe("conversation");
+      expect(result.confidence).toBe("high");
+    });
+
+    it("should classify 'terima kasih.' as conversation", () => {
+      const result = classifyHeuristic("terima kasih.");
+      expect(result.category).toBe("conversation");
+      expect(result.confidence).toBe("high");
+    });
+  });
+
+  describe("question mark hijacking fixes", () => {
+    it("should classify 'fix the build error?' as debug", () => {
+      const result = classifyHeuristic("fix the build error?");
+      expect(result.category).toBe("debug");
+      expect(result.confidence).toBe("high");
+    });
+
+    it("should classify 'run tests?' as command", () => {
+      const result = classifyHeuristic("run tests?");
+      expect(result.category).toBe("command");
+      expect(result.confidence).toBe("high");
+    });
+  });
+
+  describe("Indonesian keywords", () => {
+    it("should classify 'apakah server sudah jalan?' as question", () => {
+      const result = classifyHeuristic("apakah server sudah jalan?");
+      expect(result.category).toBe("question");
+    });
+
+    it("should classify 'tolong temukan file config' as research", () => {
+      const result = classifyHeuristic("tolong temukan file config");
+      expect(result.category).toBe("research");
+    });
+
+    it("should classify 'rancang schema database baru' as complex_task", () => {
+      const result = classifyHeuristic("rancang schema database baru");
+      expect(result.category).toBe("complex_task");
+    });
+
+    it("should classify 'jalankan tes' as command", () => {
+      const result = classifyHeuristic("jalankan tes");
+      expect(result.category).toBe("command");
+    });
+  });
+});
+
+// ─── AI-First Classification Pipeline Tests ───────────────────────────────────
+
+describe("classifyRequest (AI-First Pipeline)", () => {
+  it("should bypass LLM and return conversation immediately for empty input", async () => {
+    const mockModel = {};
+    const result = await classifyRequest("", mockModel);
+    expect(result.category).toBe("conversation");
+    expect(result.heuristicOnly).toBe(true);
+  });
+
+  it("should use AI classification when model is provided", async () => {
+    const mockModel = {};
+    vi.mocked(generateText).mockResolvedValue({
+      text: "debug",
+      usage: { promptTokens: 20, completionTokens: 5 },
+    } as any);
+
+    const result = await classifyRequest("fix the compiler error", mockModel);
+    expect(result.category).toBe("debug");
+    expect(result.heuristicOnly).toBe(false);
+    expect(result.classificationTokens).toBe(25);
+    expect(generateText).toHaveBeenCalled();
+  });
+
+  it("should fallback to heuristic when no model is provided", async () => {
+    const result = await classifyRequest("fix the compiler error", null);
+    expect(result.category).toBe("debug");
+    expect(result.heuristicOnly).toBe(true);
+  });
+
+  it("should fallback to heuristic when skipLLM is true", async () => {
+    const mockModel = {};
+    const result = await classifyRequest("fix the compiler error", mockModel, { skipLLM: true });
+    expect(result.category).toBe("debug");
+    expect(result.heuristicOnly).toBe(true);
   });
 });

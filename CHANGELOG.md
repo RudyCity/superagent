@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.186] - 2026-07-08
+
+### Changed
+- Transitioned request classifier to prioritize AI (LLM) classification when a model is provided, bypassing heuristic confidence threshold logic.
+- Retained the heuristic classifier as a fallback when no model is provided or skipLLM is active, and resolved several bugs in it:
+  - Fixed a punctuation matching bug where punctuation (exclamation marks, periods) on multi-word phrases like "thank you!" caused conversation matching to fail.
+  - Resolved question mark hijacking where command or debug requests ending in a question mark were incorrectly early-returned as questions.
+  - Fixed a regex duplicate quote typo.
+  - Expanded Indonesian keywords for all intent categories.
+  - Expanded complex keywords to prevent planning bypasses on complex tasks.
+- Optimized the LLM prompt inside `classifyWithLLM` to align with telegraphic English and markdown structure guidelines.
+
+---
+
 ## [1.2.185] - 2026-07-08
 
 ### Fixed
