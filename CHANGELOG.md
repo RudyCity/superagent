@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.172] - 2026-07-08
+
+### Fixed
+- **Task Checklist Header Formatting**:
+  - Removed the clipboard emoji (📋) from the active task checklist header.
+  - Removed the instruction texts `(click header to collapse)` and `click header to expand` from the header.
+  - Refactored task list status counting to display both completed and in-progress (ongoing) counts: `(X/N comp. | Y/N ongoing)`.
+  - Simplified the checklist component by resolving dynamic agent status overrides early before rendering.
+
+---
+
 ## [1.2.171] - 2026-07-08
 
 ### Fixed

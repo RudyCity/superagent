@@ -35,16 +35,47 @@ export const TaskChecklist = memo(function TaskChecklist({
 
   const isCollapsed = collapsedSections?.checklist || false;
   const collapseIcon = isCollapsed ? "▶" : "▼";
-  const totalTasks = checklistTasks.length;
-  const completedTasks = checklistTasks.filter((t) => t.status === "x").length;
+  // Map dynamic task status overrides to count completed and ongoing tasks
+  const resolvedTasks = checklistTasks.map((task) => {
+    let status = task.status;
+    if (isMultiAgent) {
+      for (const inst of superagentInstances.values()) {
+        const roleLower = inst.role.toLowerCase();
+        if (task.text.toLowerCase().includes(roleLower)) {
+          const isMergeOrCleanup = /merge|cleanup|prune/i.test(task.text);
+          if (!isMergeOrCleanup) {
+            if (inst.status === "running") {
+              status = "/";
+            } else if (inst.status === "paused") {
+              status = "paused";
+            } else if (inst.status === "completed") {
+              status = "x";
+            } else if (inst.status === "error") {
+              status = "error";
+            }
+          } else {
+            if (inst.status === "completed") {
+              status = "/";
+            }
+          }
+          break;
+        }
+      }
+    }
+    return { ...task, status };
+  });
+
+  const totalTasks = resolvedTasks.length;
+  const completedTasks = resolvedTasks.filter((t) => t.status === "x").length;
+  const ongoingTasks = resolvedTasks.filter((t) => t.status === "/").length;
   const hasScroll = totalTasks > maxChecklistVisible;
   const scrollIndicator = hasScroll
     ? ` [Scroll: ${checklistScrollOffset + 1}-${Math.min(totalTasks, checklistScrollOffset + maxChecklistVisible)}/${totalTasks}]`
     : "";
   const helpText = isCollapsed
     ? ""
-    : (focusMode === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : " [Ctrl+T Focus] (click header to collapse)");
-  const visibleChecklist = checklistTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
+    : (focusMode === "checklist" ? " [↑/▼ Scroll • Esc Exit]" : " [Ctrl+T Focus]");
+  const visibleChecklist = resolvedTasks.slice(checklistScrollOffset, checklistScrollOffset + maxChecklistVisible);
 
   // History: show the most recent completed tasks (capped)
   const historyToShow = completedHistory.slice(-maxHistoryVisible);
@@ -59,11 +90,13 @@ export const TaskChecklist = memo(function TaskChecklist({
   }, undefined as number | undefined);
   const headerTimeText = maxRemaining !== undefined ? ` ~ Hide in (${maxRemaining}s)` : "";
 
+  const statusText = `(${completedTasks}/${totalTasks} comp. | ${ongoingTasks}/${totalTasks} ongoing)`;
+
   if (isCollapsed) {
     return (
       <Box flexDirection="column">
         <Text bold color={focusMode === "checklist" ? "green" : "cyan"}>
-          📋 {collapseIcon} ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed) <Text dimColor italic>click header to expand</Text>
+          {collapseIcon} ACTIVE TASK CHECKLIST {statusText}
         </Text>
       </Box>
     );
@@ -79,44 +112,18 @@ export const TaskChecklist = memo(function TaskChecklist({
           {/* Header */}
           <Box flexDirection="row" justifyContent="space-between">
             <Text bold color={focusMode === "checklist" ? "green" : "cyan"}>
-              📋 {collapseIcon} ACTIVE TASK CHECKLIST ({completedTasks}/{totalTasks} completed){scrollIndicator}{helpText}
+              {collapseIcon} ACTIVE TASK CHECKLIST {statusText}{scrollIndicator}{helpText}
             </Text>
           </Box>
 
           {/* Timeline task list */}
           {visibleChecklist.map((task, index) => {
             const idx = checklistScrollOffset + index;
-            let status = task.status;
+            const status = task.status;
             let statusIcon = "○";
             let taskColor = "white";
             let connectorColor = "gray";
             let displayStatusText = "";
-
-            // Dynamic status override in multi-agent mode based on active superagents
-            if (isMultiAgent) {
-              for (const inst of superagentInstances.values()) {
-                const roleLower = inst.role.toLowerCase();
-                if (task.text.toLowerCase().includes(roleLower)) {
-                  const isMergeOrCleanup = /merge|cleanup|prune/i.test(task.text);
-                  if (!isMergeOrCleanup) {
-                    if (inst.status === "running") {
-                      status = "/";
-                    } else if (inst.status === "paused") {
-                      status = "paused";
-                    } else if (inst.status === "completed") {
-                      status = "x";
-                    } else if (inst.status === "error") {
-                      status = "error";
-                    }
-                  } else {
-                    if (inst.status === "completed") {
-                      status = "/";
-                    }
-                  }
-                  break;
-                }
-              }
-            }
 
             if (status === "x") {
               statusIcon = "◉";
