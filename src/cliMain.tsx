@@ -33,9 +33,22 @@ function hideCursor() {
   }
 }
 
-function showCursor() {
-  if (process.stdin.isTTY) {
-    process.stdout.write("\x1b[?25h");
+// Disable all mouse tracking modes and restore cursor.
+// Must be synchronous — called from signal handlers and exit.
+function restoreTerminal() {
+  try {
+    if (process.stdout.isTTY) {
+      // Disable SGR mouse + button-event tracking + any-event tracking
+      process.stdout.write(
+        "\x1b[?1006l" + // SGR mouse off
+        "\x1b[?1003l" + // any-event off
+        "\x1b[?1002l" + // button-event off
+        "\x1b[?1000l" + // normal mouse off
+        "\x1b[?25h"    // show cursor
+      );
+    }
+  } catch {
+    // Ignore if stdout already closed
   }
 }
 
@@ -74,7 +87,7 @@ export async function runCli() {
       try { masterAgentRef.saveHistorySync(); } catch {}
     }
     cleanupBackgroundTasks();
-    showCursor();
+    restoreTerminal();
   });
   process.on("SIGINT", () => {
     if (process.stdin.isTTY) {
@@ -87,18 +100,26 @@ export async function runCli() {
         // Reset counter after 2 seconds so a later Ctrl+C is treated as first
         setTimeout(() => { sigintCount = 0; }, 2000);
       } else {
+        restoreTerminal();
         cleanupBackgroundTasks();
         process.exit(130);
       }
       return;
     }
+    restoreTerminal();
     cleanupBackgroundTasks();
     process.exit(130);
   });
   process.on("SIGTERM", () => {
+    restoreTerminal();
     abortAllAgents();
     cleanupBackgroundTasks();
     process.exit(143);
+  });
+  process.on("SIGHUP", () => {
+    restoreTerminal();
+    cleanupBackgroundTasks();
+    process.exit(1);
   });
 
   const config = getConfig();

@@ -515,9 +515,23 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
     process.stdout.write(enableMouseTracking);
     process.stdin.on("data", handleMouseInput);
 
+    // Last-resort cleanup: disable mouse tracking if process exits without React cleanup running
+    const emergencyCleanup = () => {
+      try {
+        process.stdin.off("data", handleMouseInput);
+        process.stdout.write(disableMouseTracking);
+      } catch {}
+    };
+    process.once("exit", emergencyCleanup);
+    process.once("SIGINT", emergencyCleanup);
+    process.once("SIGTERM", emergencyCleanup);
+
     return () => {
       process.stdin.off("data", handleMouseInput);
       process.stdout.write(disableMouseTracking);
+      process.off("exit", emergencyCleanup);
+      process.off("SIGINT", emergencyCleanup);
+      process.off("SIGTERM", emergencyCleanup);
     };
   }, [
     wrappedLines.length,
