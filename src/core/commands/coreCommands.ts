@@ -185,6 +185,8 @@ export const helpCommand: SlashCommand = {
         "  /setting-focus-budget <number> - Set reasoning focus custom budget tokens",
         "  /setting-auto-vision <on|off> - Enable or disable automatic vision token saving",
         "  /setting-vision-threshold <number> - Set characters threshold for auto vision token saving",
+        "  /setting-classifier <on|off> - Enable or disable multi-category request classifier",
+        "  /setting-classifier-threshold <high|medium|low> - Set classifier heuristic confidence threshold",
         "  /memory   - Manage and inspect TencentDB long-term memory",
         "              Usage: /memory [status|list|search <query>|add <id> <val>|delete <id>|help]",
         "  /help     - Show this help",

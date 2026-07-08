@@ -46,6 +46,8 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-auto-vision": "Enable or disable automatic vision token saving (on or off)",
   "/setting-vision-threshold": "Set characters threshold for auto vision token saving",
   "/setting-hide-timeline": "Hide or show the timeline lines connecting turns (on or off)",
+  "/setting-classifier": "Enable or disable multi-category request classifier (on or off)",
+  "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
   "/memory": "Manage and inspect TencentDB long-term memory",
 };
 
@@ -227,6 +229,23 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
       const possibilities = [
         "/setting-hide-timeline on",
         "/setting-hide-timeline off",
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/setting-classifier") {
+      const possibilities = [
+        "/setting-classifier on",
+        "/setting-classifier off",
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/setting-classifier-threshold") {
+      const possibilities = [
+        "/setting-classifier-threshold high",
+        "/setting-classifier-threshold medium",
+        "/setting-classifier-threshold low",
       ];
       return filterSuggestions(possibilities, query);
     }

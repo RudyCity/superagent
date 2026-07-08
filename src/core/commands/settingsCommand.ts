@@ -148,6 +148,8 @@ export const settingsCommand: SlashCommand = {
         `│ • Auto Vision Token  : ${s.autoVisionTokenSaving ?? true ? "ENABLED" : "DISABLED"}`,
         `│ • Vision Threshold   : ${s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD} chars`,
         `│ • Hide Timeline Line : ${s.hideTimeline ? "ENABLED" : "DISABLED"}`,
+        `│ • Request Classifier : ${s.classifierEnabled !== false ? "ENABLED" : "DISABLED"}`,
+        `│ • Classifier Threshold: ${s.classifierConfidenceThreshold ?? "high"}`,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",
@@ -166,7 +168,9 @@ export const settingsCommand: SlashCommand = {
         "  /setting-force-prompt-tools <on|off>",
         "  /setting-auto-vision <on|off>",
         "  /setting-vision-threshold <number>",
-        "  /setting-hide-timeline <on|off>"
+        "  /setting-hide-timeline <on|off>",
+        "  /setting-classifier <on|off>",
+        "  /setting-classifier-threshold <high|medium|low>"
       ].join("\n"),
       timestamp: Date.now(),
     });
