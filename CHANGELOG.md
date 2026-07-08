@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.179] - 2026-07-08
+
+### Added
+- Added an option in settings to hide timeline connecting lines in the terminal-based UI.
+- Created `/setting-hide-timeline <on|off>` command to toggle this behavior.
+- Added autocomplete suggestions for `/setting-hide-timeline`.
+- Updated chat rendering logic in `src/components/chat-area.tsx` and `src/components/wizard-dialog.tsx` to conditionally hide timeline borders when enabled.
+
+### Fixed
+- Fixed an argument parsing bug in the `/setting-force-prompt-tools` command where `args[0]` was used instead of `args.trim()`.
+
+---
+
 ## [1.2.178] - 2026-07-08
 
 ### Added

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { wrapTextForDisplay } from "../utils/responseScroll.js";
+import { getSettings } from "../core/config.js";
 
 interface WizardDialogProps {
   title: string;
@@ -101,12 +102,15 @@ export function WizardDialog({
     visibleOptions = actualOptions.slice(start, end);
   }
 
+  const hideTimeline = getSettings().hideTimeline ?? false;
+  const marginPrefix = hideTimeline ? "  " : "│ ";
+
   return (
     <Box flexDirection="column" marginTop={finalMarginTop} marginBottom={finalMarginBottom}>
       {/* Top border connecting to the timeline */}
       <Box flexDirection="row" width="100%">
         <Text color={borderColor} wrap="truncate-end">
-          ├───[ <Text bold color={borderColor}>{renderDialogBodyText(title)}</Text> ]
+          {hideTimeline ? "     [ " : "├───[ "}<Text bold color={borderColor}>{renderDialogBodyText(title)}</Text> ]
         </Text>
       </Box>
 
@@ -119,12 +123,12 @@ export function WizardDialog({
           <>
             {descLines.map((line, idx) => (
               <Box key={idx} flexDirection="row" width="100%">
-                <Text color={borderColor}>│ </Text>
+                <Text color={borderColor}>{marginPrefix}</Text>
                 <Text color="white">{renderDialogBodyText(line)}</Text>
               </Box>
             ))}
             <Box flexDirection="row">
-              <Text color={borderColor}>│ </Text>
+              <Text color={borderColor}>{marginPrefix}</Text>
             </Box>
           </>
         );
@@ -133,7 +137,7 @@ export function WizardDialog({
       {/* Search bar — shown when searchQuery prop is provided */}
       {searchQuery !== undefined && (
         <Box flexDirection="row" width="100%">
-          <Text color={borderColor}>│ </Text>
+          <Text color={borderColor}>{marginPrefix}</Text>
           <Text color="cyan" bold>🔍 </Text>
           <Box flexShrink={1}>
             <Text color="white" wrap="truncate-start">
@@ -147,7 +151,7 @@ export function WizardDialog({
       {/* Loading indicator */}
       {isLoading && (
         <Box flexDirection="row" width="100%">
-          <Text color={borderColor}>│ </Text>
+          <Text color={borderColor}>{marginPrefix}</Text>
           <WizardSpinner color={borderColor} />
           <Box flexShrink={1}>
             <Text color="yellow" wrap="truncate-end">  Fetching models from API...</Text>
@@ -157,13 +161,13 @@ export function WizardDialog({
 
       {/* Spacer after search/loading */}
       {(searchQuery !== undefined || isLoading) && (
-        <Box flexDirection="row"><Text color={borderColor}>│</Text></Box>
+        <Box flexDirection="row"><Text color={borderColor}>{hideTimeline ? " " : "│"}</Text></Box>
       )}
 
       {/* Options prefixed with timeline line */}
       {start > 0 && (
         <Box flexDirection="row" width="100%">
-          <Text color={borderColor}>│ </Text>
+          <Text color={borderColor}>{marginPrefix}</Text>
           <Box flexShrink={1}>
             <Text color="yellow" wrap="truncate-end">   ▲ ... ({start} more options above) ...</Text>
           </Box>
@@ -178,7 +182,7 @@ export function WizardDialog({
         const checkPrefix = isMultiSelect ? (isChecked ? "[x] " : "[ ] ") : "";
         return (
           <Box key={`${optStr}-${originalIndex}`} flexDirection="row" width="100%">
-            <Text color={borderColor}>│ </Text>
+            <Text color={borderColor}>{marginPrefix}</Text>
             <Box flexDirection="row" flexShrink={1}>
               <Text color={isSelected ? borderColor : "gray"} bold={isSelected} wrap="truncate-end">
                 {isSelected ? "❯ " : "  "} {checkPrefix}{renderDialogBodyText(optStr)}
@@ -191,7 +195,7 @@ export function WizardDialog({
       {/* Empty state when no options match */}
       {!isLoading && total === 0 && searchQuery !== undefined && (
         <Box flexDirection="row" width="100%">
-          <Text color={borderColor}>│ </Text>
+          <Text color={borderColor}>{marginPrefix}</Text>
           <Box flexShrink={1}>
             <Text color="gray" dimColor wrap="truncate-end">  No models match "{searchQuery || ""}". Try a different term.</Text>
           </Box>
@@ -200,7 +204,7 @@ export function WizardDialog({
 
       {end < total && (
         <Box flexDirection="row" width="100%">
-          <Text color={borderColor}>│ </Text>
+          <Text color={borderColor}>{marginPrefix}</Text>
           <Box flexShrink={1}>
             <Text color="yellow" wrap="truncate-end">   ▼ ... ({total - end} more options below) ...</Text>
           </Box>

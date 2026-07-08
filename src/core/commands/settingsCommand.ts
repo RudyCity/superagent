@@ -147,6 +147,7 @@ export const settingsCommand: SlashCommand = {
         `│ • Force Prompt Tools : ${s.forcePromptBasedToolCalling ? "ENABLED" : "DISABLED"}`,
         `│ • Auto Vision Token  : ${s.autoVisionTokenSaving ?? true ? "ENABLED" : "DISABLED"}`,
         `│ • Vision Threshold   : ${s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD} chars`,
+        `│ • Hide Timeline Line : ${s.hideTimeline ? "ENABLED" : "DISABLED"}`,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",
@@ -164,7 +165,8 @@ export const settingsCommand: SlashCommand = {
         "  /setting-focus-budget <number>",
         "  /setting-force-prompt-tools <on|off>",
         "  /setting-auto-vision <on|off>",
-        "  /setting-vision-threshold <number>"
+        "  /setting-vision-threshold <number>",
+        "  /setting-hide-timeline <on|off>"
       ].join("\n"),
       timestamp: Date.now(),
     });
@@ -1210,7 +1212,7 @@ export const settingForcePromptToolsCommand: SlashCommand = {
   description: "Force prompt-based (XML) tool calling even if the model/endpoint supports native tools",
   execute(args, ctx) {
     const now = Date.now();
-    const val = args[0];
+    const val = args.trim();
     if (!val || (val !== "on" && val !== "off")) {
       ctx.addLine({
         type: "error",
@@ -1319,6 +1321,39 @@ export const settingVisionThresholdCommand: SlashCommand = {
   }
 };
 
+// /setting-hide-timeline command
+export const settingHideTimelineCommand: SlashCommand = {
+  name: "setting-hide-timeline",
+  description: "Hide or show the timeline lines connecting conversation turns",
+  execute(args, ctx) {
+    const now = Date.now();
+    const val = args.trim();
+    if (!val || (val !== "on" && val !== "off")) {
+      ctx.addLine({
+        type: "error",
+        content: "Usage: /setting-hide-timeline <on|off>",
+        timestamp: now,
+      });
+      return;
+    }
+    const hide = val === "on";
+    try {
+      updateSettings({ hideTimeline: hide });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Hide timeline set to: ${hide ? "ENABLED" : "DISABLED"}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
 registry.register(settingsCommand);
 registry.register(settingConcurrencyCommand);
 registry.register(settingRpmCommand);
@@ -1335,3 +1370,4 @@ registry.register(settingFocusBudgetCommand);
 registry.register(settingForcePromptToolsCommand);
 registry.register(settingAutoVisionCommand);
 registry.register(settingVisionThresholdCommand);
+registry.register(settingHideTimelineCommand);

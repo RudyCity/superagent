@@ -60,6 +60,7 @@ export interface SystemSettings {
   forcePromptBasedToolCalling?: boolean;
   autoVisionTokenSaving?: boolean;
   visionTokenSavingThreshold?: number;
+  hideTimeline?: boolean;
 }
 
 export interface McpServerConfig {
@@ -755,6 +756,7 @@ export function getSettings(): SystemSettings {
     focusBudget: s.focusBudget ?? 4000,
     autoVisionTokenSaving: s.autoVisionTokenSaving ?? true,
     visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
+    hideTimeline: s.hideTimeline ?? false,
   };
 }
 

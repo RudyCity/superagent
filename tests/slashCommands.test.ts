@@ -695,7 +695,23 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(addedLines[addedLines.length - 1].content).toContain("Vision token saving threshold set to: 8000 chars");
   });
 
-  it("should return autocomplete suggestions for setting-auto-vision and setting-vision-threshold", () => {
+  it("should configure hide timeline when running /setting-hide-timeline", () => {
+    handleSlashCommand("/setting-hide-timeline", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-hide-timeline");
+
+    handleSlashCommand("/setting-hide-timeline invalid", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    handleSlashCommand("/setting-hide-timeline on", mockCtx as any);
+    expect(getSettings().hideTimeline).toBe(true);
+    expect(addedLines[addedLines.length - 1].content).toContain("Hide timeline set to: ENABLED");
+
+    handleSlashCommand("/setting-hide-timeline off", mockCtx as any);
+    expect(getSettings().hideTimeline).toBe(false);
+    expect(addedLines[addedLines.length - 1].content).toContain("Hide timeline set to: DISABLED");
+  });
+
+  it("should return autocomplete suggestions for setting-auto-vision, setting-vision-threshold, and setting-hide-timeline", () => {
     const s1 = getDashboardSuggestions("/setting-auto");
     expect(s1).toContain("/setting-auto-vision");
 
@@ -709,6 +725,13 @@ describe("Slash Commands: /settings & /setting-*", () => {
     const s4 = getDashboardSuggestions("/setting-vision-threshold ");
     expect(s4).toContain("/setting-vision-threshold 4000");
     expect(s4).toContain("/setting-vision-threshold 8000");
+
+    const s5 = getDashboardSuggestions("/setting-hide");
+    expect(s5).toContain("/setting-hide-timeline");
+
+    const s6 = getDashboardSuggestions("/setting-hide-timeline ");
+    expect(s6).toContain("/setting-hide-timeline on");
+    expect(s6).toContain("/setting-hide-timeline off");
   });
 });
 

@@ -45,6 +45,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-focus-budget": "Set reasoning focus custom budget tokens",
   "/setting-auto-vision": "Enable or disable automatic vision token saving (on or off)",
   "/setting-vision-threshold": "Set characters threshold for auto vision token saving",
+  "/setting-hide-timeline": "Hide or show the timeline lines connecting turns (on or off)",
   "/memory": "Manage and inspect TencentDB long-term memory",
 };
 
@@ -218,6 +219,14 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
         "/setting-vision-threshold 4000",
         "/setting-vision-threshold 8000",
         "/setting-vision-threshold 0",
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/setting-hide-timeline") {
+      const possibilities = [
+        "/setting-hide-timeline on",
+        "/setting-hide-timeline off",
       ];
       return filterSuggestions(possibilities, query);
     }

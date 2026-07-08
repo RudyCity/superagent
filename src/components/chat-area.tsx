@@ -7,6 +7,7 @@ import { getTruncatedAssistantIndexes, wrapTextForDisplay, renderScrollBar, capD
 import { formatCompactNumber, minimizePathInDescription } from "../utils/text.js";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ChatLinePosition } from "../hooks/useMouseScroll.js";
+import { getSettings } from "../core/config.js";
 
 export interface WrappedChatLine {
   node: React.ReactNode;
@@ -174,7 +175,8 @@ export function wrapMarkdownToLines(
   content: string,
   themeColor: string,
   chatWidth: number,
-  lineIndex: number
+  lineIndex: number,
+  hideTimeline: boolean
 ): WrappedChatLine[] {
   const cleanContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "");
   const rawLines = cleanContent.split("\n");
@@ -187,10 +189,13 @@ export function wrapMarkdownToLines(
   let inCodeBlock = false;
   let codeLanguage = "";
 
+  const marginSpaces = hideTimeline ? "     " : "│    ";
+  const innerCodeSpaces = hideTimeline ? "        " : "│    │  ";
+
   for (let idx = 0; idx < rawLines.length; idx++) {
     const l = rawLines[idx];
     const isLastLine = idx === rawLines.length - 1;
-    const cacheKey = `${themeColor}_${chatWidth}_${inCodeBlock}_${codeLanguage}_${lineIndex}_${l}`;
+    const cacheKey = `${themeColor}_${chatWidth}_${inCodeBlock}_${codeLanguage}_${lineIndex}_${l}_${hideTimeline ? "h" : "s"}`;
 
     if (!isLastLine) {
       const cached = streamLineWrapCache.get(cacheKey);
@@ -214,7 +219,7 @@ export function wrapMarkdownToLines(
       
       const node = (
         <Box flexDirection="row">
-          <Text color="gray" dimColor>│    </Text>
+          <Text color="gray" dimColor>{marginSpaces}</Text>
           <Text color="gray" italic>
             {inCodeBlock ? `┌─── [ CODE: ${codeLanguage || "TEXT"} ]` : "└─── [ END CODE ]"}
           </Text>
@@ -226,7 +231,7 @@ export function wrapMarkdownToLines(
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│    │  </Text>
+            <Text color="gray" dimColor>{innerCodeSpaces}</Text>
             <Text color="gray">{subLine}</Text>
           </Box>
         );
@@ -237,7 +242,7 @@ export function wrapMarkdownToLines(
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│    </Text>
+            <Text color="gray" dimColor>{marginSpaces}</Text>
             <Text bold color="yellow">{subLine}</Text>
           </Box>
         );
@@ -248,7 +253,7 @@ export function wrapMarkdownToLines(
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│    </Text>
+            <Text color="gray" dimColor>{marginSpaces}</Text>
             <Text bold color="cyan">{subLine}</Text>
           </Box>
         );
@@ -259,7 +264,7 @@ export function wrapMarkdownToLines(
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│    </Text>
+            <Text color="gray" dimColor>{marginSpaces}</Text>
             <Text bold color="blue">{subLine}</Text>
           </Box>
         );
@@ -297,7 +302,7 @@ export function wrapMarkdownToLines(
         
         const node = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│    </Text>
+            <Text color="gray" dimColor>{marginSpaces}</Text>
             {isSysLine ? (
               isFirstSubLine ? (
                 <Text>{listPrefix}</Text>
@@ -334,13 +339,17 @@ function wrapNestedChild(
   childIdx: number,
   isCollapsed: boolean,
   parentIndex: number,
-  chatWidth: number
+  chatWidth: number,
+  hideTimeline: boolean
 ): WrappedChatLine[] {
   const child = {
     ...rawChild,
     content: rawChild.content.replace(/\r\n/g, "\n").replace(/\r/g, "")
   };
   const result: WrappedChatLine[] = [];
+
+  const childPrefix = hideTimeline ? "         " : "│        ";
+  const nestedChildPrefix = hideTimeline ? "              " : "│        │    ";
 
   if (child.type === "tool_start") {
     const content = child.content.replace(/^[⚡📖] /, "");
@@ -354,7 +363,6 @@ function wrapNestedChild(
     const merged = child.mergedResult;
 
     if (isCollapsed) {
-      // ── Collapsed with merged result (tool completed) ──────────────
       if (merged) {
         const statusIcon = merged.isError ? "✗" : "✓";
         const statusLabel = merged.isError ? "failed" : "done";
@@ -366,23 +374,22 @@ function wrapNestedChild(
           const answerText = outputLine ? outputLine.substring("Output:".length).trim() : "";
           const node = (
             <Box flexDirection="row">
-              <Text color="gray" dimColor>│        </Text>
+              <Text color="gray" dimColor>{childPrefix}</Text>
               <Text color={statusColor}>
                 <Text bold color={statusColor}>{statusIcon} ❓ </Text><Text color="yellow">{questionText}</Text><Text bold color={statusColor}> → </Text><Text color={statusColor}>{answerText || "N/A"}</Text> <Text dimColor italic>(Ctrl+O)</Text>
               </Text>
             </Box>
           );
-          const plainText = "│        " + statusIcon + " ❓ " + questionText + " → " + (answerText || "N/A") + " (Ctrl+O)";
+          const plainText = childPrefix + statusIcon + " ❓ " + questionText + " → " + (answerText || "N/A") + " (Ctrl+O)";
           result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true, length: visibleLength(plainText) });
         } else {
-          // Parse diff stats from tool result (format: "Changed: +7 -2\nFile: ...")
           const diffMatch = merged.content.match(/\+(\d+)\s+-(\d+)/);
           const diffStats = diffMatch
             ? { added: parseInt(diffMatch[1], 10), removed: parseInt(diffMatch[2], 10) }
             : null;
           const node = (
             <Box flexDirection="row">
-              <Text color="gray" dimColor>│        </Text>
+              <Text color="gray" dimColor>{childPrefix}</Text>
               <Text color="gray">
                 <Text bold color="gray">↳ </Text><Text color="gray">{displayDesc}</Text>
                 {diffStats && diffStats.added === 0 && diffStats.removed === 0 ? null : diffStats ? (
@@ -397,44 +404,41 @@ function wrapNestedChild(
             </Box>
           );
           const diffStatsText = diffStats && diffStats.added === 0 && diffStats.removed === 0 ? "" : diffStats ? (" +" + diffStats.added + " -" + diffStats.removed) : "";
-          const plainText = "│        ↳ " + displayDesc + diffStatsText + " " + statusIcon + " " + statusLabel + "  (Ctrl+O)";
+          const plainText = childPrefix + "↳ " + displayDesc + diffStatsText + " " + statusIcon + " " + statusLabel + "  (Ctrl+O)";
           result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true, length: visibleLength(plainText) });
         }
       } else {
-        // ── Collapsed, tool still running ────────────────────────────
         const node = isAskQuestion ? (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│        </Text>
+            <Text color="gray" dimColor>{childPrefix}</Text>
             <Text color="yellow">
               <Text bold color="yellow">↳ ❓ Question: </Text><Text color="yellow">{questionText}</Text>
             </Text>
           </Box>
         ) : (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│        </Text>
+            <Text color="gray" dimColor>{childPrefix}</Text>
             <Text color="gray">
               <Text bold color="gray">↳ </Text><Text color="gray">{cleanDesc}</Text> <Text dimColor italic>(click to view inputs)</Text>
             </Text>
           </Box>
         );
-        const plainText = isAskQuestion ? ("│        ↳ ❓ Question: " + questionText) : ("│        ↳ " + cleanDesc + " (click to view inputs)");
+        const plainText = isAskQuestion ? (childPrefix + "↳ ❓ Question: " + questionText) : (childPrefix + "↳ " + cleanDesc + " (click to view inputs)");
         result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isCollapsible: true, length: visibleLength(plainText) });
       }
     } else {
-      // ── Expanded: Input block + divider + Output block ─────────────
       const inputLines = content.split("\n");
       const mergedOutputLines = merged ? merged.content.split("\n") : [];
       const mergedColor = merged?.isError ? "red" : "gray";
       const mergedIcon = merged?.isError ? "✗" : "✓";
 
-      // Header row
       const expandedDiffMatch = merged ? merged.content.match(/\+(\d+)\s+-(\d+)/) : null;
       const expandedDiffStats = expandedDiffMatch
         ? { added: parseInt(expandedDiffMatch[1], 10), removed: parseInt(expandedDiffMatch[2], 10) }
         : null;
       const headerNode = (
         <Box flexDirection="row">
-          <Text color="gray" dimColor>│        </Text>
+          <Text color="gray" dimColor>{childPrefix}</Text>
           <Text color="gray">▼ </Text>
           <Text color="gray">{cleanDesc}</Text>
           {merged && <Text bold color={mergedColor}> {mergedIcon}</Text>}
@@ -448,17 +452,16 @@ function wrapNestedChild(
         </Box>
       );
       const diffStatsText = expandedDiffStats && !(expandedDiffStats.added === 0 && expandedDiffStats.removed === 0) ? (" +" + expandedDiffStats.added + " -" + expandedDiffStats.removed) : "";
-      const plainText = "│        ▼ " + cleanDesc + (merged ? " " + mergedIcon : "") + diffStatsText + " (click to collapse)";
+      const plainText = childPrefix + "▼ " + cleanDesc + (merged ? " " + mergedIcon : "") + diffStatsText + " (click to collapse)";
       result.push({ node: headerNode, lineIndex: parentIndex, childIndex: childIdx, type: "tool_start", isHeader: true, isCollapsible: true, length: visibleLength(plainText) });
 
-      // Input lines (skip line 0, already in header)
       for (let idx = 1; idx < inputLines.length; idx++) {
         const l = inputLines[idx];
         const subLines = wrapTextForDisplay(l, chatWidth - 14);
         for (const subLine of subLines) {
           const node = (
             <Box flexDirection="row">
-              <Text color="gray" dimColor>│        </Text>
+              <Text color="gray" dimColor>{childPrefix}</Text>
               <Text color="gray">    </Text>
               <Text bold color="white">{subLine}</Text>
             </Box>
@@ -467,11 +470,10 @@ function wrapNestedChild(
         }
       }
 
-      // Divider + Output (only if merged result exists)
       if (merged) {
         const dividerNode = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│        </Text>
+            <Text color="gray" dimColor>{childPrefix}</Text>
             <Text color={mergedColor}>    {"─".repeat(30)}</Text>
           </Box>
         );
@@ -487,7 +489,7 @@ function wrapNestedChild(
               const isFirstSub = sIdx === 0;
               const node = (
                 <Box flexDirection="row">
-                  <Text color="gray" dimColor>│        </Text>
+                  <Text color="gray" dimColor>{childPrefix}</Text>
                   {isFirstSub ? (
                     <Text>
                       <Text color={mergedColor}>    </Text>
@@ -510,7 +512,7 @@ function wrapNestedChild(
             for (const subLine of subLines) {
               const node = (
                 <Box flexDirection="row">
-                  <Text color="gray" dimColor>│        </Text>
+                  <Text color="gray" dimColor>{childPrefix}</Text>
                   <Text color={mergedColor}>    </Text>
                   <Text color={merged.isError ? "white" : "gray"} dimColor={!merged.isError}>{subLine}</Text>
                 </Box>
@@ -542,22 +544,22 @@ function wrapNestedChild(
       }
       const node = isAskQuestion ? (
         <Box flexDirection="row">
-          <Text color="gray" dimColor>│        </Text>
+          <Text color="gray" dimColor>{childPrefix}</Text>
           <Text color={themeColor}>
             <Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text bold color={themeColor}>Question: </Text><Text color={themeColor}>{questionText}</Text><Text bold color={themeColor}> | Answer: </Text><Text color={themeColor}>{answerText || "N/A"}</Text>
           </Text>
         </Box>
       ) : (
         <Box flexDirection="row">
-          <Text color="gray" dimColor>│        </Text>
+          <Text color="gray" dimColor>{childPrefix}</Text>
           <Text color={themeColor}>
             <Text bold color={themeColor}>{isError ? "↳ ✗ " : "↳ ✓ "}</Text><Text color={themeColor}>{cleanDesc}</Text> <Text dimColor italic>{isError ? "(click to view error)" : "(click to view output)"}</Text>
           </Text>
         </Box>
       );
       const plainText = isAskQuestion
-        ? ("│        " + (isError ? "↳ ✗ " : "↳ ✓ ") + "Question: " + questionText + " | Answer: " + (answerText || "N/A"))
-        : ("│        " + (isError ? "↳ ✗ " : "↳ ✓ ") + cleanDesc + " " + (isError ? "(click to view error)" : "(click to view output)"));
+        ? (childPrefix + (isError ? "↳ ✗ " : "↳ ✓ ") + "Question: " + questionText + " | Answer: " + (answerText || "N/A"))
+        : (childPrefix + (isError ? "↳ ✗ " : "↳ ✓ ") + cleanDesc + " " + (isError ? "(click to view error)" : "(click to view output)"));
       result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_end", isCollapsible: true, length: visibleLength(plainText) });
     } else {
       const contentLines = contentText.split("\n");
@@ -573,7 +575,7 @@ function wrapNestedChild(
 
           const node = (
             <Box flexDirection="row">
-              <Text color="gray" dimColor>│        </Text>
+              <Text color="gray" dimColor>{childPrefix}</Text>
               <Text color={themeColor}>
                 {isFirstSub ? (isError ? "▼ ✗ " : "▼ ✓ ") : "    "}
               </Text>
@@ -597,7 +599,7 @@ function wrapNestedChild(
             </Box>
           );
           const length = isFirstSub
-            ? visibleLength("│        " + (isError ? "▼ ✗ " : "▼ ✓ ") + subLine + " (click to collapse)")
+            ? visibleLength(childPrefix + (isError ? "▼ ✗ " : "▼ ✓ ") + subLine + " (click to collapse)")
             : undefined;
           result.push({ node, lineIndex: parentIndex, childIndex: childIdx, type: "tool_end", isCollapsible: true, length });
         }
@@ -610,7 +612,7 @@ function wrapNestedChild(
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│        │    </Text>
+            <Text color="gray" dimColor>{nestedChildPrefix}</Text>
             <Text>{subLine}</Text>
           </Box>
         );
@@ -634,6 +636,7 @@ export function wrapChatLineToLines({
   isLastAssistant,
   isCollapsed,
   expandedChildren,
+  hideTimeline,
 }: {
   line: ChatLine;
   isFirst: boolean;
@@ -646,8 +649,14 @@ export function wrapChatLineToLines({
   isLastAssistant: boolean;
   isCollapsed: boolean;
   expandedChildren: Set<number>;
+  hideTimeline: boolean;
 }): WrappedChatLine[] {
   const result: WrappedChatLine[] = [];
+
+  const marginSpaces = hideTimeline ? "     " : "│    ";
+  const separatorSpaces = hideTimeline ? "  " : "│ ";
+  const connectorPrefix = hideTimeline ? "     [ " : "├─── [ ";
+  const connectorPlain = hideTimeline ? "     " : "├───";
 
   switch (line.type) {
     case "user": {
@@ -655,7 +664,7 @@ export function wrapChatLineToLines({
       const headerNode = (
         <Box flexDirection="row">
           <Text color="gray" dimColor>
-            {isFirst ? "┌" : "├"}─── [ <Text bold color="cyan">👤 ACCESS_POINT: USER</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
+            {hideTimeline ? "     [ " : `${isFirst ? "┌" : "├"}─── [ `}<Text bold color="cyan">👤 ACCESS_POINT: USER</Text> ]{lineIndex !== undefined ? <Text dimColor> [#{lineIndex}]</Text> : null}
           </Text>
         </Box>
       );
@@ -665,7 +674,7 @@ export function wrapChatLineToLines({
       for (const subLine of subLines) {
         const node = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│    </Text>
+            <Text color="gray" dimColor>{marginSpaces}</Text>
             <Text>{renderBoldTargetText(subLine)}</Text>
           </Box>
         );
@@ -674,7 +683,7 @@ export function wrapChatLineToLines({
 
       const separatorNode = (
         <Box flexDirection="row">
-          <Text color="gray" dimColor>│ </Text>
+          <Text color="gray" dimColor>{separatorSpaces}</Text>
         </Box>
       );
       result.push({ node: separatorNode, lineIndex, type: "user", isSeparator: true });
@@ -688,13 +697,13 @@ export function wrapChatLineToLines({
       const headerNode = (
         <Box flexDirection="row">
           <Text color="gray" dimColor>
-            {isFirst ? "┌" : "├"}─── [ <Text bold color="gray">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
+            {hideTimeline ? "     [ " : `${isFirst ? "┌" : "├"}─── [ `}<Text bold color="gray">✦ SUPERAGENT</Text> ]{lineIndex !== undefined ? <Text color="gray"> [#{lineIndex}]</Text> : null}
           </Text>
         </Box>
       );
       result.push({ node: headerNode, lineIndex, type: "assistant", isHeader: true, isTruncated: capped.truncated });
 
-      const contentLines = wrapMarkdownToLines(capped.text, "gray", chatWidth, lineIndex);
+      const contentLines = wrapMarkdownToLines(capped.text, "gray", chatWidth, lineIndex, hideTimeline);
       for (const wrappedContentLine of contentLines) {
         result.push({
           ...wrappedContentLine,
@@ -705,7 +714,7 @@ export function wrapChatLineToLines({
       if (capped.truncated) {
         const noticeNode = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│    </Text>
+            <Text color="gray" dimColor>{marginSpaces}</Text>
             <Text color="yellow">... [long response truncated; click to open scroll view, mouse scroll / ↑↓] ...</Text>
           </Box>
         );
@@ -716,14 +725,14 @@ export function wrapChatLineToLines({
       if (children.length > 0) {
         for (let childIdx = 0; childIdx < children.length; childIdx++) {
           const isChildCollapsed = isCollapsibleType(children[childIdx].type) && !expandedChildren.has(childIdx);
-          const childLines = wrapNestedChild(children[childIdx], childIdx, isChildCollapsed, lineIndex, chatWidth);
+          const childLines = wrapNestedChild(children[childIdx], childIdx, isChildCollapsed, lineIndex, chatWidth, hideTimeline);
           result.push(...childLines);
         }
       }
 
       const separatorNode = (
         <Box flexDirection="row">
-          <Text color="gray" dimColor>│ </Text>
+          <Text color="gray" dimColor>{separatorSpaces}</Text>
         </Box>
       );
       result.push({ node: separatorNode, lineIndex, type: "assistant", isSeparator: true, isTruncated: capped.truncated });
@@ -747,21 +756,21 @@ export function wrapChatLineToLines({
         const node = (
           <Box flexDirection="row">
             <Text color="gray" dimColor>
-              ├─── [ <Text bold color="gray">▶ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>Ctrl+O</Text>
+              {connectorPrefix}<Text bold color="gray">▶ {desc}</Text><Text dimColor> ({toolName})</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
-        const plainText = `├─── [ ▶ ${desc} (${toolName}) ] Ctrl+O`;
+        const plainText = `${connectorPlain} [ ▶ ${desc} (${toolName}) ] Ctrl+O`;
         result.push({ node, lineIndex, type: "tool_start", isCollapsible: true, length: visibleLength(plainText) });
       } else {
         const headerNode = (
           <Box flexDirection="row">
             <Text color="gray" dimColor>
-              ├─── [ <Text bold color="gray">SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>Ctrl+O</Text>
+              {connectorPrefix}<Text bold color="gray">SYSTEM_INVOKING_MODULE</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
-        const plainText = "├─── [ SYSTEM_INVOKING_MODULE ] Ctrl+O";
+        const plainText = `${connectorPlain} [ SYSTEM_INVOKING_MODULE ] Ctrl+O`;
         result.push({ node: headerNode, lineIndex, type: "tool_start", isHeader: true, isCollapsible: true, length: visibleLength(plainText) });
 
         const contentLines = content.split("\n");
@@ -787,7 +796,7 @@ export function wrapChatLineToLines({
 
                 const node = (
                   <Box flexDirection="row">
-                    <Text color="gray" dimColor>│    </Text>
+                    <Text color="gray" dimColor>{marginSpaces}</Text>
                     {isFirstSub ? (
                       <Text>
                         <Text dimColor>{prefix}</Text>
@@ -815,7 +824,7 @@ export function wrapChatLineToLines({
           for (const subLine of subLines) {
             const node = (
               <Box flexDirection="row">
-                <Text color="gray" dimColor>│    </Text>
+                <Text color="gray" dimColor>{marginSpaces}</Text>
                 <Text bold color="white">{subLine}</Text>
               </Box>
             );
@@ -825,7 +834,7 @@ export function wrapChatLineToLines({
 
         const separatorNode = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│ </Text>
+            <Text color="gray" dimColor>{separatorSpaces}</Text>
           </Box>
         );
         result.push({ node: separatorNode, lineIndex, type: "tool_start", isSeparator: true, isCollapsible: true });
@@ -849,22 +858,22 @@ export function wrapChatLineToLines({
         const node = (
           <Box flexDirection="row">
             <Text color="gray" dimColor>
-              ├─── [ <Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>Ctrl+O</Text>
+              {connectorPrefix}<Text bold color={themeColor}>▶ {icon} {status}:</Text> <Text dimColor>{desc}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
-        const plainText = `├─── [ ▶ ${icon} ${status}: ${desc} ] Ctrl+O`;
+        const plainText = `${connectorPlain} [ ▶ ${icon} ${status}: ${desc} ] Ctrl+O`;
         result.push({ node, lineIndex, type: "tool_end", isCollapsible: true, length: visibleLength(plainText) });
       } else {
         const headerNode = (
           <Box flexDirection="row">
             <Text color="gray" dimColor>
-              ├─── [ <Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "⚪ SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>Ctrl+O</Text>
+              {connectorPrefix}<Text bold color={themeColor}>{isError ? "🔴 SYSTEM_CALL_FAILED" : "⚪ SYSTEM_CALL_SUCCESS"}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
         const label = isError ? "🔴 SYSTEM_CALL_FAILED" : "⚪ SYSTEM_CALL_SUCCESS";
-        const plainText = `├─── [ ${label} ] Ctrl+O`;
+        const plainText = `${connectorPlain} [ ${label} ] Ctrl+O`;
         result.push({ node: headerNode, lineIndex, type: "tool_end", isHeader: true, isCollapsible: true, length: visibleLength(plainText) });
 
         const contentLines = contentText.split("\n");
@@ -880,7 +889,7 @@ export function wrapChatLineToLines({
 
               const node = (
                 <Box flexDirection="row">
-                  <Text color="gray" dimColor>│    </Text>
+                  <Text color="gray" dimColor>{marginSpaces}</Text>
                   {isFirstSub ? (
                     <Text>
                       <Text bold color={isError ? "cyan" : "gray"} dimColor={!isError}>{type}</Text>
@@ -903,7 +912,7 @@ export function wrapChatLineToLines({
           for (const subLine of subLines) {
             const node = (
               <Box flexDirection="row">
-                <Text color="gray" dimColor>│    </Text>
+                <Text color="gray" dimColor>{marginSpaces}</Text>
                 <Text color={isError ? "white" : "gray"} dimColor={!isError}>{subLine}</Text>
               </Box>
             );
@@ -913,7 +922,7 @@ export function wrapChatLineToLines({
 
         const separatorNode = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│ </Text>
+            <Text color="gray" dimColor>{separatorSpaces}</Text>
           </Box>
         );
         result.push({ node: separatorNode, lineIndex, type: "tool_end", isSeparator: true, isCollapsible: true });
@@ -928,21 +937,21 @@ export function wrapChatLineToLines({
         const node = (
           <Box flexDirection="row">
             <Text color="gray" dimColor>
-              ├─── [ <Text bold color="red">▶ 🚨 Error:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
+              {connectorPrefix}<Text bold color="red">▶ 🚨 Error:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
-        const plainText = `├─── [ ▶ 🚨 Error: ${preview} ] Ctrl+O`;
+        const plainText = `${connectorPlain} [ ▶ 🚨 Error: ${preview} ] Ctrl+O`;
         result.push({ node, lineIndex, type: "error", isCollapsible: true, length: visibleLength(plainText) });
       } else {
         const headerNode = (
           <Box flexDirection="row">
             <Text color="gray" dimColor>
-              ├─── [ <Text bold color="red">🚨 ERROR_REPORT</Text> ] <Text dimColor italic>Ctrl+O</Text>
+              {connectorPrefix}<Text bold color="red">🚨 ERROR_REPORT</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
-        const plainText = "├─── [ 🚨 ERROR_REPORT ] Ctrl+O";
+        const plainText = `${connectorPlain} [ 🚨 ERROR_REPORT ] Ctrl+O`;
         result.push({ node: headerNode, lineIndex, type: "error", isHeader: true, isCollapsible: true, length: visibleLength(plainText) });
 
         const contentLines = contentText.split("\n");
@@ -951,7 +960,7 @@ export function wrapChatLineToLines({
           for (const subLine of subLines) {
             const node = (
               <Box flexDirection="row">
-                <Text color="gray" dimColor>│    </Text>
+                <Text color="gray" dimColor>{marginSpaces}</Text>
                 <Text color="red">{subLine}</Text>
               </Box>
             );
@@ -961,7 +970,7 @@ export function wrapChatLineToLines({
 
         const separatorNode = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│ </Text>
+            <Text color="gray" dimColor>{separatorSpaces}</Text>
           </Box>
         );
         result.push({ node: separatorNode, lineIndex, type: "error", isSeparator: true, isCollapsible: true });
@@ -975,21 +984,21 @@ export function wrapChatLineToLines({
         const node = (
           <Box flexDirection="row">
             <Text color="gray" dimColor>
-              ├─── [ <Text bold color="gray">▶ ℹ️ System:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
+              {connectorPrefix}<Text bold color="gray">▶ ℹ️ System:</Text> <Text dimColor>{preview}</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
-        const plainText = `├─── [ ▶ ℹ️ System: ${preview} ] Ctrl+O`;
+        const plainText = `${connectorPlain} [ ▶ ℹ️ System: ${preview} ] Ctrl+O`;
         result.push({ node, lineIndex, type: "system", isCollapsible: true, length: visibleLength(plainText) });
       } else {
         const headerNode = (
           <Box flexDirection="row">
             <Text color="gray" dimColor>
-              ├─── [ <Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ] <Text dimColor italic>Ctrl+O</Text>
+              {connectorPrefix}<Text bold color="gray">ℹ️ SYSTEM_INFO</Text> ] <Text dimColor italic>Ctrl+O</Text>
             </Text>
           </Box>
         );
-        const plainText = "├─── [ ℹ️ SYSTEM_INFO ] Ctrl+O";
+        const plainText = `${connectorPlain} [ ℹ️ SYSTEM_INFO ] Ctrl+O`;
         result.push({ node: headerNode, lineIndex, type: "system", isHeader: true, isCollapsible: true, length: visibleLength(plainText) });
 
         const contentLines = line.content.split("\n");
@@ -998,7 +1007,7 @@ export function wrapChatLineToLines({
           for (const subLine of subLines) {
             const node = (
               <Box flexDirection="row">
-                <Text color="gray" dimColor>│    </Text>
+                <Text color="gray" dimColor>{marginSpaces}</Text>
                 <Text color="gray" italic>{subLine}</Text>
               </Box>
             );
@@ -1008,7 +1017,7 @@ export function wrapChatLineToLines({
 
         const separatorNode = (
           <Box flexDirection="row">
-            <Text color="gray" dimColor>│ </Text>
+            <Text color="gray" dimColor>{separatorSpaces}</Text>
           </Box>
         );
         result.push({ node: separatorNode, lineIndex, type: "system", isSeparator: true, isCollapsible: true });
@@ -1019,7 +1028,7 @@ export function wrapChatLineToLines({
       const headerNode = (
         <Box flexDirection="row">
           <Text color="gray" dimColor>
-            ├─── [ <Text bold color="gray">COMM_PACKET</Text> ]
+            {connectorPrefix}<Text bold color="gray">COMM_PACKET</Text> ]
           </Text>
         </Box>
       );
@@ -1031,7 +1040,7 @@ export function wrapChatLineToLines({
         for (const subLine of subLines) {
           const node = (
             <Box flexDirection="row">
-              <Text color="gray" dimColor>│    </Text>
+              <Text color="gray" dimColor>{marginSpaces}</Text>
               <Text>{subLine}</Text>
             </Box>
           );
@@ -1041,7 +1050,7 @@ export function wrapChatLineToLines({
 
       const separatorNode = (
         <Box flexDirection="row">
-          <Text color="gray" dimColor>│ </Text>
+          <Text color="gray" dimColor>{separatorSpaces}</Text>
         </Box>
       );
       result.push({ node: separatorNode, lineIndex, type: "default", isSeparator: true });
@@ -1060,7 +1069,8 @@ function getLineCacheKey(
   chatWidth: number,
   isCollapsed: boolean,
   childSet: Set<number>,
-  isLastAssistant: boolean
+  isLastAssistant: boolean,
+  hideTimeline: boolean
 ): string {
   const childrenKey = line.children
     ? line.children.map((c, i) => `${c.type}:${c.content.length}:${c.mergedResult ? "m" : "n"}:${childSet.has(i)}`).join("|")
@@ -1074,7 +1084,8 @@ function getLineCacheKey(
     line.content.length,
     line.timestamp,
     line.mergedResult ? "m" : "n",
-    childrenKey
+    childrenKey,
+    hideTimeline ? "h" : "s"
   ].join(":");
 }
 
@@ -1118,6 +1129,8 @@ export function computeWrappedLines({
     lineWrapCache.clear();
   }
 
+  const hideTimeline = getSettings().hideTimeline ?? false;
+
   const lastAssistantIdx = (() => {
     const shouldRenderStreamNow = isProcessing && streamDisplay && streamDisplay.trim().length > 0;
     if (shouldRenderStreamNow) return -1;
@@ -1136,7 +1149,7 @@ export function computeWrappedLines({
     const childSet = expandedChildren.get(idx) || new Set<number>();
     const isLastAssistant = idx === lastAssistantIdx;
 
-    const cacheKey = getLineCacheKey(lines[idx], idx, chatWidth, isCollapsed, childSet, isLastAssistant);
+    const cacheKey = getLineCacheKey(lines[idx], idx, chatWidth, isCollapsed, childSet, isLastAssistant, hideTimeline);
     let wrapped = lineWrapCache.get(cacheKey);
 
     if (!wrapped) {
@@ -1152,6 +1165,7 @@ export function computeWrappedLines({
         isLastAssistant,
         isCollapsed,
         expandedChildren: childSet,
+        hideTimeline,
       });
       lineWrapCache.set(cacheKey, wrapped);
     }
@@ -1162,18 +1176,22 @@ export function computeWrappedLines({
   const isLastLinesEmpty = lines.length === 0;
   const borderPrefix = isLastLinesEmpty ? "┌" : "├";
 
+  const marginSpaces = hideTimeline ? "     " : "│    ";
+  const connectorPrefix = hideTimeline ? "     [ " : "├─── [ ";
+  const connectorPlain = hideTimeline ? "     " : "├───";
+
   const shouldRenderStream = isProcessing && streamDisplay && streamDisplay.trim().length > 0;
   if (shouldRenderStream) {
     const headerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>
-          {borderPrefix}─── [ <Text bold color="gray">✦ SUPERAGENT (STREAMING...)</Text> ]
+          {hideTimeline ? "     [ " : `${borderPrefix}─── [ `}<Text bold color="gray">✦ SUPERAGENT (STREAMING...)</Text> ]
         </Text>
       </Box>
     );
     result.push({ node: headerNode, lineIndex: -1, type: "assistant", isHeader: true });
 
-    const contentLines = wrapMarkdownToLines(streamDisplay, "gray", chatWidth, -1);
+    const contentLines = wrapMarkdownToLines(streamDisplay, "gray", chatWidth, -1, hideTimeline);
     result.push(...contentLines);
   }
 
@@ -1182,7 +1200,7 @@ export function computeWrappedLines({
     const headerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>
-          {borderPrefix}─── [ <Text bold color="gray">✦ SUPERAGENT (THINKING...)</Text> ]
+          {hideTimeline ? "     [ " : `${borderPrefix}─── [ `}<Text bold color="gray">✦ SUPERAGENT (THINKING...)</Text> ]
         </Text>
       </Box>
     );
@@ -1190,7 +1208,7 @@ export function computeWrappedLines({
 
     const bodyNode = (
       <Box flexDirection="row">
-        <Text color="gray" dimColor>│    </Text>
+        <Text color="gray" dimColor>{marginSpaces}</Text>
         <LoadingIndicator />
       </Box>
     );
@@ -1201,7 +1219,7 @@ export function computeWrappedLines({
     const headerNode = (
       <Box flexDirection="row">
         <Text color="gray" dimColor>
-          {borderPrefix}─── [ <Text bold color="gray">SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
+          {hideTimeline ? "     [ " : `${borderPrefix}─── [ `}<Text bold color="gray">SYSTEM_CALL: EXECUTING...{timeLeft !== null ? ` (${timeLeft}s left)` : ""}</Text> ]
         </Text>
       </Box>
     );
@@ -1209,7 +1227,7 @@ export function computeWrappedLines({
 
     const spinnerNode = (
       <Box flexDirection="row">
-        <Text color="gray" dimColor>│    </Text>
+        <Text color="gray" dimColor>{marginSpaces}</Text>
         <ToolLoadingIndicator />
       </Box>
     );
@@ -1219,7 +1237,7 @@ export function computeWrappedLines({
     if (activeToolLines.length > 0) {
       const liveOutputHeader = (
         <Box flexDirection="row">
-          <Text color="gray" dimColor>├─── [ </Text><Text bold color="gray">SYSTEM_CALL_OUTPUT (LIVE)</Text><Text color="gray" dimColor> ]</Text>
+          <Text color="gray" dimColor>{connectorPrefix}</Text><Text bold color="gray">SYSTEM_CALL_OUTPUT (LIVE)</Text><Text color="gray" dimColor> ]</Text>
         </Box>
       );
       result.push({ node: liveOutputHeader, lineIndex: -1, type: "tool_start" });
@@ -1229,7 +1247,7 @@ export function computeWrappedLines({
         for (const subLine of subLines) {
           const node = (
             <Box flexDirection="row">
-              <Text color="gray" dimColor>│    </Text>
+              <Text color="gray" dimColor>{marginSpaces}</Text>
               <Text color="gray">{subLine}</Text>
             </Box>
           );
