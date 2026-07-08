@@ -97,3 +97,18 @@ export function getWorkspaceTasksLogDir(): string {
   }
   return logDir;
 }
+
+/**
+ * Returns the path to the input history file scoped to the current workspace.
+ * Stored under ~/.superagent-r/workspaces/<cwd-hash>/input-history.json so that
+ * arrow-key command history from project A never pollutes autocomplete in project B.
+ */
+export function getWorkspaceInputHistoryPath(): string {
+  const root = getRootConfigDir();
+  const wsId = getWorkspaceId();
+  const wsDir = path.join(root, "workspaces", wsId);
+  if (!fs.existsSync(wsDir)) {
+    fs.mkdirSync(wsDir, { recursive: true });
+  }
+  return path.join(wsDir, "input-history.json");
+}

@@ -217,7 +217,6 @@ function isRetryableError(err: unknown): boolean {
     msg.includes("status 400") ||
     msg.includes("status: 400") ||
     msg.includes("invalid_request_error") ||
-    msg.includes("model output must contain") ||
     msg.includes("empty response from model")
   ) {
     return false;
@@ -1791,7 +1790,9 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                                         rawMsg.toLowerCase().includes("status 413") ||
                                         rawMsg.toLowerCase().includes("status: 413");
               const isOverloaded = rawMsg.toLowerCase().includes("our servers are currently overloaded") || rawMsg.toLowerCase().includes("overloaded_error");
-              const isEmptyResponse = err instanceof Error && err.message === "Empty response from model";
+              const isEmptyResponse = (err instanceof Error && err.message === "Empty response from model") ||
+                rawMsg.toLowerCase().includes("model output must contain") ||
+                rawMsg.toLowerCase().includes("these cannot both be empty");
               const isRetryable = isRetryableError(err) || isEmptyResponse || isOverloaded || isPayloadTooLarge;
               let currentMaxRetries = isEmptyResponse ? 3 : (isOverloaded ? 5 : maxRetries);
               attempt++;
@@ -2047,7 +2048,9 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                                         rawMsg.toLowerCase().includes("status 413") ||
                                         rawMsg.toLowerCase().includes("status: 413");
               const isOverloaded = rawMsg.toLowerCase().includes("our servers are currently overloaded") || rawMsg.toLowerCase().includes("overloaded_error");
-              const isEmptyResponse = err instanceof Error && err.message === "Empty response from model";
+              const isEmptyResponse = (err instanceof Error && err.message === "Empty response from model") ||
+                rawMsg.toLowerCase().includes("model output must contain") ||
+                rawMsg.toLowerCase().includes("these cannot both be empty");
               const isRetryable = isRetryableError(err) || isEmptyResponse || isOverloaded || isPayloadTooLarge;
               let currentMaxRetries = isEmptyResponse ? 3 : (isOverloaded ? 5 : maxRetries);
               attempt++;

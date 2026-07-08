@@ -4,7 +4,7 @@ import { execa } from "execa";
 import { registry } from "./registry.js";
 import { SlashCommand, getDefaultModel, getProviderLabel } from "./types.js";
 import { deleteCheckpointsForSession } from "../checkpoints.js";
-import { getGlobalConfigDir, ensureGlobalConfigDir, getEffectiveMasterModel } from "../config.js";
+import { getGlobalConfigDir, ensureGlobalConfigDir, getEffectiveMasterModel, getWorkspaceInputHistoryPath } from "../config.js";
 import { 
   allTools, 
   superagentInstances, 
@@ -95,7 +95,7 @@ export const newCommand: SlashCommand = {
     // ── 9. Clear arrow-key input history ──────────────────
     ctx.setInputHistory?.([]);
     try {
-      const inputHistoryPath = path.join(getGlobalConfigDir(), "input-history.json");
+      const inputHistoryPath = getWorkspaceInputHistoryPath();
       await fs.writeFile(inputHistoryPath, "[]", "utf-8");
     } catch { /* non-fatal */ }
 

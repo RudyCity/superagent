@@ -4,7 +4,7 @@ import ChatTextInput from "./components/ChatTextInput.js";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler, QuestionItem } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
-import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel, getSettings, getModelPresets, getActivePreset } from "./core/config.js";
+import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel, getSettings, getModelPresets, getActivePreset, getWorkspaceInputHistoryPath } from "./core/config.js";
 import { type MessageContent, contentToString } from "./core/conversation.js";
 import ImageAttachmentBar from "./components/ImageAttachmentBar.js";
 import {
@@ -158,7 +158,7 @@ export function App({
   const agentRef = useRef<Agent | null>(null);
 
   // Persist input history to disk so it survives restarts
-  const INPUT_HISTORY_FILE = path.join(getRootConfigDir(), "input-history.json");
+  const INPUT_HISTORY_FILE = getWorkspaceInputHistoryPath();
   useEffect(() => {
     fs.readFile(INPUT_HISTORY_FILE, "utf8").then((raw) => {
       const parsed = JSON.parse(raw);
