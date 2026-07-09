@@ -1687,8 +1687,10 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         // Prevents 413 Payload Too Large errors when large tool results or files
         // converted to images exceed the API endpoint/gateway request body limit.
         {
+          const systemSize = systemPrompt ? Buffer.byteLength(systemPrompt, "utf-8") : 0;
+          const toolsSize = supportsNativeTools ? Buffer.byteLength(JSON.stringify(filteredToolDefs), "utf-8") : 0;
           const payloadJson = JSON.stringify(messages);
-          const payloadBytes = Buffer.byteLength(payloadJson, "utf-8");
+          const payloadBytes = Buffer.byteLength(payloadJson, "utf-8") + systemSize + toolsSize + 5000;
           const maxPayloadBytes = this.detectedPayloadLimitBytes
             ? Math.floor(this.detectedPayloadLimitBytes * 0.9)
             : 4 * 1024 * 1024; // 4 MB safety limit
@@ -1698,7 +1700,8 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               "WARN",
               `Pre-flight payload check: estimated payload size (${(payloadBytes / 1024 / 1024).toFixed(2)} MB) exceeds safety threshold (${(maxPayloadBytes / 1024 / 1024).toFixed(2)} MB). Triggering emergency compaction.`
             );
-            await this.compactHistoryIfNeeded(signal, true, undefined, maxPayloadBytes);
+            const targetBudget = Math.max(20 * 1024, maxPayloadBytes - systemSize - toolsSize - 5000);
+            await this.compactHistoryIfNeeded(signal, true, undefined, targetBudget);
             // Rebuild messages from compacted conversation
             messages = this.buildMessages(supportsNativeTools);
             injectDynamicContext(messages);
@@ -1785,7 +1788,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         const modelName = modelInstance ? modelInstance.modelId : "";
         const supportsVision = this.modelSupportsVision(modelName);
         const settings = getSettings();
-        const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
+        const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
         // Inform the conversation so stripOldToolResults retains more cycles
         // when vision is active — buildMessages() will image-convert large results.
         this.conversation.setVisionMode(useVisionTokenSaving);
@@ -1988,7 +1991,10 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 const parsedLimit = parsePayloadLimitBytes(rawMsg);
                 if (parsedLimit) {
                   this.detectedPayloadLimitBytes = parsedLimit;
-                  currentByteBudget = Math.max(1024 * 20, Math.floor(parsedLimit * 0.9));
+                  const maxPayloadBytes = Math.floor(parsedLimit * 0.9);
+                  const systemSize = systemPrompt ? Buffer.byteLength(systemPrompt, "utf-8") : 0;
+                  const toolsSize = supportsNativeTools ? Buffer.byteLength(JSON.stringify(filteredToolDefs), "utf-8") : 0;
+                  currentByteBudget = Math.max(1024 * 20, maxPayloadBytes - systemSize - toolsSize - 5000);
                 } else {
                   currentByteBudget = Math.max(1024 * 20, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 20KB)
                 }
@@ -2257,7 +2263,10 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 const parsedLimit = parsePayloadLimitBytes(rawMsg);
                 if (parsedLimit) {
                   this.detectedPayloadLimitBytes = parsedLimit;
-                  currentByteBudget = Math.max(1024 * 20, Math.floor(parsedLimit * 0.9));
+                  const maxPayloadBytes = Math.floor(parsedLimit * 0.9);
+                  const systemSize = finalSystemPrompt ? Buffer.byteLength(finalSystemPrompt, "utf-8") : 0;
+                  const toolsSize = supportsNativeTools ? Buffer.byteLength(JSON.stringify(filteredToolDefs), "utf-8") : 0;
+                  currentByteBudget = Math.max(1024 * 20, maxPayloadBytes - systemSize - toolsSize - 5000);
                 } else {
                   currentByteBudget = Math.max(1024 * 20, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 20KB)
                 }
@@ -2999,7 +3008,7 @@ for (const tc of toolCalls) {
     }
 
     const settings = getSettings();
-    const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
+    const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
     const threshold = getDynamicVisionThreshold(modelName);
 
     for (const m of this.conversation.getMessages()) {

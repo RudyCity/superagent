@@ -52,7 +52,7 @@ export class PruningStrategy implements CompactionStrategy {
         try {
           const { getSettings, getDynamicVisionThreshold } = await import("../../config.js");
           const modelName = options.modelName || "";
-          if (modelName) {
+          if (modelName && (byteBudget === 0 || byteBudget >= 500 * 1024)) {
             const settings = getSettings();
             const name = modelName.toLowerCase();
             const supportsVision = name.includes("claude-3") || name.includes("gpt-4o") || name.includes("gpt-4-vision") || name.includes("gemini") || name.includes("gemma-3") || name.includes("vision");
@@ -66,6 +66,7 @@ export class PruningStrategy implements CompactionStrategy {
           visionThreshold = 3000;
         }
       }
+
 
       let currentBytes = toKeep.reduce((sum, msg) => sum + estimateMessagePayloadBytes(msg, useVisionTokenSaving!, visionThreshold), 0);
 
