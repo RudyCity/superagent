@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.211] - 2026-07-09
+
+### Fixed
+- Fixed `manage_subagents` tool schema mismatches by implementing fallback parameter resolution for `conversation_id`, `conversation_ids`, and `conversationId` into the expected plural `conversationIds` array.
+- Updated `BATCH_OPS_RULE` in `src/core/prompts.ts` to instruct the AI to use `conversationIds` and avoid singular `conversation_id`.
+
+---
+
 ## [1.2.210] - 2026-07-09
 
 ### Fixed

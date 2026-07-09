@@ -873,7 +873,8 @@ export const manageSubagentsTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const action = args.action as string;
-    const conversationIds = args.conversationIds as string[];
+    const rawIds = args.conversationIds ?? args.conversation_ids ?? args.conversation_id ?? args.conversationId;
+    const conversationIds = Array.isArray(rawIds) ? (rawIds as string[]) : (rawIds ? [String(rawIds)] : []);
 
     if (action === "list") {
       const lines: string[] = ["Defined Subagent Types:"];

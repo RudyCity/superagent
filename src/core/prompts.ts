@@ -20,6 +20,7 @@ const BATCH_OPS_RULE = `- BATCH_OPS: Use bulk/array parameters for ALL multi-fil
   - multi_replace_file_content: 'files' array
   - apply_patch: 'patches' array
   - invoke_subagent: 'Subagents' array (pass multiple entries to spawn independent subagents concurrently)
+  - manage_subagents: 'conversationIds' array (must be an array of strings, e.g. for logs or report actions, never use singular 'conversation_id')
   - manage_tasks / manage_tasks_bulk: use bulk actions ('add_bulk', 'update_bulk', 'remove_bulk') instead of looping single task updates
   NEVER call file or task tools sequentially when operating on multiple items. Batch all operations upfront.`;
 
