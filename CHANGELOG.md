@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.215] - 2026-07-10
+
+### Added
+- Added local HTTP and Server-Sent Events (SSE) server (`--server` / `-s` CLI flag) to programmatically orchestrate Single and Multi mode agents.
+- Added a feature-rich, cyberpunk-themed Chrome Extension containing:
+  - Mode switching between Single and Multi.
+  - Streaming chat output separating Agent reasoning from standard text.
+  - Interactive popup dialogs to handle tool execution approvals and decision questions.
+  - Dynamic 3-Tier Multi-Agent hierarchy visualization.
+  - Workspace task checklist synchronization.
+  - Active tab context extraction to grab page content or code selections directly from Chrome.
+
+---
+
 ## [1.2.214] - 2026-07-10
 
 ### Added

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Superagent AI Coding Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header>
+    <div class="logo-container">
+      <div class="glow-dot"></div>
+      <h1>SUPERAGENT<span>.AI</span></h1>
+    </div>
+    <div id="connection-status" class="status-badge status-offline">Offline</div>
+  </header>
+
+  <main>
+    <!-- Setup Screen -->
+    <section id="setup-screen" class="panel active">
+      <div class="section-header">
+        <h2>INITIALIZE ENGINE</h2>
+      </div>
+      <div class="form-group">
+        <label for="workspace-path">Local Workspace Path</label>
+        <input type="text" id="workspace-path" placeholder="e.g. C:\Projects\my-app" required>
+        <span class="input-hint">The directory Superagent will have filesystem access to write code.</span>
+      </div>
+
+      <div class="form-group">
+        <label>Orchestration Mode</label>
+        <div class="mode-selector">
+          <label class="mode-option">
+            <input type="radio" name="agent-mode" value="single" checked>
+            <div class="mode-card">
+              <h3>Single Mode</h3>
+              <p>Direct atomic operations, ideal for simple code modifications and quick queries.</p>
+            </div>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="agent-mode" value="multi">
+            <div class="mode-card">
+              <h3>Multi Mode</h3>
+              <p>3-Tier orchestration (Master → Superagent → Subagent) in isolated git branches.</p>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group checkbox-group">
+        <label class="checkbox-container">
+          <input type="checkbox" id="resume-session" checked>
+          <span class="checkmark"></span>
+          Resume last active session history
+        </label>
+      </div>
+
+      <button id="btn-init" class="btn btn-primary">LAUNCH SESSION</button>
+    </section>
+
+    <!-- Main Workspace (Active Session) -->
+    <section id="workspace-screen" class="panel">
+      <div class="sidebar-info">
+        <div class="info-row">
+          <span class="info-label">Workspace:</span>
+          <span id="active-workspace-text" class="info-value">Not Selected</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Mode:</span>
+          <span id="active-mode-text" class="info-value uppercase">Single</span>
+        </div>
+        <button id="btn-abort" class="btn btn-danger btn-sm">HALT EXECUTION</button>
+      </div>
+
+      <div class="workspace-grid">
+        <!-- Chat Area -->
+        <div class="chat-container">
+          <div id="chat-messages" class="chat-messages">
+            <!-- Messages stream here -->
+          </div>
+          
+          <!-- Typing / Progress Indicator -->
+          <div id="processing-indicator" class="processing-indicator">
+            <div class="spinner"></div>
+            <span id="processing-text">Agent is thinking...</span>
+          </div>
+        </div>
+
+        <!-- Dashboard Panel (Checklist & Agents Tree) -->
+        <div class="dashboard-panel">
+          <div class="tabs">
+            <button class="tab-btn active" data-tab="tab-checklist">Checklist</button>
+            <button class="tab-btn" data-tab="tab-agents">Active Agents</button>
+          </div>
+
+          <div id="tab-checklist" class="tab-content active">
+            <div id="checklist-container" class="checklist-container">
+              <p class="empty-state">No active tasks in checklist.</p>
+            </div>
+          </div>
+
+          <div id="tab-agents" class="tab-content">
+            <div id="agents-tree" class="agents-tree">
+              <!-- Graph tree nodes will render dynamically -->
+              <p class="empty-state">No secondary agents spawned yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Footer -->
+      <div class="chat-footer">
+        <div class="context-bar">
+          <button id="btn-grab-context" class="btn btn-secondary btn-xs">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+            Attach Chrome Active Tab context
+          </button>
+          <div id="context-badge" class="context-badge hidden">Tab attached</div>
+        </div>
+        <div class="input-area">
+          <textarea id="chat-input" placeholder="Type instructions for Superagent..." rows="2"></textarea>
+          <button id="btn-send" class="btn btn-primary btn-icon">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Prompt Approvals overlay -->
+  <div id="permission-overlay" class="overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>⚠️ ACTION APPROVAL REQUIRED</h3>
+      </div>
+      <div class="modal-body">
+        <p class="modal-label">Tool Invoked:</p>
+        <div id="permission-tool" class="code-box">run_command</div>
+        <p class="modal-label">Operation Description:</p>
+        <div id="permission-desc" class="desc-box">Running test script...</div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-approve-once" class="btn btn-primary">Approve Once</button>
+        <button id="btn-approve-session" class="btn btn-secondary">Allow for Session</button>
+        <button id="btn-deny-permission" class="btn btn-danger">Deny</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Questions overlay -->
+  <div id="question-overlay" class="overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>❓ DECISION POINT</h3>
+      </div>
+      <div class="modal-body">
+        <p id="question-title">Choose the path to proceed:</p>
+        <div id="question-options-container" class="options-container">
+          <!-- Radio or check buttons -->
+        </div>
+        <div id="question-custom-container" class="custom-input-container hidden">
+          <label for="question-custom-input">Write-in Response:</label>
+          <input type="text" id="question-custom-input" placeholder="Enter custom response...">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-submit-answer" class="btn btn-primary">Submit Answer</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
