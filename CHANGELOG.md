@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.199] - 2026-07-09
+
+### Fixed
+- Added Google Gemini to the /login command line usage output helper text.
+
+---
+
 ## [1.2.198] - 2026-07-09
 
 ### Fixed

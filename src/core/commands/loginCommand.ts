@@ -33,8 +33,8 @@ export const loginCommand: SlashCommand = {
           type: "system",
           content: [
             "Usage:",
-            "  /login add <api_key> (auto-detects OpenRouter, Anthropic, OpenAI)",
-            "  /login add <provider> <api_key>",
+            "  /login add <api_key> (auto-detects OpenRouter, Anthropic, OpenAI, Gemini)",
+            "  /login add <provider> <api_key> (providers: openrouter, anthropic, openai, gemini)",
             "  /login add custom <base_url> <api_key>",
             "  /login list",
             "  /login remove <provider_id>",
