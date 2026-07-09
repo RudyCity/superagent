@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.206] - 2026-07-09
+
+### Fixed
+- Fixed a selection and model fetching bug in the model wizard (`/model`) where selecting an existing custom provider profile (e.g., `dddd`) at step 2 was not supported, resulting in an `Invalid provider type choice` error. The wizard now correctly recognizes existing provider profiles at step 2, transitions directly to the model selection step (step 15), and fetches models using the profile's configured base URL and API token.
+- Fixed a lookup failure in `getContextWindowLimit()` where model names containing provider prefixes (e.g., `dddd@claude-sonnet-4.5-1m`) failed to match the models cache or static limits lookup because the prefix was not stripped, falling back to a default limit of 256000. It now strips the `@` prefix before matching.
+
+---
+
 ## [1.2.205] - 2026-07-09
 
 ### Fixed

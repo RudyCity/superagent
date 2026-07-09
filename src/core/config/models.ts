@@ -105,13 +105,16 @@ export function getContextWindowLimit(model: string): number {
   const jsonLimit = getSettings().contextWindowLimit;
   if (jsonLimit > 0) return jsonLimit;
 
+  // Clean provider prefix (e.g. "dddd@claude-sonnet" -> "claude-sonnet")
+  const cleanModel = model.includes("@") ? model.substring(model.indexOf("@") + 1) : model;
+
   // 2. Read from models_cache.json
   try {
     const cachePath = path.join(getRootConfigDir(), "models_cache.json");
     if (fs.existsSync(cachePath)) {
       const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
-      if (cache && typeof cache[model] === "number") {
-        return cache[model];
+      if (cache && typeof cache[cleanModel] === "number") {
+        return cache[cleanModel];
       }
     }
   } catch (err) {
@@ -119,7 +122,7 @@ export function getContextWindowLimit(model: string): number {
   }
 
   // 3. Fallback to rich static lookup
-  const staticLimit = getStaticModelLimit(model);
+  const staticLimit = getStaticModelLimit(cleanModel);
   if (staticLimit !== null) {
     return staticLimit;
   }

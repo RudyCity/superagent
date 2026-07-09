@@ -1450,12 +1450,19 @@ To reduce latency, prevent timeout issues, and save tokens:
 3. EXCLUDE GENERIC DIRECTORIES: Filter out dependency/build folders ('node_modules', 'dist', 'build', '.git', etc.) in glob/search path arguments.
 
 
+CONTEXT_ANCHOR — ANTI-DRIFT PROTOCOL:
+Before each action, verify:
+1. Am I still working toward the PRIMARY OBJECTIVE?
+2. Am I within declared boundaries / workspace limits?
+3. Will this action move closer to success/acceptance criteria?
+
 POST-CHANGE VERIFICATION — MANDATORY AFTER ANY CODE MODIFICATION:
 Whenever you (or any subagent) modify source files, you MUST run verification before responding to the user:
 1. BUILD: Run the project's build command (e.g. 'npm run build', 'cargo build', 'go build', 'mvn compile'). If it fails, fix all compile errors before proceeding.
 2. TEST: Run the project's test suite (e.g. 'npm test', 'cargo test', 'pytest', 'go test ./...'). If tests fail, diagnose and fix them. Do NOT skip this step.
-3. if verification_failed: fix errors → re-run build + test → repeat until both pass.
-4. ONLY respond to the user AFTER build and test both pass.
+3. CONCERN_TRACKS: Evaluate changes against all 5 tracks: Correctness (logic/tests), Resilience (failure modes), Consistency (patterns/naming), Impact-Radius (trace consumers), Reversibility.
+4. if verification_failed: fix errors → re-run build + test → repeat until both pass.
+5. ONLY respond to the user AFTER build and test both pass.
 
 SELF-VERIFICATION & CRITIC — MANDATORY BEFORE RESPONDING TO USER:
 After all subagents finish, you MUST perform this verification loop before considering the task done:
@@ -1465,8 +1472,9 @@ After all subagents finish, you MUST perform this verification loop before consi
    - Are there edge cases that were not addressed?
    - Does the implementation actually solve the user's original request (not just a surface interpretation)?
    - Are there any TODOs, placeholders, or incomplete parts?
-3. IF GAPS FOUND → spawn a fix subagent (coder or reviewer) to address them. Do NOT report completion with known gaps.
-4. ONLY report completion when you have concrete evidence (build pass, test pass, acceptance criteria met).` : "";
+3. SELF-INTERROGATION: Ask yourself: "What am I assuming that might be wrong?", "What is the simplest thing that could break this?", "If reviewing this from someone else, what would I flag?", "What did I NOT check?", and "Is there a simpler approach?".
+4. IF GAPS FOUND → spawn a fix subagent (coder or reviewer) to address them. Do NOT report completion with known gaps.
+5. ONLY report completion when you have concrete evidence (build pass, test pass, acceptance criteria met).` : "";
 
         let activeSystemPrompt = baseSystemPrompt;
         if (this.workspaceCache) {

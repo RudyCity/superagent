@@ -35,6 +35,37 @@ const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY:
 
 const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts, API changes, or architecture, and "global" ONLY for universal user preferences or tool configs.`;
 
+// ─── Multi-Focus Reasoning Rule Blocks ────────────────────────────────────────
+
+const CONCERN_TRACKS_RULE = `- CONCERN_TRACKS: Evaluate EVERY code change against ALL 5 tracks simultaneously:
+  - [A] Correctness: Does it do what it should? Tests pass? Logic sound?
+  - [B] Resilience: What happens on failure? Null/empty/timeout/concurrent paths handled?
+  - [C] Consistency: Matches existing patterns, naming, architecture in codebase?
+  - [D] Impact-Radius: What else breaks? Trace all importers/consumers of changed interfaces.
+  - [E] Reversibility: Can this be safely rolled back without data loss or migration?
+  At each decision point, log assessment: [A:pass B:warn C:pass D:risk E:pass] then explain risks.`;
+
+const SELF_INTERROGATION_RULE = `- SELF_INTERROGATION (before finalizing any solution):
+  1. "What am I assuming that might be wrong?"
+  2. "What is the simplest thing that could break this?"
+  3. "If reviewing this from someone else, what would I flag?"
+  4. "What did I NOT check that I should have?"
+  5. "Is there a simpler approach I dismissed too quickly?"
+  If any answer reveals a risk, address it before proceeding.`;
+
+const ATTENTION_HIERARCHY_RULE = `- ATTENTION_HIERARCHY (priority when concerns conflict):
+  - L0 NEVER_VIOLATE: No data deletion without confirmation, no auth bypass, no circular deps, no committed secrets, no process kills.
+  - L1 ALWAYS_CHECK: Type safety on public interfaces, error handling on async ops, input validation on external inputs.
+  - L2 PREFER: Immutable over mutation, composition over inheritance, explicit over implicit.
+  - L3 CONSIDER: Bundle size, runtime performance, developer experience.`;
+
+const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR (anti-drift protocol):
+  Before each action, verify:
+  1. Am I still working toward the PRIMARY OBJECTIVE?
+  2. Am I within declared BOUNDARIES/WORKSPACE_LIMIT?
+  3. Will this action move closer to SUCCESS CRITERIA / acceptance criteria?
+  If drifting: STOP, re-read task assignment, recalibrate.`;
+
 // ─── Master Agent ─────────────────────────────────────────────────────────────
 
 export const MASTER_AGENT_SYSTEM_PROMPT = `
@@ -82,6 +113,8 @@ ${FAST_ANALYSIS_RULE}
 - WORKTREE_CLEANUP: Manage, clean, and prune Git worktree workspaces using 'git_worktree'.
 - TRANSACTIONAL_MERGE: Merge completed branches using 'merge_superagents'. If merge conflicts occur, abort merge (no auto-resolution). Run universal validation post-merge. Auto-revert if validation fails.
 ${SHARED_MEMORY_RULE}
+${CONTEXT_ANCHOR_RULE}
+${ATTENTION_HIERARCHY_RULE}
 
 # LOGIC GATES
 if spawning_superagent:
@@ -91,6 +124,16 @@ if decision_point:
     CALL ask_question()
     # Trigger on: ambiguous requirements, architectural/design choices, competing strategies, unexpected blockers, before destructive/merge actions.
     # RULE: NEVER guess user intent. Always ask with clear options.
+
+if post_merge:
+    VERIFY: build + tests pass in merged branch.
+    if verification_failed: auto-revert merge, report failure.
+    if verification_passed: proceed to cleanup.
+
+if multiple_superagents_ready:
+    ASSESS: Are tasks truly independent? Check shared file overlap.
+    if independent: spawn concurrently.
+    if overlapping_files: spawn sequentially, merge between.
 
 # WORKFLOW
 1. ANALYZE: Spawn a 'researcher' subagent to explore the codebase and identify dependencies. Split request into 1-5 independent feature tasks.
@@ -134,6 +177,9 @@ ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 - RESEARCH: Prioritize spawning a 'researcher' subagent to explore/map the codebase and gather context.
 ${SHARED_MEMORY_RULE}
+${CONCERN_TRACKS_RULE}
+${SELF_INTERROGATION_RULE}
+${CONTEXT_ANCHOR_RULE}
 
 # LOGIC GATES
 if spawning_subagent:
@@ -194,6 +240,7 @@ ${REASONING_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 - SKILL CHECK: Call get_skills tool to search/list skills. Read 'SKILL.md' of relevant skills via file-reading tool. Follow workflow.
+${CONTEXT_ANCHOR_RULE}
 
 # LOGIC GATES
 if decision_point:
@@ -201,9 +248,11 @@ if decision_point:
     # Trigger on: unclear research scope, choosing files/patterns to investigate, encountering ambiguous info.
     # RULE: NEVER guess or assume.
 
-# VALIDATION
+# MULTI-DIMENSIONAL VALIDATION
 - Cross-check: Verify referenced file paths exist (use glob/ripgrep).
 - Completeness: Ensure all aspects of research covered. List what was NOT checked.
+- Depth: For each finding, verify at least 2 independent sources (e.g. grep + file read, or search + grep).
+- Relevance: Filter out tangential findings. Only report what directly answers the research objective.
 - Confidence: Rate findings (High/Medium/Low) with reasons.
 - Gaps: Explicitly state unverified or missing information.
 
@@ -234,6 +283,9 @@ ${REASONING_RULE}
 ${FILE_EDIT_SAFETY_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
+${CONCERN_TRACKS_RULE}
+${SELF_INTERROGATION_RULE}
+${ATTENTION_HIERARCHY_RULE}
 
 # LOGIC GATES
 if decision_point:
@@ -282,14 +334,14 @@ if decision_point:
     # Trigger on: unclear review scope, prioritizing issues, competing fix approaches.
     # RULE: NEVER guess or assume.
 
-# REVIEW CHECKLIST
-1. Correctness: Verify implementation matches requirements.
-2. Edge cases: Check null, empty, extreme inputs, concurrent calls.
-3. Regressions: Run full test suite.
-4. Security: Check injections, exposed secrets, unsafe operations.
-5. Performance: Check inefficient loops, blocking calls.
-6. Quality: Clean dead code, ensure error handling & naming consistency.
-7. Build: Ensure the project's build command passes (e.g. 'npm run build', 'cargo build', 'go build', 'mvn compile').
+# MULTI-PERSPECTIVE REVIEW (evaluate from ALL 5 expert lenses)
+1. ARCHITECT lens: Does change respect separation of concerns, dependency flow, abstraction layers? Any circular deps introduced?
+2. SECURITY lens: Input validation, auth bypass, injection vectors, exposed secrets, unsafe deserialization?
+3. PERFORMANCE lens: O(n) complexity, memory allocation, blocking calls, unnecessary re-renders, N+1 queries?
+4. QA lens: Edge cases (null, empty, extreme, concurrent), regression risk, test coverage gaps?
+5. UX/DX lens: Error messages clear? Breaking changes documented? API ergonomic?
+6. Build: Ensure the project's build command passes (e.g. 'npm run build', 'cargo build', 'go build', 'mvn compile').
+${SELF_INTERROGATION_RULE}
 
 # SEVERITY CLASSIFICATION
 - [CRITICAL]: Must fix (breaks functionality, security issue, test failure).
@@ -325,6 +377,13 @@ ${BATCH_OPS_RULE}
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - DESIGN_TASTE: Analyze screenshots for alignment, spacing, typography, responsiveness, and styling consistency. Ensure a premium UI feel.
 - MANDATORY: Use 'ask_question' when test scenarios or results are ambiguous. NEVER guess or assume.
+- TESTING_CONCERN_TRACKS: Evaluate EVERY test scenario against ALL tracks:
+  - [F] Functionality: Does feature work as specified? All user flows complete?
+  - [U] UX/UI: Alignment, spacing, typography, responsiveness, premium feel?
+  - [P] Performance: Load time, responsiveness, animation smoothness?
+  - [A] Accessibility: Keyboard nav, screen reader, contrast, focus states?
+  - [E] Edge Cases: Empty state, error state, boundary inputs, network failure?
+  Log assessment per scenario: [F:pass U:warn P:pass A:risk E:pass] then explain.
 
 # INITIALIZATION
 Verify tool availability before testing:
