@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.210] - 2026-07-09
+
+### Fixed
+- Fixed tool description formatting displaying `(missing)` for file operations by checking for the `args.path` parameter alias in `getToolDescription` and `resolveFilePathFromArgs`.
+- Fixed subagent invocation failure and `(missing)` UI labels by checking for `agent_name`, `agent_role`, and `initial_message` aliases inside the `invoke_subagent` tool execution and description parser.
+- Fixed `multi_replace_file_content` failures by supporting `replacements` and `oldContent`/`newContent` chunk parameters aliases in both bulk and single-file mode.
+- Support `branchName` and `agent_role`/`prompt` aliases for `invoke_superagent` to prevent arguments parsing mismatches.
+
+---
+
 ## [1.2.209] - 2026-07-09
 
 ### Fixed

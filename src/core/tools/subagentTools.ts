@@ -212,9 +212,9 @@ export const invokeSubagentTool: Tool = {
     required: ["typeName", "role", "prompt"],
   },
   async execute(args, cwd, signal) {
-    const typeName = args.typeName as string;
-    const role = args.role as string;
-    const prompt = args.prompt as string;
+    const typeName = (args.typeName ?? args.agent_name ?? args.name) as string;
+    const role = (args.role ?? args.agent_role ?? typeName ?? "subagent") as string;
+    const prompt = (args.prompt ?? args.initial_message ?? args.message) as string;
     const mode = args.mode as "inline" | "background" | undefined;
     let wait = false;
     if (mode === "inline") {

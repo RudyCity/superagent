@@ -470,8 +470,8 @@ export function getToolDescription(
   toolCall: ToolCall
 ): string {
   const args = toolCall.args;
-  /** Safely resolve file path from common LLM aliases (filePath, file_path, TargetFile, filePaths) */
-  let fp = (args.filePath ?? args.file_path ?? args.TargetFile) as string | undefined;
+  /** Safely resolve file path from common LLM aliases (filePath, file_path, path, TargetFile, filePaths) */
+  let fp = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile) as string | undefined;
   if (!fp && args.filePaths && Array.isArray(args.filePaths) && args.filePaths.length > 0) {
     const firstPath = extractFilePath(args.filePaths[0]) ?? "(invalid)";
     if (args.filePaths.length === 1) {
@@ -481,7 +481,7 @@ export function getToolDescription(
     }
   }
   if (!fp && args.edits && Array.isArray(args.edits) && args.edits.length > 0) {
-    const uniquePaths = Array.from(new Set(args.edits.map((e: any) => e.filePath).filter(Boolean)));
+    const uniquePaths = Array.from(new Set(args.edits.map((e: any) => e.filePath ?? e.path).filter(Boolean)));
     if (uniquePaths.length === 1) {
       fp = uniquePaths[0] as string;
     } else if (uniquePaths.length > 1) {
@@ -489,7 +489,7 @@ export function getToolDescription(
     }
   }
   if (!fp && args.files && Array.isArray(args.files) && args.files.length > 0) {
-    const uniquePaths = Array.from(new Set(args.files.map((f: any) => f.filePath).filter(Boolean)));
+    const uniquePaths = Array.from(new Set(args.files.map((f: any) => f.filePath ?? f.path).filter(Boolean)));
     if (uniquePaths.length === 1) {
       fp = uniquePaths[0] as string;
     } else if (uniquePaths.length > 1) {
@@ -497,7 +497,7 @@ export function getToolDescription(
     }
   }
   if (!fp && args.patches && Array.isArray(args.patches) && args.patches.length > 0) {
-    const uniquePaths = Array.from(new Set(args.patches.map((p: any) => p.filePath).filter(Boolean)));
+    const uniquePaths = Array.from(new Set(args.patches.map((p: any) => p.filePath ?? p.path).filter(Boolean)));
     if (uniquePaths.length === 1) {
       fp = uniquePaths[0] as string;
     } else if (uniquePaths.length > 1) {
@@ -544,14 +544,20 @@ export function getToolDescription(
       return `Scheduling job: ${s(args.prompt)}`;
     case "define_subagent":
       return `Defining subagent: ${s(args.name)}`;
-    case "invoke_subagent":
-      return `Invoking subagent (${s(args.role)}): ${s(args.typeName)}`;
+    case "invoke_subagent": {
+      const typeName = args.typeName ?? args.agent_name ?? args.name;
+      const role = args.role ?? args.agent_role ?? typeName ?? "subagent";
+      return `Invoking subagent (${s(role)}): ${s(typeName)}`;
+    }
     case "send_message":
       return `Sending message to subagent: ${s(args.recipientId)}`;
     case "manage_subagents":
       return `Managing subagents (${s(args.action)})`;
-    case "invoke_superagent":
-      return `Spawning Superagent "${s(args.role)}" on branch ${s(args.branch)}`;
+    case "invoke_superagent": {
+      const role = args.role ?? args.agent_role ?? "superagent";
+      const branch = args.branch ?? args.branchName;
+      return `Spawning Superagent "${s(role)}" on branch ${s(branch)}`;
+    }
     case "await_superagents":
       return `Waiting for all Superagents to finish`;
     case "merge_superagents":

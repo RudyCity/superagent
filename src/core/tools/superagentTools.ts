@@ -204,11 +204,11 @@ export const invokeSuperagentTool: Tool = {
   },
  
   async execute(args, cwd, signal) {
-    const role = args.role as string;
-    const task = args.task as string;
-    const branch = args.branch as string;
+    const role = (args.role ?? args.agent_role ?? args.typeName ?? "superagent") as string;
+    const task = (args.task ?? args.prompt ?? args.initial_message) as string;
+    const branch = (args.branch ?? args.branchName) as string;
     const baseBranch = args.baseBranch as string | undefined;
-    const typeName = args.typeName as string | undefined;
+    const typeName = (args.typeName ?? args.agent_name) as string | undefined;
     const wait = args.wait === true;
     const constraints = args.constraints as string | undefined;
     const rawCriteria = args.acceptanceCriteria;

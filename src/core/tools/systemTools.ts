@@ -81,7 +81,7 @@ function normalizePath(filePath: string): string {
  * Returns the resolved absolute path, or undefined if no valid path was provided.
  */
 function resolveFilePathFromArgs(args: Record<string, unknown>, cwd: string): string | undefined {
-  const raw = (args.filePath ?? args.file_path ?? args.TargetFile ?? args.targetFile) as string | undefined;
+  const raw = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.targetFile) as string | undefined;
   if (!raw || typeof raw !== "string" || raw.trim() === "") return undefined;
   return normalizePath(path.resolve(cwd, raw));
 }
@@ -1351,14 +1351,14 @@ export const multiReplaceFileContentTool: Tool = {
 
         for (const file of sortedFiles) {
           try {
-            const rawChunks = file.chunks;
+            const rawChunks = file.chunks || (file as any).replacements || [];
             const chunks: Chunk[] = [];
             for (const c of rawChunks as any[]) {
               if (!c || typeof c !== "object") {
                 throw new Error("Invalid chunk element: expected an object.");
               }
-              const targetContent = c.targetContent ?? c.TargetContent;
-              const replacementContent = c.replacementContent ?? c.ReplacementContent;
+              const targetContent = c.targetContent ?? c.TargetContent ?? c.oldContent ?? c.oldString ?? c.originalContent;
+              const replacementContent = c.replacementContent ?? c.ReplacementContent ?? c.newContent ?? c.newString ?? c.updatedContent;
               if (typeof targetContent !== "string") {
                 throw new Error(`Missing or invalid 'targetContent' in chunk.`);
               }
@@ -1571,7 +1571,7 @@ export const multiReplaceFileContentTool: Tool = {
     if (!filePath) {
       return "Error: Missing required parameter 'filePath' or 'files'. Provide the path to the file to edit.";
     }
-    let rawChunks = args.chunks || args.ReplacementChunks || args.replacementChunks || [];
+    let rawChunks = args.chunks || args.ReplacementChunks || args.replacementChunks || args.replacements || [];
     if (typeof rawChunks === "string") {
       try {
         rawChunks = JSON.parse(rawChunks);
@@ -1589,8 +1589,8 @@ export const multiReplaceFileContentTool: Tool = {
       if (!c || typeof c !== "object") {
         return `Error: Invalid chunk element: expected an object, got ${typeof c}.`;
       }
-      const targetContent = c.targetContent ?? c.TargetContent;
-      const replacementContent = c.replacementContent ?? c.ReplacementContent;
+      const targetContent = c.targetContent ?? c.TargetContent ?? c.oldContent ?? c.oldString ?? c.originalContent;
+      const replacementContent = c.replacementContent ?? c.ReplacementContent ?? c.newContent ?? c.newString ?? c.updatedContent;
       if (typeof targetContent !== "string") {
         return `Error: Missing or invalid 'targetContent' in chunk. Expected string, got ${typeof targetContent}.`;
       }
