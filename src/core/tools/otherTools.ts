@@ -1599,7 +1599,24 @@ If no skills are relevant, return an empty array: []`;
         output += `- name: ${s.name}\n`;
         output += `  author: ${author}\n`;
         output += `  description: ${s.description}\n`;
-        output += `  path: ${s.path}\n\n`;
+        output += `  path: ${s.path}\n`;
+
+        if (query) {
+          try {
+            const fs = await import("fs");
+            if (fs.existsSync(s.path)) {
+              const content = fs.readFileSync(s.path, "utf-8");
+              const indented = content
+                .split("\n")
+                .map((line) => `  ${line}`)
+                .join("\n");
+              output += `  content:\n${indented}\n`;
+            }
+          } catch (fileErr) {
+            // Ignore error reading skill file
+          }
+        }
+        output += `\n`;
       }
       return output.trim();
     } catch (err: any) {

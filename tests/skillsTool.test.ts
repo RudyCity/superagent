@@ -16,6 +16,22 @@ vi.mock("ai", () => {
   };
 });
 
+// Mock fs module for skill content reading
+vi.mock("fs", () => {
+  return {
+    default: {
+      existsSync: vi.fn().mockReturnValue(true),
+      readFileSync: vi.fn().mockImplementation((filePath) => {
+        return `Mock content of ${filePath}`;
+      }),
+    },
+    existsSync: vi.fn().mockReturnValue(true),
+    readFileSync: vi.fn().mockImplementation((filePath) => {
+      return `Mock content of ${filePath}`;
+    }),
+  };
+});
+
 describe("get_skills Tool", () => {
   it("should return no skills found when list is empty", async () => {
     const { getInstalledSkills } = await import("../src/core/config.js");
@@ -135,5 +151,23 @@ describe("get_skills Tool", () => {
     const result = await getSkillsTool.execute({ query: "rbac role user management" }, "/cwd");
     expect(result).toContain("auth-implementation-patterns");
     expect(result).toContain("istio-traffic-management");
+  });
+
+  it("should automatically include skill contents when a query is provided and the file exists", async () => {
+    const { getInstalledSkills, getModelInstance } = await import("../src/core/config.js");
+    vi.mocked(getInstalledSkills).mockReturnValue([
+      {
+        name: "Mock Skill",
+        description: "A skill for testing",
+        author: "tester",
+        path: "/path/to/mock-skill/SKILL.md",
+      },
+    ]);
+    vi.mocked(getModelInstance).mockReturnValue(undefined);
+
+    const result = await getSkillsTool.execute({ query: "testing" }, "/cwd");
+    expect(result).toContain("Mock Skill");
+    expect(result).toContain("content:");
+    expect(result).toContain("Mock content of /path/to/mock-skill/SKILL.md");
   });
 });

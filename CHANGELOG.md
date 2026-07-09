@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.214] - 2026-07-10
+
+### Added
+- Updated get_skills tool to automatically include matching skill file contents when queried, reducing the number of tool calls needed for the agent to read skill files.
+
+---
+
 ## [1.2.213] - 2026-07-09
 
 ### Fixed
