@@ -429,6 +429,26 @@ export function loadModelConfig(): GlobalModelConfig {
 
             cachedConfig = parsed;
             cachedConfigMtimeMs = safeMtimeMs(configPath);
+
+            // Repair provider baseUrls missing protocol prefix (e.g. "ai.genzx.id/v1" → "https://ai.genzx.id/v1")
+            let baseUrlRepaired = false;
+            for (const p of (parsed.providers || [])) {
+              if (p.baseUrl && typeof p.baseUrl === "string" && p.baseUrl.trim() !== "") {
+                const normalized = ensureProtocol(p.baseUrl);
+                if (normalized !== p.baseUrl) {
+                  p.baseUrl = normalized;
+                  baseUrlRepaired = true;
+                }
+              }
+            }
+            if (baseUrlRepaired) {
+              try {
+                writeConfigAtomically(configPath, parsed);
+                cachedConfigMtimeMs = safeMtimeMs(configPath);
+              } catch {
+                // Ignore repair write errors
+              }
+            }
           }
           return cachedConfig!;
         } else {

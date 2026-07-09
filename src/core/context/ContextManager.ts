@@ -185,6 +185,7 @@ export class ContextManager {
         byteBudget: options?.byteBudget,
         preserveRecent: options?.preserveRecent,
         abortSignal: options?.abortSignal ?? abortSignal,
+        modelName: options?.modelName ?? this.config.model,
       });
 
       this.setState("VALIDATING");

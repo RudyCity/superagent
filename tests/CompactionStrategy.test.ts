@@ -127,6 +127,11 @@ describe("CompactionStrategy", () => {
     const messages: Message[] = [
       {
         role: "user",
+        content: "c".repeat(5000), // older message to be pruned
+        timestamp: 99,
+      },
+      {
+        role: "user",
         content: "normal user input",
         timestamp: 100,
       },
@@ -151,13 +156,98 @@ describe("CompactionStrategy", () => {
 
     const result = await strategy.execute(messages, {
       preserveRecent: 5,
-      byteBudget: 70 * 1024,
+      byteBudget: 102 * 1024,
+      useVisionTokenSaving: false,
     });
 
     expect(result.metadata.strategy).toBe("pruning-with-emergency-summary");
+    // Verify that the oldest user message was pruned
+    expect(result.messages.some(m => typeof m.content === "string" && m.content.includes("c".repeat(5000)))).toBe(false);
+    
+    // Verify that the truncated messages are kept
     const lastMsg = result.messages[result.messages.length - 1];
     expect(lastMsg.role).toBe("tool");
     expect(lastMsg.toolResults?.[0].result).toContain("TRUNCATED");
     expect(lastMsg.toolResults?.[0].result.length).toBeLessThan(60000);
+  });
+
+  it("should estimate bytes using image size in pruning strategy when useVisionTokenSaving is true", async () => {
+    const strategy = new PruningStrategy();
+    const messages: Message[] = [
+      {
+        role: "user",
+        content: "a".repeat(5000),
+        timestamp: 100,
+      },
+      {
+        role: "assistant",
+        content: "short reply",
+        timestamp: 101,
+      }
+    ];
+
+    const resultNoVision = await strategy.execute(messages, {
+      preserveRecent: 5,
+      byteBudget: 50 * 1024,
+      useVisionTokenSaving: false,
+    });
+    expect(resultNoVision.messages.some(m => typeof m.content === "string" && m.content.includes("a".repeat(5000)))).toBe(true);
+
+    const resultVision = await strategy.execute(messages, {
+      preserveRecent: 5,
+      byteBudget: 50 * 1024,
+      useVisionTokenSaving: true,
+      visionThreshold: 3000,
+    });
+    expect(resultVision.messages.some(m => typeof m.content === "string" && m.content.includes("a".repeat(5000)))).toBe(false);
+  });
+
+  it("should prevent starting kept slice with tool message in pruning strategy after byte budget pruning", async () => {
+    const strategy = new PruningStrategy();
+    const messages: Message[] = [
+      { role: "user", content: "User 1", timestamp: 1 },
+      { role: "assistant", content: "a".repeat(100), timestamp: 2 },
+      {
+        role: "tool",
+        content: "",
+        toolResults: [{ toolCallId: "c1", name: "t1", result: "b".repeat(100) }],
+        timestamp: 3,
+      },
+      { role: "user", content: "User 2", timestamp: 4 }
+    ];
+
+    const result = await strategy.execute(messages, {
+      preserveRecent: 3,
+      byteBudget: 250,
+      useVisionTokenSaving: false,
+    });
+
+    const kept = result.messages.slice(1);
+    expect(kept[0].role).not.toBe("tool");
+    expect(kept[0].content).toBe("User 2");
+  });
+
+  it("should prevent starting kept slice with tool message in summarization strategy after token budget pruning", async () => {
+    const strategy = new SummarizationStrategy();
+    const messages: Message[] = [
+      { role: "user", content: "User 1", timestamp: 1 },
+      { role: "assistant", content: "a".repeat(200), timestamp: 2 },
+      {
+        role: "tool",
+        content: "",
+        toolResults: [{ toolCallId: "c1", name: "t1", result: "t1 result" }],
+        timestamp: 3,
+      },
+      { role: "user", content: "User 2", timestamp: 4 }
+    ];
+
+    const result = await strategy.execute(messages, {
+      preserveRecent: 3,
+      tokenBudget: 900,
+    });
+
+    const kept = result.messages.slice(1);
+    expect(kept[0].role).not.toBe("tool");
+    expect(kept[0].content).toBe("User 2");
   });
 });

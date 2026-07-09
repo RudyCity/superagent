@@ -62,6 +62,12 @@ export class PinningStrategy implements CompactionStrategy {
       }
     }
 
+    // Ensure that after pruning, the kept messages slice does not start with a tool message
+    while (toKeep.length > 0 && toKeep[0].role === "tool") {
+      const moved = toKeep.shift()!;
+      toSummarize.push(moved);
+    }
+
     const summary = this.buildPruneSummary(toSummarize);
 
     const summaryMessage: Message = {

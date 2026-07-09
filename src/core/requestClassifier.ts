@@ -7,7 +7,7 @@
  *
  * Two-phase classification:
  *   Phase 1: Heuristic pre-filter (zero LLM cost) — keyword/pattern matching
- *   Phase 2: LLM classification (only when heuristic confidence is low/medium)
+ *   Phase 2: LLM classification (only when heuristic confidence is below threshold)
  */
 
 import { Tool } from "./tools/types.js";
@@ -33,6 +33,71 @@ export interface ClassificationResult {
   heuristicOnly: boolean;
   /** Token cost of the classification LLM call (0 if heuristic only) */
   classificationTokens: number;
+}
+
+// ─── Confidence Threshold Helper ────────────────────────────────────────────
+
+const CONFIDENCE_RANK: Record<ClassificationConfidence, number> = {
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+/**
+ * Check if a given confidence level meets or exceeds the threshold.
+ * Example: meetsThreshold("high", "medium") => true
+ *          meetsThreshold("low", "high") => false
+ */
+export function meetsThreshold(
+  confidence: ClassificationConfidence,
+  threshold: ClassificationConfidence
+): boolean {
+  return CONFIDENCE_RANK[confidence] >= CONFIDENCE_RANK[threshold];
+}
+
+// ─── Word Boundary Matching Utilities ───────────────────────────────────────
+
+/**
+ * Build a Set of single words for O(1) lookup from a keyword list.
+ * Multi-word phrases are separated out into a parallel array.
+ */
+function splitKeywords(keywords: readonly string[]): {
+  words: ReadonlySet<string>;
+  phrases: readonly string[];
+} {
+  const words = new Set<string>();
+  const phrases: string[] = [];
+  for (const kw of keywords) {
+    if (kw.includes(" ")) {
+      phrases.push(kw);
+    } else {
+      words.add(kw.toLowerCase());
+    }
+  }
+  return { words, phrases };
+}
+
+/**
+ * Count matches using word-boundary matching for single words (O(1) per word)
+ * and substring matching for multi-word phrases.
+ * Prevents false positives like "error" matching inside "terrorist".
+ */
+function countKeywordMatches(
+  inputWords: readonly string[],
+  lowerInput: string,
+  kwWords: ReadonlySet<string>,
+  kwPhrases: readonly string[]
+): number {
+  let count = 0;
+  // O(1) per input word via Set lookup — word boundary by design
+  for (const w of inputWords) {
+    if (kwWords.has(w)) count++;
+  }
+  // Phrase matching via substring (phrases inherently have word boundaries)
+  for (const phrase of kwPhrases) {
+    if (lowerInput.includes(phrase)) count++;
+  }
+  return count;
 }
 
 // ─── Heuristic Keyword Sets ─────────────────────────────────────────────────
@@ -72,42 +137,56 @@ const QUESTION_PHRASES: readonly string[] = [
   "what's the difference", "what are the",
 ];
 
-/** Debug/error indicator keywords */
-const DEBUG_KEYWORDS: readonly string[] = [
+/** Debug/error indicator keywords — split into words + phrases */
+const DEBUG_KW = splitKeywords([
   "bug", "error", "fix", "broken", "fail", "failed", "failing",
   "crash", "exception", "issue", "wrong", "incorrect",
   "not working", "doesn't work", "does not work",
   "throw", "thrown", "stacktrace", "stack trace",
   "debug", "diagnose", "troubleshoot",
-  "TypeError", "ReferenceError", "SyntaxError",
+  "typeerror", "referenceerror", "syntaxerror",
   "gagal", "rusak", "salah", "bermasalah",
-];
+]);
 
-/** Research/exploration indicator keywords */
-const RESEARCH_KEYWORDS: readonly string[] = [
+/** Research/exploration indicator keywords — split into words + phrases */
+const RESEARCH_KW = splitKeywords([
   "find", "search", "look for", "look up", "lookup",
   "where is", "where are", "locate", "explore",
   "show me all", "list all", "find all",
   "grep", "cari", "cek", "check if",
   "investigate", "scan", "audit", "temukan", "telusuri",
-];
+]);
 
-/** Complex task indicator keywords */
-const COMPLEX_KEYWORDS: readonly string[] = [
+/** Complex task indicator keywords — split into words + phrases */
+const COMPLEX_KW = splitKeywords([
   "implement", "create", "build", "develop", "design",
   "refactor", "restructure", "rewrite", "redesign",
   "add feature", "new feature", "migrate", "upgrade",
   "architecture", "system", "module", "integration",
   "buat", "bikin", "tambahkan", "tambah fitur",
   "schema", "database", "auth", "oauth", "docker", "kubernetes", "migrasi", "integrasi", "refaktor", "rancang",
-];
+]);
 
-/** Command action indicator keywords */
-const COMMAND_KEYWORDS: readonly string[] = [
+/** Command action indicator keywords — split into words + phrases */
+const COMMAND_KW = splitKeywords([
   "run", "execute", "start", "stop", "test", "deploy", "commit", "push", "pull",
   "install", "pnpm", "npm", "yarn", "bun", "git", "docker", "cargo", "pip", "npx",
   "jalankan", "jalanin", "coba", "running", "runnign", "tes", "uji",
-];
+]);
+
+// ─── Precompiled RegExp Patterns ────────────────────────────────────────────
+
+/** Edit verb pattern — precompiled at module level for reuse */
+const EDIT_VERBS_RE = /\b(change|edit|modify|update|rename|move|add|remove|delete|replace|insert|append|swap|toggle)\b/i;
+
+/** Edit intent pattern for question disambiguation */
+const EDIT_INTENT_RE = /\b(change|edit|modify|update|add|remove|delete|fix|replace|write|create|make|run|test|execute)\b/i;
+
+/** Punctuation strip pattern for exact matching */
+const PUNCTUATION_STRIP_RE = /^[!?.,\s()'""-]+|[!?.,\s()'""-]+$/g;
+
+/** Word split pattern */
+const WORD_SPLIT_RE = /[^a-zA-Z0-9']+/;
 
 // ─── Heuristic Classifier ────────────────────────────────────────────────────
 
@@ -122,10 +201,10 @@ export function classifyHeuristic(
   const text = typeof userInput === "string" ? userInput : "";
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
-  
+
   // Clean punctuation from start/end of string for exact matching
-  const cleanLower = lower.replace(/^[!?.,\s()'"-]+|[!?.,\s()'"-]+$/g, "").trim();
-  const words = cleanLower.split(/[^a-zA-Z0-9']+/).filter(Boolean);
+  const cleanLower = lower.replace(PUNCTUATION_STRIP_RE, "").trim();
+  const words = cleanLower.split(WORD_SPLIT_RE).filter(Boolean);
   const wordCount = words.length;
 
   // ── Ultra-short messages (1-3 words) ──────────────────────────────────
@@ -174,8 +253,7 @@ export function classifyHeuristic(
 
   if ((startsWithQuestion && endsWithQuestion) || hasQuestionPhrase) {
     // Strong question signal: question word + question mark, or explicit question phrase
-    const hasEditIntent = /\b(change|edit|modify|update|add|remove|delete|fix|replace|write|create|make|run|test|execute)\b/i.test(trimmed);
-    if (!hasEditIntent) {
+    if (!EDIT_INTENT_RE.test(trimmed)) {
       return {
         category: "question",
         confidence: "high",
@@ -186,9 +264,12 @@ export function classifyHeuristic(
     }
   }
 
-  // ── Debug detection ───────────────────────────────────────────────────
-  const debugScore = DEBUG_KEYWORDS.filter(kw => cleanLower.includes(kw)).length;
-  const customDebug = (customKeywords?.debug || []).filter(kw => cleanLower.includes(kw.toLowerCase())).length;
+  // ── Debug detection (word-boundary safe) ───────────────────────────────
+  const debugScore = countKeywordMatches(words, cleanLower, DEBUG_KW.words, DEBUG_KW.phrases);
+  const customDebugKw = customKeywords?.debug ? splitKeywords(customKeywords.debug) : null;
+  const customDebug = customDebugKw
+    ? countKeywordMatches(words, cleanLower, customDebugKw.words, customDebugKw.phrases)
+    : 0;
   if (debugScore + customDebug >= 2) {
     return {
       category: "debug",
@@ -208,9 +289,12 @@ export function classifyHeuristic(
     };
   }
 
-  // ── Research detection ────────────────────────────────────────────────
-  const researchScore = RESEARCH_KEYWORDS.filter(kw => cleanLower.includes(kw)).length;
-  const customResearch = (customKeywords?.research || []).filter(kw => cleanLower.includes(kw.toLowerCase())).length;
+  // ── Research detection (word-boundary safe) ────────────────────────────
+  const researchScore = countKeywordMatches(words, cleanLower, RESEARCH_KW.words, RESEARCH_KW.phrases);
+  const customResearchKw = customKeywords?.research ? splitKeywords(customKeywords.research) : null;
+  const customResearch = customResearchKw
+    ? countKeywordMatches(words, cleanLower, customResearchKw.words, customResearchKw.phrases)
+    : 0;
   if (researchScore + customResearch >= 1 && wordCount <= 15) {
     return {
       category: "research",
@@ -221,9 +305,12 @@ export function classifyHeuristic(
     };
   }
 
-  // ── Complex task detection ────────────────────────────────────────────
-  const complexScore = COMPLEX_KEYWORDS.filter(kw => cleanLower.includes(kw)).length;
-  const customComplex = (customKeywords?.complex_task || []).filter(kw => cleanLower.includes(kw.toLowerCase())).length;
+  // ── Complex task detection (word-boundary safe) ────────────────────────
+  const complexScore = countKeywordMatches(words, cleanLower, COMPLEX_KW.words, COMPLEX_KW.phrases);
+  const customComplexKw = customKeywords?.complex_task ? splitKeywords(customKeywords.complex_task) : null;
+  const customComplex = customComplexKw
+    ? countKeywordMatches(words, cleanLower, customComplexKw.words, customComplexKw.phrases)
+    : 0;
   if (complexScore + customComplex >= 2 || (complexScore + customComplex >= 1 && wordCount > 15)) {
     return {
       category: "complex_task",
@@ -234,9 +321,12 @@ export function classifyHeuristic(
     };
   }
 
-  // ── Command detection ─────────────────────────────────────────────────
-  const commandScore = COMMAND_KEYWORDS.filter(kw => cleanLower.includes(kw)).length;
-  const customCommand = (customKeywords?.command || []).filter(kw => cleanLower.includes(kw.toLowerCase())).length;
+  // ── Command detection (word-boundary safe) ─────────────────────────────
+  const commandScore = countKeywordMatches(words, cleanLower, COMMAND_KW.words, COMMAND_KW.phrases);
+  const customCommandKw = customKeywords?.command ? splitKeywords(customKeywords.command) : null;
+  const customCommand = customCommandKw
+    ? countKeywordMatches(words, cleanLower, customCommandKw.words, customCommandKw.phrases)
+    : 0;
   if (commandScore + customCommand >= 1) {
     return {
       category: "command",
@@ -248,8 +338,7 @@ export function classifyHeuristic(
   }
 
   // ── Simple edit detection (short imperative with edit verbs) ──────────
-  const editVerbs = /\b(change|edit|modify|update|rename|move|add|remove|delete|replace|insert|append|swap|toggle)\b/i;
-  if (editVerbs.test(trimmed) && wordCount <= 20) {
+  if (EDIT_VERBS_RE.test(trimmed) && wordCount <= 20) {
     return {
       category: "simple_edit",
       confidence: "medium",
@@ -294,26 +383,12 @@ export async function classifyWithLLM(
   try {
     const { generateText } = await import("ai");
 
-    const classificationPrompt = `# ROLE
-Classify user request intent.
-Reply with EXACTLY one word from: conversation, question, simple_edit, research, complex_task, debug, command.
-
-# RULES
-- conversation: greetings, acknowledgments, yes/no, thanks, approval, proceed signals.
-- question: asking about code/concepts/explanations. NO file changes.
-- simple_edit: minor code changes affecting 1-3 files.
-- research: searching, finding, exploration, audits.
-- complex_task: major features, refactoring, migrations, multi-file architecture.
-- debug: bug fixing, error resolution, troubleshooting.
-- command: direct commands (run test, build, deploy, commit).
-
-# COMPOUND REQUESTS
-For compound requests containing multiple intents (e.g. asking a question but also requesting a code fix or command execution), always classify using the category that permits the required tools (e.g. debug, complex_task, command) rather than read-only categories (question, research).
-
-# CONTEXT
-Heuristic guess: ${heuristicResult.category} (${heuristicResult.confidence})
-User request: "${userInput.substring(0, 500)}"
-
+    // Compact prompt — optimized for minimal token usage
+    const classificationPrompt = `Classify intent. Reply ONE word: conversation|question|simple_edit|research|complex_task|debug|command.
+Rules: conversation=greetings/ack/yes/no/thanks. question=ask about code/concepts,NO edits. simple_edit=minor changes 1-3 files. research=search/find/explore. complex_task=major features/refactor/migration. debug=bug fix/error resolution. command=run/build/deploy/commit.
+Compound requests: pick category requiring tools (debug/complex_task/command) over read-only (question/research).
+Heuristic: ${heuristicResult.category}(${heuristicResult.confidence})
+Input: "${userInput.substring(0, 400)}"
 Category:`;
 
     const response = await generateText({
@@ -354,6 +429,9 @@ Category:`;
 /**
  * Main classification entry point.
  * Runs heuristic first, then optionally LLM if confidence is below threshold.
+ *
+ * Optimization: When the heuristic returns confidence >= threshold, the LLM
+ * call is skipped entirely, saving tokens and latency.
  */
 export async function classifyRequest(
   userInput: string | any[],
@@ -382,14 +460,23 @@ export async function classifyRequest(
     };
   }
 
-  // AI-First Classification: If AI classification is enabled and a model is provided, go straight to LLM
-  if (!options?.skipLLM && model) {
-    const heuristicGuess = classifyHeuristic(text, options?.customKeywords);
-    return classifyWithLLM(text, model, heuristicGuess);
+  const threshold = options?.confidenceThreshold ?? "high";
+
+  // Phase 1: Always run heuristic first (zero cost)
+  const heuristicResult = classifyHeuristic(text, options?.customKeywords);
+
+  // If heuristic confidence meets threshold, skip LLM entirely
+  if (meetsThreshold(heuristicResult.confidence, threshold)) {
+    return heuristicResult;
   }
 
-  // Fallback to heuristic
-  return classifyHeuristic(text, options?.customKeywords);
+  // Phase 2: LLM classification for low-confidence heuristic results
+  if (!options?.skipLLM && model) {
+    return classifyWithLLM(text, model, heuristicResult);
+  }
+
+  // Fallback to heuristic when LLM is unavailable or skipped
+  return heuristicResult;
 }
 
 // ─── Toolset Filtering ──────────────────────────────────────────────────────

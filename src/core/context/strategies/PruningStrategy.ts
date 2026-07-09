@@ -45,7 +45,29 @@ export class PruningStrategy implements CompactionStrategy {
     // Enforce byte budget: reduce preserved messages/truncate contents if they exceed byte budget
     const byteBudget = options.byteBudget || 0;
     if (byteBudget > 0) {
-      let currentBytes = Buffer.byteLength(JSON.stringify(toKeep), "utf-8");
+      let useVisionTokenSaving = options.useVisionTokenSaving;
+      let visionThreshold = options.visionThreshold ?? 3000;
+
+      if (useVisionTokenSaving === undefined) {
+        try {
+          const { getSettings, getDynamicVisionThreshold } = await import("../../config.js");
+          const modelName = options.modelName || "";
+          if (modelName) {
+            const settings = getSettings();
+            const name = modelName.toLowerCase();
+            const supportsVision = name.includes("claude-3") || name.includes("gpt-4o") || name.includes("gpt-4-vision") || name.includes("gemini") || name.includes("gemma-3") || name.includes("vision");
+            useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
+            visionThreshold = getDynamicVisionThreshold(modelName);
+          } else {
+            useVisionTokenSaving = false;
+          }
+        } catch {
+          useVisionTokenSaving = false; // default to false on config failure/unit tests
+          visionThreshold = 3000;
+        }
+      }
+
+      let currentBytes = toKeep.reduce((sum, msg) => sum + estimateMessagePayloadBytes(msg, useVisionTokenSaving!, visionThreshold), 0);
 
       // First, truncate very large fields within toKeep message objects to avoid throwing away everything.
       if (currentBytes > byteBudget) {
@@ -67,15 +89,21 @@ export class PruningStrategy implements CompactionStrategy {
             }
           }
         }
-        currentBytes = Buffer.byteLength(JSON.stringify(toKeep), "utf-8");
+        currentBytes = toKeep.reduce((sum, msg) => sum + estimateMessagePayloadBytes(msg, useVisionTokenSaving!, visionThreshold), 0);
       }
 
       // If still exceeding, prune older messages
       while (currentBytes > byteBudget && toKeep.length > 0) {
         const moved = toKeep.shift()!;
         toPrune.push(moved);
-        currentBytes = Buffer.byteLength(JSON.stringify(toKeep), "utf-8");
+        currentBytes = toKeep.reduce((sum, msg) => sum + estimateMessagePayloadBytes(msg, useVisionTokenSaving!, visionThreshold), 0);
       }
+    }
+
+    // Ensure that after all pruning, the kept messages slice does not start with a tool message
+    while (toKeep.length > 0 && toKeep[0].role === "tool") {
+      const moved = toKeep.shift()!;
+      toPrune.push(moved);
     }
 
     const emergencySummary = this.createEmergencySummary(toPrune);
@@ -140,4 +168,45 @@ export class PruningStrategy implements CompactionStrategy {
 
     return parts.join(" ");
   }
+}
+
+function estimateMessagePayloadBytes(
+  msg: Message,
+  useVisionTokenSaving: boolean,
+  visionThreshold: number
+): number {
+  let size = 0;
+  const ESTIMATED_IMAGE_PAGE_BYTES = 150 * 1024; // 150 KB per page
+
+  if (msg.role === "user") {
+    const rawContent = typeof msg.content === "string" ? msg.content : contentToString(msg.content);
+    const isMemoryContext = rawContent.startsWith("[TencentDB Agent Memory Context]:");
+    if (useVisionTokenSaving && (rawContent.length > visionThreshold || isMemoryContext)) {
+      const lines = rawContent.split(/\r?\n/).length;
+      const pages = Math.min(3, Math.ceil(lines / 150));
+      size += pages * ESTIMATED_IMAGE_PAGE_BYTES;
+    } else {
+      size += Buffer.byteLength(JSON.stringify(msg.content), "utf-8");
+    }
+  } else if (msg.role === "assistant") {
+    size += Buffer.byteLength(JSON.stringify(msg.content), "utf-8");
+    if (msg.toolCalls) {
+      size += Buffer.byteLength(JSON.stringify(msg.toolCalls), "utf-8");
+    }
+  } else if (msg.role === "tool") {
+    const results = msg.toolResults || [];
+    for (const tr of results) {
+      const resultStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
+      if (useVisionTokenSaving && resultStr.length > visionThreshold) {
+        const lines = resultStr.split(/\r?\n/).length;
+        const pages = Math.min(3, Math.ceil(lines / 150));
+        size += pages * ESTIMATED_IMAGE_PAGE_BYTES;
+      } else {
+        size += Buffer.byteLength(JSON.stringify(tr), "utf-8");
+      }
+    }
+  } else {
+    size += Buffer.byteLength(JSON.stringify(msg), "utf-8");
+  }
+  return size;
 }

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.203] - 2026-07-09
+
+### Optimized
+- Optimized AI request classifier pipeline: heuristic-first with confidence threshold — skips LLM call entirely when heuristic returns high confidence, saving tokens and latency on every turn.
+- Converted keyword arrays to Sets with word-boundary matching via splitKeywords/countKeywordMatches to eliminate substring false positives (e.g., "error" no longer matches inside "terrorist", "fix" no longer matches "prefix").
+- Added meetsThreshold helper for clean confidence comparison logic.
+- Precompiled all RegExp patterns (EDIT_VERBS_RE, EDIT_INTENT_RE, PUNCTUATION_STRIP_RE, WORD_SPLIT_RE) at module level instead of re-creating per call.
+- Compressed LLM classification prompt from ~500 to ~300 characters, reducing token usage when LLM fallback is needed.
+- Made the classifierConfidenceThreshold setting functional (was previously ignored in the pipeline).
+
+---
+
 ## [1.2.202] - 2026-07-09
 
 ### Fixed

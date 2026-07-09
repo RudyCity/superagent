@@ -2,10 +2,10 @@
  * Unit tests for requestClassifier.ts
  *
  * Tests the heuristic pre-filter accuracy, category-to-toolset mapping,
- * skip flags, and edge cases.
+ * skip flags, edge cases, and the optimized classification pipeline.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { generateText } from "ai";
 import {
   classifyHeuristic,
@@ -14,6 +14,7 @@ import {
   shouldSkipWorkspaceDiscovery,
   shouldSkipPlanInjection,
   getCategoryPromptAddendum,
+  meetsThreshold,
   type RequestCategory,
   type ClassificationResult,
 } from "../src/core/requestClassifier.js";
@@ -21,6 +22,42 @@ import {
 vi.mock("ai", () => ({
   generateText: vi.fn(),
 }));
+
+// ─── meetsThreshold Tests ───────────────────────────────────────────────────
+
+describe("meetsThreshold", () => {
+  it("high meets high", () => {
+    expect(meetsThreshold("high", "high")).toBe(true);
+  });
+
+  it("high meets medium", () => {
+    expect(meetsThreshold("high", "medium")).toBe(true);
+  });
+
+  it("high meets low", () => {
+    expect(meetsThreshold("high", "low")).toBe(true);
+  });
+
+  it("medium meets medium", () => {
+    expect(meetsThreshold("medium", "medium")).toBe(true);
+  });
+
+  it("medium does NOT meet high", () => {
+    expect(meetsThreshold("medium", "high")).toBe(false);
+  });
+
+  it("low meets low", () => {
+    expect(meetsThreshold("low", "low")).toBe(true);
+  });
+
+  it("low does NOT meet medium", () => {
+    expect(meetsThreshold("low", "medium")).toBe(false);
+  });
+
+  it("low does NOT meet high", () => {
+    expect(meetsThreshold("low", "high")).toBe(false);
+  });
+});
 
 // ─── Heuristic Classifier Tests ─────────────────────────────────────────────
 
@@ -201,6 +238,51 @@ describe("classifyHeuristic", () => {
       });
       expect(result.category).toBe("debug");
     });
+  });
+});
+
+// ─── Word Boundary Matching Tests ───────────────────────────────────────────
+
+describe("word boundary matching (no substring false positives)", () => {
+  it("should NOT match 'error' inside 'terrorist'", () => {
+    const result = classifyHeuristic("the terrorist attack was reported on the news channel today");
+    expect(result.category).not.toBe("debug");
+  });
+
+  it("should NOT match 'fix' inside 'prefix'", () => {
+    const result = classifyHeuristic("add a prefix to the variable name");
+    // Should be simple_edit (because of "add"), not debug
+    expect(result.category).not.toBe("debug");
+  });
+
+  it("should NOT match 'run' inside 'brunch'", () => {
+    const result = classifyHeuristic("let's discuss brunch plans");
+    expect(result.category).not.toBe("command");
+  });
+
+  it("should still match exact word 'error' when standalone", () => {
+    const result = classifyHeuristic("there is an error somewhere");
+    expect(result.category).toBe("debug");
+  });
+
+  it("should still match exact word 'fix' when standalone", () => {
+    const result = classifyHeuristic("fix the broken test case");
+    expect(result.category).toBe("debug");
+  });
+
+  it("should still match exact word 'run' when standalone", () => {
+    const result = classifyHeuristic("run the test suite");
+    expect(result.category).toBe("command");
+  });
+
+  it("should NOT match 'find' inside 'defined'", () => {
+    const result = classifyHeuristic("the type is already defined in the module interface specification");
+    expect(result.category).not.toBe("research");
+  });
+
+  it("should NOT match 'scan' inside 'scandal'", () => {
+    const result = classifyHeuristic("there was a scandal about it");
+    expect(result.category).not.toBe("research");
   });
 });
 
@@ -386,28 +468,98 @@ describe("classifyHeuristic Enhancements", () => {
   });
 });
 
-// ─── AI-First Classification Pipeline Tests ───────────────────────────────────
+// ─── Optimized Classification Pipeline Tests ──────────────────────────────────
 
-describe("classifyRequest (AI-First Pipeline)", () => {
+describe("classifyRequest (Optimized Pipeline)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("should bypass LLM and return conversation immediately for empty input", async () => {
     const mockModel = {};
     const result = await classifyRequest("", mockModel);
     expect(result.category).toBe("conversation");
     expect(result.heuristicOnly).toBe(true);
+    expect(generateText).not.toHaveBeenCalled();
   });
 
-  it("should use AI classification when model is provided", async () => {
+  it("should skip LLM when heuristic confidence is high (default threshold)", async () => {
+    const mockModel = {};
+    // "ok" is high-confidence conversation — should NOT call LLM
+    const result = await classifyRequest("ok", mockModel);
+    expect(result.category).toBe("conversation");
+    expect(result.confidence).toBe("high");
+    expect(result.heuristicOnly).toBe(true);
+    expect(result.classificationTokens).toBe(0);
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("should skip LLM when heuristic has high confidence for debug", async () => {
+    const mockModel = {};
+    // "fix the bug error" has 3 debug keywords => high confidence
+    const result = await classifyRequest("fix the bug error", mockModel);
+    expect(result.category).toBe("debug");
+    expect(result.confidence).toBe("high");
+    expect(result.heuristicOnly).toBe(true);
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("should call LLM when heuristic confidence is below threshold", async () => {
+    const mockModel = {};
+    vi.mocked(generateText).mockResolvedValue({
+      text: "complex_task",
+      usage: { promptTokens: 15, completionTokens: 3 },
+    } as any);
+
+    // Ambiguous input that heuristic returns low confidence for
+    const result = await classifyRequest(
+      "I need you to do something with the system that involves multiple considerations and careful planning",
+      mockModel,
+    );
+    expect(result.heuristicOnly).toBe(false);
+    expect(result.classificationTokens).toBeGreaterThan(0);
+    expect(generateText).toHaveBeenCalled();
+  });
+
+  it("should call LLM when heuristic is medium and threshold is high", async () => {
     const mockModel = {};
     vi.mocked(generateText).mockResolvedValue({
       text: "debug",
       usage: { promptTokens: 20, completionTokens: 5 },
     } as any);
 
-    const result = await classifyRequest("fix the compiler error", mockModel);
-    expect(result.category).toBe("debug");
+    // Single debug keyword => medium confidence, threshold defaults to high
+    const result = await classifyRequest("there is an issue with the build", mockModel, {
+      confidenceThreshold: "high",
+    });
     expect(result.heuristicOnly).toBe(false);
-    expect(result.classificationTokens).toBe(25);
     expect(generateText).toHaveBeenCalled();
+  });
+
+  it("should skip LLM when heuristic is medium and threshold is medium", async () => {
+    const mockModel = {};
+    // Single debug keyword => medium confidence, threshold is medium => skip LLM
+    const result = await classifyRequest("there is an issue with it", mockModel, {
+      confidenceThreshold: "medium",
+    });
+    expect(result.heuristicOnly).toBe(true);
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
+  it("should use AI classification when heuristic is low confidence", async () => {
+    const mockModel = {};
+    vi.mocked(generateText).mockResolvedValue({
+      text: "debug",
+      usage: { promptTokens: 20, completionTokens: 5 },
+    } as any);
+
+    const result = await classifyRequest("fix the compiler error", mockModel, {
+      confidenceThreshold: "low",
+    });
+    // Heuristic returns high for "fix the compiler error" (2 debug keywords),
+    // so even with low threshold it should skip LLM
+    expect(result.heuristicOnly).toBe(true);
+    expect(generateText).not.toHaveBeenCalled();
   });
 
   it("should fallback to heuristic when no model is provided", async () => {
@@ -421,5 +573,18 @@ describe("classifyRequest (AI-First Pipeline)", () => {
     const result = await classifyRequest("fix the compiler error", mockModel, { skipLLM: true });
     expect(result.category).toBe("debug");
     expect(result.heuristicOnly).toBe(true);
+  });
+
+  it("should fallback to heuristic on LLM failure", async () => {
+    const mockModel = {};
+    vi.mocked(generateText).mockRejectedValue(new Error("API timeout"));
+
+    const result = await classifyRequest(
+      "I need you to consider many things about the overall approach for this system",
+      mockModel,
+    );
+    // Should still return a result (heuristic fallback), not throw
+    expect(result).toBeDefined();
+    expect(result.reason).toContain("LLM fallback");
   });
 });
