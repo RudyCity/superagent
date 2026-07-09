@@ -14,7 +14,7 @@ export async function fetchAndCacheModels(): Promise<void> {
   const cache: Record<string, number> = {};
 
   const fetchPromises = providers.map(async (provider) => {
-    if (provider.type === "anthropic") return;
+    if (provider.type === "anthropic" && !provider.baseUrl) return;
 
     let url = "";
     const headers: Record<string, string> = {};
@@ -28,7 +28,7 @@ export async function fetchAndCacheModels(): Promise<void> {
     } else if (provider.type === "gemini") {
       // Google Gemini: use the generativelanguage REST API models endpoint
       url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-    } else if (provider.type === "custom" && baseUrl) {
+    } else if ((provider.type === "custom" || provider.type === "anthropic") && baseUrl) {
       url = `${baseUrl.replace(/\/+$/, "")}/models`;
     }
 

@@ -22,12 +22,19 @@ import {
   setTierModel,
   setAllTierModels,
   clearTierModel,
-  getAllTierModels
+  getAllTierModels,
+  ensureProtocol
 } from "../../core/config.js";
 import type { PresetMode } from "../../core/config.js";
 import { getTierModelConfig } from "../../core/config/providers.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import type { ChatLine } from "../../core/slash-commands.js";
+
+function cleanFetchUrl(url: string | undefined): string {
+  if (!url) return "";
+  const withProtocol = ensureProtocol(url) || "";
+  return `${withProtocol.replace(/\/+$/, "")}/models`;
+}
 
 interface ModelWizardContext {
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
@@ -583,7 +590,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
             setWizardIsLoadingModels(true);
             const headers: Record<string, string> = {};
             if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-            fetch(`${resolvedBaseUrl}/models`, { headers })
+            fetch(cleanFetchUrl(resolvedBaseUrl), { headers })
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
@@ -606,7 +613,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
             setWizardIsLoadingModels(true);
             const headers: Record<string, string> = {};
             if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-            fetch(`${resolvedBaseUrl}/models`, { headers })
+            fetch(cleanFetchUrl(resolvedBaseUrl), { headers })
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
@@ -895,7 +902,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           setWizardIsLoadingModels(true);
           const headers: Record<string, string> = {};
           if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-          fetch(`${resolvedBaseUrl}/models`, { headers })
+          fetch(cleanFetchUrl(resolvedBaseUrl), { headers })
             .then(async (res) => {
               if (res.ok) {
                 const data = await res.json() as any;
@@ -918,7 +925,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           setWizardIsLoadingModels(true);
           const headers: Record<string, string> = {};
           if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-          fetch(`${resolvedBaseUrl}/models`, { headers })
+          fetch(cleanFetchUrl(resolvedBaseUrl), { headers })
             .then(async (res) => {
               if (res.ok) {
                 const data = await res.json() as any;
@@ -1173,7 +1180,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
             setWizardIsLoadingModels(true);
             const headers: Record<string, string> = {};
             if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-            fetch(`${baseUrl}/models`, { headers })
+            fetch(cleanFetchUrl(baseUrl), { headers })
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
@@ -1196,7 +1203,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
             setWizardIsLoadingModels(true);
             const headers: Record<string, string> = {};
             if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-            fetch(`${baseUrl}/models`, { headers })
+            fetch(cleanFetchUrl(baseUrl), { headers })
               .then(async (res) => {
                 if (res.ok) {
                   const data = await res.json() as any;
@@ -1739,7 +1746,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           setWizardIsLoadingModels(true);
           const headers: Record<string, string> = {};
           if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-          fetch(`${resolvedBaseUrl}/models`, { headers })
+          fetch(cleanFetchUrl(resolvedBaseUrl), { headers })
             .then(async (res) => {
               if (res.ok) {
                 const data = await res.json() as any;
@@ -1762,7 +1769,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           setWizardIsLoadingModels(true);
           const headers: Record<string, string> = {};
           if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-          fetch(`${resolvedBaseUrl}/models`, { headers })
+          fetch(cleanFetchUrl(resolvedBaseUrl), { headers })
             .then(async (res) => {
               if (res.ok) {
                 const data = await res.json() as any;

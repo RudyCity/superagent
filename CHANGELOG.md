@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.213] - 2026-07-09
+
+### Fixed
+- Fixed API model fetching bug in /model wizard command by normalizing base URLs (ensuring protocol, stripping trailing slashes) to prevent failed to parse URL and double slash errors.
+- Supported model fetching for custom Anthropic provider configurations by allowing models to be fetched when a base URL is specified instead of returning early.
+
+---
+
 ## [1.2.212] - 2026-07-09
 
 ### Fixed
