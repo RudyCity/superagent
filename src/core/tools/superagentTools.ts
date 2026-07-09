@@ -923,7 +923,8 @@ export const manageSuperagentsTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const action = args.action as string;
-    const superagentIds = args.superagentIds as string[];
+    const rawIds = args.superagentIds ?? args.superagent_ids ?? args.superagent_id ?? args.superagentId;
+    const superagentIds = Array.isArray(rawIds) ? (rawIds as string[]) : (rawIds ? [String(rawIds)] : []);
 
     // Only Master Agent (depth 0) may manage Superagents
     const parentAgent = agentLocalStorage.getStore();
@@ -1105,8 +1106,8 @@ export const sendMessageToSuperagentTool: Tool = {
       return `Error: send_message_to_superagent can only be called by the Master Agent (depth 0).`;
     }
 
-    const superagentId = args.superagentId as string;
-    const message = args.message as string;
+    const superagentId = (args.superagentId ?? args.superagent_id ?? args.id ?? args.recipientId ?? args.recipient) as string;
+    const message = (args.message ?? args.prompt ?? args.initial_message) as string;
     const wait = args.wait === true;
 
     const inst = superagentInstances.get(superagentId);

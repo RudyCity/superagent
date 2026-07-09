@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.212] - 2026-07-09
+
+### Fixed
+- Implemented parameter fallback resolution for `superagentIds` in `manage_superagents`.
+- Implemented parameter fallback resolution for `superagentId` and `message` in `send_message_to_superagent`.
+- Implemented parameter fallback resolution for `recipientId` and `message` in `send_message` (subagent tool).
+
+---
+
 ## [1.2.211] - 2026-07-09
 
 ### Fixed

@@ -542,6 +542,10 @@ describe("Scheduler and Subagent tools", () => {
     const logErrRes = await manageSubs?.execute({ action: "logs", conversation_id: "nonexistent_subagent" }, process.cwd());
     expect(logErrRes).toContain('Subagent instance "nonexistent_subagent" not found');
 
+    // Test fallback parsing of send_message recipientId/message parameters
+    const sendMsgErrRes = await sendMsg?.execute({ recipient_id: "nonexistent_subagent", prompt: "hello" }, process.cwd());
+    expect(sendMsgErrRes).toContain('Subagent instance "nonexistent_subagent" not found');
+
     // Verify subagent delegation depth blocking
     const parentAgent: any = { delegationDepth: 2 };
     await agentLocalStorage.run(parentAgent, async () => {

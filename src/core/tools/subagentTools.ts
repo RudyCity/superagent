@@ -588,8 +588,8 @@ export const sendMessageTool: Tool = {
     required: ["recipientId", "message"],
   },
   async execute(args, cwd, signal) {
-    const recipientId = args.recipientId as string;
-    const message = args.message as string;
+    const recipientId = (args.recipientId ?? args.recipient_id ?? args.recipient ?? args.conversationId ?? args.conversation_id) as string;
+    const message = (args.message ?? args.prompt ?? args.initial_message) as string;
     const wait = args.wait !== false;
     const sendParentAgent = agentLocalStorage.getStore();
 

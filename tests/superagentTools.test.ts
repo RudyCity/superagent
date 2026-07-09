@@ -477,6 +477,15 @@ describe("superagentTools", () => {
         );
       });
       expect(result).toContain("Line 1\nLine 2");
+
+      // Verify fallback resolution of superagent_id
+      const fallbackResult = await agentLocalStorage.run(parentAgent, () => {
+        return manageSuperagentsTool.execute(
+          { action: "logs", superagent_id: "agent-logs-test" },
+          process.cwd()
+        );
+      });
+      expect(fallbackResult).toContain("Line 1\nLine 2");
     });
 
     it("should retrieve report for a specific superagent instance", async () => {
@@ -685,6 +694,15 @@ describe("superagentTools", () => {
         );
       });
       expect(resultNonexistent).toContain("Error: Superagent instance \"nonexistent\" not found");
+
+      // Verify fallback parameter resolution of superagent_id and prompt
+      const resultFallback = await agentLocalStorage.run(parentAgent, () => {
+        return sendMessageToSuperagentTool.execute(
+          { superagent_id: "nonexistent", prompt: "hello" },
+          process.cwd()
+        );
+      });
+      expect(resultFallback).toContain("Error: Superagent instance \"nonexistent\" not found");
 
       superagentInstances.set("completed-agent", {
         id: "completed-agent",
