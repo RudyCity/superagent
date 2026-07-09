@@ -76,7 +76,8 @@ import {
   gitWorktreeTool,
   listPeerSuperagentsTool,
   managePlanTool,
-  getSkillsTool
+  getSkillsTool,
+  controlBrowserTabTool
 } from "./otherTools.js";
 
 export const allTools: Tool[] = [
@@ -118,6 +119,7 @@ export const allTools: Tool[] = [
   listPeerSuperagentsTool,
   managePlanTool,
   getSkillsTool,
+  controlBrowserTabTool,
   manageMcpTool,
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,

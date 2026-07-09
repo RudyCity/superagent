@@ -45,6 +45,7 @@ import {
   listPeerSuperagentsTool,
   managePlanTool,
   getSkillsTool,
+  controlBrowserTabTool,
 } from "./otherTools.js";
 
 import {
@@ -91,6 +92,7 @@ export const masterToolset: Tool[] = [
   manageTasksTool,
   managePlanTool,
   getSkillsTool,
+  controlBrowserTabTool,
   writeToFileTool,       // for planning files
   replaceFileContentTool,// for planning files
   multiReplaceFileContentTool, // for planning files
@@ -138,6 +140,7 @@ export const superagentToolset: Tool[] = [
   loadPinnedSessionTool,
   searchPinnedKnowledgeTool,
   screenshotTool,
+  controlBrowserTabTool,
   androidCliTool,
   readPeerSuperagentFileTool, // read files from peer Superagent worktrees
   tdaiMemorySearchTool,

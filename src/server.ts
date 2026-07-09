@@ -7,6 +7,7 @@ import type { AgentEvent } from "./core/agent.js";
 import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted } from "./core/config.js";
 import { readChecklistTasks } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent } from "./core/tools/state.js";
+import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 
 let activeAgent: Agent | null = null;
 let activeSessionId: string | null = null;
@@ -16,6 +17,21 @@ let activeWorkspace: string = process.cwd();
 const sseClients = new Set<http.ServerResponse>();
 const pendingPermissions = new Map<string, (approval: boolean | "session") => void>();
 const pendingQuestions = new Map<string, (answer: any) => void>();
+const pendingBrowserControls = new Map<string, { resolve: (val: string) => void, reject: (err: any) => void }>();
+
+setBrowserControlHandler((action, target, value) => {
+  return new Promise<string>((resolve, reject) => {
+    const controlId = Math.random().toString(36).substring(2, 9);
+    pendingBrowserControls.set(controlId, { resolve, reject });
+    broadcastEvent({
+      type: "browser_control_required",
+      controlId,
+      action,
+      target,
+      value
+    });
+  });
+});
 
 function broadcastEvent(event: any) {
   const data = `data: ${JSON.stringify(event)}\n\n`;
@@ -259,6 +275,27 @@ export async function runServer(port: number) {
           sendJSON(res, 200, { success: true });
         } else {
           sendJSON(res, 404, { error: "Question request not found" });
+        }
+        return;
+      }
+
+      // Handle Browser Control Result
+      if (pathname === "/api/browser/result" && req.method === "POST") {
+        const bodyStr = await readBody(req);
+        const body = JSON.parse(bodyStr || "{}");
+        const { controlId, result, isError } = body;
+
+        const resolver = pendingBrowserControls.get(controlId);
+        if (resolver) {
+          if (isError) {
+            resolver.reject(new Error(result));
+          } else {
+            resolver.resolve(result);
+          }
+          pendingBrowserControls.delete(controlId);
+          sendJSON(res, 200, { success: true });
+        } else {
+          sendJSON(res, 404, { error: "Browser control request not found" });
         }
         return;
       }

@@ -299,6 +299,11 @@ function handleSSEEvent(data) {
     renderQuestion(data.question, data.options, data.isMultiSelect);
     questionOverlay.classList.add("active");
   }
+
+  // Handle Browser Control Request
+  else if (data.type === "browser_control_required") {
+    executeBrowserControl(data.controlId, data.action, data.target, data.value);
+  }
 }
 
 // Render Question Form
@@ -633,4 +638,87 @@ async function grabTabContext() {
       setTimeout(() => chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length), 50);
     });
   });
+}
+
+// Execute browser automation control
+async function executeBrowserControl(controlId, action, target, value) {
+  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    if (!tabs || tabs.length === 0) {
+      sendBrowserResult(controlId, "Error: No active tab found in current window.", true);
+      return;
+    }
+    const activeTab = tabs[0];
+
+    chrome.scripting.executeScript({
+      target: { tabId: activeTab.id },
+      func: (act, tgt, val) => {
+        try {
+          if (act === "navigate") {
+            window.location.href = tgt;
+            return `Navigated to ${tgt}`;
+          }
+
+          if (act === "scroll") {
+            if (tgt === "up") {
+              window.scrollBy(0, -window.innerHeight / 2);
+              return "Scrolled page up";
+            } else if (tgt === "down") {
+              window.scrollBy(0, window.innerHeight / 2);
+              return "Scrolled page down";
+            } else {
+              const el = document.querySelector(tgt);
+              if (el) {
+                el.scrollIntoView({ behavior: "smooth" });
+                return `Scrolled to element ${tgt}`;
+              }
+              return `Element not found: ${tgt}`;
+            }
+          }
+
+          const el = document.querySelector(tgt);
+          if (!el) {
+            return `Error: Element not found for selector: ${tgt}`;
+          }
+
+          if (act === "click") {
+            el.click();
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            return `Clicked element ${tgt}`;
+          }
+
+          if (act === "type") {
+            el.value = val;
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            return `Typed "${val}" into element ${tgt}`;
+          }
+
+          return `Error: Unknown action ${act}`;
+        } catch (err) {
+          return `Error: ${err.message || String(err)}`;
+        }
+      },
+      args: [action, target, value]
+    }, (results) => {
+      if (!results || results.length === 0) {
+        sendBrowserResult(controlId, "Error: Script execution failed to return results.", true);
+        return;
+      }
+      const res = results[0].result;
+      const isError = typeof res === "string" && res.startsWith("Error:");
+      sendBrowserResult(controlId, res, isError);
+    });
+  });
+}
+
+async function sendBrowserResult(controlId, result, isError) {
+  try {
+    await fetch(`${BASE_URL}/api/browser/result`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ controlId, result, isError })
+    });
+  } catch (err) {
+    console.error("Failed to send browser control result", err);
+  }
 }

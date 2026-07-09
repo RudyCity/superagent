@@ -1625,4 +1625,45 @@ If no skills are relevant, return an empty array: []`;
   }
 };
 
+let browserControlHandler: ((action: string, target: string, value?: string) => Promise<string>) | null = null;
+export function setBrowserControlHandler(handler: typeof browserControlHandler) {
+  browserControlHandler = handler;
+}
+
+export const controlBrowserTabTool: Tool = {
+  name: "control_browser_tab",
+  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (click element by selector), type (type value into element selector), navigate (go to URL), scroll (scroll page up/down/to selector).",
+  parameters: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        enum: ["click", "type", "navigate", "scroll"],
+        description: "The browser action to execute on the active tab."
+      },
+      target: {
+        type: "string",
+        description: "The CSS selector (for click/type/scroll) or destination URL (for navigate)."
+      },
+      value: {
+        type: "string",
+        description: "The text to type (for type action) or scroll offset/direction (for scroll action)."
+      }
+    },
+    required: ["action", "target"]
+  },
+  async execute(args, cwd, signal) {
+    if (!browserControlHandler) {
+      return "Error: Browser control handler is not active. Please launch the Superagent Chrome Extension and connect to activate browser control.";
+    }
+    try {
+      const result = await browserControlHandler(args.action as string, args.target as string, args.value as string);
+      return result;
+    } catch (err: any) {
+      return `Browser control failed: ${err.message || String(err)}`;
+    }
+  }
+};
+
+
 
