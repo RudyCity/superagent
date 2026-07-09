@@ -1804,6 +1804,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           let attempt = 0;
           const maxRetries = 10;
           const baseDelay = 5000;
+          let currentByteBudget = 3 * 1024 * 1024; // 3.0 MB initial safety threshold
 
           while (true) {
             let concurrencyAcquired = false;
@@ -1942,8 +1943,9 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 return;
               }
               if (isPayloadTooLarge) {
+                currentByteBudget = Math.max(1024 * 100, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 100KB)
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
-                await this.compactHistoryIfNeeded(signal, true);
+                await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
                 messages = this.buildMessages(supportsNativeTools);
                 injectDynamicContext(messages);
               } else {
@@ -1971,6 +1973,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           let attempt = 0;
           const maxRetries = 10;
           const baseDelay = 5000;
+          let currentByteBudget = 3 * 1024 * 1024; // 3.0 MB initial safety threshold
 
           while (true) {
             let concurrencyAcquired = false;
@@ -2202,8 +2205,9 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 return;
               }
               if (isPayloadTooLarge) {
+                currentByteBudget = Math.max(1024 * 100, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 100KB)
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
-                await this.compactHistoryIfNeeded(signal, true);
+                await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
                 messages = this.buildMessages(supportsNativeTools);
                 injectDynamicContext(messages);
               } else {
@@ -3255,16 +3259,16 @@ for (const tc of toolCalls) {
     return coreMessages;
   }
 
-  async compactHistoryIfNeeded(signal?: AbortSignal, force: boolean = false, tokenBudget?: number): Promise<void> {
+  async compactHistoryIfNeeded(signal?: AbortSignal, force: boolean = false, tokenBudget?: number, byteBudget?: number): Promise<void> {
     await this.ensureContextManager();
     const contextManager = this.conversation.getContextManager();
 
     if (contextManager) {
-      await this.contextManagerCompact(signal, force, tokenBudget);
+      await this.contextManagerCompact(signal, force, tokenBudget, byteBudget);
       return;
     }
 
-    await this.legacyCompactHistory(signal, force, tokenBudget);
+    await this.legacyCompactHistory(signal, force, tokenBudget, byteBudget);
   }
 
   private async ensureContextManager(): Promise<void> {
@@ -3279,7 +3283,7 @@ for (const tc of toolCalls) {
     }
   }
 
-  private async contextManagerCompact(signal?: AbortSignal, force: boolean = false, tokenBudget?: number): Promise<void> {
+  private async contextManagerCompact(signal?: AbortSignal, force: boolean = false, tokenBudget?: number, byteBudget?: number): Promise<void> {
     const contextManager = this.conversation.getContextManager()!;
     if (signal) {
       await this.conversation.updateContextManagerLLM(this.getModel(), signal);
@@ -3306,7 +3310,7 @@ for (const tc of toolCalls) {
         strategy = new PruningStrategy();
         compactionOptions = {
           ...compactionOptions,
-          byteBudget: 3 * 1024 * 1024, // 3.0 MB safety threshold
+          byteBudget: byteBudget ?? 3 * 1024 * 1024, // 3.0 MB safety threshold
         };
       } else if (tokenBudget) {
         compactionOptions = {
@@ -3327,11 +3331,11 @@ for (const tc of toolCalls) {
     } catch (error) {
       console.error("ContextManager compaction failed:", error);
       this.writeToLogFile("ERROR", `ContextManager compaction failed: ${(error as Error).message}`);
-      await this.legacyCompactHistory(signal, force, tokenBudget);
+      await this.legacyCompactHistory(signal, force, tokenBudget, byteBudget);
     }
   }
 
-  private async legacyCompactHistory(signal?: AbortSignal, force: boolean = false, tokenBudget?: number): Promise<void> {
+  private async legacyCompactHistory(signal?: AbortSignal, force: boolean = false, tokenBudget?: number, byteBudget?: number): Promise<void> {
     const modelLimit = getContextWindowLimit(this.config.model);
     const maxHistoryTokens = tokenBudget ?? Math.floor(modelLimit * (force ? 0.3 : 0.5));
 

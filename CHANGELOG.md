@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.205] - 2026-07-09
+
+### Fixed
+- Fixed an infinite loop during `413 Payload Too Large` retry attempts. The engine now progressively and dynamically halves the pruning byte budget on each consecutive retry attempt, successfully reducing payload size below the gateway's actual limit.
+- Updated `compactHistoryIfNeeded` and its context manager helper methods to accept an optional `byteBudget` parameter.
+- Updated unit test assertions to match the new compaction method signature.
+
+---
+
 ## [1.2.204] - 2026-07-09
 
 ### Added

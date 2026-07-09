@@ -85,7 +85,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
 
       // Called twice: 1 failure + 1 success retry
       expect(streamText).toHaveBeenCalledTimes(2);
-      expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true);
+      expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true, undefined, expect.any(Number));
       expect(delaySpy).toHaveBeenCalledWith(1, 1000, expect.anything());
 
       const successDelta = onEvent.mock.calls.some((call) => call[0].content === "Success after compaction");
@@ -130,7 +130,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
 
       // Called twice: 1 failure + 1 success retry
       expect(generateText).toHaveBeenCalledTimes(2);
-      expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true);
+      expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true, undefined, expect.any(Number));
       expect(delaySpy).toHaveBeenCalledWith(1, 1000, expect.anything());
 
       const successDelta = onEvent.mock.calls.some((call) => call[0].content === "Success after compaction");
