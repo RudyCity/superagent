@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.200] - 2026-07-09
+
+### Fixed
+- Added Google Gemini option to the dashboard keyboard handler, keyboard helper navigation, and wizard option templates so option 6 is shown on step 2 of the login wizard.
+
+---
+
 ## [1.2.199] - 2026-07-09
 
 ### Fixed

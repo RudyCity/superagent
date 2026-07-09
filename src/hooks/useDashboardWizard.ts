@@ -270,7 +270,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             "2. OpenAI",
             "3. Anthropic",
             "4. Custom OpenAI Endpoint",
-            "5. Custom Anthropic Endpoint"
+            "5. Custom Anthropic Endpoint",
+            "6. Google Gemini"
           ]);
           setWizardSelectedIndex(0);
         } else {
@@ -291,7 +292,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
       } else if (activeWizard.step === 2) {
         const provider = resolveProviderType(value);
         if (!provider) {
-          setMasterLogs((prev) => [...prev, `[ERROR] Invalid choice. Please select 1, 2, 3, or 4.`].slice(-500));
+          setMasterLogs((prev) => [...prev, `[ERROR] Invalid choice. Please select 1, 2, 3, 4, 5, or 6.`].slice(-500));
           return;
         }
 

@@ -564,7 +564,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 step: 2,
                 data: {},
               });
-              setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint"]);
+              setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini"]);
               setWizardSelectedIndex(0);
             } else if (selectedOption.includes("Delete / Remove")) {
               const providers = getProviders().filter((p: any) => p.apiKey && p.apiKey.trim() !== "");
@@ -1811,7 +1811,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           } else if (activeWizard.step === 3) {
             // Back to step 2: Select provider template
             setActiveWizard({ type: "login", step: 2, data: {} });
-            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint"]);
+            setWizardOptions(["1. OpenRouter (Recommended)", "2. OpenAI", "3. Anthropic", "4. Custom OpenAI Endpoint", "5. Custom Anthropic Endpoint", "6. Google Gemini"]);
             setWizardSelectedIndex(0);
             setInput("");
             return;
