@@ -1849,6 +1849,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           const maxRetries = 10;
           const baseDelay = 5000;
           let currentByteBudget = 3 * 1024 * 1024; // 3.0 MB initial safety threshold
+          let payload413Count = 0;
 
           while (true) {
             let concurrencyAcquired = false;
@@ -1988,20 +1989,42 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 return;
               }
               if (isPayloadTooLarge) {
+                payload413Count++;
                 const parsedLimit = parsePayloadLimitBytes(rawMsg);
                 if (parsedLimit) {
                   this.detectedPayloadLimitBytes = parsedLimit;
-                  const maxPayloadBytes = Math.floor(parsedLimit * 0.9);
-                  const systemSize = systemPrompt ? Buffer.byteLength(systemPrompt, "utf-8") : 0;
-                  const toolsSize = supportsNativeTools ? Buffer.byteLength(JSON.stringify(filteredToolDefs), "utf-8") : 0;
-                  currentByteBudget = Math.max(1024 * 20, maxPayloadBytes - systemSize - toolsSize - 5000);
-                } else {
-                  currentByteBudget = Math.max(1024 * 20, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 20KB)
                 }
+                const limitToUse = this.detectedPayloadLimitBytes || parsedLimit || 4 * 1024 * 1024;
+                const maxPayloadBytes = Math.floor(limitToUse * 0.9);
+                const systemSize = systemPrompt ? Buffer.byteLength(systemPrompt, "utf-8") : 0;
+                const toolsSize = supportsNativeTools ? Buffer.byteLength(JSON.stringify(filteredToolDefs), "utf-8") : 0;
+
+                if (payload413Count > 3) {
+                  throw new Error(`Payload size limit exceeded repeatedly. System prompt (${(systemSize / 1024).toFixed(1)} KB) and tool schemas (${(toolsSize / 1024).toFixed(1)} KB) exceed the provider payload limit of ${(limitToUse / 1024).toFixed(0)} KB.`);
+                }
+
+                // Reduce budget progressively on each 413 attempt: 100% of headroom on 1st, 50% on 2nd, 25% on 3rd
+                const reductionFactor = Math.pow(0.5, payload413Count - 1);
+                const allowedHeadroom = maxPayloadBytes - systemSize - toolsSize - 5000;
+                currentByteBudget = Math.max(1024 * 20, Math.floor(allowedHeadroom * reductionFactor));
+
+                const beforePayloadBytes = Buffer.byteLength(JSON.stringify(messages), "utf-8") + systemSize + toolsSize + 5000;
+                this.writeToLogFile("INFO", `413 Compaction (non-stream): attempt ${payload413Count}. Before size: ${(beforePayloadBytes / 1024).toFixed(1)} KB, Budget target: ${(currentByteBudget / 1024).toFixed(1)} KB`);
+
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
                 await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
                 messages = this.buildMessages(supportsNativeTools);
                 injectDynamicContext(messages);
+
+                const afterPayloadBytes = Buffer.byteLength(JSON.stringify(messages), "utf-8") + systemSize + toolsSize + 5000;
+                this.writeToLogFile("INFO", `413 Compaction (non-stream): After size: ${(afterPayloadBytes / 1024).toFixed(1)} KB`);
+
+                if (afterPayloadBytes >= beforePayloadBytes * 0.95 && beforePayloadBytes > 1024 * 30) {
+                  this.writeToLogFile("WARN", `413 Compaction was ineffective. Size only reduced from ${(beforePayloadBytes / 1024).toFixed(1)} KB to ${(afterPayloadBytes / 1024).toFixed(1)} KB`);
+                  if (payload413Count >= 2) {
+                    throw new Error(`Compaction ineffective. System prompt (${(systemSize / 1024).toFixed(1)} KB) and tool schemas (${(toolsSize / 1024).toFixed(1)} KB) are too large for the provider payload limit of ${(limitToUse / 1024).toFixed(0)} KB.`);
+                  }
+                }
               } else {
                 this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${rawMsg}. Retrying attempt ${attempt}/${currentMaxRetries}...\n` });
               }
@@ -2028,6 +2051,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           const maxRetries = 10;
           const baseDelay = 5000;
           let currentByteBudget = 3 * 1024 * 1024; // 3.0 MB initial safety threshold
+          let payload413Count = 0;
 
           while (true) {
             let concurrencyAcquired = false;
@@ -2260,20 +2284,42 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 return;
               }
               if (isPayloadTooLarge) {
+                payload413Count++;
                 const parsedLimit = parsePayloadLimitBytes(rawMsg);
                 if (parsedLimit) {
                   this.detectedPayloadLimitBytes = parsedLimit;
-                  const maxPayloadBytes = Math.floor(parsedLimit * 0.9);
-                  const systemSize = finalSystemPrompt ? Buffer.byteLength(finalSystemPrompt, "utf-8") : 0;
-                  const toolsSize = supportsNativeTools ? Buffer.byteLength(JSON.stringify(filteredToolDefs), "utf-8") : 0;
-                  currentByteBudget = Math.max(1024 * 20, maxPayloadBytes - systemSize - toolsSize - 5000);
-                } else {
-                  currentByteBudget = Math.max(1024 * 20, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 20KB)
                 }
+                const limitToUse = this.detectedPayloadLimitBytes || parsedLimit || 4 * 1024 * 1024;
+                const maxPayloadBytes = Math.floor(limitToUse * 0.9);
+                const systemSize = finalSystemPrompt ? Buffer.byteLength(finalSystemPrompt, "utf-8") : 0;
+                const toolsSize = supportsNativeTools ? Buffer.byteLength(JSON.stringify(filteredToolDefs), "utf-8") : 0;
+
+                if (payload413Count > 3) {
+                  throw new Error(`Payload size limit exceeded repeatedly. System prompt (${(systemSize / 1024).toFixed(1)} KB) and tool schemas (${(toolsSize / 1024).toFixed(1)} KB) exceed the provider payload limit of ${(limitToUse / 1024).toFixed(0)} KB.`);
+                }
+
+                // Reduce budget progressively on each 413 attempt: 100% of headroom on 1st, 50% on 2nd, 25% on 3rd
+                const reductionFactor = Math.pow(0.5, payload413Count - 1);
+                const allowedHeadroom = maxPayloadBytes - systemSize - toolsSize - 5000;
+                currentByteBudget = Math.max(1024 * 20, Math.floor(allowedHeadroom * reductionFactor));
+
+                const beforePayloadBytes = Buffer.byteLength(JSON.stringify(messages), "utf-8") + systemSize + toolsSize + 5000;
+                this.writeToLogFile("INFO", `413 Compaction (stream): attempt ${payload413Count}. Before size: ${(beforePayloadBytes / 1024).toFixed(1)} KB, Budget target: ${(currentByteBudget / 1024).toFixed(1)} KB`);
+
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
                 await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
                 messages = this.buildMessages(supportsNativeTools);
                 injectDynamicContext(messages);
+
+                const afterPayloadBytes = Buffer.byteLength(JSON.stringify(messages), "utf-8") + systemSize + toolsSize + 5000;
+                this.writeToLogFile("INFO", `413 Compaction (stream): After size: ${(afterPayloadBytes / 1024).toFixed(1)} KB`);
+
+                if (afterPayloadBytes >= beforePayloadBytes * 0.95 && beforePayloadBytes > 1024 * 30) {
+                  this.writeToLogFile("WARN", `413 Compaction was ineffective. Size only reduced from ${(beforePayloadBytes / 1024).toFixed(1)} KB to ${(afterPayloadBytes / 1024).toFixed(1)} KB`);
+                  if (payload413Count >= 2) {
+                    throw new Error(`Compaction ineffective. System prompt (${(systemSize / 1024).toFixed(1)} KB) and tool schemas (${(toolsSize / 1024).toFixed(1)} KB) are too large for the provider payload limit of ${(limitToUse / 1024).toFixed(0)} KB.`);
+                  }
+                }
               } else {
                 this.onEvent({ type: "text", content: `\n[SYS] Communication error: ${rawMsg}. Retrying attempt ${attempt}/${currentMaxRetries}...\n` });
               }

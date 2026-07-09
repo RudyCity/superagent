@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.209] - 2026-07-09
+
+### Fixed
+- Fixed 413 Payload Too Large infinite compaction loop by introducing a payload413Count limit of 3, progressive budget reduction factor, post-compaction size verification, and adaptive message truncation threshold.
+
+---
+
 ## [1.2.208] - 2026-07-09
 
 ### Fixed

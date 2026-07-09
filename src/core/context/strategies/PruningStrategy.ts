@@ -21,9 +21,17 @@ export class PruningStrategy implements CompactionStrategy {
     options: CompactionOptions
   ): Promise<CompactionResult> {
     const preserveRecent = options.preserveRecent || 20;
+    const byteBudget = options.byteBudget || 0;
     const tokenBudget = options.tokenBudget || 0;
 
-    let keepIndex = Math.max(0, messages.length - preserveRecent);
+    let actualPreserveRecent = preserveRecent;
+    let maxContentLen = 50000;
+    if (byteBudget > 0 && byteBudget <= 100 * 1024) {
+      maxContentLen = Math.max(2000, Math.floor(byteBudget * 0.3));
+      actualPreserveRecent = Math.max(2, Math.min(preserveRecent, Math.floor(byteBudget / (10 * 1024))));
+    }
+
+    let keepIndex = Math.max(0, messages.length - actualPreserveRecent);
     while (keepIndex < messages.length && messages[keepIndex]?.role === "tool") {
       keepIndex++;
     }
@@ -43,7 +51,6 @@ export class PruningStrategy implements CompactionStrategy {
     }
 
     // Enforce byte budget: reduce preserved messages/truncate contents if they exceed byte budget
-    const byteBudget = options.byteBudget || 0;
     if (byteBudget > 0) {
       let useVisionTokenSaving = options.useVisionTokenSaving;
       let visionThreshold = options.visionThreshold ?? 3000;
@@ -73,19 +80,19 @@ export class PruningStrategy implements CompactionStrategy {
       // First, truncate very large fields within toKeep message objects to avoid throwing away everything.
       if (currentBytes > byteBudget) {
         for (const msg of toKeep) {
-          if (typeof msg.content === "string" && msg.content.length > 50000) {
-            msg.content = msg.content.slice(0, 50000) + "\n\n[... TRUNCATED DUE TO PAYLOAD SIZE LIMITS ...]";
+          if (typeof msg.content === "string" && msg.content.length > maxContentLen) {
+            msg.content = msg.content.slice(0, maxContentLen) + "\n\n[... TRUNCATED DUE TO PAYLOAD SIZE LIMITS ...]";
           } else if (Array.isArray(msg.content)) {
             for (const part of msg.content) {
-              if (part.type === "text" && part.text && part.text.length > 50000) {
-                part.text = part.text.slice(0, 50000) + "\n\n[... TRUNCATED DUE TO PAYLOAD SIZE LIMITS ...]";
+              if (part.type === "text" && part.text && part.text.length > maxContentLen) {
+                part.text = part.text.slice(0, maxContentLen) + "\n\n[... TRUNCATED DUE TO PAYLOAD SIZE LIMITS ...]";
               }
             }
           }
           if (msg.toolResults) {
             for (const tr of msg.toolResults) {
-              if (typeof tr.result === "string" && tr.result.length > 50000) {
-                tr.result = tr.result.slice(0, 50000) + "\n\n[... TRUNCATED DUE TO PAYLOAD SIZE LIMITS ...]";
+              if (typeof tr.result === "string" && tr.result.length > maxContentLen) {
+                tr.result = tr.result.slice(0, maxContentLen) + "\n\n[... TRUNCATED DUE TO PAYLOAD SIZE LIMITS ...]";
               }
             }
           }
