@@ -1951,7 +1951,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 return;
               }
               if (isPayloadTooLarge) {
-                currentByteBudget = Math.max(1024 * 100, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 100KB)
+                currentByteBudget = Math.max(1024 * 20, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 20KB)
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
                 await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
                 messages = this.buildMessages(supportsNativeTools);
@@ -2213,7 +2213,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 return;
               }
               if (isPayloadTooLarge) {
-                currentByteBudget = Math.max(1024 * 100, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 100KB)
+                currentByteBudget = Math.max(1024 * 20, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 20KB)
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
                 await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
                 messages = this.buildMessages(supportsNativeTools);

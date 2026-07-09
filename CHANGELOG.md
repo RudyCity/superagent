@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.207] - 2026-07-09
+
+### Fixed
+- Fixed 413 Request Entity Too Large error handling to recover successfully on gateways with a strict 100KB request limit by lowering the minimum compaction byte budget floor from 100KB to 20KB.
+
+---
+
 ## [1.2.206] - 2026-07-09
 
 ### Fixed
