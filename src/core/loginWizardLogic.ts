@@ -68,13 +68,14 @@ export function getModelOptions(providerType: string, cachedModels: string[]): s
     );
     models = filtered.length > 0 ? filtered : fallback;
   } else if (providerType === "gemini") {
-    // For native Gemini provider, show only gemini-* models (not google/ prefixed OpenRouter ones)
-    models = fallback;
+    const filtered = models.filter((m) => m.startsWith("gemini-"));
+    models = filtered.length > 0 ? filtered : fallback;
   }
   return models.slice(0, 15);
 }
 
 export function resolveTestModel(providerType: string, baseUrl: string): string {
+  if (providerType === "gemini") return "gemini-2.5-flash";
   if (providerType === "anthropic" || providerType === "custom-anthropic") return "claude-3-haiku-20240307";
   if (providerType === "openrouter" || (baseUrl && baseUrl.includes("openrouter.ai"))) {
     return "openai/gpt-4o-mini";

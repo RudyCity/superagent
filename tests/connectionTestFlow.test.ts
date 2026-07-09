@@ -95,6 +95,10 @@ describe("loginWizardLogic — pure helper functions", () => {
     it("should return gpt-4o-mini for custom provider with empty URL", () => {
       expect(resolveTestModel("custom", "")).toBe("gpt-4o-mini");
     });
+
+    it("should return gemini-2.5-flash for gemini", () => {
+      expect(resolveTestModel("gemini", "")).toBe("gemini-2.5-flash");
+    });
   });
 
   describe("getModelOptions", () => {
@@ -119,6 +123,18 @@ describe("loginWizardLogic — pure helper functions", () => {
       const cached = ["claude-3-5-sonnet", "gpt-4o", "gpt-4o-mini"];
       const result = getModelOptions("openai", cached);
       expect(result).toEqual(["gpt-4o", "gpt-4o-mini"]);
+    });
+
+    it("should filter gemini models when provider is gemini", () => {
+      const cached = ["gemini-1.5-flash", "gpt-4o", "gemini-2.0-pro"];
+      const result = getModelOptions("gemini", cached);
+      expect(result).toEqual(["gemini-1.5-flash", "gemini-2.0-pro"]);
+    });
+
+    it("should use fallback when filtered list is empty for gemini", () => {
+      const cached = ["gpt-4o", "claude-3-5-sonnet"];
+      const result = getModelOptions("gemini", cached);
+      expect(result).toEqual(getFallbackModels("gemini"));
     });
 
     it("should not filter models for custom provider", () => {

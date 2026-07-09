@@ -97,28 +97,7 @@ export function getProviderOptionsList(list: ConfiguredProvider[]): string[] {
     "5. Custom Anthropic Endpoint",
     "6. Google Gemini",
   ];
-  const templatesToShow = defaultTemplates.filter((t) => {
-    const lowerT = t.toLowerCase();
-    let nameToMatch = "";
-    if (lowerT.includes("openrouter")) nameToMatch = "openrouter";
-    else if (lowerT.includes("openai") && !lowerT.includes("custom")) nameToMatch = "openai";
-    else if (lowerT.includes("anthropic") && !lowerT.includes("custom")) nameToMatch = "anthropic";
-    else if (lowerT.includes("custom") && lowerT.includes("openai")) nameToMatch = "custom";
-    else if (lowerT.includes("custom") && lowerT.includes("anthropic")) nameToMatch = "custom-anthropic";
-    else if (lowerT.includes("gemini") || lowerT.includes("google")) nameToMatch = "gemini";
-    
-    if (nameToMatch === "custom-anthropic") {
-      return !list.some((p) => p.name.toLowerCase() === "custom-anthropic" || (p.type === "anthropic" && !!p.baseUrl));
-    }
-    if (nameToMatch === "anthropic") {
-      return !list.some((p) => p.name.toLowerCase() === "anthropic" || (p.type === "anthropic" && !p.baseUrl));
-    }
-    if (nameToMatch === "gemini") {
-      return !list.some((p) => p.type === "gemini" || p.name.toLowerCase().includes("gemini"));
-    }
-    return !list.some((p) => p.name.toLowerCase() === nameToMatch);
-  });
-  return [...options, ...templatesToShow, "< Back"];
+  return [...options, ...defaultTemplates, "< Back"];
 }
 
 /**

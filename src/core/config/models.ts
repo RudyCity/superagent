@@ -52,13 +52,13 @@ export async function fetchAndCacheModels(): Promise<void> {
             m.context_length ||
             m.max_model_len ||
             m.max_position_embeddings ||
+            m.inputTokenLimit ||
             (m.metadata &&
               (m.metadata.context_length ||
                 m.metadata.max_model_len ||
                 m.metadata.max_position_embeddings));
-          if (limit && typeof limit === "number") {
-            cache[rawId] = limit;
-          }
+          const finalLimit = (typeof limit === "number" ? limit : null) || getStaticModelLimit(rawId) || 128000;
+          cache[rawId] = finalLimit;
         }
       }
     } catch (err) {

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, fetchModelsFromEndpoint, resolveTestModelAsync } from "../src/core/loginWizardLogic.js";
+import { getProviderOptionsList } from "../src/core/config/providers.js";
+import { fetchAndCacheModels, getCachedModelIds, getContextWindowLimit } from "../src/core/config/models.js";
+import { addProvider, clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 
 describe("loginWizardLogic", () => {
   describe("resolveProviderType", () => {
@@ -68,6 +71,26 @@ describe("loginWizardLogic", () => {
       ]);
     });
 
+    it("returns filtered cached models for gemini", () => {
+      const cached = ["gemini-1.5-flash", "gpt-4o", "gemini-2.0-pro"];
+      expect(getModelOptions("gemini", cached)).toEqual([
+        "gemini-1.5-flash",
+        "gemini-2.0-pro",
+      ]);
+    });
+
+    it("returns fallback models for gemini when filtered cached list is empty", () => {
+      const cached = ["gpt-4o", "claude-3-5-sonnet"];
+      expect(getModelOptions("gemini", cached)).toEqual([
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+      ]);
+    });
+
   it("limits results to 15", () => {
     const cached = Array.from({ length: 60 }, (_, i) => `gpt-${i}`);
     expect(getModelOptions("openai", cached)).toHaveLength(15);
@@ -81,6 +104,10 @@ describe("loginWizardLogic", () => {
 
     it("resolves openrouter test model", () => {
       expect(resolveTestModel("openrouter", "https://openrouter.ai/api/v1")).toBe("openai/gpt-4o-mini");
+    });
+
+    it("resolves gemini test model", () => {
+      expect(resolveTestModel("gemini", "")).toBe("gemini-2.5-flash");
     });
 
     it("defaults to openai gpt-4o-mini", () => {
@@ -214,6 +241,63 @@ describe("loginWizardLogic", () => {
       const model = await resolveTestModelAsync("openai", "https://api.openai.com/v1", "sk-openai");
       expect(model).toBe("gpt-4o-mini");
       expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getProviderOptionsList", () => {
+    it("should return all 6 default templates without filtering out configured providers", () => {
+      const list = [
+        { id: "openai-profile", name: "openai", type: "openai", apiKey: "sk-123", isActive: true },
+        { id: "gemini-profile", name: "gemini", type: "gemini", apiKey: "gemini-123", isActive: false },
+      ];
+      const result = getProviderOptionsList(list);
+      expect(result).toContain("openai (openai) [Active]");
+      expect(result).toContain("gemini (gemini)");
+      expect(result).toContain("1. OpenRouter (Recommended)");
+      expect(result).toContain("2. OpenAI");
+      expect(result).toContain("3. Anthropic");
+      expect(result).toContain("4. Custom OpenAI Endpoint");
+      expect(result).toContain("5. Custom Anthropic Endpoint");
+      expect(result).toContain("6. Google Gemini");
+      expect(result).toContain("< Back");
+    });
+  });
+
+  describe("fetchAndCacheModels with inputTokenLimit and fallbacks", () => {
+    beforeEach(() => {
+      vi.stubGlobal("fetch", vi.fn());
+      clearModelConfigCache();
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      clearModelConfigCache();
+    });
+
+    it("should read inputTokenLimit and fall back to static limits or 128000 when missing/falsy", async () => {
+      addProvider({
+        id: "gemini-test-prov",
+        name: "Gemini Test Provider",
+        provider: "gemini",
+        apiKey: "test-gemini-key",
+      });
+
+      (globalThis.fetch as any).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          models: [
+            { name: "models/gemini-2.5-flash", inputTokenLimit: 1000000 },
+            { name: "models/gemini-2.5-pro" }, // no limit, falls back to static limit 1048576
+            { name: "models/unknown-fictional-model" }, // no limit, falls back to 128000
+          ],
+        }),
+      });
+
+      await fetchAndCacheModels();
+
+      expect(getContextWindowLimit("gemini-2.5-flash")).toBe(1000000);
+      expect(getContextWindowLimit("gemini-2.5-pro")).toBe(1048576);
+      expect(getContextWindowLimit("unknown-fictional-model")).toBe(128000);
     });
   });
 });

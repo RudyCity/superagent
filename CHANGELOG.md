@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.198] - 2026-07-09
+
+### Fixed
+- Fixed Gemini login provider registration list to always show all default templates so users can add multiple provider profiles.
+- Updated login wizard's resolved test model and model filtering logic for native Gemini provider type to correctly filter models by prefix and resolve test model.
+- Fixed models cache logic in fetchAndCacheModels to correctly read inputTokenLimit and fall back to static limits or 128000 when missing/falsy.
+
+---
+
 ## [1.2.197] - 2026-07-09
 
 ### Fixed
