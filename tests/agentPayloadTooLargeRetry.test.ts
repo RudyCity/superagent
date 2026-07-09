@@ -6,7 +6,7 @@ import fs from "fs";
 const tempHome = path.join(process.cwd(), "tests", "temp-home-payload-retry");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-import { Agent } from "../src/core/agent.js";
+import { Agent, parsePayloadLimitBytes } from "../src/core/agent.js";
 import { streamText, generateText } from "ai";
 import * as configModule from "../src/core/config.js";
 
@@ -168,9 +168,37 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       await agent.sendMessage("test message");
 
       // Verify compact was triggered with force=true proactively
-      expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true);
+      expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true, undefined, expect.any(Number));
 
       byteLengthSpy.mockRestore();
     });
   });
+
+  describe("parsePayloadLimitBytes helper", () => {
+    it("should parse KB values correctly", () => {
+      expect(parsePayloadLimitBytes("Request too large (max 100KB)")).toBe(100 * 1024);
+      expect(parsePayloadLimitBytes("limit: 50 KB")).toBe(50 * 1024);
+      expect(parsePayloadLimitBytes("exceeded 2.5kb")).toBe(2.5 * 1024);
+    });
+
+    it("should parse MB values correctly", () => {
+      expect(parsePayloadLimitBytes("exceeded 1.5MB")).toBe(1.5 * 1024 * 1024);
+      expect(parsePayloadLimitBytes("limit is 10 MB")).toBe(10 * 1024 * 1024);
+    });
+
+    it("should parse byte values correctly", () => {
+      expect(parsePayloadLimitBytes("exceeded 1048576 bytes")).toBe(1048576);
+      expect(parsePayloadLimitBytes("max: 102400 b")).toBe(102400);
+    });
+
+    it("should parse raw numbers as bytes if they are large", () => {
+      expect(parsePayloadLimitBytes("body size exceeds limit: 1048576")).toBe(1048576);
+    });
+
+    it("should return null for invalid messages", () => {
+      expect(parsePayloadLimitBytes("something went wrong")).toBeNull();
+      expect(parsePayloadLimitBytes("max retries reached")).toBeNull();
+    });
+  });
 });
+

@@ -228,6 +228,36 @@ function isRetryableError(err: unknown): boolean {
   return true;
 }
 
+export function parsePayloadLimitBytes(msg: string): number | null {
+  const normalized = msg.toLowerCase();
+  // Try pattern: max/limit/exceeded 100kb / 100 kb / 1mb / 1048576 bytes
+  const regex = /(?:max|limit|exceeded|exceeds|snippet:)\s*(?:is|to|of|:|=)?\s*["']?\s*(\d+(?:\.\d+)?)\s*(kb|mb|b|bytes|o)/i;
+  const match = normalized.match(regex);
+  if (match) {
+    const value = parseFloat(match[1]);
+    const unit = match[2];
+    if (unit.startsWith("kb")) {
+      return value * 1024;
+    }
+    if (unit.startsWith("mb")) {
+      return value * 1024 * 1024;
+    }
+    if (unit === "b" || unit.startsWith("byte")) {
+      return value;
+    }
+  }
+
+  // Try matching just a number in parenthesis/detail if it looks like bytes, e.g. "max: 1048576"
+  const regexNum = /(?:max|limit|exceeded|exceeds|size|body)\s*[:=]?\s*["']?\s*(\d{5,12})\b/i;
+  const matchNum = normalized.match(regexNum);
+  if (matchNum) {
+    return parseInt(matchNum[1], 10);
+  }
+
+  return null;
+}
+
+
 
 export class Agent {
   private static imageCache: Map<string, string[]> = new Map();
@@ -246,6 +276,7 @@ export class Agent {
     Agent.imageCache.set(hash, images);
   }
 
+  private detectedPayloadLimitBytes?: number;
   public delegationDepth = 0;
   /** Agent tier in the 3-tier hierarchy: master | superagent | subagent */
   public tier: AgentTier = "master";
@@ -1658,14 +1689,16 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         {
           const payloadJson = JSON.stringify(messages);
           const payloadBytes = Buffer.byteLength(payloadJson, "utf-8");
-          const maxPayloadBytes = 4 * 1024 * 1024; // 4 MB safety limit
+          const maxPayloadBytes = this.detectedPayloadLimitBytes
+            ? Math.floor(this.detectedPayloadLimitBytes * 0.9)
+            : 4 * 1024 * 1024; // 4 MB safety limit
 
           if (payloadBytes > maxPayloadBytes) {
             this.writeToLogFile(
               "WARN",
               `Pre-flight payload check: estimated payload size (${(payloadBytes / 1024 / 1024).toFixed(2)} MB) exceeds safety threshold (${(maxPayloadBytes / 1024 / 1024).toFixed(2)} MB). Triggering emergency compaction.`
             );
-            await this.compactHistoryIfNeeded(signal, true);
+            await this.compactHistoryIfNeeded(signal, true, undefined, maxPayloadBytes);
             // Rebuild messages from compacted conversation
             messages = this.buildMessages(supportsNativeTools);
             injectDynamicContext(messages);
@@ -1925,6 +1958,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               const rawMsg = formatError(err);
               const isPayloadTooLarge = rawMsg.toLowerCase().includes("payload too large") || 
                                         rawMsg.toLowerCase().includes("request entity too large") || 
+                                        rawMsg.toLowerCase().includes("request too large") || 
                                         rawMsg.toLowerCase().includes("status 413") ||
                                         rawMsg.toLowerCase().includes("status: 413");
               const isOverloaded = rawMsg.toLowerCase().includes("our servers are currently overloaded") || rawMsg.toLowerCase().includes("overloaded_error");
@@ -1951,7 +1985,13 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 return;
               }
               if (isPayloadTooLarge) {
-                currentByteBudget = Math.max(1024 * 20, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 20KB)
+                const parsedLimit = parsePayloadLimitBytes(rawMsg);
+                if (parsedLimit) {
+                  this.detectedPayloadLimitBytes = parsedLimit;
+                  currentByteBudget = Math.max(1024 * 20, Math.floor(parsedLimit * 0.9));
+                } else {
+                  currentByteBudget = Math.max(1024 * 20, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 20KB)
+                }
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
                 await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
                 messages = this.buildMessages(supportsNativeTools);
@@ -2187,6 +2227,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               const rawMsg = formatError(err);
               const isPayloadTooLarge = rawMsg.toLowerCase().includes("payload too large") || 
                                         rawMsg.toLowerCase().includes("request entity too large") || 
+                                        rawMsg.toLowerCase().includes("request too large") || 
                                         rawMsg.toLowerCase().includes("status 413") ||
                                         rawMsg.toLowerCase().includes("status: 413");
               const isOverloaded = rawMsg.toLowerCase().includes("our servers are currently overloaded") || rawMsg.toLowerCase().includes("overloaded_error");
@@ -2213,7 +2254,13 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 return;
               }
               if (isPayloadTooLarge) {
-                currentByteBudget = Math.max(1024 * 20, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 20KB)
+                const parsedLimit = parsePayloadLimitBytes(rawMsg);
+                if (parsedLimit) {
+                  this.detectedPayloadLimitBytes = parsedLimit;
+                  currentByteBudget = Math.max(1024 * 20, Math.floor(parsedLimit * 0.9));
+                } else {
+                  currentByteBudget = Math.max(1024 * 20, Math.floor(currentByteBudget * 0.5)); // Halve the budget (floor at 20KB)
+                }
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
                 await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
                 messages = this.buildMessages(supportsNativeTools);

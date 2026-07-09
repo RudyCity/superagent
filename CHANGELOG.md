@@ -1,6 +1,15 @@
 # Changelog
 
+## [1.2.208] - 2026-07-09
+
+### Fixed
+- Fixed payload compaction loop on low-limit gateways (e.g. 100KB) by dynamically parsing the body limit from 413 error messages.
+- Cached the parsed payload limit on the Agent instance to proactively trigger pre-flight check compaction and prevent redundant failed API requests.
+
+---
+
 ## [1.2.207] - 2026-07-09
+
 
 ### Fixed
 - Fixed 413 Request Entity Too Large error handling to recover successfully on gateways with a strict 100KB request limit by lowering the minimum compaction byte budget floor from 100KB to 20KB.
