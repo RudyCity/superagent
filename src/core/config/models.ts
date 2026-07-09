@@ -472,6 +472,10 @@ export function getModelInstanceForString(modelStr: string) {
     }
   }
 
+  if (baseUrl) {
+    baseUrl = ensureProtocol(baseUrl);
+  }
+
   const isCloud = !baseUrl || baseUrl.includes("openrouter.ai") || baseUrl.includes("openai.com") || baseUrl.includes("anthropic.com");
   const isMissingKey = !apiKey || apiKey.trim() === "" || apiKey === "dummy";
   const isTest = (process.env.VITEST || process.env.NODE_ENV === "test") && !process.env.SUPERAGENT_FORCE_VAL_CHECK;
@@ -706,7 +710,7 @@ export function getModelConnectionDetailsForTier(
   const provider = providerProfile?.provider || "openai";
   const modelName = tierConfig?.model || getEffectiveMasterModel(mode) || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
   const profileId = providerProfile?.id || provider;
-  const baseUrl = providerProfile?.baseUrl || undefined;
+  const baseUrl = ensureProtocol(providerProfile?.baseUrl) || undefined;
 
   return { provider, modelName, apiKey, baseUrl, profileId };
 }

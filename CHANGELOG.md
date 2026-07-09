@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.202] - 2026-07-09
+
+### Fixed
+- Fixed baseUrl resolution when applying model presets by applying ensureProtocol right before constructing the model client and when retrieving connection details for a tier in models.ts.
+
+---
+
 ## [1.2.201] - 2026-07-09
 
 ### Fixed
