@@ -185,6 +185,11 @@ describe("config", () => {
     expect(getContextWindowLimit("deepseek-chat")).toBe(131072);
     expect(getContextWindowLimit("meta-llama/llama-3.3-70b-instruct")).toBe(131072);
     
+    // Claude Sonnet 4.5 1M tests
+    expect(getContextWindowLimit("anthropic/claude-sonnet-4.5-1m")).toBe(1000000);
+    expect(getContextWindowLimit("claude-sonnet-4.5-1m")).toBe(1000000);
+    expect(getContextWindowLimit("openrouter/anthropic/claude-sonnet-4.5-1m")).toBe(1000000);
+
     // Explicit and dynamic free models
     expect(getContextWindowLimit("google/gemma-4-26b-a4b-it:free")).toBe(262144);
     expect(getContextWindowLimit("meta-llama/llama-3.3-70b-instruct:free")).toBe(131072);

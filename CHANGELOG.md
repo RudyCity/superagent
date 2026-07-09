@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.204] - 2026-07-09
+
+### Added
+- Added support for the `claude-sonnet-4.5-1m` model by registering its static context window limit (1,000,000 tokens) in `model_limits.ts` and adding a fallback keyword matcher.
+
+---
+
 ## [1.2.203] - 2026-07-09
 
 ### Optimized

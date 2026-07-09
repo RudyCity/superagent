@@ -40,6 +40,7 @@ export const MODEL_LIMITS: Record<string, number> = {
   "anthropic/claude-opus-4.8-fast": 1000000,
   "anthropic/claude-sonnet-4": 1000000,
   "anthropic/claude-sonnet-4.5": 1000000,
+  "anthropic/claude-sonnet-4.5-1m": 1000000,
   "anthropic/claude-sonnet-4.6": 1000000,
 
   // Arcee-ai Models
@@ -501,6 +502,7 @@ export function getStaticModelLimit(model: string): number | null {
   if (m.includes("gemma-3")) return 131072;
   if (m.includes("gemma")) return 8192;
 
+  if (m.includes("claude-sonnet-4") || m.includes("claude-sonnet-latest")) return 1000000;
   if (m.includes("claude-3-5") || m.includes("claude-4")) return 200000;
   if (m.includes("claude-3") || m.includes("claude")) return 200000;
 
