@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.201] - 2026-07-09
+
+### Fixed
+- Added a URL protocol normalization helper (ensureProtocol) to automatically prepend https:// (or http:// for local endpoints) to custom base URLs that do not have a protocol prefix, preventing URL parsing failures when connecting to custom/OpenAI-compatible endpoints.
+
+---
+
 ## [1.2.200] - 2026-07-09
 
 ### Fixed

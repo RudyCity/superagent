@@ -1,4 +1,5 @@
 export type ProviderType = "openrouter" | "openai" | "anthropic" | "gemini" | "custom" | "custom-anthropic";
+import { ensureProtocol } from "./config/paths.js";
 
 export interface ConfiguredProvider {
   id: string;
@@ -168,6 +169,7 @@ export async function testCustomProviderMessage(
   message: string
 ): Promise<CustomProviderMessageTestResult> {
   try {
+    baseUrl = ensureProtocol(baseUrl) as string;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
@@ -217,6 +219,7 @@ export async function checkEndpointCompatibility(
   apiKey: string
 ): Promise<EndpointCompatibilityResult> {
   try {
+    baseUrl = ensureProtocol(baseUrl) as string;
     const url = `${baseUrl.replace(/\/+$/, "")}/models`;
     const headers: Record<string, string> = {};
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;

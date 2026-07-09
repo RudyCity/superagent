@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { execa } from "execa";
 import { threadId } from "worker_threads";
-import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir } from "./paths.js";
+import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir, ensureProtocol } from "./paths.js";
 
 export interface ProviderProfile {
   id: string;
@@ -719,6 +719,9 @@ export function getProviders(): ProviderProfile[] {
 }
 
 export function addProvider(profile: ProviderProfile): void {
+  if (profile.baseUrl) {
+    profile.baseUrl = ensureProtocol(profile.baseUrl);
+  }
   mutateModelConfig((config) => {
     const index = config.providers.findIndex((p) => p.id === profile.id);
     if (index !== -1) {

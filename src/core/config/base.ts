@@ -15,6 +15,7 @@ export interface Config {
 }
 
 import { loadModelConfig, getActivePreset, savePreset, getSettings, saveSessionPreset } from "./jsonConfig.js";
+import { ensureProtocol } from "./paths.js";
 
 export function getConfig(): Config {
   const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
@@ -70,7 +71,7 @@ export function getConfig(): Config {
   }
 
   const apiKey = providerProfile?.apiKey || "";
-  const baseUrl = providerProfile?.baseUrl || "";
+  const baseUrl = ensureProtocol(providerProfile?.baseUrl || "");
   const provider = (providerProfile?.provider as Provider) || "openai";
   const model = tierConfig?.model || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
   const disableStreaming = getSettings().disableStreaming;

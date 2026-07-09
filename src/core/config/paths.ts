@@ -112,3 +112,22 @@ export function getWorkspaceInputHistoryPath(): string {
   }
   return path.join(wsDir, "input-history.json");
 }
+
+/**
+ * Ensures that a URL has a protocol prefix (http:// or https://).
+ * Defaults to http:// for localhost/loopback, and https:// for others.
+ */
+export function ensureProtocol(url: string | undefined): string | undefined {
+  if (!url) return url;
+  const trimmed = url.trim();
+  if (trimmed === "") return trimmed;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+    return trimmed;
+  }
+  const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(\/|$)/i.test(trimmed);
+  if (isLocal) {
+    return `http://${trimmed}`;
+  }
+  return `https://${trimmed}`;
+}
+

@@ -12,7 +12,7 @@
 
 import fs from "fs";
 import path from "path";
-import { getRootConfigDir } from "../core/config/paths.js";
+import { getRootConfigDir, ensureProtocol } from "../core/config/paths.js";
 
 export interface ToolDefinition {
   name: string;
@@ -85,6 +85,7 @@ export async function probeToolCallSupport(
   apiKey: string,
   model: string
 ): Promise<boolean> {
+  baseUrl = ensureProtocol(baseUrl) as string;
   loadDiskCache();
   const cacheKey = `${baseUrl}::${model}`;
   if (toolCallSupportCache.has(cacheKey)) {

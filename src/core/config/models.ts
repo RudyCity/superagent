@@ -4,7 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getStaticModelLimit } from "../model_limits.js";
-import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
+import { getRootConfigDir, ensureGlobalConfigDir, ensureProtocol } from "./paths.js";
 import { getConfig } from "./base.js";
 import { getConfiguredProviders, getEffectiveMasterModel } from "./providers.js";
 import { loadModelConfig, getActivePreset, TierModelConfig, getSettings } from "./jsonConfig.js";
@@ -19,7 +19,7 @@ export async function fetchAndCacheModels(): Promise<void> {
     let url = "";
     const headers: Record<string, string> = {};
     const apiKey = provider.apiKey || "";
-    const baseUrl = provider.baseUrl || "";
+    const baseUrl = ensureProtocol(provider.baseUrl || "");
 
     if (provider.type === "openrouter") {
       url = "https://openrouter.ai/api/v1/models";
@@ -311,7 +311,7 @@ export function getModelInstanceForString(modelStr: string) {
   let provider = config.provider;
   let modelName = modelStr;
   let apiKey = config.apiKey;
-  let baseUrl = config.baseUrl;
+  let baseUrl = ensureProtocol(config.baseUrl);
 
   // Prefer `@` as the unambiguous profile/model separator. Fall back to `:` for
   // backward compatibility, but only treat it as a separator when the prefix
