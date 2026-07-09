@@ -1632,32 +1632,36 @@ export function setBrowserControlHandler(handler: typeof browserControlHandler) 
 
 export const controlBrowserTabTool: Tool = {
   name: "control_browser_tab",
-  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (click element by selector), type (type value into element selector), navigate (go to URL), scroll (scroll page up/down/to selector).",
+  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (click element by selector), type (type value into element selector), navigate (go to URL), scroll (scroll page up/down/to selector), screenshot (capture tab view), errors (get page console errors).",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["click", "type", "navigate", "scroll"],
+        enum: ["click", "type", "navigate", "scroll", "screenshot", "errors"],
         description: "The browser action to execute on the active tab."
       },
       target: {
         type: "string",
-        description: "The CSS selector (for click/type/scroll) or destination URL (for navigate)."
+        description: "The CSS selector (for click/type/scroll) or destination URL (for navigate). Optional for screenshot and errors."
       },
       value: {
         type: "string",
         description: "The text to type (for type action) or scroll offset/direction (for scroll action)."
       }
     },
-    required: ["action", "target"]
+    required: ["action"]
   },
   async execute(args, cwd, signal) {
     if (!browserControlHandler) {
       return "Error: Browser control handler is not active. Please launch the Superagent Chrome Extension and connect to activate browser control.";
     }
+    const action = args.action as string;
+    if (["click", "type", "navigate", "scroll"].includes(action) && !args.target) {
+      return `Error: Target parameter is required for action "${action}".`;
+    }
     try {
-      const result = await browserControlHandler(args.action as string, args.target as string, args.value as string);
+      const result = await browserControlHandler(action, args.target as string, args.value as string);
       return result;
     } catch (err: any) {
       return `Browser control failed: ${err.message || String(err)}`;

@@ -290,7 +290,18 @@ export async function runServer(port: number) {
           if (isError) {
             resolver.reject(new Error(result));
           } else {
-            resolver.resolve(result);
+            if (typeof result === "string" && result.startsWith("data:image/png;base64,")) {
+              try {
+                const base64Data = result.replace(/^data:image\/png;base64,/, "");
+                const outputPath = path.join(activeWorkspace, "chrome_screenshot.png");
+                fs.writeFileSync(outputPath, base64Data, "base64");
+                resolver.resolve(`Screenshot saved to workspace at: ${outputPath}`);
+              } catch (writeErr: any) {
+                resolver.reject(new Error(`Failed to save screenshot: ${writeErr.message}`));
+              }
+            } else {
+              resolver.resolve(result);
+            }
           }
           pendingBrowserControls.delete(controlId);
           sendJSON(res, 200, { success: true });

@@ -649,6 +649,33 @@ async function executeBrowserControl(controlId, action, target, value) {
     }
     const activeTab = tabs[0];
 
+    if (action === "screenshot") {
+      chrome.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: Failed to capture tab: ${chrome.runtime.lastError.message}`, true);
+          return;
+        }
+        sendBrowserResult(controlId, dataUrl, false);
+      });
+      return;
+    }
+
+    if (action === "errors") {
+      chrome.scripting.executeScript({
+        target: { tabId: activeTab.id },
+        func: () => {
+          return window.__capturedErrors || [];
+        }
+      }, (results) => {
+        if (!results || results.length === 0) {
+          sendBrowserResult(controlId, "[]", false);
+          return;
+        }
+        sendBrowserResult(controlId, JSON.stringify(results[0].result), false);
+      });
+      return;
+    }
+
     chrome.scripting.executeScript({
       target: { tabId: activeTab.id },
       func: (act, tgt, val) => {

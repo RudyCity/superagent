@@ -30,5 +30,12 @@
   },
   "side_panel": {
     "default_path": "sidepanel.html"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
 }
