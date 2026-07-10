@@ -384,6 +384,8 @@ export async function runServer(port: number) {
               selectedPath = stdout.trim();
             } catch (err: any) {
               console.warn("Folder dialog closed or failed:", err.message);
+              sendJSON(res, 200, { success: false, error: err.message || String(err) });
+              return;
             }
           } else if (platform === "darwin") {
             try {
