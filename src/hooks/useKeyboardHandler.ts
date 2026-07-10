@@ -811,11 +811,11 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               `1. Master Agent (depth 0) (${masterModelFormatted})`,
               `2. Superagent (depth 1) (${superagentModelFormatted})`,
               `3. Subagent (depth 2) (${subagentModelFormatted})`,
-              `4. Subagent: researcher (${researcherModelFormatted})`,
-              `5. Subagent: coder (${coderModelFormatted})`,
-              `6. Subagent: reviewer (${reviewerModelFormatted})`,
-              `7. Subagent: classifier (${classifierModelFormatted})`,
-              `8. Subagent: tencentdb (${tencentdbModelFormatted})`,
+              `4. Feature: researcher (${researcherModelFormatted})`,
+              `5. Feature: coder (${coderModelFormatted})`,
+              `6. Feature: reviewer (${reviewerModelFormatted})`,
+              `7. Feature: classifier (${classifierModelFormatted})`,
+              `8. Feature: tencentdb (${tencentdbModelFormatted})`,
               `9. All Tiers (Overwrite All)`,
               `< Back`
             ]);

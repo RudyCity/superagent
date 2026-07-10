@@ -193,9 +193,9 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         `1. Master Agent (depth 0) (${masterModelFormatted})`,
         `2. Superagent (depth 1) (${superagentModelFormatted})`,
         `3. Subagent (depth 2) (${subagentModelFormatted})`,
-        `4. Subagent: researcher (${researcherModelFormatted})`,
-        `5. Subagent: coder (${coderModelFormatted})`,
-        `6. Subagent: reviewer (${reviewerModelFormatted})`,
+        `4. Feature: researcher (${researcherModelFormatted})`,
+        `5. Feature: coder (${coderModelFormatted})`,
+        `6. Feature: reviewer (${reviewerModelFormatted})`,
         `7. All Tiers (Overwrite All)`,
         `< Back`
       ];
@@ -203,9 +203,9 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
       return [
         `1. Superagent (depth 1) (${superagentModelFormatted})`,
         `2. Subagent (depth 2) (${subagentModelFormatted})`,
-        `3. Subagent: researcher (${researcherModelFormatted})`,
-        `4. Subagent: coder (${coderModelFormatted})`,
-        `5. Subagent: reviewer (${reviewerModelFormatted})`,
+        `3. Feature: researcher (${researcherModelFormatted})`,
+        `4. Feature: coder (${coderModelFormatted})`,
+        `5. Feature: reviewer (${reviewerModelFormatted})`,
         `6. All Tiers (Overwrite All)`,
         `< Back`
       ];
@@ -219,9 +219,9 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         `1. Master Agent (depth 0) (${formatVal(models.MODEL_MULTI_MASTER)})`,
         `2. Superagent (depth 1) (${formatVal(models.MODEL_MULTI_SUPERAGENT)})`,
         `3. Subagent (depth 2) (${formatVal(models.MODEL_MULTI_SUBAGENT)})`,
-        `4. Subagent: researcher (${formatVal(models.MODEL_MULTI_SUBAGENT_RESEARCHER)})`,
-        `5. Subagent: coder (${formatVal(models.MODEL_MULTI_SUBAGENT_CODER)})`,
-        `6. Subagent: reviewer (${formatVal(models.MODEL_MULTI_SUBAGENT_REVIEWER)})`,
+        `4. Feature: researcher (${formatVal(models.MODEL_MULTI_SUBAGENT_RESEARCHER)})`,
+        `5. Feature: coder (${formatVal(models.MODEL_MULTI_SUBAGENT_CODER)})`,
+        `6. Feature: reviewer (${formatVal(models.MODEL_MULTI_SUBAGENT_REVIEWER)})`,
         "7. Save Preset & Exit",
         "8. Cancel & Exit",
         "< Back"
@@ -230,9 +230,9 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
       return [
         `1. Superagent (depth 1) (${formatVal(models.MODEL_SINGLE_SUPERAGENT)})`,
         `2. Subagent (depth 2) (${formatVal(models.MODEL_SINGLE_SUBAGENT)})`,
-        `3. Subagent: researcher (${formatVal(models.MODEL_SINGLE_SUBAGENT_RESEARCHER)})`,
-        `4. Subagent: coder (${formatVal(models.MODEL_SINGLE_SUBAGENT_CODER)})`,
-        `5. Subagent: reviewer (${formatVal(models.MODEL_SINGLE_SUBAGENT_REVIEWER)})`,
+        `3. Feature: researcher (${formatVal(models.MODEL_SINGLE_SUBAGENT_RESEARCHER)})`,
+        `4. Feature: coder (${formatVal(models.MODEL_SINGLE_SUBAGENT_CODER)})`,
+        `5. Feature: reviewer (${formatVal(models.MODEL_SINGLE_SUBAGENT_REVIEWER)})`,
         "6. Save Preset & Exit",
         "7. Cancel & Exit",
         "< Back"

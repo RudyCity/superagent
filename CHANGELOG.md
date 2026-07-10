@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.232] - 2026-07-10
+
+### Changed
+- **Wizard Option Labels**:
+  - Renamed "Subagent: researcher", "Subagent: coder", "Subagent: reviewer", "Subagent: classifier", and "Subagent: tencentdb" labels to "Feature: researcher", etc. in the model selection wizard to clarify their feature-specific nature.
+
+---
+
 ## [1.2.231] - 2026-07-10
 
 ### Fixed
