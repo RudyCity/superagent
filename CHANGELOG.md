@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.224] - 2026-07-10
+
+### Changed
+- Prompt Optimization: Refactored the loadAgentSkills instruction prompt and system prompts (Master, Researcher, Coder, Reviewer) in prompts.ts using Concept A, B, and C guidelines to optimize token usage and enforce logic gate execution.
+- Verification: Updated tests/skillsFiltering.test.ts to align with the new minified skills prompt structure.
+
+---
+
 ## [1.2.223] - 2026-07-10
 
 ### Added
