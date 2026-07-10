@@ -22,4 +22,41 @@ if (!window.__capturedErrors) {
       timestamp: Date.now()
     });
   });
+
+  // Listen for console.error messages from the main world injection
+  window.addEventListener("superagent-console-error", (e) => {
+    if (e.detail) {
+      window.__capturedErrors.push({
+        type: "console_error",
+        message: e.detail.message,
+        timestamp: e.detail.timestamp
+      });
+    }
+  });
+
+  // Inject script to wrap console.error in the main world page context
+  try {
+    const script = document.createElement("script");
+    script.textContent = `
+      (() => {
+        const originalConsoleError = console.error;
+        console.error = function (...args) {
+          const msg = args.map(arg => {
+            if (arg instanceof Error) return arg.message + (arg.stack ? "\\n" + arg.stack : "");
+            return typeof arg === "object" ? JSON.stringify(arg) : String(arg);
+          }).join(" ");
+          
+          window.dispatchEvent(new CustomEvent("superagent-console-error", {
+            detail: { message: msg, timestamp: Date.now() }
+          }));
+          originalConsoleError.apply(console, args);
+        };
+      })();
+    `;
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  } catch (err) {
+    console.warn("[Superagent] Inline script injection for console.error wrapper was blocked or failed:", err);
+  }
 }
+

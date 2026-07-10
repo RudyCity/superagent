@@ -9,6 +9,17 @@ let taskPollInterval = null;
 let pendingPermissionId = null;
 let pendingQuestionId = null;
 let selectedQuestionOption = null;
+let apiToken = "";
+
+// Local fetch wrapper to append API token
+const originalFetch = window.fetch;
+const fetch = async (url, options = {}) => {
+  if (apiToken) {
+    options.headers = options.headers || {};
+    options.headers["Authorization"] = `Bearer ${apiToken}`;
+  }
+  return originalFetch(url, options);
+};
 
 // UI Elements
 const statusBadge = document.getElementById("connection-status");
@@ -16,6 +27,7 @@ const setupScreen = document.getElementById("setup-screen");
 const workspaceScreen = document.getElementById("workspace-screen");
 
 const workspacePathInput = document.getElementById("workspace-path");
+const apiTokenInput = document.getElementById("api-token");
 const btnInit = document.getElementById("btn-init");
 
 const activeWorkspaceText = document.getElementById("active-workspace-text");
@@ -50,14 +62,18 @@ const contextBadge = document.getElementById("context-badge");
 
 // Initialize View
 document.addEventListener("DOMContentLoaded", () => {
-  // Load saved workspace path if any
-  chrome.storage.local.get(["lastWorkspacePath"], (result) => {
+  // Load saved workspace path and API token if any
+  chrome.storage.local.get(["lastWorkspacePath", "lastApiToken"], (result) => {
     if (result.lastWorkspacePath) {
       workspacePathInput.value = result.lastWorkspacePath;
     }
+    if (result.lastApiToken) {
+      apiTokenInput.value = result.lastApiToken;
+      apiToken = result.lastApiToken;
+    }
+    checkServerStatus();
   });
 
-  checkServerStatus();
   setInterval(checkServerStatus, 5000);
 
   // Tab navigation
@@ -133,14 +149,17 @@ async function initSession() {
   const workspace = workspacePathInput.value.trim();
   const mode = document.querySelector('input[name="agent-mode"]:checked').value;
   const resume = document.getElementById("resume-session").checked;
+  const token = apiTokenInput.value.trim();
 
   if (!workspace) {
     alert("Please provide a valid workspace path.");
     return;
   }
 
-  // Save workspace path locally
-  chrome.storage.local.set({ lastWorkspacePath: workspace });
+  apiToken = token;
+
+  // Save workspace path and token locally
+  chrome.storage.local.set({ lastWorkspacePath: workspace, lastApiToken: token });
 
   btnInit.disabled = true;
   btnInit.textContent = "LAUNCHING...";
@@ -182,7 +201,11 @@ function setupSSE() {
     eventSource.close();
   }
 
-  eventSource = new EventSource(`${BASE_URL}/api/events`);
+  const sseUrl = apiToken 
+    ? `${BASE_URL}/api/events?token=${encodeURIComponent(apiToken)}` 
+    : `${BASE_URL}/api/events`;
+
+  eventSource = new EventSource(sseUrl);
 
   eventSource.onmessage = (event) => {
     try {
@@ -661,80 +684,108 @@ async function executeBrowserControl(controlId, action, target, value) {
     }
 
     if (action === "errors") {
-      chrome.scripting.executeScript({
-        target: { tabId: activeTab.id },
-        func: () => {
-          return window.__capturedErrors || [];
-        }
-      }, (results) => {
-        if (!results || results.length === 0) {
-          sendBrowserResult(controlId, "[]", false);
-          return;
-        }
-        sendBrowserResult(controlId, JSON.stringify(results[0].result), false);
-      });
+      try {
+        chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          func: () => {
+            return window.__capturedErrors || [];
+          }
+        }, (results) => {
+          if (chrome.runtime.lastError) {
+            sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+            return;
+          }
+          if (!results || results.length === 0) {
+            sendBrowserResult(controlId, "[]", false);
+            return;
+          }
+          sendBrowserResult(controlId, JSON.stringify(results[0].result), false);
+        });
+      } catch (err) {
+        sendBrowserResult(controlId, `Error: Script injection failed: ${err.message || String(err)}`, true);
+      }
       return;
     }
 
-    chrome.scripting.executeScript({
-      target: { tabId: activeTab.id },
-      func: (act, tgt, val) => {
-        try {
-          if (act === "navigate") {
-            window.location.href = tgt;
-            return `Navigated to ${tgt}`;
-          }
-
-          if (act === "scroll") {
-            if (tgt === "up") {
-              window.scrollBy(0, -window.innerHeight / 2);
-              return "Scrolled page up";
-            } else if (tgt === "down") {
-              window.scrollBy(0, window.innerHeight / 2);
-              return "Scrolled page down";
-            } else {
-              const el = document.querySelector(tgt);
-              if (el) {
-                el.scrollIntoView({ behavior: "smooth" });
-                return `Scrolled to element ${tgt}`;
-              }
-              return `Element not found: ${tgt}`;
+    try {
+      chrome.scripting.executeScript({
+        target: { tabId: activeTab.id },
+        func: (act, tgt, val) => {
+          try {
+            if (act === "navigate") {
+              window.location.href = tgt;
+              return `Navigated to ${tgt}`;
             }
-          }
 
-          const el = document.querySelector(tgt);
-          if (!el) {
-            return `Error: Element not found for selector: ${tgt}`;
-          }
+            if (act === "scroll") {
+              if (tgt === "up") {
+                window.scrollBy(0, -window.innerHeight / 2);
+                return "Scrolled page up";
+              } else if (tgt === "down") {
+                window.scrollBy(0, window.innerHeight / 2);
+                return "Scrolled page down";
+              } else {
+                const el = document.querySelector(tgt);
+                if (el) {
+                  el.scrollIntoView({ behavior: "smooth" });
+                  return `Scrolled to element ${tgt}`;
+                }
+                return `Element not found: ${tgt}`;
+              }
+            }
 
-          if (act === "click") {
-            el.click();
-            el.dispatchEvent(new Event("change", { bubbles: true }));
-            return `Clicked element ${tgt}`;
-          }
+            const el = document.querySelector(tgt);
+            if (!el) {
+              return `Error: Element not found for selector: ${tgt}`;
+            }
 
-          if (act === "type") {
-            el.value = val;
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            el.dispatchEvent(new Event("change", { bubbles: true }));
-            return `Typed "${val}" into element ${tgt}`;
-          }
+            if (act === "click") {
+              el.click();
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+              return `Clicked element ${tgt}`;
+            }
 
-          return `Error: Unknown action ${act}`;
-        } catch (err) {
-          return `Error: ${err.message || String(err)}`;
+            if (act === "type") {
+              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype,
+                "value"
+              )?.set || Object.getOwnPropertyDescriptor(
+                window.HTMLTextAreaElement.prototype,
+                "value"
+              )?.set;
+
+              if (nativeInputValueSetter) {
+                nativeInputValueSetter.call(el, val);
+              } else {
+                el.value = val;
+              }
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+              return `Typed "${val}" into element ${tgt}`;
+            }
+
+            return `Error: Unknown action ${act}`;
+          } catch (err) {
+            return `Error: ${err.message || String(err)}`;
+          }
+        },
+        args: [action, target, value]
+      }, (results) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+          return;
         }
-      },
-      args: [action, target, value]
-    }, (results) => {
-      if (!results || results.length === 0) {
-        sendBrowserResult(controlId, "Error: Script execution failed to return results.", true);
-        return;
-      }
-      const res = results[0].result;
-      const isError = typeof res === "string" && res.startsWith("Error:");
-      sendBrowserResult(controlId, res, isError);
-    });
+        if (!results || results.length === 0) {
+          sendBrowserResult(controlId, "Error: Script execution failed to return results.", true);
+          return;
+        }
+        const res = results[0].result;
+        const isError = typeof res === "string" && res.startsWith("Error:");
+        sendBrowserResult(controlId, res, isError);
+      });
+    } catch (err) {
+      sendBrowserResult(controlId, `Error: Script injection failed: ${err.message || String(err)}`, true);
+    }
   });
 }
 

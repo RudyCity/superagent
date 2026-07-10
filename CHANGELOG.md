@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.216] - 2026-07-10
+
+### Improved
+- Security: Added support for optional local engine API token headers and storage (`lastApiToken`) to secure the connection to the Superagent server.
+- Stability: Added robust try-catch and chrome.runtime.lastError verification to executeScript calls in the Chrome extension sidepanel script to prevent extension crashes on restricted pages (e.g., chrome:// tabs).
+- Diagnostics: Configured main-world wrapping for console.error calls to capture page-specific console errors inside of the extension's __capturedErrors stream.
+- Compatibility: Supported React/Vue-compatible typing in the browser automation control utility by overriding native property setters.
+
+---
+
 ## [1.2.215] - 2026-07-10
 
 ### Added
