@@ -780,7 +780,7 @@ export function getSettings(): SystemSettings {
     tencentdbGatewayUrl: s.tencentdbGatewayUrl ?? "http://127.0.0.1:8420",
     tencentdbGatewayApiKey: s.tencentdbGatewayApiKey ?? "sk-xxxx",
     tencentdbServiceId: s.tencentdbServiceId ?? "default",
-    enableTencentdbMemory: s.enableTencentdbMemory ?? false,
+    enableTencentdbMemory: false,
     maxChecklistVisible: s.maxChecklistVisible ?? 3,
     maxHistoryVisible: s.maxHistoryVisible ?? 3,
     maxProcsVisible: s.maxProcsVisible ?? 3,

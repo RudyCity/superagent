@@ -34,7 +34,7 @@ const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY:
   - Ensure 'oldString' in 'edit' is unique. Add surrounding context lines or startLine/endLine.
   - Ensure 'chunks' in 'multi_replace_file_content' strictly match schema (must include 'targetContent', 'replacementContent', 'startLine', 'endLine').`;
 
-const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory' or 'tdai_memory_save', set scope to "project" (default) for workspace-specific facts, API changes, or architecture, and "global" ONLY for universal user preferences or tool configs.`;
+const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory', set scope to "project" (default) for workspace-specific facts, API changes, or architecture, and "global" ONLY for universal user preferences or tool configs.`;
 
 // ─── Multi-Focus Reasoning Rule Blocks ────────────────────────────────────────
 

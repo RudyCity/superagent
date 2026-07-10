@@ -54,7 +54,7 @@ describe("useTencentdbStatus Hook", () => {
     }
   };
 
-  it("should return disabled when enableTencentdbMemory is false", async () => {
+  it("should always return disabled", async () => {
     let hookStatus = "";
     const TestComponent = () => {
       hookStatus = useTencentdbStatus();
@@ -63,48 +63,9 @@ describe("useTencentdbStatus Hook", () => {
 
     const { unmount } = render(React.createElement(TestComponent));
     expect(hookStatus).toBe("disabled");
-    unmount();
-  });
 
-  it("should return online when enableTencentdbMemory is true and gateway is online", async () => {
     mockSettings.enableTencentdbMemory = true;
-    mockListScenarios.mockResolvedValue({ entries: [] });
-
-    let hookStatus = "";
-    const TestComponent = () => {
-      hookStatus = useTencentdbStatus();
-      return null;
-    };
-
-    const { unmount } = render(React.createElement(TestComponent));
-    
-    // Starts checking
-    expect(hookStatus).toBe("checking");
-
-    // Wait for the async checkHealth to complete using condition-based waiting
-    await waitForCondition(() => hookStatus === "online");
-    expect(hookStatus).toBe("online");
-
-    unmount();
-  });
-
-  it("should return offline when enableTencentdbMemory is true and gateway ping fails", async () => {
-    mockSettings.enableTencentdbMemory = true;
-    mockListScenarios.mockRejectedValue(new Error("Connection refused"));
-
-    let hookStatus = "";
-    const TestComponent = () => {
-      hookStatus = useTencentdbStatus();
-      return null;
-    };
-
-    const { unmount } = render(React.createElement(TestComponent));
-    expect(hookStatus).toBe("checking");
-
-    // Wait for the async checkHealth to complete using condition-based waiting
-    await waitForCondition(() => hookStatus === "offline");
-    expect(hookStatus).toBe("offline");
-
+    expect(hookStatus).toBe("disabled");
     unmount();
   });
 });

@@ -589,21 +589,15 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(addedLines[addedLines.length - 1].content).toContain("Rate limit capacity set to: 15");
   });
 
-  it("should support /setting-tencentdb command variants including hide-bg-procs and show-bg-procs", async () => {
-    // Show usage when empty or invalid
+  it("should support /setting-tencentdb command variants by printing disabled error message", async () => {
     await handleSlashCommand("/setting-tencentdb", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-tencentdb");
+    expect(addedLines[addedLines.length - 1].content).toContain("TencentDB Memory is disabled in this build.");
 
     await handleSlashCommand("/setting-tencentdb invalid", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-tencentdb");
+    expect(addedLines[addedLines.length - 1].content).toContain("TencentDB Memory is disabled in this build.");
 
-    // hide-bg-procs variant
     await handleSlashCommand("/setting-tencentdb hide-bg-procs", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("TencentDB Memory Gateway process is already hidden");
-
-    // show-bg-procs variant
-    await handleSlashCommand("/setting-tencentdb show-bg-procs", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("TENCENTDB BG PROCESS");
+    expect(addedLines[addedLines.length - 1].content).toContain("TencentDB Memory is disabled in this build.");
   });
 
   it("should configure focus level when running /setting-focus", () => {

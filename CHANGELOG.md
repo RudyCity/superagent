@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.233] - 2026-07-10
+
+### Changed
+- **TencentDB Memory Gateway Disabled**:
+  - Forced `isTencentdbActive` to always return `false`, disabling all TencentDB gateway checks.
+  - Hardcoded `enableTencentdbMemory` setting default to `false` and forced useTencentdbStatus hook to return `"disabled"`.
+  - Removed all `tdai_memory_save` references from system prompt rules.
+  - Made `runTencentdbSetup` a no-op function to prevent automatic gateway installation and startup.
+  - Disabled `/setting-tencentdb` and `/memory` commands to return a disabled feature message.
+
+---
+
 ## [1.2.232] - 2026-07-10
 
 ### Changed
