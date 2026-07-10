@@ -235,6 +235,13 @@ Superagent provides deep, local-first integration with the **TencentDB Agent Mem
 - **Dynamic Preset & Provider Resolution**: Decoupled LLM configuration by querying `getTierModelWithProvider()` for a dedicated `"memory"` or `"tencentdb"` tier preset (configured via `/model`). If set, the gateway inherits its specific provider's API key, base URL, and model. If no specific memory preset is found, it falls back to the active provider and master model, injecting them into the gateway's environment variables (`TDAI_LLM_API_KEY`, `TDAI_LLM_BASE_URL`, `TDAI_LLM_MODEL`).
 - **Clean Process Teardown & Monitoring**: Deactivating via `/setting-tencentdb off` automatically terminates the local gateway process running on port 8420 to free up system resources. You can inspect the status and details of the background gateway process with `/setting-tencentdb show-bg-procs`.
 
+### 8. Chrome Extension Integration & Local Server
+Superagent features a built-in REST API and Server-Sent Events (SSE) server (`server.ts`) that enables two-way integration with the browser via a Chrome Extension SidePanel:
+- **Local Server Engine**: Run with `superagent --server`, starting an HTTP server on port 3000 (or custom port). The CLI automatically trust-checks the workspace directory initialized by the browser client.
+- **Bi-directional Streaming (SSE)**: Streams real-time thoughts, reasoning blocks, and tool executions to the Chrome SidePanel dynamically.
+- **Interactive Prompts Overlays**: Intercepts tool execution permissions and question requests from active agents, routing them to the Chrome sidepanel as responsive overlay forms for immediate user authorization and feedback.
+- **Browser Automation Capabilities**: Empowers the assistant to interact with active browser tabs by capturing tab content (grab page text or selection context), taking visible screenshots, reading client-side console error logs, and executing automated page tasks (navigation, scroll, click, and text entry).
+
 ---
 
 ## 🚀 Getting Started & Configuration
@@ -296,6 +303,28 @@ Custom providers (e.g., self-hosted Claude API proxies, Ollama, vLLM) are suppor
 
 To dynamically switch your active API provider or model at runtime, use the `/login` or `/model` slash commands. Changes take effect immediately without restarting the assistant.
 
+### 🔌 Chrome Extension Setup
+Superagent includes a developer Chrome Extension that provides a cyberpunk-themed sidepanel interface to interact with your agent workspace directly inside the browser.
+
+#### Installation
+1. Open Google Chrome and navigate to `chrome://extensions/`.
+2. Enable **Developer mode** using the toggle switch in the top-right corner.
+3. Click **Load unpacked** in the top-left corner.
+4. Select the `chrome-extension` folder located at the root of your cloned Superagent repository.
+5. The extension "Superagent AI Coding SidePanel" is now ready. Click the extension icon in Chrome or pin it to open the sidepanel interface.
+
+#### Usage
+1. Start the Superagent local server (by default it listens on port 3000):
+   ```bash
+   superagent --server 3000
+   ```
+2. Open the sidepanel extension in Chrome.
+3. Input the absolute path of your workspace folder in the **Workspace Path** input field.
+4. (Optional) Provide the security **API Token** if configured.
+5. Select the **Agent Mode** (Single or Multi) and toggle **Resume last session** if you wish to restore previous state.
+6. Click **LAUNCHING SESSION** to initialize and connect.
+7. You can now chat, view task checklists, monitor the agent tree, and let the agent automate tab actions.
+
 ---
 
 ## ⚙️ Development Scripts
@@ -311,6 +340,12 @@ Run the following NPM scripts during development:
   npm run dev -- --multi
   # or globally:
   superagent --multi
+  ```
+- **Start Chrome Extension API Server**:
+  ```bash
+  npm run dev -- --server [port]
+  # or globally:
+  superagent --server [port]
   ```
 - **Resume Last Session**:
   ```bash

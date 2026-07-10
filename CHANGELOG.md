@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.217] - 2026-07-10
+
+### Improved
+- Documentation: Updated README.md to document the Chrome Extension integration and local server capability, including detailed setup, installation, and usage instructions.
+
+---
+
 ## [1.2.216] - 2026-07-10
 
 ### Improved
