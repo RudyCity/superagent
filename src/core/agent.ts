@@ -22,7 +22,7 @@ import {
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { contentToString, Message } from "./conversation.js";
-import { getTencentDBClient, getTencentDBSessionKey } from "./tencentdbUtil.js";
+import { getTencentDBClient, getTencentDBSessionKey, isTencentdbActive } from "./tencentdbUtil.js";
 import { AsyncLocalStorage } from "async_hooks";
 import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./taskChecklist.js";
 import { createCheckpoint } from "./checkpoints.js";
@@ -764,16 +764,24 @@ If none of the options are suitable, still pick the closest one.`;
   }
 
   public async getActiveTools(): Promise<Tool[]> {
-    if (this.customTools) return this.customTools;
-    const { masterToolset, superagentToolset, subagentToolsets, defaultSubagentToolset } = await import("./tools/toolsets.js");
-    if (this.tier === "master") {
-      return masterToolset;
-    } else if (this.tier === "superagent" || this.tier === "single") {
-      return superagentToolset;
-    } else if (this.tier === "subagent") {
-      return (this.subagentType && subagentToolsets[this.subagentType]) || defaultSubagentToolset;
+    let tools: Tool[] = [];
+    if (this.customTools) {
+      tools = [...this.customTools];
+    } else {
+      const { masterToolset, superagentToolset, subagentToolsets, defaultSubagentToolset } = await import("./tools/toolsets.js");
+      if (this.tier === "master") {
+        tools = [...masterToolset];
+      } else if (this.tier === "superagent" || this.tier === "single") {
+        tools = [...superagentToolset];
+      } else if (this.tier === "subagent") {
+        tools = [...((this.subagentType && subagentToolsets[this.subagentType]) || defaultSubagentToolset)];
+      }
     }
-    return [];
+
+    if (!(await isTencentdbActive())) {
+      tools = tools.filter((t) => !t.name.startsWith("tdai_"));
+    }
+    return tools;
   }
 
   public getTaskFilePath(): string {
@@ -1288,17 +1296,7 @@ CRITICAL GOAL MODE RULES:
         }
         let messages = this.buildMessages(supportsNativeTools);
         // Use tier-specific toolset if provided, otherwise use the appropriate tier-default toolset dynamically
-        let toolsToUse = this.customTools;
-        if (!toolsToUse) {
-          const { masterToolset, superagentToolset, subagentToolsets, defaultSubagentToolset } = await import("./tools/toolsets.js");
-          if (this.tier === "master") {
-            toolsToUse = masterToolset;
-          } else if (this.tier === "superagent" || this.tier === "single") {
-            toolsToUse = superagentToolset;
-          } else if (this.tier === "subagent") {
-            toolsToUse = (this.subagentType && subagentToolsets[this.subagentType]) || defaultSubagentToolset;
-          }
-        }
+        let toolsToUse = await this.getActiveTools();
 
         const toolDefs = toolsToUse
           ? toolsToUse.map((t) => ({
@@ -1513,6 +1511,14 @@ After all subagents finish, you MUST perform this verification loop before consi
             const { injectWorkspaceOverview } = await import("./workspaceDiscovery.js");
             activeSystemPrompt = injectWorkspaceOverview(baseSystemPrompt, this.workspaceCache);
           } catch {}
+        }
+
+        if (!(await isTencentdbActive())) {
+          activeSystemPrompt = activeSystemPrompt
+            .replace(/'save_shared_memory' or 'tdai_memory_save'/g, "'save_shared_memory'")
+            .replace(/or 'tdai_memory_save'/g, "")
+            .replace(/, 'tdai_memory_save'/g, "")
+            .replace(/tdai_[a-zA-Z0-9_]+/g, "");
         }
 
         let devHookNotice = "";

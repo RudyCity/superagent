@@ -28,3 +28,35 @@ export function getTencentDBSessionKey(historyPath: string | null): string {
   const keySource = historyPath || process.cwd();
   return createHash("sha1").update(keySource).digest("hex").slice(0, 8);
 }
+
+let cachedActiveStatus: { active: boolean; timestamp: number } | null = null;
+
+/**
+ * Checks if the TencentDB memory system is active.
+ * It is active if it is enabled in settings AND the local gateway is reachable (online).
+ * The result is cached for 15 seconds to prevent redundant network checks.
+ */
+export async function isTencentdbActive(forceRefresh = false): Promise<boolean> {
+  const settings = getSettings();
+  if (!settings.enableTencentdbMemory) {
+    return false;
+  }
+
+  const now = Date.now();
+  if (!forceRefresh && cachedActiveStatus && (now - cachedActiveStatus.timestamp) < 15000) {
+    return cachedActiveStatus.active;
+  }
+
+  const client = getTencentDBClient(1000); // 1s timeout
+  let active = false;
+  try {
+    await client.listScenarios({});
+    active = true;
+  } catch {
+    active = false;
+  }
+
+  cachedActiveStatus = { active, timestamp: now };
+  return active;
+}
+

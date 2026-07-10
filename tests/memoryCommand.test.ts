@@ -14,6 +14,10 @@ const mockClient = {
 vi.mock("../src/core/tencentdbUtil.js", () => ({
   getTencentDBClient: () => mockClient,
   getTencentDBSessionKey: () => "test-sess",
+  isTencentdbActive: vi.fn().mockImplementation(async () => {
+    const { getSettings } = await import("../src/core/config.js");
+    return !!getSettings().enableTencentdbMemory;
+  }),
 }));
 
 describe("/memory Command Suite", () => {

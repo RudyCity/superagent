@@ -30,6 +30,13 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
   };
 });
 
+// Mock tencentdbUtil
+vi.mock("../src/core/tencentdbUtil.js", () => ({
+  getTencentDBClient: vi.fn(),
+  getTencentDBSessionKey: vi.fn().mockReturnValue("test-sess"),
+  isTencentdbActive: vi.fn().mockResolvedValue(true),
+}));
+
 // Mock ai SDK partially
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();

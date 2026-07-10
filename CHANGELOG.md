@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.229] - 2026-07-10
+
+### Changed
+- TencentDB Inactive Handling: Automatically exclude tools starting with `tdai_` and clean up `tdai_` references from the system prompt if the TencentDB Memory Gateway is disabled in settings or offline (unreachable).
+- Caching: Implemented `isTencentdbActive` in `tencentdbUtil.ts` with a 15-second TTL cache for gateway checks to keep the agent execution loop fast.
+- Tests: Added unit tests for connection and cache logic in `tests/tencentdbUtil.test.ts` and updated mocks across other tests.
+
+---
+
 ## [1.2.228] - 2026-07-10
 
 ### Fixed

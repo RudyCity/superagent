@@ -32,6 +32,10 @@ vi.mock("../src/core/tencentdbUtil.js", () => {
       updateAtomic: mockUpdateAtomic,
       deleteAtomic: mockDeleteAtomic,
     }),
+    isTencentdbActive: vi.fn().mockImplementation(async () => {
+      const { getSettings } = await import("../src/core/config.js");
+      return !!getSettings().enableTencentdbMemory;
+    }),
   };
 });
 
