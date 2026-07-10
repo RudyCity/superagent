@@ -194,10 +194,12 @@ describe("config", () => {
       fs.mkdirSync(getGlobalConfigDir(), { recursive: true });
       fs.writeFileSync(cachePath, JSON.stringify({ 
         "server_zenmuxglmn_preset_zenmux/x-ai/grok-4.5-free": 128000,
+        "zenmux-anthropic/claude-fable-5-free": 200000,
         "claude-sonnet-5": 5000 
       }), "utf-8");
       
       expect(getContextWindowLimit("server_zenmuxglmn_preset_zenmux/x-ai/grok-4.5-free")).toBe(500000);
+      expect(getContextWindowLimit("zenmux-anthropic/claude-fable-5-free")).toBe(1000000);
       expect(getContextWindowLimit("claude-sonnet-5")).toBe(5000);
     } finally {
       // Clean up

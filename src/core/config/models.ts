@@ -115,10 +115,10 @@ export function getContextWindowLimit(model: string): number {
       const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
       if (cache && typeof cache[cleanModel] === "number") {
         const cachedVal = cache[cleanModel];
-        // If cached value is the default fallback (128000) and we have a specific static limit,
+        // If cached value is a generic fallback (128000 or 200000) and we have a specific static limit,
         // use the static limit since it's more specific.
         const staticLimit = getStaticModelLimit(cleanModel);
-        if (cachedVal === 128000 && staticLimit !== null) {
+        if ((cachedVal === 128000 || cachedVal === 200000) && staticLimit !== null) {
           return staticLimit;
         }
         return cachedVal;

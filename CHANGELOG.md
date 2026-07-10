@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.228] - 2026-07-10
+
+### Fixed
+- Model Limits: Extended cache override logic to cover generic 200k fallback limits (such as for Claude models). This ensures that custom endpoints or proxies returning generic 200k limits are successfully overridden by the correct 1M static limits for Claude 5 models (Sonnet 5, Fable 5, Opus 5).
+
+---
+
 ## [1.2.227] - 2026-07-10
 
 ### Fixed
