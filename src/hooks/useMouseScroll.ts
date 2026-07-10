@@ -90,6 +90,7 @@ export interface SingleAgentMouseContext {
   setWizardSelectedIndex?: (val: number | ((prev: number) => number)) => void;
   planPath?: string;
   handleWizardSubmit?: (val: string) => void;
+  wizardHeaderRows?: number;
 
   // History click/scroll support
   history?: string[];
@@ -260,7 +261,9 @@ export function useMouseScroll(
               }
               for (const pos of ctx.visibleLinePositions) {
                 const isCollapsibleClick = pos.isCollapsible ? y === pos.startRow : (y >= pos.startRow && y <= pos.endRow);
-                const isWithinWidth = pos.length === undefined || x <= pos.length;
+                // For collapsible headers, allow click anywhere on the row (wide emoji chars make length unreliable).
+                // For non-collapsible multi-row blocks, still restrict to text width.
+                const isWithinWidth = pos.isCollapsible || pos.length === undefined || x <= pos.length;
 
                 if (isCollapsibleClick && isWithinWidth) {
                   if (process.env.DEBUG_MOUSE === "true") {
@@ -377,10 +380,11 @@ export function useMouseScroll(
                     }
                   }
                   const visibleCount = end - start;
-                  const hasBelow = end < total;
 
-                  const optEndRow = clickedSection.endRow - (hasBelow ? 1 : 0);
-                  const optStartRow = optEndRow - visibleCount + 1;
+                  // Use computed wizardHeaderRows to locate option start row precisely
+                  const headerRows = ctx.wizardHeaderRows ?? 3;
+                  const optStartRow = clickedSection.startRow + headerRows;
+                  const optEndRow = optStartRow + visibleCount - 1;
 
                   if (y >= optStartRow && y <= optEndRow) {
                     const idx = start + (y - optStartRow);

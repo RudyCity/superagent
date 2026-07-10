@@ -38,6 +38,7 @@ import { StatusBar } from "./components/status-bar.js";
 import { WizardPanels } from "./components/wizard-panels.js";
 import { PLAN_APPROVAL_OPTIONS, planApprovalChromeHeight } from "./components/plan-approval-dialog.js";
 import { ChatArea, computeWrappedLines } from "./components/chat-area.js";
+import { WizardHeaderRowsContext } from "./components/wizard-dialog.js";
 import { useWizardSubmit } from "./hooks/useWizardSubmit.js";
 import { useKeyboardHandler } from "./hooks/useKeyboardHandler.js";
 import { useMouseScroll, type SectionBoundary, type ChatLinePosition } from "./hooks/useMouseScroll.js";
@@ -257,6 +258,9 @@ export function App({
   const [visibleLinePositions, setVisibleLinePositions] = useState<
     Array<{ index: number; startRow: number; endRow: number; isTruncated: boolean; type: string; isCollapsible?: boolean; parentIndex?: number; childIndex?: number }>
   >([]);
+
+  // Computed wizard header rows for precise option click detection
+  const [wizardHeaderRows, setWizardHeaderRows] = useState(3);
 
   // Collapsible chat lines state (tool_start, tool_end, system, error)
   const [expandedLines, setExpandedLines] = useState<Set<number>>(new Set());
@@ -2438,6 +2442,17 @@ export function App({
     }
   }, [wrappedLines.length]);
 
+  const handleWizardHeaderRowsChange = useCallback((internalRows: number) => {
+    let containerOffset = 1;
+    if (activeWizard && activeWizard.type !== "permission") {
+      containerOffset = 2;
+      if (activeWizard.type === "question" && activeWizard.questions && activeWizard.currentQuestionIndex !== undefined) {
+        containerOffset = 4;
+      }
+    }
+    setWizardHeaderRows(containerOffset + internalRows);
+  }, [activeWizard]);
+
   // Update mouse context ref (read by mouse handler on each event)
   mouseCtxRef.current = {
     scrollChat,
@@ -2478,6 +2493,7 @@ export function App({
     history,
     historySelectedIndex,
     setHistorySelectedIndex,
+    wizardHeaderRows,
   };
 
   return (
@@ -2556,25 +2572,27 @@ export function App({
               focusMode={focusMode}
             />
 
-            <WizardPanels
-              activeWizard={activeWizard}
-              wizardOptions={wizardOptions}
-              wizardSelectedIndex={wizardSelectedIndex}
-              wizardSelectedSet={wizardSelectedSet}
-              pendingPermission={pendingPermission}
-              pendingQuestion={pendingQuestion}
-              planState={planState}
-              planUrl={planUrl}
-              planFilePath={planPath}
-              input={input}
-              wizardIsLoadingModels={wizardIsLoadingModels}
-              checkpointsList={checkpointsList}
-              goalMode={goalMode}
-              suggestions={suggestions}
-              focus={(activeWizard?.data?.focus as "plan" | "actions") || "actions"}
-              scrollOffset={parseInt(activeWizard?.data?.scrollOffset || "0", 10)}
-              onScrollChange={(offset) => setActiveWizard((curr: any) => curr ? { ...curr, data: { ...curr.data, scrollOffset: String(offset) } } : null)}
-            />
+            <WizardHeaderRowsContext.Provider value={handleWizardHeaderRowsChange}>
+              <WizardPanels
+                activeWizard={activeWizard}
+                wizardOptions={wizardOptions}
+                wizardSelectedIndex={wizardSelectedIndex}
+                wizardSelectedSet={wizardSelectedSet}
+                pendingPermission={pendingPermission}
+                pendingQuestion={pendingQuestion}
+                planState={planState}
+                planUrl={planUrl}
+                planFilePath={planPath}
+                input={input}
+                wizardIsLoadingModels={wizardIsLoadingModels}
+                checkpointsList={checkpointsList}
+                goalMode={goalMode}
+                suggestions={suggestions}
+                focus={(activeWizard?.data?.focus as "plan" | "actions") || "actions"}
+                scrollOffset={parseInt(activeWizard?.data?.scrollOffset || "0", 10)}
+                onScrollChange={(offset) => setActiveWizard((curr: any) => curr ? { ...curr, data: { ...curr.data, scrollOffset: String(offset) } } : null)}
+              />
+            </WizardHeaderRowsContext.Provider>
 
             {/* CommandLine Input — hidden for selection-only wizard steps */}
             {!isSelectionOnlyStep && (

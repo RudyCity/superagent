@@ -19,6 +19,7 @@ interface WizardDialogProps {
   searchQuery?: string;
   searchPlaceholder?: string;
   terminalWidth?: number;
+  onHeaderRowsChange?: (rows: number) => void;
 }
 
 function WizardSpinner({ color }: { color: string }) {
@@ -64,6 +65,8 @@ export function renderDialogBodyText(text: string): React.ReactNode {
   );
 }
 
+export const WizardHeaderRowsContext = React.createContext<((rows: number) => void) | undefined>(undefined);
+
 export function WizardDialog({
   title,
   description,
@@ -80,6 +83,7 @@ export function WizardDialog({
   searchQuery,
   searchPlaceholder = "Type to filter...",
   terminalWidth,
+  onHeaderRowsChange,
 }: WizardDialogProps) {
   const finalMarginTop = marginTop !== undefined ? marginTop : (marginY !== undefined ? marginY : 1);
   const finalMarginBottom = marginBottom !== undefined ? marginBottom : (marginY !== undefined ? marginY : 0);
@@ -101,6 +105,43 @@ export function WizardDialog({
     }
     visibleOptions = actualOptions.slice(start, end);
   }
+
+  const contextCallback = React.useContext(WizardHeaderRowsContext);
+  const finalOnHeaderRowsChange = onHeaderRowsChange || contextCallback;
+
+  useEffect(() => {
+    if (!finalOnHeaderRowsChange) return;
+
+    let headerRows = 0;
+    
+    // 1. title border
+    headerRows += 1;
+    
+    // 2. description
+    if (description) {
+      const widthVal = terminalWidth || (process.stdout.columns || 110);
+      const maxTextWidth = Math.max(10, widthVal - 4);
+      const descLines = wrapTextForDisplay(description, maxTextWidth);
+      headerRows += descLines.length + 1; // descLines + spacer
+    }
+    
+    // 3. search bar
+    if (searchQuery !== undefined) {
+      headerRows += 1;
+    }
+    
+    // 4. loading indicator
+    if (isLoading) {
+      headerRows += 2; // spinner line + spacer
+    }
+    
+    // 5. scroll up indicator
+    if (start > 0) {
+      headerRows += 1;
+    }
+    
+    finalOnHeaderRowsChange(headerRows);
+  }, [description, searchQuery, isLoading, start, terminalWidth, finalOnHeaderRowsChange]);
 
   const hideTimeline = getSettings().hideTimeline ?? false;
   const marginPrefix = hideTimeline ? "  " : "│ ";

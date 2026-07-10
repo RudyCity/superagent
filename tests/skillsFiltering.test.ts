@@ -6,6 +6,6 @@ describe("Agent Skills Prompt Instructions", () => {
     const prompt = loadAgentSkills();
     expect(prompt).toContain("SKILL DISCOVERY");
     expect(prompt).toContain("get_skills");
-    expect(prompt).toContain("use_skill");
+    expect(prompt).toContain("view_file");
   });
 });

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.231] - 2026-07-10
+
+### Fixed
+- **Mouse Click Accuracy**:
+  - Expanded collapsible log lines click detection width to full terminal width, fixing a bug where clicking right of emoji characters (like ❓, ↳, ✓, ⚡) would miss due to emoji characters being counted as single-width in `visibleLength()`.
+  - Replaced reverse math offset calculation for wizard option clicks with a context-based forwarding offset calculation, ensuring correct click row alignment in multi-question ask_question prompts, login setup, and model preset configurations.
+  - Fixed failing `tests/skillsFiltering.test.ts` test assertion checking for the outdated `use_skill` tool to expect `view_file` instead.
+
+---
+
 ## [1.2.230] - 2026-07-10
 
 ### Fixed
