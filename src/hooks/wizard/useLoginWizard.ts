@@ -856,6 +856,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           providerType: selectedProvider.type,
           providerApiKey: selectedProvider.apiKey,
           providerBaseUrl: selectedProvider.baseUrl || "",
+          isEdit: "true",
         },
       });
       setWizardOptions([]);
@@ -947,6 +948,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
             providerApiKey: pApiKey,
             providerBaseUrl: pBaseUrl,
             fromList: "false",
+            isEdit: "true",
           },
         });
         setWizardOptions(["1. Yes, Test Connection", "2. No (Cancel Setup)"]);

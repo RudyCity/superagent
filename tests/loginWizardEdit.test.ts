@@ -9,6 +9,7 @@ const tempHome = path.join(process.cwd(), "tests", "temp-home-login-edit");
 
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { useLoginWizard } from "../src/hooks/wizard/useLoginWizard.js";
+import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
 import { ensureGlobalConfigDir } from "../src/core/config/paths.js";
 import { clearModelConfigCache, getProviders, addProvider } from "../src/core/config/jsonConfig.js";
 
@@ -191,6 +192,7 @@ describe("Login Wizard Provider Edition", () => {
         providerType: "openai",
         providerApiKey: "sk-test-key-12345678",
         providerBaseUrl: "https://api.openai.com/v1",
+        isEdit: "true",
       },
     });
     expect(addedLines[addedLines.length - 1].content).toContain("Enter new API Key (or press Enter to keep current):");
@@ -264,6 +266,7 @@ describe("Login Wizard Provider Edition", () => {
         providerApiKey: "sk-new-key",
         providerBaseUrl: "https://new.openai.com/v2",
         fromList: "false",
+        isEdit: "true",
       },
     });
     expect(addedLines.some(line => line.content.includes("Successfully updated provider profile: OpenAI Test"))).toBe(true);
@@ -273,6 +276,95 @@ describe("Login Wizard Provider Edition", () => {
     expect(updated?.apiKey).toBe("sk-new-key");
     expect(updated?.baseUrl).toBe("https://new.openai.com/v2");
 
+    unmount();
+  });
+
+  it("should support keyboard navigation from step 1 to step 17 when choosing Edit", async () => {
+    addProvider({
+      id: "openai-test",
+      name: "OpenAI Test",
+      provider: "openai",
+      apiKey: "sk-test-key",
+    });
+
+    const mockSubmit = vi.fn();
+    const TestComponent = () => {
+      useKeyboardHandler({
+        activeWizard: { type: "login", step: 1, data: {} },
+        setActiveWizard: (w: any) => { activeWizard = w; },
+        setWizardOptions: (opts: string[]) => { wizardOptions = opts; },
+        setWizardSelectedIndex: (idx: number) => { wizardSelectedIndex = idx; },
+        wizardOptions: ["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider", "4. Edit an Existing Provider"],
+        wizardSelectedIndex: 3,
+        setInput: mockCtx.setInput,
+        addLine: mockCtx.addLine,
+        focusedResponseIndex: null,
+        focusMode: "input",
+        scrollOffset: 0,
+        focusedResponseOffset: 0,
+        handleWizardSubmit: mockSubmit,
+        input: "",
+        isPasted: false,
+        pastePrefixLength: 0,
+        pasteSuffixLength: 0,
+      } as any);
+      return null;
+    };
+    const { unmount } = render(React.createElement(TestComponent));
+
+    expect(inputCallbacks.length).toBeGreaterThan(0);
+
+    for (const cb of inputCallbacks) {
+      cb("\r", { upArrow: false, downArrow: false, return: true, escape: false, tab: false } as any);
+    }
+
+    expect(activeWizard).toEqual({
+      type: "login",
+      step: 17,
+      data: {},
+    });
+    expect(wizardOptions.some(opt => opt.includes("OpenAI Test"))).toBe(true);
+    unmount();
+  });
+
+  it("should support keyboard navigation going back from step 17 to step 1", async () => {
+    const mockSubmit = vi.fn();
+    const TestComponent = () => {
+      useKeyboardHandler({
+        activeWizard: { type: "login", step: 17, data: {} },
+        setActiveWizard: (w: any) => { activeWizard = w; },
+        setWizardOptions: (opts: string[]) => { wizardOptions = opts; },
+        setWizardSelectedIndex: (idx: number) => { wizardSelectedIndex = idx; },
+        wizardOptions: ["1. OpenAI Test [openai]"],
+        wizardSelectedIndex: 0,
+        setInput: mockCtx.setInput,
+        addLine: mockCtx.addLine,
+        focusedResponseIndex: null,
+        focusMode: "input",
+        scrollOffset: 0,
+        focusedResponseOffset: 0,
+        handleWizardSubmit: mockSubmit,
+        input: "",
+        isPasted: false,
+        pastePrefixLength: 0,
+        pasteSuffixLength: 0,
+      } as any);
+      return null;
+    };
+    const { unmount } = render(React.createElement(TestComponent));
+
+    expect(inputCallbacks.length).toBeGreaterThan(0);
+
+    for (const cb of inputCallbacks) {
+      cb("escape", { upArrow: false, downArrow: false, return: false, escape: true, tab: false } as any);
+    }
+
+    expect(activeWizard).toEqual({
+      type: "login",
+      step: 1,
+      data: {},
+    });
+    expect(wizardOptions).toContain("4. Edit an Existing Provider");
     unmount();
   });
 });
