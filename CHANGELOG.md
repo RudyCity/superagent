@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.226] - 2026-07-10
+
+### Changed
+- Model Limits: Added fallback context window limits for Claude 5 models (Sonnet 5, Fable 5, Opus 5) to 1,000,000 tokens, and Grok 4.5 to 500,000 tokens in `model_limits.ts`.
+- Verification: Added corresponding unit test assertions in `config.test.ts`.
+
+---
+
 ## [1.2.225] - 2026-07-10
 
 ### Added

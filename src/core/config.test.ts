@@ -190,6 +190,16 @@ describe("config", () => {
     expect(getContextWindowLimit("claude-sonnet-4.5-1m")).toBe(1000000);
     expect(getContextWindowLimit("openrouter/anthropic/claude-sonnet-4.5-1m")).toBe(1000000);
 
+    // Claude 5 models and Grok 4.5
+    expect(getContextWindowLimit("anthropic/claude-sonnet-5")).toBe(1000000);
+    expect(getContextWindowLimit("claude-sonnet-5")).toBe(1000000);
+    expect(getContextWindowLimit("anthropic/claude-fable-5")).toBe(1000000);
+    expect(getContextWindowLimit("claude-fable-5")).toBe(1000000);
+    expect(getContextWindowLimit("anthropic/claude-opus-5")).toBe(1000000);
+    expect(getContextWindowLimit("claude-opus-5")).toBe(1000000);
+    expect(getContextWindowLimit("x-ai/grok-4.5")).toBe(500000);
+    expect(getContextWindowLimit("grok-4.5")).toBe(500000);
+
     // Explicit and dynamic free models
     expect(getContextWindowLimit("google/gemma-4-26b-a4b-it:free")).toBe(262144);
     expect(getContextWindowLimit("meta-llama/llama-3.3-70b-instruct:free")).toBe(131072);

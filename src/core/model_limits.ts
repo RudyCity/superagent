@@ -28,6 +28,7 @@ export const MODEL_LIMITS: Record<string, number> = {
   // Anthropic Models
   "anthropic/claude-3-haiku": 200000,
   "anthropic/claude-fable-5": 1000000,
+  "anthropic/claude-fable-5-latest": 1000000,
   "anthropic/claude-haiku-4.5": 200000,
   "anthropic/claude-opus-4": 200000,
   "anthropic/claude-opus-4.1": 200000,
@@ -38,10 +39,14 @@ export const MODEL_LIMITS: Record<string, number> = {
   "anthropic/claude-opus-4.7-fast": 1000000,
   "anthropic/claude-opus-4.8": 1000000,
   "anthropic/claude-opus-4.8-fast": 1000000,
+  "anthropic/claude-opus-5": 1000000,
+  "anthropic/claude-opus-5-latest": 1000000,
   "anthropic/claude-sonnet-4": 1000000,
   "anthropic/claude-sonnet-4.5": 1000000,
   "anthropic/claude-sonnet-4.5-1m": 1000000,
   "anthropic/claude-sonnet-4.6": 1000000,
+  "anthropic/claude-sonnet-5": 1000000,
+  "anthropic/claude-sonnet-5-latest": 1000000,
 
   // Arcee-ai Models
   "arcee-ai/coder-large": 32768,
@@ -429,6 +434,7 @@ export const MODEL_LIMITS: Record<string, number> = {
   "x-ai/grok-4.20": 2000000,
   "x-ai/grok-4.20-multi-agent": 2000000,
   "x-ai/grok-4.3": 1000000,
+  "x-ai/grok-4.5": 500000,
   "x-ai/grok-build-0.1": 256000,
 
   // Xiaomi Models
@@ -502,7 +508,9 @@ export function getStaticModelLimit(model: string): number | null {
   if (m.includes("gemma-3")) return 131072;
   if (m.includes("gemma")) return 8192;
 
-  if (m.includes("claude-sonnet-4") || m.includes("claude-sonnet-latest")) return 1000000;
+  if (m.includes("claude-fable")) return 1000000;
+  if (m.includes("claude-sonnet-5") || m.includes("claude-sonnet-4") || m.includes("claude-sonnet-latest")) return 1000000;
+  if (m.includes("claude-opus-5") || m.includes("claude-opus-4.8") || m.includes("claude-opus-4.7") || m.includes("claude-opus-4.6") || m.includes("claude-opus-latest")) return 1000000;
   if (m.includes("claude-3-5") || m.includes("claude-4")) return 200000;
   if (m.includes("claude-3") || m.includes("claude")) return 200000;
 
@@ -529,6 +537,11 @@ export function getStaticModelLimit(model: string): number | null {
   if (m.includes("codestral")) return 256000;
 
   if (m.includes("command-r")) return 128000;
+
+  if (m.includes("grok-4.5")) return 500000;
+  if (m.includes("grok-4.20")) return 2000000;
+  if (m.includes("grok-4")) return 1000000;
+  if (m.includes("grok")) return 500000;
 
   return null;
 }
