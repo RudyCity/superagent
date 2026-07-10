@@ -145,9 +145,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `5. Feature: coder (${formatVal(models.MODEL_MULTI_SUBAGENT_CODER)})`,
           `6. Feature: reviewer (${formatVal(models.MODEL_MULTI_SUBAGENT_REVIEWER)})`,
           `7. Feature: classifier (${formatVal(models.MODEL_MULTI_SUBAGENT_CLASSIFIER)})`,
-          `8. Feature: tencentdb (${formatVal(models.MODEL_MULTI_SUBAGENT_TENCENTDB)})`,
-          "9. Save Preset & Exit",
-          "10. Cancel & Exit",
+          "8. Save Preset & Exit",
+          "9. Cancel & Exit",
           "< Back"
         ];
       } else {
@@ -158,9 +157,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `4. Feature: coder (${formatVal(models.MODEL_SINGLE_SUBAGENT_CODER)})`,
           `5. Feature: reviewer (${formatVal(models.MODEL_SINGLE_SUBAGENT_REVIEWER)})`,
           `6. Feature: classifier (${formatVal(models.MODEL_SINGLE_SUBAGENT_CLASSIFIER)})`,
-          `7. Feature: tencentdb (${formatVal(models.MODEL_SINGLE_SUBAGENT_TENCENTDB)})`,
-          "8. Save Preset & Exit",
-          "9. Cancel & Exit",
+          "7. Save Preset & Exit",
+          "8. Cancel & Exit",
           "< Back"
         ];
       }
@@ -286,8 +284,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
           const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
           const rawClassifier = getTierModel("multi", "classifier") || "";
           const classifierModelFormatted = rawClassifier ? getResolvedModelWithProvider(rawClassifier, false) : `(use default: ${subagentModelFormatted})`;
-          const rawTencentdb = getTierModel("multi", "tencentdb") || "";
-          const tencentdbModelFormatted = rawTencentdb ? getResolvedModelWithProvider(rawTencentdb, false) : `(use default: ${subagentModelFormatted})`;
 
           setActiveWizard({
             type: "model",
@@ -302,8 +298,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
             `5. Feature: coder (${coderModelFormatted})`,
             `6. Feature: reviewer (${reviewerModelFormatted})`,
             `7. Feature: classifier (${classifierModelFormatted})`,
-            `8. Feature: tencentdb (${tencentdbModelFormatted})`,
-            `9. All Tiers (Overwrite All)`,
+            `8. All Tiers (Overwrite All)`,
             `< Back`
           ]);
         } else {
@@ -340,8 +335,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
         const rawClassifier = getTierModel("single", "classifier") || "";
         const classifierModelFormatted = rawClassifier ? getResolvedModelWithProvider(rawClassifier, false) : `(use default: ${subagentModelFormatted})`;
-        const rawTencentdb = getTierModel("single", "tencentdb") || "";
-        const tencentdbModelFormatted = rawTencentdb ? getResolvedModelWithProvider(rawTencentdb, false) : `(use default: ${subagentModelFormatted})`;
 
         setActiveWizard({
           type: "model",
@@ -354,8 +347,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `3. Feature: coder (${coderModelFormatted})`,
           `4. Feature: reviewer (${reviewerModelFormatted})`,
           `5. Feature: classifier (${classifierModelFormatted})`,
-          `6. Feature: tencentdb (${tencentdbModelFormatted})`,
-          `7. All Subagent Tiers`,
+          `6. All Subagent Tiers`,
           `< Back`
         ]);
         setWizardSelectedIndex(0);
@@ -403,8 +395,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
         tier = "reviewer";
       } else if (choice.includes("classifier")) {
         tier = "classifier";
-      } else if (choice.includes("tencentdb")) {
-        tier = "tencentdb";
       } else if (choice.includes("default model")) {
         tier = "default";
       } else if (choice.includes("all subagent tiers") || choice.includes("all_subagents")) {
@@ -413,11 +403,11 @@ export function useModelWizard(ctx: ModelWizardContext) {
         tier = "all";
       } else {
         if (isMulti) {
-          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "classifier", "tencentdb", "all"];
+          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "classifier", "all"];
           const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
           tier = tiers[idx] || "master";
         } else {
-          const tiers = ["subagent", "researcher", "coder", "reviewer", "classifier", "tencentdb", "all_subagents"];
+          const tiers = ["subagent", "researcher", "coder", "reviewer", "classifier", "all_subagents"];
           const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
           tier = tiers[idx] || "subagent";
         }
@@ -458,8 +448,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
         const rawClassifier = getTierModel(isMulti ? "multi" : "single", "classifier") || "";
         const classifierModelFormatted = rawClassifier ? getResolvedModelWithProvider(rawClassifier, false) : `(use default: ${subagentModelFormatted})`;
-        const rawTencentdb = getTierModel(isMulti ? "multi" : "single", "tencentdb") || "";
-        const tencentdbModelFormatted = rawTencentdb ? getResolvedModelWithProvider(rawTencentdb, false) : `(use default: ${subagentModelFormatted})`;
 
         if (isMulti || (data.tier && data.tier !== "single")) {
           setActiveWizard({
@@ -476,8 +464,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
               `5. Feature: coder (${coderModelFormatted})`,
               `6. Feature: reviewer (${reviewerModelFormatted})`,
               `7. Feature: classifier (${classifierModelFormatted})`,
-              `8. Feature: tencentdb (${tencentdbModelFormatted})`,
-              `9. All Tiers (Overwrite All)`,
+              `8. All Tiers (Overwrite All)`,
               `< Back`
             ]);
           } else {
@@ -488,8 +475,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
               `4. Feature: coder (${coderModelFormatted})`,
               `5. Feature: reviewer (${reviewerModelFormatted})`,
               `6. Feature: classifier (${classifierModelFormatted})`,
-              `7. Feature: tencentdb (${tencentdbModelFormatted})`,
-              `8. All Tiers (Overwrite All)`,
+              `7. All Tiers (Overwrite All)`,
               `< Back`
             ]);
           }
@@ -703,17 +689,12 @@ export function useModelWizard(ctx: ModelWizardContext) {
           clearTierModel(presetMode, "classifier");
           targetLabel = `Subagent "classifier"`;
           didClear = true;
-        } else if (tier === "tencentdb") {
-          clearTierModel(presetMode, "tencentdb");
-          targetLabel = `Subagent "tencentdb"`;
-          didClear = true;
         } else if (tier === "all_subagents") {
           clearTierModel(presetMode, "subagent");
           clearTierModel(presetMode, "researcher");
           clearTierModel(presetMode, "coder");
           clearTierModel(presetMode, "reviewer");
           clearTierModel(presetMode, "classifier");
-          clearTierModel(presetMode, "tencentdb");
           targetLabel = "All Subagents";
           didClear = true;
         } else if (tier === "all") {
@@ -1512,7 +1493,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
       else if (value.includes("coder")) tier = "coder";
       else if (value.includes("reviewer")) tier = "reviewer";
       else if (value.includes("classifier")) tier = "classifier";
-      else if (value.includes("tencentdb")) tier = "tencentdb";
       else if (value.includes("Default Model")) tier = "default";
       else if (value.includes("Single Agent")) tier = "single";
 

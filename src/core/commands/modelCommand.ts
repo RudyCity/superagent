@@ -176,7 +176,7 @@ export const modelCommand: SlashCommand = {
         }
 
         if (parts.length >= 2) {
-          const knownSubagents = ["researcher", "coder", "reviewer", "classifier", "tencentdb"];
+          const knownSubagents = ["researcher", "coder", "reviewer", "classifier"];
           if (
             ["master", "superagent", "subagent", "depth0", "depth1", "depth2", "dept0", "dept1", "dept2"].includes(firstWord) ||
             knownSubagents.includes(firstWord) ||

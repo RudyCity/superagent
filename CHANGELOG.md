@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.239] - 2026-07-10
+
+### Removed
+- **Feature: tencentdb**:
+  - Removed "Feature: tencentdb" configuration option from the model preset wizard and the keyboard handler's configuration menus.
+  - Excluded "tencentdb" from the known subagents list in the `/model` command.
+
+---
+
 ## [1.2.238] - 2026-07-10
 
 ### Added
