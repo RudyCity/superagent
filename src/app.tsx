@@ -1089,16 +1089,7 @@ export function App({
         return filterSuggestions(mcpSuggestions, currentInput);
       }
 
-      if (mainCommand === "/setting-tencentdb") {
-        const tdbSuggestions = [
-          "/setting-tencentdb on",
-          "/setting-tencentdb off",
-          "/setting-tencentdb status",
-          "/setting-tencentdb show-bg-procs",
-          "/setting-tencentdb hide-bg-procs",
-        ];
-        return filterSuggestions(tdbSuggestions, currentInput);
-      }
+
 
       if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
         const focusSuggestions = [

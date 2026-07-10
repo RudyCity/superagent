@@ -40,7 +40,6 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-checklist-limit": "Set checklist visible limit",
   "/setting-history-limit": "Set checklist history visible limit",
   "/setting-procs-limit": "Set processes visible limit",
-  "/setting-tencentdb": "Configure TencentDB memory strategy and gateway URL",
   "/setting-focus": "Set reasoning focus depth level (alias: /focus)",
   "/setting-focus-budget": "Set reasoning focus custom budget tokens",
   "/setting-auto-vision": "Enable or disable automatic vision token saving (on or off)",
@@ -48,7 +47,6 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-hide-timeline": "Hide or show the timeline lines connecting turns (on or off)",
   "/setting-classifier": "Enable or disable multi-category request classifier (on or off)",
   "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
-  "/memory": "Manage and inspect TencentDB long-term memory",
 };
 
 export function getDashboardSuggestions(originalQuery: string): string[] {
@@ -183,17 +181,6 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
       return filterSuggestions(possibilities, query);
     }
 
-    if (mainCommand === "/setting-tencentdb") {
-      const possibilities = [
-        "/setting-tencentdb on",
-        "/setting-tencentdb off",
-        "/setting-tencentdb status",
-        "/setting-tencentdb show-bg-procs",
-        "/setting-tencentdb hide-bg-procs",
-      ];
-      return filterSuggestions(possibilities, query);
-    }
-
     if (mainCommand === "/setting-focus" || mainCommand === "/focus") {
       const possibilities = [
         `${parts[0]} off`,
@@ -246,18 +233,6 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
         `${parts[0]} high`,
         `${parts[0]} medium`,
         `${parts[0]} low`,
-      ];
-      return filterSuggestions(possibilities, query);
-    }
-
-    if (mainCommand === "/memory") {
-      const possibilities = [
-        "/memory status",
-        "/memory list",
-        "/memory search",
-        "/memory add",
-        "/memory delete",
-        "/memory help",
       ];
       return filterSuggestions(possibilities, query);
     }

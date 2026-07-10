@@ -110,6 +110,7 @@ export function getInstalledSkills(): LoadedSkill[] {
   const searchDirs: string[] = [
     path.join(packageRootDir, ".agents", "skills"),
     path.join(packageRootDir, "skills"),
+    path.join(os.homedir(), ".agents", "skills"),
     path.join(os.homedir(), ".superagent-r", "skills"),
   ];
 

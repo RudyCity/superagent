@@ -89,4 +89,26 @@ author: test-author
     expect(matches[0].description).toBe("Workspace local version of test-skill-1");
     expect(matches[0].path.replace(/\\/g, "/")).toContain("workspace");
   });
+
+  it("should load skills from ~/.agents/skills", () => {
+    const agentsSkillDir = path.join(mockHome, ".agents", "skills", "test-skill-global-agents");
+    fs.mkdirSync(agentsSkillDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(agentsSkillDir, "SKILL.md"),
+      `---
+name: test-skill-global-agents
+description: Global agents skill version
+author: global-author
+---
+# Test Global Agents Skill
+`
+    );
+
+    const installed = getInstalledSkills();
+    const found = installed.find(s => s.name === "test-skill-global-agents");
+    expect(found).toBeDefined();
+    expect(found?.description).toBe("Global agents skill version");
+    expect(found?.author).toBe("global-author");
+    expect(found?.path.replace(/\\/g, "/")).toContain("home/.agents/skills");
+  });
 });
