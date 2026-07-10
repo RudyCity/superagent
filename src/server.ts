@@ -13,6 +13,7 @@ let activeAgent: Agent | null = null;
 let activeSessionId: string | null = null;
 let activeMode: "single" | "multi" = "single";
 let activeWorkspace: string = process.cwd();
+let isBrowseDialogOpen = false;
 
 const sseClients = new Set<http.ServerResponse>();
 const pendingPermissions = new Map<string, (approval: boolean | "session") => void>();
@@ -361,10 +362,28 @@ export async function runServer(port: number) {
 
       // Browse directory dialog
       if (pathname === "/api/browse" && req.method === "GET") {
+        if (isBrowseDialogOpen) {
+          sendJSON(res, 400, { success: false, error: "A folder selection dialog is already open." });
+          return;
+        }
+
+        isBrowseDialogOpen = true;
         try {
-          const { execSync } = await import("child_process");
+          const { exec } = await import("child_process");
           let selectedPath = "";
           const platform = process.platform;
+
+          const runCmd = (cmd: string): Promise<string> => {
+            return new Promise((resolve, reject) => {
+              exec(cmd, { encoding: "utf8" }, (error, stdout, stderr) => {
+                if (error) {
+                  reject(error);
+                } else {
+                  resolve(stdout);
+                }
+              });
+            });
+          };
 
           if (platform === "win32") {
             const commands = [
@@ -380,7 +399,7 @@ export async function runServer(port: number) {
             ];
             const commandLine = commands.join('; ');
             try {
-              const stdout = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${commandLine}"`, { encoding: "utf8" });
+              const stdout = await runCmd(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${commandLine}"`);
               selectedPath = stdout.trim();
             } catch (err: any) {
               console.warn("Folder dialog closed or failed:", err.message);
@@ -390,18 +409,18 @@ export async function runServer(port: number) {
           } else if (platform === "darwin") {
             try {
               const script = 'tell application "Finder" to set selectedFolder to choose folder with prompt "Select Local Workspace Folder"\nPOSIX path of selectedFolder';
-              const stdout = execSync(`osascript -e ${JSON.stringify(script)}`, { encoding: "utf8" });
+              const stdout = await runCmd(`osascript -e ${JSON.stringify(script)}`);
               selectedPath = stdout.trim();
             } catch (err: any) {
               console.warn("macOS folder picker cancelled or failed:", err.message);
             }
           } else {
             try {
-              const stdout = execSync('zenity --file-selection --directory --title="Select Local Workspace Folder"', { encoding: "utf8" });
+              const stdout = await runCmd('zenity --file-selection --directory --title="Select Local Workspace Folder"');
               selectedPath = stdout.trim();
             } catch {
               try {
-                const stdout = execSync('kdialog --getexistingdirectory', { encoding: "utf8" });
+                const stdout = await runCmd('kdialog --getexistingdirectory');
                 selectedPath = stdout.trim();
               } catch (err: any) {
                 console.warn("Linux folder picker cancelled or failed:", err.message);
@@ -412,6 +431,8 @@ export async function runServer(port: number) {
           sendJSON(res, 200, { success: true, path: selectedPath });
         } catch (err: any) {
           sendJSON(res, 500, { success: false, error: err.message || String(err) });
+        } finally {
+          isBrowseDialogOpen = false;
         }
         return;
       }
