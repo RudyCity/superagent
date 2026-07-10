@@ -51,6 +51,39 @@ export function resolveWindowsShell(): WindowsShellResult {
   return cachedShell;
 }
 
+export function suggestClosest(value: string, options: readonly string[]): string | undefined {
+  const distance = (a: string, b: string) => {
+    const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 1; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        dp[i][j] = a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]) + 1;
+      }
+    }
+    return dp[a.length][b.length];
+  };
+  const best = options.map(option => ({ option, score: distance(value, option) })).sort((a, b) => a.score - b.score)[0];
+  return best && best.score <= Math.max(2, Math.floor(best.option.length / 3)) ? best.option : undefined;
+}
+
+export function formatToolError(problem: string, fix?: string, example?: string): string {
+  return [`Error: ${problem}`, fix ? `Fix: ${fix}` : "", example ? `Example: ${example}` : ""].filter(Boolean).join("\n");
+}
+
+export function formatUnknownActionError(action: string, validActions: readonly string[], note?: string): string {
+  const suggestion = suggestClosest(action, validActions);
+  const fix = suggestion
+    ? `Use action \"${suggestion}\". Valid actions: ${validActions.join(", ")}.`
+    : `Use one of: ${validActions.join(", ")}.`;
+  return formatToolError(`Unknown action \"${action}\".`, note ? `${fix} ${note}` : fix);
+}
+
+export function normalizeWindowsPackageRunner(command: string): string {
+  return command.replace(/^(npm|npx|pnpm|yarn)(?=\s|$)/, "$1.cmd");
+}
+
 export function formatCommandForPowerShell(command: string): string {
   const parts: string[] = [];
   let currentPart = "";

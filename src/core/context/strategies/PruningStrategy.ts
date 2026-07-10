@@ -146,35 +146,40 @@ export class PruningStrategy implements CompactionStrategy {
 
   private createEmergencySummary(messages: Message[]): string {
     const userMessages = messages.filter((m) => m.role === "user");
-    const assistantMessages = messages.filter((m) => m.role === "assistant");
 
     const fileMatches = messages
       .flatMap((m) => contentToString(m.content).match(/[\w.-]+(?:\/|\\)[\w.-]+(?:\.\w+)?/g) || [])
-      .filter((v, i, a) => a.indexOf(v) === i)
-      .slice(0, 10);
+      .filter((v, i, a) => a.indexOf(v) === i && !v.includes("node_modules") && !v.includes(".git"))
+      .slice(0, 15);
 
-    const parts: string[] = [
-      `Conversation had ${messages.length} messages (${userMessages.length} user, ${assistantMessages.length} assistant).`,
-    ];
+    const changedFiles = fileMatches.filter(f => /edit|write|replace|modify|patch/i.test(JSON.stringify(messages).toLowerCase()));
+    const readFiles = fileMatches.filter(f => !changedFiles.includes(f));
 
-    if (fileMatches.length > 0) {
-      parts.push(`Files referenced: ${fileMatches.join(", ")}.`);
-    }
+    let decisionsText = "Continued codebase auditing and alignment.";
+    let testsText = "not-run (pruned history)";
+    let blockersText = "none";
 
     try {
       const analyzer = new SemanticAnalyzer();
       const keyPoints = analyzer.extractKeyPoints(messages);
       if (keyPoints.length > 0) {
-        const kps = keyPoints.map(kp => `[${kp.type.toUpperCase()}] ${kp.content}`).slice(0, 5).join(" | ");
-        parts.push(`Key semantic points: ${kps}.`);
+        decisionsText = keyPoints.filter(kp => kp.type === "decision").map(kp => kp.content).slice(0, 3).join(", ") || decisionsText;
+        blockersText = keyPoints.filter(kp => kp.type === "error").map(kp => kp.content).slice(0, 2).join(", ") || blockersText;
       }
-    } catch {
-      // Ignored fallback
-    }
+    } catch {}
 
-    parts.push("Key topics discussed and actions taken were preserved in task files.");
+    const lastUserMsg = userMessages.length > 0 ? contentToString(userMessages[userMessages.length - 1].content).substring(0, 120) : "Continue";
 
-    return parts.join(" ");
+    return `Objective: Audit and refine coding assistant prompts and orchestration behaviors (pruned history had ${messages.length} messages)
+Current mode: implement
+User intent: ${lastUserMsg}
+Files read: ${readFiles.join(", ") || "none"}
+Files changed: ${changedFiles.join(", ") || "none"}
+Decisions: ${decisionsText}
+Tests/build: ${testsText}
+Blockers: ${blockersText}
+Next safe action: Proceed with testing and validation of recent prompt modifications
+Confidence: static-only`;
   }
 }
 

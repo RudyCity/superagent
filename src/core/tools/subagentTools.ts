@@ -1,4 +1,5 @@
 import { Tool, SubagentInstance } from "./types.js";
+import { formatUnknownActionError } from "./helpers.js";
 import {
   subagentTypes,
   subagentInstances,
@@ -964,6 +965,6 @@ export const manageSubagentsTool: Tool = {
       return "All subagent instances terminated.";
     }
 
-    return `Error: Unknown action "${action}"`;
+    return formatUnknownActionError(action, ["list", "logs", "report", "violations", "kill", "kill_all"], "Use \"report\" (singular), not \"reports\".");
   },
 };

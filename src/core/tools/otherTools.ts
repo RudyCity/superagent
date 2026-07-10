@@ -4,6 +4,7 @@ import { execa } from "execa";
 import { Tool, ScheduleJob } from "./types.js";
 import { scheduledJobs, notifyScheduleTriggered } from "./state.js";
 import { ensureAndroidCliInstalled } from "../androidSetup.js";
+import { formatUnknownActionError } from "./helpers.js";
 
 export const askQuestionTool: Tool = {
   name: "ask_question",
@@ -707,6 +708,10 @@ export const gitWorktreeTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const action = args.action as string;
+    const validActions = ["list", "add", "remove", "prune"];
+    if (!validActions.includes(action)) {
+      return formatUnknownActionError(action, validActions);
+    }
     const worktreePath = args.path as string;
     const branch = args.branch as string;
     const force = args.force === true;
@@ -828,6 +833,10 @@ export const manageTasksTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const action = args.action as string;
+    const validActions = ["list", "add", "add_bulk", "update", "remove", "update_bulk", "remove_bulk"];
+    if (!validActions.includes(action)) {
+      return formatUnknownActionError(action, validActions);
+    }
     const text = args.text as string | undefined;
     const texts = args.texts as string[] | undefined;
     const index = args.index as number | undefined;
@@ -1145,6 +1154,10 @@ export const managePlanTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const action = args.action as string;
+    const validActions = ["create", "edit", "sync", "get"];
+    if (!validActions.includes(action)) {
+      return formatUnknownActionError(action, validActions);
+    }
     const planContentInput = args.planContent as string | undefined;
     const targetContent = args.targetContent as string | undefined;
     const replacementContent = args.replacementContent as string | undefined;

@@ -33,6 +33,12 @@ const DANGEROUS_PATTERNS = [
   /Initialize-Disk/i,
   /Stop-Process\s+.*-Force/i,
   /Stop-Computer/i,
+  // Destructive operations gate
+  /\bgit\s+(reset|clean|push|commit|rm)\b/i,
+  /\bgit\s+checkout\s+.*-f\b/i,
+  /\b(npm|pnpm|yarn|bun|pip|cargo)\s+(install|uninstall|add|remove|update|i)\b/i,
+  /\b(db:wipe|db:seed|migrate:reset)\b/i,
+  /\b(rotate|delete)\s+(secret|key)\b/i,
 ];
 
 export function isDangerousCommand(command: string): boolean {

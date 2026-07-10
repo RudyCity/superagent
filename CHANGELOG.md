@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.2.241] - 2026-07-10
+
+### Changed
+- **Tool reliability optimization**:
+  - Added recovery guidance for stale exact-match edits and risky batched edits.
+  - Clarified one-path-per-call usage for `ripgrep_search`.
+  - Clarified `manage_subagents` report action naming.
+  - Added Windows Git Bash `npm.cmd` fallback handling for validation commands.
+
+---
+
+## [1.2.240] - 2026-07-10
+
+### Changed
+- **System prompt optimization**:
+  - Removed unsupported `invoke_subagent` `Subagents` array guidance from prompt rules.
+  - Replaced stale `manage_tasks_bulk` guidance with existing `manage_tasks` bulk actions.
+  - Aligned Master Agent research workflow with available orchestration tools.
+  - Simplified Superagent and Subagent final report formats to avoid conflicting markdown-style requirements.
+  - Hardened process-kill guidance to require PID-specific termination across runtimes.
+  - Scoped plain-text response rules to final user responses while preserving Markdown for plans and prompt templates.
+  - Removed Indonesian plan-template aliases from new Master planning guidance.
+  - Clarified direct research vs Superagent research escalation.
+  - Constrained fallback/reviewer-like subagent toolsets to reduce unintended side effects.
+  - Kept critical system guidance in text when large prompt image conversion is active.
+
+---
+
 ## [1.2.239] - 2026-07-10
 
 ### Removed

@@ -193,19 +193,20 @@ if request_is_complex:
   - 'replace_file_content': Single contiguous block edits. Supports 'edits' for editing multiple files in a single tool call.
   - 'multi_replace_file_content': Multiple non-contiguous edits in a file. Supports 'files' for editing multiple files in a single tool call.
   - 'edit': Simple, unique string replacements. Supports 'edits' for editing multiple files in a single tool call.
+  - Edit failures: Do not repeat stale exact-match edits. Re-read target range, then use line-range replacement for moved content. Avoid batched edits when one risky chunk can block unrelated safe chunks.
 - Code Search:
-  - 'ripgrep_search': Fast targeted text search.
+  - 'ripgrep_search': Fast targeted text search. Pass one path per call; do not combine paths like 'src tests'.
   - 'glob': Find files by name pattern.
   - 'grep': Fallback search.
 - Execution & Background:
-  - 'run_command': Fast synchronous shell execution. Use for validation commands (timeout parameter supported).
+  - 'run_command': Fast synchronous shell execution. Use for validation commands (timeout parameter supported). On Windows Git Bash, npm commands are executed through npm.cmd to avoid broken shell shims.
   - 'run_background_process': Dev servers, test suites, long-running commands. Monitor or wait via 'manage_background_process' (status / wait).
 - Web Search:
   - 'web_search': Internet search for docs/current info.
   - 'fetch_url': Extract text from specific webpage.
 - Delegation & Timers:
   - 'schedule': Timers or cron notifications. Use to check background tasks or subagents instead of busy-waiting.
-  - 'invoke_subagent': Asynchronous subagents ('researcher', 'coder', 'reviewer'). Monitor via 'manage_subagents' (list/logs). Communicate via 'send_message'.
+  - 'invoke_subagent': Asynchronous subagents ('researcher', 'coder', 'reviewer'). Monitor via 'manage_subagents' (list/logs/report). Communicate via 'send_message'. Use action 'report' (singular), not 'reports'.
 - Best Practices:
   - Prefer bulk parameters ('filePaths', 'files', 'edits') when operating on multiple files to minimize round-trip tool execution overhead.
   - Limit file reading: Use 'offset' and 'limit' on large files.

@@ -7,6 +7,7 @@ import { Tool } from "./types.js";
 import { normalizeForMatching, verifySyntax, mapNormToOrigIndices, countOccurrences, fileLockManager } from "./helpers.js";
 import { getLocalRgPath, isRgInstalledGlobally, ensureRgInstalled } from "../androidSetup.js";
 import { getWorkspaceCachePath } from "../workspaceDiscovery.js";
+import { getRootConfigDir } from "../config/paths.js";
 
 
 function buildEditSummary(before: string, after: string, filePath: string, existedBefore = true): string {
@@ -83,6 +84,16 @@ function normalizePath(filePath: string): string {
 function resolveFilePathFromArgs(args: Record<string, unknown>, cwd: string): string | undefined {
   const raw = (args.filePath ?? args.file_path ?? args.path ?? args.TargetFile ?? args.targetFile) as string | undefined;
   if (!raw || typeof raw !== "string" || raw.trim() === "") return undefined;
+  const clean = (p: string) => p.split(String.fromCharCode(92)).join('/').toLowerCase().replace(/\/$/, '');
+  const resolved = clean(normalizePath(path.resolve(cwd, raw)));
+  const workspaceRoot = clean(normalizePath(path.resolve(process.cwd())));
+  const testRoot = clean(normalizePath(path.resolve(cwd)));
+  const rootConfigDir = clean(normalizePath(getRootConfigDir()));
+  const allowedRoots = [workspaceRoot, testRoot, rootConfigDir];
+  const isAllowed = allowedRoots.some(root => resolved === root || resolved.startsWith(root + "/")) || resolved.endsWith("_walkthrough.md");
+  if (!isAllowed) {
+    throw new Error('Path "' + raw + '" violates workspace boundary. Operations must remain within "' + workspaceRoot + '"');
+  }
   return normalizePath(path.resolve(cwd, raw));
 }
 
@@ -112,13 +123,21 @@ export const readTool: Tool = {
     },
   },
   async execute(args, cwd, signal) {
-    const filePaths = args.filePaths as string[] | undefined;
+    const filePaths = args.filePaths as any[] | undefined;
     const offset = Math.max(1, (args.offset as number) || 1);
     const limit = (args.limit as number) || 800;
 
     if (filePaths && Array.isArray(filePaths)) {
       if (filePaths.length === 0) {
         return "Error: 'filePaths' parameter is empty.";
+      }
+      for (const entry of filePaths) {
+        const raw = typeof entry === "string" ? entry : entry?.path;
+        try {
+          resolveFilePathFromArgs({ filePath: raw }, cwd);
+        } catch (boundaryErr: any) {
+          return `Error: ${boundaryErr.message}`;
+        }
       }
       const results: string[] = [];
       for (const entry of filePaths) {
@@ -177,9 +196,15 @@ export const readTool: Tool = {
       return results.join("\n\n");
     }
 
-    const filePath = resolveFilePathFromArgs(args, cwd);
-    if (!filePath) {
-      return "Error: Missing required parameter 'filePath' or 'filePaths'. Provide the path to the file to read.";
+    let filePath: string;
+    try {
+      const resolved = resolveFilePathFromArgs(args, cwd);
+      if (!resolved) {
+        return "Error: Missing required parameter 'filePath' or 'filePaths'. Provide the path to the file to read.";
+      }
+      filePath = resolved;
+    } catch (boundaryErr: any) {
+      return `Error: ${boundaryErr.message}`;
     }
 
     try {
@@ -240,9 +265,15 @@ export const writeTool: Tool = {
     required: ["filePath", "content"],
   },
   async execute(args, cwd, signal) {
-    const filePath = resolveFilePathFromArgs(args, cwd);
-    if (!filePath) {
-      return "Error: Missing required parameter 'filePath'. Provide the path to the file to write.";
+    let filePath: string;
+    try {
+      const resolved = resolveFilePathFromArgs(args, cwd);
+      if (!resolved) {
+        return "Error: Missing required parameter 'filePath'. Provide the path to the file to write.";
+      }
+      filePath = resolved;
+    } catch (boundaryErr: any) {
+      return `Error: ${boundaryErr.message}`;
     }
     const content = args.content as string | undefined;
     if (content === undefined || content === null) {
@@ -251,6 +282,14 @@ export const writeTool: Tool = {
     const release = await fileLockManager.acquire(filePath);
     try {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
+      if (filePath.endsWith("_walkthrough.md") && fsSync.existsSync(filePath)) {
+        const current = await fs.readFile(filePath, "utf-8");
+        if (!current.includes(content.trim())) {
+          await fs.writeFile(filePath, current.trim() + "\n\n" + content.trim(), "utf-8");
+          return `File appended: ${filePath}`;
+        }
+        return `File content already present: ${filePath}`;
+      }
       await fs.writeFile(filePath, content, "utf-8");
       return `File written: ${filePath}`;
     } catch (err: unknown) {
@@ -463,7 +502,8 @@ export const editTool: Tool = {
 
         const targetSubNormContent = normLines.slice(startIdx, endIdx).join("\n");
         if (!targetSubNormContent.includes(normOldStr)) {
-          return `Error: oldString not found within lines ${startLine || 1} to ${endLine || lines.length} of ${filePath} (matching normalized content)`;
+          return `Error: oldString not found within lines ${startLine || 1} to ${endLine || lines.length} of ${filePath} (matching normalized content).
+Fix: Re-read the target file range to find the updated text. The lines may have shifted.`;
         }
         const count = targetSubNormContent.split(normOldStr).length - 1;
         if (count > 1) {
@@ -484,7 +524,8 @@ export const editTool: Tool = {
         }
       } else {
         if (!normContent.includes(normOldStr)) {
-          return `Error: oldString not found in ${filePath} (matching normalized content)`;
+          return `Error: oldString not found in ${filePath} (matching normalized content).
+Fix: The target content may have been modified or lines have shifted. Re-read the target file range to find the updated text, or specify a startLine/endLine for precise range replacement.`;
         }
 
         const count = normContent.split(normOldStr).length - 1;
@@ -710,7 +751,12 @@ export const ripgrepSearchTool: Tool = {
   },
   async execute(args, cwd, signal) {
     const pattern = args.pattern as string;
-    const searchPath = args.path ? path.resolve(cwd, args.path as string) : cwd;
+    const rawPath = args.path as string | undefined;
+    const searchPath = rawPath ? path.resolve(cwd, rawPath) : cwd;
+
+    if (rawPath && /\s/.test(rawPath) && !fsSync.existsSync(searchPath)) {
+      return `Error: Search path "${rawPath}" does not exist. Pass one path per ripgrep_search call; do not combine paths like "src tests".`;
+    }
 
     await ensureRgInstalled();
 

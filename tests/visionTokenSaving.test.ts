@@ -221,29 +221,25 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
   });
 
   it("converts a large system prompt to image and prepends it to messages during execution", async () => {
-    process.env.SUPERAGENT_TEST_SYSTEM_PROMPT_IMAGE = "true";
-    try {
-      vi.mocked(configModule.getSettings).mockReturnValue({
-        autoVisionTokenSaving: true,
-        visionTokenSavingThreshold: 100, // Small threshold
-      });
+    vi.mocked(configModule.getSettings).mockReturnValue({
+      autoVisionTokenSaving: true,
+      visionTokenSavingThreshold: 100, // Small threshold
+    });
 
-      const agent = new Agent(
-        vi.fn(),
-        vi.fn().mockResolvedValue(true),
-        vi.fn().mockResolvedValue("yes")
-      );
-      agent.tier = "master";
-      agent.planState = "APPROVED"; // skip planning to go straight to execution loop
+    const agent = new Agent(
+      vi.fn(),
+      vi.fn().mockResolvedValue(true),
+      vi.fn().mockResolvedValue("yes")
+    );
+    agent.tier = "master";
+    agent.planState = "APPROVED"; // skip planning to go straight to execution loop
 
-      await agent.sendMessage("hello");
-    } finally {
-      delete process.env.SUPERAGENT_TEST_SYSTEM_PROMPT_IMAGE;
-    }
+    await agent.sendMessage("hello");
 
     // Check if generateText or streamText was called and captured options
     expect(lastGenerateTextOptions).not.toBeNull();
-    // System parameter should be the placeholder
+    // System parameter should keep critical guidance while image content carries long instructions
+    expect(lastGenerateTextOptions.system).toContain("Follow all safety, workspace, tool, and hierarchy rules");
     expect(lastGenerateTextOptions.system).toContain("rendered as images in the first user message");
     
     // Messages array should contain prepended user and assistant messages with the images

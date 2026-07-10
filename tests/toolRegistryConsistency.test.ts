@@ -34,4 +34,22 @@ describe("tool registry consistency", () => {
     expect(getToolByName("git_worktree")?.name).toBe("git_worktree");
     expect(getToolByName("list_peer_superagents")?.name).toBe("list_peer_superagents");
   });
+
+  it("keeps fallback and reviewer-like subagent toolsets side-effect constrained", () => {
+    const fallbackNames = defaultSubagentToolset.map((tool) => tool.name);
+    const reviewerNames = subagentToolsets.reviewer.map((tool) => tool.name);
+    const manualTesterNames = subagentToolsets["manual-tester"].map((tool) => tool.name);
+
+    expect(fallbackNames).not.toEqual(expect.arrayContaining([
+      "write_to_file",
+      "replace_file_content",
+      "run_command",
+      "bash",
+      "manage_mcp",
+      "tdai_memory_save",
+      "tdai_conversation_add",
+    ]));
+    expect(reviewerNames).not.toEqual(expect.arrayContaining(["tdai_memory_save", "tdai_conversation_add"]));
+    expect(manualTesterNames).not.toEqual(expect.arrayContaining(["tdai_memory_save", "tdai_conversation_add"]));
+  });
 });

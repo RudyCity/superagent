@@ -9,7 +9,9 @@ import {
   truncateOutput, 
   detectInteractivePrompt, 
   resolveWindowsShell,
-  normalizeGitPaths
+  normalizeGitPaths,
+  normalizeWindowsPackageRunner,
+  formatUnknownActionError
 } from "./helpers.js";
 import { 
   backgroundTasks, 
@@ -280,7 +282,9 @@ export const runCommandTool: Tool = {
     if (process.platform === "win32") {
       const resolved = resolveWindowsShell();
       shellPath = resolved.shellPath;
-      if (!resolved.isBash) {
+      if (resolved.isBash && /^(npm|npx|pnpm|yarn)(\s|$)/.test(command)) {
+        command = normalizeWindowsPackageRunner(command);
+      } else if (!resolved.isBash) {
         command = formatCommandForPowerShell(command);
       }
     }
@@ -337,7 +341,9 @@ export const runCommandTool: Tool = {
         }
 
         if (result.exitCode !== 0) {
-          return `Exit code: ${result.exitCode}\n${output}`;
+          const reporterHint = /Failed to load custom Reporter from (\w+)/.exec(output)?.[1];
+          const hint = reporterHint ? `\nFix: Vitest reporter "${reporterHint}" is unavailable. Use default output, --reporter=dot, or --reporter=json.` : "";
+          return `Exit code: ${result.exitCode}\n${output}${hint}`;
         }
 
         return output || "(no output)";
@@ -922,6 +928,6 @@ export const manageBackgroundProcessTool: Tool = {
       }
     }
 
-    return `Error: Unknown action "${action}"`;
+    return formatUnknownActionError(action, ["list", "status", "send_input", "kill", "wait"], "Use 'list' to inspect available process IDs.");
   },
 };

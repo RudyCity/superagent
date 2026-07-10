@@ -970,7 +970,8 @@ If none of the options are suitable, still pick the closest one.`;
       return;
     }
 
-    if (this.planState === "IDLE" && (!process.env.VITEST || process.env.SUPERAGENT_TEST_SIMPLE_TASK === "true")) {
+    const isTestEnv = process.env.VITEST && process.env.SUPERAGENT_TEST_SIMPLE_TASK !== "true";
+    if (!isTestEnv) {
       try {
         const settings = getSettings();
         if (settings.classifierEnabled !== false) {
@@ -980,7 +981,7 @@ If none of the options are suitable, still pick the closest one.`;
           const classification = await classifyRequest(userInput, classifierModel, {
             confidenceThreshold: settings.classifierConfidenceThreshold ?? "high",
             customKeywords: settings.classifierKeywords as any,
-            skipLLM: false,
+            skipLLM: this.planState !== "IDLE",
           });
           this.currentClassification = classification;
           this.writeToLogFile("INFO", `Request classified: category=${classification.category}, confidence=${classification.confidence}, heuristicOnly=${classification.heuristicOnly}, tokens=${classification.classificationTokens}, reason=${classification.reason}`);
@@ -993,68 +994,77 @@ If none of the options are suitable, still pick the closest one.`;
             } catch {}
           }
 
-          // Backward-compatible: set isSimpleTask for categories that skip planning
-          const skipPlanningCategories = ["conversation", "question", "simple_edit", "research", "debug", "command"];
-          if (skipPlanningCategories.includes(classification.category)) {
-            this.isSimpleTask = true;
-            this.planState = "APPROVED";
-
-            // Check for pre-approval keywords (auto-approve modifications)
-            const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
-            const lowerInput = userInputText.toLowerCase();
-            const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
-            const preApprovalWords = settings.simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
-            const hasPreApproval = preApprovalWords.some(word => {
-              if (word.includes(' ')) {
-                return lowerInput.includes(word);
+          // Map classification to planState and isSimpleTask using original categories
+          if (this.planState === "IDLE") {
+            const skipPlanningCategories = ["conversation", "question", "research"];
+            if (skipPlanningCategories.includes(classification.category)) {
+              this.isSimpleTask = true;
+              this.planState = "APPROVED";
+              this.simpleTaskApproved = true;
+            } else if (classification.category === "complex_task") {
+              // Check for complex task indicators or plan requests
+              const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
+              const lowerInput = userInputText.toLowerCase();
+              const isPlanRequest = /plan|design|architecture/i.test(lowerInput);
+              if (isPlanRequest) {
+                this.isSimpleTask = false;
+              } else {
+                const isComplex = /refactor|rewrite|architecture|design|feature|migration|oauth|database|schema|multi-file/i.test(lowerInput) || lowerInput.split(/\s+/).length > 25;
+                if (isComplex) {
+                  this.isSimpleTask = false;
+                } else {
+                  this.isSimpleTask = true;
+                  this.planState = "APPROVED";
+                  this.simpleTaskApproved = true;
+                }
               }
-              return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
-            });
-
-            // For conversation/question categories, auto-approve since they won't modify files
-            if (classification.category === "conversation" || classification.category === "question" || classification.category === "research" || hasPreApproval) {
+            } else if (classification.category === "simple_edit" || classification.category === "command" || classification.category === "debug") {
+              this.isSimpleTask = true;
+              this.planState = "APPROVED";
               this.simpleTaskApproved = true;
             }
           }
         } else {
           // Fallback to legacy simpleTask classification when classifier is disabled
-          const model = this.getModel();
-          const threshold = settings.simpleTaskFileThreshold ?? 3;
-          const classificationPrompt = `You are a helper that classifies if a user request is a "simple task".
-A request is a "simple task" if it expects modification or creation of fewer than ${threshold} files and does NOT introduce any new architecture, major system changes, or complex orchestration.
-For example, simple refactorings, adding single simple functions, modifying specific existing logic, or fixing a simple bug are simple tasks.
+          if (this.planState === "IDLE") {
+            const model = this.getModel();
+            const threshold = settings.simpleTaskFileThreshold ?? 3;
+            const classificationPrompt = `You are a helper that classifies if a user request is a "simple task".
+  A request is a "simple task" if it expects modification or creation of fewer than ${threshold} files and does NOT introduce any new architecture, major system changes, or complex orchestration.
+  For example, simple refactorings, adding single simple functions, modifying specific existing logic, or fixing a simple bug are simple tasks.
 
-User request: "${userInput}"
+  User request: "${userInput}"
 
-Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply with nothing else.`;
+  Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply with nothing else.`;
 
-          const response = await generateText({
-            model,
-            prompt: classificationPrompt,
-          });
-
-          try {
-            const { addMasterTokens } = await import("./tools/state.js");
-            addMasterTokens(response.usage?.promptTokens || 0, response.usage?.completionTokens || 0);
-          } catch {}
-
-          const classification = response.text.trim().toLowerCase();
-          if (classification === "yes" || classification.includes("yes")) {
-            this.isSimpleTask = true;
-            this.planState = "APPROVED";
-            
-            const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
-            const lowerInput = userInputText.toLowerCase();
-            const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
-            const preApprovalWords = settings.simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
-            const hasPreApproval = preApprovalWords.some(word => {
-              if (word.includes(' ')) {
-                return lowerInput.includes(word);
-              }
-              return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
+            const response = await generateText({
+              model,
+              prompt: classificationPrompt,
             });
-            if (hasPreApproval) {
-              this.simpleTaskApproved = true;
+
+            try {
+              const { addMasterTokens } = await import("./tools/state.js");
+              addMasterTokens(response.usage?.promptTokens || 0, response.usage?.completionTokens || 0);
+            } catch {}
+
+            const classification = response.text.trim().toLowerCase();
+            if (classification === "yes" || classification.includes("yes")) {
+              this.isSimpleTask = true;
+              this.planState = "APPROVED";
+
+              const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
+              const lowerInput = userInputText.toLowerCase();
+              const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
+              const preApprovalWords = settings.simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
+              const hasPreApproval = preApprovalWords.some(word => {
+                if (word.includes(' ')) {
+                  return lowerInput.includes(word);
+                }
+                return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
+              });
+              if (hasPreApproval) {
+                this.simpleTaskApproved = true;
+              }
             }
           }
         }
@@ -1591,20 +1601,93 @@ After all subagents finish, you MUST perform this verification loop before consi
 - If a shell command reveals a path on a different drive or directory than the workspace, DO NOT write files there.`
           : "";
 
-        const hasRunCommand = filteredToolDefs.some(t => t.name === "run_command");
-        const hasRunBackground = filteredToolDefs.some(t => t.name === "run_background_process");
-        let toolRestrictionNotice = "";
-        if (!hasRunCommand && !hasRunBackground) {
-          toolRestrictionNotice = `\n\n⚠️ CRITICAL RESTRICTION: Terminal/shell command execution is currently DISABLED for this request. Do NOT attempt to use 'run_command', 'run_background_process', or any terminal/shell execution tools, as they are not available in your tool schema.`;
+        const hasShell = filteredToolDefs.some(t => t.name === "run_command" || t.name === "bash" || t.name === "run_background_process");
+        const hasWrite = filteredToolDefs.some(t => t.name === "write_to_file" || t.name === "edit" || t.name === "replace_file_content" || t.name === "multi_replace_file_content" || t.name === "write" || t.name === "apply_patch");
+        const hasNetwork = filteredToolDefs.some(t => t.name === "web_search" || t.name === "fetch_url");
+        const hasSubagents = filteredToolDefs.some(t => t.name === "invoke_subagent" || t.name === "invoke_superagent");
+
+        let verificationStatus = "blocked";
+        if (hasShell) {
+          verificationStatus = "runtime";
+        } else if (hasWrite) {
+          verificationStatus = "static-only";
         }
 
-        const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}
+        let activeShellType = "unix-default";
+        let shellSep = "&&";
+        if (process.platform === "win32") {
+          try {
+            const { resolveWindowsShell } = await import("./tools/helpers.js");
+            const shellInfo = resolveWindowsShell();
+            activeShellType = shellInfo.isBash ? "git-bash" : "powershell";
+            shellSep = shellInfo.isBash ? "&&" : ";";
+          } catch {
+            activeShellType = "powershell";
+            shellSep = ";";
+          }
+        }
+
+        const runtimeCapabilitiesText = `
+# RUNTIME CAPABILITIES (do NOT assume or hardcode, reference these exactly)
+- Shell: ${hasShell ? "enabled" : "disabled"}
+- Write: ${hasWrite ? "enabled" : "disabled"}
+- Network: ${hasNetwork ? "enabled" : "disabled"}
+- Subagents: ${hasSubagents ? "enabled" : "disabled"}
+- Verification: ${verificationStatus}
+- Windows Shell Platform: ${activeShellType}
+- Command Separator Syntax: ${shellSep}
+`;
+
+        const category = this.currentClassification?.category || "complex_task";
+        const lastUserMessage = messages.slice().reverse().find(m => m.role === "user");
+        const userInputText = lastUserMessage ? (typeof lastUserMessage.content === "string" ? lastUserMessage.content : "") : "";
+        const lowerInput = userInputText.toLowerCase();
+
+        let activeMode = "implement"; // default
+        if (category === "conversation" || category === "question") {
+          activeMode = "ask";
+        } else if (category === "research") {
+          activeMode = "research";
+        } else if (category === "debug") {
+          activeMode = "debug";
+        } else if (category === "complex_task") {
+          if (/plan|design|architecture/i.test(lowerInput)) {
+            activeMode = "plan";
+          } else {
+            activeMode = "implement";
+          }
+        } else if (category === "simple_edit" || category === "command") {
+          activeMode = "implement";
+        }
+
+        // Check for review intent explicitly
+        if (/review|audit|diff\b/i.test(lowerInput)) {
+          activeMode = "review";
+        }
+
+        const activeModeNotice = `
+# CURRENT ACTIVE INTENT MODE: '${activeMode}'
+Follow these instructions for '${activeMode}' mode:
+${activeMode === "ask" ? `- You are in lightweight Q&A/concept explanation mode. Do NOT create any plan file or task list file. Do NOT spawn subagents. Do NOT call get_skills() or use_skill(). Do NOT run build, test, lint, or typecheck commands. Respond immediately and concisely.` : ""}
+${activeMode === "research" ? `- You are in read-only research/exploration mode. Do NOT modify any files. Do NOT run build, test, lint, or typecheck commands. Set final status to static-only.` : ""}
+${activeMode === "plan" ? `- Propose an implementation plan using 'manage_plan'. Do NOT edit source files before user approval. Minta approval secara eksplisit.` : ""}
+${activeMode === "implement" ? `- Implement code changes. Proposing a plan is mandatory only for multi-file/complex/risky changes. Small direct edits are allowed. Run build and tests if shell is available; if shell is disabled, report Build/Test as 'not-run' with reason 'shell disabled', and set status to 'static-only'.` : ""}
+${activeMode === "debug" ? `- Investigate and fix bugs. Trace root cause first before editing. Run build and tests if shell is available; if shell is disabled, report Build/Test as 'not-run' with reason 'shell disabled', and set status to 'static-only'.` : ""}
+${activeMode === "review" ? `- Perform code quality or security review. Do NOT make file edits unless requested. Output issues with severity ([CRITICAL], [IMPORTANT], [MINOR]), file/line references, and proposed fixes.` : ""}
+`;
+
+        let toolRestrictionNotice = "";
+        if (!hasShell) {
+          toolRestrictionNotice = `\n\n⚠️ CRITICAL RESTRICTION: Terminal/shell command execution is currently DISABLED for this request. Do NOT attempt to use 'run_command', 'run_background_process', 'bash', or any terminal/shell execution tools, as they are not available in your tool schema.`;
+        }
+
+        const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}
 
 CRITICAL TASK EXECUTION CONTEXT:
 - You are running with a strict step limit of ${maxIterationsStr} agent iterations per request.
 - Be highly efficient. DO NOT try to do everything in a single sequential thread.
-- MANDATORY: For any task that is complex, multi-step, or touches multiple files/components — you MUST spawn subagents via 'invoke_subagent'. Doing it yourself is forbidden for such tasks.
-- Spawn subagents in parallel whenever tasks are independent. This is the primary way to complete large tasks within the iteration limit.
+- Spawn subagents in parallel ONLY when the task meets subagent threshold rules (spans >3 files, >2 domains, major refactor/architecture, broad audit/research, or independent parallel work).
+- Spawn subagents in parallel whenever tasks are independent.
 - After spawning, wait for results, integrate them, and report back to the user.
 ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}`;
 
@@ -1800,9 +1883,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         this.conversation.setVisionMode(useVisionTokenSaving);
         const threshold = getDynamicVisionThreshold(modelName);
 
-        const allowSystemPromptImage = !process.env.VITEST || process.env.SUPERAGENT_TEST_SYSTEM_PROMPT_IMAGE === "true";
-
-        if (useVisionTokenSaving && finalSystemPrompt.length > threshold && allowSystemPromptImage) {
+        if (useVisionTokenSaving && finalSystemPrompt.length > threshold && !this.customSystemPrompt) {
           try {
             this.writeToLogFile("INFO", `Automatically converting system prompt (size ${finalSystemPrompt.length} chars) to image.`);
             let base64List = this.getCachedImages(finalSystemPrompt);
@@ -1840,7 +1921,12 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               content: "I have read the system instructions rendered as images and will strictly follow all rules and guidelines."
             };
 
-            finalSystemPrompt = "CRITICAL: System instructions are rendered as images in the first user message to save tokens. Do not ignore them. Treat the contents of those images as your active system prompt, rules, and guidelines.";
+            finalSystemPrompt = [
+              "CRITICAL: Follow all safety, workspace, tool, and hierarchy rules from this system message.",
+              "Additional long-form system instructions are rendered as images in the first user message to save tokens.",
+              "Treat image instructions as supplemental system guidance, but never override this text system message.",
+              devHookNotice.trim()
+            ].filter(Boolean).join("\n");
           } catch (err: any) {
             this.writeToLogFile("WARN", `Failed to automatically convert system prompt to image: ${err.message}. Falling back to text.`);
           }

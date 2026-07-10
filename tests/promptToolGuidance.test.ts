@@ -21,4 +21,35 @@ describe("prompt and command guidance", () => {
     expect(combined).toContain("PowerShell on Windows");
     expect(combined).toContain("Use \\`run_command\\` for validation commands");
   });
+
+  it("does not reference unsupported prompt tool schemas", () => {
+    const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
+
+    expect(prompts).not.toContain("'Subagents' array");
+    expect(prompts).not.toContain("manage_tasks_bulk");
+    expect(prompts).not.toContain("Spawn a 'researcher' subagent to explore the codebase");
+  });
+
+  it("keeps prompt hardening guidance aligned", () => {
+    const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
+
+    expect(prompts).toContain("kill ONLY its specific process ID");
+    expect(prompts).not.toContain("taskkill /F /IM bun.exe");
+    expect(prompts).not.toContain("## Rencana Perubahan");
+    expect(prompts).toContain("Final user responses use plain terminal text only");
+    expect(prompts).toContain("spawn a researcher Superagent only for broad or multi-domain exploration");
+  });
+
+  it("documents tool failure recovery guidance", () => {
+    const configBase = fs.readFileSync(path.resolve(process.cwd(), "src/core/config/base.ts"), "utf-8");
+    const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
+
+    expect(configBase).toContain("Do not repeat stale exact-match edits");
+    expect(configBase).toContain("Pass one path per call");
+    expect(configBase).toContain("Use action 'report' (singular), not 'reports'");
+    expect(configBase).toContain("npm.cmd");
+
+    expect(prompts).toContain("Edit failures: Do not repeat stale exact-match edits");
+    expect(prompts).toContain("DIRTY_WORKSPACE");
+  });
 });

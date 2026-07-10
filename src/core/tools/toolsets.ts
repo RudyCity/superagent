@@ -215,8 +215,6 @@ export const subagentToolsets: Record<string, Tool[]> = {
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
-    tdaiMemorySaveTool,
-    tdaiConversationAddTool,
   ],
 
   "manual-tester": [
@@ -234,28 +232,17 @@ export const subagentToolsets: Record<string, Tool[]> = {
     tdaiMemorySearchTool,
     tdaiConversationSearchTool,
     tdaiReadCosTool,
-    tdaiMemorySaveTool,
-    tdaiConversationAddTool,
   ],
 };
 
-/** Fallback toolset for unrecognized subagent types */
+/** Read-only fallback toolset for unrecognized subagent types */
 export const defaultSubagentToolset: Tool[] = [
   readTool,
   globTool,
   grepTool,
-  manageMcpTool,
+  ripgrepSearchTool,
   webSearchTool,
-  writeToFileTool,
-  replaceFileContentTool,
-  runCommandTool,
-  bashTool,
   askQuestionTool,
   getSkillsTool,
   useSkillTool,
-  tdaiMemorySearchTool,
-  tdaiConversationSearchTool,
-  tdaiReadCosTool,
-  tdaiMemorySaveTool,
-  tdaiConversationAddTool,
 ];

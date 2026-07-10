@@ -264,7 +264,7 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
 
 # SKILL DISCOVERY
 - RULE: call get_skills(query) BEFORE coding, planning, or executing any command.
-  - EXCEPT: Do NOT call get_skills(query) or use_skill() if the relevant skill is already preloaded/defined in your system prompt context (e.g. karpathy-guidelines, pragmatic-minimalism, systematic-debugging, superagent-planning, writing-plans, executing-plans, track-management, subagent-driven-development, verification-before-completion, master-agent-orchestration).
+  - EXCEPT: Do NOT call get_skills(query) or use_skill() if the current mode is 'ask' (lightweight Q&A) or if the relevant skill is already preloaded/defined in your system prompt context (e.g. karpathy-guidelines, pragmatic-minimalism, systematic-debugging, superagent-planning, writing-plans, executing-plans, track-management, subagent-driven-development, verification-before-completion, master-agent-orchestration).
 - QUERY CONSTRUCTION (critical for accurate results):
   - Build query from: [task_type] + [technology] + [goal]
   - Examples:
@@ -279,7 +279,9 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
   - If exploring/learning a new codebase or workspace: call get_skills(query) with a query containing "learn codebase architecture design technology" to find codebase structure, design systems, or coding standards.
   - If investigating/solving a new problem, bug, or exception: call get_skills(query) with a query detailing the issue, technology, and action words (e.g. "debug", "diagnose", "troubleshoot") to retrieve debugging and validation guides.
 - logic:
-  if skill_is_already_preloaded_in_prompt:
+  if current_mode_is_ask:
+      Do NOT call get_skills() or use_skill().
+  elif skill_is_already_preloaded_in_prompt:
       use the preloaded content directly. Do NOT call get_skills() or use_skill().
   elif skill_found:
       use skill via use_skill(skillName/path) -> follow instructions exactly. Do NOT guess/execute from memory.
