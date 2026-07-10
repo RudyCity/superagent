@@ -262,12 +262,22 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
   return `
 
 # SKILL DISCOVERY
-- RULE: call get_skills() before coding, planning, or executing commands.
+- RULE: call get_skills(query) BEFORE coding, planning, or executing any command.
+- QUERY CONSTRUCTION (critical for accurate results):
+  - Build query from: [task_type] + [technology] + [goal]
+  - Examples:
+    - "debug TypeScript compilation error in React component"
+    - "write TDD tests for async Node.js service"
+    - "deploy Next.js app to Vercel with environment variables"
+    - "refactor PostgreSQL schema for performance"
+    - "plan implementation for multi-agent orchestration feature"
+  - NEVER call get_skills() with an empty or single-word query.
+  - Use the user's actual request as the basis for the query — include tech stack, action, and goal.
 - logic:
   if skill_found:
-      call use_skill(skillName/path) -> follow instructions. Do NOT guess/execute from memory.
+      read SKILL.md via view_file(path) -> follow instructions exactly. Do NOT guess/execute from memory.
   else:
-      proceed directly.
-- LIMIT: do NOT repeatedly list/search directories if no skill matches.`;
+      proceed directly without searching further.
+- LIMIT: call get_skills() once per task. Do NOT retry with different queries if results are returned.`;
 }
 

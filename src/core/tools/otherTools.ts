@@ -1451,13 +1451,13 @@ export const managePlanTool: Tool = {
 
 export const getSkillsTool: Tool = {
   name: "get_skills",
-  description: "List all installed skills, including their names, descriptions, authors, and paths. Optionally filter by a search query.",
+  description: "List installed skills relevant to a specific task or query. Always provide a descriptive query so the AI can return the most relevant skills. If no query is given, returns all skills.",
   parameters: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "Optional search query to filter skills by name or description (case-insensitive).",
+        description: "Descriptive query of the task you need skills for. Be specific: include the task type (e.g. 'debug', 'test', 'deploy', 'refactor'), the technology (e.g. 'React', 'TypeScript', 'PostgreSQL'), and the goal (e.g. 'fix failing test', 'deploy to Vercel', 'optimize database queries'). More context = better results.",
       },
     },
     required: [],
@@ -1486,18 +1486,26 @@ export const getSkillsTool: Tool = {
               description: s.description,
             }));
 
-            const prompt = `You are a developer assistant analyzing a list of available specialized skills.
-The user is searching for skills relevant to the query: "${args.query}".
+            const prompt = `You are an expert at matching developer tasks to the correct specialized skill guides.
 
-Here is the list of available skills:
+Task/Query: "${args.query}"
+
+Available skills (index, name, description):
 ${JSON.stringify(candidates, null, 2)}
 
-Identify the indices of the skills that are semantically relevant to the user's query.
-A skill is relevant if its name or description covers, or is closely related to, the topics, technologies, tasks, or concepts mentioned in the query.
-Be inclusive: if the query mentions specific terms (like "rbac" or "role" or "user management"), then skills about authentication/authorization, security policies, identity management, or user databases are highly relevant.
+# MATCHING RULES
+- Match skills whose name or description directly addresses the task, technology, or workflow in the query.
+- TIER 1 (must include): Skills that are a direct, primary match for the exact task type (e.g. query says "debug" → include systematic-debugging, diagnosing-bugs).
+- TIER 2 (include if relevant): Skills that cover a closely related sub-task or prerequisite (e.g. query says "write tests" → include tdd, testing-anti-patterns, condition-based-waiting).
+- TIER 3 (skip): Skills that are only tangentially or thematically related but don't add actionable value for THIS specific query.
+- Be precise, not inclusive: prefer returning 3-6 highly relevant skills over 10+ loosely related ones.
+- If the query is about a specific technology (e.g. "React", "PostgreSQL", "Docker"), prioritize skills that explicitly mention that technology.
+- If the query mentions a workflow action (e.g. "deploy", "refactor", "review", "plan", "test"), prioritize skills for that exact action.
+- Return results ordered by relevance (most relevant index first).
+- Maximum 8 indices. Minimum 0.
 
-Return ONLY a JSON array of numbers representing the relevant skill indices (from the index field of each item in the list above). Example: [0, 2]
-If no skills are relevant, return an empty array: []`;
+Return ONLY a valid JSON array of integers (the index values). Example: [3, 7, 1]
+If nothing matches: []`;
 
             const result = await generateText({
               model,
@@ -1505,8 +1513,8 @@ If no skills are relevant, return an empty array: []`;
             });
 
             const filterResult = result.text;
-            const jsonMatch = filterResult.match(/\[\s*\d*\s*(?:,\s*\d*\s*)*\]/);
-            const indices: number[] = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+            const jsonMatch = filterResult.match(/\[\s*(?:\d+\s*(?:,\s*\d+\s*)*)?\]/);
+            const indices: number[] = jsonMatch ? JSON.parse(jsonMatch[0]).filter((i: any) => typeof i === "number" && i >= 0 && i < skills.length) : [];
             aiFiltered = indices.map(idx => skills[idx]).filter(Boolean);
             aiSuccess = true;
           }
