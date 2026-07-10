@@ -12,7 +12,7 @@ import {
 
 export const loginCommand: SlashCommand = {
   name: "login",
-  description: "Manage and authenticate provider profiles (add, list, remove)",
+  description: "Manage and authenticate provider profiles (add, list, remove, edit)",
   async execute(args, ctx) {
     const now = Date.now();
     if (!args) {
@@ -25,7 +25,8 @@ export const loginCommand: SlashCommand = {
         ctx.setWizardOptions?.([
           "1. List Configured Providers",
           "2. Create / Log in to a Provider",
-          "3. Delete / Remove a Provider"
+          "3. Delete / Remove a Provider",
+          "4. Edit an Existing Provider"
         ]);
         ctx.setWizardSelectedIndex?.(0);
       } else {
@@ -38,6 +39,8 @@ export const loginCommand: SlashCommand = {
             "  /login add custom <base_url> <api_key>",
             "  /login list",
             "  /login remove <provider_id>",
+            "  /login edit <provider_id> <new_api_key>",
+            "  /login edit <provider_id> custom <new_base_url> <new_api_key>",
           ].join("\n"),
           timestamp: now,
         });
@@ -50,7 +53,7 @@ export const loginCommand: SlashCommand = {
     const parts = args.split(/\s+/);
     const actionArg = parts[0].toLowerCase();
     
-    let action: "add" | "list" | "remove" | null = null;
+    let action: "add" | "list" | "remove" | "edit" | null = null;
     let shiftArgs = false;
 
     if (actionArg === "add") {
@@ -61,6 +64,9 @@ export const loginCommand: SlashCommand = {
       shiftArgs = true;
     } else if (actionArg === "remove") {
       action = "remove";
+      shiftArgs = true;
+    } else if (actionArg === "edit") {
+      action = "edit";
       shiftArgs = true;
     } else {
       // Backward compatibility fallback
@@ -81,7 +87,7 @@ export const loginCommand: SlashCommand = {
     if (!action) {
       ctx.addLine({
         type: "error",
-        content: `Error: Invalid subcommand "${parts[0]}". Supported subcommands: add, list, remove`,
+        content: `Error: Invalid subcommand "${parts[0]}". Supported subcommands: add, list, remove, edit`,
         timestamp: now,
       });
       return;
@@ -154,6 +160,96 @@ export const loginCommand: SlashCommand = {
         ctx.addLine({
           type: "error",
           content: `Failed to remove provider: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
+    if (action === "edit") {
+      if (subParts.length < 2) {
+        ctx.addLine({
+          type: "error",
+          content: "Error: /login edit requires <provider_id> and <new_api_key> or custom <new_base_url> <new_api_key>",
+          timestamp: now,
+        });
+        return;
+      }
+
+      const targetId = subParts[0].toLowerCase();
+      const providers = getProviders();
+      const target = providers.find(p => p.id === targetId);
+
+      if (!target) {
+        ctx.addLine({
+          type: "error",
+          content: `Error: Provider with ID "${targetId}" not found.`,
+          timestamp: now,
+        });
+        return;
+      }
+
+      let newApiKey = "";
+      let newBaseUrl = target.baseUrl;
+
+      if (subParts[1].toLowerCase() === "custom") {
+        if (subParts.length < 4) {
+          ctx.addLine({
+            type: "error",
+            content: "Error: /login edit <provider_id> custom requires <new_base_url> and <new_api_key>",
+            timestamp: now,
+          });
+          return;
+        }
+        newBaseUrl = subParts[2];
+        newApiKey = subParts[3];
+      } else {
+        newApiKey = subParts[1];
+      }
+
+      try {
+        addProvider({
+          id: target.id,
+          name: target.name,
+          provider: target.provider,
+          apiKey: newApiKey,
+          baseUrl: newBaseUrl,
+        });
+
+        switchActiveProvider(target.id);
+
+        let defaultModel = "gpt-4o";
+        if (target.provider === "openrouter") {
+          defaultModel = "google/gemini-2.5-flash";
+        } else if (target.provider === "anthropic") {
+          defaultModel = "claude-3-5-sonnet-20241022";
+        } else if (target.provider === "gemini") {
+          defaultModel = "gemini-2.5-flash";
+        }
+
+        const baseUrlInfo = newBaseUrl ? `\nBase URL: ${newBaseUrl}` : "";
+
+        ctx.addLine({
+          type: "system",
+          content: `Successfully updated provider profile: ${target.id} (${target.provider})${baseUrlInfo}\nSaved to model-config.json\nNote: Use /model to configure tier-specific models.`,
+          timestamp: now,
+        });
+
+        if (ctx.setActiveModel) {
+          ctx.setActiveModel(defaultModel);
+        }
+
+        fetchAndCacheModels()
+          .then(() => {
+            const limit = getContextWindowLimit(defaultModel);
+            if (ctx.setContextLimit) ctx.setContextLimit(limit);
+            if (ctx.setActiveModel) ctx.setActiveModel(defaultModel);
+          })
+          .catch(() => {});
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to update provider: ${err.message}`,
           timestamp: now,
         });
       }

@@ -972,6 +972,60 @@ describe("Slash Command: /login", () => {
       baseUrl: "https://openrouter.ai/api/v1",
     });
   });
+
+  it("should edit provider on /login edit <provider_id> <new_api_key>", async () => {
+    vi.spyOn(configModule, "getProviders").mockReturnValue([
+      {
+        id: "openrouter",
+        name: "openrouter",
+        provider: "openrouter",
+        apiKey: "sk-or-old-key",
+        baseUrl: "https://openrouter.ai/api/v1",
+      }
+    ]);
+    const addProviderSpy = vi.spyOn(configModule, "addProvider").mockImplementation(() => {});
+    const switchActiveProviderSpy = vi.spyOn(configModule, "switchActiveProvider").mockImplementation(() => {});
+    vi.spyOn(configModule, "fetchAndCacheModels").mockResolvedValue(undefined as any);
+
+    await handleSlashCommand("/login edit openrouter sk-or-new-key", mockCtx as any);
+
+    expect(addProviderSpy).toHaveBeenCalledWith({
+      id: "openrouter",
+      name: "openrouter",
+      provider: "openrouter",
+      apiKey: "sk-or-new-key",
+      baseUrl: "https://openrouter.ai/api/v1",
+    });
+    expect(switchActiveProviderSpy).toHaveBeenCalledWith("openrouter");
+    expect(addedLines[0].content).toContain("Successfully updated provider profile: openrouter (openrouter)");
+  });
+
+  it("should edit provider with custom options on /login edit <provider_id> custom <new_base_url> <new_api_key>", async () => {
+    vi.spyOn(configModule, "getProviders").mockReturnValue([
+      {
+        id: "custom-p",
+        name: "custom-p",
+        provider: "custom",
+        apiKey: "old-key",
+        baseUrl: "https://old.api/v1",
+      }
+    ]);
+    const addProviderSpy = vi.spyOn(configModule, "addProvider").mockImplementation(() => {});
+    const switchActiveProviderSpy = vi.spyOn(configModule, "switchActiveProvider").mockImplementation(() => {});
+    vi.spyOn(configModule, "fetchAndCacheModels").mockResolvedValue(undefined as any);
+
+    await handleSlashCommand("/login edit custom-p custom https://new.api/v1 new-key", mockCtx as any);
+
+    expect(addProviderSpy).toHaveBeenCalledWith({
+      id: "custom-p",
+      name: "custom-p",
+      provider: "custom",
+      apiKey: "new-key",
+      baseUrl: "https://new.api/v1",
+    });
+    expect(switchActiveProviderSpy).toHaveBeenCalledWith("custom-p");
+    expect(addedLines[0].content).toContain("Successfully updated provider profile: custom-p (custom)");
+  });
 });
 
 

@@ -86,6 +86,24 @@ export function useLoginWizard(ctx: LoginWizardContext) {
           setWizardOptions([]);
           setWizardSelectedIndex(0);
         }
+      } else if (choice.includes("edit") || choice === "4") {
+        const list = getConfiguredProviders();
+        if (list.length > 0) {
+          setActiveWizard({ type: "login", step: 17, data: {} });
+          setWizardOptions(list.map(
+            (p, i) => `${i + 1}. ${p.name} [${p.type || "unknown"}]${p.baseUrl ? ` (${p.baseUrl})` : ""}`
+          ));
+          setWizardSelectedIndex(0);
+        } else {
+          addLine({
+            type: "system",
+            content: `No providers configured yet.`,
+            timestamp: now,
+          });
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+        }
       } else {
         const list = getConfiguredProviders();
         if (list.length > 0) {
@@ -802,6 +820,144 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
         setWizardSelectedIndex(0);
       } else {
         addLine({ type: "system", content: "No more providers to delete.", timestamp: now });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+      }
+    } else if (step === 17) {
+      // Step 17: Select provider to edit
+      const providers = getConfiguredProviders();
+      const idx = parseInt(value, 10) - 1;
+      const selectedProvider = providers[idx];
+      if (!selectedProvider) {
+        addLine({ type: "error", content: "Invalid provider selection.", timestamp: now });
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        return;
+      }
+
+      const masked = selectedProvider.apiKey
+        ? (selectedProvider.apiKey.length <= 8 ? "*".repeat(selectedProvider.apiKey.length) : `${selectedProvider.apiKey.slice(0, 4)}...${selectedProvider.apiKey.slice(-4)}`)
+        : "None";
+
+      addLine({
+        type: "system",
+        content: `Editing provider: ${selectedProvider.name} [${selectedProvider.type}]\nCurrent API Key: ${masked}\nCurrent Base URL: ${selectedProvider.baseUrl || "None"}\n\nEnter new API Key (or press Enter to keep current):`,
+        timestamp: now,
+      });
+
+      setActiveWizard({
+        type: "login",
+        step: 18,
+        data: {
+          providerId: selectedProvider.id,
+          providerName: selectedProvider.name,
+          providerType: selectedProvider.type,
+          providerApiKey: selectedProvider.apiKey,
+          providerBaseUrl: selectedProvider.baseUrl || "",
+        },
+      });
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
+      setInput("");
+    } else if (step === 18) {
+      // Step 18: Enter new API Key
+      const newApiKey = value;
+      if (newApiKey.trim() !== "") {
+        data.providerApiKey = newApiKey.trim();
+        addLine({
+          type: "system",
+          content: "Updated API Key input.",
+          timestamp: now,
+        });
+      } else {
+        addLine({
+          type: "system",
+          content: "Kept current API Key.",
+          timestamp: now,
+        });
+      }
+
+      addLine({
+        type: "system",
+        content: `Enter new Base URL (or press Enter to keep current: ${data.providerBaseUrl || "None"}):`,
+        timestamp: now,
+      });
+
+      setActiveWizard({
+        type: "login",
+        step: 19,
+        data: {
+          ...data,
+        },
+      });
+      setWizardOptions([]);
+      setWizardSelectedIndex(0);
+      setInput("");
+    } else if (step === 19) {
+      // Step 19: Enter new Base URL and save
+      const newBaseUrl = value.trim();
+      if (newBaseUrl !== "") {
+        data.providerBaseUrl = newBaseUrl;
+        addLine({
+          type: "system",
+          content: `Updated Base URL: ${newBaseUrl}`,
+          timestamp: now,
+        });
+      } else {
+        addLine({
+          type: "system",
+          content: "Kept current Base URL.",
+          timestamp: now,
+        });
+      }
+
+      const pId = data.providerId || "";
+      const pName = data.providerName || "";
+      const pType = data.providerType || "";
+      const pApiKey = data.providerApiKey || "";
+      const pBaseUrl = data.providerBaseUrl || "";
+
+      try {
+        addProvider({
+          id: pId,
+          name: pName,
+          provider: pType,
+          apiKey: pApiKey,
+          baseUrl: pBaseUrl || undefined,
+        });
+
+        switchActiveProvider(pId);
+
+        addLine({
+          type: "system",
+          content: `Successfully updated provider profile: ${pName} (${pType})\nSaved to model-config.json`,
+          timestamp: now,
+        });
+
+        // Transition to connection test confirmation (step 7)
+        setActiveWizard({
+          type: "login",
+          step: 7,
+          data: {
+            providerId: pId,
+            providerName: pName,
+            providerType: pType,
+            providerApiKey: pApiKey,
+            providerBaseUrl: pBaseUrl,
+            fromList: "false",
+          },
+        });
+        setWizardOptions(["1. Yes, Test Connection", "2. No (Cancel Setup)"]);
+        setWizardSelectedIndex(0);
+        setInput("");
+      } catch (err: any) {
+        addLine({
+          type: "error",
+          content: `Failed to save credentials: ${err.message}`,
+          timestamp: now,
+        });
         setActiveWizard(null);
         setWizardOptions([]);
         setWizardSelectedIndex(0);

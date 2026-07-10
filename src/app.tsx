@@ -942,7 +942,8 @@ export function App({
         const loginSuggestions = [
           `${mainCommand} add`,
           `${mainCommand} list`,
-          `${mainCommand} remove`
+          `${mainCommand} remove`,
+          `${mainCommand} edit`
         ];
         return filterSuggestions(loginSuggestions, currentInput);
       }

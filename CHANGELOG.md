@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.238] - 2026-07-10
+
+### Added
+- **Edit Option to /login Command**:
+  - Added a new `edit` subcommand to `/login` for editing existing provider profiles: `/login edit <provider_id> [new_api_key]` and `/login edit <provider_id> custom <new_base_url> <new_api_key>`.
+  - Added "Edit an Existing Provider" option in the interactive `/login` wizard (Step 1).
+  - Implemented wizard steps to select a provider, edit the API Key, edit the Base URL, and run connection tests.
+  - Added full test coverage for slash command edits and wizard edit flows.
+
+---
+
 ## [1.2.237] - 2026-07-10
 
 ### Changed
