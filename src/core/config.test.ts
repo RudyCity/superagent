@@ -180,6 +180,37 @@ describe("config", () => {
     }
   });
 
+  it("should prioritize static limits over cache for known models", () => {
+    const cachePath = path.join(getGlobalConfigDir(), "models_cache.json");
+    
+    // Save existing cache file if it exists
+    let existingContent: string | null = null;
+    if (fs.existsSync(cachePath)) {
+      existingContent = fs.readFileSync(cachePath, "utf-8");
+    }
+
+    try {
+      // Ensure dir exists
+      fs.mkdirSync(getGlobalConfigDir(), { recursive: true });
+      fs.writeFileSync(cachePath, JSON.stringify({ 
+        "server_zenmuxglmn_preset_zenmux/x-ai/grok-4.5-free": 128000,
+        "claude-sonnet-5": 5000 
+      }), "utf-8");
+      
+      expect(getContextWindowLimit("server_zenmuxglmn_preset_zenmux/x-ai/grok-4.5-free")).toBe(500000);
+      expect(getContextWindowLimit("claude-sonnet-5")).toBe(5000);
+    } finally {
+      // Clean up
+      if (existingContent !== null) {
+        fs.writeFileSync(cachePath, existingContent, "utf-8");
+      } else {
+        try {
+          fs.unlinkSync(cachePath);
+        } catch {}
+      }
+    }
+  });
+
   it("should fallback to rich static lookups if not cached", () => {
     expect(getContextWindowLimit("google/gemini-2.5-flash")).toBe(1048576);
     expect(getContextWindowLimit("deepseek-chat")).toBe(131072);
@@ -199,6 +230,7 @@ describe("config", () => {
     expect(getContextWindowLimit("claude-opus-5")).toBe(1000000);
     expect(getContextWindowLimit("x-ai/grok-4.5")).toBe(500000);
     expect(getContextWindowLimit("grok-4.5")).toBe(500000);
+    expect(getContextWindowLimit("server_zenmuxglmn_preset_zenmux/x-ai/grok-4.5-free")).toBe(500000);
 
     // Explicit and dynamic free models
     expect(getContextWindowLimit("google/gemma-4-26b-a4b-it:free")).toBe(262144);

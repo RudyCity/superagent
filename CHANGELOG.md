@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.227] - 2026-07-10
+
+### Fixed
+- Model Limits: Prioritized rich static limit lookups over `models_cache.json` in `getContextWindowLimit()` to prevent placeholder/generic limits (like 128k) from custom endpoints or proxies overriding known limits.
+- Suffix Stripping: Added support for stripping `-free` suffixes in addition to `:free` suffixes when determining model limits.
+
+---
+
 ## [1.2.226] - 2026-07-10
 
 ### Changed

@@ -476,8 +476,14 @@ export const MODEL_LIMITS: Record<string, number> = {
 export function getStaticModelLimit(model: string): number | null {
   let m = model.toLowerCase();
 
-  // Strip :free suffix if present to resolve to base models
+  // Strip :free or -free suffix if present to resolve to base models
   if (m.endsWith(":free")) {
+    // Check direct exact match with free suffix first
+    if (MODEL_LIMITS[m]) {
+      return MODEL_LIMITS[m];
+    }
+    m = m.slice(0, -5);
+  } else if (m.endsWith("-free")) {
     // Check direct exact match with free suffix first
     if (MODEL_LIMITS[m]) {
       return MODEL_LIMITS[m];
