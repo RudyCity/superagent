@@ -54,7 +54,7 @@ export type AgentEvent =
   | { type: "text"; content: string }
   | { type: "reasoning"; content: string }
   | { type: "tool_start"; toolCall: ToolCall; description: string }
-  | { type: "tool_end"; toolResult: ToolResult; description: string }
+  | { type: "tool_end"; toolResult: ToolResult; description: string; toolCall?: ToolCall }
   | { type: "error"; message: string }
   | { type: "done" }
   | { type: "goal_done"; goal: string; summary: string }
@@ -2905,7 +2905,7 @@ for (const tc of toolCalls) {
             throw err;
           }
           toolResults.push(toolResult);
-          this.onEvent({ type: "tool_end", toolResult, description });
+          this.onEvent({ type: "tool_end", toolResult, description, toolCall: tc });
         }
 
         this.conversation.addAssistantMessage(

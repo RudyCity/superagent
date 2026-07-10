@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.230] - 2026-07-10
+
+### Fixed
+- **Bulk Tool Result Display**: When clicking to expand a bulk tool call in the conversation log, the output section now lists all files that were read or edited instead of showing a truncated 500-character raw dump.
+  - `read` with `filePaths` array: shows "Read N files:" followed by each file path.
+  - `edit` with `edits` array (multi-file): shows "Edited N files:" followed by each unique file path.
+  - `write` with `files` array: shows "Wrote N files:" followed by each file path.
+  - `apply_patch` with `patches` array: shows "Patched N files:" followed by each file path.
+  - Single-file and non-bulk tools continue to show truncated raw output as before.
+- Added `toolCall?: ToolCall` to the `tool_end` `AgentEvent` type in `agent.ts` and pass `toolCall: tc` at the main execution emit site so the UI can access the original tool arguments when building the expanded result view.
+
+---
+
 ## [1.2.229] - 2026-07-10
 
 ### Changed

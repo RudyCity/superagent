@@ -1621,9 +1621,63 @@ export function App({
               customTitleEnd = `[SKILL] Loaded instructions for: ${skillName}`;
             }
           }
-          const resultContent = r.isError
-            ? `Detail: ${r.result}`
-            : `Output: ${r.result.slice(0, 500)}${r.result.length > 500 ? "..." : ""}`;
+
+          // Build result content — for bulk tools, list all files instead of truncating raw output
+          let resultContent: string;
+          if (r.isError) {
+            resultContent = `Detail: ${r.result}`;
+          } else {
+            const tcArgs = event.toolCall?.args;
+            // Bulk read: filePaths array with 2+ entries
+            if (
+              tcArgs?.filePaths &&
+              Array.isArray(tcArgs.filePaths) &&
+              tcArgs.filePaths.length > 1
+            ) {
+              const paths: string[] = tcArgs.filePaths.map((p: any) =>
+                typeof p === "string" ? p : (p?.path ?? String(p))
+              );
+              resultContent = `Output: Read ${paths.length} files:\n${paths.map((p) => `  ${p}`).join("\n")}`;
+            // Bulk edit: edits array with multiple unique file paths
+            } else if (
+              tcArgs?.edits &&
+              Array.isArray(tcArgs.edits) &&
+              tcArgs.edits.length > 0
+            ) {
+              const uniquePaths = Array.from(
+                new Set(tcArgs.edits.map((e: any) => e.filePath ?? e.path).filter(Boolean))
+              ) as string[];
+              if (uniquePaths.length > 1) {
+                resultContent = `Output: Edited ${uniquePaths.length} files:\n${uniquePaths.map((p) => `  ${p}`).join("\n")}`;
+              } else {
+                resultContent = `Output: ${r.result.slice(0, 500)}${r.result.length > 500 ? "..." : ""}`;
+              }
+            // Bulk write: files array with 2+ entries
+            } else if (
+              tcArgs?.files &&
+              Array.isArray(tcArgs.files) &&
+              tcArgs.files.length > 1
+            ) {
+              const paths = Array.from(
+                new Set(tcArgs.files.map((f: any) => f.filePath ?? f.path).filter(Boolean))
+              ) as string[];
+              resultContent = `Output: Wrote ${paths.length} files:\n${paths.map((p) => `  ${p}`).join("\n")}`;
+            // Bulk patch: patches array with 2+ entries
+            } else if (
+              tcArgs?.patches &&
+              Array.isArray(tcArgs.patches) &&
+              tcArgs.patches.length > 1
+            ) {
+              const paths = Array.from(
+                new Set(tcArgs.patches.map((p: any) => p.filePath ?? p.path).filter(Boolean))
+              ) as string[];
+              resultContent = `Output: Patched ${paths.length} files:\n${paths.map((p) => `  ${p}`).join("\n")}`;
+            } else {
+              // Default: truncate raw output
+              resultContent = `Output: ${r.result.slice(0, 500)}${r.result.length > 500 ? "..." : ""}`;
+            }
+          }
+
           // Patch the matching tool_start child with the result — no separate tool_end child needed
           patchLastToolStart({
             isError: !!r.isError,
@@ -1632,6 +1686,7 @@ export function App({
           });
           break;
         }
+
 
         case "error":
           if (streamTimeoutRef.current) {
