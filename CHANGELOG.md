@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.235] - 2026-07-10
+
+### Changed
+- **get_skills Prompt Optimization**:
+  - Updated `loadAgentSkills` query construction instructions to guide agents to use specific queries when exploring a codebase (e.g. `learn codebase design technology`) or diagnosing a new problem (e.g. `[problem] [technology] debug`).
+  - Replaced empty `call get_skills()` references in Master Agent, Researcher, Coder, and Reviewer system prompts with query-based `call get_skills(query)` alongside inline examples to discourage empty queries and optimize matching precision.
+
+---
+
 ## [1.2.234] - 2026-07-10
 
 ### Added

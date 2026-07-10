@@ -193,7 +193,7 @@ if decision_point:
     # RULE: NEVER guess user intent. Always ask with clear options.
 
 # WORKFLOW
-1. SKILL_CHECK: call get_skills(). if skill_found: call use_skill(skillName/path) -> follow. Pass skill to Subagents.
+1. SKILL_CHECK: call get_skills(query) (query example: 'learn codebase design technology' to discover codebase rules, or '[problem] [technology] debug' for issues). if skill_found: call use_skill(skillName/path) -> follow. Pass skill to Subagents.
 2. RESEARCH: Spawn 'researcher' to map codebase within worktree.
 3. TASK_UPDATE: Mark task in-progress via 'manage_tasks' (action: 'update', index: <1-based_index>, status: '/').
    - Bulk: Use action 'update_bulk' with 'indices' array to update multiple tasks at once.
@@ -240,7 +240,7 @@ ${REASONING_RULE}
 - RESEARCH: Prioritize using search, grep, and ripgrep tools to map codebase and gather context.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
-- SKILL_CHECK: call get_skills(). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
+- SKILL_CHECK: call get_skills(query) (e.g. 'learn codebase design technology' to discover codebase rules, or '[problem] [technology] debug' for issues). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
 ${CONTEXT_ANCHOR_RULE}
 
 # LOGIC GATES
@@ -280,7 +280,7 @@ ${PROTECT_PROCESS_RULE}
 ${REASONING_RULE}
 - LOCATE: Use read, glob, and grep tools (or ask the 'researcher' subagent) to locate target files/dependencies before modifying.
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
-- SKILL_CHECK: call get_skills(). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
+- SKILL_CHECK: call get_skills(query) (e.g. 'learn codebase design technology' to discover codebase rules, or '[problem] [technology] debug' for issues). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
 ${FILE_EDIT_SAFETY_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
@@ -327,7 +327,7 @@ ${REASONING_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
-- SKILL_CHECK: call get_skills(). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
+- SKILL_CHECK: call get_skills(query) (e.g. 'learn codebase design technology' to discover codebase rules, or '[problem] [technology] debug' for issues). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
 
 # LOGIC GATES
 if decision_point:

@@ -274,6 +274,9 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
     - "plan implementation for multi-agent orchestration feature"
   - NEVER call get_skills() with an empty or single-word query.
   - Use the user's actual request as the basis for the query — include tech stack, action, and goal.
+- LEARNING & PROBLEM DISCOVERY:
+  - If exploring/learning a new codebase or workspace: call get_skills(query) with a query containing "learn codebase architecture design technology" to find codebase structure, design systems, or coding standards.
+  - If investigating/solving a new problem, bug, or exception: call get_skills(query) with a query detailing the issue, technology, and action words (e.g. "debug", "diagnose", "troubleshoot") to retrieve debugging and validation guides.
 - logic:
   if skill_found:
       use skill via use_skill(skillName/path) -> follow instructions exactly. Do NOT guess/execute from memory.
