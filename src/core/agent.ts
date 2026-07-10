@@ -1457,7 +1457,7 @@ WHEN YOU SHOULD DELEGATE TO A SUBAGENT (non-exhaustive):
 
 SKILL USAGE — MANDATORY:
 You have access to INSTALLED AGENT SKILLS listed above. You MUST use them.
-BEFORE starting any task, identify which skill(s) are relevant and read their SKILL.md file using the view_file tool.
+BEFORE starting any task, identify which skill(s) are relevant and load them using the use_skill tool.
 Skill categories to always check:
 - Debugging/investigation → 'systematic-debugging', 'root-cause-tracing', 'diagnosing-bugs'
 - New feature/development → 'writing-plans', 'subagent-driven-development', 'test-driven-development-tdd'

@@ -276,7 +276,7 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
   - Use the user's actual request as the basis for the query — include tech stack, action, and goal.
 - logic:
   if skill_found:
-      read SKILL.md via view_file(path) -> follow instructions exactly. Do NOT guess/execute from memory.
+      use skill via use_skill(skillName/path) -> follow instructions exactly. Do NOT guess/execute from memory.
   else:
       proceed directly without searching further.
 - LIMIT: call get_skills() once per task. Do NOT retry with different queries if results are returned.`;

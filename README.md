@@ -32,7 +32,6 @@ Unlike standard headless execution bots or basic shell wrappers, Superagent is d
 - **Mandatory Interactive Decision Points**: All agent tiers (Master, Superagent, Subagent) are required to use the `ask_question` tool at every decision point — choosing implementations, resolving ambiguity, or selecting approaches — ensuring the AI never guesses or assumes on the user's behalf.
 - **AI-Guided Preset Initialization**: Configure your workspace commands effortlessly. Superagent scans your codebase structure (such as dependencies, packages, and scripts) to automatically recommend, select, and construct terminal command presets with the `/terminal init` wizard.
 - **Multimodal Image Paste & Path Detection**: Drag-and-drop or paste an image file path (like `D:\images\screenshot.png`) directly into the prompt to auto-attach it. Press `Ctrl+V` to automatically capture image binary data from your system clipboard (cross-platform support for Windows, macOS, and Linux). Attached images are rendered in a sleek visual queue above the prompt and transmitted as high-fidelity multimodal inputs to vision-capable models (e.g. Claude 3.5 Sonnet, GPT-4o), with automatic token tracking.
-- **Local-First Agent Long-Term Memory**: Integrates the local **TencentDB Agent Memory** system using a 4-tier progressive memory pipeline (Conversation, Atom, Scenario, Persona). It automatically structures conversation turns into high-density vector databases (`vectors.db` via SQLite vector search) and markdown documents in your user profile (`~/.superagent-r/tencentdb-memory/`). Agents can autonomously call `tdai_memory_search`, `tdai_conversation_search`, and `tdai_read_cos` to recall past decisions, preferences, and solutions cross-session. Setup is fully zero-config: starting the CLI automatically spins up and heals the gateway in the background asynchronously when enabled.
 - **Internal Hooks — Custom Agent Tools**: Extend Superagent's toolset with your own executable scripts directly from your project. Place a script in `internal-hooks/<name>/` with a `hook.json` schema definition and an `index.js` entrypoint. Hooks are auto-discovered on startup and registered as first-class agent tools. Use `/ih init <name>` to scaffold the project, `/ih dev <name>` to run and test it locally, and `/ih active` to pick which hooks are active via an interactive multi-select checkbox dialog. Active selections are persisted per-project in `~/.superagent-r/model-config.json`.
 
 ---
@@ -226,15 +225,6 @@ Built into the core agent loop (`agent.ts`), the auto-checkpoint system:
 ### 6. Atomic Config Persistence
 Model configuration (`model-config.json`) uses atomic write operations to prevent file corruption. If the process is interrupted (e.g., Ctrl+C), the config file remains intact — writes are first written to a temporary file and then atomically renamed, ensuring zero risk of partial/corrupt state.
 
-### 7. TencentDB Memory Gateway Integration & Auto-Setup
-Superagent provides deep, local-first integration with the **TencentDB Agent Memory** gateway server:
-- **Zero-Config Self-Healing Startup**: When `enableTencentdbMemory` is set to `true`, launching Superagent triggers a fully asynchronous, non-blocking check. If the gateway is offline, it automatically clones the repository, installs all dependencies, and spawns the server in the background as a detached process on port 8420. The startup logic runs asynchronously in the background so it never blocks or slows down CLI boot.
-- **Strict Tag v1.0.0 Pinning**: To guarantee compatibility, the repository is automatically checked out to stable release tag `v1.0.0`. If the version mismatch is detected, existing `node_modules` are automatically cleaned up to force a fresh reinstall.
-- **Windows Postinstall Bypass**: Dependency installation automatically uses `--ignore-scripts` to bypass problematic pre/postinstall build steps on Windows, ensuring out-of-the-box support without external build toolchains.
-- **Global Storage Isolation**: The database file and all extracted memories are stored globally under `~/.superagent-r/tencentdb-memory/vectors.db`, keeping the active workspace clean and sharing your memories across all projects you work on.
-- **Dynamic Preset & Provider Resolution**: Decoupled LLM configuration by querying `getTierModelWithProvider()` for a dedicated `"memory"` or `"tencentdb"` tier preset (configured via `/model`). If set, the gateway inherits its specific provider's API key, base URL, and model. If no specific memory preset is found, it falls back to the active provider and master model, injecting them into the gateway's environment variables (`TDAI_LLM_API_KEY`, `TDAI_LLM_BASE_URL`, `TDAI_LLM_MODEL`).
-- **Clean Process Teardown & Monitoring**: Deactivating via `/setting-tencentdb off` automatically terminates the local gateway process running on port 8420 to free up system resources. You can inspect the status and details of the background gateway process with `/setting-tencentdb show-bg-procs`.
-
 ### 8. Chrome Extension Integration & Local Server
 Superagent features a built-in REST API and Server-Sent Events (SSE) server (`server.ts`) that enables two-way integration with the browser via a Chrome Extension SidePanel:
 - **Local Server Engine**: Run with `superagent --server`, starting an HTTP server on port 7888 (or custom port). The CLI automatically trust-checks the workspace directory initialized by the browser client.
@@ -415,7 +405,7 @@ Superagent supports a wide range of slash commands within the terminal chat to m
 ### Provider & Model Settings
 - **`/login`**: Opens a visual wizard to add API credentials, switch active providers, or list configured providers. You can also log in directly via `/login <key>` or `/login custom <base_url> <key>`.
 - **`/model <name>`**: Switches the active Large Language Model (e.g., `/model openai/gpt-4o` or `/model google/gemini-2.5-flash`). Running without arguments prints the active model name.
-- **`/setting-tencentdb`**: Configures the local TencentDB Agent Memory gateway. Subcommands: `/setting-tencentdb on` (activates memory and spawns gateway), `/setting-tencentdb off` (deactivates memory and stops gateway), `/setting-tencentdb status` (checks connection health and offline status), and `/setting-tencentdb show-bg-procs` (lists active gateway background processes).
+
 
 ---
 
