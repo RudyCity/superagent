@@ -346,6 +346,37 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 17 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="🔌 EDIT PROVIDER — Select provider (↑/↓ Navigate, Enter: Select, Esc: Back):"
+            description="Select a provider to edit its credentials:"
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+            maxVisible={10}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 18 && (
+          <WizardDialog
+            title="🔌 EDIT PROVIDER — API KEY (Type & Enter, Esc: Back):"
+            description={`Enter new API Key for "${activeWizard.data.providerName || ""}" (or press Enter to keep current):`}
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "login" && activeWizard.step === 19 && (
+          <WizardDialog
+            title="🔌 EDIT PROVIDER — BASE URL (Type & Enter, Esc: Back):"
+            description={`Enter new Base URL for "${activeWizard.data.providerName || ""}" (or press Enter to keep current: ${activeWizard.data.providerBaseUrl || "None"}):`}
+            borderColor="cyan"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
         {activeWizard && activeWizard.type === "model" && activeWizard.step === 1 && wizardOptions.length > 0 && (
           <WizardDialog
             title="⚙️ SELECT AGENT TIER TO CONFIGURE (Use Arrow Keys Up/Down & Enter):"
