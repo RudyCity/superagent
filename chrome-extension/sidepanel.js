@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:3000";
+const BASE_URL = "http://localhost:7888";
 
 let eventSource = null;
 let currentAgentMessageElement = null;

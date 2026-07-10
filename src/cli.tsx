@@ -7,14 +7,14 @@ Usage: superagent [options] [prompt]
 Options:
   -r, --resume      Resume the last active session
   --multi           Start in Multi Superagent master orchestrator mode
-  -s, --server [P]  Start API server for Chrome Extension (default port: 3000)
+  -s, --server [P]  Start API server for Chrome Extension (default port: 7888)
   -h, --help        Show this help message and exit
 
 Examples:
   superagent
   superagent --resume
   superagent --multi
-  superagent --server 3000
+  superagent --server 7888
   superagent "explain quantum computing in simple terms"
 `);
   process.exit(0);
@@ -22,7 +22,7 @@ Examples:
 
 const serverIndex = process.argv.findIndex(arg => arg === "--server" || arg === "-s");
 if (serverIndex !== -1) {
-  let port = 3000;
+  let port = 7888;
   if (serverIndex + 1 < process.argv.length) {
     const nextArg = process.argv[serverIndex + 1];
     const parsed = parseInt(nextArg, 10);

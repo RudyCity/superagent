@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.219] - 2026-07-10
+
+### Changed
+- Configuration: Updated default local server port from 3000 to 7888 across the extension client, CLI parser, and documentation.
+
+---
+
 ## [1.2.218] - 2026-07-10
 
 ### Added

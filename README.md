@@ -237,7 +237,7 @@ Superagent provides deep, local-first integration with the **TencentDB Agent Mem
 
 ### 8. Chrome Extension Integration & Local Server
 Superagent features a built-in REST API and Server-Sent Events (SSE) server (`server.ts`) that enables two-way integration with the browser via a Chrome Extension SidePanel:
-- **Local Server Engine**: Run with `superagent --server`, starting an HTTP server on port 3000 (or custom port). The CLI automatically trust-checks the workspace directory initialized by the browser client.
+- **Local Server Engine**: Run with `superagent --server`, starting an HTTP server on port 7888 (or custom port). The CLI automatically trust-checks the workspace directory initialized by the browser client.
 - **Bi-directional Streaming (SSE)**: Streams real-time thoughts, reasoning blocks, and tool executions to the Chrome SidePanel dynamically.
 - **Interactive Prompts Overlays**: Intercepts tool execution permissions and question requests from active agents, routing them to the Chrome sidepanel as responsive overlay forms for immediate user authorization and feedback.
 - **Browser Automation Capabilities**: Empowers the assistant to interact with active browser tabs by capturing tab content (grab page text or selection context), taking visible screenshots, reading client-side console error logs, and executing automated page tasks (navigation, scroll, click, and text entry).
@@ -314,9 +314,9 @@ Superagent includes a developer Chrome Extension that provides a cyberpunk-theme
 5. The extension "Superagent AI Coding SidePanel" is now ready. Click the extension icon in Chrome or pin it to open the sidepanel interface.
 
 #### Usage
-1. Start the Superagent local server (by default it listens on port 3000):
+1. Start the Superagent local server (by default it listens on port 7888):
    ```bash
-   superagent --server 3000
+   superagent --server 7888
    ```
 2. Open the sidepanel extension in Chrome.
 3. Input the absolute path of your workspace folder in the **Workspace Path** input field.
