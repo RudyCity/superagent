@@ -1669,5 +1669,87 @@ export const controlBrowserTabTool: Tool = {
   }
 };
 
+export const useSkillTool: Tool = {
+  name: "use_skill",
+  description: "Activate and load the instructions for a specific skill. Provide either the exact skill name (e.g. 'systematic-debugging') or the absolute path to the skill's SKILL.md file. This returns the complete contents of the skill's instructions so you can follow them.",
+  parameters: {
+    type: "object",
+    properties: {
+      skillName: {
+        type: "string",
+        description: "The name of the skill to use (e.g., 'systematic-debugging', 'test-driven-development-tdd', 'getting-started-with-skills').",
+      },
+      path: {
+        type: "string",
+        description: "The absolute path to the skill's SKILL.md file, if known.",
+      },
+    },
+    required: [],
+  },
+  async execute(args, cwd, signal) {
+    try {
+      const { getInstalledSkills } = await import("../config.js");
+      const skills = getInstalledSkills();
+      const skillName = typeof args.skillName === "string" ? args.skillName.trim() : undefined;
+      const skillPath = typeof args.path === "string" ? args.path.trim() : undefined;
+
+      if (!skillName && !skillPath) {
+        return "Error: You must provide either 'skillName' or 'path' to use a skill.";
+      }
+
+      let foundSkill = null;
+
+      if (skillPath) {
+        foundSkill = skills.find(s => s.path === skillPath);
+        if (!foundSkill) {
+          const fs = await import("fs");
+          if (fs.existsSync(skillPath)) {
+            foundSkill = {
+              name: path.basename(path.dirname(skillPath)),
+              description: "Custom skill file directly provided via path.",
+              path: skillPath,
+            };
+          }
+        }
+      }
+
+      if (!foundSkill && skillName) {
+        const queryLower = skillName.toLowerCase();
+        foundSkill = skills.find(s => s.name.toLowerCase() === queryLower);
+        if (!foundSkill) {
+          foundSkill = skills.find(s => {
+            const folderName = path.basename(path.dirname(s.path)).toLowerCase();
+            return folderName === queryLower ||
+                   folderName.replace(/-/g, "_") === queryLower.replace(/-/g, "_");
+          });
+        }
+      }
+
+      if (!foundSkill) {
+        const availableNames = skills.map(s => `"${s.name}"`).join(", ");
+        return `Error: Skill "${skillName || skillPath}" not found. Available skills: ${availableNames}`;
+      }
+
+      const fs = await import("fs");
+      if (!fs.existsSync(foundSkill.path)) {
+        return `Error: Skill instruction file not found at path: ${foundSkill.path}`;
+      }
+
+      const content = fs.readFileSync(foundSkill.path, "utf-8");
+      
+      let output = `### Activated Skill: ${foundSkill.name}\n`;
+      output += `**Path**: ${foundSkill.path}\n`;
+      output += `**Description**: ${foundSkill.description}\n\n`;
+      output += `#### Skill Instructions (Read and follow carefully):\n`;
+      output += `\`\`\`markdown\n${content}\n\`\`\``;
+
+      return output;
+    } catch (err: any) {
+      return `Error using skill: ${err.message}`;
+    }
+  }
+};
+
+
 
 

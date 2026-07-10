@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { getSkillsTool } from "../src/core/tools/otherTools.js";
+import { getSkillsTool, useSkillTool } from "../src/core/tools/otherTools.js";
 
 // Mock the config module
 vi.mock("../src/core/config.js", () => {
@@ -171,3 +171,55 @@ describe("get_skills Tool", () => {
     expect(result).toContain("Mock content of /path/to/mock-skill/SKILL.md");
   });
 });
+
+describe("use_skill Tool", () => {
+  it("should return error when no arguments are provided", async () => {
+    const result = await useSkillTool.execute({}, "/cwd");
+    expect(result).toContain("Error: You must provide either 'skillName' or 'path' to use a skill.");
+  });
+
+  it("should successfully retrieve skill by name", async () => {
+    const { getInstalledSkills } = await import("../src/core/config.js");
+    vi.mocked(getInstalledSkills).mockReturnValue([
+      {
+        name: "systematic-debugging",
+        description: "Standard debugging skill",
+        path: "/path/to/debug/SKILL.md",
+      },
+    ]);
+
+    const result = await useSkillTool.execute({ skillName: "systematic-debugging" }, "/cwd");
+    expect(result).toContain("### Activated Skill: systematic-debugging");
+    expect(result).toContain("Mock content of /path/to/debug/SKILL.md");
+  });
+
+  it("should successfully retrieve skill by path", async () => {
+    const { getInstalledSkills } = await import("../src/core/config.js");
+    vi.mocked(getInstalledSkills).mockReturnValue([
+      {
+        name: "systematic-debugging",
+        description: "Standard debugging skill",
+        path: "/path/to/debug/SKILL.md",
+      },
+    ]);
+
+    const result = await useSkillTool.execute({ path: "/path/to/debug/SKILL.md" }, "/cwd");
+    expect(result).toContain("### Activated Skill: systematic-debugging");
+    expect(result).toContain("Mock content of /path/to/debug/SKILL.md");
+  });
+
+  it("should return error when skill is not found", async () => {
+    const { getInstalledSkills } = await import("../src/core/config.js");
+    vi.mocked(getInstalledSkills).mockReturnValue([
+      {
+        name: "React Basics",
+        description: "React basics skill",
+        path: "/path/to/react/SKILL.md",
+      },
+    ]);
+
+    const result = await useSkillTool.execute({ skillName: "Vue Basics" }, "/cwd");
+    expect(result).toContain("Error: Skill \"Vue Basics\" not found.");
+  });
+});
+

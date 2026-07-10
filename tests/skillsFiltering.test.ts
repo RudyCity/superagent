@@ -6,6 +6,6 @@ describe("Agent Skills Prompt Instructions", () => {
     const prompt = loadAgentSkills();
     expect(prompt).toContain("INSTALLED AGENT SKILLS & MANDATORY DISCOVERY RULES");
     expect(prompt).toContain("get_skills");
-    expect(prompt).toContain("read its `SKILL.md`");
+    expect(prompt).toContain("use_skill");
   });
 });

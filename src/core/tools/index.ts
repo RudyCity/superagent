@@ -77,6 +77,7 @@ import {
   listPeerSuperagentsTool,
   managePlanTool,
   getSkillsTool,
+  useSkillTool,
   controlBrowserTabTool
 } from "./otherTools.js";
 
@@ -119,6 +120,7 @@ export const allTools: Tool[] = [
   listPeerSuperagentsTool,
   managePlanTool,
   getSkillsTool,
+  useSkillTool,
   controlBrowserTabTool,
   manageMcpTool,
   tdaiMemorySearchTool,

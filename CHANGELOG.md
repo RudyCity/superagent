@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.223] - 2026-07-10
+
+### Added
+- Skill Execution: Added `use_skill` tool to explicitly activate and load instructions for specialized skills.
+- Toolsets Integration: Registered `use_skill` tool in all agent tier toolsets (Master, Superagent, Subagents) and default subagent toolset.
+- System Prompts: Updated system prompts (Master, Researcher, Coder, Reviewer) and dynamic skill loading configuration to mandate calling `use_skill` when relevant skills are found.
+- Verification: Added comprehensive unit tests in `tests/skillsTool.test.ts` and updated assertions in `tests/skillsFiltering.test.ts`.
+
+---
+
 ## [1.2.222] - 2026-07-10
 
 ### Fixed
