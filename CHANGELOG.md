@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.221] - 2026-07-10
+
+### Fixed
+- Security & Compatibility: Resolved CSP (Content Security Policy) violations on external websites by migrating the console error interception script to a dedicated native main-world content script (`main-world.js`) registered via `manifest.json`, eliminating inline script tag injection.
+
+---
+
 ## [1.2.220] - 2026-07-10
 
 ### Fixed
