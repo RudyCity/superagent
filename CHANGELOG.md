@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.225] - 2026-07-10
+
+### Added
+- Configurable Tiers: Added dedicated model preset configuration options for the request `classifier` and `tencentdb` subagent/gateway tiers.
+- Wizard & UI: Updated the terminal model configuration wizard and the keyboard handler's selection menu to support configuring classifier and tencentdb models.
+- Core Agent Integration: Updated request classification to use the dedicated classifier tier model (resolved via getModelInstanceForTier) rather than falling back to the main agent model by default.
+- Robustness: Migrated keyboard handler model selections from index-based mapping to string-based parsing, resolving wizard test breaks.
+
+---
+
 ## [1.2.224] - 2026-07-10
 
 ### Changed

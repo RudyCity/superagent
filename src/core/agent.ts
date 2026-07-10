@@ -968,8 +968,8 @@ If none of the options are suitable, still pick the closest one.`;
         if (settings.classifierEnabled !== false) {
           // Multi-category request classification for token optimization
           const { classifyRequest } = await import("./requestClassifier.js");
-          const model = this.getModel();
-          const classification = await classifyRequest(userInput, model, {
+          const classifierModel = getModelInstanceForTier("subagent", 2, "classifier", !this.isMultiAgent);
+          const classification = await classifyRequest(userInput, classifierModel, {
             confidenceThreshold: settings.classifierConfidenceThreshold ?? "high",
             customKeywords: settings.classifierKeywords as any,
             skipLLM: false,

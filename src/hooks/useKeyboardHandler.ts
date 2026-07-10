@@ -797,6 +797,10 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             const coderModelFormatted = rawCoder ? getResolvedModelWithProvider(rawCoder, false) : `(use default: ${subagentModelFormatted})`;
             const rawReviewer = getTierModel(kbMode, "reviewer") || "";
             const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
+            const rawClassifier = getTierModel(kbMode, "classifier") || "";
+            const classifierModelFormatted = rawClassifier ? getResolvedModelWithProvider(rawClassifier, false) : `(use default: ${subagentModelFormatted})`;
+            const rawTencentdb = getTierModel(kbMode, "tencentdb") || "";
+            const tencentdbModelFormatted = rawTencentdb ? getResolvedModelWithProvider(rawTencentdb, false) : `(use default: ${subagentModelFormatted})`;
 
             setActiveWizard({
               type: "model",
@@ -810,7 +814,9 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               `4. Subagent: researcher (${researcherModelFormatted})`,
               `5. Subagent: coder (${coderModelFormatted})`,
               `6. Subagent: reviewer (${reviewerModelFormatted})`,
-              `7. All Tiers (Overwrite All)`,
+              `7. Subagent: classifier (${classifierModelFormatted})`,
+              `8. Subagent: tencentdb (${tencentdbModelFormatted})`,
+              `9. All Tiers (Overwrite All)`,
               `< Back`
             ]);
             setWizardSelectedIndex(0);
@@ -828,8 +834,19 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           return;
         }
         if (key.return) {
-          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "all", "back"];
-          const tier = tiers[wizardSelectedIndex];
+          const selectedOpt = (wizardOptions[wizardSelectedIndex] || "").toLowerCase();
+          let tier = "";
+          if (selectedOpt.includes("master")) tier = "master";
+          else if (selectedOpt.includes("superagent")) tier = "superagent";
+          else if (selectedOpt.includes("researcher")) tier = "researcher";
+          else if (selectedOpt.includes("coder")) tier = "coder";
+          else if (selectedOpt.includes("reviewer")) tier = "reviewer";
+          else if (selectedOpt.includes("classifier")) tier = "classifier";
+          else if (selectedOpt.includes("tencentdb")) tier = "tencentdb";
+          else if (selectedOpt.includes("subagent")) tier = "subagent";
+          else if (selectedOpt.includes("all")) tier = "all";
+          else if (selectedOpt.includes("back") || selectedOpt.startsWith("<")) tier = "back";
+
           if (!tier) return;
 
           if (tier === "back") {
