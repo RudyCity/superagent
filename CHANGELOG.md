@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.222] - 2026-07-10
+
+### Fixed
+- Browse Dialog: Resolved issues with the Windows FolderBrowserDialog by executing PowerShell with the `-NoProfile -ExecutionPolicy Bypass` flags and passing a topmost form owner to force the dialog window to the foreground.
+
+---
+
 ## [1.2.221] - 2026-07-10
 
 ### Fixed

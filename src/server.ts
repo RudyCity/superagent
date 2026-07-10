@@ -369,15 +369,18 @@ export async function runServer(port: number) {
           if (platform === "win32") {
             const commands = [
               'Add-Type -AssemblyName System.Windows.Forms',
+              '$form = New-Object System.Windows.Forms.Form',
+              '$form.TopMost = $true',
+              '$form.TopLevel = $true',
               '$f = New-Object System.Windows.Forms.FolderBrowserDialog',
               '$f.Description = \'Select Local Workspace Folder\'',
               '$f.ShowNewFolderButton = $true',
-              '$res = $f.ShowDialog()',
+              '$res = $f.ShowDialog($form)',
               'if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }'
             ];
             const commandLine = commands.join('; ');
             try {
-              const stdout = execSync(`powershell -Command "${commandLine}"`, { encoding: "utf8" });
+              const stdout = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${commandLine}"`, { encoding: "utf8" });
               selectedPath = stdout.trim();
             } catch (err: any) {
               console.warn("Folder dialog closed or failed:", err.message);
