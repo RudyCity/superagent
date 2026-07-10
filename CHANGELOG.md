@@ -2,9 +2,11 @@
 
 ## [1.2.242] - 2026-07-11
 
-### Changed
-- **Response Format Rules**:
-  - Added a new rule requiring a summary of modified files and change counts (insertions/deletions) at the end of final AI responses.
+### Added
+- **Final Response Git Changes Summary**:
+  - Implemented automatic git diff summary (+/- line count) of edited files at the end of each assistant run response in both CLI and dashboards.
+  - Added new git snapshot comparisons to count lines added/deleted in tracked and untracked files relative to the start of the message process.
+  - Conformed summary output styling to plain text and single-level bullet points without any markdown decoration.
 
 ---
 
