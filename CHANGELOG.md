@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.218] - 2026-07-10
+
+### Added
+- Feature: Added a native directory selection dialog triggered by a "Browse" button in the Chrome Extension, utilizing OS-specific commands (PowerShell on Windows, AppleScript on macOS, Zenity/KDialog on Linux) to safely populate the local workspace path.
+
+---
+
 ## [1.2.217] - 2026-07-10
 
 ### Improved

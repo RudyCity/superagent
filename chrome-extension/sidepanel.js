@@ -29,6 +29,7 @@ const workspaceScreen = document.getElementById("workspace-screen");
 const workspacePathInput = document.getElementById("workspace-path");
 const apiTokenInput = document.getElementById("api-token");
 const btnInit = document.getElementById("btn-init");
+const btnBrowse = document.getElementById("btn-browse");
 
 const activeWorkspaceText = document.getElementById("active-workspace-text");
 const activeModeText = document.getElementById("active-mode-text");
@@ -89,6 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Buttons Event Listeners
   btnInit.addEventListener("click", initSession);
+  btnBrowse.addEventListener("click", browseWorkspaceFolder);
   btnSend.addEventListener("click", sendChatMessage);
   chatInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -141,6 +143,28 @@ async function checkServerStatus() {
         eventSource = null;
       }
     }
+  }
+}
+
+async function browseWorkspaceFolder() {
+  btnBrowse.disabled = true;
+  const originalText = btnBrowse.textContent;
+  btnBrowse.textContent = "Browsing...";
+  try {
+    const res = await fetch(`${BASE_URL}/api/browse`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.path) {
+        workspacePathInput.value = data.path;
+      }
+    } else {
+      console.error("Browse API returned an error status");
+    }
+  } catch (err) {
+    console.error("Failed to connect to browse API:", err);
+  } finally {
+    btnBrowse.disabled = false;
+    btnBrowse.textContent = originalText;
   }
 }
 

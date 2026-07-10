@@ -183,6 +183,20 @@ main {
   box-shadow: var(--shadow-glow);
 }
 
+.input-with-button {
+  display: flex;
+  gap: 8px;
+}
+
+.input-with-button input[type="text"] {
+  flex: 1;
+}
+
+.input-with-button .btn {
+  white-space: nowrap;
+  padding: 10px 14px;
+}
+
 .input-hint {
   font-size: 11px;
   color: var(--text-muted);

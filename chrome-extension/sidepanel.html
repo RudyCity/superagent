@@ -25,7 +25,10 @@
       </div>
       <div class="form-group">
         <label for="workspace-path">Local Workspace Path</label>
-        <input type="text" id="workspace-path" placeholder="e.g. C:\Projects\my-app" required>
+        <div class="input-with-button">
+          <input type="text" id="workspace-path" placeholder="e.g. C:\Projects\my-app" required>
+          <button id="btn-browse" type="button" class="btn btn-secondary">Browse</button>
+        </div>
         <span class="input-hint">The directory Superagent will have filesystem access to write code.</span>
       </div>
 

@@ -359,6 +359,58 @@ export async function runServer(port: number) {
         return;
       }
 
+      // Browse directory dialog
+      if (pathname === "/api/browse" && req.method === "GET") {
+        try {
+          const { execSync } = await import("child_process");
+          let selectedPath = "";
+          const platform = process.platform;
+
+          if (platform === "win32") {
+            const commands = [
+              'Add-Type -AssemblyName System.Windows.Forms',
+              '$f = New-Object System.Windows.Forms.FolderBrowserDialog',
+              '$f.Description = "Select Local Workspace Folder"',
+              '$f.ShowNewFolderButton = $true',
+              '$res = $f.ShowDialog()',
+              'if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }'
+            ];
+            const commandLine = commands.join('; ');
+            try {
+              const stdout = execSync(`powershell -Command "${commandLine}"`, { encoding: "utf8" });
+              selectedPath = stdout.trim();
+            } catch (err: any) {
+              console.warn("Folder dialog closed or failed:", err.message);
+            }
+          } else if (platform === "darwin") {
+            try {
+              const script = 'tell application "Finder" to set selectedFolder to choose folder with prompt "Select Local Workspace Folder"\nPOSIX path of selectedFolder';
+              const stdout = execSync(`osascript -e ${JSON.stringify(script)}`, { encoding: "utf8" });
+              selectedPath = stdout.trim();
+            } catch (err: any) {
+              console.warn("macOS folder picker cancelled or failed:", err.message);
+            }
+          } else {
+            try {
+              const stdout = execSync('zenity --file-selection --directory --title="Select Local Workspace Folder"', { encoding: "utf8" });
+              selectedPath = stdout.trim();
+            } catch {
+              try {
+                const stdout = execSync('kdialog --getexistingdirectory', { encoding: "utf8" });
+                selectedPath = stdout.trim();
+              } catch (err: any) {
+                console.warn("Linux folder picker cancelled or failed:", err.message);
+              }
+            }
+          }
+
+          sendJSON(res, 200, { success: true, path: selectedPath });
+        } catch (err: any) {
+          sendJSON(res, 500, { success: false, error: err.message || String(err) });
+        }
+        return;
+      }
+
       // Default 404
       sendJSON(res, 404, { error: "Not Found" });
 
