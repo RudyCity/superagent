@@ -6,6 +6,8 @@
 - **Global Skills Directory**:
   - Added `$USERPROFILE/.agents/skills/` (using `path.join(os.homedir(), ".agents", "skills")`) to the default global search directories in `getInstalledSkills()`, allowing skills installed via `npx skills add` to be automatically recognized by the `use_skill` tool and other skill registries.
   - Added unit test coverage for verifying that skills in `~/.agents/skills` are correctly loaded.
+- **Skills Prompt Update**:
+  - Updated skills discovery and instruction loading prompts in the core agent and config to instruct agents to use the `use_skill` tool instead of `view_file`.
 
 ---
 
