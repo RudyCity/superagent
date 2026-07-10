@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.242] - 2026-07-11
+
+### Changed
+- **Response Format Rules**:
+  - Added a new rule requiring a summary of modified files and change counts (insertions/deletions) at the end of final AI responses.
+
+---
+
 ## [1.2.241] - 2026-07-10
 
 ### Changed
