@@ -264,9 +264,9 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
             setLogScrollOffset((prev) => {
               if (isUp) {
                 const maxScroll = Math.max(0, wrappedLines.length - logsCount);
-                return Math.min(prev + 1, maxScroll);
+                return Math.min(prev + 10, maxScroll);
               } else {
-                return Math.max(0, prev - 1);
+                return Math.max(0, prev - 10);
               }
             });
           }

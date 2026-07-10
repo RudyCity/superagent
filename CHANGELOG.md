@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.237] - 2026-07-10
+
+### Changed
+- **Mouse Scroll Amount**:
+  - Increased conversation log/chat scroll speed from 1 line to 10 lines per scroll tick in single-agent and multi-agent dashboard modes.
+  - Increased focused response view scroll speed from 1 line to 10 lines per scroll tick.
+
+---
+
 ## [1.2.236] - 2026-07-10
 
 ### Changed

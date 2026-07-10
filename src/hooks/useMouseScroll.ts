@@ -157,14 +157,14 @@ export function useMouseScroll(
             if (ctx.focusedResponseIndex !== null) {
               ctx.setFocusedResponseOffset((prev: number) => {
                 if (isUp) {
-                  return Math.max(0, prev - 1);
+                  return Math.max(0, prev - 10);
                 } else {
                   const maxOffset = Math.max(0, ctx.responseLinesCount - ctx.focusWindowHeight);
-                  return Math.min(prev + 1, maxOffset);
+                  return Math.min(prev + 10, maxOffset);
                 }
               });
             } else {
-              ctx.scrollChat(isUp ? "up" : "down");
+              ctx.scrollChat(isUp ? "up" : "down", 10);
             }
           } else if (sectionName === "wizard" && ctx.activeWizard?.type === "plan_approve") {
             ctx.setActiveWizard?.((curr: any) => {
@@ -192,9 +192,9 @@ export function useMouseScroll(
               });
             } else if (ctx.focusedResponseIndex !== null) {
               ctx.setFocusedResponseOffset((prev: number) => {
-                if (isUp) return Math.max(0, prev - 1);
+                if (isUp) return Math.max(0, prev - 10);
                 const maxOffset = Math.max(0, ctx.responseLinesCount - ctx.focusWindowHeight);
-                return Math.min(prev + 1, maxOffset);
+                return Math.min(prev + 10, maxOffset);
               });
             } else if (
               ctx.focusMode === "superagents" ||
@@ -205,7 +205,7 @@ export function useMouseScroll(
             ) {
               scrollSection(ctx, ctx.focusMode, isUp ? "up" : "down");
             } else {
-              ctx.scrollChat(isUp ? "up" : "down");
+              ctx.scrollChat(isUp ? "up" : "down", 10);
             }
           }
           continue;
