@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.236] - 2026-07-10
+
+### Changed
+- **Prevent Redundant Skill Discovery**:
+  - Updated `loadAgentSkills` logic instructions to forbid the agent from running `get_skills` or `use_skill` for skills that are already preloaded or defined in its system prompt context (such as `karpathy-guidelines`, `pragmatic-minimalism`, `systematic-debugging`, etc.).
+  - Guided the agent to check the prompt context first and use preloaded instructions directly, preventing redundant tool calls and token waste.
+
+---
+
 ## [1.2.235] - 2026-07-10
 
 ### Changed
