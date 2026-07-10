@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.220] - 2026-07-10
+
+### Fixed
+- Bug: Fixed string quoting syntax in PowerShell folder selector command line that prevented the native Windows Forms folder browser dialog from launching when requested by the Chrome extension.
+
+---
+
 ## [1.2.219] - 2026-07-10
 
 ### Changed

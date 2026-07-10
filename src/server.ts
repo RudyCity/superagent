@@ -370,7 +370,7 @@ export async function runServer(port: number) {
             const commands = [
               'Add-Type -AssemblyName System.Windows.Forms',
               '$f = New-Object System.Windows.Forms.FolderBrowserDialog',
-              '$f.Description = "Select Local Workspace Folder"',
+              '$f.Description = \'Select Local Workspace Folder\'',
               '$f.ShowNewFolderButton = $true',
               '$res = $f.ShowDialog()',
               'if ($res -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }'
