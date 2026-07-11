@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.287] - 2026-07-11
+
+### Refactored
+- **Chrome Extension Code Modularization**:
+  - Split `chrome-extension/sidepanel.js` (previously 1880+ lines) into modular scripts to keep all codebase files strictly under 1000 lines.
+  - Created `chrome-extension/sidepanel-ui.js` (670 lines) containing all DOM rendering, helpers, tool labels, and formatting logic.
+  - Created `chrome-extension/sidepanel-history.js` (240 lines) containing all chat history and session switching controls.
+  - Reduced `chrome-extension/sidepanel.js` to 959 lines containing core orchestrators, SSE events, and event listeners.
+  - Updated `chrome-extension/sidepanel.html` to load split modules in correct dependency order.
+
+---
+
 ## [1.2.286] - 2026-07-11
 
 ### Changed
