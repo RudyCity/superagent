@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Superagent AI Coding SidePanel",
   "version": "1.0.0",
-  "description": "Sleek cyberpunk Chrome Extension for coding powered by the local Superagent engine.",
+  "description": "Clean, Chrome-styled side panel for coding powered by the local Superagent engine.",
   "permissions": [
     "sidePanel",
     "activeTab",

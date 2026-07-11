@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.247] - 2026-07-11
+
+### Changed
+- **Chrome Extension UI - Chrome Browser Style**:
+  - Replaced the cyberpunk dark neon theme with a clean, standard Google Chrome browser visual design.
+  - Adopted a system-aware light/dark color palette matching Chrome's official color tokens (Google Blue `#1a73e8`, neutral greys, semantic greens/reds/ambers).
+  - Switched font from Outfit to Roboto to match Chrome's native typeface.
+  - Replaced hard square corners and neon glow effects with standard border-radius, subtle box shadows, and clean card borders.
+  - Updated button styles to standard Chrome primary/secondary/danger patterns with no neon outlines.
+  - Status badges now use soft pill shapes with semantic background tints.
+  - Updated manifest description to remove cyberpunk reference.
+
+---
+
 ## [1.2.246] - 2026-07-11
 
 ### Fixed
