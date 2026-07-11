@@ -960,11 +960,8 @@ main {
   word-break: break-all;
   max-height: 150px;
   overflow-y: auto;
-  background: var(--bg-main);
-  border: 1px solid var(--border-dim);
-  border-radius: var(--border-radius-sm);
-  padding: 8px 12px;
   margin: 0;
+  padding: 0;
 }
 
 .tool-result-area {

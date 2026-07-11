@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.260] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Spacing**:
+  - Removed the background and border of the code/JSON arguments container (`.tool-args`) inside tool blocks to integrate it seamlessly with the tool detail block.
+
+---
+
 ## [1.2.259] - 2026-07-11
 
 ### Fixed
