@@ -81,8 +81,6 @@ const btnGrabContext = document.getElementById("btn-grab-context");
 const contextBadge = document.getElementById("context-badge");
 
 const btnNewChat = document.getElementById("btn-new-chat");
-const btnChatHistory = document.getElementById("btn-chat-history");
-const chatHistoryDropdown = document.getElementById("chat-history-dropdown");
 const chatHistoryList = document.getElementById("chat-history-list");
 
 const btnSwitchWorkspace = document.getElementById("btn-switch-workspace");
@@ -95,16 +93,17 @@ const settingsOverlay = document.getElementById("settings-overlay");
 const btnCloseSettings = document.getElementById("btn-close-settings");
 const btnSaveSettings = document.getElementById("btn-save-settings");
 
-// Workspace Tabs Elements
 const tabChat = document.getElementById("tab-chat");
 const tabPlan = document.getElementById("tab-plan");
 const tabTasks = document.getElementById("tab-tasks");
 const tabWalkthrough = document.getElementById("tab-walkthrough");
+const tabHistory = document.getElementById("tab-history");
 
 const viewChat = document.getElementById("view-chat");
 const viewPlan = document.getElementById("view-plan");
 const viewTasks = document.getElementById("view-tasks");
 const viewWalkthrough = document.getElementById("view-walkthrough");
+const viewHistory = document.getElementById("view-history");
 
 const planContent = document.getElementById("plan-content");
 const tasksContent = document.getElementById("tasks-content");
@@ -113,6 +112,7 @@ const walkthroughContent = document.getElementById("walkthrough-content");
 const btnRefreshPlan = document.getElementById("btn-refresh-plan");
 const btnRefreshTasks = document.getElementById("btn-refresh-tasks");
 const btnRefreshWalkthrough = document.getElementById("btn-refresh-walkthrough");
+const btnRefreshHistory = document.getElementById("btn-refresh-history");
 const modelPresetSelect = document.getElementById("model-preset");
 const settingDisableStreaming = document.getElementById("setting-disable-streaming");
 const settingConcurrency = document.getElementById("setting-concurrency");
@@ -195,16 +195,8 @@ document.addEventListener("DOMContentLoaded", () => {
     btnNewChat.addEventListener("click", startNewChatSession);
   }
 
-  if (btnChatHistory) {
-    btnChatHistory.addEventListener("click", (e) => {
-      e.stopPropagation();
-      toggleChatHistoryDropdown();
-    });
-  }
-
   document.addEventListener("click", () => {
     hideWorkspaceDropdown();
-    hideChatHistoryDropdown();
   });
 
   // Settings Modal Toggle
@@ -282,11 +274,13 @@ document.addEventListener("DOMContentLoaded", () => {
   if (tabPlan) tabPlan.addEventListener("click", () => switchTab("plan"));
   if (tabTasks) tabTasks.addEventListener("click", () => switchTab("tasks"));
   if (tabWalkthrough) tabWalkthrough.addEventListener("click", () => switchTab("walkthrough"));
+  if (tabHistory) tabHistory.addEventListener("click", () => switchTab("history"));
 
   // Document Refresh Listeners
   if (btnRefreshPlan) btnRefreshPlan.addEventListener("click", loadDocuments);
   if (btnRefreshTasks) btnRefreshTasks.addEventListener("click", loadDocuments);
   if (btnRefreshWalkthrough) btnRefreshWalkthrough.addEventListener("click", loadDocuments);
+  if (btnRefreshHistory) btnRefreshHistory.addEventListener("click", loadChatHistorySessions);
 });
 
 // Check Server Status
@@ -1343,8 +1337,8 @@ function updateSetupRecentWorkspaces() {
 
 // Tab Switching Logic
 function switchTab(tabId) {
-  const tabs = [tabChat, tabPlan, tabTasks, tabWalkthrough];
-  const views = [viewChat, viewPlan, viewTasks, viewWalkthrough];
+  const tabs = [tabChat, tabPlan, tabTasks, tabWalkthrough, tabHistory];
+  const views = [viewChat, viewPlan, viewTasks, viewWalkthrough, viewHistory];
   
   tabs.forEach(t => { if (t) t.classList.remove("active"); });
   views.forEach(v => { if (v) v.classList.add("hidden"); });
@@ -1364,7 +1358,12 @@ function switchTab(tabId) {
     tabWalkthrough.classList.add("active");
     viewWalkthrough.classList.remove("hidden");
     loadDocuments();
+  } else if (tabId === "history" && tabHistory && viewHistory) {
+    tabHistory.classList.add("active");
+    viewHistory.classList.remove("hidden");
+    loadChatHistorySessions();
   }
+}
 }
 
 // Document Fetching and Parsing
@@ -1449,23 +1448,7 @@ function showSummaryModal(role, result) {
   }
 }
 
-let chatHistoryDropdownOpen = false;
 
-function toggleChatHistoryDropdown() {
-  if (chatHistoryDropdown.classList.contains("hidden")) {
-    hideWorkspaceDropdown();
-    chatHistoryDropdown.classList.remove("hidden");
-    chatHistoryDropdownOpen = true;
-    loadChatHistorySessions();
-  } else {
-    hideChatHistoryDropdown();
-  }
-}
-
-function hideChatHistoryDropdown() {
-  chatHistoryDropdown.classList.add("hidden");
-  chatHistoryDropdownOpen = false;
-}
 
 async function loadChatHistorySessions() {
   chatHistoryList.innerHTML = '<div class="p-3 text-center text-vscode-muted text-[11px]">Loading sessions...</div>';
@@ -1510,9 +1493,9 @@ function renderChatHistorySessionsList(sessions) {
       <div class="text-[9px] text-vscode-muted/70 text-right mt-0.5">${formattedDate}</div>
     `;
 
-    item.addEventListener("click", () => {
-      hideChatHistoryDropdown();
-      switchChatSession(s.id);
+    item.addEventListener("click", async () => {
+      await switchChatSession(s.id);
+      switchTab("chat");
     });
 
     chatHistoryList.appendChild(item);

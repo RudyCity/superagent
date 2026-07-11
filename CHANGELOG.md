@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.282] - 2026-07-11
+
+### Changed
+- **Chrome Extension Dedicated History Tab**:
+  - Moved the chat session history switcher from a dropdown menu into a dedicated vertical tab in the left-side Activity Bar.
+  - Added a History tab button and a dedicated `view-history` panel containing the list of previous sessions for the active workspace.
+  - Configured client-side redirection to load the session and switch the active tab back to Chat when a session history item is clicked.
+
+---
+
 ## [1.2.281] - 2026-07-11
 
 ### Changed
