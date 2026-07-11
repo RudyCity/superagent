@@ -21,6 +21,7 @@
       <button id="btn-start-server-help" class="btn btn-secondary text-[10px] px-1.5 py-0.5 h-5 uppercase btn-xs btn-server-ctrl font-sans font-medium border rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover">Start Server</button>
       <button id="btn-stop-server" class="btn btn-danger text-[10px] px-1.5 py-0.5 h-5 uppercase btn-xs btn-server-ctrl hidden font-sans font-medium border rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-red-error text-white border-transparent hover:bg-[#be533f]">Stop Server</button>
       <div id="connection-status" class="status-badge status-offline text-[11px] font-medium px-2 py-0.5 rounded-sm capitalize border transition-all duration-200 bg-red-error-light text-red-error border-[rgba(244,135,113,0.3)]">Offline</div>
+      <button id="btn-header-settings" class="btn btn-secondary text-[12px] p-0 h-5 w-5 font-sans border rounded-sm cursor-pointer inline-flex items-center justify-center transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover hover:text-white" title="Settings">⚙️</button>
     </div>
   </header>
 
@@ -77,49 +78,7 @@
         </label>
       </div>
 
-      <!-- Advanced Settings & Presets -->
-      <div class="advanced-settings-container my-1.5">
-        <button id="btn-toggle-advanced" class="btn btn-secondary btn-toggle-advanced w-full flex justify-between items-center bg-vscode-inner! border border-vscode-dim! text-vscode-primary! text-[11px]! font-semibold! uppercase font-sans py-1.5 px-3 rounded-sm cursor-pointer inline-flex gap-1.5 transition-colors duration-150 hover:bg-vscode-hover! h-[30px]" type="button">
-          <span>⚙️ SETTINGS & PRESETS</span>
-          <svg id="advanced-chevron" class="icon-chevron w-3.5 h-3.5 fill-current transition-transform duration-200" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
-        </button>
-        <div id="advanced-settings-content" class="advanced-settings-content hidden border-l-2 border-vscode-bright pl-2.5 mt-2 flex flex-col gap-2.5">
-          <div class="form-group flex flex-col gap-1.5">
-            <label for="model-preset" class="text-[11px] font-semibold text-vscode-primary">Active Model Preset</label>
-            <select id="model-preset" class="form-select bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright"></select>
-            <span class="input-hint text-[11px] text-vscode-muted leading-tight">Select the active model configuration preset.</span>
-          </div>
 
-          <div class="form-group checkbox-group flex flex-col gap-1.5">
-            <label class="checkbox-container flex items-center gap-1.5 text-[12px] text-vscode-primary cursor-pointer">
-              <input type="checkbox" id="setting-disable-streaming" class="hidden">
-              <span class="checkmark w-3.5 h-3.5 border border-vscode-dim rounded-sm inline-block relative bg-vscode-inner"></span>
-              Disable response streaming
-            </label>
-          </div>
-
-          <div class="form-group flex flex-col gap-1.5">
-            <label for="setting-concurrency" class="text-[11px] font-semibold text-vscode-primary">Concurrency Limit</label>
-            <select id="setting-concurrency" class="form-select bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
-              <option value="0">Disabled (0) - Run tasks concurrently</option>
-              <option value="1">Enabled (1) - Run tasks sequentially</option>
-            </select>
-            <span class="input-hint text-[11px] text-vscode-muted leading-tight">Enable to run tasks sequentially and avoid concurrent conflicts.</span>
-          </div>
-
-          <div class="form-group flex flex-col gap-1.5">
-            <label for="setting-max-iterations" class="text-[11px] font-semibold text-vscode-primary">Max Iterations</label>
-            <input type="number" id="setting-max-iterations" min="1" max="1000" placeholder="50" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
-            <span class="input-hint text-[11px] text-vscode-muted leading-tight">Maximum thinking steps before automatically halting.</span>
-          </div>
-
-          <div class="form-group flex flex-col gap-1.5">
-            <label for="setting-rpm" class="text-[11px] font-semibold text-vscode-primary">Rate Limit (RPM)</label>
-            <input type="number" id="setting-rpm" min="1" max="10000" placeholder="60" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
-            <span class="input-hint text-[11px] text-vscode-muted leading-tight">Maximum API requests allowed per minute.</span>
-          </div>
-        </div>
-      </div>
 
       <button id="btn-init" class="btn btn-primary w-full mt-1.5 font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">LAUNCH SESSION</button>
     </section>
@@ -306,6 +265,55 @@
       </div>
       <div class="modal-footer p-2.5 border-t border-vscode-dim flex justify-end">
         <button id="btn-dismiss-summary" class="btn btn-secondary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-[30px]">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div id="settings-overlay" class="overlay absolute top-0 left-0 w-full h-full bg-black/55 backdrop-blur-[1px] z-[10000] items-center justify-center p-3">
+    <div class="modal bg-vscode-sidebar border border-vscode-bright rounded-sm shadow-2xl w-full max-w-[320px] flex flex-col">
+      <div class="modal-header p-2.5 border-b border-vscode-dim flex justify-between items-center">
+        <h3 class="text-[11.5px] font-semibold text-vscode-light uppercase">⚙️ Settings & Presets</h3>
+        <button id="btn-close-settings" class="bg-transparent border-0 text-vscode-muted hover:text-vscode-light cursor-pointer text-[14px]">×</button>
+      </div>
+      <div class="modal-body p-3 flex flex-col gap-2.5 max-h-[300px] overflow-y-auto">
+        <div class="form-group flex flex-col gap-1.5">
+          <label for="model-preset" class="text-[11px] font-semibold text-vscode-primary">Active Model Preset</label>
+          <select id="model-preset" class="form-select bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright"></select>
+          <span class="input-hint text-[11px] text-vscode-muted leading-tight">Select the active model configuration preset.</span>
+        </div>
+
+        <div class="form-group checkbox-group flex flex-col gap-1.5">
+          <label class="checkbox-container flex items-center gap-1.5 text-[12px] text-vscode-primary cursor-pointer">
+            <input type="checkbox" id="setting-disable-streaming" class="hidden">
+            <span class="checkmark w-3.5 h-3.5 border border-vscode-dim rounded-sm inline-block relative bg-vscode-inner"></span>
+            Disable response streaming
+          </label>
+        </div>
+
+        <div class="form-group flex flex-col gap-1.5">
+          <label for="setting-concurrency" class="text-[11px] font-semibold text-vscode-primary">Concurrency Limit</label>
+          <select id="setting-concurrency" class="form-select bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+            <option value="0">Disabled (0) - Run tasks concurrently</option>
+            <option value="1">Enabled (1) - Run tasks sequentially</option>
+          </select>
+          <span class="input-hint text-[11px] text-vscode-muted leading-tight">Enable to run tasks sequentially and avoid concurrent conflicts.</span>
+        </div>
+
+        <div class="form-group flex flex-col gap-1.5">
+          <label for="setting-max-iterations" class="text-[11px] font-semibold text-vscode-primary">Max Iterations</label>
+          <input type="number" id="setting-max-iterations" min="1" max="1000" placeholder="50" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+          <span class="input-hint text-[11px] text-vscode-muted leading-tight">Maximum thinking steps before automatically halting.</span>
+        </div>
+
+        <div class="form-group flex flex-col gap-1.5">
+          <label for="setting-rpm" class="text-[11px] font-semibold text-vscode-primary">Rate Limit (RPM)</label>
+          <input type="number" id="setting-rpm" min="1" max="10000" placeholder="60" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+          <span class="input-hint text-[11px] text-vscode-muted leading-tight">Maximum API requests allowed per minute.</span>
+        </div>
+      </div>
+      <div class="modal-footer p-2.5 border-t border-vscode-dim flex justify-end gap-2">
+        <button id="btn-save-settings" class="btn btn-primary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">Save & Apply</button>
       </div>
     </div>
   </div>

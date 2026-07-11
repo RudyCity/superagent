@@ -89,8 +89,10 @@ const workspaceDropdown = document.getElementById("workspace-dropdown");
 const savedWorkspacesList = document.getElementById("saved-workspaces-list");
 const btnNewWorkspace = document.getElementById("btn-new-workspace");
 
-const btnToggleAdvanced = document.getElementById("btn-toggle-advanced");
-const advancedSettingsContent = document.getElementById("advanced-settings-content");
+const btnHeaderSettings = document.getElementById("btn-header-settings");
+const settingsOverlay = document.getElementById("settings-overlay");
+const btnCloseSettings = document.getElementById("btn-close-settings");
+const btnSaveSettings = document.getElementById("btn-save-settings");
 
 // Workspace Tabs Elements
 const tabChat = document.getElementById("tab-chat");
@@ -198,12 +200,70 @@ document.addEventListener("DOMContentLoaded", () => {
     hideWorkspaceDropdown();
   });
 
-  // Advanced Settings Toggle
-  btnToggleAdvanced.addEventListener("click", () => {
-    advancedSettingsOpen = !advancedSettingsOpen;
-    btnToggleAdvanced.classList.toggle("open", advancedSettingsOpen);
-    advancedSettingsContent.classList.toggle("hidden", !advancedSettingsOpen);
-  });
+  // Settings Modal Toggle
+  if (btnHeaderSettings) {
+    btnHeaderSettings.addEventListener("click", (e) => {
+      e.stopPropagation();
+      settingsOverlay.classList.add("active");
+    });
+  }
+
+  if (btnCloseSettings) {
+    btnCloseSettings.addEventListener("click", () => {
+      settingsOverlay.classList.remove("active");
+    });
+  }
+
+  if (btnSaveSettings) {
+    btnSaveSettings.addEventListener("click", async () => {
+      const selectedPresetId = modelPresetSelect.value;
+      const maxIterations = parseInt(settingMaxIterations.value, 10) || 50;
+      const rateLimitRpm = parseInt(settingRpm.value, 10) || 60;
+      const disableStreaming = settingDisableStreaming.checked;
+      const concurrencyLimit = parseInt(settingConcurrency.value, 10) || 0;
+
+      const configUpdate = {
+        settings: {
+          maxIterations,
+          rateLimitRpm,
+          disableStreaming,
+          concurrencyLimit
+        }
+      };
+      
+      const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
+      const mode = modeRadio ? modeRadio.value : "single";
+      const activeMode = currentMode || mode;
+
+      if (selectedPresetId) {
+        configUpdate.activePresetId = {
+          [activeMode]: selectedPresetId
+        };
+      }
+      
+      try {
+        btnSaveSettings.disabled = true;
+        btnSaveSettings.textContent = "Saving...";
+        const res = await fetch(`${BASE_URL}/api/config`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(configUpdate)
+        });
+        if (res.ok) {
+          settingsOverlay.classList.remove("active");
+          // Refresh configuration locally
+          fetchServerConfig();
+        } else {
+          alert("Failed to save settings to server.");
+        }
+      } catch (err) {
+        alert("Failed to save settings: " + err.message);
+      } finally {
+        btnSaveSettings.disabled = false;
+        btnSaveSettings.textContent = "Save & Apply";
+      }
+    });
+  }
 
   // Orchestration Mode Radio Change
   document.querySelectorAll('input[name="agent-mode"]').forEach(radio => {

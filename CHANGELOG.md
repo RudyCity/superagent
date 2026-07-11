@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.276] - 2026-07-11
+
+### Changed
+- **Chrome Extension Settings Panel**:
+  - Relocated advanced settings from the setup screen body into a global settings modal overlay.
+  - Added a settings gear button (`btn-header-settings`) in the top right corner of the extension header, allowing real-time access to presets, streaming config, rate limits, and concurrency limits from both the setup and active workspace screens.
+
+---
+
 ## [1.2.275] - 2026-07-11
 
 ### Added
