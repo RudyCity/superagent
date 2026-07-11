@@ -1322,9 +1322,15 @@ function appendJobFinishFooter(msgEl, startTime) {
   const footer = document.createElement("div");
   footer.className = "job-finish-footer";
 
-  // Duration badge row
+  // Hide all tool blocks within this message content by default
+  const toolBlocks = msgEl.querySelectorAll(".tool-block");
+  toolBlocks.forEach(tb => tb.classList.add("hidden"));
+
+  // Duration badge row (styled with cursor: pointer to indicate toggle function)
   const badgeRow = document.createElement("div");
   badgeRow.className = "job-finish-badge-row";
+  badgeRow.style.cursor = "pointer";
+  badgeRow.title = "Click to show/hide tools usage";
 
   const checkIcon = document.createElement("span");
   checkIcon.className = "job-finish-icon";
@@ -1336,16 +1342,16 @@ function appendJobFinishFooter(msgEl, startTime) {
 
   const toggleBtn = document.createElement("button");
   toggleBtn.className = "job-finish-toggle";
-  toggleBtn.textContent = "Summary ▾";
+  toggleBtn.textContent = "Summary ▴"; // default open, arrow pointing up
   toggleBtn.title = "Toggle summary";
 
   badgeRow.appendChild(checkIcon);
   badgeRow.appendChild(badge);
   badgeRow.appendChild(toggleBtn);
 
-  // Summary card (collapsible)
+  // Summary card (default expanded, NO "hidden" class)
   const summaryCard = document.createElement("div");
-  summaryCard.className = "job-summary-card hidden";
+  summaryCard.className = "job-summary-card";
 
   const summaryLabel = document.createElement("div");
   summaryLabel.className = "job-summary-label";
@@ -1367,11 +1373,25 @@ function appendJobFinishFooter(msgEl, startTime) {
   summaryCard.appendChild(summaryLabel);
   summaryCard.appendChild(summaryBody);
 
-  // Toggle logic
-  toggleBtn.addEventListener("click", () => {
+  // Toggle logic for summary card
+  toggleBtn.addEventListener("click", (e) => {
+    e.stopPropagation(); // prevent triggering tool blocks toggle
     const isHidden = summaryCard.classList.contains("hidden");
     summaryCard.classList.toggle("hidden", !isHidden);
     toggleBtn.textContent = isHidden ? "Summary ▴" : "Summary ▾";
+  });
+
+  // Clicking finished badge row will toggle the tools usage visibility
+  badgeRow.addEventListener("click", () => {
+    let anyVisible = false;
+    toolBlocks.forEach(tb => {
+      if (!tb.classList.contains("hidden")) {
+        anyVisible = true;
+      }
+    });
+    toolBlocks.forEach(tb => {
+      tb.classList.toggle("hidden", anyVisible);
+    });
   });
 
   footer.appendChild(badgeRow);
@@ -1379,7 +1399,11 @@ function appendJobFinishFooter(msgEl, startTime) {
 
   // Inject after the msg content (outside the msg-content div, inside .msg)
   msgEl.appendChild(footer);
-  scrollToBottom();
+
+  // Directly scroll the summary card into view smoothly
+  setTimeout(() => {
+    summaryCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, 100);
 }
 
 function showSpinner(text) {

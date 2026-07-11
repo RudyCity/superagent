@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.286] - 2026-07-11
+
+### Changed
+- **Chrome Extension Finished Flow Enhancements**:
+  - The job summary card is now default expanded (open) when a job finishes.
+  - Automatically scrolls the summary card smoothly into view when a job completes.
+  - Tool execution blocks (tools usage) are now automatically collapsed (hidden) when a job finishes.
+  - Clicking the "Finished in Xm Xs" badge row will toggle the visibility of the collapsed tool blocks.
+
+---
+
 ## [1.2.285] - 2026-07-11
 
 ### Changed
