@@ -1477,41 +1477,39 @@ function renderChatHistory(messages) {
           argsText = argsStr.length > 300 ? argsStr.slice(0, 300) + "..." : argsStr;
         } catch (_) {}
 
-        const isCompleted = !!tr;
         const isErr = tr && tr.isError;
-        const indicatorClass = isCompleted 
-          ? (isErr ? "tool-indicator tool-error" : "tool-indicator tool-success")
-          : "tool-indicator tool-running";
+        const label = getToolLabel(tc, tc.name);
+        const detail = buildToolDetail(tc);
+        const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
         toolBlock.innerHTML = `
-          <div class="tool-header">
-            <span class="tool-indicator ${indicatorClass}">•</span>
-            <span class="tool-name">${tc.name ?? "tool"}</span>
-            <span class="tool-desc"></span>
+          <div class="tool-row">
+            <span class="tool-row-label ${isErr ? 'tool-row-label-error' : ''}">${esc(label)}</span>
+            ${detail ? `<span class="tool-row-detail">${esc(detail)}</span>` : ""}
+            <span class="tool-row-chevron">›</span>
           </div>
-          <div class="tool-detail hidden">
-            ${argsText ? `<pre class="tool-args">${argsText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>` : ""}
+          <div class="tool-expand hidden">
+            ${argsText ? `<pre class="tool-args">${esc(argsText)}</pre>` : ""}
             <div class="tool-result-area hidden"></div>
           </div>
         `;
 
-        toolBlock.querySelector(".tool-header").addEventListener("click", () => {
-          const detail = toolBlock.querySelector(".tool-detail");
-          detail.classList.toggle("hidden");
+        toolBlock.querySelector(".tool-row").addEventListener("click", () => {
+          const exp = toolBlock.querySelector(".tool-expand");
+          const chev = toolBlock.querySelector(".tool-row-chevron");
+          const isHidden = exp.classList.contains("hidden");
+          exp.classList.toggle("hidden", !isHidden);
+          chev.textContent = isHidden ? "⌄" : "›";
         });
 
         if (tr) {
           const resultArea = toolBlock.querySelector(".tool-result-area");
           const resultText = tr.result || "";
           if (resultText) {
-            const preview = resultText.length > 600 ? resultText.slice(0, 600) + "\n... (truncated)" : resultText;
+            const preview = resultText.length > 500 ? resultText.slice(0, 500) + "\n... (truncated)" : resultText;
             resultArea.textContent = preview;
             resultArea.classList.remove("hidden");
             if (isErr) resultArea.classList.add("tool-result-error");
-            
-            // By default expand completed tool details
-            const detail = toolBlock.querySelector(".tool-detail");
-            detail.classList.remove("hidden");
           }
         }
 
@@ -1520,62 +1518,37 @@ function renderChatHistory(messages) {
     }
 
     if (msg.role === "tool" && Array.isArray(msg.toolResults)) {
-      // Find the last assistant message element to append tool results if not already rendered
       const msgDivs = chatMessages.querySelectorAll(".msg-agent");
       if (msgDivs.length > 0) {
         const lastMsgDiv = msgDivs[msgDivs.length - 1];
         const contentDiv = lastMsgDiv.querySelector(".msg-content");
         
         msg.toolResults.forEach(tr => {
-          // Check if this tool result was already rendered
-          const existingBlocks = contentDiv.querySelectorAll(".tool-block");
-          let alreadyRendered = false;
-          existingBlocks.forEach(block => {
-            const nameSpan = block.querySelector(".tool-name");
-            if (nameSpan && nameSpan.textContent === tr.name) {
-              const resArea = block.querySelector(".tool-result-area");
-              if (resArea && resArea.classList.contains("hidden")) {
-                alreadyRendered = true;
-                const preview = tr.result.length > 600 ? tr.result.slice(0, 600) + "\n... (truncated)" : tr.result;
-                resArea.textContent = preview;
-                resArea.classList.remove("hidden");
-                if (tr.isError) resArea.classList.add("tool-result-error");
-                
-                const indicator = block.querySelector(".tool-indicator");
-                indicator.className = tr.isError ? "tool-indicator tool-error" : "tool-indicator tool-success";
-                
-                const detail = block.querySelector(".tool-detail");
-                detail.classList.remove("hidden");
-              }
-            }
+          const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          const toolBlock = document.createElement("div");
+          toolBlock.className = "tool-block";
+          const resultText = tr.result || "";
+          const preview = resultText.length > 500 ? resultText.slice(0, 500) + "\n... (truncated)" : resultText;
+
+          toolBlock.innerHTML = `
+            <div class="tool-row">
+              <span class="tool-row-label ${tr.isError ? 'tool-row-label-error' : ''}">${esc(tr.name ?? "tool")}</span>
+              <span class="tool-row-chevron">›</span>
+            </div>
+            <div class="tool-expand hidden">
+              <div class="tool-result-area ${tr.isError ? 'tool-result-error' : ''}">${esc(preview)}</div>
+            </div>
+          `;
+
+          toolBlock.querySelector(".tool-row").addEventListener("click", () => {
+            const exp = toolBlock.querySelector(".tool-expand");
+            const chev = toolBlock.querySelector(".tool-row-chevron");
+            const isHidden = exp.classList.contains("hidden");
+            exp.classList.toggle("hidden", !isHidden);
+            chev.textContent = isHidden ? "⌄" : "›";
           });
 
-          if (!alreadyRendered) {
-            const toolBlock = document.createElement("div");
-            toolBlock.className = "tool-block";
-            const indicatorClass = tr.isError ? "tool-indicator tool-error" : "tool-indicator tool-success";
-
-            toolBlock.innerHTML = `
-              <div class="tool-header">
-                <span class="tool-indicator ${indicatorClass}">•</span>
-                <span class="tool-name">${tr.name ?? "tool"}</span>
-                <span class="tool-desc"></span>
-              </div>
-              <div class="tool-detail">
-                <div class="tool-result-area">${tr.result.length > 600 ? tr.result.slice(0, 600) + "\n... (truncated)" : tr.result}</div>
-              </div>
-            `;
-            if (tr.isError) {
-              toolBlock.querySelector(".tool-result-area").classList.add("tool-result-error");
-            }
-            
-            toolBlock.querySelector(".tool-header").addEventListener("click", () => {
-              const detail = toolBlock.querySelector(".tool-detail");
-              detail.classList.toggle("hidden");
-            });
-
-            contentDiv.appendChild(toolBlock);
-          }
+          contentDiv.appendChild(toolBlock);
         });
       }
     }
@@ -1641,7 +1614,6 @@ function switchTab(tabId) {
     viewHistory.classList.remove("hidden");
     loadChatHistorySessions();
   }
-}
 }
 
 // Document Fetching and Parsing
