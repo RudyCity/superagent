@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.278] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Overlay Layout**:
+  - Fixed a missing closing `</div>` tag for the `question-overlay` container in sidepanel.html which caused subsequent overlays (including the settings panel and job summary overlays) to be nested inside it, preventing the settings gear from opening.
+
+---
+
 ## [1.2.277] - 2026-07-11
 
 ### Removed
