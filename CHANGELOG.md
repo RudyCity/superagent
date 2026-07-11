@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.257] - 2026-07-11
+
+### Added
+- **Chrome Extension - Recent Workspaces History**:
+  - Implemented a list of recently used workspace paths directly on the setup screen.
+  - Added click handlers to automatically populate the workspace path input from history items.
+  - Styled recent items under the workspace path input using Chrome-compliant variables.
+  - Automatically refresh the list on the setup screen when new workspaces are loaded or switched.
+
+---
+
 ## [1.2.256] - 2026-07-11
 
 ### Fixed

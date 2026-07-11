@@ -39,6 +39,8 @@ const workspacePathInput = document.getElementById("workspace-path");
 const apiTokenInput = document.getElementById("api-token");
 const btnInit = document.getElementById("btn-init");
 const btnBrowse = document.getElementById("btn-browse");
+const recentWorkspacesContainer = document.getElementById("recent-workspaces-container");
+const recentWorkspacesList = document.getElementById("recent-workspaces-list");
 
 const activeWorkspaceText = document.getElementById("active-workspace-text");
 const activeModeText = document.getElementById("active-mode-text");
@@ -90,8 +92,8 @@ const settingRpm = document.getElementById("setting-rpm");
 
 // Initialize View
 document.addEventListener("DOMContentLoaded", () => {
-  // Load saved workspace path and API token if any
-  chrome.storage.local.get(["lastWorkspacePath", "lastApiToken"], (result) => {
+  // Load saved workspace path, API token, and saved workspaces list if any
+  chrome.storage.local.get(["lastWorkspacePath", "lastApiToken", "savedWorkspaces"], (result) => {
     if (result.lastWorkspacePath) {
       workspacePathInput.value = result.lastWorkspacePath;
     }
@@ -99,6 +101,7 @@ document.addEventListener("DOMContentLoaded", () => {
       apiTokenInput.value = result.lastApiToken;
       apiToken = result.lastApiToken;
     }
+    renderSetupRecentWorkspaces(result.savedWorkspaces || []);
     checkServerStatus();
   });
 
@@ -888,5 +891,37 @@ function clearChatMessages() {
     }
   });
 }
+
+function renderSetupRecentWorkspaces(saved) {
+  if (!recentWorkspacesContainer || !recentWorkspacesList) return;
+  
+  if (!saved || saved.length === 0) {
+    recentWorkspacesContainer.classList.add("hidden");
+    return;
+  }
+  
+  recentWorkspacesList.innerHTML = "";
+  saved.forEach(ws => {
+    const item = document.createElement("div");
+    item.className = "recent-ws-item";
+    item.title = ws;
+    item.innerHTML = `
+      <span class="recent-ws-path">${ws}</span>
+      <span class="recent-ws-arrow">➔</span>
+    `;
+    item.addEventListener("click", () => {
+      workspacePathInput.value = ws;
+    });
+    recentWorkspacesList.appendChild(item);
+  });
+  recentWorkspacesContainer.classList.remove("hidden");
+}
+
+function updateSetupRecentWorkspaces() {
+  chrome.storage.local.get(["savedWorkspaces"], (result) => {
+    renderSetupRecentWorkspaces(result.savedWorkspaces || []);
+  });
+}
+
 
 

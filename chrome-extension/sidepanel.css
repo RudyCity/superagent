@@ -194,6 +194,70 @@ main {
   gap: 6px;
 }
 
+.recent-workspaces-container {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recent-workspaces-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+.recent-workspaces-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.recent-ws-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--bg-inner);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--border-radius-sm);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.recent-ws-item:hover {
+  background: var(--bg-panel);
+  border-color: var(--border-bright);
+  color: var(--accent-primary);
+}
+
+.recent-ws-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.recent-ws-arrow {
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+  transition: transform 0.2s ease;
+}
+
+.recent-ws-item:hover .recent-ws-arrow {
+  color: var(--accent-primary);
+  transform: translateX(2px);
+}
+
 .form-group label {
   font-size: 12px;
   font-weight: 500;

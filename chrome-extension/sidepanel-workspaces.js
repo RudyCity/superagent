@@ -14,7 +14,12 @@ async function saveWorkspace(workspacePath) {
   filtered.unshift(workspacePath);
   const trimmed = filtered.slice(0, MAX_SAVED_WORKSPACES);
   return new Promise((resolve) => {
-    chrome.storage.local.set({ savedWorkspaces: trimmed }, resolve);
+    chrome.storage.local.set({ savedWorkspaces: trimmed }, () => {
+      if (typeof updateSetupRecentWorkspaces === "function") {
+        updateSetupRecentWorkspaces();
+      }
+      resolve();
+    });
   });
 }
 
