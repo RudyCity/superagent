@@ -14,7 +14,14 @@
       <div class="glow-dot"></div>
       <h1>SUPERAGENT<span>.AI</span></h1>
     </div>
-    <div id="connection-status" class="status-badge status-offline">Offline</div>
+    <div class="header-actions">
+      <div id="start-server-tooltip" class="start-server-tooltip hidden">
+        <p>Run CLI: <code>superagent --server</code></p>
+      </div>
+      <button id="btn-start-server-help" class="btn btn-secondary btn-xs btn-server-ctrl">Start Server</button>
+      <button id="btn-stop-server" class="btn btn-danger btn-xs btn-server-ctrl hidden">Stop Server</button>
+      <div id="connection-status" class="status-badge status-offline">Offline</div>
+    </div>
   </header>
 
   <main>

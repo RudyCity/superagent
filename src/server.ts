@@ -334,6 +334,15 @@ export async function runServer(port: number, silent = false) {
         return;
       }
 
+      // Shutdown server process
+      if (pathname === "/api/shutdown" && req.method === "POST") {
+        sendJSON(res, 200, { success: true, message: "Server shutting down..." });
+        setTimeout(() => {
+          process.exit(0);
+        }, 500);
+        return;
+      }
+
       // Fetch Tasks
       if (pathname === "/api/tasks" && req.method === "GET") {
         const taskFile = activeMode === "multi" ? "_task.md" : "task.md";

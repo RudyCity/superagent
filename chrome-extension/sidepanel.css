@@ -1112,3 +1112,47 @@ main {
   animation: blink 1.5s infinite alternate;
   text-shadow: 0 0 5px var(--accent-cyan-glow);
 }
+
+/* Server Controls Cyberpunk styles */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+}
+
+.btn-server-ctrl {
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  padding: 4px 8px !important;
+  border-radius: 0 !important;
+}
+
+.start-server-tooltip {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-bright);
+  box-shadow: var(--shadow-glow);
+  padding: 10px 14px;
+  z-index: 100;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.start-server-tooltip p {
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.start-server-tooltip code {
+  color: var(--accent-cyan);
+  background: var(--bg-main);
+  padding: 2px 6px;
+  border: 1px solid var(--border-dim);
+}

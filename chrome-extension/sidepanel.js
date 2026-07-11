@@ -61,6 +61,10 @@ const btnSubmitAnswer = document.getElementById("btn-submit-answer");
 const btnGrabContext = document.getElementById("btn-grab-context");
 const contextBadge = document.getElementById("context-badge");
 
+const btnStopServer = document.getElementById("btn-stop-server");
+const btnStartServerHelp = document.getElementById("btn-start-server-help");
+const startServerTooltip = document.getElementById("start-server-tooltip");
+
 // Initialize View
 document.addEventListener("DOMContentLoaded", () => {
   // Load saved workspace path and API token if any
@@ -105,6 +109,15 @@ document.addEventListener("DOMContentLoaded", () => {
   btnDenyPermission.addEventListener("click", () => resolvePermission(false));
   btnSubmitAnswer.addEventListener("click", submitAnswer);
   btnGrabContext.addEventListener("click", grabTabContext);
+
+  btnStopServer.addEventListener("click", stopServer);
+  btnStartServerHelp.addEventListener("click", (e) => {
+    e.stopPropagation();
+    startServerTooltip.classList.toggle("hidden");
+  });
+  document.addEventListener("click", () => {
+    startServerTooltip.classList.add("hidden");
+  });
 });
 
 // Check Server Status
@@ -121,6 +134,10 @@ async function checkServerStatus() {
         statusBadge.className = "status-badge status-online";
       }
       
+      btnStopServer.classList.remove("hidden");
+      btnStartServerHelp.classList.add("hidden");
+      startServerTooltip.classList.add("hidden");
+
       // Auto reconnect view if server is running session
       if (data.sessionId && workspaceScreen.className.indexOf("active") === -1) {
         activeWorkspaceText.textContent = data.workspace;
@@ -144,6 +161,8 @@ async function checkServerStatus() {
   } catch {
     statusBadge.textContent = "Offline";
     statusBadge.className = "status-badge status-offline";
+    btnStopServer.classList.add("hidden");
+    btnStartServerHelp.classList.remove("hidden");
     if (workspaceScreen.classList.contains("active")) {
       workspaceScreen.classList.remove("active");
       setupScreen.classList.add("active");
@@ -153,6 +172,29 @@ async function checkServerStatus() {
         eventSource = null;
       }
     }
+  }
+}
+
+// Stop local server
+async function stopServer() {
+  if (!confirm("Are you sure you want to stop the local Superagent server?")) return;
+  try {
+    await fetch(`${BASE_URL}/api/shutdown`, { method: "POST" });
+    statusBadge.textContent = "Offline";
+    statusBadge.className = "status-badge status-offline";
+    btnStopServer.classList.add("hidden");
+    btnStartServerHelp.classList.remove("hidden");
+    if (workspaceScreen.classList.contains("active")) {
+      workspaceScreen.classList.remove("active");
+      setupScreen.classList.add("active");
+      stopPolling();
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+    }
+  } catch (err) {
+    alert("Failed to send shutdown command: " + err.message);
   }
 }
 

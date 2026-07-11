@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.244] - 2026-07-11
+
+### Added
+- **Server Shutdown & Helper controls**:
+  - Implemented a Stop Server button in the extension header that triggers a new `/api/shutdown` endpoint to terminate the local server process.
+  - Implemented a Start Server help overlay that displays CLI launch instructions (`superagent --server`) when the extension is disconnected/offline.
+
+---
+
 ## [1.2.243] - 2026-07-11
 
 ### Added
