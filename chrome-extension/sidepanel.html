@@ -73,6 +73,53 @@
         </label>
       </div>
 
+      <!-- Advanced Settings & Presets -->
+      <div class="advanced-settings-container">
+        <button id="btn-toggle-advanced" class="btn btn-secondary btn-toggle-advanced" type="button">
+          <span>⚙️ SETTINGS & PRESETS</span>
+          <svg id="advanced-chevron" class="icon-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+        </button>
+        <div id="advanced-settings-content" class="advanced-settings-content hidden">
+          <div class="form-group">
+            <label for="model-preset">Active Model Preset</label>
+            <select id="model-preset" class="form-select">
+              <option value="">Loading presets...</option>
+            </select>
+            <span class="input-hint">Select the active model configuration preset.</span>
+          </div>
+
+          <div class="form-group checkbox-group">
+            <label class="checkbox-container">
+              <input type="checkbox" id="setting-disable-streaming">
+              <span class="checkmark"></span>
+              Disable response streaming
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label for="setting-concurrency">Concurrency Limit</label>
+            <select id="setting-concurrency" class="form-select">
+              <option value="0">Disabled (0) - Run tasks concurrently</option>
+              <option value="1">Enabled (1) - Run tasks sequentially</option>
+            </select>
+            <span class="input-hint">Enable to run tasks sequentially and avoid concurrent conflicts.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="setting-max-iterations">Max Iterations</label>
+            <input type="number" id="setting-max-iterations" min="1" max="1000" placeholder="50">
+            <span class="input-hint">Maximum thinking steps before automatically halting.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="setting-rpm">Rate Limit (RPM)</label>
+            <input type="number" id="setting-rpm" min="1" max="10000" placeholder="60">
+            <span class="input-hint">Maximum API requests allowed per minute.</span>
+          </div>
+        </div>
+      </div>
+
+
       <button id="btn-init" class="btn btn-primary">LAUNCH SESSION</button>
     </section>
 

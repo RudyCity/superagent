@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
-import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted } from "./core/config.js";
+import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings } from "./core/config.js";
 import { readChecklistTasks } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
@@ -376,7 +376,46 @@ export async function runServer(port: number, silent = false) {
       if (pathname === "/api/config" && req.method === "GET") {
         const settings = getSettings();
         const providers = getConfiguredProviders();
-        sendJSON(res, 200, { settings, providers });
+        const singlePresets = getPresets("single");
+        const multiPresets = getPresets("multi");
+        const activeSinglePresetId = getActivePresetId("single");
+        const activeMultiPresetId = getActivePresetId("multi");
+        sendJSON(res, 200, {
+          settings,
+          providers,
+          presets: {
+            single: singlePresets,
+            multi: multiPresets
+          },
+          activePresetId: {
+            single: activeSinglePresetId,
+            multi: activeMultiPresetId
+          }
+        });
+        return;
+      }
+
+      // Update Config / Models
+      if (pathname === "/api/config" && req.method === "POST") {
+        try {
+          const bodyStr = await readBody(req);
+          const body = JSON.parse(bodyStr || "{}");
+          
+          if (body.settings) {
+            updateSettings(body.settings);
+          }
+          if (body.activePresetId) {
+            if (body.activePresetId.single) {
+              setActivePresetId("single", body.activePresetId.single);
+            }
+            if (body.activePresetId.multi) {
+              setActivePresetId("multi", body.activePresetId.multi);
+            }
+          }
+          sendJSON(res, 200, { success: true });
+        } catch (err: any) {
+          sendJSON(res, 400, { success: false, error: err.message || String(err) });
+        }
         return;
       }
 
