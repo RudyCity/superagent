@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.292] - 2026-07-11
+
+### Fixed
+- **Chrome Extension UI Auto-Hiding**:
+  - Automatically hide the status checklist strip (Tasks and Agents) when no tasks are present in the list and no subagents/superagents are running.
+  - Automatically hide the collapsible bottom terminal panel by default on load, when there is no active process running, and when the terminal output logs are empty.
+  - Added CSS utility overrides and script checks to toggle visibility dynamically.
+
+---
+
 ## [1.2.291] - 2026-07-11
 
 ### Added

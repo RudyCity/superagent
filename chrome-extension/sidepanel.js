@@ -308,6 +308,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Document Refresh Listeners
   if (btnRefreshHistory) btnRefreshHistory.addEventListener("click", loadChatHistorySessions);
+
+  // Initialize terminal visibility
+  if (typeof updateTerminalDrawerVisibility === "function") {
+    updateTerminalDrawerVisibility();
+  }
 });
 
 // Check Server Status
@@ -712,6 +717,9 @@ function handleSSEEvent(data) {
       if (termDrawer && termDrawer.style.height !== "200px" && badge) {
         badge.classList.remove("hidden");
       }
+      if (typeof updateTerminalDrawerVisibility === "function") {
+        updateTerminalDrawerVisibility();
+      }
     }
 
     if (currentActiveToolElement) {
@@ -868,12 +876,17 @@ function stopPolling() {
 }
 
 async function pollChecklistAndAgents() {
+  let tasks = [];
+  let subagents = [];
+  let superagents = [];
+
   // Poll tasks
   try {
     const resTasks = await fetch(`${BASE_URL}/api/tasks`);
     if (resTasks.ok) {
       const data = await resTasks.json();
-      renderTasks(data.tasks);
+      tasks = data.tasks || [];
+      renderTasks(tasks);
     }
   } catch {}
 
@@ -882,9 +895,23 @@ async function pollChecklistAndAgents() {
     const resInsts = await fetch(`${BASE_URL}/api/instances`);
     if (resInsts.ok) {
       const data = await resInsts.json();
-      renderAgentsTree(data.subagents, data.superagents);
+      subagents = data.subagents || [];
+      superagents = data.superagents || [];
+      renderAgentsTree(subagents, superagents);
     }
   } catch {}
+
+  // Show/Hide status strip based on whether there are tasks or agents
+  const statusStrip = document.getElementById("status-strip");
+  if (statusStrip) {
+    const hasTasks = tasks && tasks.length > 0;
+    const hasAgents = (subagents && subagents.length > 0) || (superagents && superagents.length > 0);
+    if (hasTasks || hasAgents) {
+      statusStrip.classList.remove("hidden");
+    } else {
+      statusStrip.classList.add("hidden");
+    }
+  }
 }
 
 // Render task list as compact chip strip

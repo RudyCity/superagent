@@ -103,6 +103,7 @@ function showSpinner(text) {
   }
   
   scrollToBottom();
+  updateTerminalDrawerVisibility();
 }
 
 function hideSpinner() {
@@ -124,6 +125,26 @@ function hideSpinner() {
     sendBtnEl.classList.add("bg-vscode-blue", "hover:bg-vscode-blue-hover");
     sendBtnEl.innerHTML = `<svg viewBox="0 0 24 24" class="w-3.5 h-3.5 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`;
   }
+  updateTerminalDrawerVisibility();
+}
+
+function updateTerminalDrawerVisibility() {
+  const termDrawer = document.getElementById("terminal-drawer");
+  const termBody = document.getElementById("terminal-body");
+  if (!termDrawer || !termBody) return;
+
+  const hasContent = termBody.textContent && 
+                     termBody.textContent.trim() !== "" && 
+                     termBody.textContent !== "Welcome to Superagent terminal logs...";
+  
+  const spinnerEl = document.getElementById("processing-indicator");
+  const isProcessing = spinnerEl && spinnerEl.classList.contains("active");
+
+  if (hasContent || isProcessing) {
+    termDrawer.classList.remove("hidden");
+  } else {
+    termDrawer.classList.add("hidden");
+  }
 }
 
 function scrollToBottom() {
@@ -137,6 +158,13 @@ function clearChatMessages() {
       chatMessages.removeChild(node);
     }
   });
+  
+  // Reset and hide terminal drawer
+  const termBody = document.getElementById("terminal-body");
+  if (termBody) {
+    termBody.textContent = "Welcome to Superagent terminal logs...";
+  }
+  updateTerminalDrawerVisibility();
 }
 
 // Tasks Chip list rendering
