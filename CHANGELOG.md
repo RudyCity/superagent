@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.250] - 2026-07-11
+
+### Changed
+- **Chrome Extension - Thinking Indicator Inside Message Flow**:
+  - Moved the processing (thinking) indicator inside the scrollable chat messages container so it flows inline with messages instead of sitting in a fixed position directly above the input box.
+  - Adjusted the indicator spacing and padding to align with the left edge of agent message bubbles.
+  - Updated chat messages clear and append operations to handle and preserve the inline indicator position.
+
+---
+
 ## [1.2.249] - 2026-07-11
 
 ### Security

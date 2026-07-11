@@ -458,6 +458,70 @@ export async function runServer(port: number, silent = false) {
         return;
       }
 
+      // Switch active workspace
+      if (pathname === "/api/switch-workspace" && req.method === "POST") {
+        const bodyStr = await readBody(req);
+        const body = JSON.parse(bodyStr || "{}");
+        const { workspace, mode } = body;
+
+        if (!workspace) {
+          sendJSON(res, 400, { error: "workspace path is required" });
+          return;
+        }
+
+        if (activeAgent && activeAgent.isAgentRunning()) {
+          activeAgent.abort();
+        }
+
+        const targetWorkspace = path.resolve(workspace);
+        addTrustedDirectory(targetWorkspace);
+        await ensureDirectoryTrusted(targetWorkspace);
+
+        activeWorkspace = targetWorkspace;
+        process.chdir(targetWorkspace);
+        activeMode = mode === "multi" ? "multi" : "single";
+        activeSessionId = Date.now().toString();
+        isCliSession = false;
+
+        let customSystemPrompt: string | undefined = undefined;
+        let customTools: any[] | undefined = undefined;
+
+        if (activeMode === "multi") {
+          const { MASTER_AGENT_SYSTEM_PROMPT } = await import("./core/prompts.js");
+          const { masterToolset } = await import("./core/tools/toolsets.js");
+          customSystemPrompt = MASTER_AGENT_SYSTEM_PROMPT;
+          customTools = masterToolset;
+        }
+
+        activeAgent = new Agent(
+          onEvent,
+          onPermission,
+          onQuestion,
+          customSystemPrompt,
+          customTools,
+          targetWorkspace
+        );
+
+        if (activeMode === "multi") {
+          activeAgent.tier = "master";
+          activeAgent.isMultiAgent = true;
+          registerMasterAgent(activeAgent);
+        } else {
+          activeAgent.tier = "single";
+        }
+
+        pendingPermissions.clear();
+        pendingQuestions.clear();
+
+        sendJSON(res, 200, {
+          success: true,
+          sessionId: activeSessionId,
+          workspace: targetWorkspace,
+          mode: activeMode
+        });
+        return;
+      }
+
       // Default 404
       sendJSON(res, 404, { error: "Not Found" });
 

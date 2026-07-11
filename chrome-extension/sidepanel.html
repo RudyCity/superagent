@@ -81,7 +81,19 @@
       <div class="sidebar-info">
         <div class="info-row">
           <span class="info-label">Workspace:</span>
-          <span id="active-workspace-text" class="info-value">Not Selected</span>
+          <div class="workspace-switcher-container">
+            <button id="btn-switch-workspace" class="workspace-switcher-btn" title="Click to switch workspace">
+              <span id="active-workspace-text" class="info-value">Not Selected</span>
+              <svg class="icon-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+            </button>
+            <div id="workspace-dropdown" class="workspace-dropdown hidden">
+              <div class="workspace-dropdown-header">Saved Workspaces</div>
+              <div id="saved-workspaces-list" class="saved-workspaces-list"></div>
+              <div class="workspace-dropdown-footer">
+                <button id="btn-new-workspace" class="btn-new-workspace">+ New Workspace</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="info-row">
           <span class="info-label">Mode:</span>
@@ -90,8 +102,8 @@
         <button id="btn-abort" class="btn btn-danger btn-sm">HALT EXECUTION</button>
       </div>
 
-      <div class="workspace-grid">
-        <!-- Terminal Redirect Screen (Only shown in CLI mode) -->
+      <div class="workspace-area">
+        <!-- CLI Mode Banner -->
         <div id="cli-mode-banner" class="cli-mode-banner hidden">
           <div class="cli-banner-content">
             <div class="terminal-header">
@@ -110,36 +122,29 @@
           </div>
         </div>
 
-        <!-- Chat Area -->
-        <div class="chat-container">
-          <div id="chat-messages" class="chat-messages">
-            <!-- Messages stream here -->
+        <!-- Status Strip: Checklist + Agents compact view -->
+        <div id="status-strip" class="status-strip">
+          <div class="strip-row" id="checklist-strip">
+            <span class="strip-label">Tasks</span>
+            <div id="checklist-strip-items" class="strip-items">
+              <span class="strip-empty">No active tasks</span>
+            </div>
           </div>
-          
-          <!-- Typing / Progress Indicator -->
-          <div id="processing-indicator" class="processing-indicator">
-            <div class="spinner"></div>
-            <span id="processing-text">Agent is thinking...</span>
+          <div class="strip-row hidden" id="agents-strip">
+            <span class="strip-label">Agents</span>
+            <div id="agents-strip-items" class="strip-items"></div>
           </div>
         </div>
 
-        <!-- Dashboard Panel (Checklist & Agents Tree) -->
-        <div class="dashboard-panel">
-          <div class="tabs">
-            <button class="tab-btn active" data-tab="tab-checklist">Checklist</button>
-            <button class="tab-btn" data-tab="tab-agents">Active Agents</button>
-          </div>
+        <!-- Chat Area (full width) -->
+        <div class="chat-container">
+          <div id="chat-messages" class="chat-messages">
+            <!-- Messages stream here -->
 
-          <div id="tab-checklist" class="tab-content active">
-            <div id="checklist-container" class="checklist-container">
-              <p class="empty-state">No active tasks in checklist.</p>
-            </div>
-          </div>
-
-          <div id="tab-agents" class="tab-content">
-            <div id="agents-tree" class="agents-tree">
-              <!-- Graph tree nodes will render dynamically -->
-              <p class="empty-state">No secondary agents spawned yet.</p>
+            <!-- Typing / Progress Indicator -->
+            <div id="processing-indicator" class="processing-indicator">
+              <div class="spinner"></div>
+              <span id="processing-text">Agent is thinking...</span>
             </div>
           </div>
         </div>

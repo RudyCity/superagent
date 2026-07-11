@@ -1,4 +1,5 @@
 const BASE_URL = "http://localhost:7888";
+const MAX_SAVED_WORKSPACES = 10;
 
 let eventSource = null;
 let currentAgentMessageElement = null;
@@ -10,6 +11,8 @@ let pendingPermissionId = null;
 let pendingQuestionId = null;
 let selectedQuestionOption = null;
 let apiToken = "";
+let currentMode = "single";
+let workspaceDropdownOpen = false;
 
 // Local fetch wrapper to append API token
 const originalFetch = window.fetch;
@@ -41,8 +44,9 @@ const btnSend = document.getElementById("btn-send");
 const processingIndicator = document.getElementById("processing-indicator");
 const processingText = document.getElementById("processing-text");
 
-const checklistContainer = document.getElementById("checklist-container");
-const agentsTree = document.getElementById("agents-tree");
+const checklistStripItems = document.getElementById("checklist-strip-items");
+const agentsStrip = document.getElementById("agents-strip");
+const agentsStripItems = document.getElementById("agents-strip-items");
 
 const permissionOverlay = document.getElementById("permission-overlay");
 const permissionTool = document.getElementById("permission-tool");
@@ -65,6 +69,11 @@ const btnStopServer = document.getElementById("btn-stop-server");
 const btnStartServerHelp = document.getElementById("btn-start-server-help");
 const startServerTooltip = document.getElementById("start-server-tooltip");
 
+const btnSwitchWorkspace = document.getElementById("btn-switch-workspace");
+const workspaceDropdown = document.getElementById("workspace-dropdown");
+const savedWorkspacesList = document.getElementById("saved-workspaces-list");
+const btnNewWorkspace = document.getElementById("btn-new-workspace");
+
 // Initialize View
 document.addEventListener("DOMContentLoaded", () => {
   // Load saved workspace path and API token if any
@@ -81,16 +90,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   setInterval(checkServerStatus, 1000);
 
-  // Tab navigation
-  document.querySelectorAll(".tab-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-      document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
-      
-      btn.classList.add("active");
-      document.getElementById(btn.dataset.tab).classList.add("active");
-    });
-  });
 
   // Buttons Event Listeners
   btnInit.addEventListener("click", initSession);
@@ -115,8 +114,21 @@ document.addEventListener("DOMContentLoaded", () => {
     e.stopPropagation();
     startServerTooltip.classList.toggle("hidden");
   });
+
+  // Workspace switcher
+  btnSwitchWorkspace.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleWorkspaceDropdown();
+  });
+
+  btnNewWorkspace.addEventListener("click", () => {
+    hideWorkspaceDropdown();
+    goToSetupScreen();
+  });
+
   document.addEventListener("click", () => {
     startServerTooltip.classList.add("hidden");
+    hideWorkspaceDropdown();
   });
 });
 
@@ -257,11 +269,14 @@ async function initSession() {
     if (data.success) {
       activeWorkspaceText.textContent = workspace;
       activeModeText.textContent = mode;
+      currentMode = mode;
+
+      await saveWorkspace(workspace);
       
       setupScreen.classList.remove("active");
       workspaceScreen.classList.add("active");
       
-      chatMessages.innerHTML = "";
+      clearChatMessages();
       appendMessage("system", `System initialized in ${mode} mode.`);
       
       setupSSE();
@@ -352,13 +367,42 @@ function handleSSEEvent(data) {
         if (!currentAgentMessageElement) {
           currentAgentMessageElement = appendMessage("agent", "");
         }
-        
+
         currentActiveToolElement = document.createElement("div");
         currentActiveToolElement.className = "tool-block";
+
+        // Format args as preview — ToolCall.args is the correct field
+        let argsText = "";
+        try {
+          const args = e.toolCall.args || {};
+          const argsStr = JSON.stringify(args, null, 2);
+          argsText = argsStr.length > 300 ? argsStr.slice(0, 300) + "..." : argsStr;
+        } catch (_) {}
+
         currentActiveToolElement.innerHTML = `
-          <div class="tool-indicator tool-running"></div>
-          <span>${e.toolCall.name} (${e.description})</span>
+          <div class="tool-header">
+            <div class="tool-indicator tool-running"></div>
+            <span class="tool-name">${e.toolCall?.name ?? "tool"}</span>
+            <span class="tool-desc">${e.description ?? ""}</span>
+            <button class="tool-toggle" aria-expanded="false" title="Expand details">&#9658;</button>
+          </div>
+          <div class="tool-detail hidden">
+            ${argsText ? `<pre class="tool-args">${argsText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>` : ""}
+            <div class="tool-result-area hidden"></div>
+          </div>
         `;
+
+        // Toggle expand/collapse on header click
+        const toolBlock = currentActiveToolElement;
+        toolBlock.querySelector(".tool-header").addEventListener("click", () => {
+          const detail = toolBlock.querySelector(".tool-detail");
+          const toggle = toolBlock.querySelector(".tool-toggle");
+          const isOpen = !detail.classList.contains("hidden");
+          detail.classList.toggle("hidden", isOpen);
+          toggle.textContent = isOpen ? "▸" : "▾";
+          toggle.setAttribute("aria-expanded", String(!isOpen));
+        });
+
         currentAgentMessageElement.querySelector(".msg-content").appendChild(currentActiveToolElement);
         scrollToBottom();
         break;
@@ -367,7 +411,27 @@ function handleSSEEvent(data) {
         hideSpinner();
         if (currentActiveToolElement) {
           const indicator = currentActiveToolElement.querySelector(".tool-indicator");
-          indicator.className = e.toolResult.isError ? "tool-indicator tool-error" : "tool-indicator tool-success";
+          const isErr = e.toolResult && e.toolResult.isError;
+          indicator.className = isErr ? "tool-indicator tool-error" : "tool-indicator tool-success";
+
+          // Render result — ToolResult.result is the correct field (string)
+          const resultArea = currentActiveToolElement.querySelector(".tool-result-area");
+          if (resultArea && e.toolResult) {
+            const resultText = e.toolResult.result || "";
+            if (resultText) {
+              const preview = resultText.length > 600 ? resultText.slice(0, 600) + "\n... (truncated)" : resultText;
+              resultArea.textContent = preview;
+              resultArea.classList.remove("hidden");
+              if (isErr) resultArea.classList.add("tool-result-error");
+              // Auto-expand to show result
+              const detail = currentActiveToolElement.querySelector(".tool-detail");
+              const toggle = currentActiveToolElement.querySelector(".tool-toggle");
+              detail.classList.remove("hidden");
+              toggle.textContent = "\u25be";
+              toggle.setAttribute("aria-expanded", "true");
+            }
+          }
+
           currentActiveToolElement = null;
         }
         break;
@@ -379,6 +443,12 @@ function handleSSEEvent(data) {
 
       case "done":
         hideSpinner();
+        if (currentAgentMessageElement) {
+          const contentSpan = currentAgentMessageElement.querySelector(".msg-content-text");
+          if (contentSpan) {
+            contentSpan.innerHTML = formatMarkdown(contentSpan.textContent);
+          }
+        }
         currentAgentMessageElement = null;
         currentReasoningElement = null;
         currentActiveToolElement = null;
@@ -552,6 +622,132 @@ async function abortExecution() {
   }
 }
 
+// ─── Workspace Switcher ──────────────────────────────────────────────────────
+
+async function loadSavedWorkspaces() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["savedWorkspaces"], (result) => {
+      resolve(result.savedWorkspaces || []);
+    });
+  });
+}
+
+async function saveWorkspace(workspacePath) {
+  const saved = await loadSavedWorkspaces();
+  const filtered = saved.filter(w => w !== workspacePath);
+  filtered.unshift(workspacePath);
+  const trimmed = filtered.slice(0, MAX_SAVED_WORKSPACES);
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ savedWorkspaces: trimmed }, resolve);
+  });
+}
+
+async function renderWorkspaceDropdown() {
+  const saved = await loadSavedWorkspaces();
+  const currentPath = activeWorkspaceText.textContent;
+
+  savedWorkspacesList.innerHTML = "";
+
+  if (saved.length === 0) {
+    savedWorkspacesList.innerHTML = '<p class="ws-empty">No saved workspaces yet.</p>';
+    return;
+  }
+
+  saved.forEach(ws => {
+    const isActive = ws === currentPath;
+    const item = document.createElement("div");
+    item.className = "workspace-item" + (isActive ? " active" : "");
+    item.title = ws;
+    item.innerHTML = `
+      <span class="ws-dot"></span>
+      <span class="ws-path">${ws}</span>
+      ${isActive ? '<span class="ws-active-badge">active</span>' : ''}
+    `;
+    if (!isActive) {
+      item.addEventListener("click", () => {
+        hideWorkspaceDropdown();
+        switchToWorkspace(ws, currentMode);
+      });
+    }
+    savedWorkspacesList.appendChild(item);
+  });
+}
+
+async function switchToWorkspace(workspacePath, mode) {
+  try {
+    const res = await fetch(`${BASE_URL}/api/switch-workspace`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace: workspacePath, mode })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      activeWorkspaceText.textContent = data.workspace;
+      activeModeText.textContent = data.mode;
+      currentMode = data.mode;
+
+      await saveWorkspace(data.workspace);
+
+      clearChatMessages();
+      appendMessage("system", `Switched to workspace: ${data.workspace}`);
+      appendMessage("system", `Mode: ${data.mode}`);
+
+      stopPolling();
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      setupSSE();
+      startPolling();
+
+      // Save new last workspace path
+      chrome.storage.local.set({ lastWorkspacePath: data.workspace });
+    } else {
+      alert("Failed to switch workspace: " + (data.error || "Unknown error"));
+    }
+  } catch (err) {
+    alert("Error switching workspace: " + err.message);
+  }
+}
+
+function toggleWorkspaceDropdown() {
+  if (workspaceDropdownOpen) {
+    hideWorkspaceDropdown();
+  } else {
+    showWorkspaceDropdown();
+  }
+}
+
+function showWorkspaceDropdown() {
+  workspaceDropdownOpen = true;
+  workspaceDropdown.classList.remove("hidden");
+  btnSwitchWorkspace.classList.add("open");
+  renderWorkspaceDropdown();
+}
+
+function hideWorkspaceDropdown() {
+  workspaceDropdownOpen = false;
+  workspaceDropdown.classList.add("hidden");
+  btnSwitchWorkspace.classList.remove("open");
+}
+
+function goToSetupScreen() {
+  if (activeAgent && typeof activeAgent.abort === "function") {
+    // Signal abort but don't wait
+  }
+  stopPolling();
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  workspaceScreen.classList.remove("active");
+  setupScreen.classList.add("active");
+  clearChatMessages();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Poll Active Info
 function startPolling() {
   stopPolling();
@@ -586,84 +782,87 @@ async function pollChecklistAndAgents() {
   } catch {}
 }
 
-// Render task list checklist
+// Render task list as compact chip strip
 function renderTasks(tasks) {
   if (!tasks || tasks.length === 0) {
-    checklistContainer.innerHTML = '<p class="empty-state">No active tasks in checklist.</p>';
+    checklistStripItems.innerHTML = '<span class="strip-empty">No active tasks</span>';
     return;
   }
 
-  checklistContainer.innerHTML = "";
+  checklistStripItems.innerHTML = "";
   tasks.forEach(t => {
-    const div = document.createElement("div");
-    div.className = "task-item";
-    
-    // Status text mapping
-    let statusLabel = t.status;
-    if (t.status === " ") statusLabel = "TODO";
-    if (t.status === "/") statusLabel = "RUNNING";
-    if (t.status === "x") statusLabel = "DONE";
+    const chip = document.createElement("div");
+    const statusKey = t.status === "x" ? "done" : t.status === "/" ? "running" : "todo";
+    chip.className = `task-chip chip-${statusKey}`;
 
-    div.innerHTML = `
-      <span class="task-status status-val-${t.status.replace('/', '\\/') || 'todo'}">${statusLabel}</span>
-      <span class="task-text">${t.text}</span>
-    `;
-    checklistContainer.appendChild(div);
+    let icon = "○";
+    if (t.status === "x") icon = "✓";
+    else if (t.status === "/") icon = "◌";
+
+    chip.title = t.text;
+    chip.innerHTML = `<span class="chip-icon">${icon}</span><span class="chip-text">${t.text}</span>`;
+    checklistStripItems.appendChild(chip);
   });
 }
 
-// Render Multi-Agent tree hierarchy
+// Render agent hierarchy as compact chip strip
 function renderAgentsTree(subagents, superagents) {
   const mode = activeModeText.textContent.toLowerCase();
-  
-  if (mode !== "multi") {
-    agentsTree.innerHTML = '<p class="empty-state">Agent tree hierarchy is only active in Multi Mode.</p>';
+
+  const hasAgents = (subagents && subagents.length > 0) || (superagents && superagents.length > 0);
+  if (mode !== "multi" || !hasAgents) {
+    agentsStrip.classList.add("hidden");
     return;
   }
 
-  if ((!subagents || subagents.length === 0) && (!superagents || superagents.length === 0)) {
-    agentsTree.innerHTML = `
-      <div class="agent-node agent-node-master">
-        <div class="node-title">Orchestrator Master</div>
-        <div class="node-sub">Status: Idle</div>
-      </div>
-      <p class="empty-state">Waiting to spawn feature Superagents...</p>
-    `;
-    return;
-  }
+  agentsStrip.classList.remove("hidden");
+  agentsStripItems.innerHTML = "";
 
-  agentsTree.innerHTML = "";
-
-  // Master Orchestrator Node
-  const masterNode = document.createElement("div");
-  masterNode.className = "agent-node agent-node-master";
-  masterNode.innerHTML = `
-    <div class="node-title">Orchestrator Master</div>
-    <div class="node-sub">Status: Active</div>
-  `;
-  agentsTree.appendChild(masterNode);
-
-  // Render Superagent Nodes
   superagents.forEach(sa => {
-    const node = document.createElement("div");
-    node.className = "agent-node agent-node-super";
-    node.innerHTML = `
-      <div class="node-title">Superagent (Role: ${sa.role})</div>
-      <div class="node-sub">Status: ${sa.status.toUpperCase()} ${sa.result ? `(${sa.result})` : ''}</div>
-    `;
-    agentsTree.appendChild(node);
+    const chip = document.createElement("div");
+    const statusKey = sa.status === "done" ? "done" : sa.status === "running" ? "running" : "todo";
+    chip.className = `agent-chip chip-super chip-${statusKey}`;
+    chip.title = `Superagent: ${sa.role} (${sa.status})`;
+    chip.innerHTML = `<span class="chip-icon">◈</span><span class="chip-text">${sa.role}</span>`;
+    agentsStripItems.appendChild(chip);
   });
 
-  // Render Subagent Nodes
   subagents.forEach(sub => {
-    const node = document.createElement("div");
-    node.className = "agent-node agent-node-sub";
-    node.innerHTML = `
-      <div class="node-title">Subagent (Type: ${sub.typeName})</div>
-      <div class="node-sub">Status: ${sub.status.toUpperCase()} ${sub.result ? `(${sub.result})` : ''}</div>
-    `;
-    agentsTree.appendChild(node);
+    const chip = document.createElement("div");
+    const statusKey = sub.status === "done" ? "done" : sub.status === "running" ? "running" : "todo";
+    chip.className = `agent-chip chip-sub chip-${statusKey}`;
+    chip.title = `Subagent: ${sub.typeName} (${sub.status})`;
+    chip.innerHTML = `<span class="chip-icon">◆</span><span class="chip-text">${sub.typeName}</span>`;
+    agentsStripItems.appendChild(chip);
   });
+}
+
+function formatMarkdown(text) {
+  if (!text) return "";
+  
+  // Escape HTML first to prevent XSS issues
+  let escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  
+  // Format code blocks/spans: `code`
+  escaped = escaped.replace(/`([^`]+)`/g, (match, code) => {
+    // Detect shell/command related tools (bash, run_command, git, npm, test, build etc)
+    const isShell = /\b(bash|run_command|execute|shell|terminal|npm|git|build|test)\b/i.test(code);
+    const extraClass = isShell ? " md-code-shell" : "";
+    return `<code class="md-code${extraClass}">${code}</code>`;
+  });
+  
+  // Format bold: **text**
+  escaped = escaped.replace(/\*\*([^*]+)\*\*/g, (match, content) => {
+    // Highlight specific bold texts like "Shell & build"
+    const isShellText = /\b(shell|build|terminal|run|execution)\b/i.test(content);
+    const extraClass = isShellText ? " md-bold-shell" : "";
+    return `<strong class="md-bold${extraClass}">${content}</strong>`;
+  });
+  
+  return escaped;
 }
 
 // Chat Helpers
@@ -685,12 +884,21 @@ function appendMessage(role, text) {
     textSpan.textContent = text;
     content.appendChild(textSpan);
   } else {
-    content.textContent = text;
+    // User or System: parse markdown directly
+    const textSpan = document.createElement("span");
+    textSpan.className = "msg-content-text";
+    textSpan.innerHTML = formatMarkdown(text);
+    content.appendChild(textSpan);
   }
 
   msgDiv.appendChild(header);
   msgDiv.appendChild(content);
-  chatMessages.appendChild(msgDiv);
+
+  if (processingIndicator && processingIndicator.parentNode === chatMessages) {
+    chatMessages.insertBefore(msgDiv, processingIndicator);
+  } else {
+    chatMessages.appendChild(msgDiv);
+  }
   
   scrollToBottom();
   return msgDiv;
@@ -699,6 +907,7 @@ function appendMessage(role, text) {
 function showSpinner(text) {
   processingIndicator.classList.add("active");
   processingText.textContent = text;
+  scrollToBottom();
 }
 
 function hideSpinner() {
@@ -707,6 +916,15 @@ function hideSpinner() {
 
 function scrollToBottom() {
   chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function clearChatMessages() {
+  if (!chatMessages) return;
+  Array.from(chatMessages.childNodes).forEach(node => {
+    if (node !== processingIndicator) {
+      chatMessages.removeChild(node);
+    }
+  });
 }
 
 // Grab Browser Context (Active Tab)
@@ -765,6 +983,17 @@ async function executeBrowserControl(controlId, action, target, value) {
       return;
     }
 
+    if (action === "navigate") {
+      chrome.tabs.update(activeTab.id, { url: target }, (tab) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Navigated to ${target}`, false);
+        }
+      });
+      return;
+    }
+
     if (action === "errors") {
       try {
         chrome.scripting.executeScript({
@@ -794,11 +1023,6 @@ async function executeBrowserControl(controlId, action, target, value) {
         target: { tabId: activeTab.id },
         func: (act, tgt, val) => {
           try {
-            if (act === "navigate") {
-              window.location.href = tgt;
-              return `Navigated to ${tgt}`;
-            }
-
             if (act === "scroll") {
               if (tgt === "up") {
                 window.scrollBy(0, -window.innerHeight / 2);
@@ -851,7 +1075,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             return `Error: ${err.message || String(err)}`;
           }
         },
-        args: [action, target, value]
+        args: [action || "", target || "", value || ""]
       }, (results) => {
         if (chrome.runtime.lastError) {
           sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
