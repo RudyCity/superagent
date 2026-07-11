@@ -194,23 +194,23 @@
 }
 
 .tool-indicator {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
   flex-shrink: 0;
 }
 
 .tool-running {
-  background: var(--border-vscode-bright);
+  color: var(--border-vscode-bright);
   animation: blink 1s infinite alternate;
 }
 
 .tool-success {
-  background: var(--color-green);
+  color: var(--color-green);
 }
 
 .tool-error {
-  background: var(--color-red);
+  color: var(--color-red);
 }
 
 .tool-header {

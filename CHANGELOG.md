@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.268] - 2026-07-11
+
+### Changed
+- **Chrome Extension UI**:
+  - Simplified tool block design by removing the toggle arrow button.
+  - Replaced the indicator div with a simple bullet character (`•`) that changes color based on status (running is blue, success is green, error is red).
+  - Made the entire tool header line clickable to toggle details expand/collapse state.
+
+---
+
 ## [1.2.267] - 2026-07-11
 
 ### Added

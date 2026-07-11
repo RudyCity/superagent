@@ -498,10 +498,9 @@ function handleSSEEvent(data) {
 
         currentActiveToolElement.innerHTML = `
           <div class="tool-header">
-            <div class="tool-indicator tool-running"></div>
+            <span class="tool-indicator tool-running">•</span>
             <span class="tool-name">${e.toolCall?.name ?? "tool"}</span>
             <span class="tool-desc">${e.description ?? ""}</span>
-            <button class="tool-toggle" aria-expanded="false" title="Expand details">&#9658;</button>
           </div>
           <div class="tool-detail hidden">
             ${argsText ? `<pre class="tool-args">${argsText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>` : ""}
@@ -513,11 +512,7 @@ function handleSSEEvent(data) {
         const toolBlock = currentActiveToolElement;
         toolBlock.querySelector(".tool-header").addEventListener("click", () => {
           const detail = toolBlock.querySelector(".tool-detail");
-          const toggle = toolBlock.querySelector(".tool-toggle");
-          const isOpen = !detail.classList.contains("hidden");
-          detail.classList.toggle("hidden", isOpen);
-          toggle.textContent = isOpen ? "▸" : "▾";
-          toggle.setAttribute("aria-expanded", String(!isOpen));
+          detail.classList.toggle("hidden");
         });
 
         currentAgentMessageElement.querySelector(".msg-content").appendChild(currentActiveToolElement);
@@ -542,10 +537,7 @@ function handleSSEEvent(data) {
               if (isErr) resultArea.classList.add("tool-result-error");
               // Auto-expand to show result
               const detail = currentActiveToolElement.querySelector(".tool-detail");
-              const toggle = currentActiveToolElement.querySelector(".tool-toggle");
               detail.classList.remove("hidden");
-              toggle.textContent = "\u25be";
-              toggle.setAttribute("aria-expanded", "true");
             }
           }
 
@@ -582,7 +574,6 @@ function handleSSEEvent(data) {
     if (currentActiveToolElement) {
       const resultArea = currentActiveToolElement.querySelector(".tool-result-area");
       const detail = currentActiveToolElement.querySelector(".tool-detail");
-      const toggle = currentActiveToolElement.querySelector(".tool-toggle");
       if (resultArea) {
         // Show last 600 characters of streaming text to keep display readable
         const preview = data.content.length > 600 
@@ -593,10 +584,6 @@ function handleSSEEvent(data) {
         // Auto-expand tool block to show streaming progress
         if (detail && detail.classList.contains("hidden")) {
           detail.classList.remove("hidden");
-          if (toggle) {
-            toggle.textContent = "\u25be";
-            toggle.setAttribute("aria-expanded", "true");
-          }
         }
       }
       scrollToBottom();
