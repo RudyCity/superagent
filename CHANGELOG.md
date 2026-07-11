@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.263] - 2026-07-11
+
+### Changed
+- **Chrome Extension Styling**:
+  - Migrated styling compilation workflow to use Tailwind CSS v4.
+  - Added `@tailwindcss/cli` devDependency and compilation scripts (`ext:css` / `ext:css:watch`) to `package.json`.
+  - Refactored `sidepanel.html` components to use inline Tailwind utility classes.
+  - Implemented `@theme` config inside `sidepanel.src.css` to map VS Code color variables.
+
+---
+
 ## [1.2.262] - 2026-07-11
 
 ### Changed

@@ -8,9 +8,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="sidepanel.css">
 </head>
-<body>
-  <header>
-    <div class="logo-container">
+<body class="font-sans antialiased bg-vscode-editor text-vscode-primary">
+  <header class="bg-vscode-activitybar border-b border-vscode-dim p-[10px_16px] flex items-center justify-between z-10">
+    <div class="logo-container flex items-center gap-[8px]">
       <div class="glow-dot"></div>
       <h1>SUPERAGENT<span>.AI</span></h1>
     </div>
@@ -20,7 +20,7 @@
       </div>
       <button id="btn-start-server-help" class="btn btn-secondary btn-xs btn-server-ctrl">Start Server</button>
       <button id="btn-stop-server" class="btn btn-danger btn-xs btn-server-ctrl hidden">Stop Server</button>
-      <div id="connection-status" class="status-badge status-offline">Offline</div>
+      <div id="connection-status" class="status-badge status-offline text-[11px] font-medium p-[2px_8px] rounded-sm capitalize border border-transparent transition-all duration-200">Offline</div>
     </div>
   </header>
 
