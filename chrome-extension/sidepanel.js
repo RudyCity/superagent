@@ -144,9 +144,24 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Initialize Custom Select Component Dropdowns
-  initCustomSelect("quick-preset-trigger", "quick-preset-options");
-  initCustomSelect("input-preset-trigger", "input-preset-options");
+  // Initialize Preset Select Event Listeners
+  const quickPresetSelect = document.getElementById("quick-preset-select");
+  if (quickPresetSelect) {
+    quickPresetSelect.addEventListener("change", (e) => {
+      if (typeof changeActivePreset === "function") {
+        changeActivePreset(e.target.value);
+      }
+    });
+  }
+
+  const inputPresetSelect = document.getElementById("input-preset-select");
+  if (inputPresetSelect) {
+    inputPresetSelect.addEventListener("change", (e) => {
+      if (typeof changeActivePreset === "function") {
+        changeActivePreset(e.target.value);
+      }
+    });
+  }
 
   // Collapsible Terminal Drawer Toggler
   const terminalDrawer = document.getElementById("terminal-drawer");

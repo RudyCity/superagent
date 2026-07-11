@@ -818,6 +818,29 @@ async function fetchServerConfig() {
   }
 }
 
+// Populate standard select helper
+function populateStandardSelect(selectId, presets, activePresetId) {
+  const selectEl = document.getElementById(selectId);
+  if (!selectEl) return;
+  
+  selectEl.innerHTML = "";
+  if (presets.length === 0) {
+    selectEl.innerHTML = '<option value="">No presets</option>';
+    return;
+  }
+  
+  presets.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.name;
+    opt.title = `${p.name} - ${p.description || ""}`;
+    if (p.id === activePresetId) {
+      opt.selected = true;
+    }
+    selectEl.appendChild(opt);
+  });
+}
+
 // Update presets dropdown based on active orchestration mode selection
 function updatePresetsDropdown() {
   if (!serverPresets) return;
@@ -842,9 +865,9 @@ function updatePresetsDropdown() {
     modelPresetSelect.appendChild(opt);
   });
 
-  // Populate Custom Select dropdowns
-  populateCustomSelect("quick-preset-options", "quick-preset-val", presets, activePresetId, changeActivePreset);
-  populateCustomSelect("input-preset-options", "input-preset-val", presets, activePresetId, changeActivePreset);
+  // Populate Standard Select dropdowns
+  populateStandardSelect("quick-preset-select", presets, activePresetId);
+  populateStandardSelect("input-preset-select", presets, activePresetId);
 
   const metaModelName = document.getElementById("meta-model-name");
   const activePreset = presets.find(p => p.id === activePresetId);

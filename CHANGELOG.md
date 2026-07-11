@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.294] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Preset Select Dropdowns**:
+  - Restored rendering and population of standard quick-preset-select and input-preset-select dropdown selectors.
+  - Linked selection changes to active preset update APIs correctly.
+
+---
+
 ## [1.2.293] - 2026-07-11
 
 ### Added
