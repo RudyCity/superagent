@@ -6,7 +6,7 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
-import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents } from "./core/tools/state.js";
+import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 
 interface AgentSession {
@@ -223,6 +223,7 @@ const onQuestion = (question: any, options?: string[], isMultiSelect?: boolean) 
 };
 
 export async function runServer(port: number, silent = false) {
+  registerQuestionHandler(onQuestion);
   const server = http.createServer(async (req, res) => {
     const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
     const pathname = parsedUrl.pathname;
