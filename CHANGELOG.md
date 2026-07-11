@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.259] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Padding and Spacing**:
+  - Increased padding and spacing inside agent message bubbles, tool execution blocks, tool headers, and tool details in `sidepanel.css`.
+  - Added border and comfortable padding around code/JSON arguments (`.tool-args`) in tool blocks to make them more readable and visually spacious.
+
+---
+
 ## [1.2.258] - 2026-07-11
 
 ### Fixed
