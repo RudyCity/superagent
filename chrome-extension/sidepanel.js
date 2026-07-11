@@ -253,6 +253,7 @@ async function checkServerStatus() {
         workspaceScreen.classList.add("active");
         setupSSE();
         startPolling();
+        await loadChatHistory();
       }
 
       // Handle CLI session mode toggle
@@ -400,7 +401,7 @@ async function initSession() {
       workspaceScreen.classList.add("active");
       
       clearChatMessages();
-      appendMessage("system", `System initialized in ${mode} mode.`);
+      await loadChatHistory();
       
       setupSSE();
       startPolling();
@@ -1075,6 +1076,196 @@ function clearChatMessages() {
   Array.from(chatMessages.childNodes).forEach(node => {
     if (node !== processingIndicator) {
       chatMessages.removeChild(node);
+    }
+  });
+}
+
+// Fetch and Render Chat History
+async function loadChatHistory() {
+  try {
+    const res = await fetch(`${BASE_URL}/api/history`);
+    const data = await res.json().catch(() => null);
+    if (res.ok && data && data.success && Array.isArray(data.messages)) {
+      clearChatMessages();
+      renderChatHistory(data.messages);
+    }
+  } catch (err) {
+    console.error("Failed to load chat history:", err);
+  }
+}
+
+function renderChatHistory(messages) {
+  if (!messages || messages.length === 0) {
+    appendMessage("system", `System initialized in ${currentMode} mode.`);
+    return;
+  }
+
+  messages.forEach(msg => {
+    if (msg.role === "system") {
+      if (msg.content) {
+        appendMessage("system", typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content));
+      }
+      return;
+    }
+
+    if (msg.role === "user") {
+      const text = typeof msg.content === "string" 
+        ? msg.content 
+        : (Array.isArray(msg.content) ? msg.content.map(p => p.text || "").join(" ") : "");
+      appendMessage("user", text);
+      return;
+    }
+
+    if (msg.role === "assistant") {
+      const text = typeof msg.content === "string" 
+        ? msg.content 
+        : (Array.isArray(msg.content) ? msg.content.map(p => p.text || "").join(" ") : "");
+
+      const msgDiv = appendMessage("agent", "");
+      const contentDiv = msgDiv.querySelector(".msg-content");
+      const textSpan = msgDiv.querySelector(".msg-content-text");
+
+      // 1. Render Reasoning if present
+      if (msg.reasoning) {
+        const reasoningDiv = document.createElement("div");
+        reasoningDiv.className = "reasoning-block";
+        
+        const label = document.createElement("div");
+        label.className = "msg-header";
+        label.textContent = "Reasoning";
+        reasoningDiv.appendChild(label);
+        
+        const textSpanReasoning = document.createElement("span");
+        textSpanReasoning.className = "reasoning-text";
+        textSpanReasoning.textContent = msg.reasoning;
+        reasoningDiv.appendChild(textSpanReasoning);
+        
+        contentDiv.insertBefore(reasoningDiv, contentDiv.firstChild);
+      }
+
+      // 2. Render Text Content
+      if (textSpan && text) {
+        textSpan.innerHTML = formatMarkdown(text);
+      }
+
+      // 3. Render Tool Calls & Results
+      const toolCalls = msg.toolCalls || [];
+      const toolResults = msg.toolResults || [];
+
+      toolCalls.forEach((tc, idx) => {
+        const tr = toolResults.find(r => r.toolCallId === tc.id) || toolResults[idx];
+
+        const toolBlock = document.createElement("div");
+        toolBlock.className = "tool-block";
+
+        let argsText = "";
+        try {
+          const args = tc.args || {};
+          const argsStr = JSON.stringify(args, null, 2);
+          argsText = argsStr.length > 300 ? argsStr.slice(0, 300) + "..." : argsStr;
+        } catch (_) {}
+
+        const isCompleted = !!tr;
+        const isErr = tr && tr.isError;
+        const indicatorClass = isCompleted 
+          ? (isErr ? "tool-indicator tool-error" : "tool-indicator tool-success")
+          : "tool-indicator tool-running";
+
+        toolBlock.innerHTML = `
+          <div class="tool-header">
+            <span class="tool-indicator ${indicatorClass}">•</span>
+            <span class="tool-name">${tc.name ?? "tool"}</span>
+            <span class="tool-desc"></span>
+          </div>
+          <div class="tool-detail hidden">
+            ${argsText ? `<pre class="tool-args">${argsText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>` : ""}
+            <div class="tool-result-area hidden"></div>
+          </div>
+        `;
+
+        toolBlock.querySelector(".tool-header").addEventListener("click", () => {
+          const detail = toolBlock.querySelector(".tool-detail");
+          detail.classList.toggle("hidden");
+        });
+
+        if (tr) {
+          const resultArea = toolBlock.querySelector(".tool-result-area");
+          const resultText = tr.result || "";
+          if (resultText) {
+            const preview = resultText.length > 600 ? resultText.slice(0, 600) + "\n... (truncated)" : resultText;
+            resultArea.textContent = preview;
+            resultArea.classList.remove("hidden");
+            if (isErr) resultArea.classList.add("tool-result-error");
+            
+            // By default expand completed tool details
+            const detail = toolBlock.querySelector(".tool-detail");
+            detail.classList.remove("hidden");
+          }
+        }
+
+        contentDiv.appendChild(toolBlock);
+      });
+    }
+
+    if (msg.role === "tool" && Array.isArray(msg.toolResults)) {
+      // Find the last assistant message element to append tool results if not already rendered
+      const msgDivs = chatMessages.querySelectorAll(".msg-agent");
+      if (msgDivs.length > 0) {
+        const lastMsgDiv = msgDivs[msgDivs.length - 1];
+        const contentDiv = lastMsgDiv.querySelector(".msg-content");
+        
+        msg.toolResults.forEach(tr => {
+          // Check if this tool result was already rendered
+          const existingBlocks = contentDiv.querySelectorAll(".tool-block");
+          let alreadyRendered = false;
+          existingBlocks.forEach(block => {
+            const nameSpan = block.querySelector(".tool-name");
+            if (nameSpan && nameSpan.textContent === tr.name) {
+              const resArea = block.querySelector(".tool-result-area");
+              if (resArea && resArea.classList.contains("hidden")) {
+                alreadyRendered = true;
+                const preview = tr.result.length > 600 ? tr.result.slice(0, 600) + "\n... (truncated)" : tr.result;
+                resArea.textContent = preview;
+                resArea.classList.remove("hidden");
+                if (tr.isError) resArea.classList.add("tool-result-error");
+                
+                const indicator = block.querySelector(".tool-indicator");
+                indicator.className = tr.isError ? "tool-indicator tool-error" : "tool-indicator tool-success";
+                
+                const detail = block.querySelector(".tool-detail");
+                detail.classList.remove("hidden");
+              }
+            }
+          });
+
+          if (!alreadyRendered) {
+            const toolBlock = document.createElement("div");
+            toolBlock.className = "tool-block";
+            const indicatorClass = tr.isError ? "tool-indicator tool-error" : "tool-indicator tool-success";
+
+            toolBlock.innerHTML = `
+              <div class="tool-header">
+                <span class="tool-indicator ${indicatorClass}">•</span>
+                <span class="tool-name">${tr.name ?? "tool"}</span>
+                <span class="tool-desc"></span>
+              </div>
+              <div class="tool-detail">
+                <div class="tool-result-area">${tr.result.length > 600 ? tr.result.slice(0, 600) + "\n... (truncated)" : tr.result}</div>
+              </div>
+            `;
+            if (tr.isError) {
+              toolBlock.querySelector(".tool-result-area").classList.add("tool-result-error");
+            }
+            
+            toolBlock.querySelector(".tool-header").addEventListener("click", () => {
+              const detail = toolBlock.querySelector(".tool-detail");
+              detail.classList.toggle("hidden");
+            });
+
+            contentDiv.appendChild(toolBlock);
+          }
+        });
+      }
     }
   });
 }

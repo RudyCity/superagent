@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.275] - 2026-07-11
+
+### Added
+- **Chat History Loading in Chrome Extension**:
+  - Implemented public `getConversationMessages()` helper in `Agent` class to return the messages.
+  - Implemented `/api/history` GET endpoint in the extension server to serve conversation history of the active session.
+  - Added support in `sidepanel.js` to fetch and render chat history (with formatting for reasoning blocks and collapsible tool blocks) when initializing a session, auto-reconnecting, or switching workspaces.
+
+---
+
 ## [1.2.274] - 2026-07-11
 
 ### Added

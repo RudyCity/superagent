@@ -911,6 +911,10 @@ If none of the options are suitable, still pick the closest one.`;
     return this.currentHistoryFilePath;
   }
 
+  getConversationMessages(): Message[] {
+    return this.conversation.getMessages();
+  }
+
   async loadHistory(autoResume: boolean | string = false): Promise<void> {
     this.currentHistoryFilePath = this.resolveHistoryFilePath(autoResume);
     process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;

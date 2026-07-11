@@ -272,6 +272,18 @@ export async function runServer(port: number, silent = false) {
         return;
       }
 
+      // Get chat history
+      if (pathname === "/api/history" && req.method === "GET") {
+        const session = resolveSession(req);
+        if (!session) {
+          sendJSON(res, 200, { success: true, messages: [] });
+          return;
+        }
+        const messages = session.agent.getConversationMessages();
+        sendJSON(res, 200, { success: true, messages });
+        return;
+      }
+
       // Initialize session
       if (pathname === "/api/init" && req.method === "POST") {
         const bodyStr = await readBody(req);

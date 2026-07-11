@@ -71,8 +71,11 @@ async function switchToWorkspace(workspacePath, mode) {
       await saveWorkspace(data.workspace);
 
       clearChatMessages();
-      appendMessage("system", `Switched to workspace: ${data.workspace}`);
-      appendMessage("system", `Mode: ${data.mode}`);
+      await loadChatHistory();
+      if (chatMessages.querySelectorAll(".msg").length === 0) {
+        appendMessage("system", `Switched to workspace: ${data.workspace}`);
+        appendMessage("system", `Mode: ${data.mode}`);
+      }
 
       stopPolling();
       if (eventSource) {
