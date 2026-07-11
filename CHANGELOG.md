@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.258] - 2026-07-11
+
+### Fixed
+- **Overlay & Native Folder Browser Dialog Z-Index**:
+  - Increased z-index of the `.overlay` element in `sidepanel.css` to 10000 to keep HTML dialogs topmost.
+  - Enhanced the Windows PowerShell script in `src/server.ts` to show and activate the parent owner form when launching the native folder selection dialog, resolving the issue where the native directory picker opens behind the active browser window.
+
+---
+
 ## [1.2.257] - 2026-07-11
 
 ### Added
