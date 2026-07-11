@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.293] - 2026-07-11
+
+### Added
+- **Chrome Extension Tool Parameter Details and Full Result Expanse**:
+  - Added an Expand Full Result button to truncated tool output results inside the chat message stream.
+  - Added an Expand Full Summary button to truncated job summary cards.
+  - Improved tool detail rendering inside `buildToolDetail` to present rich snippets of parameter values (command lines, queries, file relative path segments, lines ranges, subagent roles, and prompts) instead of only printing simple filenames.
+
+---
+
 ## [1.2.292] - 2026-07-11
 
 ### Fixed

@@ -3600,3 +3600,19 @@
     }
   }
 }
+
+.btn-expand-result {
+  margin-top: 6px;
+  padding: 3px 8px;
+  background-color: #0e639c;
+  color: #ffffff;
+  border: none;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.btn-expand-result:hover {
+  background-color: #1177bb;
+}

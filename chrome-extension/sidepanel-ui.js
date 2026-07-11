@@ -296,25 +296,83 @@ function buildToolDetail(toolCall) {
   if (!toolCall || !toolCall.args) return "";
   const args = toolCall.args;
   
-  if (args.CommandLine) {
-    // Truncate command to fit nicely
-    const cmd = args.CommandLine;
-    return cmd.length > 50 ? cmd.slice(0, 47) + "..." : cmd;
+  // Helper to get last 2 segments of a path
+  const formatPath = (p) => {
+    if (!p) return "";
+    const clean = p.replace(/\\/g, "/");
+    const parts = clean.split("/");
+    if (parts.length > 2) {
+      return parts.slice(-2).join("/");
+    }
+    return parts[parts.length - 1];
+  };
+
+  const name = toolCall.name;
+
+  if (name === "run_command") {
+    const cmd = args.CommandLine || "";
+    return cmd.length > 60 ? cmd.slice(0, 57) + "..." : cmd;
   }
   
+  if (name === "view_file") {
+    const file = formatPath(args.AbsolutePath);
+    if (args.StartLine !== undefined && args.EndLine !== undefined) {
+      return `${file}:${args.StartLine}-${args.EndLine}`;
+    }
+    return file;
+  }
+
+  if (name === "replace_file_content" || name === "multi_replace_file_content") {
+    return formatPath(args.TargetFile);
+  }
+
+  if (name === "write_to_file") {
+    return formatPath(args.TargetFile);
+  }
+
+  if (name === "list_dir") {
+    return formatPath(args.DirectoryPath);
+  }
+
+  if (name === "grep_search") {
+    const query = args.Query || "";
+    const cleanQuery = query.length > 25 ? query.slice(0, 22) + "..." : query;
+    const path = formatPath(args.SearchPath);
+    return `"${cleanQuery}" in ${path}`;
+  }
+
+  if (name === "invoke_subagent") {
+    let details = [];
+    if (args.Subagents && args.Subagents[0]) {
+      const sa = args.Subagents[0];
+      const role = sa.Role || sa.TypeName || "";
+      const prompt = sa.Prompt || "";
+      const cleanPrompt = prompt.length > 25 ? prompt.slice(0, 22) + "..." : prompt;
+      details.push(`${role} ("${cleanPrompt}")`);
+    }
+    return details.join(", ");
+  }
+
+  if (name === "ask_question") {
+    if (args.questions && args.questions[0]) {
+      const q = args.questions[0].question || "";
+      return q.length > 30 ? q.slice(0, 27) + "..." : q;
+    }
+    return "";
+  }
+
+  if (name === "ask_permission") {
+    return `${args.Action || ""}: ${args.Target || ""}`;
+  }
+
+  // Fallback for paths
   const filePath = args.TargetFile || args.AbsolutePath || args.DirectoryPath || args.SearchPath;
   if (filePath) {
-    // Show only the file/dir basename for clean aesthetics
-    const parts = filePath.replace(/\\/g, "/").split("/");
-    return parts[parts.length - 1];
+    return formatPath(filePath);
   }
   
   if (args.Query) {
     return `"${args.Query}"`;
-  }
-  
-  if (args.Subagents && args.Subagents[0]) {
-    return args.Subagents[0].TypeName || args.Subagents[0].Role || "";
   }
   
   return "";
@@ -644,10 +702,21 @@ function appendJobFinishFooter(msgEl, startTime) {
   summaryBody.className = "job-summary-body";
 
   if (summaryText) {
-    const preview = summaryText.length > 1000
-      ? summaryText.slice(0, 1000) + "\n... (truncated)"
-      : summaryText;
-    summaryBody.innerHTML = formatMarkdown(preview);
+    if (summaryText.length > 1000) {
+      summaryBody.innerHTML = formatMarkdown(summaryText.slice(0, 1000) + "\n... (truncated)");
+      const expandBtn = document.createElement("button");
+      expandBtn.className = "btn-expand-result";
+      expandBtn.textContent = "Expand Full Summary";
+      expandBtn.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        summaryBody.innerHTML = formatMarkdown(summaryText);
+        expandBtn.remove();
+      });
+      summaryBody.appendChild(document.createElement("br"));
+      summaryBody.appendChild(expandBtn);
+    } else {
+      summaryBody.innerHTML = formatMarkdown(summaryText);
+    }
   } else {
     summaryBody.textContent = "No summary available.";
   }

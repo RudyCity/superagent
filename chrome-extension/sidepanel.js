@@ -647,8 +647,21 @@ function handleSSEEvent(data) {
             } else {
               const resultText = e.toolResult.result || "";
               if (resultText) {
-                const preview = resultText.length > 500 ? resultText.slice(0, 500) + "\n... (truncated)" : resultText;
-                resultArea.textContent = preview;
+                if (resultText.length > 500) {
+                  resultArea.textContent = resultText.slice(0, 500) + "\n... (truncated)";
+                  const expandBtn = document.createElement("button");
+                  expandBtn.className = "btn-expand-result";
+                  expandBtn.textContent = "Expand Full Result";
+                  expandBtn.addEventListener("click", (evt) => {
+                    evt.stopPropagation();
+                    resultArea.textContent = resultText;
+                    expandBtn.remove();
+                  });
+                  resultArea.appendChild(document.createElement("br"));
+                  resultArea.appendChild(expandBtn);
+                } else {
+                  resultArea.textContent = resultText;
+                }
                 resultArea.classList.remove("hidden");
                 if (isErr) resultArea.classList.add("tool-result-error");
               }
