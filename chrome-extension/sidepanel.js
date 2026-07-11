@@ -861,11 +861,10 @@ function handleSSEEvent(data) {
     permissionOverlay.classList.add("active");
   }
 
-  // Handle Question Request
+  // Handle Question Request — inline in chat, no modal
   else if (data.type === "question_required") {
     pendingQuestionId = data.questionId;
-    renderQuestion(data.question, data.options, data.isMultiSelect);
-    questionOverlay.classList.add("active");
+    appendInlineQuestion(data.questionId, data.question, data.options, data.isMultiSelect);
   }
 
   // Handle Plan Approval Required
@@ -884,155 +883,170 @@ function handleSSEEvent(data) {
   }
 }
 
-// Render Question Form
-function renderQuestion(question, options, isMultiSelect) {
-  questionOptionsContainer.innerHTML = "";
-  questionCustomContainer.classList.add("hidden");
-  questionCustomInput.value = "";
-  selectedQuestionOption = null;
+// Append inline question bubble directly into chat
+function appendInlineQuestion(questionId, question, options, isMultiSelect) {
+  hideSpinner();
   currentIsMultiSelect = !!isMultiSelect;
   currentQuestionIsArray = Array.isArray(question);
 
+  const msgDiv = document.createElement("div");
+  msgDiv.className = "msg msg-question";
+  msgDiv.dataset.questionId = questionId;
+
+  const header = document.createElement("div");
+  header.className = "msg-header";
+  header.textContent = "DECISION POINT";
+
+  const body = document.createElement("div");
+  body.className = "msg-content inline-question-body";
+
+  // Title
+  const titleEl = document.createElement("p");
+  titleEl.className = "inline-question-title";
+  titleEl.textContent = currentQuestionIsArray
+    ? "Multiple items requested. Please select options:"
+    : (typeof question === "string" ? question : "Choose an option:");
+  body.appendChild(titleEl);
+
+  // Options container
+  const optsCon = document.createElement("div");
+  optsCon.className = "inline-question-options";
+
   if (currentQuestionIsArray) {
-    // Multi-question item format
-    questionTitle.textContent = "Multiple items requested. Please select options:";
     question.forEach((q, idx) => {
       const qLabel = document.createElement("p");
-      qLabel.className = "modal-label mt-2 text-[10px] text-vscode-muted uppercase";
+      qLabel.className = "inline-question-group-label";
       qLabel.textContent = q.question;
-      questionOptionsContainer.appendChild(qLabel);
+      optsCon.appendChild(qLabel);
 
       const groupDiv = document.createElement("div");
-      groupDiv.className = "flex flex-col gap-1.5";
+      groupDiv.className = "inline-question-group";
       groupDiv.dataset.questionIdx = idx;
       groupDiv.dataset.isMultiSelect = q.isMultiSelect ? "true" : "false";
 
-      const qOptions = q.options || [];
-      qOptions.forEach(opt => {
-        const btn = document.createElement("div");
-        btn.className = "option-btn";
-        btn.innerHTML = `
-          <div class="option-bullet ${q.isMultiSelect ? 'checkbox-bullet' : ''}"></div>
-          <span class="option-text">${opt}</span>
-        `;
-        btn.addEventListener("click", () => {
-          if (q.isMultiSelect) {
-            btn.classList.toggle("selected");
-          } else {
-            groupDiv.querySelectorAll(".option-btn").forEach(b => b.classList.remove("selected"));
-            btn.classList.add("selected");
-          }
-        });
+      (q.options || []).forEach(opt => {
+        const btn = buildOptionBtn(opt, q.isMultiSelect, groupDiv, null);
         groupDiv.appendChild(btn);
       });
-      questionOptionsContainer.appendChild(groupDiv);
+      optsCon.appendChild(groupDiv);
     });
-  } else {
-    questionTitle.textContent = question;
-    const hasOptions = options && options.length > 0;
-    
-    if (hasOptions) {
-      options.forEach(opt => {
-        const btn = document.createElement("div");
-        btn.className = "option-btn";
-        btn.innerHTML = `
-          <div class="option-bullet ${currentIsMultiSelect ? 'checkbox-bullet' : ''}"></div>
-          <span class="option-text">${opt}</span>
-        `;
-        btn.addEventListener("click", () => {
-          if (currentIsMultiSelect) {
-            btn.classList.toggle("selected");
-            const hasCustom = Array.from(questionOptionsContainer.querySelectorAll(".option-btn.selected"))
-              .some(b => b.querySelector(".option-text").textContent === "Custom...");
-            if (hasCustom) {
-              questionCustomContainer.classList.remove("hidden");
-            } else {
-              questionCustomContainer.classList.add("hidden");
-            }
-          } else {
-            document.querySelectorAll(".option-btn").forEach(b => b.classList.remove("selected"));
-            btn.classList.add("selected");
-            selectedQuestionOption = opt;
-            if (opt === "Custom...") {
-              questionCustomContainer.classList.remove("hidden");
-            } else {
-              questionCustomContainer.classList.add("hidden");
-            }
-          }
-        });
-        questionOptionsContainer.appendChild(btn);
-      });
-    } else {
-      // Freeform text entry
-      questionCustomContainer.classList.remove("hidden");
-    }
+  } else if (options && options.length > 0) {
+    options.forEach(opt => {
+      const btn = buildOptionBtn(opt, isMultiSelect, optsCon, null);
+      optsCon.appendChild(btn);
+    });
   }
+  body.appendChild(optsCon);
+
+  // Custom write-in
+  const customWrap = document.createElement("div");
+  customWrap.className = "inline-question-custom hidden";
+  const customLabel = document.createElement("label");
+  customLabel.textContent = "Write-in response:";
+  customLabel.className = "inline-question-custom-label";
+  const customInput = document.createElement("input");
+  customInput.type = "text";
+  customInput.className = "inline-question-input";
+  customInput.placeholder = "Type your response...";
+  customWrap.appendChild(customLabel);
+  customWrap.appendChild(customInput);
+  body.appendChild(customWrap);
+
+  // Show custom input for freeform (no options)
+  if ((!options || options.length === 0) && !currentQuestionIsArray) {
+    customWrap.classList.remove("hidden");
+  }
+
+  // Wire up Custom... option visibility
+  optsCon.querySelectorAll(".inline-option-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const hasCustom = Array.from(optsCon.querySelectorAll(".inline-option-btn.selected"))
+        .some(b => b.dataset.value === "Custom...");
+      customWrap.classList.toggle("hidden", !hasCustom);
+    });
+  });
+
+  // Submit button
+  const submitBtn = document.createElement("button");
+  submitBtn.className = "inline-question-submit";
+  submitBtn.textContent = "Submit";
+  submitBtn.addEventListener("click", () => submitInlineAnswer(msgDiv, questionId, customInput));
+
+  // Enter key on custom input
+  customInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitInlineAnswer(msgDiv, questionId, customInput);
+  });
+
+  body.appendChild(submitBtn);
+  msgDiv.appendChild(header);
+  msgDiv.appendChild(body);
+
+  if (processingIndicator && processingIndicator.parentNode === chatMessages) {
+    chatMessages.insertBefore(msgDiv, processingIndicator);
+  } else {
+    chatMessages.appendChild(msgDiv);
+  }
+  scrollToBottom();
 }
 
-// Submit interactive answer
-async function submitAnswer() {
+function buildOptionBtn(opt, isMulti, container, _unused) {
+  const btn = document.createElement("div");
+  btn.className = "inline-option-btn";
+  btn.dataset.value = opt;
+
+  const bullet = document.createElement("span");
+  bullet.className = isMulti ? "inline-option-check" : "inline-option-radio";
+  const label = document.createElement("span");
+  label.className = "inline-option-text";
+  label.textContent = opt;
+  btn.appendChild(bullet);
+  btn.appendChild(label);
+
+  btn.addEventListener("click", () => {
+    if (isMulti) {
+      btn.classList.toggle("selected");
+      bullet.textContent = btn.classList.contains("selected") ? "✓" : "";
+    } else {
+      container.querySelectorAll(".inline-option-btn").forEach(b => {
+        b.classList.remove("selected");
+        b.querySelector(".inline-option-radio").textContent = "";
+      });
+      btn.classList.add("selected");
+      bullet.textContent = "●";
+    }
+  });
+  return btn;
+}
+
+async function submitInlineAnswer(msgDiv, questionId, customInput) {
   let answer = "";
 
   if (currentQuestionIsArray) {
-    const groups = Array.from(questionOptionsContainer.querySelectorAll("[data-question-idx]"));
-    const answersList = [];
-    
-    for (const group of groups) {
-      const isMulti = group.dataset.isMultiSelect === "true";
-      const selected = Array.from(group.querySelectorAll(".option-btn.selected"));
-      
-      if (selected.length === 0) {
-        alert("Please answer all questions before submitting.");
-        return;
-      }
-      
-      if (isMulti) {
-        const val = selected.map(b => b.querySelector(".option-text").textContent).join(", ");
-        answersList.push(val);
-      } else {
-        const val = selected[0].querySelector(".option-text").textContent;
-        answersList.push(val);
-      }
+    const groups = Array.from(msgDiv.querySelectorAll(".inline-question-group"));
+    const list = [];
+    for (const g of groups) {
+      const isMulti = g.dataset.isMultiSelect === "true";
+      const sel = Array.from(g.querySelectorAll(".inline-option-btn.selected"));
+      if (sel.length === 0) { alert("Please answer all questions."); return; }
+      list.push(isMulti
+        ? sel.map(b => b.dataset.value).join(", ")
+        : sel[0].dataset.value);
     }
-    answer = answersList;
+    answer = list;
   } else {
-    const selectedBtns = Array.from(questionOptionsContainer.querySelectorAll(".option-btn.selected"));
-    
-    if (selectedBtns.length > 0) {
-      if (currentIsMultiSelect) {
-        const hasCustom = selectedBtns.some(b => b.querySelector(".option-text").textContent === "Custom...");
-        if (hasCustom) {
-          const customVal = questionCustomInput.value.trim();
-          if (!customVal) {
-            alert("Please type a custom response.");
-            return;
-          }
-          const otherVals = selectedBtns
-            .map(b => b.querySelector(".option-text").textContent)
-            .filter(v => v !== "Custom...");
-          otherVals.push(customVal);
-          answer = otherVals.join(", ");
-        } else {
-          answer = selectedBtns.map(b => b.querySelector(".option-text").textContent).join(", ");
-        }
+    const sel = Array.from(msgDiv.querySelectorAll(".inline-option-btn.selected"));
+    if (sel.length > 0) {
+      const vals = sel.map(b => b.dataset.value);
+      if (vals.includes("Custom...")) {
+        const cv = customInput.value.trim();
+        if (!cv) { alert("Please type a custom response."); return; }
+        answer = [...vals.filter(v => v !== "Custom..."), cv].join(", ");
       } else {
-        const selVal = selectedBtns[0].querySelector(".option-text").textContent;
-        if (selVal === "Custom...") {
-          answer = questionCustomInput.value.trim();
-          if (!answer) {
-            alert("Please type a custom response.");
-            return;
-          }
-        } else {
-          answer = selVal;
-        }
+        answer = currentIsMultiSelect ? vals.join(", ") : vals[0];
       }
     } else {
-      answer = questionCustomInput.value.trim();
-      if (!answer) {
-        alert("Please type an answer.");
-        return;
-      }
+      answer = customInput.value.trim();
+      if (!answer) { alert("Please type an answer."); return; }
     }
   }
 
@@ -1040,16 +1054,28 @@ async function submitAnswer() {
     const res = await fetch(`${BASE_URL}/api/answer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ questionId: pendingQuestionId, answer })
+      body: JSON.stringify({ questionId, answer })
     });
     if (res.ok) {
-      questionOverlay.classList.remove("active");
+      // Replace question bubble with compact answered state
+      const answerText = Array.isArray(answer) ? answer.join(" / ") : answer;
+      const body = msgDiv.querySelector(".inline-question-body");
+      body.innerHTML = "";
+      const doneEl = document.createElement("span");
+      doneEl.className = "inline-question-answered";
+      doneEl.textContent = `Answered: ${answerText}`;
+      body.appendChild(doneEl);
+      msgDiv.classList.add("msg-question-answered");
       pendingQuestionId = null;
     }
   } catch (err) {
     alert("Error submitting answer: " + err.message);
   }
 }
+
+// Legacy renderQuestion / submitAnswer kept for compatibility but no longer used for live flow
+function renderQuestion() {}
+async function submitAnswer() {}
 
 // Resolve Tool Permission
 async function resolvePermission(approval) {
