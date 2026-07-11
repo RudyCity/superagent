@@ -62,9 +62,10 @@ const btnSend = document.getElementById("btn-send");
 const processingIndicator = document.getElementById("processing-indicator");
 const processingText = document.getElementById("processing-text");
 
-const checklistStripItems = document.getElementById("checklist-strip-items");
-const agentsStrip = document.getElementById("agents-strip");
-const agentsStripItems = document.getElementById("agents-strip-items");
+const chatTasksContainer = document.getElementById("chat-tasks-container");
+const chatTasksList = document.getElementById("chat-tasks-list");
+const chatAgentsSection = document.getElementById("chat-agents-section");
+const chatAgentsList = document.getElementById("chat-agents-list");
 
 const permissionOverlay = document.getElementById("permission-overlay");
 const permissionTool = document.getElementById("permission-tool");
@@ -130,19 +131,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   setInterval(checkServerStatus, 1000);
 
-  // Status strip collapse/expand toggle
-  const statusStrip = document.getElementById("status-strip");
-  const btnToggleStatusStrip = document.getElementById("btn-toggle-status-strip");
-  if (statusStrip && btnToggleStatusStrip) {
-    btnToggleStatusStrip.addEventListener("click", () => {
-      const isCollapsed = statusStrip.classList.contains("status-strip-collapsed");
-      statusStrip.classList.toggle("status-strip-collapsed", !isCollapsed);
-      const icon = btnToggleStatusStrip.querySelector(".toggle-icon");
-      if (icon) {
-        icon.textContent = isCollapsed ? "▾" : "▸";
-      }
-    });
-  }
+
 
   // Initialize Preset Select Event Listeners
   const quickPresetSelect = document.getElementById("quick-preset-select");
@@ -163,24 +152,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Collapsible Terminal Drawer Toggler
-  const terminalDrawer = document.getElementById("terminal-drawer");
-  const terminalHeader = document.getElementById("terminal-header");
-  const btnToggleTerminal = document.getElementById("btn-toggle-terminal");
-  if (terminalDrawer && terminalHeader) {
-    terminalHeader.addEventListener("click", () => {
-      const isExpanded = terminalDrawer.style.height === "200px";
-      terminalDrawer.style.height = isExpanded ? "28px" : "200px";
-      if (btnToggleTerminal) {
-        btnToggleTerminal.textContent = isExpanded ? "▲" : "▼";
-      }
-      // Hide badge when drawer is opened
-      if (!isExpanded) {
-        const badge = document.getElementById("terminal-badge");
-        if (badge) badge.classList.add("hidden");
-      }
-    });
-  }
+
 
   // Buttons Event Listeners
   btnInit.addEventListener("click", initSession);
@@ -324,10 +296,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Document Refresh Listeners
   if (btnRefreshHistory) btnRefreshHistory.addEventListener("click", loadChatHistorySessions);
 
-  // Initialize terminal visibility
-  if (typeof updateTerminalDrawerVisibility === "function") {
-    updateTerminalDrawerVisibility();
-  }
 });
 
 // Check Server Status
@@ -609,11 +577,11 @@ function handleSSEEvent(data) {
             <div class="tool-row">
               <span class="tool-row-label">${esc(label)}</span>
               ${detail ? `<span class="tool-row-detail">${esc(detail)}</span>` : ""}
-              <span class="tool-row-chevron">›</span>
+              <span class="tool-row-chevron">⌄</span>
             </div>
-            <div class="tool-expand hidden">
+            <div class="tool-expand">
               ${argsText ? `<pre class="tool-args">${esc(argsText)}</pre>` : ""}
-              <div class="tool-result-area hidden"></div>
+              <div class="tool-result-area"></div>
             </div>
           `;
 
@@ -732,38 +700,13 @@ function handleSSEEvent(data) {
 
   // Handle Active Tool Progress (Streaming Output)
   else if (data.type === "tool_progress") {
-    const termBody = document.getElementById("terminal-body");
-    if (termBody) {
-      if (termBody.textContent === "Welcome to Superagent terminal logs...") {
-        termBody.textContent = "";
-      }
-      termBody.textContent += data.content;
-      termBody.scrollTop = termBody.scrollHeight;
-      
-      const termDrawer = document.getElementById("terminal-drawer");
-      const badge = document.getElementById("terminal-badge");
-      if (termDrawer && termDrawer.style.height !== "200px" && badge) {
-        badge.classList.remove("hidden");
-      }
-      if (typeof updateTerminalDrawerVisibility === "function") {
-        updateTerminalDrawerVisibility();
-      }
-    }
-
     if (currentActiveToolElement) {
       const resultArea = currentActiveToolElement.querySelector(".tool-result-area");
-      const detail = currentActiveToolElement.querySelector(".tool-detail");
       if (resultArea) {
-        // Show last 600 characters of streaming text to keep display readable
         const preview = data.content.length > 600 
           ? data.content.slice(data.content.length - 600) + "\n... (streaming)" 
           : data.content;
         resultArea.textContent = preview;
-        resultArea.classList.remove("hidden");
-        // Auto-expand tool block to show streaming progress
-        if (detail && detail.classList.contains("hidden")) {
-          detail.classList.remove("hidden");
-        }
       }
       scrollToBottom();
     }
@@ -928,53 +871,72 @@ async function pollChecklistAndAgents() {
       renderAgentsTree(subagents, superagents);
     }
   } catch {}
-
-  // Show/Hide status strip based on whether there are tasks or agents
-  const statusStrip = document.getElementById("status-strip");
-  if (statusStrip) {
-    const hasTasks = tasks && tasks.length > 0;
-    const hasAgents = (subagents && subagents.length > 0) || (superagents && superagents.length > 0);
-    if (hasTasks || hasAgents) {
-      statusStrip.classList.remove("hidden");
-    } else {
-      statusStrip.classList.add("hidden");
-    }
-  }
 }
 
-// Render task list as compact chip strip
+// Render task list inside chat messages card
 function renderTasks(tasks) {
+  if (!chatTasksContainer || !chatTasksList) return;
+
   if (!tasks || tasks.length === 0) {
-    checklistStripItems.innerHTML = '<span class="strip-empty">No active tasks</span>';
+    chatTasksContainer.classList.add("hidden");
+    chatTasksList.innerHTML = "";
     return;
   }
 
-  checklistStripItems.innerHTML = "";
+  chatTasksContainer.classList.remove("hidden");
+  chatTasksList.innerHTML = "";
+
+  let completed = 0;
   tasks.forEach(t => {
-    const chip = document.createElement("div");
-    const statusKey = t.status === "x" ? "done" : t.status === "/" ? "running" : "todo";
-    chip.className = `task-chip chip-${statusKey}`;
+    const row = document.createElement("div");
+    row.className = "flex items-center gap-2 py-0.5 text-[11px] font-sans leading-tight";
 
     let icon = "○";
-    if (t.status === "x") icon = "✓";
-    else if (t.status === "/") icon = "◌";
+    let textClass = "text-vscode-primary";
 
-    chip.title = t.text;
-    chip.innerHTML = `<span class="chip-icon">${icon}</span><span class="chip-text">${t.text}</span>`;
-    checklistStripItems.appendChild(chip);
+    if (t.status === "x") {
+      icon = "✓";
+      textClass = "line-through text-vscode-muted";
+      completed++;
+    } else if (t.status === "/") {
+      icon = "◌";
+      textClass = "text-vscode-bright font-medium";
+    }
+
+    const iconSpan = document.createElement("span");
+    iconSpan.className = `font-mono text-[10px] select-none ${t.status === '/' ? 'animate-spin inline-block text-vscode-blue' : (t.status === 'x' ? 'text-green-success font-bold' : 'text-vscode-muted')}`;
+    iconSpan.textContent = icon;
+
+    const textSpan = document.createElement("span");
+    textSpan.className = `${textClass} flex-1 overflow-hidden text-ellipsis`;
+    textSpan.textContent = t.text;
+
+    row.appendChild(iconSpan);
+    row.appendChild(textSpan);
+    chatTasksList.appendChild(row);
   });
+
+  const countEl = document.getElementById("chat-tasks-count");
+  if (countEl) {
+    countEl.textContent = `${completed}/${tasks.length}`;
+  }
+
+  scrollToBottom();
 }
 
-// Render agent hierarchy as compact chip strip
+// Render active subagents/superagents inside chat messages card
 function renderAgentsTree(subagents, superagents) {
+  if (!chatAgentsSection || !chatAgentsList) return;
+
   const hasAgents = (subagents && subagents.length > 0) || (superagents && superagents.length > 0);
   if (!hasAgents) {
-    agentsStrip.classList.add("hidden");
+    chatAgentsSection.classList.add("hidden");
+    chatAgentsList.innerHTML = "";
     return;
   }
 
-  agentsStrip.classList.remove("hidden");
-  agentsStripItems.innerHTML = "";
+  chatAgentsSection.classList.remove("hidden");
+  chatAgentsList.innerHTML = "";
 
   superagents.forEach(sa => {
     const chip = document.createElement("div");
@@ -983,14 +945,14 @@ function renderAgentsTree(subagents, superagents) {
     chip.className = `agent-chip chip-super chip-${statusKey}`;
     chip.title = `Superagent: ${sa.role} (${sa.status})`;
     chip.innerHTML = `<span class="chip-icon">◈</span><span class="chip-text">${sa.role}</span>`;
-    
+
     if (isCompleted && sa.result) {
       chip.addEventListener("click", () => {
         showSummaryModal(`Superagent: ${sa.role}`, sa.result);
       });
     }
-    
-    agentsStripItems.appendChild(chip);
+
+    chatAgentsList.appendChild(chip);
   });
 
   subagents.forEach(sub => {
@@ -1000,15 +962,17 @@ function renderAgentsTree(subagents, superagents) {
     chip.className = `agent-chip chip-sub chip-${statusKey}`;
     chip.title = `Subagent: ${sub.typeName} (${sub.status})`;
     chip.innerHTML = `<span class="chip-icon">◆</span><span class="chip-text">${sub.typeName}</span>`;
-    
+
     if (isCompleted && sub.result) {
       chip.addEventListener("click", () => {
         showSummaryModal(`Subagent: ${sub.typeName}`, sub.result);
       });
     }
-    
-    agentsStripItems.appendChild(chip);
+
+    chatAgentsList.appendChild(chip);
   });
+
+  scrollToBottom();
 }
 
 // [Rendering helpers, appendMessage, finishFooter, spinner controls, workspaces rendering moved to sidepanel-ui.js]

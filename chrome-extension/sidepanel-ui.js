@@ -103,7 +103,6 @@ function showSpinner(text) {
   }
   
   scrollToBottom();
-  updateTerminalDrawerVisibility();
 }
 
 function hideSpinner() {
@@ -125,26 +124,6 @@ function hideSpinner() {
     sendBtnEl.classList.add("bg-vscode-blue", "hover:bg-vscode-blue-hover");
     sendBtnEl.innerHTML = `<svg viewBox="0 0 24 24" class="w-3.5 h-3.5 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`;
   }
-  updateTerminalDrawerVisibility();
-}
-
-function updateTerminalDrawerVisibility() {
-  const termDrawer = document.getElementById("terminal-drawer");
-  const termBody = document.getElementById("terminal-body");
-  if (!termDrawer || !termBody) return;
-
-  const hasContent = termBody.textContent && 
-                     termBody.textContent.trim() !== "" && 
-                     termBody.textContent !== "Welcome to Superagent terminal logs...";
-  
-  const spinnerEl = document.getElementById("processing-indicator");
-  const isProcessing = spinnerEl && spinnerEl.classList.contains("active");
-
-  if (hasContent || isProcessing) {
-    termDrawer.classList.remove("hidden");
-  } else {
-    termDrawer.classList.add("hidden");
-  }
 }
 
 function scrollToBottom() {
@@ -153,88 +132,25 @@ function scrollToBottom() {
 
 function clearChatMessages() {
   if (!chatMessages) return;
+  const chatTasksContainer = document.getElementById("chat-tasks-container");
   Array.from(chatMessages.childNodes).forEach(node => {
-    if (node !== processingIndicator) {
+    if (node !== processingIndicator && node !== chatTasksContainer) {
       chatMessages.removeChild(node);
     }
   });
   
-  // Reset and hide terminal drawer
-  const termBody = document.getElementById("terminal-body");
-  if (termBody) {
-    termBody.textContent = "Welcome to Superagent terminal logs...";
+  if (chatTasksContainer) {
+    chatTasksContainer.classList.add("hidden");
+    const chatTasksList = document.getElementById("chat-tasks-list");
+    if (chatTasksList) chatTasksList.innerHTML = "";
+    const chatAgentsSection = document.getElementById("chat-agents-section");
+    if (chatAgentsSection) chatAgentsSection.classList.add("hidden");
+    const chatAgentsList = document.getElementById("chat-agents-list");
+    if (chatAgentsList) chatAgentsList.innerHTML = "";
   }
-  updateTerminalDrawerVisibility();
 }
 
-// Tasks Chip list rendering
-function renderTasks(tasks) {
-  if (!tasks || tasks.length === 0) {
-    checklistStripItems.innerHTML = '<span class="strip-empty">No active tasks</span>';
-    return;
-  }
 
-  checklistStripItems.innerHTML = "";
-  tasks.forEach(t => {
-    const chip = document.createElement("div");
-    const statusKey = t.status === "x" ? "done" : t.status === "/" ? "running" : "todo";
-    chip.className = `task-chip chip-${statusKey}`;
-
-    let icon = "○";
-    if (t.status === "x") icon = "✓";
-    else if (t.status === "/") icon = "◌";
-
-    chip.title = t.text;
-    chip.innerHTML = `<span class="chip-icon">${icon}</span><span class="chip-text">${t.text}</span>`;
-    checklistStripItems.appendChild(chip);
-  });
-}
-
-// Subagents/Superagents Chip tree rendering
-function renderAgentsTree(subagents, superagents) {
-  const hasAgents = (subagents && subagents.length > 0) || (superagents && superagents.length > 0);
-  if (!hasAgents) {
-    agentsStrip.classList.add("hidden");
-    return;
-  }
-
-  agentsStrip.classList.remove("hidden");
-  agentsStripItems.innerHTML = "";
-
-  superagents.forEach(sa => {
-    const chip = document.createElement("div");
-    const isCompleted = sa.status === "completed" || sa.status === "done";
-    const statusKey = isCompleted ? "done" : (sa.status === "running" ? "running" : (sa.status === "error" ? "error" : "todo"));
-    chip.className = `agent-chip chip-super chip-${statusKey}`;
-    chip.title = `Superagent: ${sa.role} (${sa.status})`;
-    chip.innerHTML = `<span class="chip-icon">◈</span><span class="chip-text">${sa.role}</span>`;
-    
-    if (isCompleted && sa.result) {
-      chip.addEventListener("click", () => {
-        showSummaryModal(`Superagent: ${sa.role}`, sa.result);
-      });
-    }
-    
-    agentsStripItems.appendChild(chip);
-  });
-
-  subagents.forEach(sub => {
-    const chip = document.createElement("div");
-    const isCompleted = sub.status === "completed" || sub.status === "done";
-    const statusKey = isCompleted ? "done" : (sub.status === "running" ? "running" : (sub.status === "error" ? "error" : "todo"));
-    chip.className = `agent-chip chip-sub chip-${statusKey}`;
-    chip.title = `Subagent: ${sub.typeName} (${sub.status})`;
-    chip.innerHTML = `<span class="chip-icon">◆</span><span class="chip-text">${sub.typeName}</span>`;
-    
-    if (isCompleted && sub.result) {
-      chip.addEventListener("click", () => {
-        showSummaryModal(`Subagent: ${sub.typeName}`, sub.result);
-      });
-    }
-    
-    agentsStripItems.appendChild(chip);
-  });
-}
 
 // Agent Summary modal
 function showSummaryModal(role, result) {
@@ -633,7 +549,10 @@ function appendMessage(role, text) {
   msgDiv.appendChild(header);
   msgDiv.appendChild(content);
 
-  if (processingIndicator && processingIndicator.parentNode === chatMessages) {
+  const chatTasksContainer = document.getElementById("chat-tasks-container");
+  if (chatTasksContainer && chatTasksContainer.parentNode === chatMessages) {
+    chatMessages.insertBefore(msgDiv, chatTasksContainer);
+  } else if (processingIndicator && processingIndicator.parentNode === chatMessages) {
     chatMessages.insertBefore(msgDiv, processingIndicator);
   } else {
     chatMessages.appendChild(msgDiv);

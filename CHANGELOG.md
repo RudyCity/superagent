@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.295] - 2026-07-11
+
+### Changed
+- **Chrome Extension UI Relayout**:
+  - Moved the execution task checklist card directly into the scrollable chat messages area (above the typing indicator) instead of showing it on top of the prompt inputs.
+  - Placed active subagents and superagents list inside the same execution tasks card.
+  - Removed the collapsible bottom terminal drawer completely, streaming active tool terminal logs and outputs directly inside the auto-expanded tool result details within the chat message stream.
+
+---
+
 ## [1.2.294] - 2026-07-11
 
 ### Fixed
