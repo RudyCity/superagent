@@ -878,12 +878,12 @@ function renderTasks(tasks) {
   if (!chatTasksContainer || !chatTasksList) return;
 
   if (!tasks || tasks.length === 0) {
-    chatTasksContainer.classList.add("hidden");
-    chatTasksList.innerHTML = "";
+    chatTasksList.innerHTML = '<div class="text-vscode-muted text-[10.5px] italic py-0.5">No active tasks</div>';
+    const countEl = document.getElementById("chat-tasks-count");
+    if (countEl) countEl.textContent = "0/0";
     return;
   }
 
-  chatTasksContainer.classList.remove("hidden");
   chatTasksList.innerHTML = "";
 
   let completed = 0;
@@ -977,18 +977,7 @@ function renderAgentsTree(subagents, superagents) {
 
 // [Rendering helpers, appendMessage, finishFooter, spinner controls, workspaces rendering moved to sidepanel-ui.js]
 
-function scrollToBottom() {
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
 
-function clearChatMessages() {
-  if (!chatMessages) return;
-  Array.from(chatMessages.childNodes).forEach(node => {
-    if (node !== processingIndicator) {
-      chatMessages.removeChild(node);
-    }
-  });
-}
 
 // Fetch and Render Chat History
 async function loadChatHistory() {

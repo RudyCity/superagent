@@ -140,9 +140,10 @@ function clearChatMessages() {
   });
   
   if (chatTasksContainer) {
-    chatTasksContainer.classList.add("hidden");
     const chatTasksList = document.getElementById("chat-tasks-list");
-    if (chatTasksList) chatTasksList.innerHTML = "";
+    if (chatTasksList) chatTasksList.innerHTML = '<div class="text-vscode-muted text-[10.5px] italic py-0.5">No active tasks</div>';
+    const countEl = document.getElementById("chat-tasks-count");
+    if (countEl) countEl.textContent = "0/0";
     const chatAgentsSection = document.getElementById("chat-agents-section");
     if (chatAgentsSection) chatAgentsSection.classList.add("hidden");
     const chatAgentsList = document.getElementById("chat-agents-list");

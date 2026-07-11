@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.296] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Checklist Persistence**:
+  - Restored tasks checklist card persistence by removing overridden, buggy `clearChatMessages` definitions.
+  - Set checklist card to remain visible constantly in the chat pane, displaying a clean "No active tasks" state instead of being hidden when empty.
+
+---
+
 ## [1.2.295] - 2026-07-11
 
 ### Changed
