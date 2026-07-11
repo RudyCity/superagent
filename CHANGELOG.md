@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.252] - 2026-07-11
+
+### Added
+- **Chrome Extension Permissions**:
+  - Added `<all_urls>` to `host_permissions` in `manifest.json` to enable capturing screenshots and executing scripts on all external web pages.
+
+---
+
 ## [1.2.251] - 2026-07-11
 
 ### Changed
