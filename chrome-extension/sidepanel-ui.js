@@ -758,6 +758,32 @@ function updatePresetsDropdown() {
       quickSelect.appendChild(opt);
     });
   }
+
+  const inputPresetSelect = document.getElementById("input-preset-select");
+  if (inputPresetSelect) {
+    inputPresetSelect.innerHTML = "";
+    presets.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      if (p.id === activePresetId) {
+        opt.selected = true;
+      }
+      inputPresetSelect.appendChild(opt);
+    });
+  }
+
+  const metaModelName = document.getElementById("meta-model-name");
+  const activePreset = presets.find(p => p.id === activePresetId);
+  if (metaModelName && activePreset) {
+    let modelName = "";
+    if (mode === "single" && activePreset.models && activePreset.models.superagent) {
+      modelName = activePreset.models.superagent.model;
+    } else if (mode === "multi" && activePreset.models && activePreset.models.master) {
+      modelName = activePreset.models.master.model;
+    }
+    metaModelName.textContent = modelName || "Unknown Model";
+  }
 }
 
 async function browseWorkspaceFolder() {

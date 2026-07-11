@@ -7,6 +7,8 @@ let currentReasoningElement = null;
 let currentActiveToolElement = null;
 let taskPollInterval = null;
 let agentJobStartTime = null;
+let streamStartTime = null;
+let streamCharCount = 0;
 
 let pendingPermissionId = null;
 let pendingQuestionId = null;
@@ -147,6 +149,37 @@ document.addEventListener("DOMContentLoaded", () => {
   if (quickPresetSelect) {
     quickPresetSelect.addEventListener("change", async () => {
       const selectedId = quickPresetSelect.value;
+      if (!selectedId) return;
+
+      const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
+      const mode = modeRadio ? modeRadio.value : "single";
+
+      const configUpdate = {
+        activePresetId: {
+          [mode]: selectedId
+        }
+      };
+
+      try {
+        const res = await fetch(`${BASE_URL}/api/config`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(configUpdate)
+        });
+        if (res.ok) {
+          fetchServerConfig();
+        }
+      } catch (err) {
+        console.error("Failed to update preset:", err);
+      }
+    });
+  }
+
+  // Input Metadata Preset Selector Change Listener
+  const inputPresetSelect = document.getElementById("input-preset-select");
+  if (inputPresetSelect) {
+    inputPresetSelect.addEventListener("change", async () => {
+      const selectedId = inputPresetSelect.value;
       if (!selectedId) return;
 
       const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
@@ -543,6 +576,19 @@ function handleSSEEvent(data) {
         // Append text chunk
         const contentSpan = currentAgentMessageElement.querySelector(".msg-content-text") || currentAgentMessageElement.querySelector(".msg-content");
         contentSpan.textContent += e.content;
+
+        if (!streamStartTime) streamStartTime = Date.now();
+        streamCharCount += e.content.length;
+        const elapsed = (Date.now() - streamStartTime) / 1000;
+        if (elapsed > 0.1) {
+          const estimatedTokens = streamCharCount / 4;
+          const speed = estimatedTokens / elapsed;
+          const speedText = document.getElementById("meta-speed-text");
+          if (speedText) {
+            speedText.textContent = `${speed.toFixed(1)} t/s`;
+          }
+        }
+
         scrollToBottom();
         break;
 
@@ -692,7 +738,19 @@ function handleSSEEvent(data) {
         break;
         
       case "token_usage":
-        // Optionally update token indicators
+        {
+          const speedText = document.getElementById("meta-speed-text");
+          if (speedText) {
+            const completion = e.completionTokens || 0;
+            const duration = e.durationMs ? e.durationMs / 1000 : 0;
+            if (duration > 0.1) {
+              const speed = completion / duration;
+              speedText.textContent = `${speed.toFixed(1)} t/s (${completion} t, ${duration.toFixed(1)}s)`;
+            } else {
+              speedText.textContent = `${completion} t`;
+            }
+          }
+        }
         break;
     }
   }
@@ -818,6 +876,11 @@ async function sendChatMessage() {
   appendMessage("user", text);
   scrollToBottom();
   showSpinner("Thinking...");
+
+  streamStartTime = null;
+  streamCharCount = 0;
+  const speedText = document.getElementById("meta-speed-text");
+  if (speedText) speedText.textContent = "0.0 t/s";
 
   try {
     const res = await fetch(`${BASE_URL}/api/chat`, {

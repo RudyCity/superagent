@@ -442,6 +442,9 @@
   .mt-4 {
     margin-top: calc(var(--spacing) * 4);
   }
+  .mr-1 {
+    margin-right: var(--spacing);
+  }
   .mr-1\.5 {
     margin-right: calc(var(--spacing) * 1.5);
   }
@@ -674,6 +677,9 @@
   }
   .max-w-\[110px\] {
     max-width: 110px;
+  }
+  .max-w-\[120px\] {
+    max-width: 120px;
   }
   .max-w-\[140px\] {
     max-width: 140px;
@@ -1248,6 +1254,12 @@
   .bg-vscode-inner {
     background-color: var(--color-vscode-inner);
   }
+  .bg-vscode-inner\/10 {
+    background-color: color-mix(in srgb, #2d2d2d 10%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-vscode-inner) 10%, transparent);
+    }
+  }
   .bg-vscode-inner\/20 {
     background-color: color-mix(in srgb, #2d2d2d 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -1597,6 +1609,12 @@
   }
   .text-vscode-bright {
     color: var(--color-vscode-bright);
+  }
+  .text-vscode-dim\/50 {
+    color: color-mix(in srgb, #3c3c3c 50%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      color: color-mix(in oklab, var(--color-vscode-dim) 50%, transparent);
+    }
   }
   .text-vscode-light {
     color: var(--color-vscode-light);

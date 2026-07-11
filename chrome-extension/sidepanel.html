@@ -221,6 +221,20 @@
           <div class="input-box-wrapper flex flex-col border border-vscode-dim rounded-[3px] bg-vscode-editor focus-within:border-vscode-bright">
             <textarea id="chat-input" placeholder="Type instructions or / for commands, ! for terminal..." rows="2" class="w-full bg-transparent text-vscode-primary px-2.5 py-2 font-sans text-[12px] resize-none outline-none border-none h-14"></textarea>
             
+            <!-- Input Metadata Bar (Preset, Model, and Speed status) -->
+            <div class="input-meta-bar px-2.5 py-1 flex items-center justify-between border-t border-vscode-dim/30 bg-vscode-inner/10 text-[9.5px] text-vscode-muted font-mono select-none">
+              <div class="flex items-center gap-1">
+                <span class="meta-label">Preset:</span>
+                <select id="input-preset-select" class="bg-transparent border-none outline-none text-vscode-bright font-semibold cursor-pointer p-0 font-mono text-[9.5px] hover:text-vscode-light" title="Change active preset"></select>
+                <span class="meta-separator text-vscode-dim/50 ml-1 mr-1">|</span>
+                <span class="meta-label">Model:</span>
+                <span id="meta-model-name" class="text-vscode-muted truncate max-w-[120px]">loading...</span>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <span id="meta-speed-text" class="text-green-success font-semibold">0.0 t/s</span>
+              </div>
+            </div>
+
             <div class="input-toolbar flex items-center justify-between px-2 py-1.5 border-t border-vscode-dim/50 bg-vscode-inner/20">
               <div class="toolbar-left flex items-center gap-1.5">
                 <!-- Attach Image Trigger -->
