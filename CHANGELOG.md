@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.271] - 2026-07-11
+
+### Fixed
+- **Browser Control Tool**:
+  - Fixed `TypeError: Illegal invocation` error when executing the `type` action on custom elements or elements with `contenteditable="true"` (such as rich textareas on Gemini/Claude web interfaces) by checking element type before attempting to retrieve and call the native value setter.
+  - Added proper fallbacks for `contenteditable` elements to use `innerText`.
+
+---
+
 ## [1.2.270] - 2026-07-11
 
 ### Added

@@ -134,18 +134,22 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "type") {
-              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                window.HTMLInputElement.prototype,
-                "value"
-              )?.set || Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype,
-                "value"
-              )?.set;
-
-              if (nativeInputValueSetter) {
-                nativeInputValueSetter.call(el, val);
+              if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                const proto = el instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+                if (nativeInputValueSetter) {
+                  nativeInputValueSetter.call(el, val);
+                } else {
+                  el.value = val;
+                }
+              } else if (el.isContentEditable) {
+                el.innerText = val;
               } else {
-                el.value = val;
+                try {
+                  el.value = val;
+                } catch (e) {
+                  el.innerText = val;
+                }
               }
               el.dispatchEvent(new Event("input", { bubbles: true }));
               el.dispatchEvent(new Event("change", { bubbles: true }));
