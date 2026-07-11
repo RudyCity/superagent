@@ -2947,6 +2947,11 @@
   border-width: 0 1px 1px 0;
   transform: rotate(45deg);
 }
+.status-strip-collapsed {
+  max-height: 26px !important;
+  overflow: hidden !important;
+  padding-bottom: 0 !important;
+}
 @property --tw-translate-x {
   syntax: "*";
   inherits: false;

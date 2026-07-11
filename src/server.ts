@@ -5,7 +5,7 @@ import path from "path";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions } from "./core/config.js";
-import { readChecklistTasks } from "./core/taskChecklist.js";
+import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 
@@ -533,11 +533,19 @@ export async function runServer(port: number, silent = false) {
       // Fetch Tasks
       if (pathname === "/api/tasks" && req.method === "GET") {
         const session = resolveSession(req);
-        const wsPath = session ? session.workspace : lastActiveWorkspace;
-        const wsMode = session ? session.mode : "single";
-        const taskFile = wsMode === "multi" ? "_task.md" : "task.md";
-        const taskPath = path.join(wsPath, taskFile);
-        const taskData = await readChecklistTasks(taskPath);
+        let taskPath = "";
+        if (session) {
+          taskPath = session.agent.getTaskFilePath();
+        } else {
+          const wsPath = lastActiveWorkspace;
+          const taskFile = "task.md";
+          taskPath = wsPath ? path.join(wsPath, taskFile) : "";
+        }
+
+        let taskData: ReadChecklistResult = { tasks: [], missing: true };
+        if (taskPath && fs.existsSync(taskPath)) {
+          taskData = await readChecklistTasks(taskPath);
+        }
         sendJSON(res, 200, taskData);
         return;
       }
@@ -773,20 +781,28 @@ export async function runServer(port: number, silent = false) {
       // Fetch plan, task, and walkthrough markdown content
       if (pathname === "/api/documents" && req.method === "GET") {
         const session = resolveSession(req);
-        const wsPath = session ? session.workspace : lastActiveWorkspace;
-        const wsMode = session ? session.mode : "single";
+        let planPath = "";
+        let taskPath = "";
+        let walkthroughPath = "";
 
-        const planFile = wsMode === "multi" ? "_plan.md" : "plan.md";
-        const taskFile = wsMode === "multi" ? "_task.md" : "task.md";
-        const walkthroughFile = wsMode === "multi" ? "_walkthrough.md" : "walkthrough.md";
+        if (session) {
+          planPath = session.agent.getPlanFilePath();
+          taskPath = session.agent.getTaskFilePath();
+          walkthroughPath = session.agent.getWalkthroughFilePath();
+        } else {
+          const wsPath = lastActiveWorkspace;
+          const planFile = "implementation_plan.md";
+          const taskFile = "task.md";
+          const walkthroughFile = "walkthrough.md";
 
-        const planPath = path.join(wsPath, planFile);
-        const taskPath = path.join(wsPath, taskFile);
-        const walkthroughPath = path.join(wsPath, walkthroughFile);
+          planPath = wsPath ? path.join(wsPath, planFile) : "";
+          taskPath = wsPath ? path.join(wsPath, taskFile) : "";
+          walkthroughPath = wsPath ? path.join(wsPath, walkthroughFile) : "";
+        }
 
         const readMarkdown = async (filePath: string): Promise<string> => {
           try {
-            if (fs.existsSync(filePath)) {
+            if (filePath && fs.existsSync(filePath)) {
               return await fs.promises.readFile(filePath, "utf-8");
             }
           } catch {}

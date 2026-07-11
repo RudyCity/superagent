@@ -141,6 +141,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   setInterval(checkServerStatus, 1000);
 
+  // Status strip collapse/expand toggle
+  const statusStrip = document.getElementById("status-strip");
+  const btnToggleStatusStrip = document.getElementById("btn-toggle-status-strip");
+  if (statusStrip && btnToggleStatusStrip) {
+    btnToggleStatusStrip.addEventListener("click", () => {
+      const isCollapsed = statusStrip.classList.contains("status-strip-collapsed");
+      statusStrip.classList.toggle("status-strip-collapsed", !isCollapsed);
+      const icon = btnToggleStatusStrip.querySelector(".toggle-icon");
+      if (icon) {
+        icon.textContent = isCollapsed ? "▾" : "▸";
+      }
+    });
+  }
 
   // Buttons Event Listeners
   btnInit.addEventListener("click", initSession);

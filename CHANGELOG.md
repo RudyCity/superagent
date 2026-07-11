@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.289] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Tasks Layout and Sync**:
+  - Relocated the status checklist strip (Tasks and Agents) from the top of the chat view to the bottom, positioned directly above the input footer.
+  - Implemented collapsible capability for the status strip with a toggle button click listener (Tasks ▾ / Tasks ▸) to minimize vertical space usage.
+  - Fixed `/api/tasks` and `/api/documents` backend endpoints to fetch plan, task, and walkthrough markdown content from the session-specific history path (via `session.agent.getTaskFilePath()`, etc.) instead of workspace root directories when a session is active.
+
+---
+
 ## [1.2.288] - 2026-07-11
 
 ### Fixed
