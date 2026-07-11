@@ -126,8 +126,13 @@ function hideSpinner() {
   }
 }
 
-function scrollToBottom() {
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+function scrollToBottom(force = false) {
+  if (!chatMessages) return;
+  const threshold = 60;
+  const isNearBottom = chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop < threshold;
+  if (force || isNearBottom) {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
 }
 
 function clearChatMessages() {

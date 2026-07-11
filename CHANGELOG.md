@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.298] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Smart Auto-Scrolling**:
+  - Implemented a smart scroll behavior inside `scrollToBottom` that only auto-scrolls to the bottom when new content/progress is received if the user was already near the bottom.
+  - Allowed forcing the scroll behavior explicitly during direct user actions (like sending messages).
+
+---
+
 ## [1.2.297] - 2026-07-11
 
 ### Fixed

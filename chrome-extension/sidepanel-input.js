@@ -304,7 +304,7 @@ Direct Terminal Commands:
 - Prefix your prompt with ! to run commands directly in the workspace, e.g., !git status or !npm test.
   `;
   appendMessage("system", helpText.trim());
-  scrollToBottom();
+  scrollToBottom(true);
 }
 
 // Override global sendChatMessage function
@@ -327,7 +327,7 @@ window.sendChatMessage = async function() {
     displayMessageText = text ? `${text}\n\n[Attachments: ${attachedNames}]` : `[Attachments: ${attachedNames}]`;
   }
   appendMessage("user", displayMessageText);
-  scrollToBottom();
+  scrollToBottom(true);
   showSpinner("Thinking...");
 
   // Intercept slash commands locally
