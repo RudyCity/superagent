@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.261] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Tool Block Spacing**:
+  - Removed separate backgrounds, borders, and margins from tool execution blocks (`.tool-block`) to integrate them inline with the message bubble background and border.
+  - Resolved excessive/nested paddings by aligning tool headers and tool details directly to the message bubble's padding layout.
+
+---
+
 ## [1.2.260] - 2026-07-11
 
 ### Fixed
