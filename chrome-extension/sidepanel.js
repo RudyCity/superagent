@@ -77,6 +77,10 @@ const questionCustomContainer = document.getElementById("question-custom-contain
 const questionCustomInput = document.getElementById("question-custom-input");
 const btnSubmitAnswer = document.getElementById("btn-submit-answer");
 
+const planOverlay = document.getElementById("plan-overlay");
+const btnApprovePlan = document.getElementById("btn-approve-plan");
+const btnRejectPlan = document.getElementById("btn-reject-plan");
+
 const btnGrabContext = document.getElementById("btn-grab-context");
 const contextBadge = document.getElementById("context-badge");
 
@@ -162,6 +166,9 @@ document.addEventListener("DOMContentLoaded", () => {
   btnDenyPermission.addEventListener("click", () => resolvePermission(false));
   btnSubmitAnswer.addEventListener("click", submitAnswer);
   btnGrabContext.addEventListener("click", grabTabContext);
+  btnApprovePlan.addEventListener("click", () => resolvePlanApproval("approve"));
+  btnRejectPlan.addEventListener("click", () => resolvePlanApproval("reject"));
+
  
   // Summary modal listeners
   const btnCloseSummary = document.getElementById("btn-close-summary");
@@ -322,6 +329,13 @@ async function checkServerStatus() {
       } else {
         if (cliBanner) cliBanner.classList.add("hidden");
         if (workspaceScreen) workspaceScreen.classList.remove("cli-active");
+      }
+
+      // Show plan approval overlay if server reports agent is in PLANNING_PENDING
+      if (data.planState === "PLANNING_PENDING") {
+        showPlanOverlay();
+      } else if (planOverlay && planOverlay.classList.contains("active") && data.planState !== "PLANNING_PENDING") {
+        planOverlay.classList.remove("active");
       }
     }
   } catch {
@@ -706,6 +720,16 @@ function handleSSEEvent(data) {
     questionOverlay.classList.add("active");
   }
 
+  // Handle Plan Approval Required
+  else if (data.type === "plan_approval_required") {
+    if (data.planState === "PLANNING_PENDING") {
+      showPlanOverlay();
+    } else {
+      // planState is IDLE or APPROVED — hide the overlay if visible
+      planOverlay.classList.remove("active");
+    }
+  }
+
   // Handle Browser Control Request
   else if (data.type === "browser_control_required") {
     executeBrowserControl(data.controlId, data.action, data.target, data.value);
@@ -893,6 +917,32 @@ async function resolvePermission(approval) {
     }
   } catch (err) {
     alert("Error sending approval: " + err.message);
+  }
+}
+
+// Show Plan Approval Overlay
+function showPlanOverlay() {
+  if (planOverlay && !planOverlay.classList.contains("active")) {
+    planOverlay.classList.add("active");
+  }
+}
+
+// Resolve Plan Approval
+async function resolvePlanApproval(action) {
+  try {
+    const res = await fetch(`${BASE_URL}/api/plan/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action })
+    });
+    if (res.ok) {
+      planOverlay.classList.remove("active");
+    } else {
+      const data = await res.json().catch(() => ({}));
+      alert("Error: " + (data.error || "Failed to send plan action."));
+    }
+  } catch (err) {
+    alert("Error sending plan action: " + err.message);
   }
 }
 

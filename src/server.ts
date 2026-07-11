@@ -112,8 +112,12 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 }
 
 // Global Agent Event Handlers
-const onEvent = (event: AgentEvent) => {
+const onEvent = (event: AgentEvent, agentRef?: Agent) => {
   broadcastEvent({ type: "agent_event", event });
+  // When agent finishes a turn and is waiting for plan approval, notify extension clients
+  if (event.type === "done" && agentRef && agentRef.planState === "PLANNING_PENDING") {
+    broadcastEvent({ type: "plan_approval_required", planState: "PLANNING_PENDING" });
+  }
 };
 
 // Subscribe to active tool output streaming and broadcast it to SSE clients
@@ -268,6 +272,7 @@ export async function runServer(port: number, silent = false) {
           agentActive: !!session,
           agentRunning: session ? session.agent.isAgentRunning() : false,
           isCliSession: session ? session.isCliSession : false,
+          planState: session ? session.agent.planState : "IDLE",
         });
         return;
       }
@@ -335,7 +340,7 @@ export async function runServer(port: number, silent = false) {
         }
 
         const agent = new Agent(
-          onEvent,
+          (event: AgentEvent) => onEvent(event, agent),
           onPermission,
           onQuestion,
           customSystemPrompt,
@@ -421,6 +426,34 @@ export async function runServer(port: number, silent = false) {
           sendJSON(res, 200, { success: true });
         } else {
           sendJSON(res, 404, { error: "Permission request not found" });
+        }
+        return;
+      }
+
+      // Handle Plan Approval
+      if (pathname === "/api/plan/approve" && req.method === "POST") {
+        const session = resolveSession(req);
+        if (!session) {
+          sendJSON(res, 400, { error: "Session not initialized" });
+          return;
+        }
+        const bodyStr = await readBody(req);
+        const body = JSON.parse(bodyStr || "{}");
+        const { action } = body;
+
+        if (action === "approve") {
+          session.agent.approvePlan();
+          session.agent.sendMessage("Implementation plan approved via interactive approval wizard. Continue with the approved plan now.").catch(err => {
+            broadcastEvent({ type: "error", message: err.message || String(err) });
+          });
+          sendJSON(res, 200, { success: true });
+        } else if (action === "reject") {
+          session.agent.planState = "IDLE";
+          session.agent.abort();
+          broadcastEvent({ type: "plan_approval_required", planState: "IDLE" });
+          sendJSON(res, 200, { success: true });
+        } else {
+          sendJSON(res, 400, { error: "Invalid action. Use approve or reject." });
         }
         return;
       }
