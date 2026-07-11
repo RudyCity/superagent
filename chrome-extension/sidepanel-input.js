@@ -329,10 +329,12 @@ window.sendChatMessage = async function() {
   appendMessage("user", displayMessageText);
   scrollToBottom(true);
   showSpinner("Thinking...");
+  window.isWaitingForAgentStart = true;
 
   // Intercept slash commands locally
   if (text.startsWith("/")) {
     if (text === "/help") {
+      window.isWaitingForAgentStart = false;
       hideSpinner();
       displayHelpInfo();
       attachedFiles = [];
@@ -340,6 +342,7 @@ window.sendChatMessage = async function() {
       return;
     }
     if (text === "/clear") {
+      window.isWaitingForAgentStart = false;
       hideSpinner();
       const btnNewChat = document.getElementById("btn-new-chat");
       if (btnNewChat) {
@@ -352,6 +355,7 @@ window.sendChatMessage = async function() {
       return;
     }
     if (text === "/settings") {
+      window.isWaitingForAgentStart = false;
       hideSpinner();
       const btnSettings = document.getElementById("btn-header-settings");
       if (btnSettings) btnSettings.click();
@@ -403,11 +407,13 @@ window.sendChatMessage = async function() {
       body: JSON.stringify({ message: payloadMessage })
     });
     if (!res.ok) {
+      window.isWaitingForAgentStart = false;
       const data = await res.json();
       appendMessage("system", "Error: " + data.error);
       hideSpinner();
     }
   } catch (err) {
+    window.isWaitingForAgentStart = false;
     appendMessage("system", "Error: Failed to deliver prompt.");
     hideSpinner();
   }

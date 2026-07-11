@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.301] - 2026-07-12
+
+### Fixed
+- **Chrome Extension First Message Loading Indicator**:
+  - Introduced `window.isWaitingForAgentStart` state to track when a chat message has been sent but the agent hasn't started running yet.
+  - Updated the background status polling checks to not reset the thinking spinner and send button state while waiting for agent execution.
+
+---
+
 ## [1.2.300] - 2026-07-11
 
 ### Fixed

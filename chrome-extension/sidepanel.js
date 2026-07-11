@@ -18,6 +18,7 @@ let currentQuestionIsArray = false;
 let apiToken = "";
 let currentMode = "single";
 let workspaceDropdownOpen = false;
+window.isWaitingForAgentStart = false;
 
 // Config state
 let serverPresets = null;
@@ -324,7 +325,7 @@ async function checkServerStatus() {
         
         // Reset spinner and button state if it was in stop/running state
         const sendBtnEl = document.getElementById("btn-send");
-        if (sendBtnEl && sendBtnEl.dataset.state === "stop") {
+        if (sendBtnEl && sendBtnEl.dataset.state === "stop" && !window.isWaitingForAgentStart) {
           hideSpinner();
         }
       }
@@ -492,6 +493,7 @@ function setupSSE() {
 
 // Handle Incoming SSE Events
 function handleSSEEvent(data) {
+  window.isWaitingForAgentStart = false;
   if (data.type === "agent_event") {
     const e = data.event;
     switch (e.type) {
@@ -797,6 +799,7 @@ async function sendChatMessage() {
   appendMessage("user", text);
   scrollToBottom();
   showSpinner("Thinking...");
+  window.isWaitingForAgentStart = true;
 
   streamStartTime = null;
   streamCharCount = 0;
@@ -810,11 +813,13 @@ async function sendChatMessage() {
       body: JSON.stringify({ message: text })
     });
     if (!res.ok) {
+      window.isWaitingForAgentStart = false;
       const data = await res.json();
       appendMessage("system", "Error: " + data.error);
       hideSpinner();
     }
   } catch (err) {
+    window.isWaitingForAgentStart = false;
     appendMessage("system", "Error: Failed to deliver prompt.");
     hideSpinner();
   }
@@ -822,6 +827,7 @@ async function sendChatMessage() {
 
 // Abort Execution
 async function abortExecution() {
+  window.isWaitingForAgentStart = false;
   try {
     await fetch(`${BASE_URL}/api/abort`, { method: "POST" });
     appendMessage("system", "Halt signal sent to Superagent.");
