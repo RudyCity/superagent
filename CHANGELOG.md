@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.253] - 2026-07-11
+
+### Added
+- **Chrome Extension & Tooling - Text Extraction Action**:
+  - Added the `text` action to the `control_browser_tab` tool in `otherTools.ts`.
+  - Implemented the `text` action in the Chrome extension `sidepanel.js` scripting execution. It retrieves either a selector's text or the entire page's inner body text if no selector is passed.
+
+---
+
 ## [1.2.252] - 2026-07-11
 
 ### Added

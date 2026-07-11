@@ -1653,18 +1653,18 @@ export function setBrowserControlHandler(handler: typeof browserControlHandler) 
 
 export const controlBrowserTabTool: Tool = {
   name: "control_browser_tab",
-  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (click element by selector), type (type value into element selector), navigate (go to URL), scroll (scroll page up/down/to selector), screenshot (capture tab view), errors (get page console errors).",
+  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (click element by selector), type (type value into element selector), navigate (go to URL), scroll (scroll page up/down/to selector), screenshot (capture tab view), errors (get page console errors), text (get text content of selector or full body).",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["click", "type", "navigate", "scroll", "screenshot", "errors"],
+        enum: ["click", "type", "navigate", "scroll", "screenshot", "errors", "text"],
         description: "The browser action to execute on the active tab."
       },
       target: {
         type: "string",
-        description: "The CSS selector (for click/type/scroll) or destination URL (for navigate). Optional for screenshot and errors."
+        description: "The CSS selector (for click/type/scroll/text) or destination URL (for navigate). Optional for screenshot, errors, and text."
       },
       value: {
         type: "string",

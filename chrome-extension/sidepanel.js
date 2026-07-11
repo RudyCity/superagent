@@ -1040,6 +1040,17 @@ async function executeBrowserControl(controlId, action, target, value) {
               }
             }
 
+            if (act === "text") {
+              if (!tgt) {
+                return document.body ? document.body.innerText : "";
+              }
+              const el = document.querySelector(tgt);
+              if (!el) {
+                return `Error: Element not found for selector: ${tgt}`;
+              }
+              return el.innerText || "";
+            }
+
             const el = document.querySelector(tgt);
             if (!el) {
               return `Error: Element not found for selector: ${tgt}`;
