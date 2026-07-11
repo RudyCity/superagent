@@ -473,7 +473,7 @@ export async function runServer(port: number, silent = false) {
     }
   });
 
-  server.listen(port, () => {
+  server.listen(port, '127.0.0.1', () => {
     if (!silent) {
       console.log(`\n🚀 Superagent Extension Server is running at http://localhost:${port}`);
       console.log(`💡 Mode: REST API & Server-Sent Events (SSE)`);

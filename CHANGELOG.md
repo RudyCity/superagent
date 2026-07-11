@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.249] - 2026-07-11
+
+### Security
+- **Extension Server - Localhost-Only Binding**:
+  - Changed `server.listen(port)` to `server.listen(port, '127.0.0.1')` so the extension API server only accepts connections from the local machine. Previously it was binding to all network interfaces (`0.0.0.0`), making it reachable from other devices on the same network.
+
+---
+
 ## [1.2.248] - 2026-07-11
 
 ### Fixed
