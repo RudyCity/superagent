@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.274] - 2026-07-11
+
+### Added
+- **Browser Control Tool**:
+  - Implemented active control status banner overlay. A dark translucent banner with a pulsing red indicator dot and operation label now displays at the top center of the webpage during active browser automation steps, showing the current action and element target, and fading out after 3 seconds of inactivity.
+
+---
+
 ## [1.2.273] - 2026-07-11
 
 ### Added

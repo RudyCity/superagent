@@ -203,7 +203,74 @@ async function executeBrowserControl(controlId, action, target, value) {
               }
             };
 
+            const showBanner = (text) => {
+              try {
+                let banner = document.getElementById("__superagent_banner__");
+                if (!banner) {
+                  banner = document.createElement("div");
+                  banner.id = "__superagent_banner__";
+                  banner.style.position = "fixed";
+                  banner.style.top = "10px";
+                  banner.style.left = "50%";
+                  banner.style.transform = "translateX(-50%)";
+                  banner.style.padding = "6px 12px";
+                  banner.style.background = "rgba(30, 30, 30, 0.92)";
+                  banner.style.border = "1px solid #0e639c";
+                  banner.style.borderRadius = "4px";
+                  banner.style.color = "#cccccc";
+                  banner.style.fontFamily = "'Segoe UI', system-ui, -apple-system, sans-serif";
+                  banner.style.fontSize = "12px";
+                  banner.style.fontWeight = "500";
+                  banner.style.zIndex = "999999999";
+                  banner.style.display = "flex";
+                  banner.style.alignItems = "center";
+                  banner.style.gap = "8px";
+                  banner.style.pointerEvents = "none";
+                  banner.style.boxShadow = "0 4px 12px rgba(0,0,0,0.5)";
+                  banner.style.transition = "opacity 0.3s ease-out";
+                  
+                  const dot = document.createElement("span");
+                  dot.style.width = "8px";
+                  dot.style.height = "8px";
+                  dot.style.background = "#ff3b30";
+                  dot.style.borderRadius = "50%";
+                  dot.style.display = "inline-block";
+                  dot.animate([
+                    { opacity: 0.4 },
+                    { opacity: 1 },
+                    { opacity: 0.4 }
+                  ], {
+                    duration: 1500,
+                    iterations: Infinity
+                  });
+                  
+                  const label = document.createElement("span");
+                  label.id = "__superagent_banner_text__";
+                  label.textContent = text;
+                  
+                  banner.appendChild(dot);
+                  banner.appendChild(label);
+                  document.body.appendChild(banner);
+                } else {
+                  const label = document.getElementById("__superagent_banner_text__");
+                  if (label) label.textContent = text;
+                }
+                
+                if (window.__superagent_banner_timeout__) {
+                  clearTimeout(window.__superagent_banner_timeout__);
+                }
+                banner.style.opacity = "1";
+                
+                window.__superagent_banner_timeout__ = setTimeout(() => {
+                  banner.style.opacity = "0";
+                }, 3000);
+              } catch (e) {
+                // Ignore banner errors
+              }
+            };
+
             if (act === "wait") {
+              showBanner(`Waiting for ${tgt}...`);
               const timeout = parseInt(val || "5000", 10);
               if (!isNaN(Number(tgt))) {
                 const ms = parseInt(tgt, 10);
@@ -215,6 +282,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "html") {
+              showBanner(`Reading HTML from ${tgt || "page"}...`);
               if (!tgt) {
                 return document.documentElement ? document.documentElement.outerHTML : "";
               }
@@ -226,6 +294,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "scroll") {
+              showBanner(`Scrolling ${tgt}...`);
               if (tgt === "up") {
                 window.scrollBy(0, -window.innerHeight / 2);
                 return "Scrolled page up";
@@ -243,6 +312,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "text") {
+              showBanner(`Reading text from ${tgt || "page"}...`);
               if (!tgt) {
                 return document.body ? document.body.innerText : "";
               }
@@ -259,6 +329,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "click") {
+              showBanner(`Clicking element ${tgt}...`);
               showCursor(el, "click");
               el.click();
               el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -266,6 +337,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "hover") {
+              showBanner(`Hovering over element ${tgt}...`);
               showCursor(el, "move");
               const rect = el.getBoundingClientRect();
               el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 }));
@@ -275,6 +347,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "keypress") {
+              showBanner(`Pressing key ${val || "Enter"} on element ${tgt}...`);
               showCursor(el, "click");
               const key = val || "Enter";
               const keyCode = key === "Enter" ? 13 : 0;
@@ -295,6 +368,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "type") {
+              showBanner(`Typing into element ${tgt}...`);
               showCursor(el, "type");
               if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
                 const proto = el instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
