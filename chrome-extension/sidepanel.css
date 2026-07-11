@@ -799,10 +799,15 @@ main {
   background: var(--bg-inner);
   border: 1px solid var(--border-dim);
   border-radius: var(--border-radius-sm);
-  margin-top: 6px;
+  margin-top: 4px;
+  margin-bottom: 2px;
   overflow: hidden;
   font-family: var(--font-mono);
   font-size: 11.5px;
+}
+
+.msg-content:has(.tool-block) {
+  padding-bottom: 6px;
 }
 
 .tool-indicator {
@@ -873,7 +878,7 @@ main {
 
 .tool-detail {
   border-top: 1px solid var(--border-dim);
-  padding: 6px 8px;
+  padding: 4px 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;

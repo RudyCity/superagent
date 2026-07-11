@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.251] - 2026-07-11
+
+### Changed
+- **Chrome Extension - Compact Tool Spacing**:
+  - Reduced top and bottom spacing of the tool execution blocks in the chat view to make them more compact.
+  - Decreased padding inside the expanded tool details panel to 4px 8px.
+  - Added targeted selector to lower the bottom padding of message content bubbles when they contain tool blocks, preventing excessive whitespace.
+
+---
+
 ## [1.2.250] - 2026-07-11
 
 ### Changed
