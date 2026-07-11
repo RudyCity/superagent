@@ -577,6 +577,32 @@ function handleSSEEvent(data) {
     }
   }
 
+  // Handle Active Tool Progress (Streaming Output)
+  else if (data.type === "tool_progress") {
+    if (currentActiveToolElement) {
+      const resultArea = currentActiveToolElement.querySelector(".tool-result-area");
+      const detail = currentActiveToolElement.querySelector(".tool-detail");
+      const toggle = currentActiveToolElement.querySelector(".tool-toggle");
+      if (resultArea) {
+        // Show last 600 characters of streaming text to keep display readable
+        const preview = data.content.length > 600 
+          ? data.content.slice(data.content.length - 600) + "\n... (streaming)" 
+          : data.content;
+        resultArea.textContent = preview;
+        resultArea.classList.remove("hidden");
+        // Auto-expand tool block to show streaming progress
+        if (detail && detail.classList.contains("hidden")) {
+          detail.classList.remove("hidden");
+          if (toggle) {
+            toggle.textContent = "\u25be";
+            toggle.setAttribute("aria-expanded", "true");
+          }
+        }
+      }
+      scrollToBottom();
+    }
+  }
+
   // Handle Permission Request
   else if (data.type === "permission_required") {
     pendingPermissionId = data.permissionId;

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.267] - 2026-07-11
+
+### Added
+- **Chrome Extension UI Streaming**:
+  - Implemented real-time tool execution output streaming to the extension sidepanel client.
+  - Subscribed `src/server.ts` to active command outputs and broadcasted them via SSE `tool_progress` event.
+  - Added support in `sidepanel.js` to render the live stream inside the active tool block's result area, expanding it automatically.
+
+---
+
 ## [1.2.266] - 2026-07-11
 
 ### Changed

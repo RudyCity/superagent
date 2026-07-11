@@ -6,7 +6,7 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings } from "./core/config.js";
 import { readChecklistTasks } from "./core/taskChecklist.js";
-import { subagentInstances, superagentInstances, registerMasterAgent } from "./core/tools/state.js";
+import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 
 let activeAgent: Agent | null = null;
@@ -77,6 +77,14 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 const onEvent = (event: AgentEvent) => {
   broadcastEvent({ type: "agent_event", event });
 };
+
+// Subscribe to active tool output streaming and broadcast it to SSE clients
+subscribeToActiveOutput((output) => {
+  broadcastEvent({
+    type: "tool_progress",
+    content: output
+  });
+});
 
 const onPermission = (toolCall: any, description: string) => {
   return new Promise<boolean | "session">((resolve) => {
