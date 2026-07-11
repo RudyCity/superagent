@@ -1653,22 +1653,22 @@ export function setBrowserControlHandler(handler: typeof browserControlHandler) 
 
 export const controlBrowserTabTool: Tool = {
   name: "control_browser_tab",
-  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (click element by selector), type (type value into element selector), navigate (go to URL), scroll (scroll page up/down/to selector), screenshot (capture tab view), errors (get page console errors), text (get text content of selector or full body).",
+  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (click selector), type (type value into selector), navigate (go to URL), scroll (scroll up/down/to selector), screenshot (capture tab view), errors (get console errors), text (get element or page text), hover (hover selector), keypress (press key e.g. Enter on selector), wait (wait for selector or ms duration), html (get outerHTML of selector or page), reload (refresh page), back (go back), forward (go forward).",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["click", "type", "navigate", "scroll", "screenshot", "errors", "text"],
+        enum: ["click", "type", "navigate", "scroll", "screenshot", "errors", "text", "hover", "keypress", "wait", "html", "reload", "back", "forward"],
         description: "The browser action to execute on the active tab."
       },
       target: {
         type: "string",
-        description: "The CSS selector (for click/type/scroll/text) or destination URL (for navigate). Optional for screenshot, errors, and text."
+        description: "CSS selector, destination URL, or wait parameter (ms duration or selector). Required for click, type, navigate, scroll, hover, keypress, and wait."
       },
       value: {
         type: "string",
-        description: "The text to type (for type action) or scroll offset/direction (for scroll action)."
+        description: "Text to type (type), key to press (keypress), scroll offset, or timeout in ms (wait)."
       }
     },
     required: ["action"]
@@ -1678,7 +1678,7 @@ export const controlBrowserTabTool: Tool = {
       return "Error: Browser control handler is not active. Please launch the Superagent Chrome Extension and connect to activate browser control.";
     }
     const action = args.action as string;
-    if (["click", "type", "navigate", "scroll"].includes(action) && !args.target) {
+    if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait"].includes(action) && !args.target) {
       return `Error: Target parameter is required for action "${action}".`;
     }
     try {

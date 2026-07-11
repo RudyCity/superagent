@@ -65,6 +65,39 @@ async function executeBrowserControl(controlId, action, target, value) {
       return;
     }
 
+    if (action === "reload" || action === "refresh") {
+      chrome.tabs.reload(activeTab.id, {}, () => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, "Page reloaded", false);
+        }
+      });
+      return;
+    }
+
+    if (action === "back") {
+      chrome.tabs.goBack(activeTab.id, () => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, "Navigated back", false);
+        }
+      });
+      return;
+    }
+
+    if (action === "forward") {
+      chrome.tabs.goForward(activeTab.id, () => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, "Navigated forward", false);
+        }
+      });
+      return;
+    }
+
     if (action === "errors") {
       try {
         chrome.scripting.executeScript({
@@ -92,8 +125,48 @@ async function executeBrowserControl(controlId, action, target, value) {
     try {
       chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
-        func: (act, tgt, val) => {
+        func: async (act, tgt, val) => {
           try {
+            const waitForSelector = (selector, timeoutMs = 5000) => {
+              return new Promise((resolve, reject) => {
+                if (document.querySelector(selector)) {
+                  return resolve(true);
+                }
+                const startTime = Date.now();
+                const interval = setInterval(() => {
+                  if (document.querySelector(selector)) {
+                    clearInterval(interval);
+                    resolve(true);
+                  } else if (Date.now() - startTime > timeoutMs) {
+                    clearInterval(interval);
+                    reject(new Error(`Timeout waiting for selector: ${selector}`));
+                  }
+                }, 100);
+              });
+            };
+
+            if (act === "wait") {
+              const timeout = parseInt(val || "5000", 10);
+              if (!isNaN(Number(tgt))) {
+                const ms = parseInt(tgt, 10);
+                await new Promise(r => setTimeout(r, ms));
+                return `Waited for ${ms}ms`;
+              }
+              await waitForSelector(tgt, timeout);
+              return `Element ${tgt} is now present`;
+            }
+
+            if (act === "html") {
+              if (!tgt) {
+                return document.documentElement ? document.documentElement.outerHTML : "";
+              }
+              const el = document.querySelector(tgt);
+              if (!el) {
+                return `Error: Element not found for selector: ${tgt}`;
+              }
+              return el.outerHTML || "";
+            }
+
             if (act === "scroll") {
               if (tgt === "up") {
                 window.scrollBy(0, -window.innerHeight / 2);
@@ -131,6 +204,33 @@ async function executeBrowserControl(controlId, action, target, value) {
               el.click();
               el.dispatchEvent(new Event("change", { bubbles: true }));
               return `Clicked element ${tgt}`;
+            }
+
+            if (act === "hover") {
+              const rect = el.getBoundingClientRect();
+              el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 }));
+              el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
+              el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 }));
+              return `Hovered over element ${tgt}`;
+            }
+
+            if (act === "keypress") {
+              const key = val || "Enter";
+              const keyCode = key === "Enter" ? 13 : 0;
+              const eventInit = { key, keyCode, bubbles: true, cancelable: true };
+              el.dispatchEvent(new KeyboardEvent("keydown", eventInit));
+              el.dispatchEvent(new KeyboardEvent("keypress", eventInit));
+              el.dispatchEvent(new KeyboardEvent("keyup", eventInit));
+              
+              if (key === "Enter") {
+                if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) {
+                  const form = el.closest("form");
+                  if (form) {
+                    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+                  }
+                }
+              }
+              return `Pressed key "${key}" on element ${tgt}`;
             }
 
             if (act === "type") {

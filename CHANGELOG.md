@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.272] - 2026-07-11
+
+### Added
+- **Browser Control Tool**:
+  - Expanded `control_browser_tab` actions to support `hover` (trigger mouse hover states), `keypress` (trigger keyboards events like custom key values or simulated form submits), `wait` (pause for duration or wait for a CSS selector to exist), and `html` (retrieve elements' outerHTML).
+  - Added new navigation actions: `reload` (page refresh), `back` (go back), and `forward` (go forward) using Chrome tabs history API.
+
+---
+
 ## [1.2.271] - 2026-07-11
 
 ### Fixed
