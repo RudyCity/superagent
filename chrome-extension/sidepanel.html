@@ -186,19 +186,46 @@
         </div>
 
         <!-- Action Footer -->
-        <div class="chat-footer bg-vscode-sidebar border-t border-vscode-dim p-3.5 flex flex-col gap-1.5 shrink-0">
-          <div class="context-bar flex items-center justify-between">
-            <button id="btn-grab-context" class="btn btn-secondary btn-xs px-1.5 py-0.5 text-[10px] h-5 font-sans font-medium border rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover">
-              <svg class="icon w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-              Attach Chrome Active Tab context
-            </button>
-            <div id="context-badge" class="context-badge hidden text-[9.5px] bg-green-success-light text-green-success px-1.5 py-0.5 rounded-sm border border-[rgba(78,201,176,0.3)]">Tab attached</div>
+        <div class="chat-footer bg-vscode-sidebar border-t border-vscode-dim p-3 flex flex-col gap-1.5 shrink-0 relative">
+          <!-- Autocomplete / Suggestions Popover -->
+          <div id="suggestions-popover" class="absolute bottom-[calc(100%-8px)] left-3 right-3 bg-vscode-sidebar border border-vscode-dim rounded-sm shadow-2xl overflow-hidden hidden flex-col z-20 max-h-[160px]">
+            <div id="suggestions-list" class="flex flex-col max-h-[135px] overflow-y-auto">
+              <!-- Dynamically populated suggestion rows -->
+            </div>
+            <div class="suggestions-footer px-2.5 py-1.5 border-t border-vscode-dim bg-vscode-inner flex items-center justify-between text-[9px] text-vscode-muted font-sans select-none shrink-0">
+              <span>Use ↑↓ to navigate, Enter to select</span>
+              <span>Fuzzy search active</span>
+            </div>
           </div>
-          <div class="input-area flex gap-2.5 items-end">
-            <textarea id="chat-input" placeholder="Type instructions for Superagent..." rows="2" class="flex-1 bg-vscode-editor border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-sans text-[12px] resize-none outline-none h-12 focus:border-vscode-bright"></textarea>
-            <button id="btn-send" class="btn btn-primary btn-icon w-[30px] h-[30px] p-0 rounded-sm font-sans font-medium text-xs border border-transparent cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover">
-              <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-            </button>
+
+          <!-- Attachment Preview Container -->
+          <div id="attachment-preview-container" class="flex flex-wrap gap-1.5 empty:hidden max-h-[60px] overflow-y-auto pb-1"></div>
+
+          <!-- Input Box Wrapper -->
+          <div class="input-box-wrapper flex flex-col border border-vscode-dim rounded-[3px] bg-vscode-editor focus-within:border-vscode-bright">
+            <textarea id="chat-input" placeholder="Type instructions or / for commands, ! for terminal..." rows="2" class="w-full bg-transparent text-vscode-primary px-2.5 py-2 font-sans text-[12px] resize-none outline-none border-none h-14"></textarea>
+            
+            <div class="input-toolbar flex items-center justify-between px-2 py-1.5 border-t border-vscode-dim/50 bg-vscode-inner/20">
+              <div class="toolbar-left flex items-center gap-1.5">
+                <!-- Attach Image Trigger -->
+                <button id="btn-attach-image" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Attach Image">🖼️</button>
+                <input type="file" id="attach-image-input" accept="image/*" class="hidden">
+                
+                <!-- Attach Document Trigger -->
+                <button id="btn-attach-doc" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Attach File/Document">📎</button>
+                <input type="file" id="attach-doc-input" accept=".txt,.md,.js,.ts,.tsx,.json,.html,.css,.py,.go,.rs,.sh,.bat,.ps1,.java,.cpp,.c,.h" class="hidden">
+
+                <!-- Grab Tab Context -->
+                <button id="btn-grab-context" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Attach Chrome Active Tab context">🌐</button>
+                <div id="context-badge" class="text-[9px] bg-green-success/20 text-green-success px-1 py-0.5 rounded-[2px] font-mono border border-green-success/30 hidden">Tab OK</div>
+
+                <!-- Input Help Button -->
+                <button id="btn-input-help" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Help Guide">❓</button>
+              </div>
+              <button id="btn-send" class="btn btn-primary btn-icon w-[24px] h-[24px] p-0 rounded-sm font-sans font-medium border border-transparent cursor-pointer inline-flex items-center justify-center transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover shrink-0">
+                <svg viewBox="0 0 24 24" class="w-3 h-3 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -379,5 +406,6 @@
   <script src="sidepanel-workspaces.js"></script>
   <script src="sidepanel-browser.js"></script>
   <script src="sidepanel-monitor.js"></script>
+  <script src="sidepanel-input.js"></script>
 </body>
 </html>

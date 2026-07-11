@@ -907,3 +907,34 @@
   border-color: var(--color-vscode-bright);
   background-color: var(--color-vscode-hover);
 }
+
+/* Autocomplete Popover Styling */
+#suggestions-popover {
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.45);
+}
+
+.suggestion-row {
+  transition: background-color 0.1s ease;
+}
+
+.suggestion-row.active {
+  background-color: var(--color-vscode-hover);
+  border-left: 2.5px solid var(--color-vscode-bright);
+  padding-left: 9.5px;
+}
+
+/* Attachment Preview Chips */
+.attachment-chip {
+  animation: fadeInAttachment 0.15s ease-out;
+}
+
+@keyframes fadeInAttachment {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

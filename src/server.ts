@@ -403,6 +403,76 @@ export async function runServer(port: number, silent = false) {
           return;
         }
 
+        // Direct terminal command executor prefix
+        if (typeof message === "string" && message.startsWith("!")) {
+          const command = message.slice(1).trim();
+          if (!command) {
+            sendJSON(res, 400, { error: "Empty terminal command" });
+            return;
+          }
+
+          // Run in background and stream output via SSE
+          (async () => {
+            const wsPath = session.workspace || lastActiveWorkspace;
+            broadcastEvent({
+              type: "agent_event",
+              event: {
+                type: "text",
+                content: `> Executing command: ${command}\n`
+              }
+            });
+
+            try {
+              const { execa } = await import("execa");
+              const cp = execa(command, {
+                cwd: wsPath,
+                all: true,
+                reject: false,
+                shell: true
+              });
+
+              cp.all?.on("data", (chunk) => {
+                broadcastEvent({
+                  type: "agent_event",
+                  event: {
+                    type: "text",
+                    content: chunk.toString()
+                  }
+                });
+              });
+
+              const result = await cp;
+              broadcastEvent({
+                type: "agent_event",
+                event: {
+                  type: "text",
+                  content: `\n> Command finished with exit code ${result.exitCode}\n`
+                }
+              });
+            } catch (err: any) {
+              broadcastEvent({
+                type: "agent_event",
+                event: {
+                  type: "text",
+                  content: `\n> Command failed: ${err.message}\n`
+                }
+              });
+            } finally {
+              // Notify done to stop spinner
+              broadcastEvent({
+                type: "agent_event",
+                event: {
+                  type: "done",
+                  stats: { totalTimeMs: 0 }
+                }
+              });
+            }
+          })();
+
+          sendJSON(res, 200, { success: true });
+          return;
+        }
+
         // Run message in the background so HTTP finishes quickly
         // Client receives output via SSE
         session.agent.sendMessage(message).catch(err => {
