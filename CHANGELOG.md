@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.255] - 2026-07-11
+
+### Changed
+- **Chrome Extension - Modular Code Refactoring**:
+  - Refactored `sidepanel.js` by splitting helper functions into separate files: `sidepanel-markdown.js` (markdown rendering), `sidepanel-workspaces.js` (workspace switcher), and `sidepanel-browser.js` (browser control). This keeps `sidepanel.js` and all other code files strictly under 1000 lines of code.
+  - Updated `sidepanel.html` script loading tags to include the newly separated modules.
+
+---
+
 ## [1.2.254] - 2026-07-11
 
 ### Added
