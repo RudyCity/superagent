@@ -137,11 +137,19 @@ document.addEventListener("DOMContentLoaded", () => {
   // Buttons Event Listeners
   btnInit.addEventListener("click", initSession);
   btnBrowse.addEventListener("click", browseWorkspaceFolder);
-  btnSend.addEventListener("click", sendChatMessage);
+  btnSend.addEventListener("click", () => {
+    if (btnSend.dataset.state === "stop") {
+      abortExecution();
+    } else {
+      sendChatMessage();
+    }
+  });
   chatInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendChatMessage();
+      if (btnSend.dataset.state !== "stop") {
+        sendChatMessage();
+      }
     }
   });
 
@@ -1038,11 +1046,24 @@ function appendMessage(role, text) {
 function showSpinner(text) {
   processingIndicator.classList.add("active");
   processingText.textContent = text;
+  
+  // Change Send button to Stop button
+  btnSend.dataset.state = "stop";
+  btnSend.classList.remove("bg-vscode-blue", "hover:bg-vscode-blue-hover");
+  btnSend.classList.add("bg-red-error", "hover:bg-[#be533f]");
+  btnSend.innerHTML = `<svg viewBox="0 0 24 24" class="w-3.5 h-3.5 fill-current"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>`;
+  
   scrollToBottom();
 }
 
 function hideSpinner() {
   processingIndicator.classList.remove("active");
+  
+  // Reset Send button to original state
+  btnSend.dataset.state = "send";
+  btnSend.classList.remove("bg-red-error", "hover:bg-[#be533f]");
+  btnSend.classList.add("bg-vscode-blue", "hover:bg-vscode-blue-hover");
+  btnSend.innerHTML = `<svg viewBox="0 0 24 24" class="w-3.5 h-3.5 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`;
 }
 
 function scrollToBottom() {
