@@ -305,9 +305,21 @@ async function checkServerStatus() {
       if (data.agentRunning) {
         statusBadge.textContent = "Running";
         statusBadge.className = "status-badge status-running";
+        
+        // Sync spinner and button state if not already in stop/running state
+        const sendBtnEl = document.getElementById("btn-send");
+        if (sendBtnEl && sendBtnEl.dataset.state !== "stop") {
+          showSpinner("Agent is executing...");
+        }
       } else {
         statusBadge.textContent = "Online";
         statusBadge.className = "status-badge status-online";
+        
+        // Reset spinner and button state if it was in stop/running state
+        const sendBtnEl = document.getElementById("btn-send");
+        if (sendBtnEl && sendBtnEl.dataset.state === "stop") {
+          hideSpinner();
+        }
       }
 
 
@@ -477,7 +489,9 @@ function handleSSEEvent(data) {
     const e = data.event;
     switch (e.type) {
       case "text":
-        hideSpinner();
+        if (processingText && processingText.textContent !== "Generating response...") {
+          showSpinner("Generating response...");
+        }
         if (!agentJobStartTime) agentJobStartTime = Date.now();
         if (!currentAgentMessageElement) {
           currentAgentMessageElement = appendMessage("agent", "");
@@ -489,7 +503,9 @@ function handleSSEEvent(data) {
         break;
 
       case "reasoning":
-        hideSpinner();
+        if (processingText && processingText.textContent !== "Thinking...") {
+          showSpinner("Thinking...");
+        }
         if (!currentAgentMessageElement) {
           currentAgentMessageElement = appendMessage("agent", "");
         }
@@ -565,7 +581,9 @@ function handleSSEEvent(data) {
         break;
 
       case "tool_end":
-        hideSpinner();
+        if (processingText) {
+          processingText.textContent = "Thinking...";
+        }
         if (currentActiveToolElement) {
           const isErr = e.toolResult && e.toolResult.isError;
           if (isErr) {
@@ -600,7 +618,6 @@ function handleSSEEvent(data) {
         break;
 
       case "system":
-        hideSpinner();
         appendMessage("system", e.content);
         break;
 

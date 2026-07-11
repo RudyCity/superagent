@@ -81,26 +81,49 @@ function renderDocument(element, markdown, fallback) {
 
 // Show/Hide thinking spinner
 function showSpinner(text) {
-  processingIndicator.classList.add("active");
-  processingText.textContent = text;
+  const spinnerEl = document.getElementById("processing-indicator");
+  const spinnerTextEl = document.getElementById("processing-text");
+  if (spinnerEl) spinnerEl.classList.add("active");
+  if (spinnerTextEl) spinnerTextEl.textContent = text;
   
+  // Disable chat input
+  const inputEl = document.getElementById("chat-input");
+  if (inputEl) {
+    inputEl.disabled = true;
+    inputEl.placeholder = "Agent is executing...";
+  }
+
   // Change Send button to Stop button
-  btnSend.dataset.state = "stop";
-  btnSend.classList.remove("bg-vscode-blue", "hover:bg-vscode-blue-hover");
-  btnSend.classList.add("bg-red-error", "hover:bg-[#be533f]");
-  btnSend.innerHTML = `<svg viewBox="0 0 24 24" class="w-3.5 h-3.5 fill-current"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>`;
+  const sendBtnEl = document.getElementById("btn-send");
+  if (sendBtnEl) {
+    sendBtnEl.dataset.state = "stop";
+    sendBtnEl.classList.remove("bg-vscode-blue", "hover:bg-vscode-blue-hover");
+    sendBtnEl.classList.add("bg-red-error", "hover:bg-[#be533f]");
+    sendBtnEl.innerHTML = `<svg viewBox="0 0 24 24" class="w-3.5 h-3.5 fill-current"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>`;
+  }
   
   scrollToBottom();
 }
 
 function hideSpinner() {
-  processingIndicator.classList.remove("active");
+  const spinnerEl = document.getElementById("processing-indicator");
+  if (spinnerEl) spinnerEl.classList.remove("active");
   
+  // Enable chat input
+  const inputEl = document.getElementById("chat-input");
+  if (inputEl) {
+    inputEl.disabled = false;
+    inputEl.placeholder = "Type instructions for Superagent...";
+  }
+
   // Reset Send button to original state
-  btnSend.dataset.state = "send";
-  btnSend.classList.remove("bg-red-error", "hover:bg-[#be533f]");
-  btnSend.classList.add("bg-vscode-blue", "hover:bg-vscode-blue-hover");
-  btnSend.innerHTML = `<svg viewBox="0 0 24 24" class="w-3.5 h-3.5 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`;
+  const sendBtnEl = document.getElementById("btn-send");
+  if (sendBtnEl) {
+    sendBtnEl.dataset.state = "send";
+    sendBtnEl.classList.remove("bg-red-error", "hover:bg-[#be533f]");
+    sendBtnEl.classList.add("bg-vscode-blue", "hover:bg-vscode-blue-hover");
+    sendBtnEl.innerHTML = `<svg viewBox="0 0 24 24" class="w-3.5 h-3.5 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`;
+  }
 }
 
 function scrollToBottom() {

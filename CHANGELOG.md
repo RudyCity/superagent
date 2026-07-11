@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.288] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Loading/Process Button States**:
+  - Prevented premature hiding of the spinner and reverting of the send button state on intermediate events like `text`, `reasoning`, and `tool_end`.
+  - Added robust synchronization of spinner visibility, chat input text disabled state, and process button (send/stop) state with the `/api/status` endpoint's `data.agentRunning` value.
+  - Enabled active/generating feedback on text and reasoning streams instead of resetting UI early.
+
+---
+
 ## [1.2.287] - 2026-07-11
 
 ### Refactored
