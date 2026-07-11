@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.277] - 2026-07-11
+
+### Removed
+- **Chrome Extension Server Controls**:
+  - Removed start server help button, stop server button, and the start server command tooltip from the sidebar panel header.
+  - Cleaned up event listeners, DOM elements, status visibility logic, and the shutdown/stop server API request function from sidepanel.js.
+
+---
+
 ## [1.2.276] - 2026-07-11
 
 ### Changed

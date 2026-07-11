@@ -80,10 +80,6 @@ const btnSubmitAnswer = document.getElementById("btn-submit-answer");
 const btnGrabContext = document.getElementById("btn-grab-context");
 const contextBadge = document.getElementById("context-badge");
 
-const btnStopServer = document.getElementById("btn-stop-server");
-const btnStartServerHelp = document.getElementById("btn-start-server-help");
-const startServerTooltip = document.getElementById("start-server-tooltip");
-
 const btnSwitchWorkspace = document.getElementById("btn-switch-workspace");
 const workspaceDropdown = document.getElementById("workspace-dropdown");
 const savedWorkspacesList = document.getElementById("saved-workspaces-list");
@@ -178,11 +174,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  btnStopServer.addEventListener("click", stopServer);
-  btnStartServerHelp.addEventListener("click", (e) => {
-    e.stopPropagation();
-    startServerTooltip.classList.toggle("hidden");
-  });
 
   // Workspace switcher
   btnSwitchWorkspace.addEventListener("click", (e) => {
@@ -300,10 +291,7 @@ async function checkServerStatus() {
         statusBadge.textContent = "Online";
         statusBadge.className = "status-badge status-online";
       }
-      
-      btnStopServer.classList.remove("hidden");
-      btnStartServerHelp.classList.add("hidden");
-      startServerTooltip.classList.add("hidden");
+
 
       // Auto reconnect view if server is running session
       if (data.sessionId && workspaceScreen.className.indexOf("active") === -1) {
@@ -330,29 +318,7 @@ async function checkServerStatus() {
     wasOffline = true;
     statusBadge.textContent = "Offline";
     statusBadge.className = "status-badge status-offline";
-    btnStopServer.classList.add("hidden");
-    btnStartServerHelp.classList.remove("hidden");
-    if (workspaceScreen.classList.contains("active")) {
-      workspaceScreen.classList.remove("active");
-      setupScreen.classList.add("active");
-      stopPolling();
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-      }
-    }
-  }
-}
 
-// Stop local server
-async function stopServer() {
-  if (!confirm("Are you sure you want to stop the local Superagent server?")) return;
-  try {
-    await fetch(`${BASE_URL}/api/shutdown`, { method: "POST" });
-    statusBadge.textContent = "Offline";
-    statusBadge.className = "status-badge status-offline";
-    btnStopServer.classList.add("hidden");
-    btnStartServerHelp.classList.remove("hidden");
     if (workspaceScreen.classList.contains("active")) {
       workspaceScreen.classList.remove("active");
       setupScreen.classList.add("active");
@@ -362,8 +328,6 @@ async function stopServer() {
         eventSource = null;
       }
     }
-  } catch (err) {
-    alert("Failed to send shutdown command: " + err.message);
   }
 }
 

@@ -410,14 +410,8 @@
       max-width: 96rem;
     }
   }
-  .m-0 {
-    margin: 0;
-  }
   .mx-auto {
     margin-inline: auto;
-  }
-  .my-1\.5 {
-    margin-block: calc(var(--spacing) * 1.5);
   }
   .mt-1 {
     margin-top: var(--spacing);
@@ -576,6 +570,9 @@
   }
   .max-h-\[250px\] {
     max-height: 250px;
+  }
+  .max-h-\[300px\] {
+    max-height: 300px;
   }
   .min-h-\[20px\] {
     min-height: 20px;
@@ -964,10 +961,6 @@
     border-bottom-style: var(--tw-border-style);
     border-bottom-width: 2px;
   }
-  .border-l-2 {
-    border-left-style: var(--tw-border-style);
-    border-left-width: 2px;
-  }
   .border-l-4 {
     border-left-style: var(--tw-border-style);
     border-left-width: 4px;
@@ -1009,9 +1002,6 @@
   }
   .border-vscode-dim {
     border-color: var(--color-vscode-dim);
-  }
-  .border-vscode-dim\! {
-    border-color: var(--color-vscode-dim) !important;
   }
   .border-t-vscode-bright {
     border-top-color: var(--color-vscode-bright);
@@ -1102,9 +1092,6 @@
   }
   .bg-vscode-inner {
     background-color: var(--color-vscode-inner);
-  }
-  .bg-vscode-inner\! {
-    background-color: var(--color-vscode-inner) !important;
   }
   .bg-vscode-sidebar {
     background-color: var(--color-vscode-sidebar);
@@ -1233,9 +1220,6 @@
   .pb-4 {
     padding-bottom: calc(var(--spacing) * 4);
   }
-  .pl-2\.5 {
-    padding-left: calc(var(--spacing) * 2.5);
-  }
   .text-left {
     text-align: left;
   }
@@ -1298,9 +1282,6 @@
   .text-\[11px\] {
     font-size: 11px;
   }
-  .text-\[11px\]\! {
-    font-size: 11px !important;
-  }
   .text-\[12px\] {
     font-size: 12px;
   }
@@ -1341,10 +1322,6 @@
   .font-semibold {
     --tw-font-weight: var(--font-weight-semibold);
     font-weight: var(--font-weight-semibold);
-  }
-  .font-semibold\! {
-    --tw-font-weight: var(--font-weight-semibold) !important;
-    font-weight: var(--font-weight-semibold) !important;
   }
   .tracking-tight {
     --tw-tracking: var(--tracking-tight);
@@ -1429,9 +1406,6 @@
   }
   .text-vscode-primary {
     color: var(--color-vscode-primary);
-  }
-  .text-vscode-primary\! {
-    color: var(--color-vscode-primary) !important;
   }
   .text-white {
     color: var(--color-white);
@@ -1754,13 +1728,6 @@
       }
     }
   }
-  .hover\:bg-vscode-hover\! {
-    &:hover {
-      @media (hover: hover) {
-        background-color: var(--color-vscode-hover) !important;
-      }
-    }
-  }
   .hover\:text-gray-900 {
     &:hover {
       @media (hover: hover) {
@@ -1772,6 +1739,13 @@
     &:hover {
       @media (hover: hover) {
         color: var(--color-vscode-light);
+      }
+    }
+  }
+  .hover\:text-white {
+    &:hover {
+      @media (hover: hover) {
+        color: var(--color-white);
       }
     }
   }
