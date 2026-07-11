@@ -14,6 +14,15 @@ let activeSessionId: string | null = null;
 let activeMode: "single" | "multi" = "single";
 let activeWorkspace: string = process.cwd();
 let isBrowseDialogOpen = false;
+let isCliSession = false;
+
+export function registerCliAgent(agent: Agent, workspace: string, mode: "single" | "multi") {
+  activeAgent = agent;
+  activeWorkspace = workspace;
+  activeMode = mode;
+  activeSessionId = activeSessionId || Date.now().toString();
+  isCliSession = true;
+}
 
 const sseClients = new Set<http.ServerResponse>();
 const pendingPermissions = new Map<string, (approval: boolean | "session") => void>();
@@ -96,7 +105,7 @@ const onQuestion = (question: any, options?: string[], isMultiSelect?: boolean) 
   });
 };
 
-export async function runServer(port: number) {
+export async function runServer(port: number, silent = false) {
   const server = http.createServer(async (req, res) => {
     const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
     const pathname = parsedUrl.pathname;
@@ -144,6 +153,7 @@ export async function runServer(port: number) {
           sessionId: activeSessionId,
           agentActive: !!activeAgent,
           agentRunning: activeAgent ? activeAgent.isAgentRunning() : false,
+          isCliSession: isCliSession,
         });
         return;
       }
@@ -153,6 +163,7 @@ export async function runServer(port: number) {
         const bodyStr = await readBody(req);
         const body = JSON.parse(bodyStr || "{}");
         const { mode, workspace, resume, initialPrompt } = body;
+        isCliSession = false;
 
         const targetWorkspace = workspace ? path.resolve(workspace) : process.cwd();
         
@@ -446,9 +457,17 @@ export async function runServer(port: number) {
     }
   });
 
+  server.on("error", (err: any) => {
+    if (!silent) {
+      console.error("[Extension Server Error]", err);
+    }
+  });
+
   server.listen(port, () => {
-    console.log(`\n🚀 Superagent Extension Server is running at http://localhost:${port}`);
-    console.log(`💡 Mode: REST API & Server-Sent Events (SSE)`);
-    console.log(`📂 Current Workspace: ${activeWorkspace}\n`);
+    if (!silent) {
+      console.log(`\n🚀 Superagent Extension Server is running at http://localhost:${port}`);
+      console.log(`💡 Mode: REST API & Server-Sent Events (SSE)`);
+      console.log(`📂 Current Workspace: ${activeWorkspace}\n`);
+    }
   });
 }

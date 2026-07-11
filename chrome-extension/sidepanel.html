@@ -84,6 +84,25 @@
       </div>
 
       <div class="workspace-grid">
+        <!-- Terminal Redirect Screen (Only shown in CLI mode) -->
+        <div id="cli-mode-banner" class="cli-mode-banner hidden">
+          <div class="cli-banner-content">
+            <div class="terminal-header">
+              <span class="terminal-dot red"></span>
+              <span class="terminal-dot yellow"></span>
+              <span class="terminal-dot green"></span>
+              <span class="terminal-title">SUPERAGENT TERMINAL BRIDGE</span>
+            </div>
+            <div class="terminal-body">
+              <p class="cyber-alert">&gt;&gt;&gt; SYSTEM STATUS: CONNECTED TO CLI</p>
+              <p class="cyber-hint">Chat input and log history are restricted to the terminal window where the agent is running.</p>
+              <div class="glitch-container">
+                <div class="glitch-text" data-text="MONITORING ACTIVE">MONITORING ACTIVE</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Chat Area -->
         <div class="chat-container">
           <div id="chat-messages" class="chat-messages">

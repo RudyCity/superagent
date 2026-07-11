@@ -1,28 +1,31 @@
 :root {
-  --bg-main: #0a0b10;
-  --bg-panel: #11131c;
-  --bg-inner: #181b28;
-  --bg-card: #202436;
+  --bg-main: #050508;
+  --bg-panel: #0b0c10;
+  --bg-inner: #0f1015;
+  --bg-card: #15161f;
   
-  --border-dim: #1f2536;
+  --border-dim: #1d2130;
   --border-bright: #3f4a6b;
   
-  --accent-cyan: #00f2fe;
-  --accent-cyan-glow: rgba(0, 242, 254, 0.4);
-  --accent-purple: #9d4edd;
-  --accent-purple-glow: rgba(157, 78, 221, 0.4);
-  --accent-pink: #ff007f;
+  --accent-cyan: #00f0ff;
+  --accent-cyan-glow: rgba(0, 240, 255, 0.35);
+  --accent-purple: #bd00ff;
+  --accent-purple-glow: rgba(189, 0, 255, 0.35);
+  --accent-pink: #ff0055;
+  --accent-pink-glow: rgba(255, 0, 85, 0.35);
   
-  --text-primary: #f1f3f9;
-  --text-muted: #8e9bb4;
-  --text-dark: #07080d;
+  --text-primary: #e6ebf5;
+  --text-muted: #727a8c;
+  --text-dark: #050508;
   
   --color-green: #39ff14;
+  --color-green-glow: rgba(57, 255, 20, 0.35);
   --color-amber: #ffb703;
   --color-red: #ff003c;
   
-  --shadow-glow: 0 0 15px var(--accent-cyan-glow);
-  --shadow-glow-purple: 0 0 15px var(--accent-purple-glow);
+  --shadow-glow: 0 0 10px var(--accent-cyan-glow);
+  --shadow-glow-purple: 0 0 10px var(--accent-purple-glow);
+  --shadow-glow-green: 0 0 10px var(--color-green-glow);
   
   --font-sans: 'Outfit', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
@@ -37,6 +40,9 @@
 body {
   font-family: var(--font-sans);
   background-color: var(--bg-main);
+  background-image: linear-gradient(rgba(0, 240, 255, 0.02) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(0, 240, 255, 0.02) 1px, transparent 1px);
+  background-size: 24px 24px;
   color: var(--text-primary);
   height: 100vh;
   display: flex;
@@ -970,4 +976,139 @@ main {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-bright);
+}
+
+/* Cyberpunk overrides */
+.btn, input, textarea, .mode-card, .msg-content, .reasoning-block, .tool-block, .status-badge, .tab-btn, .checkmark, .option-btn, .modal {
+  border-radius: 0 !important;
+}
+
+/* Button Cyberpunk Styling */
+.btn-primary {
+  background: transparent !important;
+  color: var(--accent-cyan) !important;
+  border: 1px solid var(--accent-cyan) !important;
+  box-shadow: 0 0 5px rgba(0, 240, 255, 0.2) !important;
+  text-shadow: 0 0 4px var(--accent-cyan-glow);
+}
+.btn-primary:hover {
+  background: var(--accent-cyan) !important;
+  color: var(--bg-main) !important;
+  box-shadow: 0 0 15px var(--accent-cyan-glow) !important;
+  text-shadow: none;
+}
+.btn-secondary {
+  border-radius: 0 !important;
+  border: 1px solid var(--border-bright) !important;
+  background: var(--bg-card) !important;
+}
+.btn-secondary:hover {
+  border-color: var(--accent-cyan) !important;
+  box-shadow: 0 0 8px var(--accent-cyan-glow) !important;
+}
+.btn-danger {
+  background: transparent !important;
+  color: var(--accent-pink) !important;
+  border: 1px solid var(--accent-pink) !important;
+  box-shadow: 0 0 5px rgba(255, 0, 85, 0.2) !important;
+}
+.btn-danger:hover {
+  background: var(--accent-pink) !important;
+  color: var(--bg-main) !important;
+  box-shadow: 0 0 15px var(--accent-pink-glow) !important;
+}
+
+/* CLI Active State Layout overrides */
+#workspace-screen.cli-active .chat-container,
+#workspace-screen.cli-active .chat-footer {
+  display: none !important;
+}
+
+#workspace-screen.cli-active .workspace-grid {
+  height: calc(100vh - 40px) !important;
+  grid-template-columns: 1.2fr 0.8fr !important;
+}
+
+/* CLI mode banner design */
+.cli-mode-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(5, 5, 8, 0.7);
+  border-right: 1px solid var(--border-dim);
+}
+
+.cli-banner-content {
+  width: 100%;
+  max-width: 480px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-bright);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-header {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-dim);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.terminal-dot.red { background-color: var(--color-red); }
+.terminal-dot.yellow { background-color: var(--color-amber); }
+.terminal-dot.green { background-color: var(--color-green); }
+
+.terminal-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  letter-spacing: 1px;
+}
+
+.terminal-body {
+  padding: 24px;
+  font-family: var(--font-mono);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cyber-alert {
+  color: var(--color-green);
+  text-shadow: 0 0 6px var(--color-green-glow);
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.cyber-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Blinking/glitch text effect */
+.glitch-container {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px dashed var(--border-dim);
+  text-align: center;
+}
+
+.glitch-text {
+  color: var(--accent-cyan);
+  font-size: 12px;
+  letter-spacing: 2px;
+  animation: blink 1.5s infinite alternate;
+  text-shadow: 0 0 5px var(--accent-cyan-glow);
 }

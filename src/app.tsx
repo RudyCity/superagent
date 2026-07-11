@@ -1865,6 +1865,11 @@ export function App({
     agentRef.current = agent;
     registerMasterAgent(agent);
 
+    // Register with extension server
+    import("./server.js").then(({ registerCliAgent }) => {
+      registerCliAgent(agent, process.cwd(), "single");
+    }).catch(() => {});
+
     const handleSigint = () => {
       if (stopRunningSubagents() > 0) {
         agent.abort();

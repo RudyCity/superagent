@@ -82,6 +82,12 @@ function abortAllAgents() {
 let sigintCount = 0;
 
 export async function runCli() {
+  // Start extension server silently in the background
+  try {
+    const { runServer } = await import("./server.js");
+    runServer(7888, true).catch(() => {});
+  } catch {}
+
   process.on("exit", () => {
     if (masterAgentRef) {
       try { masterAgentRef.saveHistorySync(); } catch {}
@@ -284,6 +290,12 @@ export async function runCli() {
       agent.isMultiAgent = true;
       registerMasterAgent(agent);
 
+      // Register with extension server
+      try {
+        const { registerCliAgent } = await import("./server.js");
+        registerCliAgent(agent, process.cwd(), "multi");
+      } catch {}
+
       if (autoResume) {
         try {
           await agent.loadHistory(autoResume);
@@ -457,6 +469,12 @@ export async function runCli() {
       }
     );
     agent.tier = "single";
+
+    // Register with extension server
+    try {
+      const { registerCliAgent } = await import("./server.js");
+      registerCliAgent(agent, process.cwd(), "single");
+    } catch {}
 
     const rl = readline.createInterface({
       input: process.stdin,

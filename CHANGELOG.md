@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.243] - 2026-07-11
+
+### Added
+- **Cyberpunk Extension UI**:
+  - Redesigned the Chrome Extension's side panel chat UI with a sleek, simple cyberpunk theme.
+  - Implemented high-contrast dark backgrounds, neon accents (cyan, purple, pink, green), sharp borders, and monospace font styling.
+- **Terminal Chat & Log Restriction**:
+  - Restricted the Chrome Extension chat logs and input chat area when connected to a CLI-initiated session, replacing them with a status bridge screen.
+  - Automatically spins up the extension API server silently in the background when running the `superagent` CLI.
+  - Enabled dynamic registration of CLI-connected agents, ensuring active task checklists and subagents trees update in real-time in the Chrome Extension.
+
+---
+
 ## [1.2.242] - 2026-07-11
 
 ### Added

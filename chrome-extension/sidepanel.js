@@ -130,6 +130,16 @@ async function checkServerStatus() {
         setupSSE();
         startPolling();
       }
+
+      // Handle CLI session mode toggle
+      const cliBanner = document.getElementById("cli-mode-banner");
+      if (data.isCliSession) {
+        if (cliBanner) cliBanner.classList.remove("hidden");
+        if (workspaceScreen) workspaceScreen.classList.add("cli-active");
+      } else {
+        if (cliBanner) cliBanner.classList.add("hidden");
+        if (workspaceScreen) workspaceScreen.classList.remove("cli-active");
+      }
     }
   } catch {
     statusBadge.textContent = "Offline";
