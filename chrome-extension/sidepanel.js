@@ -99,24 +99,11 @@ const btnCloseSettings = document.getElementById("btn-close-settings");
 const btnSaveSettings = document.getElementById("btn-save-settings");
 
 const tabChat = document.getElementById("tab-chat");
-const tabPlan = document.getElementById("tab-plan");
-const tabTasks = document.getElementById("tab-tasks");
-const tabWalkthrough = document.getElementById("tab-walkthrough");
 const tabHistory = document.getElementById("tab-history");
 
 const viewChat = document.getElementById("view-chat");
-const viewPlan = document.getElementById("view-plan");
-const viewTasks = document.getElementById("view-tasks");
-const viewWalkthrough = document.getElementById("view-walkthrough");
 const viewHistory = document.getElementById("view-history");
 
-const planContent = document.getElementById("plan-content");
-const tasksContent = document.getElementById("tasks-content");
-const walkthroughContent = document.getElementById("walkthrough-content");
-
-const btnRefreshPlan = document.getElementById("btn-refresh-plan");
-const btnRefreshTasks = document.getElementById("btn-refresh-tasks");
-const btnRefreshWalkthrough = document.getElementById("btn-refresh-walkthrough");
 const btnRefreshHistory = document.getElementById("btn-refresh-history");
 const modelPresetSelect = document.getElementById("model-preset");
 const settingDisableStreaming = document.getElementById("setting-disable-streaming");
@@ -292,15 +279,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Tab Navigation Listeners
   if (tabChat) tabChat.addEventListener("click", () => switchTab("chat"));
-  if (tabPlan) tabPlan.addEventListener("click", () => switchTab("plan"));
-  if (tabTasks) tabTasks.addEventListener("click", () => switchTab("tasks"));
-  if (tabWalkthrough) tabWalkthrough.addEventListener("click", () => switchTab("walkthrough"));
   if (tabHistory) tabHistory.addEventListener("click", () => switchTab("history"));
 
   // Document Refresh Listeners
-  if (btnRefreshPlan) btnRefreshPlan.addEventListener("click", loadDocuments);
-  if (btnRefreshTasks) btnRefreshTasks.addEventListener("click", loadDocuments);
-  if (btnRefreshWalkthrough) btnRefreshWalkthrough.addEventListener("click", loadDocuments);
   if (btnRefreshHistory) btnRefreshHistory.addEventListener("click", loadChatHistorySessions);
 });
 
@@ -939,8 +920,8 @@ function updateSetupRecentWorkspaces() {
 
 // Tab Switching Logic
 function switchTab(tabId) {
-  const tabs = [tabChat, tabPlan, tabTasks, tabWalkthrough, tabHistory];
-  const views = [viewChat, viewPlan, viewTasks, viewWalkthrough, viewHistory];
+  const tabs = [tabChat, tabHistory];
+  const views = [viewChat, viewHistory];
   
   tabs.forEach(t => { if (t) t.classList.remove("active"); });
   views.forEach(v => { if (v) v.classList.add("hidden"); });
@@ -948,37 +929,10 @@ function switchTab(tabId) {
   if (tabId === "chat" && tabChat && viewChat) {
     tabChat.classList.add("active");
     viewChat.classList.remove("hidden");
-  } else if (tabId === "plan" && tabPlan && viewPlan) {
-    tabPlan.classList.add("active");
-    viewPlan.classList.remove("hidden");
-    loadDocuments();
-  } else if (tabId === "tasks" && tabTasks && viewTasks) {
-    tabTasks.classList.add("active");
-    viewTasks.classList.remove("hidden");
-    loadDocuments();
-  } else if (tabId === "walkthrough" && tabWalkthrough && viewWalkthrough) {
-    tabWalkthrough.classList.add("active");
-    viewWalkthrough.classList.remove("hidden");
-    loadDocuments();
   } else if (tabId === "history" && tabHistory && viewHistory) {
     tabHistory.classList.add("active");
     viewHistory.classList.remove("hidden");
     loadChatHistorySessions();
-  }
-}
-
-// Document Fetching and Parsing
-async function loadDocuments() {
-  try {
-    const res = await fetch(`${BASE_URL}/api/documents`);
-    if (res.ok) {
-      const data = await res.json();
-      renderDocument(planContent, data.plan, "No implementation plan found.");
-      renderDocument(tasksContent, data.tasks, "No task checklist found.");
-      renderDocument(walkthroughContent, data.walkthrough, "No walkthrough found.");
-    }
-  } catch (err) {
-    console.error("Error loading documents:", err);
   }
 }
 

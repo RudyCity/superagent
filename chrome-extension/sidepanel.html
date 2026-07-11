@@ -91,18 +91,6 @@
           <button id="tab-history" class="tab-btn w-10 h-10 flex items-center justify-center rounded-md cursor-pointer transition-colors text-vscode-muted hover:text-vscode-light relative" title="Chat History">
             <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
           </button>
-          <!-- Plan Icon -->
-          <button id="tab-plan" class="tab-btn w-10 h-10 flex items-center justify-center rounded-md cursor-pointer transition-colors text-vscode-muted hover:text-vscode-light relative" title="Implementation Plan">
-            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-          </button>
-          <!-- Tasks Icon -->
-          <button id="tab-tasks" class="tab-btn w-10 h-10 flex items-center justify-center rounded-md cursor-pointer transition-colors text-vscode-muted hover:text-vscode-light relative" title="Task Checklist">
-            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
-          </button>
-          <!-- Walkthrough Icon -->
-          <button id="tab-walkthrough" class="tab-btn w-10 h-10 flex items-center justify-center rounded-md cursor-pointer transition-colors text-vscode-muted hover:text-vscode-light relative" title="Walkthrough Summary">
-            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-          </button>
         </div>
       </aside>
 
@@ -181,39 +169,6 @@
                 <span class="strip-label text-[9px] font-semibold text-vscode-muted uppercase tracking-wider">Agents</span>
                 <div id="agents-strip-items" class="strip-items flex flex-wrap gap-1 flex-1"></div>
               </div>
-            </div>
-          </div>
-
-          <!-- PLAN CONTENT VIEW -->
-          <div id="view-plan" class="tab-view flex-1 overflow-y-auto p-4 bg-vscode-editor hidden">
-            <div class="doc-header flex justify-between items-center mb-3">
-              <h3 class="text-[11px] font-bold text-vscode-light uppercase tracking-wider">Implementation Plan</h3>
-              <button id="btn-refresh-plan" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 cursor-pointer">Refresh</button>
-            </div>
-            <div id="plan-content" class="markdown-body text-[12px] leading-relaxed text-vscode-primary font-sans">
-              <p class="text-vscode-muted italic">No implementation plan found.</p>
-            </div>
-          </div>
-
-          <!-- TASKS CONTENT VIEW -->
-          <div id="view-tasks" class="tab-view flex-1 overflow-y-auto p-4 bg-vscode-editor hidden">
-            <div class="doc-header flex justify-between items-center mb-3">
-              <h3 class="text-[11px] font-bold text-vscode-light uppercase tracking-wider">Task Checklist</h3>
-              <button id="btn-refresh-tasks" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 cursor-pointer">Refresh</button>
-            </div>
-            <div id="tasks-content" class="markdown-body text-[12px] leading-relaxed text-vscode-primary font-sans">
-              <p class="text-vscode-muted italic">No tasks found.</p>
-            </div>
-          </div>
-
-          <!-- WALKTHROUGH CONTENT VIEW -->
-          <div id="view-walkthrough" class="tab-view flex-1 overflow-y-auto p-4 bg-vscode-editor hidden">
-            <div class="doc-header flex justify-between items-center mb-3">
-              <h3 class="text-[11px] font-bold text-vscode-light uppercase tracking-wider">Verification Walkthrough</h3>
-              <button id="btn-refresh-walkthrough" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 cursor-pointer">Refresh</button>
-            </div>
-            <div id="walkthrough-content" class="markdown-body text-[12px] leading-relaxed text-vscode-primary font-sans">
-              <p class="text-vscode-muted italic">No walkthrough found.</p>
             </div>
           </div>
 

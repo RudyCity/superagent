@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.290] - 2026-07-11
+
+### Removed
+- **Chrome Extension Plan, Tasks, and Walkthrough Left Tabs**:
+  - Deleted Plan, Tasks, and Walkthrough tab button triggers from the left activity bar.
+  - Deleted the corresponding view panes (`view-plan`, `view-tasks`, `view-walkthrough`) from the layout.
+  - Simplified the switch tab listener logic and cleaned up unused DOM element references and handlers in `sidepanel.js`.
+
+---
+
 ## [1.2.289] - 2026-07-11
 
 ### Fixed
