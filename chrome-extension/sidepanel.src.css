@@ -116,6 +116,9 @@
   display: flex;
   flex-direction: column;
 }
+#workspace-screen.active {
+  flex-direction: row;
+}
 
 /* Dynamic JS-injected elements styling */
 .msg {
@@ -400,25 +403,15 @@
   background: var(--bg-vscode-hover);
 }
 
-/* Tab Navigation */
-.workspace-tabs {
-  height: 32px;
-  background: var(--bg-vscode-sidebar);
-  border-bottom: 1px solid var(--border-vscode-dim);
-}
+/* Tab Navigation (Activity Bar Vertical Icons) */
 .tab-btn {
   border: none;
   background: transparent;
   color: var(--text-vscode-muted);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 0 14px;
-  height: 32px;
-  line-height: 32px;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.15s ease;
 }
 .tab-btn:hover {
@@ -426,7 +419,15 @@
 }
 .tab-btn.active {
   color: var(--text-vscode-light);
-  border-bottom-color: var(--bg-vscode-blue);
+}
+.tab-btn.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background-color: var(--color-vscode-bright);
 }
 
 /* CLI Active State Layout (Chat is shown, no longer display: none) */

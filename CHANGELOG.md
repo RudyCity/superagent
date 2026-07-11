@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.281] - 2026-07-11
+
+### Changed
+- **Chrome Extension Activity Bar Layout**:
+  - Restructured the horizontal workspace tabs layout into a vertical, VS Code-style left Activity Bar.
+  - Added SVGs for Chat, Plan, Tasks, and Walkthrough menu items.
+  - Styled the vertical icons with hover states and a sleek left border highlight for the active menu option.
+
+---
+
 ## [1.2.280] - 2026-07-11
 
 ### Added
