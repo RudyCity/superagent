@@ -976,3 +976,19 @@
 .terminal-header:hover {
   background-color: var(--color-vscode-hover);
 }
+
+/* Custom Select Component Dropdowns */
+.custom-select-options {
+  background-color: var(--color-vscode-sidebar);
+  border: 1px solid var(--color-vscode-dim);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.custom-select-row {
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.custom-select-row:hover {
+  background-color: var(--color-vscode-hover);
+  color: var(--color-vscode-bright);
+}

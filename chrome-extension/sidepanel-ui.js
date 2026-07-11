@@ -745,33 +745,9 @@ function updatePresetsDropdown() {
     modelPresetSelect.appendChild(opt);
   });
 
-  const quickSelect = document.getElementById("quick-preset-select");
-  if (quickSelect) {
-    quickSelect.innerHTML = "";
-    presets.forEach(p => {
-      const opt = document.createElement("option");
-      opt.value = p.id;
-      opt.textContent = p.name;
-      if (p.id === activePresetId) {
-        opt.selected = true;
-      }
-      quickSelect.appendChild(opt);
-    });
-  }
-
-  const inputPresetSelect = document.getElementById("input-preset-select");
-  if (inputPresetSelect) {
-    inputPresetSelect.innerHTML = "";
-    presets.forEach(p => {
-      const opt = document.createElement("option");
-      opt.value = p.id;
-      opt.textContent = p.name;
-      if (p.id === activePresetId) {
-        opt.selected = true;
-      }
-      inputPresetSelect.appendChild(opt);
-    });
-  }
+  // Populate Custom Select dropdowns
+  populateCustomSelect("quick-preset-options", "quick-preset-val", presets, activePresetId, changeActivePreset);
+  populateCustomSelect("input-preset-options", "input-preset-val", presets, activePresetId, changeActivePreset);
 
   const metaModelName = document.getElementById("meta-model-name");
   const activePreset = presets.find(p => p.id === activePresetId);
@@ -881,5 +857,91 @@ function renderSplitDiff(originalText, modifiedText, container) {
 
   container.appendChild(leftCol);
   container.appendChild(rightCol);
+}
+
+// Helper to manage custom dropdown select elements
+function initCustomSelect(triggerId, optionsId) {
+  const trigger = document.getElementById(triggerId);
+  const options = document.getElementById(optionsId);
+  if (!trigger || !options) return;
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    // Close other dropdowns
+    document.querySelectorAll(".custom-select-options").forEach(opt => {
+      if (opt !== options) opt.classList.add("hidden");
+    });
+    options.classList.toggle("hidden");
+  });
+
+  // Hide on click outside
+  document.addEventListener("click", () => {
+    options.classList.add("hidden");
+  });
+}
+
+// Populate custom options list
+function populateCustomSelect(optionsId, triggerValId, items, selectedId, onSelectChange) {
+  const options = document.getElementById(optionsId);
+  const triggerVal = document.getElementById(triggerValId);
+  if (!options) return;
+
+  options.innerHTML = "";
+  if (items.length === 0) {
+    options.innerHTML = '<div class="px-2.5 py-1.5 text-[10px] text-vscode-muted italic">No items</div>';
+    if (triggerVal) triggerVal.textContent = "None";
+    return;
+  }
+
+  items.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "custom-select-row px-2.5 py-1.5 text-[10px] font-mono text-vscode-primary cursor-pointer hover:bg-vscode-hover hover:text-vscode-light truncate flex items-center justify-between";
+    row.textContent = item.name;
+    
+    if (item.id === selectedId) {
+      row.classList.add("font-semibold", "text-vscode-bright");
+      const check = document.createElement("span");
+      check.className = "text-[8px] text-vscode-blue font-bold ml-2";
+      check.textContent = "✓";
+      row.appendChild(check);
+      if (triggerVal) {
+        triggerVal.textContent = item.name;
+        triggerVal.title = `${item.name} - ${item.description || ""}`;
+      }
+    }
+
+    row.addEventListener("click", () => {
+      onSelectChange(item.id);
+      options.classList.add("hidden");
+    });
+
+    options.appendChild(row);
+  });
+}
+
+async function changeActivePreset(selectedId) {
+  if (!selectedId) return;
+
+  const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
+  const mode = modeRadio ? modeRadio.value : "single";
+
+  const configUpdate = {
+    activePresetId: {
+      [mode]: selectedId
+    }
+  };
+
+  try {
+    const res = await fetch(`${BASE_URL}/api/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(configUpdate)
+    });
+    if (res.ok) {
+      fetchServerConfig();
+    }
+  } catch (err) {
+    console.error("Failed to update preset:", err);
+  }
 }
 

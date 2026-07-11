@@ -144,67 +144,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Quick Preset Selector Change Listener
-  const quickPresetSelect = document.getElementById("quick-preset-select");
-  if (quickPresetSelect) {
-    quickPresetSelect.addEventListener("change", async () => {
-      const selectedId = quickPresetSelect.value;
-      if (!selectedId) return;
-
-      const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
-      const mode = modeRadio ? modeRadio.value : "single";
-
-      const configUpdate = {
-        activePresetId: {
-          [mode]: selectedId
-        }
-      };
-
-      try {
-        const res = await fetch(`${BASE_URL}/api/config`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(configUpdate)
-        });
-        if (res.ok) {
-          fetchServerConfig();
-        }
-      } catch (err) {
-        console.error("Failed to update preset:", err);
-      }
-    });
-  }
-
-  // Input Metadata Preset Selector Change Listener
-  const inputPresetSelect = document.getElementById("input-preset-select");
-  if (inputPresetSelect) {
-    inputPresetSelect.addEventListener("change", async () => {
-      const selectedId = inputPresetSelect.value;
-      if (!selectedId) return;
-
-      const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
-      const mode = modeRadio ? modeRadio.value : "single";
-
-      const configUpdate = {
-        activePresetId: {
-          [mode]: selectedId
-        }
-      };
-
-      try {
-        const res = await fetch(`${BASE_URL}/api/config`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(configUpdate)
-        });
-        if (res.ok) {
-          fetchServerConfig();
-        }
-      } catch (err) {
-        console.error("Failed to update preset:", err);
-      }
-    });
-  }
+  // Initialize Custom Select Component Dropdowns
+  initCustomSelect("quick-preset-trigger", "quick-preset-options");
+  initCustomSelect("input-preset-trigger", "input-preset-options");
 
   // Collapsible Terminal Drawer Toggler
   const terminalDrawer = document.getElementById("terminal-drawer");
