@@ -73,10 +73,7 @@ Master Agent  (orchestrator)
 - **Exploration & Research**: When performing codebase exploration, investigation, or research, always spawn a subagent to handle the task.
 - **Mandatory Skill Reading**: At the very start of the workflow to solve any user request (such as debugging, testing, QA, refactoring, new feature development, or any other task supported by our comprehensive skills), you MUST identify all relevant skills and read their `SKILL.md` instructions using the `view_file` tool before making plans or taking action.
 - **Terminal Preset Names**: When creating or setting up terminal presets (e.g. via `/terminal init` or by writing to `terminal-presets.json`), preset names (keys in the JSON configuration) MUST be short, simple, lowercase, alphanumeric characters, and may use hyphens or underscores (e.g., `'dev'`, `'build'`, `'start'`, `'test'`). Emojis are strictly prohibited in preset names to ensure they are easy for users to type in the terminal when running `/terminal <preset_name>` or `/terminal preset <preset_name>`.
-
-
-
-
+- **Chrome Extension Styling**: The Chrome extension side panel MUST adhere strictly to a clean, premium VS Code dark theme aesthetic. This includes using VS Code base colors (such as #1e1e1e, #252526, and #181818), classic VS Code blue buttons/accents (#0e639c), Segoe UI typography for interface text, and JetBrains Mono for terminal output and logs.
 
 ## System Prompt Guidelines (Concept A, B, and C)
 All system prompts in the codebase (e.g., in [prompts.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/prompts.ts)) must be designed and optimized using the following guidelines:

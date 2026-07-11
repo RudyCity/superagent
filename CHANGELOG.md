@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.262] - 2026-07-11
+
+### Changed
+- **Chrome Extension Styling**:
+  - Redesigned the sidepanel UI with a premium VS Code Modern Dark theme aesthetic.
+  - Replaced Roboto with Google Font "Inter" for UI text.
+  - Rewrote `sidepanel.css` under 1000 lines (951 lines) to implement VS Code sidebar settings styles, flat border buttons, collapsible explorer-style tool trees, code-tab user messages, and comment-styled reasoning blocks.
+- **Project Guidelines**:
+  - Documented Chrome Extension Styling guidelines in `AGENTS.md` to enforce the VS Code theme style.
+
+---
+
 ## [1.2.261] - 2026-07-11
 
 ### Fixed
