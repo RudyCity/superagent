@@ -548,6 +548,130 @@ function setupSSE() {
   };
 }
 
+// Tool label helpers — map tool name → human verb (like screenshot style)
+function getToolLabel(toolCall, fallbackDesc) {
+  if (!toolCall) return fallbackDesc || "Running tool";
+  const name = toolCall.name || "";
+  const args = toolCall.args || {};
+  const cmd = args.command || args.cmd || "";
+  const truncCmd = (s) => (s.length > 60 ? s.slice(0, 60) + "…" : s);
+  switch (name) {
+    case "bash":
+    case "run_command":
+    case "run_background_process":
+      return `Ran ${truncCmd(cmd)}`;
+    case "read":
+    case "view_file":
+      return "Read file";
+    case "write":
+    case "write_to_file":
+      return "Wrote file";
+    case "edit":
+    case "replace_file_content":
+      return "Edited file";
+    case "multi_replace_file_content":
+      return "Edited file";
+    case "apply_patch":
+      return "Applied patch";
+    case "glob":
+      return "Found files";
+    case "grep":
+    case "ripgrep_search":
+      return "Searched";
+    case "web_search":
+      return "Searched web";
+    case "fetch_url":
+      return "Fetched URL";
+    case "git_action":
+      return `Git ${args.action || "action"}`;
+    case "git_worktree":
+      return `Git worktree ${args.action || ""}`;
+    case "list_dir":
+      return "Explored directory";
+    case "screenshot":
+      return "Captured screenshot";
+    case "invoke_subagent":
+      return `Spawned subagent`;
+    case "define_subagent":
+      return `Defined subagent`;
+    case "manage_subagents":
+      return `Managed subagents`;
+    case "manage_tasks":
+      return `Managed tasks`;
+    case "manage_plan":
+      return `Managed plan`;
+    case "ask_question":
+      return "Asked question";
+    case "schedule":
+      return "Scheduled job";
+    default:
+      return fallbackDesc || `Ran ${name}`;
+  }
+}
+
+function buildToolDetail(toolCall) {
+  if (!toolCall) return "";
+  const args = toolCall.args || {};
+  const name = toolCall.name || "";
+  // Extract the most useful "detail" token to show inline
+  switch (name) {
+    case "bash":
+    case "run_command":
+    case "run_background_process": {
+      const cmd = args.command || args.cmd || "";
+      return cmd.length > 80 ? cmd.slice(0, 80) + "…" : cmd;
+    }
+    case "read":
+    case "view_file":
+    case "write":
+    case "write_to_file":
+    case "edit":
+    case "replace_file_content":
+    case "multi_replace_file_content":
+    case "apply_patch": {
+      const fp = args.filePath || args.file_path || args.path || args.TargetFile || "";
+      return fp ? fp.split(/[\\/]/).pop() : "";
+    }
+    case "grep":
+    case "ripgrep_search":
+      return args.pattern || args.query || "";
+    case "web_search":
+      return (args.query || "").slice(0, 60);
+    case "fetch_url":
+      return (args.url || "").replace(/^https?:\/\//, "").slice(0, 60);
+    case "git_action":
+      return args.action || "";
+    case "list_dir":
+      return (args.path || args.DirectoryPath || "").split(/[\\/]/).pop() || "";
+    case "invoke_subagent":
+      return args.role || args.typeName || "";
+    default:
+      return "";
+  }
+}
+
+function buildResultSuffix(toolCall, toolResult) {
+  if (!toolCall || !toolResult) return "";
+  const name = toolCall.name || "";
+  const result = toolResult.result || "";
+  const isEdit = ["edit", "replace_file_content", "multi_replace_file_content", "write", "write_to_file", "apply_patch"].includes(name);
+  if (isEdit && !toolResult.isError) {
+    // Count lines added/removed from diff-like result
+    const added = (result.match(/^\+/gm) || []).length;
+    const removed = (result.match(/^-/gm) || []).length;
+    if (added > 0 || removed > 0) {
+      return `+${added} -${removed}`;
+    }
+    return "";
+  }
+  // For search/grep: show match count
+  if (["grep", "ripgrep_search"].includes(name) && !toolResult.isError) {
+    const lines = result.split("\n").filter(Boolean).length;
+    return lines > 0 ? `${lines} match${lines !== 1 ? "es" : ""}` : "";
+  }
+  return "";
+}
+
 // Handle Incoming SSE Events
 function handleSSEEvent(data) {
   if (data.type === "agent_event") {
@@ -593,7 +717,7 @@ function handleSSEEvent(data) {
 
       case "tool_start":
         if (!agentJobStartTime) agentJobStartTime = Date.now();
-        showSpinner(`Executing: ${e.description}`);
+        showSpinner(getToolLabel(e.toolCall, e.description));
         if (!currentAgentMessageElement) {
           currentAgentMessageElement = appendMessage("agent", "");
         }
@@ -601,32 +725,42 @@ function handleSSEEvent(data) {
         currentActiveToolElement = document.createElement("div");
         currentActiveToolElement.className = "tool-block";
 
-        // Format args as preview — ToolCall.args is the correct field
-        let argsText = "";
-        try {
-          const args = e.toolCall.args || {};
-          const argsStr = JSON.stringify(args, null, 2);
-          argsText = argsStr.length > 300 ? argsStr.slice(0, 300) + "..." : argsStr;
-        } catch (_) {}
+        {
+          const label = getToolLabel(e.toolCall, e.description);
+          const detail = buildToolDetail(e.toolCall);
+          const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-        currentActiveToolElement.innerHTML = `
-          <div class="tool-header">
-            <span class="tool-indicator tool-running">•</span>
-            <span class="tool-name">${e.toolCall?.name ?? "tool"}</span>
-            <span class="tool-desc">${e.description ?? ""}</span>
-          </div>
-          <div class="tool-detail hidden">
-            ${argsText ? `<pre class="tool-args">${argsText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>` : ""}
-            <div class="tool-result-area hidden"></div>
-          </div>
-        `;
+          // Format args as preview for expanded section
+          let argsText = "";
+          try {
+            const args = e.toolCall.args || {};
+            const argsStr = JSON.stringify(args, null, 2);
+            argsText = argsStr.length > 400 ? argsStr.slice(0, 400) + "..." : argsStr;
+          } catch (_) {}
 
-        // Toggle expand/collapse on header click
-        const toolBlock = currentActiveToolElement;
-        toolBlock.querySelector(".tool-header").addEventListener("click", () => {
-          const detail = toolBlock.querySelector(".tool-detail");
-          detail.classList.toggle("hidden");
-        });
+          currentActiveToolElement.innerHTML = `
+            <div class="tool-row">
+              <span class="tool-status-dot tool-dot-running"></span>
+              <span class="tool-row-label">${esc(label)}</span>
+              ${detail ? `<span class="tool-row-detail">${esc(detail)}</span>` : ""}
+              <span class="tool-row-chevron">›</span>
+            </div>
+            <div class="tool-expand hidden">
+              ${argsText ? `<pre class="tool-args">${esc(argsText)}</pre>` : ""}
+              <div class="tool-result-area hidden"></div>
+            </div>
+          `;
+
+          // Toggle expand on row click
+          const tb = currentActiveToolElement;
+          tb.querySelector(".tool-row").addEventListener("click", () => {
+            const exp = tb.querySelector(".tool-expand");
+            const chev = tb.querySelector(".tool-row-chevron");
+            const isHidden = exp.classList.contains("hidden");
+            exp.classList.toggle("hidden", !isHidden);
+            chev.textContent = isHidden ? "⌄" : "›";
+          });
+        }
 
         currentAgentMessageElement.querySelector(".msg-content").appendChild(currentActiveToolElement);
         scrollToBottom();
@@ -635,22 +769,29 @@ function handleSSEEvent(data) {
       case "tool_end":
         hideSpinner();
         if (currentActiveToolElement) {
-          const indicator = currentActiveToolElement.querySelector(".tool-indicator");
+          const dot = currentActiveToolElement.querySelector(".tool-status-dot");
           const isErr = e.toolResult && e.toolResult.isError;
-          indicator.className = isErr ? "tool-indicator tool-error" : "tool-indicator tool-success";
+          dot.className = isErr ? "tool-status-dot tool-dot-error" : "tool-status-dot tool-dot-done";
 
-          // Render result — ToolResult.result is the correct field (string)
+          // Inline result suffix (e.g. diff stat for edits)
+          const inlineSuffix = buildResultSuffix(e.toolCall, e.toolResult);
+          if (inlineSuffix) {
+            const rowLabel = currentActiveToolElement.querySelector(".tool-row-label");
+            const suffixSpan = document.createElement("span");
+            suffixSpan.className = "tool-row-suffix";
+            suffixSpan.textContent = inlineSuffix;
+            rowLabel.parentNode.insertBefore(suffixSpan, rowLabel.nextSibling);
+          }
+
+          // Populate expanded result area
           const resultArea = currentActiveToolElement.querySelector(".tool-result-area");
           if (resultArea && e.toolResult) {
             const resultText = e.toolResult.result || "";
             if (resultText) {
-              const preview = resultText.length > 600 ? resultText.slice(0, 600) + "\n... (truncated)" : resultText;
+              const preview = resultText.length > 500 ? resultText.slice(0, 500) + "\n... (truncated)" : resultText;
               resultArea.textContent = preview;
               resultArea.classList.remove("hidden");
               if (isErr) resultArea.classList.add("tool-result-error");
-              // Auto-expand to show result
-              const detail = currentActiveToolElement.querySelector(".tool-detail");
-              detail.classList.remove("hidden");
             }
           }
 

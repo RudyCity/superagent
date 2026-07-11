@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.285] - 2026-07-11
+
+### Changed
+- **Chrome Extension Tool Stream Redesign**:
+  - Tool execution blocks now render as clean single-line rows matching the screenshot style: `● Ran git add … ›` instead of the previous JSON-heavy verbose layout.
+  - Added `getToolLabel()` that maps tool names to human-readable verbs: `Ran`, `Edited file`, `Read file`, `Explored directory`, `Searched`, `Spawned subagent`, etc.
+  - Added `buildToolDetail()` to extract the key inline detail (filename basename or truncated command) shown in muted text next to the label.
+  - Added `buildResultSuffix()` for inline result stats: edit tools show `+14 -0` diff counts, grep tools show `N matches`.
+  - Status indicator changed from blinking bullet `•` to a 6px dot (blue=running, green=done, red=error).
+  - Chevron `›` toggles to `⌄` on expand; expanded section shows args JSON + result output.
+  - CSS fully replaced: removed old `.tool-header/.tool-indicator/.tool-name/.tool-desc` in favor of `.tool-row/.tool-status-dot/.tool-row-label/.tool-row-detail/.tool-row-suffix/.tool-row-chevron/.tool-expand`.
+
+---
+
 ## [1.2.284] - 2026-07-11
 
 ### Added
