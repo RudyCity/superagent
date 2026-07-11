@@ -221,20 +221,6 @@
           <div class="input-box-wrapper flex flex-col border border-vscode-dim rounded-[3px] bg-vscode-editor focus-within:border-vscode-bright">
             <textarea id="chat-input" placeholder="Type instructions or / for commands, ! for terminal..." rows="2" class="w-full bg-transparent text-vscode-primary px-2.5 py-2 font-sans text-[12px] resize-none outline-none border-none h-14"></textarea>
             
-            <!-- Input Metadata Bar (Preset, Model, and Speed status) -->
-            <div class="input-meta-bar px-2.5 py-1 flex items-center justify-between border-t border-vscode-dim/30 bg-vscode-inner/10 text-[9.5px] text-vscode-muted font-mono select-none">
-              <div class="flex items-center gap-1">
-                <span class="meta-label">Preset:</span>
-                <select id="input-preset-select" class="bg-transparent border-none outline-none text-vscode-bright font-semibold cursor-pointer p-0 font-mono text-[9.5px] hover:text-vscode-light" title="Change active preset"></select>
-                <span class="meta-separator text-vscode-dim/50 ml-1 mr-1">|</span>
-                <span class="meta-label">Model:</span>
-                <span id="meta-model-name" class="text-vscode-muted truncate max-w-[120px]">loading...</span>
-              </div>
-              <div class="flex items-center gap-1 shrink-0">
-                <span id="meta-speed-text" class="text-green-success font-semibold">0.0 t/s</span>
-              </div>
-            </div>
-
             <div class="input-toolbar flex items-center justify-between px-2 py-1.5 border-t border-vscode-dim/50 bg-vscode-inner/20">
               <div class="toolbar-left flex items-center gap-1.5">
                 <!-- Attach Image Trigger -->
@@ -252,9 +238,17 @@
                 <!-- Input Help Button -->
                 <button id="btn-input-help" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Help Guide">❓</button>
               </div>
-              <button id="btn-send" class="btn btn-primary btn-icon w-[24px] h-[24px] p-0 rounded-sm font-sans font-medium border border-transparent cursor-pointer inline-flex items-center justify-center transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover shrink-0">
-                <svg viewBox="0 0 24 24" class="w-3 h-3 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-              </button>
+
+              <div class="toolbar-right flex items-center gap-2">
+                <div class="flex items-center gap-1 text-[9px] font-mono text-vscode-muted select-none">
+                  <select id="input-preset-select" class="bg-transparent border-none outline-none text-vscode-muted hover:text-vscode-light font-semibold cursor-pointer p-0 font-mono text-[9px] max-w-[75px]" title="Change active preset"></select>
+                  <span id="meta-model-name" class="hidden"></span>
+                  <span id="meta-speed-text" class="text-green-success ml-1">0.0 t/s</span>
+                </div>
+                <button id="btn-send" class="btn btn-primary btn-icon w-[24px] h-[24px] p-0 rounded-sm font-sans font-medium border border-transparent cursor-pointer inline-flex items-center justify-center transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover shrink-0">
+                  <svg viewBox="0 0 24 24" class="w-3 h-3 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
