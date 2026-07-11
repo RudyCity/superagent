@@ -80,6 +80,11 @@ const btnSubmitAnswer = document.getElementById("btn-submit-answer");
 const btnGrabContext = document.getElementById("btn-grab-context");
 const contextBadge = document.getElementById("context-badge");
 
+const btnNewChat = document.getElementById("btn-new-chat");
+const btnChatHistory = document.getElementById("btn-chat-history");
+const chatHistoryDropdown = document.getElementById("chat-history-dropdown");
+const chatHistoryList = document.getElementById("chat-history-list");
+
 const btnSwitchWorkspace = document.getElementById("btn-switch-workspace");
 const workspaceDropdown = document.getElementById("workspace-dropdown");
 const savedWorkspacesList = document.getElementById("saved-workspaces-list");
@@ -186,8 +191,20 @@ document.addEventListener("DOMContentLoaded", () => {
     goToSetupScreen();
   });
 
+  if (btnNewChat) {
+    btnNewChat.addEventListener("click", startNewChatSession);
+  }
+
+  if (btnChatHistory) {
+    btnChatHistory.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleChatHistoryDropdown();
+    });
+  }
+
   document.addEventListener("click", () => {
     hideWorkspaceDropdown();
+    hideChatHistoryDropdown();
   });
 
   // Settings Modal Toggle
@@ -1429,6 +1446,156 @@ function showSummaryModal(role, result) {
     roleEl.textContent = role;
     textEl.textContent = result;
     overlay.classList.add("active");
+  }
+}
+
+let chatHistoryDropdownOpen = false;
+
+function toggleChatHistoryDropdown() {
+  if (chatHistoryDropdown.classList.contains("hidden")) {
+    hideWorkspaceDropdown();
+    chatHistoryDropdown.classList.remove("hidden");
+    chatHistoryDropdownOpen = true;
+    loadChatHistorySessions();
+  } else {
+    hideChatHistoryDropdown();
+  }
+}
+
+function hideChatHistoryDropdown() {
+  chatHistoryDropdown.classList.add("hidden");
+  chatHistoryDropdownOpen = false;
+}
+
+async function loadChatHistorySessions() {
+  chatHistoryList.innerHTML = '<div class="p-3 text-center text-vscode-muted text-[11px]">Loading sessions...</div>';
+  try {
+    const res = await fetch(`${BASE_URL}/api/history/sessions`);
+    const data = await res.json().catch(() => null);
+    if (res.ok && data && data.success && Array.isArray(data.sessions)) {
+      renderChatHistorySessionsList(data.sessions);
+    } else {
+      chatHistoryList.innerHTML = '<div class="p-3 text-center text-vscode-muted text-[11px]">Failed to load sessions</div>';
+    }
+  } catch (err) {
+    console.error("Failed to fetch chat history sessions:", err);
+    chatHistoryList.innerHTML = '<div class="p-3 text-center text-vscode-muted text-[11px]">Error loading sessions</div>';
+  }
+}
+
+function renderChatHistorySessionsList(sessions) {
+  chatHistoryList.innerHTML = "";
+  if (sessions.length === 0) {
+    chatHistoryList.innerHTML = '<div class="p-3 text-center text-vscode-muted text-[11px]">No previous sessions</div>';
+    return;
+  }
+
+  sessions.forEach(s => {
+    const item = document.createElement("div");
+    item.className = "history-item px-2.5 py-2 border-b border-vscode-dim cursor-pointer hover:bg-vscode-hover flex flex-col gap-1 transition-colors duration-150";
+    
+    const formattedDate = new Date(s.lastModified).toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    item.innerHTML = `
+      <div class="flex justify-between items-center text-[11px] font-medium">
+        <span class="history-name text-vscode-light truncate max-w-[170px]" title="${s.displayName}">${escapeHtml(s.displayName)}</span>
+        <span class="history-count text-vscode-muted text-[10px] shrink-0">${s.messageCount} msgs</span>
+      </div>
+      <div class="text-[10px] text-vscode-muted truncate" title="${s.preview}">${escapeHtml(s.preview)}</div>
+      <div class="text-[9px] text-vscode-muted/70 text-right mt-0.5">${formattedDate}</div>
+    `;
+
+    item.addEventListener("click", () => {
+      hideChatHistoryDropdown();
+      switchChatSession(s.id);
+    });
+
+    chatHistoryList.appendChild(item);
+  });
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+async function switchChatSession(sessionId) {
+  const activeWorkspaceText = document.getElementById("active-workspace-text");
+  const workspace = activeWorkspaceText ? activeWorkspaceText.textContent : "";
+  const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
+  const mode = modeRadio ? modeRadio.value : "single";
+  const activeMode = currentMode || mode;
+
+  if (!workspace || workspace === "Not Selected") return;
+
+  chatMessages.innerHTML = '<div class="p-3 text-center text-vscode-muted text-[11px]">Switching chat session...</div>';
+
+  try {
+    const res = await fetch(`${BASE_URL}/api/init`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: activeMode,
+        workspace: workspace,
+        resume: sessionId
+      })
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data && data.success) {
+      await checkServerStatus();
+    } else {
+      alert("Failed to switch chat session");
+      await loadChatHistory();
+    }
+  } catch (err) {
+    console.error("Error switching chat session:", err);
+    alert("Error connecting to server: " + err.message);
+    await loadChatHistory();
+  }
+}
+
+async function startNewChatSession() {
+  const activeWorkspaceText = document.getElementById("active-workspace-text");
+  const workspace = activeWorkspaceText ? activeWorkspaceText.textContent : "";
+  const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
+  const mode = modeRadio ? modeRadio.value : "single";
+  const activeMode = currentMode || mode;
+
+  if (!workspace || workspace === "Not Selected") return;
+
+  if (!confirm("Are you sure you want to start a new chat? This will clear the current chat messages and begin a fresh session.")) return;
+
+  try {
+    const res = await fetch(`${BASE_URL}/api/init`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: activeMode,
+        workspace: workspace,
+        resume: false
+      })
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data && data.success) {
+      await checkServerStatus();
+      clearChatMessages();
+      appendMessage("system", "New chat session started.");
+    } else {
+      alert("Failed to start new chat");
+    }
+  } catch (err) {
+    console.error("Error starting new chat:", err);
+    alert("Error connecting to server: " + err.message);
   }
 }
 

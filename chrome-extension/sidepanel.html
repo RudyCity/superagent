@@ -138,6 +138,26 @@
             </div>
           </div>
 
+          <!-- Chat actions: New Chat & History -->
+          <div class="chat-actions flex items-center justify-between px-3.5 py-1.5 border-b border-vscode-dim bg-vscode-sidebar shrink-0 relative">
+            <button id="btn-new-chat" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 font-sans font-medium border border-vscode-dim rounded-sm cursor-pointer inline-flex items-center justify-center gap-1 bg-vscode-inner text-vscode-primary hover:bg-vscode-hover hover:text-white" title="Clear history and start a new chat">
+              <svg class="w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+              <span>New Chat</span>
+            </button>
+            <div class="history-dropdown-container relative">
+              <button id="btn-chat-history" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 font-sans font-medium border border-vscode-dim rounded-sm cursor-pointer inline-flex items-center justify-center gap-1 bg-vscode-inner text-vscode-primary hover:bg-vscode-hover hover:text-white" title="View chat session history">
+                <svg class="w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+                <span>History</span>
+              </button>
+              <div id="chat-history-dropdown" class="chat-history-dropdown hidden absolute top-[calc(100%+4px)] right-0 min-w-[260px] max-w-[320px] bg-vscode-sidebar border border-vscode-dim shadow-2xl z-[1000] overflow-hidden rounded-sm">
+                <div class="chat-history-header px-2.5 py-1.5 text-[9px] font-semibold uppercase text-vscode-muted border-b border-vscode-dim">Chat Sessions</div>
+                <div id="chat-history-list" class="chat-history-list max-h-[220px] overflow-y-auto">
+                  <div class="p-3 text-center text-vscode-muted text-[11px]">No previous sessions</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Chat Area (full width) -->
           <div class="chat-container flex-1 flex flex-col bg-vscode-editor relative overflow-hidden">
             <div id="chat-messages" class="chat-messages flex-1 overflow-y-auto p-3.5 flex flex-col gap-3">

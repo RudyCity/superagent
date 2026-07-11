@@ -25,6 +25,7 @@ function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolea
 }
 
 export interface HistorySession {
+  id: string;
   filePath: string;
   displayName: string;
   messageCount: number;
@@ -54,8 +55,9 @@ export function clearHistoryCache(): void {
   listCache.clear();
 }
 
-export function listHistorySessions(isMulti = false, crossSession = false): HistorySession[] {
-  const cacheKey = `${isMulti}:${crossSession}:${process.cwd()}`;
+export function listHistorySessions(isMulti = false, crossSession = false, workspaceDir?: string): HistorySession[] {
+  const currentDir = workspaceDir ? path.resolve(workspaceDir) : process.cwd();
+  const cacheKey = `${isMulti}:${crossSession}:${currentDir}`;
   const now = Date.now();
   const cached = listCache.get(cacheKey);
   if (!process.env.VITEST && cached && now - cached.timestamp < 30000) {
@@ -66,7 +68,6 @@ export function listHistorySessions(isMulti = false, crossSession = false): Hist
   const historyDir = path.join(getGlobalConfigDir(), "history", mode);
   if (!fs.existsSync(historyDir)) return [];
 
-  const currentDir = process.cwd();
   const currentSanitized = currentDir.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
 
   let dirs: string[];
@@ -172,6 +173,7 @@ export function listHistorySessions(isMulti = false, crossSession = false): Hist
       }
 
       sessions.push({
+        id: d,
         filePath,
         displayName,
         messageCount,

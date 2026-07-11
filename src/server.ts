@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
-import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings } from "./core/config.js";
+import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions } from "./core/config.js";
 import { readChecklistTasks } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
@@ -281,6 +281,21 @@ export async function runServer(port: number, silent = false) {
         }
         const messages = session.agent.getConversationMessages();
         sendJSON(res, 200, { success: true, messages });
+        return;
+      }
+
+      // Get list of previous history sessions
+      if (pathname === "/api/history/sessions" && req.method === "GET") {
+        const session = resolveSession(req);
+        const workspacePath = session ? session.workspace : lastActiveWorkspace;
+        const mode = session ? session.mode : "single";
+        const isMulti = mode === "multi";
+        if (!workspacePath) {
+          sendJSON(res, 200, { success: true, sessions: [] });
+          return;
+        }
+        const sessions = listHistorySessions(isMulti, false, workspacePath);
+        sendJSON(res, 200, { success: true, sessions });
         return;
       }
 

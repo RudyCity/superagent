@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.280] - 2026-07-11
+
+### Added
+- **Chrome Extension New Chat and Session History**:
+  - Added New Chat and History buttons at the top of the Chat view in the extension panel.
+  - Added a dropdown list of historical chat sessions for the active workspace, showing metadata (display name, preview, message count, and timestamp) for each session.
+  - Implemented client-side switching to load a specific session history when clicked.
+  - Implemented the ability to trigger a fresh empty chat session directly from the extension UI.
+  - Exposed a new `GET /api/history/sessions` endpoint in server.ts.
+  - Enhanced `listHistorySessions` in history.ts to accept a custom workspaceDir parameter and return the session ID.
+
+---
+
 ## [1.2.279] - 2026-07-11
 
 ### Fixed

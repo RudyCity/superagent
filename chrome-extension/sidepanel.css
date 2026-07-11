@@ -383,6 +383,9 @@
   .z-100 {
     z-index: 100;
   }
+  .z-\[1000\] {
+    z-index: 1000;
+  }
   .z-\[10000\] {
     z-index: 10000;
   }
@@ -412,6 +415,9 @@
   }
   .mx-auto {
     margin-inline: auto;
+  }
+  .mt-0\.5 {
+    margin-top: calc(var(--spacing) * 0.5);
   }
   .mt-1 {
     margin-top: var(--spacing);
@@ -568,6 +574,9 @@
   .max-h-\[160px\] {
     max-height: 160px;
   }
+  .max-h-\[220px\] {
+    max-height: 220px;
+  }
   .max-h-\[250px\] {
     max-height: 250px;
   }
@@ -634,6 +643,9 @@
   .max-w-\[140px\] {
     max-width: 140px;
   }
+  .max-w-\[170px\] {
+    max-width: 170px;
+  }
   .max-w-\[320px\] {
     max-width: 320px;
   }
@@ -672,6 +684,9 @@
   }
   .min-w-\[240px\] {
     min-width: 240px;
+  }
+  .min-w-\[260px\] {
+    min-width: 260px;
   }
   .min-w-\[600px\] {
     min-width: 600px;
@@ -1220,8 +1235,14 @@
   .pb-4 {
     padding-bottom: calc(var(--spacing) * 4);
   }
+  .text-center {
+    text-align: center;
+  }
   .text-left {
     text-align: left;
+  }
+  .text-right {
+    text-align: right;
   }
   .font-mono {
     font-family: var(--font-mono);
@@ -1403,6 +1424,12 @@
   }
   .text-vscode-muted {
     color: var(--color-vscode-muted);
+  }
+  .text-vscode-muted\/70 {
+    color: color-mix(in srgb, #858585 70%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      color: color-mix(in oklab, var(--color-vscode-muted) 70%, transparent);
+    }
   }
   .text-vscode-primary {
     color: var(--color-vscode-primary);
