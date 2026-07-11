@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.279] - 2026-07-11
+
+### Fixed
+- **Chrome Extension JS Cleanup**:
+  - Removed remaining references to the deleted `startServerTooltip` variable inside the global document click event listener block in sidepanel.js, resolving a ReferenceError.
+
+---
+
 ## [1.2.278] - 2026-07-11
 
 ### Fixed

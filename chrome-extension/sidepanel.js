@@ -187,7 +187,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.addEventListener("click", () => {
-    startServerTooltip.classList.add("hidden");
     hideWorkspaceDropdown();
   });
 
