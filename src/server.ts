@@ -423,8 +423,9 @@ export async function runServer(port: number, silent = false) {
               selectedPath = stdout.trim();
             } catch (err: any) {
               console.warn("Folder dialog closed or failed:", err.message);
-              sendJSON(res, 200, { success: false, error: err.message || String(err) });
-              return;
+              // Do not early-return here — let the outer finally reset isBrowseDialogOpen.
+              // Return empty path so caller knows nothing was selected.
+              selectedPath = "";
             }
           } else if (platform === "darwin") {
             try {

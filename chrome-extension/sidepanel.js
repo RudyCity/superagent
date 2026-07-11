@@ -204,17 +204,18 @@ async function browseWorkspaceFolder() {
   btnBrowse.textContent = "Browsing...";
   try {
     const res = await fetch(`${BASE_URL}/api/browse`);
+    const data = await res.json().catch(() => null);
     if (res.ok) {
-      const data = await res.json();
-      if (data.success) {
+      if (data && data.success) {
         if (data.path) {
           workspacePathInput.value = data.path;
         }
       } else {
-        alert("Error opening folder picker: " + (data.error || "Unknown error"));
+        alert("Error opening folder picker: " + (data?.error || "Unknown error"));
       }
     } else {
-      alert("Browse API returned an error status: " + res.statusText);
+      const errMsg = data?.error || res.statusText || "Unknown error";
+      alert("Browse error: " + errMsg);
     }
   } catch (err) {
     alert("Failed to connect to browse API. Please make sure the local server is running at " + BASE_URL);

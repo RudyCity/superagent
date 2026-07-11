@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.248] - 2026-07-11
+
+### Fixed
+- **Browse Dialog - "Bad Request" Error**:
+  - Fixed `isBrowseDialogOpen` flag never being reset to `false` when the Windows folder picker dialog was cancelled or failed. An early `return` inside the inner catch block was bypassing the outer `finally` that resets the flag, causing every subsequent click on Browse to receive a 400 Bad Request response.
+  - Fixed the extension showing the raw HTTP status text ("Bad Request") instead of the server's real error message. The extension now parses the JSON response body on non-ok responses and displays the actual error reason.
+
+---
+
 ## [1.2.247] - 2026-07-11
 
 ### Changed
