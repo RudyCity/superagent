@@ -181,18 +181,16 @@
 
 /* Tool execution blocks */
 .tool-block {
-  background: var(--bg-vscode-inner);
-  border: 1px solid var(--border-vscode-dim);
-  border-radius: var(--border-radius-sm);
-  margin: 6px 0;
+  background: transparent;
+  border: none;
+  margin: 4px 0;
   padding: 0;
-  overflow: hidden;
   font-family: var(--font-mono);
   font-size: 11px;
 }
 
 .msg-content:has(.tool-block) {
-  padding-bottom: 8px;
+  padding-bottom: 4px;
 }
 
 .tool-indicator {
@@ -218,10 +216,10 @@
 .tool-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 6px;
+  padding: 2px 0;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.02);
+  background: transparent;
 }
 
 .tool-name {
@@ -247,8 +245,7 @@
 }
 
 .tool-detail {
-  border-top: 1px solid var(--border-vscode-dim);
-  padding: 6px 10px;
+  padding: 4px 0 4px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -268,9 +265,7 @@
 }
 
 .tool-result-area {
-  border-top: 1px solid var(--border-vscode-dim);
-  padding-top: 6px;
-  margin-top: 4px;
+  padding: 4px 0 4px 12px;
   color: var(--text-vscode-primary);
   font-size: 10.5px;
   white-space: pre-wrap;

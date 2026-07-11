@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.266] - 2026-07-11
+
+### Changed
+- **Chrome Extension UI**:
+  - Removed backgrounds and borders from tool execution blocks (`.tool-block`).
+  - Reduced layout padding and margins for a flat, borderless, and compact terminal-style look.
+
+---
+
 ## [1.2.265] - 2026-07-11
 
 ### Fixed
