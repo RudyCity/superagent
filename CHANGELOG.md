@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.264] - 2026-07-11
+
+### Changed
+- **Chrome Extension Styling**:
+  - Fully refactored `sidepanel.html` to use Tailwind CSS v4 utility classes for all static layouts (forms, panels, buttons, cards, wrappers).
+  - Cleaned and minimized `sidepanel.src.css` to only 438 lines, keeping only custom animations, scrollbars, and dynamic markup styling rules.
+
+---
+
 ## [1.2.263] - 2026-07-11
 
 ### Changed

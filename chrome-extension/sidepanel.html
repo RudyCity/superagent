@@ -8,212 +8,209 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="sidepanel.css">
 </head>
-<body class="font-sans antialiased bg-vscode-editor text-vscode-primary">
-  <header class="bg-vscode-activitybar border-b border-vscode-dim p-[10px_16px] flex items-center justify-between z-10">
-    <div class="logo-container flex items-center gap-[8px]">
-      <div class="glow-dot"></div>
-      <h1>SUPERAGENT<span>.AI</span></h1>
+<body class="font-sans antialiased bg-vscode-editor text-vscode-primary h-screen flex flex-col overflow-hidden">
+  <header class="bg-vscode-activitybar border-b border-vscode-dim px-4 py-2.5 flex items-center justify-between z-10 shrink-0">
+    <div class="logo-container flex items-center gap-2">
+      <div class="glow-dot w-2 h-2 bg-green-success rounded-full shadow-[0_0_8px_var(--color-green-success)]"></div>
+      <h1 class="text-[13px] font-semibold tracking-wider text-white">SUPERAGENT<span class="text-vscode-blue-hover">.AI</span></h1>
     </div>
-    <div class="header-actions">
-      <div id="start-server-tooltip" class="start-server-tooltip hidden">
-        <p>Run CLI: <code>superagent --server</code></p>
+    <div class="header-actions flex items-center gap-2 relative">
+      <div id="start-server-tooltip" class="start-server-tooltip hidden absolute top-full right-0 mt-1.5 bg-vscode-sidebar border border-vscode-dim shadow-xl px-3 py-2 z-100 text-[11px] whitespace-nowrap rounded-sm">
+        <p class="m-0 text-vscode-primary">Run CLI: <code class="font-mono text-vscode-bright bg-vscode-editor px-1 py-0.5 border border-vscode-dim rounded-sm">superagent --server</code></p>
       </div>
-      <button id="btn-start-server-help" class="btn btn-secondary btn-xs btn-server-ctrl">Start Server</button>
-      <button id="btn-stop-server" class="btn btn-danger btn-xs btn-server-ctrl hidden">Stop Server</button>
-      <div id="connection-status" class="status-badge status-offline text-[11px] font-medium p-[2px_8px] rounded-sm capitalize border border-transparent transition-all duration-200">Offline</div>
+      <button id="btn-start-server-help" class="btn btn-secondary text-[10px] px-1.5 py-0.5 h-5 uppercase btn-xs btn-server-ctrl font-sans font-medium border rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover">Start Server</button>
+      <button id="btn-stop-server" class="btn btn-danger text-[10px] px-1.5 py-0.5 h-5 uppercase btn-xs btn-server-ctrl hidden font-sans font-medium border rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-red-error text-white border-transparent hover:bg-[#be533f]">Stop Server</button>
+      <div id="connection-status" class="status-badge status-offline text-[11px] font-medium px-2 py-0.5 rounded-sm capitalize border transition-all duration-200 bg-red-error-light text-red-error border-[rgba(244,135,113,0.3)]">Offline</div>
     </div>
   </header>
 
-  <main>
+  <main class="flex-1 relative overflow-hidden">
     <!-- Setup Screen -->
-    <section id="setup-screen" class="panel active">
+    <section id="setup-screen" class="panel active bg-vscode-sidebar w-full p-5 flex flex-col gap-4 overflow-y-auto h-full">
       <div class="section-header">
-        <h2>INITIALIZE ENGINE</h2>
+        <h2 class="text-[12px] font-semibold uppercase text-vscode-muted tracking-wider mb-1">INITIALIZE ENGINE</h2>
       </div>
-      <div class="form-group">
-        <label for="workspace-path">Local Workspace Path</label>
-        <div class="input-with-button">
-          <input type="text" id="workspace-path" placeholder="e.g. C:\Projects\my-app" required>
-          <button id="btn-browse" type="button" class="btn btn-secondary">Browse</button>
+      <div class="form-group flex flex-col gap-1.5">
+        <label for="workspace-path" class="text-[11px] font-semibold text-vscode-primary">Local Workspace Path</label>
+        <div class="input-with-button flex gap-1.5">
+          <input type="text" id="workspace-path" placeholder="e.g. C:\Projects\my-app" required class="flex-1 bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+          <button id="btn-browse" type="button" class="btn btn-secondary font-sans font-medium text-xs px-3.5 py-1.5 border rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-[30px]">Browse</button>
         </div>
-        <span class="input-hint">The directory Superagent will have filesystem access to write code.</span>
-        <div id="recent-workspaces-container" class="recent-workspaces-container hidden">
-          <div class="recent-workspaces-label">Recent Workspaces</div>
-          <div id="recent-workspaces-list" class="recent-workspaces-list"></div>
+        <span class="input-hint text-[11px] text-vscode-muted leading-tight">The directory Superagent will have filesystem access to write code.</span>
+        <div id="recent-workspaces-container" class="recent-workspaces-container hidden mt-1.5 flex flex-col gap-1">
+          <div class="recent-workspaces-label text-[10px] font-semibold uppercase text-vscode-muted">Recent Workspaces</div>
+          <div id="recent-workspaces-list" class="recent-workspaces-list flex flex-col gap-0.5 max-h-[100px] overflow-y-auto"></div>
         </div>
       </div>
 
-      <div class="form-group">
-        <label for="api-token">Engine API Token</label>
-        <input type="password" id="api-token" placeholder="Optional connection security token">
-        <span class="input-hint">The authentication token if required by the local Superagent server.</span>
+      <div class="form-group flex flex-col gap-1.5">
+        <label for="api-token" class="text-[11px] font-semibold text-vscode-primary">Engine API Token</label>
+        <input type="password" id="api-token" placeholder="Optional connection security token" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+        <span class="input-hint text-[11px] text-vscode-muted leading-tight">The authentication token if required by the local Superagent server.</span>
       </div>
 
-      <div class="form-group">
-        <label>Orchestration Mode</label>
-        <div class="mode-selector">
-          <label class="mode-option">
-            <input type="radio" name="agent-mode" value="single" checked>
-            <div class="mode-card">
-              <h3>Single Mode</h3>
-              <p>Direct atomic operations, ideal for simple code modifications and quick queries.</p>
+      <div class="form-group flex flex-col gap-1.5">
+        <label class="text-[11px] font-semibold text-vscode-primary">Orchestration Mode</label>
+        <div class="mode-selector flex gap-2.5">
+          <label class="mode-option flex-1 cursor-pointer">
+            <input type="radio" name="agent-mode" value="single" checked class="hidden">
+            <div class="mode-card bg-vscode-inner border border-vscode-dim rounded-sm p-2.5 h-full transition-all duration-200 flex flex-col gap-1">
+              <h3 class="text-[12px] font-semibold text-vscode-light">Single Mode</h3>
+              <p class="text-[11px] text-vscode-muted leading-tight">Direct atomic operations, ideal for simple code modifications and quick queries.</p>
             </div>
           </label>
-          <label class="mode-option">
-            <input type="radio" name="agent-mode" value="multi">
-            <div class="mode-card">
-              <h3>Multi Mode</h3>
-              <p>3-Tier orchestration (Master → Superagent → Subagent) in isolated git branches.</p>
+          <label class="mode-option flex-1 cursor-pointer">
+            <input type="radio" name="agent-mode" value="multi" class="hidden">
+            <div class="mode-card bg-vscode-inner border border-vscode-dim rounded-sm p-2.5 h-full transition-all duration-200 flex flex-col gap-1">
+              <h3 class="text-[12px] font-semibold text-vscode-light">Multi Mode</h3>
+              <p class="text-[11px] text-vscode-muted leading-tight">3-Tier orchestration (Master → Superagent → Subagent) in isolated git branches.</p>
             </div>
           </label>
         </div>
       </div>
 
-      <div class="form-group checkbox-group">
-        <label class="checkbox-container">
-          <input type="checkbox" id="resume-session" checked>
-          <span class="checkmark"></span>
+      <div class="form-group checkbox-group flex flex-col gap-1.5">
+        <label class="checkbox-container flex items-center gap-1.5 text-[12px] text-vscode-primary cursor-pointer">
+          <input type="checkbox" id="resume-session" checked class="hidden">
+          <span class="checkmark w-3.5 h-3.5 border border-vscode-dim rounded-sm inline-block relative bg-vscode-inner"></span>
           Resume last active session history
         </label>
       </div>
 
       <!-- Advanced Settings & Presets -->
-      <div class="advanced-settings-container">
-        <button id="btn-toggle-advanced" class="btn btn-secondary btn-toggle-advanced" type="button">
+      <div class="advanced-settings-container my-1.5">
+        <button id="btn-toggle-advanced" class="btn btn-secondary btn-toggle-advanced w-full flex justify-between items-center bg-vscode-inner! border border-vscode-dim! text-vscode-primary! text-[11px]! font-semibold! uppercase font-sans py-1.5 px-3 rounded-sm cursor-pointer inline-flex gap-1.5 transition-colors duration-150 hover:bg-vscode-hover! h-[30px]" type="button">
           <span>⚙️ SETTINGS & PRESETS</span>
-          <svg id="advanced-chevron" class="icon-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+          <svg id="advanced-chevron" class="icon-chevron w-3.5 h-3.5 fill-current transition-transform duration-200" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
         </button>
-        <div id="advanced-settings-content" class="advanced-settings-content hidden">
-          <div class="form-group">
-            <label for="model-preset">Active Model Preset</label>
-            <select id="model-preset" class="form-select">
-              <option value="">Loading presets...</option>
-            </select>
-            <span class="input-hint">Select the active model configuration preset.</span>
+        <div id="advanced-settings-content" class="advanced-settings-content hidden border-l-2 border-vscode-bright pl-2.5 mt-2 flex flex-col gap-2.5">
+          <div class="form-group flex flex-col gap-1.5">
+            <label for="model-preset" class="text-[11px] font-semibold text-vscode-primary">Active Model Preset</label>
+            <select id="model-preset" class="form-select bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright"></select>
+            <span class="input-hint text-[11px] text-vscode-muted leading-tight">Select the active model configuration preset.</span>
           </div>
 
-          <div class="form-group checkbox-group">
-            <label class="checkbox-container">
-              <input type="checkbox" id="setting-disable-streaming">
-              <span class="checkmark"></span>
+          <div class="form-group checkbox-group flex flex-col gap-1.5">
+            <label class="checkbox-container flex items-center gap-1.5 text-[12px] text-vscode-primary cursor-pointer">
+              <input type="checkbox" id="setting-disable-streaming" class="hidden">
+              <span class="checkmark w-3.5 h-3.5 border border-vscode-dim rounded-sm inline-block relative bg-vscode-inner"></span>
               Disable response streaming
             </label>
           </div>
 
-          <div class="form-group">
-            <label for="setting-concurrency">Concurrency Limit</label>
-            <select id="setting-concurrency" class="form-select">
+          <div class="form-group flex flex-col gap-1.5">
+            <label for="setting-concurrency" class="text-[11px] font-semibold text-vscode-primary">Concurrency Limit</label>
+            <select id="setting-concurrency" class="form-select bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
               <option value="0">Disabled (0) - Run tasks concurrently</option>
               <option value="1">Enabled (1) - Run tasks sequentially</option>
             </select>
-            <span class="input-hint">Enable to run tasks sequentially and avoid concurrent conflicts.</span>
+            <span class="input-hint text-[11px] text-vscode-muted leading-tight">Enable to run tasks sequentially and avoid concurrent conflicts.</span>
           </div>
 
-          <div class="form-group">
-            <label for="setting-max-iterations">Max Iterations</label>
-            <input type="number" id="setting-max-iterations" min="1" max="1000" placeholder="50">
-            <span class="input-hint">Maximum thinking steps before automatically halting.</span>
+          <div class="form-group flex flex-col gap-1.5">
+            <label for="setting-max-iterations" class="text-[11px] font-semibold text-vscode-primary">Max Iterations</label>
+            <input type="number" id="setting-max-iterations" min="1" max="1000" placeholder="50" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+            <span class="input-hint text-[11px] text-vscode-muted leading-tight">Maximum thinking steps before automatically halting.</span>
           </div>
 
-          <div class="form-group">
-            <label for="setting-rpm">Rate Limit (RPM)</label>
-            <input type="number" id="setting-rpm" min="1" max="10000" placeholder="60">
-            <span class="input-hint">Maximum API requests allowed per minute.</span>
+          <div class="form-group flex flex-col gap-1.5">
+            <label for="setting-rpm" class="text-[11px] font-semibold text-vscode-primary">Rate Limit (RPM)</label>
+            <input type="number" id="setting-rpm" min="1" max="10000" placeholder="60" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+            <span class="input-hint text-[11px] text-vscode-muted leading-tight">Maximum API requests allowed per minute.</span>
           </div>
         </div>
       </div>
 
-
-      <button id="btn-init" class="btn btn-primary">LAUNCH SESSION</button>
+      <button id="btn-init" class="btn btn-primary w-full mt-1.5 font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">LAUNCH SESSION</button>
     </section>
 
     <!-- Main Workspace (Active Session) -->
-    <section id="workspace-screen" class="panel">
-      <div class="sidebar-info">
-        <div class="info-row">
-          <span class="info-label">Workspace:</span>
-          <div class="workspace-switcher-container">
-            <button id="btn-switch-workspace" class="workspace-switcher-btn" title="Click to switch workspace">
-              <span id="active-workspace-text" class="info-value">Not Selected</span>
-              <svg class="icon-chevron" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+    <section id="workspace-screen" class="panel bg-vscode-editor h-full flex-col">
+      <div class="sidebar-info bg-vscode-sidebar border-b border-vscode-dim px-3.5 py-1.5 flex items-center justify-between gap-3 shrink-0">
+        <div class="info-row flex items-center gap-1.5 text-[11px]">
+          <span class="info-label text-vscode-muted">Workspace:</span>
+          <div class="workspace-switcher-container relative">
+            <button id="btn-switch-workspace" class="workspace-switcher-btn flex items-center gap-0.5 bg-none border-none p-0.5 rounded-sm cursor-pointer max-w-[140px] hover:bg-vscode-hover" title="Click to switch workspace">
+              <span id="active-workspace-text" class="info-value font-mono text-vscode-bright font-medium overflow-hidden text-ellipsis whitespace-nowrap max-w-[110px] block">Not Selected</span>
+              <svg class="icon-chevron w-3.5 h-3.5 fill-current transition-transform duration-200" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
             </button>
-            <div id="workspace-dropdown" class="workspace-dropdown hidden">
-              <div class="workspace-dropdown-header">Saved Workspaces</div>
-              <div id="saved-workspaces-list" class="saved-workspaces-list"></div>
-              <div class="workspace-dropdown-footer">
-                <button id="btn-new-workspace" class="btn-new-workspace">+ New Workspace</button>
+            <div id="workspace-dropdown" class="workspace-dropdown hidden absolute top-[calc(100%+4px)] left-0 min-w-[240px] bg-vscode-sidebar border border-vscode-dim shadow-2xl z-100 overflow-hidden rounded-sm">
+              <div class="workspace-dropdown-header px-2.5 py-1.5 text-[9px] font-semibold uppercase text-vscode-muted border-b border-vscode-dim">Saved Workspaces</div>
+              <div id="saved-workspaces-list" class="saved-workspaces-list max-h-[160px] overflow-y-auto"></div>
+              <div class="workspace-dropdown-footer px-2.5 py-1 border-t border-vscode-dim">
+                <button id="btn-new-workspace" class="btn-new-workspace w-full bg-none border border-dashed border-vscode-dim rounded-sm p-1 text-[11px] text-vscode-muted cursor-pointer hover:text-vscode-light hover:border-vscode-bright">+ New Workspace</button>
               </div>
             </div>
           </div>
         </div>
-        <div class="info-row">
-          <span class="info-label">Mode:</span>
-          <span id="active-mode-text" class="info-value uppercase">Single</span>
+        <div class="info-row flex items-center gap-1.5 text-[11px]">
+          <span class="info-label text-vscode-muted">Mode:</span>
+          <span id="active-mode-text" class="info-value font-mono text-vscode-bright font-medium uppercase">Single</span>
         </div>
-        <button id="btn-abort" class="btn btn-danger btn-sm">HALT EXECUTION</button>
+        <button id="btn-abort" class="btn btn-danger btn-sm px-2 py-1 text-[11px] h-6 font-sans font-medium border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-red-error text-white hover:bg-[#be533f]">HALT EXECUTION</button>
       </div>
 
-      <div class="workspace-area">
+      <div class="workspace-area flex-1 flex flex-col overflow-hidden">
         <!-- CLI Mode Banner -->
-        <div id="cli-mode-banner" class="cli-mode-banner hidden">
-          <div class="cli-banner-content">
-            <div class="terminal-header">
-              <span class="terminal-dot red"></span>
-              <span class="terminal-dot yellow"></span>
-              <span class="terminal-dot green"></span>
-              <span class="terminal-title">SUPERAGENT TERMINAL BRIDGE</span>
+        <div id="cli-mode-banner" class="cli-mode-banner hidden flex items-center justify-center p-4 bg-vscode-editor">
+          <div class="cli-banner-content w-full bg-vscode-sidebar border border-vscode-dim shadow-lg flex flex-col rounded-sm overflow-hidden">
+            <div class="terminal-header bg-vscode-inner border-b border-vscode-dim padding-2.5 flex items-center gap-1.5 p-2">
+              <span class="terminal-dot red w-2 h-2 rounded-full bg-red-error"></span>
+              <span class="terminal-dot yellow w-2 h-2 rounded-full bg-amber-warning"></span>
+              <span class="terminal-dot green w-2 h-2 rounded-full bg-green-success"></span>
+              <span class="terminal-title font-mono text-[10px] text-vscode-muted ml-1">SUPERAGENT TERMINAL BRIDGE</span>
             </div>
-            <div class="terminal-body">
-              <p class="cyber-alert">&gt;&gt;&gt; SYSTEM STATUS: CONNECTED TO CLI</p>
-              <p class="cyber-hint">Chat input and log history are restricted to the terminal window where the agent is running.</p>
-              <div class="glitch-container">
-                <div class="glitch-text" data-text="MONITORING ACTIVE">MONITORING ACTIVE</div>
+            <div class="terminal-body p-4 font-mono flex flex-col gap-3">
+              <p class="cyber-alert text-amber-warning text-[12px] font-bold">&gt;&gt;&gt; SYSTEM STATUS: CONNECTED TO CLI</p>
+              <p class="cyber-hint text-vscode-muted text-[11px] leading-relaxed">Chat input and log history are restricted to the terminal window where the agent is running.</p>
+              <div class="glitch-container p-1.5 border border-dashed border-vscode-dim text-center rounded-sm">
+                <div class="glitch-text text-vscode-bright text-[11px] animate-pulse">MONITORING ACTIVE</div>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Status Strip: Checklist + Agents compact view -->
-        <div id="status-strip" class="status-strip">
-          <div class="strip-row" id="checklist-strip">
-            <span class="strip-label">Tasks</span>
-            <div id="checklist-strip-items" class="strip-items">
-              <span class="strip-empty">No active tasks</span>
+        <div id="status-strip" class="status-strip bg-vscode-sidebar border-b border-vscode-dim p-2 flex flex-col gap-1 max-h-[120px] overflow-y-auto shrink-0">
+          <div class="strip-row flex items-start gap-1.5 min-h-[20px]" id="checklist-strip">
+            <span class="strip-label text-[9px] font-semibold text-vscode-muted uppercase tracking-wider min-w-[38px] pt-0.5 shrink-0">Tasks</span>
+            <div id="checklist-strip-items" class="strip-items flex flex-wrap gap-1 flex-1">
+              <span class="strip-empty text-[10.5px] text-vscode-muted pt-0.5">No active tasks</span>
             </div>
           </div>
-          <div class="strip-row hidden" id="agents-strip">
-            <span class="strip-label">Agents</span>
-            <div id="agents-strip-items" class="strip-items"></div>
+          <div class="strip-row hidden flex items-start gap-1.5 min-h-[20px]" id="agents-strip">
+            <span class="strip-label text-[9px] font-semibold text-vscode-muted uppercase tracking-wider min-w-[38px] pt-0.5 shrink-0">Agents</span>
+            <div id="agents-strip-items" class="strip-items flex flex-wrap gap-1 flex-1"></div>
           </div>
         </div>
 
         <!-- Chat Area (full width) -->
-        <div class="chat-container">
-          <div id="chat-messages" class="chat-messages">
+        <div class="chat-container flex-1 flex flex-col bg-vscode-editor relative overflow-hidden">
+          <div id="chat-messages" class="chat-messages flex-1 overflow-y-auto p-3.5 flex flex-col gap-3">
             <!-- Messages stream here -->
 
             <!-- Typing / Progress Indicator -->
-            <div id="processing-indicator" class="processing-indicator">
-              <div class="spinner"></div>
-              <span id="processing-text">Agent is thinking...</span>
+            <div id="processing-indicator" class="processing-indicator hidden items-center gap-2 p-1">
+              <div class="spinner w-3 h-3 border-[1.5px] border-vscode-dim border-t-vscode-bright rounded-full animate-spin"></div>
+              <span id="processing-text" class="text-[11px] text-vscode-muted">Agent is thinking...</span>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Action Footer -->
-      <div class="chat-footer">
-        <div class="context-bar">
-          <button id="btn-grab-context" class="btn btn-secondary btn-xs">
-            <svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+      <div class="chat-footer bg-vscode-sidebar border-t border-vscode-dim p-3.5 flex flex-col gap-1.5 shrink-0">
+        <div class="context-bar flex items-center justify-between">
+          <button id="btn-grab-context" class="btn btn-secondary btn-xs px-1.5 py-0.5 text-[10px] h-5 font-sans font-medium border rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover">
+            <svg class="icon w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
             Attach Chrome Active Tab context
           </button>
-          <div id="context-badge" class="context-badge hidden">Tab attached</div>
+          <div id="context-badge" class="context-badge hidden text-[9.5px] bg-green-success-light text-green-success px-1.5 py-0.5 rounded-sm border border-[rgba(78,201,176,0.3)]">Tab attached</div>
         </div>
-        <div class="input-area">
-          <textarea id="chat-input" placeholder="Type instructions for Superagent..." rows="2"></textarea>
-          <button id="btn-send" class="btn btn-primary btn-icon">
-            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        <div class="input-area flex gap-2.5 items-end">
+          <textarea id="chat-input" placeholder="Type instructions for Superagent..." rows="2" class="flex-1 bg-vscode-editor border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-sans text-[12px] resize-none outline-none h-12 focus:border-vscode-bright"></textarea>
+          <button id="btn-send" class="btn btn-primary btn-icon w-[30px] h-[30px] p-0 rounded-sm font-sans font-medium text-xs border border-transparent cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover">
+            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
           </button>
         </div>
       </div>
@@ -221,43 +218,43 @@
   </main>
 
   <!-- Prompt Approvals overlay -->
-  <div id="permission-overlay" class="overlay">
-    <div class="modal">
-      <div class="modal-header">
-        <h3>⚠️ ACTION APPROVAL REQUIRED</h3>
+  <div id="permission-overlay" class="overlay hidden absolute top-0 left-0 w-full h-full bg-black/55 backdrop-blur-[1px] z-[10000] items-center justify-center p-3">
+    <div class="modal bg-vscode-sidebar border border-vscode-bright rounded-sm shadow-2xl w-full max-w-[320px] flex flex-col">
+      <div class="modal-header p-2.5 border-b border-vscode-dim">
+        <h3 class="text-[11.5px] font-semibold text-vscode-light">⚠️ ACTION APPROVAL REQUIRED</h3>
       </div>
-      <div class="modal-body">
-        <p class="modal-label">Tool Invoked:</p>
-        <div id="permission-tool" class="code-box">run_command</div>
-        <p class="modal-label">Operation Description:</p>
-        <div id="permission-desc" class="desc-box">Running test script...</div>
+      <div class="modal-body p-3 flex flex-col gap-1.5">
+        <p class="modal-label text-[10px] text-vscode-muted uppercase">Tool Invoked:</p>
+        <div id="permission-tool" class="code-box font-mono bg-vscode-editor border border-vscode-dim rounded-sm p-1 px-2 text-[11px] text-red-error">run_command</div>
+        <p class="modal-label text-[10px] text-vscode-muted uppercase">Operation Description:</p>
+        <div id="permission-desc" class="desc-box text-[11.5px] text-vscode-primary leading-normal">Running test script...</div>
       </div>
-      <div class="modal-footer">
-        <button id="btn-approve-once" class="btn btn-primary">Approve Once</button>
-        <button id="btn-approve-session" class="btn btn-secondary">Allow for Session</button>
-        <button id="btn-deny-permission" class="btn btn-danger">Deny</button>
+      <div class="modal-footer p-2.5 border-t border-vscode-dim flex flex-col gap-1.5">
+        <button id="btn-approve-once" class="btn btn-primary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">Approve Once</button>
+        <button id="btn-approve-session" class="btn btn-secondary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-[30px]">Allow for Session</button>
+        <button id="btn-deny-permission" class="btn btn-danger font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-red-error text-white hover:bg-[#be533f] h-[30px]">Deny</button>
       </div>
     </div>
   </div>
 
   <!-- Interactive Questions overlay -->
-  <div id="question-overlay" class="overlay">
-    <div class="modal">
-      <div class="modal-header">
-        <h3>❓ DECISION POINT</h3>
+  <div id="question-overlay" class="overlay hidden absolute top-0 left-0 w-full h-full bg-black/55 backdrop-blur-[1px] z-[10000] items-center justify-center p-3">
+    <div class="modal bg-vscode-sidebar border border-vscode-bright rounded-sm shadow-2xl w-full max-w-[320px] flex flex-col">
+      <div class="modal-header p-2.5 border-b border-vscode-dim">
+        <h3 class="text-[11.5px] font-semibold text-vscode-light">❓ DECISION POINT</h3>
       </div>
-      <div class="modal-body">
-        <p id="question-title">Choose the path to proceed:</p>
-        <div id="question-options-container" class="options-container">
+      <div class="modal-body p-3 flex flex-col gap-1.5">
+        <p id="question-title" class="text-[11.5px] text-vscode-primary leading-normal">Choose the path to proceed:</p>
+        <div id="question-options-container" class="options-container display flex flex-col gap-1.5 max-h-[140px] overflow-y-auto">
           <!-- Radio or check buttons -->
         </div>
-        <div id="question-custom-container" class="custom-input-container hidden">
-          <label for="question-custom-input">Write-in Response:</label>
-          <input type="text" id="question-custom-input" placeholder="Enter custom response...">
+        <div id="question-custom-container" class="custom-input-container hidden flex flex-col gap-1">
+          <label for="question-custom-input" class="text-[10px] text-vscode-muted uppercase">Write-in Response:</label>
+          <input type="text" id="question-custom-input" placeholder="Enter custom response..." class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
         </div>
       </div>
-      <div class="modal-footer">
-        <button id="btn-submit-answer" class="btn btn-primary">Submit Answer</button>
+      <div class="modal-footer p-2.5 border-t border-vscode-dim flex flex-col gap-1.5">
+        <button id="btn-submit-answer" class="btn btn-primary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">Submit Answer</button>
       </div>
     </div>
   </div>
