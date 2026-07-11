@@ -1,6 +1,20 @@
 # Changelog
 
+## [1.2.283] - 2026-07-11
+
+### Added
+- **Chrome Extension Plan Approval Flow**:
+  - Server now exposes `planState` in `/api/status` response so the extension can detect when the agent is waiting for plan approval.
+  - Added `/api/plan/approve` POST endpoint accepting `{ action: "approve" | "reject" }`. Approve calls `agent.approvePlan()` and resumes execution; Reject sets planState to IDLE and aborts.
+  - Server broadcasts a `plan_approval_required` SSE event (with `planState`) when the agent emits a `done` event while in `PLANNING_PENDING` state.
+  - Added a Plan Approval modal overlay in the Chrome extension side panel, following the VS Code dark theme, with Approve & Proceed and Reject Plan buttons.
+  - Extension handles `plan_approval_required` SSE events to show/hide the overlay automatically.
+  - `/api/status` polling fallback ensures the overlay re-appears on extension reload if the agent is already in `PLANNING_PENDING` state.
+
+---
+
 ## [1.2.282] - 2026-07-11
+
 
 ### Changed
 - **Chrome Extension Dedicated History Tab**:
