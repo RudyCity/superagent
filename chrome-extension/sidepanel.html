@@ -78,60 +78,7 @@
       <button id="btn-init" class="btn btn-primary w-full mt-1.5 font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">LAUNCH SESSION</button>
     </section>
 
-    <!-- Main Workspace (Active Session) -->
-    <section id="workspace-screen" class="panel bg-vscode-editor h-full flex-col">
-      <div class="sidebar-info bg-vscode-sidebar border-b border-vscode-dim px-3.5 py-1.5 flex items-center justify-between gap-3 shrink-0">
-        <div class="info-row flex items-center gap-1.5 text-[11px]">
-          <span class="info-label text-vscode-muted">Workspace:</span>
-          <div class="workspace-switcher-container relative">
-            <button id="btn-switch-workspace" class="workspace-switcher-btn flex items-center gap-0.5 bg-none border-none p-0.5 rounded-sm cursor-pointer max-w-[140px] hover:bg-vscode-hover" title="Click to switch workspace">
-              <span id="active-workspace-text" class="info-value font-mono text-vscode-bright font-medium overflow-hidden text-ellipsis whitespace-nowrap max-w-[110px] block">Not Selected</span>
-              <svg class="icon-chevron w-3.5 h-3.5 fill-current transition-transform duration-200" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
-            </button>
-            <div id="workspace-dropdown" class="workspace-dropdown hidden absolute top-[calc(100%+4px)] left-0 min-w-[240px] bg-vscode-sidebar border border-vscode-dim shadow-2xl z-100 overflow-hidden rounded-sm">
-              <div class="workspace-dropdown-header px-2.5 py-1.5 text-[9px] font-semibold uppercase text-vscode-muted border-b border-vscode-dim">Saved Workspaces</div>
-              <div id="saved-workspaces-list" class="saved-workspaces-list max-h-[160px] overflow-y-auto"></div>
-              <div class="workspace-dropdown-footer px-2.5 py-1 border-t border-vscode-dim">
-                <button id="btn-new-workspace" class="btn-new-workspace w-full bg-none border border-dashed border-vscode-dim rounded-sm p-1 text-[11px] text-vscode-muted cursor-pointer hover:text-vscode-light hover:border-vscode-bright">+ New Workspace</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="info-row flex items-center gap-1.5 text-[11px]">
-          <span class="info-label text-vscode-muted">Mode:</span>
-          <span id="active-mode-text" class="info-value font-mono text-vscode-bright font-medium uppercase">Single</span>
-        </div>
-        <button id="btn-abort" class="btn btn-danger btn-sm px-2 py-1 text-[11px] h-6 font-sans font-medium border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-red-error text-white hover:bg-[#be533f]">HALT EXECUTION</button>
-      </div>
 
-      <!-- Tab Navigation -->
-      <div class="workspace-tabs flex bg-vscode-sidebar border-b border-vscode-dim shrink-0">
-        <button id="tab-chat" class="tab-btn active px-3.5 py-2 text-[11px] font-semibold tracking-wider text-vscode-light uppercase border-b-2 border-vscode-blue bg-transparent cursor-pointer transition-all">Chat</button>
-        <button id="tab-plan" class="tab-btn px-3.5 py-2 text-[11px] font-semibold tracking-wider text-vscode-muted uppercase border-b-2 border-transparent bg-transparent cursor-pointer transition-all">Plan</button>
-        <button id="tab-tasks" class="tab-btn px-3.5 py-2 text-[11px] font-semibold tracking-wider text-vscode-muted uppercase border-b-2 border-transparent bg-transparent cursor-pointer transition-all">Tasks</button>
-        <button id="tab-walkthrough" class="tab-btn px-3.5 py-2 text-[11px] font-semibold tracking-wider text-vscode-muted uppercase border-b-2 border-transparent bg-transparent cursor-pointer transition-all">Walkthrough</button>
-      </div>
-
-      <div class="workspace-area flex-1 flex flex-col overflow-hidden">
-        <!-- CHAT CONTENT VIEW -->
-        <div id="view-chat" class="tab-view flex-1 flex flex-col overflow-hidden">
-          <!-- CLI Mode Banner (status strip version) -->
-          <div id="cli-mode-banner" class="cli-mode-banner hidden p-2 bg-vscode-inner border-b border-vscode-dim flex items-center justify-between shrink-0">
-            <div class="flex items-center gap-1.5">
-              <div class="glow-dot w-1.5 h-1.5 bg-amber-warning rounded-full shadow-[0_0_6px_var(--color-amber-warning)]"></div>
-              <span class="font-mono text-[10px] text-vscode-primary font-bold">CONNECTED TO CLI SESSION</span>
-            </div>
-            <span class="text-[9.5px] text-vscode-muted">Dual Control Active</span>
-          </div>
-
-          <!-- Status Strip: Checklist + Agents compact view -->
-          <div id="status-strip" class="status-strip bg-vscode-sidebar border-b border-vscode-dim p-2 flex flex-col gap-1 max-h-[120px] overflow-y-auto shrink-0">
-            <div class="strip-row flex items-start gap-1.5 min-h-[20px]" id="checklist-strip">
-              <span class="strip-label text-[9px] font-semibold text-vscode-muted uppercase tracking-wider min-w-[38px] pt-0.5 shrink-0">Tasks</span>
-              <div id="checklist-strip-items" class="strip-items flex flex-wrap gap-1 flex-1">
-                <span class="strip-empty text-[10.5px] text-vscode-muted pt-0.5">No active tasks</span>
-              </div>
-            </div>
     <section id="workspace-screen" class="panel bg-vscode-editor h-full flex-row">
       <!-- VS Code Style Activity Bar (Left Menu) -->
       <aside class="w-12 bg-vscode-activitybar border-r border-vscode-dim flex flex-col justify-between items-center py-3 shrink-0">
