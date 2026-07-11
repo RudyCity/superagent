@@ -170,11 +170,12 @@ main {
 
 /* Setup Screen */
 #setup-screen {
-  justify-content: center;
+  justify-content: flex-start;
   max-width: 440px;
   margin: 0 auto;
   padding: 24px;
   gap: 20px;
+  overflow-y: auto;
 }
 
 .section-header h2 {

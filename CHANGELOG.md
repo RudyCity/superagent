@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.256] - 2026-07-11
+
+### Fixed
+- **Chrome Extension - Setup Screen Scroll**:
+  - Added overflow-y: auto and changed justify-content from center to flex-start in the #setup-screen section inside sidepanel.css to enable vertical scrolling and prevent top clipping of form controls when settings are expanded.
+
+---
+
 ## [1.2.255] - 2026-07-11
 
 ### Changed
