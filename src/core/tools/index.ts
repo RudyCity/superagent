@@ -7,7 +7,8 @@ import {
   masterToolset,
   superagentToolset,
   subagentToolsets,
-  defaultSubagentToolset
+  defaultSubagentToolset,
+  chromeExtensionToolset
 } from "./toolsets.js";
 import { loadDynamicHooks } from "./dynamicHooks.js";
 
@@ -201,6 +202,7 @@ export function refreshDynamicHooks(): void {
     if (Array.isArray(allTools)) filterArray(allTools);
     if (Array.isArray(masterToolset)) filterArray(masterToolset);
     if (Array.isArray(superagentToolset)) filterArray(superagentToolset);
+    if (Array.isArray(chromeExtensionToolset)) filterArray(chromeExtensionToolset);
     if (Array.isArray(defaultSubagentToolset)) filterArray(defaultSubagentToolset);
     if (subagentToolsets && typeof subagentToolsets === "object") {
       for (const key of Object.keys(subagentToolsets)) {
@@ -218,6 +220,7 @@ export function refreshDynamicHooks(): void {
       if (Array.isArray(allTools)) allTools.push(...loadedDynamicTools);
       if (Array.isArray(masterToolset)) masterToolset.push(...loadedDynamicTools);
       if (Array.isArray(superagentToolset)) superagentToolset.push(...loadedDynamicTools);
+      if (Array.isArray(chromeExtensionToolset)) chromeExtensionToolset.push(...loadedDynamicTools);
       if (Array.isArray(defaultSubagentToolset)) defaultSubagentToolset.push(...loadedDynamicTools);
       if (subagentToolsets && typeof subagentToolsets === "object") {
         for (const key of Object.keys(subagentToolsets)) {

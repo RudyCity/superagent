@@ -9,19 +9,57 @@ import { readChecklistTasks } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 
-let activeAgent: Agent | null = null;
-let activeSessionId: string | null = null;
-let activeMode: "single" | "multi" = "single";
-let activeWorkspace: string = process.cwd();
+interface AgentSession {
+  agent: Agent;
+  workspace: string;
+  mode: "single" | "multi";
+  sessionId: string;
+  isCliSession: boolean;
+}
+
+export const activeSessions = new Map<string, AgentSession>();
+let lastActiveWorkspace: string = process.cwd();
 let isBrowseDialogOpen = false;
-let isCliSession = false;
+
+function resolveSession(req: http.IncomingMessage): AgentSession | null {
+  const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
+  let wsPath = req.headers["x-workspace-path"] as string || parsedUrl.searchParams.get("workspace");
+  
+  if (wsPath) {
+    wsPath = path.resolve(wsPath);
+    const session = activeSessions.get(wsPath);
+    if (session) return session;
+  }
+  
+  if (activeSessions.size === 1) {
+    return activeSessions.values().next().value || null;
+  }
+  
+  if (wsPath) {
+    for (const [key, session] of activeSessions.entries()) {
+      if (key.toLowerCase() === wsPath.toLowerCase()) {
+        return session;
+      }
+    }
+  }
+
+  for (const session of activeSessions.values()) {
+    if (session.isCliSession) return session;
+  }
+  
+  return null;
+}
 
 export function registerCliAgent(agent: Agent, workspace: string, mode: "single" | "multi") {
-  activeAgent = agent;
-  activeWorkspace = workspace;
-  activeMode = mode;
-  activeSessionId = activeSessionId || Date.now().toString();
-  isCliSession = true;
+  const targetWorkspace = path.resolve(workspace);
+  activeSessions.set(targetWorkspace, {
+    agent,
+    workspace: targetWorkspace,
+    mode,
+    sessionId: Date.now().toString(),
+    isCliSession: true
+  });
+  lastActiveWorkspace = targetWorkspace;
 }
 
 const sseClients = new Set<http.ServerResponse>();
@@ -154,14 +192,15 @@ export async function runServer(port: number, silent = false) {
 
       // Status
       if (pathname === "/api/status" && req.method === "GET") {
+        const session = resolveSession(req);
         sendJSON(res, 200, {
           status: "online",
-          workspace: activeWorkspace,
-          mode: activeMode,
-          sessionId: activeSessionId,
-          agentActive: !!activeAgent,
-          agentRunning: activeAgent ? activeAgent.isAgentRunning() : false,
-          isCliSession: isCliSession,
+          workspace: session ? session.workspace : lastActiveWorkspace,
+          mode: session ? session.mode : "single",
+          sessionId: session ? session.sessionId : null,
+          agentActive: !!session,
+          agentRunning: session ? session.agent.isAgentRunning() : false,
+          isCliSession: session ? session.isCliSession : false,
         });
         return;
       }
@@ -171,7 +210,6 @@ export async function runServer(port: number, silent = false) {
         const bodyStr = await readBody(req);
         const body = JSON.parse(bodyStr || "{}");
         const { mode, workspace, resume, initialPrompt } = body;
-        isCliSession = false;
 
         const targetWorkspace = workspace ? path.resolve(workspace) : process.cwd();
         
@@ -179,27 +217,30 @@ export async function runServer(port: number, silent = false) {
         addTrustedDirectory(targetWorkspace);
         await ensureDirectoryTrusted(targetWorkspace);
 
-        activeWorkspace = targetWorkspace;
-        process.chdir(targetWorkspace);
-
-        if (activeAgent && activeAgent.isAgentRunning()) {
-          activeAgent.abort();
+        const existingSession = activeSessions.get(targetWorkspace);
+        if (existingSession && existingSession.agent.isAgentRunning()) {
+          existingSession.agent.abort();
         }
 
-        activeMode = mode === "multi" ? "multi" : "single";
-        activeSessionId = Date.now().toString();
+        const targetMode = mode === "multi" ? "multi" : "single";
+        const sessionId = Date.now().toString();
 
         let customSystemPrompt: string | undefined = undefined;
         let customTools: any[] | undefined = undefined;
 
-        if (activeMode === "multi") {
+        if (targetMode === "multi") {
           const { MASTER_AGENT_SYSTEM_PROMPT } = await import("./core/prompts.js");
           const { masterToolset } = await import("./core/tools/toolsets.js");
           customSystemPrompt = MASTER_AGENT_SYSTEM_PROMPT;
           customTools = masterToolset;
+        } else {
+          const { CHROME_EXTENSION_SYSTEM_PROMPT } = await import("./core/prompts.js");
+          const { chromeExtensionToolset } = await import("./core/tools/toolsets.js");
+          customSystemPrompt = CHROME_EXTENSION_SYSTEM_PROMPT;
+          customTools = chromeExtensionToolset;
         }
 
-        activeAgent = new Agent(
+        const agent = new Agent(
           onEvent,
           onPermission,
           onQuestion,
@@ -208,12 +249,12 @@ export async function runServer(port: number, silent = false) {
           targetWorkspace
         );
 
-        if (activeMode === "multi") {
-          activeAgent.tier = "master";
-          activeAgent.isMultiAgent = true;
-          registerMasterAgent(activeAgent);
+        if (targetMode === "multi") {
+          agent.tier = "master";
+          agent.isMultiAgent = true;
+          registerMasterAgent(agent);
         } else {
-          activeAgent.tier = "single";
+          agent.tier = "single";
         }
 
         pendingPermissions.clear();
@@ -221,20 +262,27 @@ export async function runServer(port: number, silent = false) {
 
         if (resume) {
           try {
-            await activeAgent.loadHistory(resume);
+            await agent.loadHistory(resume);
           } catch {}
         }
 
-        sendJSON(res, 200, { success: true, sessionId: activeSessionId });
+        activeSessions.set(targetWorkspace, {
+          agent,
+          workspace: targetWorkspace,
+          mode: targetMode,
+          sessionId,
+          isCliSession: false
+        });
+        lastActiveWorkspace = targetWorkspace;
+
+        sendJSON(res, 200, { success: true, sessionId });
 
         if (initialPrompt && initialPrompt.trim()) {
           // Process initial prompt in the background
           setTimeout(() => {
-            if (activeAgent) {
-              activeAgent.sendMessage(initialPrompt).catch(err => {
-                broadcastEvent({ type: "error", message: err.message || String(err) });
-              });
-            }
+            agent.sendMessage(initialPrompt).catch(err => {
+              broadcastEvent({ type: "error", message: err.message || String(err) });
+            });
           }, 100);
         }
         return;
@@ -242,7 +290,8 @@ export async function runServer(port: number, silent = false) {
 
       // Send chat message
       if (pathname === "/api/chat" && req.method === "POST") {
-        if (!activeAgent) {
+        const session = resolveSession(req);
+        if (!session) {
           sendJSON(res, 400, { error: "Session not initialized" });
           return;
         }
@@ -257,7 +306,7 @@ export async function runServer(port: number, silent = false) {
 
         // Run message in the background so HTTP finishes quickly
         // Client receives output via SSE
-        activeAgent.sendMessage(message).catch(err => {
+        session.agent.sendMessage(message).catch(err => {
           broadcastEvent({ type: "error", message: err.message || String(err) });
         });
 
@@ -313,7 +362,9 @@ export async function runServer(port: number, silent = false) {
             if (typeof result === "string" && result.startsWith("data:image/png;base64,")) {
               try {
                 const base64Data = result.replace(/^data:image\/png;base64,/, "");
-                const outputPath = path.join(activeWorkspace, "chrome_screenshot.png");
+                const session = resolveSession(req);
+                const wsPath = session ? session.workspace : lastActiveWorkspace;
+                const outputPath = path.join(wsPath, "chrome_screenshot.png");
                 fs.writeFileSync(outputPath, base64Data, "base64");
                 resolver.resolve(`Screenshot saved to workspace at: ${outputPath}`);
               } catch (writeErr: any) {
@@ -333,8 +384,9 @@ export async function runServer(port: number, silent = false) {
 
       // Abort agent execution
       if (pathname === "/api/abort" && req.method === "POST") {
-        if (activeAgent) {
-          activeAgent.abort();
+        const session = resolveSession(req);
+        if (session) {
+          session.agent.abort();
           sendJSON(res, 200, { success: true });
         } else {
           sendJSON(res, 400, { error: "No active agent to abort" });
@@ -353,8 +405,11 @@ export async function runServer(port: number, silent = false) {
 
       // Fetch Tasks
       if (pathname === "/api/tasks" && req.method === "GET") {
-        const taskFile = activeMode === "multi" ? "_task.md" : "task.md";
-        const taskPath = path.join(activeWorkspace, taskFile);
+        const session = resolveSession(req);
+        const wsPath = session ? session.workspace : lastActiveWorkspace;
+        const wsMode = session ? session.mode : "single";
+        const taskFile = wsMode === "multi" ? "_task.md" : "task.md";
+        const taskPath = path.join(wsPath, taskFile);
         const taskData = await readChecklistTasks(taskPath);
         sendJSON(res, 200, taskData);
         return;
@@ -522,55 +577,103 @@ export async function runServer(port: number, silent = false) {
           return;
         }
 
-        if (activeAgent && activeAgent.isAgentRunning()) {
-          activeAgent.abort();
-        }
-
         const targetWorkspace = path.resolve(workspace);
         addTrustedDirectory(targetWorkspace);
         await ensureDirectoryTrusted(targetWorkspace);
 
-        activeWorkspace = targetWorkspace;
-        process.chdir(targetWorkspace);
-        activeMode = mode === "multi" ? "multi" : "single";
-        activeSessionId = Date.now().toString();
-        isCliSession = false;
+        let session = activeSessions.get(targetWorkspace);
+        if (!session) {
+          const targetMode = mode === "multi" ? "multi" : "single";
+          const sessionId = Date.now().toString();
 
-        let customSystemPrompt: string | undefined = undefined;
-        let customTools: any[] | undefined = undefined;
+          let customSystemPrompt: string | undefined = undefined;
+          let customTools: any[] | undefined = undefined;
 
-        if (activeMode === "multi") {
-          const { MASTER_AGENT_SYSTEM_PROMPT } = await import("./core/prompts.js");
-          const { masterToolset } = await import("./core/tools/toolsets.js");
-          customSystemPrompt = MASTER_AGENT_SYSTEM_PROMPT;
-          customTools = masterToolset;
-        }
+          if (targetMode === "multi") {
+            const { MASTER_AGENT_SYSTEM_PROMPT } = await import("./core/prompts.js");
+            const { masterToolset } = await import("./core/tools/toolsets.js");
+            customSystemPrompt = MASTER_AGENT_SYSTEM_PROMPT;
+            customTools = masterToolset;
+          } else {
+            const { CHROME_EXTENSION_SYSTEM_PROMPT } = await import("./core/prompts.js");
+            const { chromeExtensionToolset } = await import("./core/tools/toolsets.js");
+            customSystemPrompt = CHROME_EXTENSION_SYSTEM_PROMPT;
+            customTools = chromeExtensionToolset;
+          }
 
-        activeAgent = new Agent(
-          onEvent,
-          onPermission,
-          onQuestion,
-          customSystemPrompt,
-          customTools,
-          targetWorkspace
-        );
+          const agent = new Agent(
+            onEvent,
+            onPermission,
+            onQuestion,
+            customSystemPrompt,
+            customTools,
+            targetWorkspace
+          );
 
-        if (activeMode === "multi") {
-          activeAgent.tier = "master";
-          activeAgent.isMultiAgent = true;
-          registerMasterAgent(activeAgent);
+          if (targetMode === "multi") {
+            agent.tier = "master";
+            agent.isMultiAgent = true;
+            registerMasterAgent(agent);
+          } else {
+            agent.tier = "single";
+          }
+
+          session = {
+            agent,
+            workspace: targetWorkspace,
+            mode: targetMode,
+            sessionId,
+            isCliSession: false
+          };
+          activeSessions.set(targetWorkspace, session);
         } else {
-          activeAgent.tier = "single";
+          if (session.agent.isAgentRunning()) {
+            session.agent.abort();
+          }
         }
 
-        pendingPermissions.clear();
-        pendingQuestions.clear();
+        lastActiveWorkspace = targetWorkspace;
 
         sendJSON(res, 200, {
           success: true,
-          sessionId: activeSessionId,
+          sessionId: session.sessionId,
           workspace: targetWorkspace,
-          mode: activeMode
+          mode: session.mode
+        });
+        return;
+      }
+
+      // Fetch plan, task, and walkthrough markdown content
+      if (pathname === "/api/documents" && req.method === "GET") {
+        const session = resolveSession(req);
+        const wsPath = session ? session.workspace : lastActiveWorkspace;
+        const wsMode = session ? session.mode : "single";
+
+        const planFile = wsMode === "multi" ? "_plan.md" : "plan.md";
+        const taskFile = wsMode === "multi" ? "_task.md" : "task.md";
+        const walkthroughFile = wsMode === "multi" ? "_walkthrough.md" : "walkthrough.md";
+
+        const planPath = path.join(wsPath, planFile);
+        const taskPath = path.join(wsPath, taskFile);
+        const walkthroughPath = path.join(wsPath, walkthroughFile);
+
+        const readMarkdown = async (filePath: string): Promise<string> => {
+          try {
+            if (fs.existsSync(filePath)) {
+              return await fs.promises.readFile(filePath, "utf-8");
+            }
+          } catch {}
+          return "";
+        };
+
+        const planContent = await readMarkdown(planPath);
+        const taskContent = await readMarkdown(taskPath);
+        const walkthroughContent = await readMarkdown(walkthroughPath);
+
+        sendJSON(res, 200, {
+          plan: planContent,
+          tasks: taskContent,
+          walkthrough: walkthroughContent
         });
         return;
       }
@@ -594,7 +697,7 @@ export async function runServer(port: number, silent = false) {
     if (!silent) {
       console.log(`\n🚀 Superagent Extension Server is running at http://localhost:${port}`);
       console.log(`💡 Mode: REST API & Server-Sent Events (SSE)`);
-      console.log(`📂 Current Workspace: ${activeWorkspace}\n`);
+      console.log(`📂 Current Workspace: ${lastActiveWorkspace}\n`);
     }
   });
 }

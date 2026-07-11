@@ -154,6 +154,51 @@ export const superagentToolset: Tool[] = [
   saveSharedMemoryTool,
 ];
 
+// ─── Chrome Extension Toolset (depth 1) ──────────────────────────────────────
+export const chromeExtensionToolset: Tool[] = [
+  readTool,
+  writeToFileTool,
+  replaceFileContentTool,
+  multiReplaceFileContentTool,
+  editTool,
+  applyPatchTool,
+  globTool,
+  grepTool,
+  ripgrepSearchTool,
+  bashTool,
+  runCommandTool,
+  runBackgroundProcessTool,
+  manageBackgroundProcessTool,
+  webSearchTool,
+  fetchUrlTool,
+  gitActionTool,
+  gitWorktreeTool,
+  manageTasksTool,
+  managePlanTool,
+  getSkillsTool,
+  useSkillTool,
+  manageMcpTool,
+  defineSubagentTool,
+  invokeSubagentTool,
+  sendMessageTool,
+  manageSubagentsTool,
+  askQuestionTool,
+  scheduleTool,
+  searchHistoryTool,
+  loadPinnedSessionTool,
+  searchPinnedKnowledgeTool,
+  screenshotTool,
+  controlBrowserTabTool,
+  androidCliTool,
+  tdaiMemorySearchTool,
+  tdaiConversationSearchTool,
+  tdaiReadCosTool,
+  tdaiMemorySaveTool,
+  tdaiConversationAddTool,
+  saveSharedMemoryTool,
+];
+
+
 // ─── Subagent Toolsets (depth 2) — keyed by type name ───────────────────────
 export const subagentToolsets: Record<string, Tool[]> = {
   researcher: [

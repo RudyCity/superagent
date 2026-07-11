@@ -20,7 +20,7 @@ Examples:
   process.exit(0);
 }
 
-const serverIndex = process.argv.findIndex(arg => arg === "--server" || arg === "-s");
+const serverIndex = process.argv.findIndex(arg => arg === "--server" || arg === "-s" || arg === "--server-only");
 if (serverIndex !== -1) {
   let port = 7888;
   if (serverIndex + 1 < process.argv.length) {

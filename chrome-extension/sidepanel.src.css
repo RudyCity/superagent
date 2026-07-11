@@ -400,14 +400,97 @@
   background: var(--bg-vscode-hover);
 }
 
-/* CLI Active State Layout */
-#workspace-screen.cli-active .chat-container,
-#workspace-screen.cli-active .chat-footer {
-  display: none !important;
+/* Tab Navigation */
+.workspace-tabs {
+  height: 32px;
+  background: var(--bg-vscode-sidebar);
+  border-bottom: 1px solid var(--border-vscode-dim);
+}
+.tab-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-vscode-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 0 14px;
+  height: 32px;
+  line-height: 32px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+}
+.tab-btn:hover {
+  color: var(--text-vscode-light);
+}
+.tab-btn.active {
+  color: var(--text-vscode-light);
+  border-bottom-color: var(--bg-vscode-blue);
 }
 
+/* CLI Active State Layout (Chat is shown, no longer display: none) */
 #workspace-screen.cli-active .workspace-area {
-  height: calc(100vh - 40px) !important;
+  height: calc(100vh - 72px) !important;
+}
+
+/* Markdown Rendering */
+.markdown-body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text-vscode-primary);
+  line-height: 1.6;
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  color: var(--text-vscode-light);
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.markdown-body h1 { font-size: 1.4em; border-bottom: 1px solid var(--border-vscode-dim); padding-bottom: 4px; }
+.markdown-body h2 { font-size: 1.2em; border-bottom: 1px solid var(--border-vscode-dim); padding-bottom: 3px; }
+.markdown-body h3 { font-size: 1.05em; }
+.markdown-body p, .markdown-body ul, .markdown-body ol {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+.markdown-body ul {
+  padding-left: 18px;
+  list-style-type: disc;
+}
+.markdown-body li {
+  margin-bottom: 4px;
+}
+.markdown-body code {
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 11.5px;
+  background: var(--bg-vscode-inner);
+  border: 1px solid var(--border-vscode-dim);
+  padding: 1.5px 4px;
+  border-radius: 3px;
+  color: var(--text-vscode-bright);
+}
+.markdown-body pre {
+  background: var(--bg-vscode-inner);
+  border: 1px solid var(--border-vscode-dim);
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+.markdown-body pre code {
+  border: none;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+/* Styled checkboxes in lists */
+.markdown-body li input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.markdown-body .task-list-item {
+  list-style-type: none;
+  padding-left: 0;
 }
 
 /* Processing Indicator */

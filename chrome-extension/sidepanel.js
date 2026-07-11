@@ -20,12 +20,17 @@ let serverActivePresetId = null;
 let advancedSettingsOpen = false;
 let wasOffline = true;
 
-// Local fetch wrapper to append API token
+// Local fetch wrapper to append API token and active workspace path
 const originalFetch = window.fetch;
 const fetch = async (url, options = {}) => {
+  options.headers = options.headers || {};
   if (apiToken) {
-    options.headers = options.headers || {};
     options.headers["Authorization"] = `Bearer ${apiToken}`;
+  }
+  const activeWorkspaceText = document.getElementById("active-workspace-text");
+  const workspacePath = activeWorkspaceText ? activeWorkspaceText.textContent : "";
+  if (workspacePath && workspacePath !== "Not Selected") {
+    options.headers["X-Workspace-Path"] = workspacePath;
   }
   return originalFetch(url, options);
 };
@@ -84,6 +89,25 @@ const btnNewWorkspace = document.getElementById("btn-new-workspace");
 
 const btnToggleAdvanced = document.getElementById("btn-toggle-advanced");
 const advancedSettingsContent = document.getElementById("advanced-settings-content");
+
+// Workspace Tabs Elements
+const tabChat = document.getElementById("tab-chat");
+const tabPlan = document.getElementById("tab-plan");
+const tabTasks = document.getElementById("tab-tasks");
+const tabWalkthrough = document.getElementById("tab-walkthrough");
+
+const viewChat = document.getElementById("view-chat");
+const viewPlan = document.getElementById("view-plan");
+const viewTasks = document.getElementById("view-tasks");
+const viewWalkthrough = document.getElementById("view-walkthrough");
+
+const planContent = document.getElementById("plan-content");
+const tasksContent = document.getElementById("tasks-content");
+const walkthroughContent = document.getElementById("walkthrough-content");
+
+const btnRefreshPlan = document.getElementById("btn-refresh-plan");
+const btnRefreshTasks = document.getElementById("btn-refresh-tasks");
+const btnRefreshWalkthrough = document.getElementById("btn-refresh-walkthrough");
 const modelPresetSelect = document.getElementById("model-preset");
 const settingDisableStreaming = document.getElementById("setting-disable-streaming");
 const settingConcurrency = document.getElementById("setting-concurrency");
@@ -159,6 +183,17 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll('input[name="agent-mode"]').forEach(radio => {
     radio.addEventListener("change", updatePresetsDropdown);
   });
+
+  // Tab Navigation Listeners
+  if (tabChat) tabChat.addEventListener("click", () => switchTab("chat"));
+  if (tabPlan) tabPlan.addEventListener("click", () => switchTab("plan"));
+  if (tabTasks) tabTasks.addEventListener("click", () => switchTab("tasks"));
+  if (tabWalkthrough) tabWalkthrough.addEventListener("click", () => switchTab("walkthrough"));
+
+  // Document Refresh Listeners
+  if (btnRefreshPlan) btnRefreshPlan.addEventListener("click", loadDocuments);
+  if (btnRefreshTasks) btnRefreshTasks.addEventListener("click", loadDocuments);
+  if (btnRefreshWalkthrough) btnRefreshWalkthrough.addEventListener("click", loadDocuments);
 });
 
 // Check Server Status
@@ -813,10 +848,8 @@ function renderTasks(tasks) {
 
 // Render agent hierarchy as compact chip strip
 function renderAgentsTree(subagents, superagents) {
-  const mode = activeModeText.textContent.toLowerCase();
-
   const hasAgents = (subagents && subagents.length > 0) || (superagents && superagents.length > 0);
-  if (mode !== "multi" || !hasAgents) {
+  if (!hasAgents) {
     agentsStrip.classList.add("hidden");
     return;
   }
@@ -934,6 +967,102 @@ function updateSetupRecentWorkspaces() {
   chrome.storage.local.get(["savedWorkspaces"], (result) => {
     renderSetupRecentWorkspaces(result.savedWorkspaces || []);
   });
+}
+
+// Tab Switching Logic
+function switchTab(tabId) {
+  const tabs = [tabChat, tabPlan, tabTasks, tabWalkthrough];
+  const views = [viewChat, viewPlan, viewTasks, viewWalkthrough];
+  
+  tabs.forEach(t => { if (t) t.classList.remove("active"); });
+  views.forEach(v => { if (v) v.classList.add("hidden"); });
+  
+  if (tabId === "chat" && tabChat && viewChat) {
+    tabChat.classList.add("active");
+    viewChat.classList.remove("hidden");
+  } else if (tabId === "plan" && tabPlan && viewPlan) {
+    tabPlan.classList.add("active");
+    viewPlan.classList.remove("hidden");
+    loadDocuments();
+  } else if (tabId === "tasks" && tabTasks && viewTasks) {
+    tabTasks.classList.add("active");
+    viewTasks.classList.remove("hidden");
+    loadDocuments();
+  } else if (tabId === "walkthrough" && tabWalkthrough && viewWalkthrough) {
+    tabWalkthrough.classList.add("active");
+    viewWalkthrough.classList.remove("hidden");
+    loadDocuments();
+  }
+}
+
+// Document Fetching and Parsing
+async function loadDocuments() {
+  try {
+    const res = await fetch(`${BASE_URL}/api/documents`);
+    if (res.ok) {
+      const data = await res.json();
+      renderDocument(planContent, data.plan, "No implementation plan found.");
+      renderDocument(tasksContent, data.tasks, "No task checklist found.");
+      renderDocument(walkthroughContent, data.walkthrough, "No walkthrough found.");
+    }
+  } catch (err) {
+    console.error("Error loading documents:", err);
+  }
+}
+
+function renderDocument(element, markdown, fallback) {
+  if (!element) return;
+  if (!markdown || markdown.trim() === "") {
+    element.innerHTML = `<p class="text-vscode-muted italic">${fallback}</p>`;
+    return;
+  }
+  element.innerHTML = parseMarkdownDoc(markdown);
+}
+
+function parseMarkdownDoc(md) {
+  let html = md
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Headers
+  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
+  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+
+  // Checkboxes
+  html = html.replace(/^\s*-\s*\[\s*\]\s*(.*$)/gim, '<li class="task-list-item"><input type="checkbox" disabled> $1</li>');
+  html = html.replace(/^\s*-\s*\[x\]\s*(.*$)/gim, '<li class="task-list-item"><input type="checkbox" checked disabled> $1</li>');
+  html = html.replace(/^\s*-\s*\[\/\]\s*(.*$)/gim, '<li class="task-list-item"><input type="checkbox" disabled style="opacity:0.6"> <span style="color:var(--text-vscode-bright)">◌ $1</span></li>');
+
+  // Lists (remaining bullet points)
+  html = html.replace(/^\s*-\s*(?!\[)(.*$)/gim, '<li>$1</li>');
+  html = html.replace(/^\s*\*\s*(.*$)/gim, '<li>$1</li>');
+
+  // Group list items
+  html = html.replace(/(<li>.*<\/li>)/gim, '<ul>$1</ul>');
+  html = html.replace(/<\/ul>\s*<ul>/gim, '');
+
+  // Bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // Inline Code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Code blocks
+  html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)\n```/gm, '<pre><code class="language-$1">$2</code></pre>');
+
+  // Paragraphs
+  const paragraphs = html.split(/\n\n+/);
+  html = paragraphs.map(p => {
+    const trimmed = p.trim();
+    if (trimmed.startsWith('<h') || trimmed.startsWith('<u') || trimmed.startsWith('<li') || trimmed.startsWith('<pre')) {
+      return p;
+    }
+    return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+  }).join('\n');
+
+  return html;
 }
 
 

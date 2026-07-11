@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.269] - 2026-07-11
+
+### Added
+- **Dedicated Extension Server & Multi-Session**:
+  - Decoupled server execution from the CLI via support for the `--server-only` flag.
+  - Implemented multi-session workspace tracking via `activeSessions` Map in the server.
+  - Resolved sessions by checking a new custom request header `X-Workspace-Path`.
+  - Added specialized browser system prompt and toolsets for extension-initiated agents.
+  - Created `/api/documents` GET endpoint to fetch plan/tasks/walkthrough files.
+- **Tabbed UI Sidepanel**:
+  - Added Chat, Plan, Tasks, and Walkthrough tab navigation to the sidepanel.
+  - Implemented visual markdown rendering for plans, checklists, and walkthroughs.
+  - Enabled active chat logs and inputs even when connected to an active CLI session.
+  - Allowed subagent status tree display in single mode.
+
+---
+
 ## [1.2.268] - 2026-07-11
 
 ### Changed
