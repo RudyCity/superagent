@@ -79,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
     checkServerStatus();
   });
 
-  setInterval(checkServerStatus, 5000);
+  setInterval(checkServerStatus, 1000);
 
   // Tab navigation
   document.querySelectorAll(".tab-btn").forEach(btn => {

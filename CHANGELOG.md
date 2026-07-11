@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.245] - 2026-07-11
+
+### Changed
+- **Faster Status Polling**:
+  - Decreased the server connection check interval from 5000ms to 1000ms in the extension, enabling instantaneous auto-detection when the local server starts up and goes online.
+
+---
+
 ## [1.2.244] - 2026-07-11
 
 ### Added
