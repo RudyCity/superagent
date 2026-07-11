@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.297] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Dropdowns Dark Mode**:
+  - Configured dark background and light text styling for all standard `<select>` and `<option>` elements to adhere strictly to the extension's VS Code dark theme aesthetic.
+
+---
+
 ## [1.2.296] - 2026-07-11
 
 ### Fixed

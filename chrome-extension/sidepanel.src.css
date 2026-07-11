@@ -1008,3 +1008,10 @@
 .btn-expand-result:hover {
   background-color: #1177bb;
 }
+
+/* Select Option Dark Mode Styling */
+select option {
+  background-color: var(--color-vscode-sidebar) !important;
+  color: var(--color-vscode-primary) !important;
+}
+
