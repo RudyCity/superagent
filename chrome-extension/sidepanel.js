@@ -149,6 +149,22 @@ document.addEventListener("DOMContentLoaded", () => {
   btnDenyPermission.addEventListener("click", () => resolvePermission(false));
   btnSubmitAnswer.addEventListener("click", submitAnswer);
   btnGrabContext.addEventListener("click", grabTabContext);
+ 
+  // Summary modal listeners
+  const btnCloseSummary = document.getElementById("btn-close-summary");
+  const btnDismissSummary = document.getElementById("btn-dismiss-summary");
+  const summaryOverlay = document.getElementById("summary-overlay");
+
+  if (btnCloseSummary) {
+    btnCloseSummary.addEventListener("click", () => {
+      summaryOverlay.classList.remove("active");
+    });
+  }
+  if (btnDismissSummary) {
+    btnDismissSummary.addEventListener("click", () => {
+      summaryOverlay.classList.remove("active");
+    });
+  }
 
   btnStopServer.addEventListener("click", stopServer);
   btnStartServerHelp.addEventListener("click", (e) => {
@@ -580,6 +596,11 @@ function handleSSEEvent(data) {
         }
         break;
 
+      case "system":
+        hideSpinner();
+        appendMessage("system", e.content);
+        break;
+
       case "error":
         hideSpinner();
         appendMessage("system", `Error: ${e.message}`);
@@ -859,19 +880,35 @@ function renderAgentsTree(subagents, superagents) {
 
   superagents.forEach(sa => {
     const chip = document.createElement("div");
-    const statusKey = sa.status === "done" ? "done" : sa.status === "running" ? "running" : "todo";
+    const isCompleted = sa.status === "completed" || sa.status === "done";
+    const statusKey = isCompleted ? "done" : (sa.status === "running" ? "running" : (sa.status === "error" ? "error" : "todo"));
     chip.className = `agent-chip chip-super chip-${statusKey}`;
     chip.title = `Superagent: ${sa.role} (${sa.status})`;
     chip.innerHTML = `<span class="chip-icon">◈</span><span class="chip-text">${sa.role}</span>`;
+    
+    if (isCompleted && sa.result) {
+      chip.addEventListener("click", () => {
+        showSummaryModal(`Superagent: ${sa.role}`, sa.result);
+      });
+    }
+    
     agentsStripItems.appendChild(chip);
   });
 
   subagents.forEach(sub => {
     const chip = document.createElement("div");
-    const statusKey = sub.status === "done" ? "done" : sub.status === "running" ? "running" : "todo";
+    const isCompleted = sub.status === "completed" || sub.status === "done";
+    const statusKey = isCompleted ? "done" : (sub.status === "running" ? "running" : (sub.status === "error" ? "error" : "todo"));
     chip.className = `agent-chip chip-sub chip-${statusKey}`;
     chip.title = `Subagent: ${sub.typeName} (${sub.status})`;
     chip.innerHTML = `<span class="chip-icon">◆</span><span class="chip-text">${sub.typeName}</span>`;
+    
+    if (isCompleted && sub.result) {
+      chip.addEventListener("click", () => {
+        showSummaryModal(`Subagent: ${sub.typeName}`, sub.result);
+      });
+    }
+    
     agentsStripItems.appendChild(chip);
   });
 }
@@ -1063,6 +1100,18 @@ function parseMarkdownDoc(md) {
   }).join('\n');
 
   return html;
+}
+
+function showSummaryModal(role, result) {
+  const overlay = document.getElementById("summary-overlay");
+  const roleEl = document.getElementById("summary-role");
+  const textEl = document.getElementById("summary-text");
+  
+  if (overlay && roleEl && textEl) {
+    roleEl.textContent = role;
+    textEl.textContent = result;
+    overlay.classList.add("active");
+  }
 }
 
 

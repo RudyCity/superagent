@@ -6,7 +6,7 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings } from "./core/config.js";
 import { readChecklistTasks } from "./core/taskChecklist.js";
-import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput } from "./core/tools/state.js";
+import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 
 interface AgentSession {
@@ -121,6 +121,73 @@ subscribeToActiveOutput((output) => {
   broadcastEvent({
     type: "tool_progress",
     content: output
+  });
+});
+
+// Subscribe to subagents/superagents completion notifications to broadcast and/or resume the agent
+subscribeToSubagents(() => {
+  const activeList = Array.from(subagentInstances.values());
+  activeList.forEach((inst) => {
+    if (inst.status === "completed" && inst.result && !(inst as any).notified) {
+      (inst as any).notified = true;
+      const msg = `🤖 [SUBAGENT NOTIFICATION]: Subagent ${inst.id} (${inst.role || inst.typeName}) has completed!\nReport Summary:\n${inst.result}`;
+      
+      broadcastEvent({
+        type: "agent_event",
+        event: {
+          type: "system",
+          content: msg
+        }
+      });
+
+      for (const session of activeSessions.values()) {
+        if (path.resolve(session.workspace) === path.resolve(inst.agent.workingDirectory) && !session.agent.isAgentRunning()) {
+          broadcastEvent({
+            type: "agent_event",
+            event: {
+              type: "text",
+              content: `\n[SYSTEM TRIGGER] ${msg}\n`
+            }
+          });
+          session.agent.sendMessage(msg).catch(err => {
+            broadcastEvent({ type: "error", message: err.message || String(err) });
+          });
+        }
+      }
+    }
+  });
+});
+
+subscribeToSuperagents(() => {
+  const activeList = Array.from(superagentInstances.values());
+  activeList.forEach((inst) => {
+    if (inst.status === "completed" && inst.result && !(inst as any).notified) {
+      (inst as any).notified = true;
+      const msg = `⚡ [SUPERAGENT NOTIFICATION]: Superagent ${inst.id} (${inst.role}) has completed!\nReport Summary:\n${inst.result}`;
+      
+      broadcastEvent({
+        type: "agent_event",
+        event: {
+          type: "system",
+          content: msg
+        }
+      });
+
+      for (const session of activeSessions.values()) {
+        if (path.resolve(session.workspace) === path.resolve(inst.agent.workingDirectory) && !session.agent.isAgentRunning()) {
+          broadcastEvent({
+            type: "agent_event",
+            event: {
+              type: "text",
+              content: `\n[SYSTEM TRIGGER] ${msg}\n`
+            }
+          });
+          session.agent.sendMessage(msg).catch(err => {
+            broadcastEvent({ type: "error", message: err.message || String(err) });
+          });
+        }
+      }
+    }
   });
 });
 

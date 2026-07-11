@@ -508,3 +508,72 @@
 .overlay.active {
   display: flex;
 }
+
+/* Chips styling in status strip */
+.task-chip, .agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 500;
+  border: 1px solid var(--border-vscode-dim);
+  background: var(--bg-vscode-inner);
+  color: var(--text-vscode-primary);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.agent-chip.chip-done {
+  cursor: pointer;
+}
+.agent-chip.chip-done:hover {
+  background: var(--bg-vscode-hover);
+  border-color: var(--accent-vscode-blue);
+  color: var(--text-vscode-light);
+}
+
+.chip-icon {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Status variants */
+.chip-todo {
+  opacity: 0.7;
+}
+
+.chip-running {
+  border-color: var(--color-amber);
+  color: var(--color-amber);
+  animation: pulse-border 1.5s infinite ease-in-out;
+}
+
+.chip-done {
+  border-color: var(--color-green);
+  color: var(--color-green);
+}
+
+.chip-super {
+  font-weight: 600;
+}
+
+.chip-sub {
+  font-style: italic;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(204, 167, 0, 0.4); }
+  50% { border-color: rgba(204, 167, 0, 1); }
+}

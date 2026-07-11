@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.270] - 2026-07-11
+
+### Added
+- **Workflow Job Summaries in Chrome Extension**:
+  - Integrated subagent/superagent completion events in the extension server using `subscribeToSubagents`/`subscribeToSuperagents`.
+  - Added SSE system messages broadcast when subagents/superagents complete, displaying report summaries directly inside the extension chat log.
+  - Implemented automatic resume invocation for the parent agent via `agent.sendMessage` when background jobs complete.
+  - Added `#summary-overlay` modal to display the detailed execution summary when clicking on completed agent chips in the status strip.
+  - Styled task/agent chips with VS Code colors, hover states, and animations for active chips.
+
+---
+
 ## [1.2.269] - 2026-07-11
 
 ### Added
