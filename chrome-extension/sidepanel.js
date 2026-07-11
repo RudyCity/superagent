@@ -872,21 +872,44 @@ async function pollChecklistAndAgents() {
     }
   } catch {}
 }
-
-// Render task list inside chat messages card
+// Render task list as a dynamically appended message card in the chat log when it updates
 function renderTasks(tasks) {
-  if (!chatTasksContainer || !chatTasksList) return;
+  if (!tasks || tasks.length === 0) return;
 
-  if (!tasks || tasks.length === 0) {
-    chatTasksList.innerHTML = '<div class="text-vscode-muted text-[10.5px] italic py-0.5">No active tasks</div>';
-    const countEl = document.getElementById("chat-tasks-count");
-    if (countEl) countEl.textContent = "0/0";
-    return;
+  // Initialize tracking variables on window if not yet set
+  if (typeof window.lastSerializedTasks === "undefined") {
+    window.lastSerializedTasks = "";
+    window.currentTasksCardElement = null;
   }
 
-  chatTasksList.innerHTML = "";
+  const serialized = JSON.stringify(tasks);
+  if (serialized === window.lastSerializedTasks) return;
+  window.lastSerializedTasks = serialized;
+
+  // Build a new checklist card element
+  const card = document.createElement("div");
+  card.className = "msg msg-tasks p-3 bg-vscode-sidebar border border-vscode-dim rounded-[3px] flex flex-col gap-2.5 font-sans text-[11px] text-vscode-primary select-none my-2";
 
   let completed = 0;
+  tasks.forEach(t => {
+    if (t.status === "x") completed++;
+  });
+
+  card.innerHTML = `
+    <div class="flex flex-col gap-1.5">
+      <div class="flex items-center justify-between border-b border-vscode-dim pb-1 mb-0.5">
+        <span class="font-bold text-vscode-bright uppercase tracking-wider text-[9px]">Execution Tasks</span>
+        <span class="text-[9px] bg-vscode-blue/20 text-vscode-bright px-1.5 py-0.5 rounded-full font-mono">${completed}/${tasks.length}</span>
+      </div>
+      <div class="tasks-list flex flex-col gap-1"></div>
+    </div>
+    <div class="agents-section hidden flex flex-col gap-1.5 border-t border-vscode-dim pt-2">
+      <span class="font-bold text-vscode-bright uppercase tracking-wider text-[9px]">Active Agents</span>
+      <div class="agents-list flex flex-wrap gap-1"></div>
+    </div>
+  `;
+
+  const listEl = card.querySelector(".tasks-list");
   tasks.forEach(t => {
     const row = document.createElement("div");
     row.className = "flex items-center gap-2 py-0.5 text-[11px] font-sans leading-tight";
@@ -897,7 +920,6 @@ function renderTasks(tasks) {
     if (t.status === "x") {
       icon = "✓";
       textClass = "line-through text-vscode-muted";
-      completed++;
     } else if (t.status === "/") {
       icon = "◌";
       textClass = "text-vscode-bright font-medium";
@@ -913,30 +935,37 @@ function renderTasks(tasks) {
 
     row.appendChild(iconSpan);
     row.appendChild(textSpan);
-    chatTasksList.appendChild(row);
+    listEl.appendChild(row);
   });
 
-  const countEl = document.getElementById("chat-tasks-count");
-  if (countEl) {
-    countEl.textContent = `${completed}/${tasks.length}`;
+  // Append card to chatMessages
+  if (processingIndicator && processingIndicator.parentNode === chatMessages) {
+    chatMessages.insertBefore(card, processingIndicator);
+  } else {
+    chatMessages.appendChild(card);
   }
 
+  window.currentTasksCardElement = card;
   scrollToBottom();
 }
 
-// Render active subagents/superagents inside chat messages card
+// Render active subagents/superagents inside the most recently appended tasks card
 function renderAgentsTree(subagents, superagents) {
-  if (!chatAgentsSection || !chatAgentsList) return;
+  if (!window.currentTasksCardElement) return;
+
+  const section = window.currentTasksCardElement.querySelector(".agents-section");
+  const listEl = window.currentTasksCardElement.querySelector(".agents-list");
+  if (!section || !listEl) return;
 
   const hasAgents = (subagents && subagents.length > 0) || (superagents && superagents.length > 0);
   if (!hasAgents) {
-    chatAgentsSection.classList.add("hidden");
-    chatAgentsList.innerHTML = "";
+    section.classList.add("hidden");
+    listEl.innerHTML = "";
     return;
   }
 
-  chatAgentsSection.classList.remove("hidden");
-  chatAgentsList.innerHTML = "";
+  section.classList.remove("hidden");
+  listEl.innerHTML = "";
 
   superagents.forEach(sa => {
     const chip = document.createElement("div");
@@ -952,7 +981,7 @@ function renderAgentsTree(subagents, superagents) {
       });
     }
 
-    chatAgentsList.appendChild(chip);
+    listEl.appendChild(chip);
   });
 
   subagents.forEach(sub => {
@@ -969,7 +998,7 @@ function renderAgentsTree(subagents, superagents) {
       });
     }
 
-    chatAgentsList.appendChild(chip);
+    listEl.appendChild(chip);
   });
 
   scrollToBottom();

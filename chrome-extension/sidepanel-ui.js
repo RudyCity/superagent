@@ -137,23 +137,14 @@ function scrollToBottom(force = false) {
 
 function clearChatMessages() {
   if (!chatMessages) return;
-  const chatTasksContainer = document.getElementById("chat-tasks-container");
   Array.from(chatMessages.childNodes).forEach(node => {
-    if (node !== processingIndicator && node !== chatTasksContainer) {
+    if (node !== processingIndicator) {
       chatMessages.removeChild(node);
     }
   });
   
-  if (chatTasksContainer) {
-    const chatTasksList = document.getElementById("chat-tasks-list");
-    if (chatTasksList) chatTasksList.innerHTML = '<div class="text-vscode-muted text-[10.5px] italic py-0.5">No active tasks</div>';
-    const countEl = document.getElementById("chat-tasks-count");
-    if (countEl) countEl.textContent = "0/0";
-    const chatAgentsSection = document.getElementById("chat-agents-section");
-    if (chatAgentsSection) chatAgentsSection.classList.add("hidden");
-    const chatAgentsList = document.getElementById("chat-agents-list");
-    if (chatAgentsList) chatAgentsList.innerHTML = "";
-  }
+  window.lastSerializedTasks = "";
+  window.currentTasksCardElement = null;
 }
 
 
@@ -555,10 +546,7 @@ function appendMessage(role, text) {
   msgDiv.appendChild(header);
   msgDiv.appendChild(content);
 
-  const chatTasksContainer = document.getElementById("chat-tasks-container");
-  if (chatTasksContainer && chatTasksContainer.parentNode === chatMessages) {
-    chatMessages.insertBefore(msgDiv, chatTasksContainer);
-  } else if (processingIndicator && processingIndicator.parentNode === chatMessages) {
+  if (processingIndicator && processingIndicator.parentNode === chatMessages) {
     chatMessages.insertBefore(msgDiv, processingIndicator);
   } else {
     chatMessages.appendChild(msgDiv);

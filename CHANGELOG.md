@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.299] - 2026-07-11
+
+### Changed
+- **Chrome Extension Inline Task Checklist Updates**:
+  - Re-architected task list rendering to dynamically append a new task checklist card directly in the scrollable chat message list only when the task state changes, preserving a historical timeline of checklist transitions.
+  - Linked active subagent and superagent chips to render dynamically inside the most recently appended checklist card.
+
+---
+
 ## [1.2.298] - 2026-07-11
 
 ### Fixed
