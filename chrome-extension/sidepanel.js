@@ -10,6 +10,8 @@ let taskPollInterval = null;
 let pendingPermissionId = null;
 let pendingQuestionId = null;
 let selectedQuestionOption = null;
+let currentIsMultiSelect = false;
+let currentQuestionIsArray = false;
 let apiToken = "";
 let currentMode = "single";
 let workspaceDropdownOpen = false;
@@ -673,48 +675,74 @@ function renderQuestion(question, options, isMultiSelect) {
   questionCustomContainer.classList.add("hidden");
   questionCustomInput.value = "";
   selectedQuestionOption = null;
+  currentIsMultiSelect = !!isMultiSelect;
+  currentQuestionIsArray = Array.isArray(question);
 
-  if (Array.isArray(question)) {
+  if (currentQuestionIsArray) {
     // Multi-question item format
-    questionTitle.textContent = "Multiple items requested. Please select pathways:";
+    questionTitle.textContent = "Multiple items requested. Please select options:";
     question.forEach((q, idx) => {
       const qLabel = document.createElement("p");
-      qLabel.className = "modal-label";
+      qLabel.className = "modal-label mt-2 text-[10px] text-vscode-muted uppercase";
       qLabel.textContent = q.question;
       questionOptionsContainer.appendChild(qLabel);
 
-      q.options.forEach(opt => {
+      const groupDiv = document.createElement("div");
+      groupDiv.className = "flex flex-col gap-1.5";
+      groupDiv.dataset.questionIdx = idx;
+      groupDiv.dataset.isMultiSelect = q.isMultiSelect ? "true" : "false";
+
+      const qOptions = q.options || [];
+      qOptions.forEach(opt => {
         const btn = document.createElement("div");
         btn.className = "option-btn";
         btn.innerHTML = `
-          <div class="option-bullet"></div>
+          <div class="option-bullet ${q.isMultiSelect ? 'checkbox-bullet' : ''}"></div>
           <span class="option-text">${opt}</span>
         `;
         btn.addEventListener("click", () => {
-          btn.parentElement.querySelectorAll(".option-btn").forEach(b => b.classList.remove("selected"));
-          btn.classList.add("selected");
+          if (q.isMultiSelect) {
+            btn.classList.toggle("selected");
+          } else {
+            groupDiv.querySelectorAll(".option-btn").forEach(b => b.classList.remove("selected"));
+            btn.classList.add("selected");
+          }
         });
-        questionOptionsContainer.appendChild(btn);
+        groupDiv.appendChild(btn);
       });
+      questionOptionsContainer.appendChild(groupDiv);
     });
   } else {
     questionTitle.textContent = question;
-    if (options && options.length > 0) {
+    const hasOptions = options && options.length > 0;
+    
+    if (hasOptions) {
       options.forEach(opt => {
         const btn = document.createElement("div");
         btn.className = "option-btn";
         btn.innerHTML = `
-          <div class="option-bullet"></div>
+          <div class="option-bullet ${currentIsMultiSelect ? 'checkbox-bullet' : ''}"></div>
           <span class="option-text">${opt}</span>
         `;
         btn.addEventListener("click", () => {
-          document.querySelectorAll(".option-btn").forEach(b => b.classList.remove("selected"));
-          btn.classList.add("selected");
-          selectedQuestionOption = opt;
-          if (opt === "Custom...") {
-            questionCustomContainer.classList.remove("hidden");
+          if (currentIsMultiSelect) {
+            btn.classList.toggle("selected");
+            const hasCustom = Array.from(questionOptionsContainer.querySelectorAll(".option-btn.selected"))
+              .some(b => b.querySelector(".option-text").textContent === "Custom...");
+            if (hasCustom) {
+              questionCustomContainer.classList.remove("hidden");
+            } else {
+              questionCustomContainer.classList.add("hidden");
+            }
           } else {
-            questionCustomContainer.classList.add("hidden");
+            document.querySelectorAll(".option-btn").forEach(b => b.classList.remove("selected"));
+            btn.classList.add("selected");
+            selectedQuestionOption = opt;
+            if (opt === "Custom...") {
+              questionCustomContainer.classList.remove("hidden");
+            } else {
+              questionCustomContainer.classList.add("hidden");
+            }
           }
         });
         questionOptionsContainer.appendChild(btn);
@@ -728,14 +756,69 @@ function renderQuestion(question, options, isMultiSelect) {
 
 // Submit interactive answer
 async function submitAnswer() {
-  let answer = selectedQuestionOption;
-  if (selectedQuestionOption === "Custom..." || !selectedQuestionOption) {
-    answer = questionCustomInput.value.trim();
-  }
+  let answer = "";
 
-  if (answer === null || answer === "") {
-    alert("Please select or type an answer.");
-    return;
+  if (currentQuestionIsArray) {
+    const groups = Array.from(questionOptionsContainer.querySelectorAll("[data-question-idx]"));
+    const answersList = [];
+    
+    for (const group of groups) {
+      const isMulti = group.dataset.isMultiSelect === "true";
+      const selected = Array.from(group.querySelectorAll(".option-btn.selected"));
+      
+      if (selected.length === 0) {
+        alert("Please answer all questions before submitting.");
+        return;
+      }
+      
+      if (isMulti) {
+        const val = selected.map(b => b.querySelector(".option-text").textContent).join(", ");
+        answersList.push(val);
+      } else {
+        const val = selected[0].querySelector(".option-text").textContent;
+        answersList.push(val);
+      }
+    }
+    answer = answersList;
+  } else {
+    const selectedBtns = Array.from(questionOptionsContainer.querySelectorAll(".option-btn.selected"));
+    
+    if (selectedBtns.length > 0) {
+      if (currentIsMultiSelect) {
+        const hasCustom = selectedBtns.some(b => b.querySelector(".option-text").textContent === "Custom...");
+        if (hasCustom) {
+          const customVal = questionCustomInput.value.trim();
+          if (!customVal) {
+            alert("Please type a custom response.");
+            return;
+          }
+          const otherVals = selectedBtns
+            .map(b => b.querySelector(".option-text").textContent)
+            .filter(v => v !== "Custom...");
+          otherVals.push(customVal);
+          answer = otherVals.join(", ");
+        } else {
+          answer = selectedBtns.map(b => b.querySelector(".option-text").textContent).join(", ");
+        }
+      } else {
+        const selVal = selectedBtns[0].querySelector(".option-text").textContent;
+        if (selVal === "Custom...") {
+          answer = questionCustomInput.value.trim();
+          if (!answer) {
+            alert("Please type a custom response.");
+            return;
+          }
+        } else {
+          answer = selVal;
+        }
+      }
+    } else {
+      answer = questionCustomInput.value.trim();
+      if (!answer) {
+        alert("Please type an answer.");
+        return;
+      }
+    }
   }
 
   try {

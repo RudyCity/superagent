@@ -2684,6 +2684,65 @@
     border-color: rgba(204, 167, 0, 1);
   }
 }
+.option-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-vscode-inner);
+  border: 1px solid var(--border-vscode-dim);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-vscode-primary);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+.option-btn:hover {
+  background: var(--bg-vscode-hover);
+  border-color: var(--border-vscode-bright);
+  color: var(--text-vscode-light);
+}
+.option-btn.selected {
+  background: var(--bg-vscode-hover);
+  border-color: var(--accent-vscode-blue);
+  color: var(--text-vscode-light);
+  box-shadow: 0 0 0 1px var(--accent-vscode-blue);
+}
+.option-bullet {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--text-vscode-muted);
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+.option-btn.selected .option-bullet {
+  background: var(--accent-vscode-blue);
+  border-color: var(--accent-vscode-blue);
+  box-shadow: inset 0 0 0 2px var(--bg-vscode-sidebar);
+}
+.option-bullet.checkbox-bullet {
+  border-radius: 2px;
+}
+.option-btn.selected .option-bullet.checkbox-bullet {
+  box-shadow: none;
+  background: var(--accent-vscode-blue);
+  border-color: var(--accent-vscode-blue);
+  position: relative;
+}
+.option-btn.selected .option-bullet.checkbox-bullet::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 1px;
+  width: 2.5px;
+  height: 5px;
+  border: solid #ffffff;
+  border-width: 0 1px 1px 0;
+  transform: rotate(45deg);
+}
 @property --tw-translate-x {
   syntax: "*";
   inherits: false;
