@@ -145,6 +145,64 @@ async function executeBrowserControl(controlId, action, target, value) {
               });
             };
 
+            const showCursor = (element, actionType = "move") => {
+              try {
+                let cursor = document.getElementById("__superagent_cursor__");
+                if (!cursor) {
+                  cursor = document.createElement("div");
+                  cursor.id = "__superagent_cursor__";
+                  cursor.style.position = "absolute";
+                  cursor.style.width = "14px";
+                  cursor.style.height = "14px";
+                  cursor.style.background = "rgba(220, 38, 38, 0.75)";
+                  cursor.style.border = "2.5px solid #ffffff";
+                  cursor.style.borderRadius = "50%";
+                  cursor.style.pointerEvents = "none";
+                  cursor.style.zIndex = "999999999";
+                  cursor.style.transition = "left 0.2s cubic-bezier(0.25, 1, 0.5, 1), top 0.2s cubic-bezier(0.25, 1, 0.5, 1), transform 0.15s ease-out, background-color 0.15s ease-out, opacity 0.3s ease-out";
+                  cursor.style.boxShadow = "0 2px 4px rgba(0,0,0,0.4)";
+                  document.body.appendChild(cursor);
+                }
+                
+                if (window.__superagent_cursor_timeout__) {
+                  clearTimeout(window.__superagent_cursor_timeout__);
+                }
+                cursor.style.opacity = "1";
+
+                const rect = element.getBoundingClientRect();
+                const x = rect.left + rect.width / 2 + window.scrollX;
+                const y = rect.top + rect.height / 2 + window.scrollY;
+                
+                cursor.style.left = `${x - 7}px`;
+                cursor.style.top = `${y - 7}px`;
+                cursor.style.transform = "scale(1)";
+                cursor.style.backgroundColor = "rgba(220, 38, 38, 0.75)";
+
+                if (actionType === "click") {
+                  cursor.style.transform = "scale(0.7)";
+                  cursor.style.backgroundColor = "rgba(239, 68, 68, 1)";
+                  setTimeout(() => {
+                    cursor.style.transform = "scale(1.2)";
+                    setTimeout(() => {
+                      cursor.style.transform = "scale(1)";
+                    }, 150);
+                  }, 100);
+                } else if (actionType === "type") {
+                  cursor.style.transform = "scale(1.1)";
+                  cursor.style.backgroundColor = "rgba(14, 99, 156, 0.85)";
+                  setTimeout(() => {
+                    cursor.style.transform = "scale(1)";
+                  }, 150);
+                }
+
+                window.__superagent_cursor_timeout__ = setTimeout(() => {
+                  cursor.style.opacity = "0";
+                }, 3000);
+              } catch (e) {
+                // Ignore cursor errors
+              }
+            };
+
             if (act === "wait") {
               const timeout = parseInt(val || "5000", 10);
               if (!isNaN(Number(tgt))) {
@@ -201,12 +259,14 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "click") {
+              showCursor(el, "click");
               el.click();
               el.dispatchEvent(new Event("change", { bubbles: true }));
               return `Clicked element ${tgt}`;
             }
 
             if (act === "hover") {
+              showCursor(el, "move");
               const rect = el.getBoundingClientRect();
               el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 }));
               el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
@@ -215,6 +275,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "keypress") {
+              showCursor(el, "click");
               const key = val || "Enter";
               const keyCode = key === "Enter" ? 13 : 0;
               const eventInit = { key, keyCode, bubbles: true, cancelable: true };
@@ -234,6 +295,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "type") {
+              showCursor(el, "type");
               if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
                 const proto = el instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
                 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;

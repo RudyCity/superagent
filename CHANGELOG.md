@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.273] - 2026-07-11
+
+### Added
+- **Browser Control Tool**:
+  - Implemented visual virtual cursor simulation. An animated, translucent circular pointer now shows up and slides to target elements during `click`, `hover`, `keypress`, and `type` actions, showing clicks and type events with scaling/color animations and fading out after 3 seconds of inactivity.
+
+---
+
 ## [1.2.272] - 2026-07-11
 
 ### Added
