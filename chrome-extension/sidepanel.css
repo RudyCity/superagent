@@ -17,6 +17,8 @@
     --color-blue-500: oklch(62.3% 0.214 259.815);
     --color-blue-600: oklch(54.6% 0.245 262.881);
     --color-blue-700: oklch(48.8% 0.243 264.376);
+    --color-purple-400: oklch(71.4% 0.203 305.504);
+    --color-purple-500: oklch(62.7% 0.265 303.9);
     --color-slate-200: oklch(92.9% 0.013 255.508);
     --color-slate-900: oklch(20.8% 0.042 265.755);
     --color-gray-50: oklch(98.5% 0.002 247.839);
@@ -622,6 +624,9 @@
   .w-32 {
     width: calc(var(--spacing) * 32);
   }
+  .w-64 {
+    width: calc(var(--spacing) * 64);
+  }
   .w-\[30px\] {
     width: 30px;
   }
@@ -672,9 +677,6 @@
   }
   .min-w-48 {
     min-width: calc(var(--spacing) * 48);
-  }
-  .min-w-\[38px\] {
-    min-width: 38px;
   }
   .min-w-\[44px\] {
     min-width: 44px;
@@ -803,9 +805,6 @@
   .items-end {
     align-items: flex-end;
   }
-  .items-start {
-    align-items: flex-start;
-  }
   .justify-between {
     justify-content: space-between;
   }
@@ -925,6 +924,9 @@
   .rounded-2xl {
     border-radius: var(--radius-2xl);
   }
+  .rounded-\[2px\] {
+    border-radius: 2px;
+  }
   .rounded-full {
     border-radius: calc(infinity * 1px);
   }
@@ -980,6 +982,10 @@
     border-bottom-style: var(--tw-border-style);
     border-bottom-width: 2px;
   }
+  .border-l {
+    border-left-style: var(--tw-border-style);
+    border-left-width: 1px;
+  }
   .border-l-4 {
     border-left-style: var(--tw-border-style);
     border-left-width: 4px;
@@ -998,20 +1004,50 @@
   .border-\[rgba\(244\,135\,113\,0\.3\)\] {
     border-color: rgba(244,135,113,0.3);
   }
+  .border-amber-warning\/30 {
+    border-color: color-mix(in srgb, #cca700 30%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-amber-warning) 30%, transparent);
+    }
+  }
   .border-blue-600 {
     border-color: var(--color-blue-600);
   }
   .border-gray-300 {
     border-color: var(--color-gray-300);
   }
+  .border-green-success\/30 {
+    border-color: color-mix(in srgb, #4ec9b0 30%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-green-success) 30%, transparent);
+    }
+  }
+  .border-purple-500\/30 {
+    border-color: color-mix(in srgb, oklch(62.7% 0.265 303.9) 30%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-purple-500) 30%, transparent);
+    }
+  }
   .border-red-500 {
     border-color: var(--color-red-500);
+  }
+  .border-red-error\/30 {
+    border-color: color-mix(in srgb, #f48771 30%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-red-error) 30%, transparent);
+    }
   }
   .border-slate-200 {
     border-color: var(--color-slate-200);
   }
   .border-transparent {
     border-color: transparent;
+  }
+  .border-vscode-blue\/30 {
+    border-color: color-mix(in srgb, #0e639c 30%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-vscode-blue) 30%, transparent);
+    }
   }
   .border-vscode-bright {
     border-color: var(--color-vscode-bright);
@@ -1027,6 +1063,12 @@
   }
   .bg-amber-warning {
     background-color: var(--color-amber-warning);
+  }
+  .bg-amber-warning\/20 {
+    background-color: color-mix(in srgb, #cca700 20%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-amber-warning) 20%, transparent);
+    }
   }
   .bg-black\/50 {
     background-color: color-mix(in srgb, #000 50%, transparent);
@@ -1082,6 +1124,18 @@
   .bg-green-success-light {
     background-color: var(--color-green-success-light);
   }
+  .bg-green-success\/20 {
+    background-color: color-mix(in srgb, #4ec9b0 20%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-green-success) 20%, transparent);
+    }
+  }
+  .bg-purple-500\/20 {
+    background-color: color-mix(in srgb, oklch(62.7% 0.265 303.9) 20%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-purple-500) 20%, transparent);
+    }
+  }
   .bg-red-600 {
     background-color: var(--color-red-600);
   }
@@ -1090,6 +1144,12 @@
   }
   .bg-red-error-light {
     background-color: var(--color-red-error-light);
+  }
+  .bg-red-error\/20 {
+    background-color: color-mix(in srgb, #f48771 20%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-red-error) 20%, transparent);
+    }
   }
   .bg-stone-50 {
     background-color: var(--color-stone-50);
@@ -1103,11 +1163,29 @@
   .bg-vscode-blue {
     background-color: var(--color-vscode-blue);
   }
+  .bg-vscode-blue\/20 {
+    background-color: color-mix(in srgb, #0e639c 20%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-vscode-blue) 20%, transparent);
+    }
+  }
+  .bg-vscode-blue\/30 {
+    background-color: color-mix(in srgb, #0e639c 30%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-vscode-blue) 30%, transparent);
+    }
+  }
   .bg-vscode-editor {
     background-color: var(--color-vscode-editor);
   }
   .bg-vscode-inner {
     background-color: var(--color-vscode-inner);
+  }
+  .bg-vscode-muted\/20 {
+    background-color: color-mix(in srgb, #858585 20%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-vscode-muted) 20%, transparent);
+    }
   }
   .bg-vscode-sidebar {
     background-color: var(--color-vscode-sidebar);
@@ -1145,6 +1223,9 @@
   }
   .p-1 {
     padding: var(--spacing);
+  }
+  .p-1\.5 {
+    padding: calc(var(--spacing) * 1.5);
   }
   .p-2 {
     padding: calc(var(--spacing) * 2);
@@ -1286,6 +1367,9 @@
     font-size: var(--text-xs);
     line-height: var(--tw-leading, var(--text-xs--line-height));
   }
+  .text-\[8px\] {
+    font-size: 8px;
+  }
   .text-\[9\.5px\] {
     font-size: 9.5px;
   }
@@ -1320,10 +1404,6 @@
   .leading-normal {
     --tw-leading: var(--leading-normal);
     line-height: var(--leading-normal);
-  }
-  .leading-relaxed {
-    --tw-leading: var(--leading-relaxed);
-    line-height: var(--leading-relaxed);
   }
   .leading-tight {
     --tw-leading: var(--leading-tight);
@@ -1378,6 +1458,9 @@
   .tab-2 {
     tab-size: 2;
   }
+  .text-amber-warning {
+    color: var(--color-amber-warning);
+  }
   .text-blue-500 {
     color: var(--color-blue-500);
   }
@@ -1402,6 +1485,9 @@
   .text-green-success {
     color: var(--color-green-success);
   }
+  .text-purple-400 {
+    color: var(--color-purple-400);
+  }
   .text-red-500 {
     color: var(--color-red-500);
   }
@@ -1413,6 +1499,9 @@
   }
   .text-slate-900 {
     color: var(--color-slate-900);
+  }
+  .text-vscode-blue {
+    color: var(--color-vscode-blue);
   }
   .text-vscode-blue-hover {
     color: var(--color-vscode-blue-hover);
@@ -1603,6 +1692,10 @@
     --tw-outline-style: none;
     outline-style: none;
   }
+  .select-none {
+    -webkit-user-select: none;
+    user-select: none;
+  }
   .select-text {
     -webkit-user-select: text;
     user-select: text;
@@ -1739,6 +1832,13 @@
     &:hover {
       @media (hover: hover) {
         background-color: var(--color-gray-200);
+      }
+    }
+  }
+  .hover\:bg-red-error {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-red-error);
       }
     }
   }
@@ -2951,6 +3051,18 @@
   max-height: 26px !important;
   overflow: hidden !important;
   padding-bottom: 0 !important;
+}
+#btn-toggle-right-panel.active {
+  background-color: var(--color-vscode-blue);
+  color: #ffffff;
+  border-color: var(--color-vscode-blue);
+}
+.monitor-item {
+  transition: all 0.15s ease-in-out;
+}
+.monitor-item:hover {
+  border-color: var(--color-vscode-bright);
+  background-color: var(--color-vscode-hover);
 }
 @property --tw-translate-x {
   syntax: "*";

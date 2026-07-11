@@ -16,6 +16,7 @@
     </div>
     <div class="header-actions flex items-center gap-2 relative">
       <div id="connection-status" class="status-badge status-offline text-[11px] font-medium px-2 py-0.5 rounded-sm capitalize border transition-all duration-200 bg-red-error-light text-red-error border-[rgba(244,135,113,0.3)]">Offline</div>
+      <button id="btn-toggle-right-panel" class="btn btn-secondary text-[12px] p-0 h-5 w-5 font-sans border rounded-sm cursor-pointer inline-flex items-center justify-center transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover hover:text-white" title="Toggle Monitor Sidebar">📊</button>
       <button id="btn-header-settings" class="btn btn-secondary text-[12px] p-0 h-5 w-5 font-sans border rounded-sm cursor-pointer inline-flex items-center justify-center transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover hover:text-white" title="Settings">⚙️</button>
     </div>
   </header>
@@ -201,6 +202,47 @@
           </div>
         </div>
       </div>
+
+      <!-- Right Side Panel -->
+      <aside id="right-side-panel" class="w-64 bg-vscode-sidebar border-l border-vscode-dim flex flex-col overflow-hidden shrink-0 hidden">
+        <!-- Panel Header -->
+        <div class="panel-header p-3 border-b border-vscode-dim flex items-center justify-between bg-vscode-activitybar">
+          <h3 class="text-[11px] font-bold text-vscode-light uppercase tracking-wider">Workspace Monitor</h3>
+        </div>
+        
+        <!-- File Changes Section -->
+        <div class="flex-1 flex flex-col overflow-hidden border-b border-vscode-dim">
+          <div class="section-sub-header px-3 py-2 bg-vscode-inner border-b border-vscode-dim flex items-center justify-between">
+            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">File Changes</span>
+            <span id="changes-count-badge" class="text-[9.5px] bg-vscode-blue/30 text-vscode-bright px-1.5 py-0.5 rounded-full font-mono font-medium hidden">0</span>
+          </div>
+          <div id="file-changes-container" class="flex-1 overflow-y-auto p-2.5 flex flex-col gap-1.5">
+            <div class="p-3 text-center text-vscode-muted text-[11px] italic">No file changes detected</div>
+          </div>
+        </div>
+        
+        <!-- Background Processes Section -->
+        <div class="flex-1 flex flex-col overflow-hidden border-b border-vscode-dim">
+          <div class="section-sub-header px-3 py-2 bg-vscode-inner border-b border-vscode-dim flex items-center justify-between">
+            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Background Processes</span>
+            <span id="bg-tasks-count-badge" class="text-[9.5px] bg-vscode-blue/30 text-vscode-bright px-1.5 py-0.5 rounded-full font-mono font-medium hidden">0</span>
+          </div>
+          <div id="bg-tasks-container" class="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2">
+            <div class="p-3 text-center text-vscode-muted text-[11px] italic">No active processes</div>
+          </div>
+        </div>
+
+        <!-- Active Agents/Subagents Section -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <div class="section-sub-header px-3 py-2 bg-vscode-inner border-b border-vscode-dim flex items-center justify-between">
+            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Active Agents</span>
+            <span id="agents-count-badge" class="text-[9.5px] bg-vscode-blue/30 text-vscode-bright px-1.5 py-0.5 rounded-full font-mono font-medium hidden">0</span>
+          </div>
+          <div id="active-agents-container" class="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2">
+            <div class="p-3 text-center text-vscode-muted text-[11px] italic">No active agents</div>
+          </div>
+        </div>
+      </aside>
     </section>
   </main>
 
@@ -336,5 +378,6 @@
   <script src="sidepanel-markdown.js"></script>
   <script src="sidepanel-workspaces.js"></script>
   <script src="sidepanel-browser.js"></script>
+  <script src="sidepanel-monitor.js"></script>
 </body>
 </html>

@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.291] - 2026-07-11
+
+### Added
+- **Chrome Extension Workspace Monitor Side Panel**:
+  - Implemented a collapsible right-side panel layout showing active file changes, running background processes, and active subagents/superagents.
+  - Added backend endpoints in `server.ts` (`/api/git/changes`, `/api/background-tasks`, `/api/background-tasks/kill`).
+  - Added toggle button in the header bar with persistence state saved in local storage.
+  - Created `sidepanel-monitor.js` script to fetch, map status levels, and render live updates.
+
+---
+
 ## [1.2.290] - 2026-07-11
 
 ### Removed

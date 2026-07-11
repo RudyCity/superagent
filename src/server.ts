@@ -570,6 +570,82 @@ export async function runServer(port: number, silent = false) {
         return;
       }
 
+      // Fetch Git changes
+      if (pathname === "/api/git/changes" && req.method === "GET") {
+        const session = resolveSession(req);
+        const wsPath = session ? session.workspace : lastActiveWorkspace;
+        if (!wsPath) {
+          sendJSON(res, 200, { success: true, changes: [] });
+          return;
+        }
+
+        try {
+          const { execa } = await import("execa");
+          const { stdout } = await execa("git", ["status", "--porcelain"], { cwd: wsPath, reject: false });
+          const changes = stdout
+            .split("\n")
+            .filter(Boolean)
+            .map(line => {
+              const status = line.slice(0, 2).trim();
+              const filepath = line.slice(3).trim();
+              return { status, filepath };
+            });
+          sendJSON(res, 200, { success: true, changes });
+        } catch (err: any) {
+          sendJSON(res, 200, { success: true, changes: [], error: err.message });
+        }
+        return;
+      }
+
+      // Fetch active background tasks
+      if (pathname === "/api/background-tasks" && req.method === "GET") {
+        try {
+          const { backgroundTasks } = await import("./core/tools/state.js");
+          const list = Array.from(backgroundTasks.entries()).map(([id, task]) => ({
+            id,
+            command: task.command,
+            hasExited: !!task.hasExited,
+            exitCode: task.exitCode ?? null,
+            cwd: task.cwd,
+            output: task.output.slice(-20)
+          }));
+          sendJSON(res, 200, { success: true, tasks: list });
+        } catch (err: any) {
+          sendJSON(res, 500, { error: err.message });
+        }
+        return;
+      }
+
+      // Kill active background task
+      if (pathname === "/api/background-tasks/kill" && req.method === "POST") {
+        const bodyStr = await readBody(req);
+        const body = JSON.parse(bodyStr || "{}");
+        const { id } = body;
+        if (!id) {
+          sendJSON(res, 400, { error: "Missing process ID" });
+          return;
+        }
+
+        try {
+          const { backgroundTasks } = await import("./core/tools/state.js");
+          const task = backgroundTasks.get(id);
+          if (task) {
+            if (task.process && typeof task.process.kill === "function") {
+              task.process.kill("SIGTERM");
+            }
+            task.hasExited = true;
+            task.exitCode = -1;
+            backgroundTasks.delete(id);
+            sendJSON(res, 200, { success: true });
+          } else {
+            sendJSON(res, 404, { error: "Process not found" });
+          }
+        } catch (err: any) {
+          sendJSON(res, 500, { error: err.message });
+        }
+        return;
+      }
+
       // Fetch Config / Models
       if (pathname === "/api/config" && req.method === "GET") {
         const settings = getSettings();
