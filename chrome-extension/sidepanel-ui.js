@@ -744,6 +744,20 @@ function updatePresetsDropdown() {
     }
     modelPresetSelect.appendChild(opt);
   });
+
+  const quickSelect = document.getElementById("quick-preset-select");
+  if (quickSelect) {
+    quickSelect.innerHTML = "";
+    presets.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      if (p.id === activePresetId) {
+        opt.selected = true;
+      }
+      quickSelect.appendChild(opt);
+    });
+  }
 }
 
 async function browseWorkspaceFolder() {
@@ -772,5 +786,74 @@ async function browseWorkspaceFolder() {
     btnBrowse.disabled = false;
     btnBrowse.textContent = originalText;
   }
+}
+
+// Render side-by-side diff in result area
+function renderDiffInResultArea(toolCall, resultArea) {
+  if (!toolCall || !resultArea) return;
+  const name = toolCall.name;
+  
+  if (name === "replace_file_content") {
+    const originalText = toolCall.args.TargetContent || "";
+    const modifiedText = toolCall.args.ReplacementContent || "";
+    renderSplitDiff(originalText, modifiedText, resultArea);
+  } else if (name === "multi_replace_file_content") {
+    const chunks = toolCall.args.ReplacementChunks || [];
+    resultArea.innerHTML = "";
+    resultArea.className = "flex flex-col gap-2 w-full";
+    resultArea.classList.remove("hidden");
+    
+    chunks.forEach((chunk, index) => {
+      const title = document.createElement("div");
+      title.className = "text-[9px] text-vscode-muted font-sans font-semibold mt-1";
+      title.textContent = `Chunk #${index + 1} (Lines ${chunk.StartLine}-${chunk.EndLine})`;
+      resultArea.appendChild(title);
+
+      const diffContainer = document.createElement("div");
+      renderSplitDiff(chunk.TargetContent || "", chunk.ReplacementContent || "", diffContainer);
+      resultArea.appendChild(diffContainer);
+    });
+  }
+}
+
+function renderSplitDiff(originalText, modifiedText, container) {
+  container.innerHTML = "";
+  container.className = "split-diff-container flex gap-2 w-full font-mono text-[10px] overflow-x-auto border border-vscode-dim bg-vscode-editor p-2 rounded-sm";
+
+  const originalLines = originalText.split("\n");
+  const modifiedLines = modifiedText.split("\n");
+
+  const leftCol = document.createElement("div");
+  leftCol.className = "flex-1 flex flex-col border-r border-vscode-dim pr-2 overflow-x-auto min-w-0";
+  
+  const rightCol = document.createElement("div");
+  rightCol.className = "flex-1 flex flex-col pl-2 overflow-x-auto min-w-0";
+
+  originalLines.forEach(line => {
+    const row = document.createElement("div");
+    row.className = "diff-line bg-red-error/15 text-red-error border-l-2 border-red-error px-1 truncate select-text";
+    row.textContent = "- " + line;
+    leftCol.appendChild(row);
+
+    const spacer = document.createElement("div");
+    spacer.className = "diff-line text-transparent select-none px-1";
+    spacer.textContent = " ";
+    rightCol.appendChild(spacer);
+  });
+
+  modifiedLines.forEach(line => {
+    const spacer = document.createElement("div");
+    spacer.className = "diff-line text-transparent select-none px-1";
+    spacer.textContent = " ";
+    leftCol.appendChild(spacer);
+
+    const row = document.createElement("div");
+    row.className = "diff-line bg-green-success/15 text-green-success border-l-2 border-green-success px-1 truncate select-text";
+    row.textContent = "+ " + line;
+    rightCol.appendChild(row);
+  });
+
+  container.appendChild(leftCol);
+  container.appendChild(rightCol);
 }
 

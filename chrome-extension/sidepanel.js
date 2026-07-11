@@ -142,6 +142,56 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Quick Preset Selector Change Listener
+  const quickPresetSelect = document.getElementById("quick-preset-select");
+  if (quickPresetSelect) {
+    quickPresetSelect.addEventListener("change", async () => {
+      const selectedId = quickPresetSelect.value;
+      if (!selectedId) return;
+
+      const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
+      const mode = modeRadio ? modeRadio.value : "single";
+
+      const configUpdate = {
+        activePresetId: {
+          [mode]: selectedId
+        }
+      };
+
+      try {
+        const res = await fetch(`${BASE_URL}/api/config`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(configUpdate)
+        });
+        if (res.ok) {
+          fetchServerConfig();
+        }
+      } catch (err) {
+        console.error("Failed to update preset:", err);
+      }
+    });
+  }
+
+  // Collapsible Terminal Drawer Toggler
+  const terminalDrawer = document.getElementById("terminal-drawer");
+  const terminalHeader = document.getElementById("terminal-header");
+  const btnToggleTerminal = document.getElementById("btn-toggle-terminal");
+  if (terminalDrawer && terminalHeader) {
+    terminalHeader.addEventListener("click", () => {
+      const isExpanded = terminalDrawer.style.height === "200px";
+      terminalDrawer.style.height = isExpanded ? "28px" : "200px";
+      if (btnToggleTerminal) {
+        btnToggleTerminal.textContent = isExpanded ? "▲" : "▼";
+      }
+      // Hide badge when drawer is opened
+      if (!isExpanded) {
+        const badge = document.getElementById("terminal-badge");
+        if (badge) badge.classList.add("hidden");
+      }
+    });
+  }
+
   // Buttons Event Listeners
   btnInit.addEventListener("click", initSession);
   btnBrowse.addEventListener("click", browseWorkspaceFolder);
@@ -598,12 +648,17 @@ function handleSSEEvent(data) {
           // Populate expanded result area
           const resultArea = currentActiveToolElement.querySelector(".tool-result-area");
           if (resultArea && e.toolResult) {
-            const resultText = e.toolResult.result || "";
-            if (resultText) {
-              const preview = resultText.length > 500 ? resultText.slice(0, 500) + "\n... (truncated)" : resultText;
-              resultArea.textContent = preview;
-              resultArea.classList.remove("hidden");
-              if (isErr) resultArea.classList.add("tool-result-error");
+            const name = e.toolCall ? e.toolCall.name : "";
+            if (!isErr && (name === "replace_file_content" || name === "multi_replace_file_content")) {
+              renderDiffInResultArea(e.toolCall, resultArea);
+            } else {
+              const resultText = e.toolResult.result || "";
+              if (resultText) {
+                const preview = resultText.length > 500 ? resultText.slice(0, 500) + "\n... (truncated)" : resultText;
+                resultArea.textContent = preview;
+                resultArea.classList.remove("hidden");
+                if (isErr) resultArea.classList.add("tool-result-error");
+              }
             }
           }
 
@@ -644,6 +699,21 @@ function handleSSEEvent(data) {
 
   // Handle Active Tool Progress (Streaming Output)
   else if (data.type === "tool_progress") {
+    const termBody = document.getElementById("terminal-body");
+    if (termBody) {
+      if (termBody.textContent === "Welcome to Superagent terminal logs...") {
+        termBody.textContent = "";
+      }
+      termBody.textContent += data.content;
+      termBody.scrollTop = termBody.scrollHeight;
+      
+      const termDrawer = document.getElementById("terminal-drawer");
+      const badge = document.getElementById("terminal-badge");
+      if (termDrawer && termDrawer.style.height !== "200px" && badge) {
+        badge.classList.remove("hidden");
+      }
+    }
+
     if (currentActiveToolElement) {
       const resultArea = currentActiveToolElement.querySelector(".tool-result-area");
       const detail = currentActiveToolElement.querySelector(".tool-detail");

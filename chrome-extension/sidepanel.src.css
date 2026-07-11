@@ -938,3 +938,41 @@
     transform: translateY(0);
   }
 }
+
+/* Split Diff Viewer styling */
+.split-diff-container {
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.25);
+  max-height: 240px;
+}
+
+.diff-line {
+  line-height: 1.4;
+  white-space: pre;
+  word-break: break-all;
+}
+
+/* Workspace Explorer styling */
+.explorer-node {
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.explorer-node:hover {
+  background-color: var(--color-vscode-hover);
+}
+
+.dir-children {
+  transition: max-height 0.2s ease-out;
+}
+
+/* Terminal Drawer styling */
+#terminal-drawer {
+  transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.terminal-header {
+  transition: background-color 0.15s ease;
+}
+
+.terminal-header:hover {
+  background-color: var(--color-vscode-hover);
+}

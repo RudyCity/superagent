@@ -640,6 +640,63 @@ export async function runServer(port: number, silent = false) {
         return;
       }
 
+      // Fetch workspace files
+      if (pathname === "/api/workspace/files" && req.method === "GET") {
+        const session = resolveSession(req);
+        const wsPath = session ? session.workspace : lastActiveWorkspace;
+        if (!wsPath) {
+          sendJSON(res, 200, { success: true, files: [] });
+          return;
+        }
+
+        try {
+          const { execa } = await import("execa");
+          const { stdout } = await execa("git", ["ls-files"], { cwd: wsPath, reject: false });
+          const files = stdout.split("\n").filter(Boolean);
+          sendJSON(res, 200, { success: true, files });
+        } catch (err: any) {
+          sendJSON(res, 200, { success: true, files: [], error: err.message });
+        }
+        return;
+      }
+
+      // Read workspace file content
+      if (pathname === "/api/workspace/file/read" && req.method === "POST") {
+        const bodyStr = await readBody(req);
+        const body = JSON.parse(bodyStr || "{}");
+        const { filepath } = body;
+        if (!filepath) {
+          sendJSON(res, 400, { error: "Missing filepath" });
+          return;
+        }
+
+        const session = resolveSession(req);
+        const wsPath = session ? session.workspace : lastActiveWorkspace;
+        if (!wsPath) {
+          sendJSON(res, 400, { error: "No active workspace select" });
+          return;
+        }
+
+        const fullPath = path.resolve(wsPath, filepath);
+        // Verify path traversal safety
+        if (!fullPath.startsWith(path.resolve(wsPath))) {
+          sendJSON(res, 403, { error: "Access denied (path traversal)" });
+          return;
+        }
+
+        try {
+          if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+            const content = fs.readFileSync(fullPath, "utf-8");
+            sendJSON(res, 200, { success: true, content });
+          } else {
+            sendJSON(res, 404, { error: "File not found" });
+          }
+        } catch (err: any) {
+          sendJSON(res, 500, { error: err.message });
+        }
+        return;
+      }
+
       // Fetch Git changes
       if (pathname === "/api/git/changes" && req.method === "GET") {
         const session = resolveSession(req);

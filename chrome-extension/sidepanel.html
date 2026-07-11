@@ -116,7 +116,11 @@
           </div>
           <div class="info-row flex items-center gap-1.5 text-[11px]">
             <span class="info-label text-vscode-muted">Mode:</span>
-            <span id="active-mode-text" class="info-value font-mono text-vscode-bright font-medium uppercase">Single</span>
+            <span id="active-mode-text" class="info-value font-mono text-vscode-bright font-medium uppercase mr-1.5">Single</span>
+          </div>
+          <div class="info-row flex items-center gap-1 text-[11px]">
+            <span class="info-label text-vscode-muted">Preset:</span>
+            <select id="quick-preset-select" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-1 py-0.5 font-mono text-[10px] outline-none max-w-[80px] hover:border-vscode-bright cursor-pointer" title="Quick Preset Selector"></select>
           </div>
           <button id="btn-abort" class="btn btn-danger btn-sm px-2 py-1 text-[11px] h-6 font-sans font-medium border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-red-error text-white hover:bg-[#be533f]">HALT EXECUTION</button>
         </div>
@@ -170,6 +174,18 @@
                 <span class="strip-label text-[9px] font-semibold text-vscode-muted uppercase tracking-wider">Agents</span>
                 <div id="agents-strip-items" class="strip-items flex flex-wrap gap-1 flex-1"></div>
               </div>
+            </div>
+
+            <!-- Collapsible Bottom Terminal Panel -->
+            <div id="terminal-drawer" class="border-t border-vscode-dim bg-vscode-sidebar flex flex-col transition-all duration-200 h-[28px] overflow-hidden shrink-0">
+              <div id="terminal-header" class="terminal-header px-3 py-1.5 flex items-center justify-between bg-vscode-activitybar cursor-pointer select-none">
+                <div class="flex items-center gap-1.5 text-[9px] font-bold text-vscode-muted uppercase tracking-wider">
+                  <span>Terminal Output</span>
+                  <span id="terminal-badge" class="w-1.5 h-1.5 rounded-full bg-green-success animate-pulse hidden"></span>
+                </div>
+                <button id="btn-toggle-terminal" class="bg-transparent border-0 text-vscode-muted hover:text-vscode-light text-[9px] cursor-pointer">▲</button>
+              </div>
+              <div id="terminal-body" class="flex-1 p-2.5 font-mono text-[10px] leading-relaxed text-vscode-primary bg-vscode-editor overflow-y-auto whitespace-pre-wrap selection:bg-vscode-hover">Welcome to Superagent terminal logs...</div>
             </div>
           </div>
 
@@ -267,6 +283,16 @@
           </div>
           <div id="active-agents-container" class="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2">
             <div class="p-3 text-center text-vscode-muted text-[11px] italic">No active agents</div>
+          </div>
+        </div>
+
+        <!-- Workspace Files Section -->
+        <div class="flex-1 flex flex-col overflow-hidden border-t border-vscode-dim">
+          <div class="section-sub-header px-3 py-2 bg-vscode-inner border-b border-vscode-dim flex items-center justify-between">
+            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Workspace Files</span>
+          </div>
+          <div id="workspace-files-container" class="flex-1 overflow-y-auto p-2.5 flex flex-col gap-1">
+            <div class="p-3 text-center text-vscode-muted text-[11px] italic">Loading workspace files...</div>
           </div>
         </div>
       </aside>
@@ -407,5 +433,6 @@
   <script src="sidepanel-browser.js"></script>
   <script src="sidepanel-monitor.js"></script>
   <script src="sidepanel-input.js"></script>
+  <script src="sidepanel-explorer.js"></script>
 </body>
 </html>

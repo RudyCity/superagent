@@ -442,6 +442,9 @@
   .mt-4 {
     margin-top: calc(var(--spacing) * 4);
   }
+  .mr-1\.5 {
+    margin-right: calc(var(--spacing) * 1.5);
+  }
   .mr-2 {
     margin-right: calc(var(--spacing) * 2);
   }
@@ -558,6 +561,9 @@
   .h-\[24px\] {
     height: 24px;
   }
+  .h-\[28px\] {
+    height: 28px;
+  }
   .h-\[30px\] {
     height: 30px;
   }
@@ -663,6 +669,9 @@
   .max-w-5xl {
     max-width: var(--container-5xl);
   }
+  .max-w-\[80px\] {
+    max-width: 80px;
+  }
   .max-w-\[110px\] {
     max-width: 110px;
   }
@@ -698,6 +707,9 @@
   }
   .max-w-screen-xl {
     max-width: var(--breakpoint-xl);
+  }
+  .min-w-0 {
+    min-width: 0;
   }
   .min-w-48 {
     min-width: calc(var(--spacing) * 48);
@@ -1013,6 +1025,10 @@
     border-left-style: var(--tw-border-style);
     border-left-width: 1px;
   }
+  .border-l-2 {
+    border-left-style: var(--tw-border-style);
+    border-left-width: 2px;
+  }
   .border-l-4 {
     border-left-style: var(--tw-border-style);
     border-left-width: 4px;
@@ -1040,6 +1056,9 @@
   .border-gray-300 {
     border-color: var(--color-gray-300);
   }
+  .border-green-success {
+    border-color: var(--color-green-success);
+  }
   .border-green-success\/30 {
     border-color: color-mix(in srgb, #4ec9b0 30%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -1054,6 +1073,9 @@
   }
   .border-red-500 {
     border-color: var(--color-red-500);
+  }
+  .border-red-error {
+    border-color: var(--color-red-error);
   }
   .border-red-error\/30 {
     border-color: color-mix(in srgb, #f48771 30%, transparent);
@@ -1157,6 +1179,12 @@
   .bg-green-success {
     background-color: var(--color-green-success);
   }
+  .bg-green-success\/15 {
+    background-color: color-mix(in srgb, #4ec9b0 15%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-green-success) 15%, transparent);
+    }
+  }
   .bg-green-success\/20 {
     background-color: color-mix(in srgb, #4ec9b0 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -1177,6 +1205,12 @@
   }
   .bg-red-error-light {
     background-color: var(--color-red-error-light);
+  }
+  .bg-red-error\/15 {
+    background-color: color-mix(in srgb, #f48771 15%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-red-error) 15%, transparent);
+    }
   }
   .bg-red-error\/20 {
     background-color: color-mix(in srgb, #f48771 20%, transparent);
@@ -1350,6 +1384,9 @@
   .pt-0\.5 {
     padding-top: calc(var(--spacing) * 0.5);
   }
+  .pr-2 {
+    padding-right: calc(var(--spacing) * 2);
+  }
   .pb-1 {
     padding-bottom: var(--spacing);
   }
@@ -1358,6 +1395,9 @@
   }
   .pb-4 {
     padding-bottom: calc(var(--spacing) * 4);
+  }
+  .pl-2 {
+    padding-left: calc(var(--spacing) * 2);
   }
   .text-center {
     text-align: center;
@@ -1446,6 +1486,10 @@
   .leading-normal {
     --tw-leading: var(--leading-normal);
     line-height: var(--leading-normal);
+  }
+  .leading-relaxed {
+    --tw-leading: var(--leading-relaxed);
+    line-height: var(--leading-relaxed);
   }
   .leading-tight {
     --tw-leading: var(--leading-tight);
@@ -1541,6 +1585,9 @@
   }
   .text-slate-900 {
     color: var(--color-slate-900);
+  }
+  .text-transparent {
+    color: transparent;
   }
   .text-vscode-blue {
     color: var(--color-vscode-blue);
@@ -1759,6 +1806,14 @@
   .peer-disabled\:opacity-70 {
     &:is(:where(.peer):disabled ~ *) {
       opacity: 70%;
+    }
+  }
+  .selection\:bg-vscode-hover {
+    & *::selection {
+      background-color: var(--color-vscode-hover);
+    }
+    &::selection {
+      background-color: var(--color-vscode-hover);
     }
   }
   .file\:border-0 {
@@ -3152,6 +3207,33 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+.split-diff-container {
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.25);
+  max-height: 240px;
+}
+.diff-line {
+  line-height: 1.4;
+  white-space: pre;
+  word-break: break-all;
+}
+.explorer-node {
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+.explorer-node:hover {
+  background-color: var(--color-vscode-hover);
+}
+.dir-children {
+  transition: max-height 0.2s ease-out;
+}
+#terminal-drawer {
+  transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.terminal-header {
+  transition: background-color 0.15s ease;
+}
+.terminal-header:hover {
+  background-color: var(--color-vscode-hover);
 }
 @property --tw-translate-x {
   syntax: "*";

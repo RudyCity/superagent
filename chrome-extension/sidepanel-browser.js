@@ -10,11 +10,12 @@ async function grabTabContext() {
       func: () => {
         const selection = window.getSelection().toString().trim();
         const bodyText = document.body.innerText.trim();
-        return { selection, bodyText };
+        const errors = window.__capturedErrors || [];
+        return { selection, bodyText, errors };
       }
     }, (results) => {
       if (!results || results.length === 0) return;
-      const { selection, bodyText } = results[0].result;
+      const { selection, bodyText, errors } = results[0].result;
       
       let contextText = `[Context from tab: "${activeTab.title}" (${activeTab.url})]\n`;
       contextText += `=========================================\n`;
@@ -24,6 +25,18 @@ async function grabTabContext() {
       } else {
         contextText += `[Page Content Summary (First 1500 chars)]:\n${bodyText.slice(0, 1500)}...\n`;
       }
+
+      if (errors && errors.length > 0) {
+        contextText += `=========================================\n`;
+        contextText += `[Captured Console Errors & Exceptions]:\n`;
+        errors.slice(-10).forEach(err => {
+          contextText += `- [${err.type}] ${err.message} (${new Date(err.timestamp).toLocaleTimeString()})\n`;
+          if (err.stack) {
+            contextText += `  Stack: ${err.stack.split("\n").slice(0, 3).join("\n  ")}\n`;
+          }
+        });
+      }
+      
       contextText += `=========================================\n\n[Instruction]: `;
 
       chatInput.value = contextText + chatInput.value;
