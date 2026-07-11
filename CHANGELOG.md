@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.265] - 2026-07-11
+
+### Fixed
+- **Chrome Extension UI**:
+  - Fixed overlays (approval and question modals) and the processing indicator layout showing state.
+  - Removed Tailwind's `hidden` utility class from toggled markup elements to prevent `!important` display locks.
+  - Added dedicated styling rules for `.overlay` and `.processing-indicator` in `sidepanel.src.css` to govern their active state transitions.
+
+---
+
 ## [1.2.264] - 2026-07-11
 
 ### Changed

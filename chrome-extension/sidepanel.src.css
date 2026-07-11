@@ -414,3 +414,19 @@
 #workspace-screen.cli-active .workspace-area {
   height: calc(100vh - 40px) !important;
 }
+
+/* Processing Indicator */
+.processing-indicator {
+  display: none;
+}
+.processing-indicator.active {
+  display: flex;
+}
+
+/* Overlays / Modals */
+.overlay {
+  display: none;
+}
+.overlay.active {
+  display: flex;
+}
