@@ -745,6 +745,10 @@ main {
   display: none;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .input-area {
   display: flex;
   gap: 12px;

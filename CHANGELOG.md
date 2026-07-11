@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.246] - 2026-07-11
+
+### Fixed
+- **UI Visibility Issue**:
+  - Added a generic `.hidden` class to the CSS styles to ensure that the Start Server button, command tooltips, and background panels are correctly hidden when the status is online.
+
+---
+
 ## [1.2.245] - 2026-07-11
 
 ### Changed
