@@ -128,7 +128,10 @@ function hideSpinner() {
 
 function scrollToBottom(force = false) {
   if (!chatMessages) return;
-  const threshold = 60;
+  const spinnerEl = document.getElementById("processing-indicator");
+  const isProcessing = spinnerEl && spinnerEl.classList.contains("active");
+  const threshold = isProcessing ? 200 : 60;
+  
   const isNearBottom = chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop < threshold;
   if (force || isNearBottom) {
     chatMessages.scrollTop = chatMessages.scrollHeight;

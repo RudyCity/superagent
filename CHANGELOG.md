@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.300] - 2026-07-11
+
+### Fixed
+- **Chrome Extension Streaming Scroll Follow**:
+  - Configured a dynamic scroll threshold that increases to 200px while the AI is actively processing or thinking, ensuring auto-scroll successfully follows fast-streaming logs and content without being broken by large layout updates.
+
+---
+
 ## [1.2.299] - 2026-07-11
 
 ### Changed
