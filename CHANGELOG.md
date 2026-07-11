@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.254] - 2026-07-11
+
+### Added
+- **Chrome Extension - Custom Log Row Styles**:
+  - Implemented a parser in `sidepanel.js`'s `formatMarkdown` to detect tool action logs (such as `Edited`, `Explored`, `Ran`, `Worked`) and format them into cyberpunk/VS Code styled layout components.
+  - Added CSS classes in `sidepanel.css` for file badges and diff stats rendering.
+
+---
+
 ## [1.2.253] - 2026-07-11
 
 ### Added

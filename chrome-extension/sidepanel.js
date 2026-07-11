@@ -14,6 +14,12 @@ let apiToken = "";
 let currentMode = "single";
 let workspaceDropdownOpen = false;
 
+// Config state
+let serverPresets = null;
+let serverActivePresetId = null;
+let advancedSettingsOpen = false;
+let wasOffline = true;
+
 // Local fetch wrapper to append API token
 const originalFetch = window.fetch;
 const fetch = async (url, options = {}) => {
@@ -74,6 +80,14 @@ const workspaceDropdown = document.getElementById("workspace-dropdown");
 const savedWorkspacesList = document.getElementById("saved-workspaces-list");
 const btnNewWorkspace = document.getElementById("btn-new-workspace");
 
+const btnToggleAdvanced = document.getElementById("btn-toggle-advanced");
+const advancedSettingsContent = document.getElementById("advanced-settings-content");
+const modelPresetSelect = document.getElementById("model-preset");
+const settingDisableStreaming = document.getElementById("setting-disable-streaming");
+const settingConcurrency = document.getElementById("setting-concurrency");
+const settingMaxIterations = document.getElementById("setting-max-iterations");
+const settingRpm = document.getElementById("setting-rpm");
+
 // Initialize View
 document.addEventListener("DOMContentLoaded", () => {
   // Load saved workspace path and API token if any
@@ -130,6 +144,18 @@ document.addEventListener("DOMContentLoaded", () => {
     startServerTooltip.classList.add("hidden");
     hideWorkspaceDropdown();
   });
+
+  // Advanced Settings Toggle
+  btnToggleAdvanced.addEventListener("click", () => {
+    advancedSettingsOpen = !advancedSettingsOpen;
+    btnToggleAdvanced.classList.toggle("open", advancedSettingsOpen);
+    advancedSettingsContent.classList.toggle("hidden", !advancedSettingsOpen);
+  });
+
+  // Orchestration Mode Radio Change
+  document.querySelectorAll('input[name="agent-mode"]').forEach(radio => {
+    radio.addEventListener("change", updatePresetsDropdown);
+  });
 });
 
 // Check Server Status
@@ -138,6 +164,11 @@ async function checkServerStatus() {
     const res = await fetch(`${BASE_URL}/api/status`);
     const data = await res.json();
     if (data.status === "online") {
+      if (wasOffline) {
+        wasOffline = false;
+        fetchServerConfig();
+      }
+
       if (data.agentRunning) {
         statusBadge.textContent = "Running";
         statusBadge.className = "status-badge status-running";
@@ -171,6 +202,7 @@ async function checkServerStatus() {
       }
     }
   } catch {
+    wasOffline = true;
     statusBadge.textContent = "Offline";
     statusBadge.className = "status-badge status-offline";
     btnStopServer.classList.add("hidden");
@@ -259,6 +291,33 @@ async function initSession() {
   btnInit.textContent = "LAUNCHING...";
 
   try {
+    // Save settings and preset first!
+    const selectedPresetId = modelPresetSelect.value;
+    const maxIterations = parseInt(settingMaxIterations.value, 10) || 50;
+    const rateLimitRpm = parseInt(settingRpm.value, 10) || 60;
+    const disableStreaming = settingDisableStreaming.checked;
+    const concurrencyLimit = parseInt(settingConcurrency.value, 10) || 0;
+
+    const configUpdate = {
+      settings: {
+        maxIterations,
+        rateLimitRpm,
+        disableStreaming,
+        concurrencyLimit
+      }
+    };
+    if (selectedPresetId) {
+      configUpdate.activePresetId = {
+        [mode]: selectedPresetId
+      };
+    }
+    
+    await fetch(`${BASE_URL}/api/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(configUpdate)
+    });
+
     const res = await fetch(`${BASE_URL}/api/init`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -290,6 +349,61 @@ async function initSession() {
     btnInit.disabled = false;
     btnInit.textContent = "LAUNCHING SESSION";
   }
+}
+
+// Fetch Server Config
+async function fetchServerConfig() {
+  try {
+    const res = await fetch(`${BASE_URL}/api/config`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data) {
+      serverPresets = data.presets;
+      serverActivePresetId = data.activePresetId;
+
+      // Populate settings fields if they are not active in user focus
+      if (data.settings) {
+        if (document.activeElement !== settingMaxIterations) {
+          settingMaxIterations.value = data.settings.maxIterations ?? 50;
+        }
+        if (document.activeElement !== settingRpm) {
+          settingRpm.value = data.settings.rateLimitRpm ?? 60;
+        }
+        settingDisableStreaming.checked = !!data.settings.disableStreaming;
+        settingConcurrency.value = String(data.settings.concurrencyLimit ?? 0);
+      }
+      
+      // Update presets dropdown for current selected mode
+      updatePresetsDropdown();
+    }
+  } catch (err) {
+    console.error("Failed to fetch server config:", err);
+  }
+}
+
+// Update presets dropdown based on active orchestration mode selection
+function updatePresetsDropdown() {
+  if (!serverPresets) return;
+  const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
+  const mode = modeRadio ? modeRadio.value : "single";
+  const presets = serverPresets[mode] || [];
+  const activePresetId = serverActivePresetId ? serverActivePresetId[mode] : "";
+
+  modelPresetSelect.innerHTML = "";
+  if (presets.length === 0) {
+    modelPresetSelect.innerHTML = '<option value="">No presets available</option>';
+    return;
+  }
+
+  presets.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = `${p.name} - ${p.description || ""}`;
+    if (p.id === activePresetId) {
+      opt.selected = true;
+    }
+    modelPresetSelect.appendChild(opt);
+  });
 }
 
 // Setup EventSource (SSE)
@@ -840,29 +954,102 @@ function renderAgentsTree(subagents, superagents) {
 function formatMarkdown(text) {
   if (!text) return "";
   
-  // Escape HTML first to prevent XSS issues
-  let escaped = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  
-  // Format code blocks/spans: `code`
-  escaped = escaped.replace(/`([^`]+)`/g, (match, code) => {
-    // Detect shell/command related tools (bash, run_command, git, npm, test, build etc)
-    const isShell = /\b(bash|run_command|execute|shell|terminal|npm|git|build|test)\b/i.test(code);
-    const extraClass = isShell ? " md-code-shell" : "";
-    return `<code class="md-code${extraClass}">${code}</code>`;
+  const lines = text.split("\n");
+  const formattedLines = lines.map(line => {
+    const trimmed = line.trim();
+    
+    // Pattern A: Edited [type] [file] +[added] -[removed]
+    // e.g. "Edited ts `otherTools.ts` +8 -8" or "Edited ts otherTools.ts +8 -8"
+    const editMatch = trimmed.match(/^Edited\s+([^\s]+)\s+`?([a-zA-Z0-9_\-\.\/]+)`?\s+\+(\d+)\s+-(\d+)/i);
+    if (editMatch) {
+      const type = editMatch[1];
+      const file = editMatch[2];
+      const added = editMatch[3];
+      const removed = editMatch[4];
+      return `<div class="log-row log-edit">
+        <span class="log-prefix">Edited</span>
+        <span class="badge badge-filetype badge-${type.toLowerCase().replace(/[^a-z0-9]/g, '')}">${type}</span>
+        <span class="log-filename">${file}</span>
+        <span class="log-stat log-stat-added">+${added}</span>
+        <span class="log-stat log-stat-removed">-${removed}</span>
+      </div>`;
+    }
+    
+    // Pattern B: Explored [count] file[s] >
+    const exploreMatch = trimmed.match(/^Explored\s+(\d+)\s+files?\s*>?/i);
+    if (exploreMatch) {
+      const count = exploreMatch[1];
+      return `<div class="log-row log-explore">
+        <span class="log-explore-text">Explored ${count} file${count > 1 ? 's' : ''}</span>
+        <span class="log-chevron">&gt;</span>
+      </div>`;
+    }
+    
+    // Pattern C: Ran [command] >
+    const runMatch = trimmed.match(/^Ran\s+([^>]+)\s*>?/i);
+    if (runMatch) {
+      const command = runMatch[1].trim();
+      return `<div class="log-row log-run">
+        <span class="log-prefix">Ran</span>
+        <code class="log-command">${command}</code>
+        <span class="log-chevron">&gt;</span>
+      </div>`;
+    }
+    
+    // Pattern D: [count] files changed +[added]-[removed] >
+    const summaryMatch = trimmed.match(/^(\d+)\s+files?\s+changed\s+\+(\d+)\s*-(\d+)\s*>?/i);
+    if (summaryMatch) {
+      const count = summaryMatch[1];
+      const added = summaryMatch[2];
+      const removed = summaryMatch[3];
+      return `<div class="log-row log-summary">
+        <span class="log-summary-text">${count} file${count > 1 ? 's' : ''} changed</span>
+        <span class="log-stat log-stat-added">+${added}</span>
+        <span class="log-stat log-stat-removed">-${removed}</span>
+        <span class="log-chevron">&gt;</span>
+      </div>`;
+    }
+    
+    // Pattern E: Worked for [duration] v
+    const workedMatch = trimmed.match(/^Worked\s+for\s+([^\s]+)\s*(?:v|▼)?/i);
+    if (workedMatch) {
+      const duration = workedMatch[1];
+      return `<div class="log-row log-worked">
+        <span class="log-worked-text">Worked for ${duration}</span>
+        <span class="log-chevron">▼</span>
+      </div>`;
+    }
+    
+    // Pattern F: Run build and tests finished
+    const finishedMatch = trimmed.match(/^Run\s+build\s+and\s+tests?\s+finished/i);
+    if (finishedMatch) {
+      return `<div class="log-row log-finished">
+        <span class="log-finished-text">Run build and tests finished</span>
+      </div>`;
+    }
+    
+    // Regular markdown formatting for lines that don't match special patterns
+    let escaped = line
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    
+    escaped = escaped.replace(/`([^`]+)`/g, (match, code) => {
+      const isShell = /\b(bash|run_command|execute|shell|terminal|npm|git|build|test)\b/i.test(code);
+      const extraClass = isShell ? " md-code-shell" : "";
+      return `<code class="md-code${extraClass}">${code}</code>`;
+    });
+    
+    escaped = escaped.replace(/\*\*([^*]+)\*\*/g, (match, content) => {
+      const isShellText = /\b(shell|build|terminal|run|execution)\b/i.test(content);
+      const extraClass = isShellText ? " md-bold-shell" : "";
+      return `<strong class="md-bold${extraClass}">${content}</strong>`;
+    });
+    
+    return escaped;
   });
   
-  // Format bold: **text**
-  escaped = escaped.replace(/\*\*([^*]+)\*\*/g, (match, content) => {
-    // Highlight specific bold texts like "Shell & build"
-    const isShellText = /\b(shell|build|terminal|run|execution)\b/i.test(content);
-    const extraClass = isShellText ? " md-bold-shell" : "";
-    return `<strong class="md-bold${extraClass}">${content}</strong>`;
-  });
-  
-  return escaped;
+  return formattedLines.join("\n");
 }
 
 // Chat Helpers

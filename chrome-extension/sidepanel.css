@@ -1490,3 +1490,227 @@ main {
   border: 1px solid var(--border-dim);
   border-radius: var(--border-radius-sm);
 }
+
+/* Advanced Settings Collapsible */
+.advanced-settings-container {
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
+
+.btn-toggle-advanced {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  background: var(--bg-inner) !important;
+  border: 1px solid var(--border-dim) !important;
+  color: var(--text-muted) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  transition: all 0.2s ease;
+}
+
+.btn-toggle-advanced:hover {
+  background: var(--bg-main) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-bright) !important;
+}
+
+.btn-toggle-advanced .icon-chevron {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  transition: transform 0.2s ease;
+}
+
+.btn-toggle-advanced.open #advanced-chevron {
+  transform: rotate(180deg);
+}
+
+.advanced-settings-content {
+  border-left: 2px solid var(--border-dim);
+  padding-left: 12px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-group select.form-select {
+  width: 100%;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  transition: all 0.2s ease;
+  outline: none;
+  cursor: pointer;
+  height: 36px;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235f6368'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 16px;
+  padding-right: 32px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .form-group select.form-select {
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239aa0a6'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+  }
+}
+
+.form-group select.form-select:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-primary-light);
+}
+
+.form-group input[type="number"] {
+  width: 100%;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.form-group input[type="number"]:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-primary-light);
+}
+
+/* Custom Log Row Styles (Cyberpunk/VS Code style) */
+.log-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin: 6px 0;
+  color: var(--text-primary);
+  padding: 4px 8px;
+  border-radius: var(--border-radius-sm);
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid var(--border-dim);
+}
+
+@media (prefers-color-scheme: dark) {
+  .log-row {
+    background: rgba(255, 255, 255, 0.02);
+  }
+}
+
+.log-prefix {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-ts {
+  color: #00bcd4;
+  background: rgba(0, 188, 212, 0.1);
+  border: 1px solid rgba(0, 188, 212, 0.2);
+}
+
+.badge-js {
+  color: #ffeb3b;
+  background: rgba(255, 235, 59, 0.1);
+  border: 1px solid rgba(255, 235, 59, 0.2);
+}
+
+.badge-task {
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.2);
+}
+
+.badge-md {
+  color: #e91e63;
+  background: rgba(233, 30, 99, 0.1);
+  border: 1px solid rgba(233, 30, 99, 0.2);
+}
+
+.badge-json {
+  color: #ff9800;
+  background: rgba(255, 152, 0, 0.1);
+  border: 1px solid rgba(255, 152, 0, 0.2);
+}
+
+.badge-html {
+  color: #e65100;
+  background: rgba(230, 81, 0, 0.1);
+  border: 1px solid rgba(230, 81, 0, 0.2);
+}
+
+.badge-css {
+  color: #2196f3;
+  background: rgba(33, 150, 243, 0.1);
+  border: 1px solid rgba(33, 150, 243, 0.2);
+}
+
+.log-filename {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.log-stat {
+  font-weight: 600;
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.log-stat-added {
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.log-stat-removed {
+  color: #f44336;
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.log-explore-text, .log-worked-text, .log-finished-text {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.log-chevron {
+  color: var(--text-muted);
+  margin-left: auto;
+  font-weight: bold;
+  font-size: 11px;
+}
+
+.log-command {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent-primary);
+  font-size: 11.5px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .log-command {
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
