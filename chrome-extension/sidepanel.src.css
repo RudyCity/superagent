@@ -196,29 +196,7 @@
   padding-bottom: 4px;
 }
 
-/* Status dot */
-.tool-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
 
-.tool-dot-running {
-  background: var(--border-vscode-bright);
-  animation: blink 0.8s infinite alternate;
-}
-
-.tool-dot-done {
-  background: var(--color-green);
-}
-
-.tool-dot-error {
-  background: var(--color-red);
-}
-
-/* Tool row: single line */
 .tool-row {
   display: flex;
   align-items: center;
@@ -238,6 +216,10 @@
   font-weight: 500;
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.tool-row-label-error {
+  color: var(--color-red);
 }
 
 .tool-row-detail {

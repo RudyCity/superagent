@@ -740,7 +740,6 @@ function handleSSEEvent(data) {
 
           currentActiveToolElement.innerHTML = `
             <div class="tool-row">
-              <span class="tool-status-dot tool-dot-running"></span>
               <span class="tool-row-label">${esc(label)}</span>
               ${detail ? `<span class="tool-row-detail">${esc(detail)}</span>` : ""}
               <span class="tool-row-chevron">›</span>
@@ -769,9 +768,11 @@ function handleSSEEvent(data) {
       case "tool_end":
         hideSpinner();
         if (currentActiveToolElement) {
-          const dot = currentActiveToolElement.querySelector(".tool-status-dot");
           const isErr = e.toolResult && e.toolResult.isError;
-          dot.className = isErr ? "tool-status-dot tool-dot-error" : "tool-status-dot tool-dot-done";
+          if (isErr) {
+            const label = currentActiveToolElement.querySelector(".tool-row-label");
+            if (label) label.classList.add("tool-row-label-error");
+          }
 
           // Inline result suffix (e.g. diff stat for edits)
           const inlineSuffix = buildResultSuffix(e.toolCall, e.toolResult);
