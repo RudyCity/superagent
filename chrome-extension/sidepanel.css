@@ -2366,6 +2366,81 @@
 .tool-result-error {
   color: var(--color-red);
 }
+.job-finish-footer {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: fade-in 0.2s ease;
+}
+.job-finish-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.job-finish-icon {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-green);
+  line-height: 1;
+}
+.job-finish-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-green);
+  background: rgba(78, 201, 176, 0.08);
+  border: 1px solid rgba(78, 201, 176, 0.25);
+  border-radius: 10px;
+  padding: 1px 8px;
+  letter-spacing: 0.02em;
+}
+.job-finish-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-vscode-muted);
+  padding: 1px 6px;
+  border-radius: var(--border-radius-sm);
+  transition: color 0.15s, background 0.15s;
+}
+.job-finish-toggle:hover {
+  color: var(--text-vscode-light);
+  background: var(--bg-vscode-hover);
+}
+.job-summary-card {
+  background: var(--bg-vscode-inner);
+  border: 1px solid var(--border-vscode-dim);
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+  animation: fade-in 0.15s ease;
+}
+.job-summary-card.hidden {
+  display: none;
+}
+.job-summary-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-vscode-muted);
+  padding: 5px 10px 4px;
+  border-bottom: 1px solid var(--border-vscode-dim);
+  background: rgba(255,255,255,0.02);
+}
+.job-summary-body {
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-vscode-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}
 .md-bold {
   font-weight: 700;
   color: var(--text-vscode-light);

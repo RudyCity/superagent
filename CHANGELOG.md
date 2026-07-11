@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.284] - 2026-07-11
+
+### Added
+- **Chrome Extension Job Finish Footer**:
+  - After an agent finishes a task, a "Finished in Xm Xs" elapsed-time badge (green pill) now appears below the agent message in the chat.
+  - A "Summary ▾" toggle button lets users expand/collapse a collapsible summary card showing the last portion of the agent's final response.
+  - Timer starts on the first meaningful agent event (text output or tool execution) and stops on the `done` event.
+  - All elements styled with VS Code dark theme aesthetics matching the existing extension design.
+
+---
+
 ## [1.2.283] - 2026-07-11
 
 ### Added

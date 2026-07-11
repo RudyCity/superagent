@@ -6,6 +6,7 @@ let currentAgentMessageElement = null;
 let currentReasoningElement = null;
 let currentActiveToolElement = null;
 let taskPollInterval = null;
+let agentJobStartTime = null;
 
 let pendingPermissionId = null;
 let pendingQuestionId = null;
@@ -554,6 +555,7 @@ function handleSSEEvent(data) {
     switch (e.type) {
       case "text":
         hideSpinner();
+        if (!agentJobStartTime) agentJobStartTime = Date.now();
         if (!currentAgentMessageElement) {
           currentAgentMessageElement = appendMessage("agent", "");
         }
@@ -590,6 +592,7 @@ function handleSSEEvent(data) {
         break;
 
       case "tool_start":
+        if (!agentJobStartTime) agentJobStartTime = Date.now();
         showSpinner(`Executing: ${e.description}`);
         if (!currentAgentMessageElement) {
           currentAgentMessageElement = appendMessage("agent", "");
@@ -672,10 +675,13 @@ function handleSSEEvent(data) {
           if (contentSpan) {
             contentSpan.innerHTML = formatMarkdown(contentSpan.textContent);
           }
+          // Inject "Finished in Xm Xs" badge + summary footer
+          appendJobFinishFooter(currentAgentMessageElement, agentJobStartTime);
         }
         currentAgentMessageElement = null;
         currentReasoningElement = null;
         currentActiveToolElement = null;
+        agentJobStartTime = null;
         break;
         
       case "token_usage":
@@ -1126,6 +1132,86 @@ function appendMessage(role, text) {
   
   scrollToBottom();
   return msgDiv;
+}
+
+// Job finish footer: "Finished in Xm Xs" badge + collapsible summary
+function appendJobFinishFooter(msgEl, startTime) {
+  if (!msgEl) return;
+
+  // Compute elapsed duration
+  const elapsed = startTime ? Math.round((Date.now() - startTime) / 1000) : 0;
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  const durationLabel = mins > 0
+    ? `${mins}m ${secs}s`
+    : `${secs}s`;
+
+  // Grab summary text from the agent message text content
+  const contentSpan = msgEl.querySelector(".msg-content-text");
+  const summaryText = contentSpan ? contentSpan.innerText.trim() : "";
+
+  // Build footer container
+  const footer = document.createElement("div");
+  footer.className = "job-finish-footer";
+
+  // Duration badge row
+  const badgeRow = document.createElement("div");
+  badgeRow.className = "job-finish-badge-row";
+
+  const checkIcon = document.createElement("span");
+  checkIcon.className = "job-finish-icon";
+  checkIcon.textContent = "✓";
+
+  const badge = document.createElement("span");
+  badge.className = "job-finish-badge";
+  badge.textContent = `Finished in ${durationLabel}`;
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.className = "job-finish-toggle";
+  toggleBtn.textContent = "Summary ▾";
+  toggleBtn.title = "Toggle summary";
+
+  badgeRow.appendChild(checkIcon);
+  badgeRow.appendChild(badge);
+  badgeRow.appendChild(toggleBtn);
+
+  // Summary card (collapsible)
+  const summaryCard = document.createElement("div");
+  summaryCard.className = "job-summary-card hidden";
+
+  const summaryLabel = document.createElement("div");
+  summaryLabel.className = "job-summary-label";
+  summaryLabel.textContent = "Summary";
+
+  const summaryBody = document.createElement("div");
+  summaryBody.className = "job-summary-body";
+
+  if (summaryText) {
+    // Show only last ~600 chars as a quick summary
+    const preview = summaryText.length > 600
+      ? "..." + summaryText.slice(summaryText.length - 600)
+      : summaryText;
+    summaryBody.innerHTML = formatMarkdown(preview);
+  } else {
+    summaryBody.textContent = "No summary available.";
+  }
+
+  summaryCard.appendChild(summaryLabel);
+  summaryCard.appendChild(summaryBody);
+
+  // Toggle logic
+  toggleBtn.addEventListener("click", () => {
+    const isHidden = summaryCard.classList.contains("hidden");
+    summaryCard.classList.toggle("hidden", !isHidden);
+    toggleBtn.textContent = isHidden ? "Summary ▴" : "Summary ▾";
+  });
+
+  footer.appendChild(badgeRow);
+  footer.appendChild(summaryCard);
+
+  // Inject after the msg content (outside the msg-content div, inside .msg)
+  msgEl.appendChild(footer);
+  scrollToBottom();
 }
 
 function showSpinner(text) {
