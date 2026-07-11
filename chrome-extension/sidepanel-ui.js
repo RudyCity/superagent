@@ -616,8 +616,8 @@ function appendJobFinishFooter(msgEl, startTime) {
   summaryBody.className = "job-summary-body";
 
   if (summaryText) {
-    const preview = summaryText.length > 600
-      ? "..." + summaryText.slice(summaryText.length - 600)
+    const preview = summaryText.length > 1000
+      ? summaryText.slice(0, 1000) + "\n... (truncated)"
       : summaryText;
     summaryBody.innerHTML = formatMarkdown(preview);
   } else {
