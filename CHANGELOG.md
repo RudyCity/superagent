@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.329] - 2026-07-12
+
+### Fixed
+- **Redundant Tool Log Rendering**:
+  - Filtered out redundant plain text log lines (e.g., `web_search >` or `fetch_url >`) from message markdown rendering, resolving the visual double-show tool bug when tools are already displayed as interactive UI cards.
+
+---
+
 ## [1.2.328] - 2026-07-12
 
 ### Changed

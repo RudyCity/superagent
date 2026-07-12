@@ -5,6 +5,11 @@ function formatMarkdown(text) {
   const formattedLines = lines.map(line => {
     const trimmed = line.trim();
     
+    // Skip redundant tool log lines like "web_search >" or "fetch_url >"
+    if (/^[a-z0-9_-]+\s*>\s*$/i.test(trimmed)) {
+      return null;
+    }
+
     // Pattern A: Edited [type] [file] +[added] -[removed]
     // e.g. "Edited ts `otherTools.ts` +8 -8" or "Edited ts otherTools.ts +8 -8"
     const editMatch = trimmed.match(/^Edited\s+([^\s]+)\s+`?([a-zA-Z0-9_\-\.\/]+)`?\s+\+(\d+)\s+-(\d+)/i);
@@ -108,5 +113,5 @@ function formatMarkdown(text) {
     return escaped;
   });
   
-  return formattedLines.join("\n");
+  return formattedLines.filter(line => line !== null).join("\n");
 }
