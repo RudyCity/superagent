@@ -101,13 +101,15 @@ const settingsOverlay = document.getElementById("settings-overlay");
 const btnCloseSettings = document.getElementById("btn-close-settings");
 const btnSaveSettings = document.getElementById("btn-save-settings");
 
+const tabWorkspace = document.getElementById("tab-workspace");
 const tabChat = document.getElementById("tab-chat");
 const tabHistory = document.getElementById("tab-history");
 
+const viewWorkspace = document.getElementById("view-workspace");
 const viewChat = document.getElementById("view-chat");
 const viewHistory = document.getElementById("view-history");
 
-const btnRefreshHistory = document.getElementById("btn-refresh-history");
+const btnRefreshHistory = document.getElementById("btn-refresh-history-sidebar");
 const modelPresetSelect = document.getElementById("model-preset");
 const settingDisableStreaming = document.getElementById("setting-disable-streaming");
 const settingConcurrency = document.getElementById("setting-concurrency");
@@ -345,8 +347,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Tab Navigation Listeners
-  if (tabChat) tabChat.addEventListener("click", () => handleTabClick("chat"));
-  if (tabHistory) tabHistory.addEventListener("click", () => handleTabClick("history"));
+  if (tabWorkspace) tabWorkspace.addEventListener("click", () => handleSidebarTabClick("workspace"));
+  if (tabChat) tabChat.addEventListener("click", () => handleSidebarTabClick("chat"));
+  if (tabHistory) tabHistory.addEventListener("click", () => handleSidebarTabClick("history"));
 
   // Document Refresh Listeners
   if (btnRefreshHistory) btnRefreshHistory.addEventListener("click", loadChatHistorySessions);
@@ -1207,46 +1210,81 @@ function updateSetupRecentWorkspaces() {
   renderWorkspaceListOnly();
 }
 
-// Tab Switching Logic
-function switchTab(tabId) {
-  const tabs = [tabChat, tabHistory];
-  const views = [viewChat, viewHistory];
+// Tab Switching and Sidebar Navigation Logic
+let activeSidebarTab = "workspace";
+
+function switchSidebarTab(tabId) {
   const leftSidebar = document.getElementById("left-sidebar");
+  const sidebarTitle = document.getElementById("left-sidebar-title");
   
   if (leftSidebar) {
     leftSidebar.classList.remove("hidden");
   }
   
-  tabs.forEach(t => { if (t) t.classList.remove("active"); });
-  views.forEach(v => { if (v) v.classList.add("hidden"); });
+  // Reset tab button active states
+  if (tabWorkspace) tabWorkspace.classList.remove("active");
+  if (tabChat) tabChat.classList.remove("active");
+  if (tabHistory) tabHistory.classList.remove("active");
   
-  if (tabId === "chat" && tabChat && viewChat) {
-    tabChat.classList.add("active");
-    viewChat.classList.remove("hidden");
-  } else if (tabId === "history" && tabHistory && viewHistory) {
-    tabHistory.classList.add("active");
-    viewHistory.classList.remove("hidden");
+  // Hide all sidebar views
+  if (viewWorkspace) viewWorkspace.classList.add("hidden");
+  if (viewHistory) viewHistory.classList.add("hidden");
+  
+  if (tabId === "workspace") {
+    if (tabWorkspace) tabWorkspace.classList.add("active");
+    if (viewWorkspace) viewWorkspace.classList.remove("hidden");
+    if (sidebarTitle) sidebarTitle.textContent = "Workspace";
+    activeSidebarTab = "workspace";
+  } else if (tabId === "history") {
+    if (tabHistory) tabHistory.classList.add("active");
+    if (viewHistory) viewHistory.classList.remove("hidden");
+    if (sidebarTitle) sidebarTitle.textContent = "History";
+    activeSidebarTab = "history";
     loadChatHistorySessions();
   }
 }
 
-function handleTabClick(tabId) {
+function handleSidebarTabClick(tabId) {
   const leftSidebar = document.getElementById("left-sidebar");
-  const tabButton = tabId === "chat" ? tabChat : tabHistory;
   
-  if (tabButton && tabButton.classList.contains("active")) {
+  if (tabId === "chat") {
     if (leftSidebar) {
       const isHidden = leftSidebar.classList.contains("hidden");
       if (isHidden) {
-        leftSidebar.classList.remove("hidden");
-        tabButton.classList.add("active");
+        // Show sidebar and active tab
+        switchSidebarTab(activeSidebarTab);
       } else {
+        // Collapse sidebar and focus Chat
         leftSidebar.classList.add("hidden");
-        tabButton.classList.remove("active");
+        if (tabWorkspace) tabWorkspace.classList.remove("active");
+        if (tabHistory) tabHistory.classList.remove("active");
+        if (tabChat) tabChat.classList.add("active");
       }
     }
   } else {
-    switchTab(tabId);
+    const tabButton = tabId === "workspace" ? tabWorkspace : tabHistory;
+    if (leftSidebar && !leftSidebar.classList.contains("hidden") && activeSidebarTab === tabId) {
+      // Toggle off
+      leftSidebar.classList.add("hidden");
+      if (tabButton) tabButton.classList.remove("active");
+    } else {
+      switchSidebarTab(tabId);
+    }
+  }
+}
+
+// Legacy switchTab wrapper for backward compatibility
+function switchTab(tabId) {
+  if (tabId === "chat") {
+    const leftSidebar = document.getElementById("left-sidebar");
+    if (leftSidebar) {
+      leftSidebar.classList.add("hidden");
+    }
+    if (tabWorkspace) tabWorkspace.classList.remove("active");
+    if (tabHistory) tabHistory.classList.remove("active");
+    if (tabChat) tabChat.classList.add("active");
+  } else {
+    switchSidebarTab(tabId);
   }
 }
 

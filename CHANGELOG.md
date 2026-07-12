@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.314] - 2026-07-12
+
+### Changed
+- **Activity Bar Workspace Tab Integration**:
+  - Reorganized the Left Sidebar layout to run as a unified tab-view switcher container.
+  - Added a dedicated Workspace folder icon button (#tab-workspace) to the Left Activity Bar.
+  - Moved the Workspace Switcher list and Chat History list into the Collapsible Left Sidebar, displaying them dynamically under the 'Workspace' and 'History' headings.
+  - Made the Chat panel view occupy the primary right main content view adjacent to the Left Sidebar, maintaining full editor height and maximizing visual workspace efficiency.
+
+---
+
 ## [1.2.313] - 2026-07-12
 
 ### Fixed

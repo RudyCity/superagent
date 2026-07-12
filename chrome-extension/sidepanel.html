@@ -84,8 +84,12 @@
       <!-- VS Code Style Activity Bar (Left Menu) -->
       <aside class="w-12 bg-vscode-activitybar border-r border-vscode-dim flex flex-col justify-between items-center py-3 shrink-0">
         <div class="flex flex-col gap-4.5 w-full items-center">
+          <!-- Workspace Icon -->
+          <button id="tab-workspace" class="tab-btn active w-10 h-10 flex items-center justify-center rounded-md cursor-pointer transition-colors text-vscode-muted hover:text-vscode-light relative" title="Workspace">
+            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+          </button>
           <!-- Chat Icon -->
-          <button id="tab-chat" class="tab-btn active w-10 h-10 flex items-center justify-center rounded-md cursor-pointer transition-colors text-vscode-muted hover:text-vscode-light relative" title="Chat">
+          <button id="tab-chat" class="tab-btn w-10 h-10 flex items-center justify-center rounded-md cursor-pointer transition-colors text-vscode-muted hover:text-vscode-light relative" title="Chat">
             <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
           </button>
           <!-- History Icon -->
@@ -95,91 +99,90 @@
         </div>
       </aside>
 
-      <!-- Left Sidebar (Workspace Panel) -->
+      <!-- Left Sidebar (Workspace / History Panel) -->
       <aside id="left-sidebar" class="w-56 bg-vscode-sidebar border-r border-vscode-dim flex flex-col overflow-hidden shrink-0">
         <!-- Panel Header -->
-        <div class="panel-header p-3 border-b border-vscode-dim flex items-center justify-between bg-vscode-activitybar">
-          <h3 class="text-[11px] font-bold text-vscode-light uppercase tracking-wider">Workspace</h3>
+        <div class="panel-header p-3 border-b border-vscode-dim flex items-center justify-between bg-vscode-activitybar shrink-0">
+          <h3 id="left-sidebar-title" class="text-[11px] font-bold text-vscode-light uppercase tracking-wider">Workspace</h3>
         </div>
         
-        <!-- Workspace switcher/list & Add Workspace section -->
-        <div class="p-3 border-b border-vscode-dim flex flex-col gap-3 shrink-0">
-          <!-- Active Workspace Label -->
-          <div class="flex flex-col gap-1">
-            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Active Workspace</span>
-            <span id="active-workspace-text" class="font-mono text-vscode-bright font-medium text-[11px] truncate block bg-vscode-inner px-2 py-1.5 border border-vscode-dim rounded-sm" title="Not Selected">Not Selected</span>
+        <!-- Tab Content View: Workspace -->
+        <div id="view-workspace" class="tab-view flex-1 flex flex-col overflow-hidden">
+          <!-- Workspace switcher/list & Add Workspace section -->
+          <div class="p-3 border-b border-vscode-dim flex flex-col gap-3 shrink-0">
+            <!-- Active Workspace Label -->
+            <div class="flex flex-col gap-1">
+              <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Active Workspace</span>
+              <span id="active-workspace-text" class="font-mono text-vscode-bright font-medium text-[11px] truncate block bg-vscode-inner px-2 py-1.5 border border-vscode-dim rounded-sm" title="Not Selected">Not Selected</span>
+            </div>
+
+            <!-- Add Workspace folder button/input -->
+            <div class="flex flex-col gap-1.5">
+              <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Add Workspace</span>
+              <div class="input-with-button flex gap-1">
+                <input type="text" id="workspace-path" placeholder="e.g. C:\\Projects\\my-app" required class="flex-1 bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1 font-mono text-[10.5px] outline-none h-6 focus:border-vscode-bright">
+                <button id="btn-browse" type="button" class="btn btn-secondary font-sans font-medium text-[10px] px-2 py-0.5 border rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-6">Browse</button>
+              </div>
+              <button id="btn-add-workspace" class="btn btn-primary w-full font-sans font-medium text-[10.5px] px-2.5 py-1 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-blue text-white hover:bg-vscode-blue-hover h-6">+ Add Workspace</button>
+            </div>
           </div>
 
-          <!-- Add Workspace folder button/input -->
-          <div class="flex flex-col gap-1.5">
-            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Add Workspace</span>
-            <div class="input-with-button flex gap-1">
-              <input type="text" id="workspace-path" placeholder="e.g. C:\\Projects\\my-app" required class="flex-1 bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2 py-1 font-mono text-[10.5px] outline-none h-6 focus:border-vscode-bright">
-              <button id="btn-browse" type="button" class="btn btn-secondary font-sans font-medium text-[10px] px-2 py-0.5 border rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-6">Browse</button>
+          <!-- Saved Workspaces list -->
+          <div class="flex-1 flex flex-col overflow-hidden">
+            <div class="px-3 py-1.5 bg-vscode-inner border-b border-vscode-dim shrink-0">
+              <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Saved Workspaces</span>
             </div>
-            <button id="btn-add-workspace" class="btn btn-primary w-full font-sans font-medium text-[10.5px] px-2.5 py-1 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-blue text-white hover:bg-vscode-blue-hover h-6">+ Add Workspace</button>
+            <div id="saved-workspaces-list" class="saved-workspaces-list flex-1 overflow-y-auto p-1.5 flex flex-col gap-1">
+              <!-- Saved workspaces item list -->
+            </div>
           </div>
         </div>
 
-        <!-- Saved Workspaces list -->
-        <div class="flex-1 flex flex-col overflow-hidden">
-          <div class="px-3 py-1.5 bg-vscode-inner border-b border-vscode-dim shrink-0">
-            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Saved Workspaces</span>
+        <!-- Tab Content View: History -->
+        <div id="view-history" class="tab-view flex-1 flex flex-col overflow-hidden hidden">
+          <div class="px-3 py-1.5 bg-vscode-inner border-b border-vscode-dim shrink-0 flex justify-between items-center">
+            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Saved Sessions</span>
+            <button id="btn-refresh-history-sidebar" class="btn btn-secondary text-[9px] px-1.5 py-0.5 cursor-pointer">Refresh</button>
           </div>
-          <div id="saved-workspaces-list" class="saved-workspaces-list flex-1 overflow-y-auto p-1.5 flex flex-col gap-1">
-            <!-- Saved workspaces item list -->
+          <div id="chat-history-list" class="chat-history-list flex-1 overflow-y-auto p-1.5 flex flex-col gap-1.5">
+            <div class="p-3 text-center text-vscode-muted text-[11px]">No previous sessions</div>
           </div>
         </div>
       </aside>
 
       <!-- Right Main Content Panel -->
       <div class="flex-1 flex flex-col overflow-hidden bg-vscode-editor">
-        <div class="workspace-area flex-1 flex flex-col overflow-hidden">
-          <!-- CHAT CONTENT VIEW -->
-          <div id="view-chat" class="tab-view flex-1 flex flex-col overflow-hidden">
-            <!-- CLI Mode Banner (status strip version) -->
-            <div id="cli-mode-banner" class="cli-mode-banner hidden p-2 bg-vscode-inner border-b border-vscode-dim flex items-center justify-between shrink-0">
-              <div class="flex items-center gap-1.5">
-                <div class="glow-dot w-1.5 h-1.5 bg-amber-warning rounded-full shadow-[0_0_6px_var(--color-amber-warning)]"></div>
-                <span class="font-mono text-[10px] text-vscode-primary font-bold">CONNECTED TO CLI SESSION</span>
-              </div>
-              <span class="text-[9.5px] text-vscode-muted">Dual Control Active</span>
+        <!-- CHAT CONTENT VIEW -->
+        <div id="view-chat" class="flex-1 flex flex-col overflow-hidden">
+          <!-- CLI Mode Banner (status strip version) -->
+          <div id="cli-mode-banner" class="cli-mode-banner hidden p-2 bg-vscode-inner border-b border-vscode-dim flex items-center justify-between shrink-0">
+            <div class="flex items-center gap-1.5">
+              <div class="glow-dot w-1.5 h-1.5 bg-amber-warning rounded-full shadow-[0_0_6px_var(--color-amber-warning)]"></div>
+              <span class="font-mono text-[10px] text-vscode-primary font-bold">CONNECTED TO CLI SESSION</span>
             </div>
-
-            <!-- Chat actions: New Chat -->
-            <div class="chat-actions flex items-center justify-between px-3.5 py-1.5 border-b border-vscode-dim bg-vscode-sidebar shrink-0 relative">
-              <button id="btn-new-chat" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 font-sans font-medium border border-vscode-dim rounded-sm cursor-pointer inline-flex items-center justify-center gap-1 bg-vscode-inner text-vscode-primary hover:bg-vscode-hover hover:text-white" title="Clear history and start a new chat">
-                <svg class="w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-                <span>New Chat</span>
-              </button>
-            </div>
-
-            <div class="chat-container flex-1 flex flex-col bg-vscode-editor relative overflow-hidden">
-              <div id="chat-messages" class="chat-messages flex-1 overflow-y-auto p-3.5 flex flex-col gap-3">
-                <!-- Messages stream here -->
-
-
-
-                <!-- Typing / Progress Indicator -->
-                <div id="processing-indicator" class="processing-indicator items-center gap-2 p-1">
-                  <div class="spinner w-3 h-3 border-[1.5px] border-vscode-dim border-t-vscode-bright rounded-full animate-spin"></div>
-                  <span id="processing-text" class="text-[11px] text-vscode-muted">Agent is thinking...</span>
-                </div>
-              </div>
-            </div>
+            <span class="text-[9.5px] text-vscode-muted">Dual Control Active</span>
           </div>
 
-          <!-- HISTORY CONTENT VIEW -->
-          <div id="view-history" class="tab-view flex-1 overflow-y-auto p-4 bg-vscode-editor hidden">
-            <div class="doc-header flex justify-between items-center mb-3">
-              <h3 class="text-[11px] font-bold text-vscode-light uppercase tracking-wider">Chat History</h3>
-              <button id="btn-refresh-history" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 cursor-pointer">Refresh</button>
-            </div>
-            <div id="chat-history-list" class="chat-history-list flex flex-col gap-2 max-h-[calc(100vh-140px)] overflow-y-auto">
-              <div class="p-3 text-center text-vscode-muted text-[11px]">No previous sessions</div>
-            </div>
+          <!-- Chat actions: New Chat -->
+          <div class="chat-actions flex items-center justify-between px-3.5 py-1.5 border-b border-vscode-dim bg-vscode-sidebar shrink-0 relative">
+            <button id="btn-new-chat" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 font-sans font-medium border border-vscode-dim rounded-sm cursor-pointer inline-flex items-center justify-center gap-1 bg-vscode-inner text-vscode-primary hover:bg-vscode-hover hover:text-white" title="Clear history and start a new chat">
+              <svg class="w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+              <span>New Chat</span>
+            </button>
           </div>
+
+          <div class="chat-container flex-1 flex flex-col bg-vscode-editor relative overflow-hidden">
+            <div id="chat-messages" class="chat-messages flex-1 overflow-y-auto p-3.5 flex flex-col gap-3">
+              <!-- Messages stream here -->
+
+              <!-- Typing / Progress Indicator -->
+              <div id="processing-indicator" class="processing-indicator items-center gap-2 p-1">
+                <div class="spinner w-3 h-3 border-[1.5px] border-vscode-dim border-t-vscode-bright rounded-full animate-spin"></div>
+                <span id="processing-text" class="text-[11px] text-vscode-muted">Agent is thinking...</span>
+              </div>
+            </div>
         </div>
+      </div>
 
         <!-- Action Footer -->
         <div class="chat-footer bg-vscode-sidebar border-t border-vscode-dim p-3 flex flex-col gap-1.5 shrink-0 relative">
