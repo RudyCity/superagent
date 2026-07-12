@@ -598,9 +598,8 @@ function appendJobFinishFooter(msgEl, startTime) {
     ? `${mins}m ${secs}s`
     : `${secs}s`;
 
-  // Grab summary text from the agent message text content
-  const contentSpan = msgEl.querySelector(".msg-content-text");
-  const summaryText = msgEl.dataset.rawMarkdown || (contentSpan ? contentSpan.textContent.trim() : "");
+  // Grab the content element (the chat bubble)
+  const contentDiv = msgEl.querySelector(".msg-content");
 
   // Build footer container
   const footer = document.createElement("div");
@@ -626,43 +625,30 @@ function appendJobFinishFooter(msgEl, startTime) {
 
   const toggleBtn = document.createElement("button");
   toggleBtn.className = "job-finish-toggle";
-  toggleBtn.textContent = "Summary ▴"; // default open
-  toggleBtn.title = "Toggle summary";
+  toggleBtn.textContent = "Summary ▴"; // default open (visible)
+  toggleBtn.title = "Toggle summary visibility";
 
   badgeRow.appendChild(checkIcon);
   badgeRow.appendChild(badge);
   badgeRow.appendChild(toggleBtn);
 
-  // Summary card (default expanded)
-  const summaryCard = document.createElement("div");
-  summaryCard.className = "job-summary-card";
-
-  const summaryLabel = document.createElement("div");
-  summaryLabel.className = "job-summary-label";
-  summaryLabel.textContent = "Summary";
-
-  const summaryBody = document.createElement("div");
-  summaryBody.className = "job-summary-body";
-
-  if (summaryText) {
-    summaryBody.innerHTML = formatMarkdown(summaryText);
-  } else {
-    summaryBody.textContent = "No summary available.";
-  }
-
-  summaryCard.appendChild(summaryLabel);
-  summaryCard.appendChild(summaryBody);
-
-  // Toggle logic for summary card
+  // Toggle logic for the original chat bubble content
   toggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    const isHidden = summaryCard.classList.contains("hidden");
-    summaryCard.classList.toggle("hidden", !isHidden);
-    toggleBtn.textContent = isHidden ? "Summary ▴" : "Summary ▾";
+    if (contentDiv) {
+      const isHidden = contentDiv.classList.contains("hidden");
+      contentDiv.classList.toggle("hidden", !isHidden);
+      toggleBtn.textContent = isHidden ? "Summary ▴" : "Summary ▾";
+    }
   });
 
   // Clicking finished badge row will toggle the tools usage visibility
   badgeRow.addEventListener("click", () => {
+    // If the content div is hidden, expand it first!
+    if (contentDiv && contentDiv.classList.contains("hidden")) {
+      contentDiv.classList.remove("hidden");
+      toggleBtn.textContent = "Summary ▴";
+    }
     let anyVisible = false;
     toolBlocks.forEach(tb => {
       if (!tb.classList.contains("hidden")) {
@@ -675,14 +661,13 @@ function appendJobFinishFooter(msgEl, startTime) {
   });
 
   footer.appendChild(badgeRow);
-  footer.appendChild(summaryCard);
 
   // Inject after the msg content (outside the msg-content div, inside .msg)
   msgEl.appendChild(footer);
 
-  // Directly scroll the summary card into view smoothly
+  // Directly scroll the message into view smoothly
   setTimeout(() => {
-    summaryCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    msgEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, 100);
 }
 

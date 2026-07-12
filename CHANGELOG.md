@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.328] - 2026-07-12
+
+### Changed
+- **Response Stream and Summary Consistency**:
+  - Configured response text to format as Markdown incrementally in real-time while streaming, ensuring visual consistency between the stream and the final state.
+  - Simplified the job finish collapsible footer to directly toggle the visibility of the original chat bubble element instead of duplicating text in a separate summary card.
+
+---
+
 ## [1.2.327] - 2026-07-12
 
 ### Changed

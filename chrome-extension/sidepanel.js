@@ -695,9 +695,13 @@ function handleSSEEvent(data) {
         if (!currentAgentMessageElement) {
           currentAgentMessageElement = appendMessage("agent", "");
         }
-        // Append text chunk
+        // Append text chunk and format as markdown incrementally
         const contentSpan = currentAgentMessageElement.querySelector(".msg-content-text") || currentAgentMessageElement.querySelector(".msg-content");
-        contentSpan.textContent += e.content;
+        if (contentSpan) {
+          const rawText = (currentAgentMessageElement.dataset.rawMarkdown || "") + e.content;
+          currentAgentMessageElement.dataset.rawMarkdown = rawText;
+          contentSpan.innerHTML = formatMarkdown(rawText);
+        }
 
         if (!streamStartTime) streamStartTime = Date.now();
         streamCharCount += e.content.length;
@@ -886,8 +890,9 @@ function handleSSEEvent(data) {
         if (currentAgentMessageElement) {
           const contentSpan = currentAgentMessageElement.querySelector(".msg-content-text");
           if (contentSpan) {
-            currentAgentMessageElement.dataset.rawMarkdown = contentSpan.textContent;
-            contentSpan.innerHTML = formatMarkdown(contentSpan.textContent);
+            const rawMarkdown = currentAgentMessageElement.dataset.rawMarkdown || contentSpan.textContent;
+            currentAgentMessageElement.dataset.rawMarkdown = rawMarkdown;
+            contentSpan.innerHTML = formatMarkdown(rawMarkdown);
           }
           // Inject "Finished in Xm Xs" badge + summary footer
           appendJobFinishFooter(currentAgentMessageElement, agentJobStartTime);
