@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.302] - 2026-07-12
+
+### Changed
+- **Chrome Extension Tasks Checklist Layout**:
+  - Replaced the in-stream task message cards with a dedicated persistent task checklist panel positioned right above the input box.
+  - Implemented a visible limit of 3 task items max (`max-h-[58px]`) with scrollability for overflow.
+  - Refactored `renderTasks` and `renderAgentsTree` to target the new persistent panel, and added clear/reset routines inside `clearChatMessages`.
+
+---
+
 ## [1.2.301] - 2026-07-12
 
 ### Fixed

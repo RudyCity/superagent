@@ -148,6 +148,18 @@ function clearChatMessages() {
   
   window.lastSerializedTasks = "";
   window.currentTasksCardElement = null;
+
+  // Clear and hide persistent tasks panel
+  const persistentPanel = document.getElementById("persistent-tasks-panel");
+  if (persistentPanel) {
+    persistentPanel.classList.add("hidden");
+    const listEl = document.getElementById("persistent-tasks-list");
+    if (listEl) listEl.innerHTML = "";
+    const agentsSection = document.getElementById("persistent-agents-section");
+    if (agentsSection) agentsSection.classList.add("hidden");
+    const agentsList = document.getElementById("persistent-agents-list");
+    if (agentsList) agentsList.innerHTML = "";
+  }
 }
 
 

@@ -878,89 +878,79 @@ async function pollChecklistAndAgents() {
     }
   } catch {}
 }
-// Render task list as a dynamically appended message card in the chat log when it updates
+// Render task list in the persistent panel above the input area
 function renderTasks(tasks) {
-  if (!tasks || tasks.length === 0) return;
+  const panel = document.getElementById("persistent-tasks-panel");
+  if (!panel) return;
+
+  if (!tasks || tasks.length === 0) {
+    panel.classList.add("hidden");
+    return;
+  }
 
   // Initialize tracking variables on window if not yet set
   if (typeof window.lastSerializedTasks === "undefined") {
     window.lastSerializedTasks = "";
-    window.currentTasksCardElement = null;
   }
 
   const serialized = JSON.stringify(tasks);
-  if (serialized === window.lastSerializedTasks) return;
+  if (serialized === window.lastSerializedTasks) {
+    panel.classList.remove("hidden");
+    return;
+  }
   window.lastSerializedTasks = serialized;
 
-  // Build a new checklist card element
-  const card = document.createElement("div");
-  card.className = "msg msg-tasks p-3 bg-vscode-sidebar border border-vscode-dim rounded-[3px] flex flex-col gap-2.5 font-sans text-[11px] text-vscode-primary select-none my-2";
+  panel.classList.remove("hidden");
 
   let completed = 0;
   tasks.forEach(t => {
     if (t.status === "x") completed++;
   });
 
-  card.innerHTML = `
-    <div class="flex flex-col gap-1.5">
-      <div class="flex items-center justify-between border-b border-vscode-dim pb-1 mb-0.5">
-        <span class="font-bold text-vscode-bright uppercase tracking-wider text-[9px]">Execution Tasks</span>
-        <span class="text-[9px] bg-vscode-blue/20 text-vscode-bright px-1.5 py-0.5 rounded-full font-mono">${completed}/${tasks.length}</span>
-      </div>
-      <div class="tasks-list flex flex-col gap-1"></div>
-    </div>
-    <div class="agents-section hidden flex flex-col gap-1.5 border-t border-vscode-dim pt-2">
-      <span class="font-bold text-vscode-bright uppercase tracking-wider text-[9px]">Active Agents</span>
-      <div class="agents-list flex flex-wrap gap-1"></div>
-    </div>
-  `;
-
-  const listEl = card.querySelector(".tasks-list");
-  tasks.forEach(t => {
-    const row = document.createElement("div");
-    row.className = "flex items-center gap-2 py-0.5 text-[11px] font-sans leading-tight";
-
-    let icon = "○";
-    let textClass = "text-vscode-primary";
-
-    if (t.status === "x") {
-      icon = "✓";
-      textClass = "line-through text-vscode-muted";
-    } else if (t.status === "/") {
-      icon = "◌";
-      textClass = "text-vscode-bright font-medium";
-    }
-
-    const iconSpan = document.createElement("span");
-    iconSpan.className = `font-mono text-[10px] select-none ${t.status === '/' ? 'animate-spin inline-block text-vscode-blue' : (t.status === 'x' ? 'text-green-success font-bold' : 'text-vscode-muted')}`;
-    iconSpan.textContent = icon;
-
-    const textSpan = document.createElement("span");
-    textSpan.className = `${textClass} flex-1 overflow-hidden text-ellipsis`;
-    textSpan.textContent = t.text;
-
-    row.appendChild(iconSpan);
-    row.appendChild(textSpan);
-    listEl.appendChild(row);
-  });
-
-  // Append card to chatMessages
-  if (processingIndicator && processingIndicator.parentNode === chatMessages) {
-    chatMessages.insertBefore(card, processingIndicator);
-  } else {
-    chatMessages.appendChild(card);
+  const countEl = document.getElementById("persistent-tasks-count");
+  if (countEl) {
+    countEl.textContent = `${completed}/${tasks.length}`;
   }
 
-  window.currentTasksCardElement = card;
+  const listEl = document.getElementById("persistent-tasks-list");
+  if (listEl) {
+    listEl.innerHTML = "";
+    tasks.forEach(t => {
+      const row = document.createElement("div");
+      row.className = "flex items-center gap-2 py-0.5 text-[11px] font-sans leading-tight";
+
+      let icon = "○";
+      let textClass = "text-vscode-primary";
+
+      if (t.status === "x") {
+        icon = "✓";
+        textClass = "line-through text-vscode-muted";
+      } else if (t.status === "/") {
+        icon = "◌";
+        textClass = "text-vscode-bright font-medium";
+      }
+
+      const iconSpan = document.createElement("span");
+      iconSpan.className = `font-mono text-[10px] select-none ${t.status === '/' ? 'animate-spin inline-block text-vscode-blue' : (t.status === 'x' ? 'text-green-success font-bold' : 'text-vscode-muted')}`;
+      iconSpan.textContent = icon;
+
+      const textSpan = document.createElement("span");
+      textSpan.className = `${textClass} flex-1 overflow-hidden text-ellipsis`;
+      textSpan.textContent = t.text;
+
+      row.appendChild(iconSpan);
+      row.appendChild(textSpan);
+      listEl.appendChild(row);
+    });
+  }
+  
   scrollToBottom();
 }
 
-// Render active subagents/superagents inside the most recently appended tasks card
+// Render active subagents/superagents inside the persistent tasks panel
 function renderAgentsTree(subagents, superagents) {
-  if (!window.currentTasksCardElement) return;
-
-  const section = window.currentTasksCardElement.querySelector(".agents-section");
-  const listEl = window.currentTasksCardElement.querySelector(".agents-list");
+  const section = document.getElementById("persistent-agents-section");
+  const listEl = document.getElementById("persistent-agents-list");
   if (!section || !listEl) return;
 
   const hasAgents = (subagents && subagents.length > 0) || (superagents && superagents.length > 0);
