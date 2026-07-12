@@ -3,9 +3,9 @@
 @layer theme, base, components, utilities;
 @layer theme {
   :root, :host {
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-sans: 'Google Sans', 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-    --font-mono: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+    --font-mono: 'JetBrains Mono', 'Roboto Mono', 'Consolas', monospace;
     --color-red-500: oklch(63.7% 0.237 25.331);
     --color-red-600: oklch(57.7% 0.245 27.325);
     --color-amber-500: oklch(76.9% 0.188 70.08);
@@ -78,10 +78,10 @@
     --leading-tight: 1.25;
     --leading-normal: 1.5;
     --leading-relaxed: 1.625;
-    --radius-sm: 0.25rem;
-    --radius-md: 0.375rem;
-    --radius-lg: 0.5rem;
-    --radius-xl: 0.75rem;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
     --radius-2xl: 1rem;
     --radius-3xl: 1.5rem;
     --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
@@ -97,25 +97,25 @@
     --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
-    --color-vscode-editor: #1e1e1e;
-    --color-vscode-sidebar: #252526;
-    --color-vscode-activitybar: #181818;
-    --color-vscode-inner: #2d2d2d;
-    --color-vscode-hover: #37373d;
-    --color-vscode-dim: #3c3c3c;
-    --color-vscode-bright: #007fd4;
-    --color-vscode-blue: #0e639c;
-    --color-vscode-blue-hover: #1177bb;
-    --color-vscode-blue-light: rgba(14, 99, 156, 0.2);
-    --color-vscode-primary: #cccccc;
-    --color-vscode-muted: #858585;
+    --color-vscode-editor: #131314;
+    --color-vscode-sidebar: #1e1f20;
+    --color-vscode-activitybar: #1e1f20;
+    --color-vscode-inner: #2b2c2e;
+    --color-vscode-hover: #3c3d3f;
+    --color-vscode-dim: #444746;
+    --color-vscode-bright: #a8c7fa;
+    --color-vscode-blue: #a8c7fa;
+    --color-vscode-blue-hover: #c2e7ff;
+    --color-vscode-blue-light: rgba(168, 199, 250, 0.12);
+    --color-vscode-primary: #e3e3e3;
+    --color-vscode-muted: #c4c7c5;
     --color-vscode-light: #ffffff;
-    --color-green-success: #4ec9b0;
-    --color-green-success-light: rgba(78, 201, 176, 0.15);
-    --color-amber-warning: #cca700;
-    --color-amber-warning-light: rgba(204, 167, 0, 0.15);
-    --color-red-error: #f48771;
-    --color-red-error-light: rgba(244, 135, 113, 0.15);
+    --color-green-success: #c4eed0;
+    --color-green-success-light: rgba(196, 238, 208, 0.15);
+    --color-amber-warning: #fde293;
+    --color-amber-warning-light: rgba(253, 226, 147, 0.15);
+    --color-red-error: #f28b82;
+    --color-red-error-light: rgba(242, 139, 130, 0.15);
   }
 }
 @layer base {
@@ -1053,7 +1053,7 @@
     border-color: rgba(244,135,113,0.3);
   }
   .border-amber-warning\/30 {
-    border-color: color-mix(in srgb, #cca700 30%, transparent);
+    border-color: color-mix(in srgb, #fde293 30%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-amber-warning) 30%, transparent);
     }
@@ -1068,7 +1068,7 @@
     border-color: var(--color-green-success);
   }
   .border-green-success\/30 {
-    border-color: color-mix(in srgb, #4ec9b0 30%, transparent);
+    border-color: color-mix(in srgb, #c4eed0 30%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-green-success) 30%, transparent);
     }
@@ -1086,7 +1086,7 @@
     border-color: var(--color-red-error);
   }
   .border-red-error\/30 {
-    border-color: color-mix(in srgb, #f48771 30%, transparent);
+    border-color: color-mix(in srgb, #f28b82 30%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-red-error) 30%, transparent);
     }
@@ -1098,7 +1098,7 @@
     border-color: transparent;
   }
   .border-vscode-blue\/30 {
-    border-color: color-mix(in srgb, #0e639c 30%, transparent);
+    border-color: color-mix(in srgb, #a8c7fa 30%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-vscode-blue) 30%, transparent);
     }
@@ -1110,13 +1110,13 @@
     border-color: var(--color-vscode-dim);
   }
   .border-vscode-dim\/30 {
-    border-color: color-mix(in srgb, #3c3c3c 30%, transparent);
+    border-color: color-mix(in srgb, #444746 30%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-vscode-dim) 30%, transparent);
     }
   }
   .border-vscode-dim\/50 {
-    border-color: color-mix(in srgb, #3c3c3c 50%, transparent);
+    border-color: color-mix(in srgb, #444746 50%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-vscode-dim) 50%, transparent);
     }
@@ -1131,7 +1131,7 @@
     background-color: var(--color-amber-warning);
   }
   .bg-amber-warning\/20 {
-    background-color: color-mix(in srgb, #cca700 20%, transparent);
+    background-color: color-mix(in srgb, #fde293 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-amber-warning) 20%, transparent);
     }
@@ -1188,13 +1188,13 @@
     background-color: var(--color-green-success);
   }
   .bg-green-success\/15 {
-    background-color: color-mix(in srgb, #4ec9b0 15%, transparent);
+    background-color: color-mix(in srgb, #c4eed0 15%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-green-success) 15%, transparent);
     }
   }
   .bg-green-success\/20 {
-    background-color: color-mix(in srgb, #4ec9b0 20%, transparent);
+    background-color: color-mix(in srgb, #c4eed0 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-green-success) 20%, transparent);
     }
@@ -1215,13 +1215,13 @@
     background-color: var(--color-red-error-light);
   }
   .bg-red-error\/15 {
-    background-color: color-mix(in srgb, #f48771 15%, transparent);
+    background-color: color-mix(in srgb, #f28b82 15%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-red-error) 15%, transparent);
     }
   }
   .bg-red-error\/20 {
-    background-color: color-mix(in srgb, #f48771 20%, transparent);
+    background-color: color-mix(in srgb, #f28b82 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-red-error) 20%, transparent);
     }
@@ -1239,13 +1239,13 @@
     background-color: var(--color-vscode-blue);
   }
   .bg-vscode-blue\/20 {
-    background-color: color-mix(in srgb, #0e639c 20%, transparent);
+    background-color: color-mix(in srgb, #a8c7fa 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-vscode-blue) 20%, transparent);
     }
   }
   .bg-vscode-blue\/30 {
-    background-color: color-mix(in srgb, #0e639c 30%, transparent);
+    background-color: color-mix(in srgb, #a8c7fa 30%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-vscode-blue) 30%, transparent);
     }
@@ -1257,7 +1257,7 @@
     background-color: var(--color-vscode-inner);
   }
   .bg-vscode-inner\/20 {
-    background-color: color-mix(in srgb, #2d2d2d 20%, transparent);
+    background-color: color-mix(in srgb, #2b2c2e 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-vscode-inner) 20%, transparent);
     }
@@ -1266,7 +1266,7 @@
     background-color: var(--color-vscode-muted);
   }
   .bg-vscode-muted\/20 {
-    background-color: color-mix(in srgb, #858585 20%, transparent);
+    background-color: color-mix(in srgb, #c4c7c5 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-vscode-muted) 20%, transparent);
     }
@@ -1613,7 +1613,7 @@
     color: var(--color-vscode-muted);
   }
   .text-vscode-muted\/70 {
-    color: color-mix(in srgb, #858585 70%, transparent);
+    color: color-mix(in srgb, #c4c7c5 70%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       color: color-mix(in oklab, var(--color-vscode-muted) 70%, transparent);
     }
@@ -2392,37 +2392,39 @@
   --color-amber-light: var(--color-amber-warning-light);
   --color-red: var(--color-red-error);
   --color-red-light: var(--color-red-error-light);
-  --shadow-subtle: 0 2px 8px rgba(0,0,0,0.4);
-  --shadow-elevation: 0 4px 16px rgba(0,0,0,0.6);
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
-  --border-radius-sm: 2px;
-  --border-radius-md: 4px;
-  --border-radius-lg: 6px;
+  --shadow-subtle: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-elevation: 0 4px 12px rgba(0,0,0,0.4);
+  --font-sans: 'Google Sans', 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Roboto Mono', 'Consolas', monospace;
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --border-radius-xl: 16px;
+  --border-radius-pill: 100px;
 }
 @media (prefers-color-scheme: light) {
   :root {
     --bg-vscode-editor: #ffffff;
-    --bg-vscode-sidebar: #f3f3f3;
-    --bg-vscode-activitybar: #2c2c2c;
-    --bg-vscode-inner: #e4e4e7;
-    --bg-vscode-hover: #d4d4d8;
-    --border-vscode-dim: #d4d4d8;
-    --border-vscode-bright: #007acc;
-    --accent-vscode-blue: #007acc;
-    --accent-vscode-blue-hover: #0062a3;
-    --accent-vscode-blue-light: rgba(0, 122, 204, 0.1);
-    --text-vscode-primary: #333333;
-    --text-vscode-muted: #71717a;
-    --text-vscode-light: #000000;
-    --color-green: #388a34;
-    --color-green-light: rgba(56, 138, 52, 0.1);
-    --color-amber: #b89500;
-    --color-amber-light: rgba(184, 149, 0, 0.1);
-    --color-red: #c7254e;
-    --color-red-light: rgba(199, 37, 78, 0.1);
-    --shadow-subtle: 0 1px 3px rgba(0,0,0,0.1);
-    --shadow-elevation: 0 4px 12px rgba(0,0,0,0.15);
+    --bg-vscode-sidebar: #f0f4f9;
+    --bg-vscode-activitybar: #e9eef6;
+    --bg-vscode-inner: #dfe3eb;
+    --bg-vscode-hover: #d3d7df;
+    --border-vscode-dim: #dadce0;
+    --border-vscode-bright: #1a73e8;
+    --accent-vscode-blue: #1a73e8;
+    --accent-vscode-blue-hover: #1557b0;
+    --accent-vscode-blue-light: rgba(26, 115, 232, 0.08);
+    --text-vscode-primary: #3c4043;
+    --text-vscode-muted: #5f6368;
+    --text-vscode-light: #1f1f1f;
+    --color-green: #188038;
+    --color-green-light: rgba(24, 128, 56, 0.08);
+    --color-amber: #f9ab00;
+    --color-amber-light: rgba(249, 171, 0, 0.08);
+    --color-red: #d93025;
+    --color-red-light: rgba(217, 48, 37, 0.08);
+    --shadow-subtle: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
+    --shadow-elevation: 0 4px 8px 3px rgba(60,64,67,0.15);
   }
 }
 .checkbox-container input:checked + .checkmark {
@@ -2459,25 +2461,39 @@
   flex-direction: column;
   width: 100%;
   animation: fade-in 0.15s ease;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
+}
+.msg-user {
+  align-items: flex-end;
+}
+.msg-agent, .msg-system, .msg-question {
+  align-items: flex-start;
 }
 .msg-header {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 9px;
+  font-weight: 700;
   text-transform: uppercase;
   color: var(--text-vscode-muted);
-  margin-bottom: 3px;
-  padding-left: 2px;
+  margin-bottom: 4px;
+  padding-left: 6px;
+  letter-spacing: 0.05em;
+}
+.msg-user .msg-header {
+  padding-left: 0;
+  padding-right: 6px;
+  text-align: right;
 }
 .msg-content {
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
-  border-radius: var(--border-radius-sm);
+  border-radius: var(--border-radius-lg);
   background: var(--bg-vscode-sidebar);
   color: var(--text-vscode-primary);
   border: 1px solid var(--border-vscode-dim);
+  box-shadow: var(--shadow-subtle);
+  max-width: 88%;
 }
 .text-vscode-bright {
   color: var(--color-vscode-bright) !important;
@@ -2503,14 +2519,22 @@
   white-space: normal;
 }
 .msg-user .msg-content {
-  background: rgba(0, 127, 212, 0.05);
-  border-left: 3px solid var(--border-vscode-bright);
+  background: var(--accent-vscode-blue-light);
+  border: 1px solid rgba(26, 115, 232, 0.15);
+  border-radius: 18px 18px 4px 18px;
+}
+@media (prefers-color-scheme: dark) {
+  .msg-user .msg-content {
+    border: 1px solid rgba(168, 199, 250, 0.25);
+  }
 }
 .msg-agent .msg-content {
   background: var(--bg-vscode-editor);
+  border-radius: 18px 18px 18px 4px;
 }
 .msg-system .msg-content {
   background: var(--bg-vscode-inner);
+  border-radius: 12px;
   border-left: 3px solid var(--text-vscode-muted);
   font-style: italic;
 }
@@ -2519,6 +2543,7 @@
 }
 .msg-question .msg-content {
   background: var(--bg-vscode-inner);
+  border-radius: 18px 18px 18px 4px;
   border-left: 3px solid var(--border-vscode-bright);
 }
 .msg-question-answered .msg-header {
