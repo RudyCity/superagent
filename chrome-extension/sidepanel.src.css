@@ -381,7 +381,7 @@
   margin-bottom: 8px;
   border-radius: var(--border-radius-sm);
   font-size: 11px;
-  color: #6a9955; /* VS Code comment color */
+  color: #6a9955; /* Green code comment color */
   line-height: 1.4;
 }
 
@@ -608,7 +608,7 @@
   font-weight: 600;
 }
 
-/* Custom log files (VS Code Search / Git decorators) */
+/* Custom log files (Log Search / Git decorators) */
 .log-row {
   display: flex;
   align-items: center;
