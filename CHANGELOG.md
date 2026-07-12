@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.318] - 2026-07-12
+
+### Changed
+- **Removed Saved Workspaces Header**:
+  - Removed the redundant Saved Workspaces section heading from the Left Sidebar workspace tab layout to optimize visual space.
+
+---
+
 ## [1.2.317] - 2026-07-12
 
 ### Changed
