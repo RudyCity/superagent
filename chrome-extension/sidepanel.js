@@ -183,6 +183,20 @@ document.addEventListener("DOMContentLoaded", () => {
   btnApprovePlan.addEventListener("click", () => resolvePlanApproval("approve"));
   btnRejectPlan.addEventListener("click", () => resolvePlanApproval("reject"));
 
+  // Persistent tasks header expand/collapse listener
+  const tasksHeader = document.getElementById("persistent-tasks-header");
+  if (tasksHeader) {
+    tasksHeader.addEventListener("click", () => {
+      const content = document.getElementById("persistent-tasks-content");
+      const chevron = document.getElementById("persistent-tasks-chevron");
+      if (content && chevron) {
+        const isHidden = content.classList.contains("hidden");
+        content.classList.toggle("hidden", !isHidden);
+        chevron.textContent = isHidden ? "▼" : "▶";
+      }
+    });
+  }
+
  
   // Summary modal listeners
   const btnCloseSummary = document.getElementById("btn-close-summary");
@@ -901,6 +915,12 @@ function renderTasks(tasks) {
   window.lastSerializedTasks = serialized;
 
   panel.classList.remove("hidden");
+
+  // Auto-expand content panel when tasks update
+  const content = document.getElementById("persistent-tasks-content");
+  const chevron = document.getElementById("persistent-tasks-chevron");
+  if (content) content.classList.remove("hidden");
+  if (chevron) chevron.textContent = "▼";
 
   let completed = 0;
   tasks.forEach(t => {

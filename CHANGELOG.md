@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.304] - 2026-07-12
+
+### Added
+- **Chrome Extension Tasks Collapse/Expand Feature**:
+  - Implemented an interactive header toggle with a geometric chevron pointer (`▼` / `▶`) inside `sidepanel.html` that allows users to collapse or expand the persistent tasks checklist content.
+  - Added click listener registration on `#persistent-tasks-header` inside `sidepanel.js` to toggle visibility of `#persistent-tasks-content`.
+  - Configured `renderTasks` and `clearChatMessages` to automatically expand the checklist and reset the chevron back to expanded (`▼`) whenever tasks are updated or cleared.
+
+---
+
 ## [1.2.303] - 2026-07-12
 
 ### Changed

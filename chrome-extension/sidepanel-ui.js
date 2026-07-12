@@ -159,6 +159,12 @@ function clearChatMessages() {
     if (agentsSection) agentsSection.classList.add("hidden");
     const agentsList = document.getElementById("persistent-agents-list");
     if (agentsList) agentsList.innerHTML = "";
+    
+    // Reset collapse state
+    const content = document.getElementById("persistent-tasks-content");
+    const chevron = document.getElementById("persistent-tasks-chevron");
+    if (content) content.classList.remove("hidden");
+    if (chevron) chevron.textContent = "▼";
   }
 }
 
