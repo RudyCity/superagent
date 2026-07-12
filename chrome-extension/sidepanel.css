@@ -669,11 +669,11 @@
   .max-w-5xl {
     max-width: var(--container-5xl);
   }
-  .max-w-\[75px\] {
-    max-width: 75px;
+  .max-w-\[100px\] {
+    max-width: 100px;
   }
-  .max-w-\[85px\] {
-    max-width: 85px;
+  .max-w-\[120px\] {
+    max-width: 120px;
   }
   .max-w-\[140px\] {
     max-width: 140px;

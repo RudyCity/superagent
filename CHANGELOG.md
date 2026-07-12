@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.327] - 2026-07-12
+
+### Changed
+- **Preset Model Information**:
+  - Configured preset select dropdown options to display their active target model name (e.g., `fast (gemini-2.5-flash)`) for better model visibility.
+  - Adjusted header and toolbar select dropdown max-width limits to avoid excessive text truncation.
+
+---
+
 ## [1.2.326] - 2026-07-12
 
 ### Changed

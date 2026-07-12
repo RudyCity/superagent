@@ -759,8 +759,24 @@ function populateStandardSelect(selectId, presets, activePresetId) {
   presets.forEach(p => {
     const opt = document.createElement("option");
     opt.value = p.id;
-    opt.textContent = p.name;
-    opt.title = `${p.name} - ${p.description || ""}`;
+    
+    // Find model name for this preset
+    let modelName = "";
+    if (p.models) {
+      if (p.models.superagent) {
+        modelName = p.models.superagent.model || "";
+      } else if (p.models.master) {
+        modelName = p.models.master.model || "";
+      } else {
+        const keys = Object.keys(p.models);
+        if (keys.length > 0 && p.models[keys[0]]) {
+          modelName = p.models[keys[0]].model || "";
+        }
+      }
+    }
+    const displayModel = modelName ? ` (${modelName})` : "";
+    opt.textContent = `${p.name}${displayModel}`;
+    opt.title = `${p.name}${displayModel} - ${p.description || ""}`;
     if (p.id === activePresetId) {
       opt.selected = true;
     }
@@ -785,7 +801,23 @@ function updatePresetsDropdown() {
   presets.forEach(p => {
     const opt = document.createElement("option");
     opt.value = p.id;
-    opt.textContent = `${p.name} - ${p.description || ""}`;
+    
+    // Find model name for this preset
+    let modelName = "";
+    if (p.models) {
+      if (p.models.superagent) {
+        modelName = p.models.superagent.model || "";
+      } else if (p.models.master) {
+        modelName = p.models.master.model || "";
+      } else {
+        const keys = Object.keys(p.models);
+        if (keys.length > 0 && p.models[keys[0]]) {
+          modelName = p.models[keys[0]].model || "";
+        }
+      }
+    }
+    const displayModel = modelName ? ` (${modelName})` : "";
+    opt.textContent = `${p.name}${displayModel}${p.description ? ` - ${p.description}` : ""}`;
     if (p.id === activePresetId) {
       opt.selected = true;
     }
