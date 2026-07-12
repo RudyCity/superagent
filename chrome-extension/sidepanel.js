@@ -917,7 +917,7 @@ function renderTasks(tasks) {
     listEl.innerHTML = "";
     tasks.forEach(t => {
       const row = document.createElement("div");
-      row.className = "flex items-center gap-2 py-0.5 text-[11px] font-sans leading-tight";
+      row.className = "flex items-center gap-1.5 py-[1px] text-[10px] font-sans leading-tight";
 
       let icon = "○";
       let textClass = "text-vscode-primary";
@@ -931,7 +931,7 @@ function renderTasks(tasks) {
       }
 
       const iconSpan = document.createElement("span");
-      iconSpan.className = `font-mono text-[10px] select-none ${t.status === '/' ? 'animate-spin inline-block text-vscode-blue' : (t.status === 'x' ? 'text-green-success font-bold' : 'text-vscode-muted')}`;
+      iconSpan.className = `font-mono text-[9px] select-none ${t.status === '/' ? 'animate-spin inline-block text-vscode-blue' : (t.status === 'x' ? 'text-green-success font-bold' : 'text-vscode-muted')}`;
       iconSpan.textContent = icon;
 
       const textSpan = document.createElement("span");

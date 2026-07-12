@@ -588,6 +588,9 @@
   .max-h-60 {
     max-height: calc(var(--spacing) * 60);
   }
+  .max-h-\[50px\] {
+    max-height: 50px;
+  }
   .max-h-\[58px\] {
     max-height: 58px;
   }
@@ -1381,14 +1384,20 @@
   .py-20 {
     padding-block: calc(var(--spacing) * 20);
   }
+  .py-\[1px\] {
+    padding-block: 1px;
+  }
   .pt-0 {
     padding-top: 0;
   }
-  .pt-1\.5 {
-    padding-top: calc(var(--spacing) * 1.5);
+  .pt-1 {
+    padding-top: var(--spacing);
   }
   .pr-2 {
     padding-right: calc(var(--spacing) * 2);
+  }
+  .pb-0\.5 {
+    padding-bottom: calc(var(--spacing) * 0.5);
   }
   .pb-1 {
     padding-bottom: var(--spacing);
@@ -1451,6 +1460,9 @@
   .text-xs {
     font-size: var(--text-xs);
     line-height: var(--tw-leading, var(--text-xs--line-height));
+  }
+  .text-\[8\.5px\] {
+    font-size: 8.5px;
   }
   .text-\[8px\] {
     font-size: 8px;

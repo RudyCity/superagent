@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.303] - 2026-07-12
+
+### Changed
+- **Chrome Extension Tasks Checklist Spacing and Font Size**:
+  - Decreased the font size of the persistent task checklist panel to 10px (header to 8.5px, count to 8px, task items to 10px, icons to 9px).
+  - Reduced padding and gap sizes across the panel (p-1.5, gap-1) and decreased row vertical spacing (py-[1px], gap-1.5).
+  - Reduced the max-height constraint from 58px to 50px to fit 3 smaller items perfectly.
+
+---
+
 ## [1.2.302] - 2026-07-12
 
 ### Changed
