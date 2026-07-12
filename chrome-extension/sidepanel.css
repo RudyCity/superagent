@@ -337,9 +337,6 @@
   .top-50 {
     top: calc(var(--spacing) * 50);
   }
-  .top-\[calc\(100\%\+4px\)\] {
-    top: calc(100% + 4px);
-  }
   .top-full {
     top: 100%;
   }
@@ -394,9 +391,6 @@
   .z-50 {
     z-index: 50;
   }
-  .z-100 {
-    z-index: 100;
-  }
   .z-\[10000\] {
     z-index: 10000;
   }
@@ -441,9 +435,6 @@
   }
   .mt-4 {
     margin-top: calc(var(--spacing) * 4);
-  }
-  .mr-1\.5 {
-    margin-right: calc(var(--spacing) * 1.5);
   }
   .mr-2 {
     margin-right: calc(var(--spacing) * 2);
@@ -597,9 +588,6 @@
   .max-h-\[60px\] {
     max-height: 60px;
   }
-  .max-h-\[100px\] {
-    max-height: 100px;
-  }
   .max-h-\[120px\] {
     max-height: 120px;
   }
@@ -660,6 +648,9 @@
   .w-32 {
     width: calc(var(--spacing) * 32);
   }
+  .w-56 {
+    width: calc(var(--spacing) * 56);
+  }
   .w-64 {
     width: calc(var(--spacing) * 64);
   }
@@ -678,11 +669,8 @@
   .max-w-\[75px\] {
     max-width: 75px;
   }
-  .max-w-\[80px\] {
-    max-width: 80px;
-  }
-  .max-w-\[110px\] {
-    max-width: 110px;
+  .max-w-\[85px\] {
+    max-width: 85px;
   }
   .max-w-\[140px\] {
     max-width: 140px;
@@ -725,9 +713,6 @@
   }
   .min-w-\[44px\] {
     min-width: 44px;
-  }
-  .min-w-\[240px\] {
-    min-width: 240px;
   }
   .min-w-\[600px\] {
     min-width: 600px;
@@ -779,6 +764,12 @@
     --tw-scale-x: 0%;
     --tw-scale-y: 0%;
     --tw-scale-z: 0%;
+    scale: var(--tw-scale-x) var(--tw-scale-y);
+  }
+  .scale-90 {
+    --tw-scale-x: 90%;
+    --tw-scale-y: 90%;
+    --tw-scale-z: 90%;
     scale: var(--tw-scale-x) var(--tw-scale-y);
   }
   .scale-100 {
@@ -1042,10 +1033,6 @@
     border-left-style: var(--tw-border-style);
     border-left-width: 4px;
   }
-  .border-dashed {
-    --tw-border-style: dashed;
-    border-style: dashed;
-  }
   .border-none {
     --tw-border-style: none;
     border-style: none;
@@ -1263,6 +1250,9 @@
       background-color: color-mix(in oklab, var(--color-vscode-inner) 20%, transparent);
     }
   }
+  .bg-vscode-muted {
+    background-color: var(--color-vscode-muted);
+  }
   .bg-vscode-muted\/20 {
     background-color: color-mix(in srgb, #858585 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -1299,9 +1289,6 @@
   }
   .p-0 {
     padding: 0;
-  }
-  .p-0\.5 {
-    padding: calc(var(--spacing) * 0.5);
   }
   .p-1 {
     padding: var(--spacing);
@@ -1371,9 +1358,6 @@
   }
   .py-2 {
     padding-block: calc(var(--spacing) * 2);
-  }
-  .py-2\.5 {
-    padding-block: calc(var(--spacing) * 2.5);
   }
   .py-3 {
     padding-block: calc(var(--spacing) * 3);
@@ -1475,6 +1459,9 @@
   }
   .text-\[9px\] {
     font-size: 9px;
+  }
+  .text-\[10\.5px\] {
+    font-size: 10.5px;
   }
   .text-\[10px\] {
     font-size: 10px;

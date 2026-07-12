@@ -726,9 +726,7 @@ function renderSetupRecentWorkspaces(saved) {
 }
 
 function updateSetupRecentWorkspaces() {
-  chrome.storage.local.get(["savedWorkspaces"], (result) => {
-    renderSetupRecentWorkspaces(result.savedWorkspaces || []);
-  });
+  renderWorkspaceListOnly();
 }
 
 // Fetch Server Config

@@ -125,7 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
       apiTokenInput.value = result.lastApiToken;
       apiToken = result.lastApiToken;
     }
-    renderSetupRecentWorkspaces(result.savedWorkspaces || []);
+    renderWorkspaceListOnly();
     checkServerStatus();
   });
 
@@ -155,7 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
   // Buttons Event Listeners
-  btnInit.addEventListener("click", initSession);
+  btnInit.addEventListener("click", launchWelcomeSession);
   btnBrowse.addEventListener("click", browseWorkspaceFolder);
   btnSend.addEventListener("click", () => {
     if (btnSend.dataset.state === "stop") {
@@ -245,24 +245,34 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
 
-  // Workspace switcher
-  btnSwitchWorkspace.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleWorkspaceDropdown();
-  });
-
-  btnNewWorkspace.addEventListener("click", () => {
-    hideWorkspaceDropdown();
-    goToSetupScreen();
-  });
+  // Workspace Left Sidebar Buttons
+  const btnAddWorkspace = document.getElementById("btn-add-workspace");
+  if (btnAddWorkspace) {
+    btnAddWorkspace.addEventListener("click", () => {
+      const workspacePath = workspacePathInput.value.trim();
+      if (!workspacePath) {
+        alert("Please provide a valid workspace path.");
+        return;
+      }
+      connectToWorkspace(workspacePath);
+    });
+  }
 
   if (btnNewChat) {
     btnNewChat.addEventListener("click", startNewChatSession);
   }
 
-  document.addEventListener("click", () => {
-    hideWorkspaceDropdown();
-  });
+  if (workspacePathInput) {
+    workspacePathInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const workspacePath = workspacePathInput.value.trim();
+        if (workspacePath) {
+          connectToWorkspace(workspacePath);
+        }
+      }
+    });
+  }
 
   // Settings Modal Toggle
   if (btnHeaderSettings) {
@@ -422,22 +432,17 @@ async function checkServerStatus() {
 
 // [browseWorkspaceFolder moved to sidepanel-ui.js]
 
-// Initialize Session
-async function initSession() {
-  const workspace = workspacePathInput.value.trim();
+// Welcome screen transition (only Mode and API Token)
+async function launchWelcomeSession() {
   const mode = document.querySelector('input[name="agent-mode"]:checked').value;
-  const resume = document.getElementById("resume-session").checked;
   const token = apiTokenInput.value.trim();
-
-  if (!workspace) {
-    alert("Please provide a valid workspace path.");
-    return;
-  }
+  const resume = document.getElementById("resume-session").checked;
 
   apiToken = token;
+  currentMode = mode;
 
-  // Save workspace path and token locally
-  chrome.storage.local.set({ lastWorkspacePath: workspace, lastApiToken: token });
+  // Save settings and token locally
+  chrome.storage.local.set({ lastApiToken: token, lastMode: mode, lastResume: resume });
 
   btnInit.disabled = true;
   btnInit.textContent = "LAUNCHING...";
@@ -470,36 +475,79 @@ async function initSession() {
       body: JSON.stringify(configUpdate)
     });
 
-    const res = await fetch(`${BASE_URL}/api/init`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, workspace, resume })
-    });
-    const data = await res.json();
+    activeWorkspaceText.textContent = "Not Selected";
+    activeWorkspaceText.title = "Not Selected";
+    activeModeText.textContent = mode;
 
-    if (data.success) {
-      activeWorkspaceText.textContent = workspace;
-      activeModeText.textContent = mode;
-      currentMode = mode;
+    await renderWorkspaceListOnly();
 
-      await saveWorkspace(workspace);
-      
-      setupScreen.classList.remove("active");
-      workspaceScreen.classList.add("active");
-      
-      clearChatMessages();
-      await loadChatHistory();
-      
-      setupSSE();
-      startPolling();
-    } else {
-      alert("Error initializing session: " + data.error);
-    }
+    setupScreen.classList.remove("active");
+    workspaceScreen.classList.add("active");
+
+    clearChatMessages();
+    appendMessage("system", "Engine initialized. Please select a workspace from Saved Workspaces below or enter a path above to start your session.");
   } catch (err) {
     alert("Failed to connect to local server: " + err.message);
   } finally {
     btnInit.disabled = false;
-    btnInit.textContent = "LAUNCHING SESSION";
+    btnInit.textContent = "LAUNCH SESSION";
+  }
+}
+
+// Connect to a Workspace inside the workspace view
+async function connectToWorkspace(workspacePath) {
+  if (!workspacePath) return;
+
+  const btnAddWorkspace = document.getElementById("btn-add-workspace");
+  if (btnAddWorkspace) {
+    btnAddWorkspace.disabled = true;
+    btnAddWorkspace.textContent = "CONNECTING...";
+  }
+
+  try {
+    const resume = document.getElementById("resume-session").checked;
+    const mode = currentMode;
+
+    const res = await fetch(`${BASE_URL}/api/init`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, workspace: workspacePath, resume })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      activeWorkspaceText.textContent = workspacePath;
+      activeWorkspaceText.title = workspacePath;
+      
+      // Save new last workspace path
+      chrome.storage.local.set({ lastWorkspacePath: workspacePath });
+      await saveWorkspace(workspacePath);
+      await renderWorkspaceListOnly();
+
+      clearChatMessages();
+      await loadChatHistory();
+      if (chatMessages.querySelectorAll(".msg").length === 0) {
+        appendMessage("system", `Connected to workspace: ${workspacePath}`);
+        appendMessage("system", `Mode: ${mode}`);
+      }
+
+      stopPolling();
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      setupSSE();
+      startPolling();
+    } else {
+      alert("Error initializing workspace session: " + data.error);
+    }
+  } catch (err) {
+    alert("Failed to connect to workspace: " + err.message);
+  } finally {
+    if (btnAddWorkspace) {
+      btnAddWorkspace.disabled = false;
+      btnAddWorkspace.textContent = "+ Add Workspace";
+    }
   }
 }
 
@@ -1155,9 +1203,7 @@ async function loadChatHistory() {
 // [History rendering moved to sidepanel-history.js]
 
 function updateSetupRecentWorkspaces() {
-  chrome.storage.local.get(["savedWorkspaces"], (result) => {
-    renderSetupRecentWorkspaces(result.savedWorkspaces || []);
-  });
+  renderWorkspaceListOnly();
 }
 
 // Tab Switching Logic

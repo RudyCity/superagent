@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.310] - 2026-07-12
+
+### Changed
+- **Chrome Extension Welcome Screen and Sidebar Refactor**:
+  - Simplified welcome/setup screen to only ask for the orchestration mode, API token, and session resume toggle.
+  - Relocated orchestration mode and preset select dropdown into the main top header bar.
+  - Implemented a dedicated Left Sidebar for workspace browser/selector management featuring a list of saved workspaces, current active workspace status card, and a "+ Add Workspace" folder path input.
+  - Added seamless lazy-initialization logic that defers server session startup (`/api/init`) until a workspace is selected or added inside the main workspace view.
+
+---
+
 ## [1.2.309] - 2026-07-12
 
 ### Added

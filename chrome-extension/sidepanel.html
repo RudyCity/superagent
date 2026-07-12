@@ -9,11 +9,24 @@
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body class="font-sans antialiased bg-vscode-editor text-vscode-primary h-screen flex flex-col overflow-hidden">
-  <header class="bg-vscode-activitybar border-b border-vscode-dim px-4 py-2.5 flex items-center justify-between z-10 shrink-0">
+  <header class="bg-vscode-activitybar border-b border-vscode-dim px-4 py-2 flex items-center justify-between z-10 shrink-0">
     <div class="logo-container flex items-center gap-2">
       <div class="glow-dot w-2 h-2 bg-green-success rounded-full shadow-[0_0_8px_var(--color-green-success)]"></div>
       <h1 class="text-[13px] font-semibold tracking-wider text-white">SUPERAGENT<span class="text-vscode-blue-hover">.AI</span></h1>
     </div>
+    
+    <!-- Mode and Preset selectors directly in the header -->
+    <div class="header-selectors flex items-center gap-4">
+      <div class="flex items-center gap-1.5 text-[11px]">
+        <span class="info-label text-vscode-muted">Mode:</span>
+        <span id="active-mode-text" class="info-value font-mono text-vscode-bright font-medium uppercase">Single</span>
+      </div>
+      <div class="flex items-center gap-1 text-[11px]">
+        <span class="info-label text-vscode-muted">Preset:</span>
+        <select id="quick-preset-select" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-1 py-0.5 font-mono text-[10px] outline-none max-w-[85px] hover:border-vscode-bright cursor-pointer" title="Quick Preset Selector"></select>
+      </div>
+    </div>
+
     <div class="header-actions flex items-center gap-2 relative">
       <div id="connection-status" class="status-badge status-offline text-[11px] font-medium px-2 py-0.5 rounded-sm capitalize border transition-all duration-200 bg-red-error-light text-red-error border-[rgba(244,135,113,0.3)]">Offline</div>
       <button id="btn-toggle-right-panel" class="btn btn-secondary text-[12px] p-0 h-5 w-5 font-sans border rounded-sm cursor-pointer inline-flex items-center justify-center transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover hover:text-white" title="Toggle Monitor Sidebar">📊</button>
@@ -26,18 +39,6 @@
     <section id="setup-screen" class="panel active bg-vscode-sidebar w-full p-5 flex flex-col gap-4 overflow-y-auto h-full">
       <div class="section-header">
         <h2 class="text-[12px] font-semibold uppercase text-vscode-muted tracking-wider mb-1">INITIALIZE ENGINE</h2>
-      </div>
-      <div class="form-group flex flex-col gap-1.5">
-        <label for="workspace-path" class="text-[11px] font-semibold text-vscode-primary">Local Workspace Path</label>
-        <div class="input-with-button flex gap-1.5">
-          <input type="text" id="workspace-path" placeholder="e.g. C:\Projects\my-app" required class="flex-1 bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
-          <button id="btn-browse" type="button" class="btn btn-secondary font-sans font-medium text-xs px-3.5 py-1.5 border rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-[30px]">Browse</button>
-        </div>
-        <span class="input-hint text-[11px] text-vscode-muted leading-tight">The directory Superagent will have filesystem access to write code.</span>
-        <div id="recent-workspaces-container" class="recent-workspaces-container hidden mt-1.5 flex flex-col gap-1">
-          <div class="recent-workspaces-label text-[10px] font-semibold uppercase text-vscode-muted">Recent Workspaces</div>
-          <div id="recent-workspaces-list" class="recent-workspaces-list flex flex-col gap-0.5 max-h-[100px] overflow-y-auto"></div>
-        </div>
       </div>
 
       <div class="form-group flex flex-col gap-1.5">
@@ -95,35 +96,45 @@
         </div>
       </aside>
 
-      <!-- Right Main Content Panel -->
-      <div class="flex-1 flex flex-col overflow-hidden bg-vscode-editor">
-        <div class="sidebar-info bg-vscode-sidebar border-b border-vscode-dim px-3.5 py-1.5 flex items-center justify-between gap-3 shrink-0">
-          <div class="info-row flex items-center gap-1.5 text-[11px]">
-            <span class="info-label text-vscode-muted">Workspace:</span>
-            <div class="workspace-switcher-container relative">
-              <button id="btn-switch-workspace" class="workspace-switcher-btn flex items-center gap-0.5 bg-none border-none p-0.5 rounded-sm cursor-pointer max-w-[140px] hover:bg-vscode-hover" title="Click to switch workspace">
-                <span id="active-workspace-text" class="info-value font-mono text-vscode-bright font-medium overflow-hidden text-ellipsis whitespace-nowrap max-w-[110px] block">Not Selected</span>
-                <svg class="icon-chevron w-3.5 h-3.5 fill-current transition-transform duration-200" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
-              </button>
-              <div id="workspace-dropdown" class="workspace-dropdown hidden absolute top-[calc(100%+4px)] left-0 min-w-[240px] bg-vscode-sidebar border border-vscode-dim shadow-2xl z-100 overflow-hidden rounded-sm">
-                <div class="workspace-dropdown-header px-2.5 py-1.5 text-[9px] font-semibold uppercase text-vscode-muted border-b border-vscode-dim">Saved Workspaces</div>
-                <div id="saved-workspaces-list" class="saved-workspaces-list max-h-[160px] overflow-y-auto"></div>
-                <div class="workspace-dropdown-footer px-2.5 py-1 border-t border-vscode-dim">
-                  <button id="btn-new-workspace" class="btn-new-workspace w-full bg-none border border-dashed border-vscode-dim rounded-sm p-1 text-[11px] text-vscode-muted cursor-pointer hover:text-vscode-light hover:border-vscode-bright">+ New Workspace</button>
-                </div>
-              </div>
+      <!-- Left Sidebar (Workspace Panel) -->
+      <aside id="left-sidebar" class="w-56 bg-vscode-sidebar border-r border-vscode-dim flex flex-col overflow-hidden shrink-0">
+        <!-- Panel Header -->
+        <div class="panel-header p-3 border-b border-vscode-dim flex items-center justify-between bg-vscode-activitybar">
+          <h3 class="text-[11px] font-bold text-vscode-light uppercase tracking-wider">Workspace</h3>
+        </div>
+        
+        <!-- Workspace switcher/list & Add Workspace section -->
+        <div class="p-3 border-b border-vscode-dim flex flex-col gap-3 shrink-0">
+          <!-- Active Workspace Label -->
+          <div class="flex flex-col gap-1">
+            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Active Workspace</span>
+            <span id="active-workspace-text" class="font-mono text-vscode-bright font-medium text-[11px] truncate block bg-vscode-inner px-2 py-1.5 border border-vscode-dim rounded-sm" title="Not Selected">Not Selected</span>
+          </div>
+
+          <!-- Add Workspace folder button/input -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Add Workspace</span>
+            <div class="input-with-button flex gap-1">
+              <input type="text" id="workspace-path" placeholder="e.g. C:\\Projects\\my-app" required class="flex-1 bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2 py-1 font-mono text-[10.5px] outline-none h-6 focus:border-vscode-bright">
+              <button id="btn-browse" type="button" class="btn btn-secondary font-sans font-medium text-[10px] px-2 py-0.5 border rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-6">Browse</button>
             </div>
-          </div>
-          <div class="info-row flex items-center gap-1.5 text-[11px]">
-            <span class="info-label text-vscode-muted">Mode:</span>
-            <span id="active-mode-text" class="info-value font-mono text-vscode-bright font-medium uppercase mr-1.5">Single</span>
-          </div>
-          <div class="info-row flex items-center gap-1 text-[11px]">
-            <span class="info-label text-vscode-muted">Preset:</span>
-            <select id="quick-preset-select" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-1 py-0.5 font-mono text-[10px] outline-none max-w-[80px] hover:border-vscode-bright cursor-pointer" title="Quick Preset Selector"></select>
+            <button id="btn-add-workspace" class="btn btn-primary w-full font-sans font-medium text-[10.5px] px-2.5 py-1 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-blue text-white hover:bg-vscode-blue-hover h-6">+ Add Workspace</button>
           </div>
         </div>
 
+        <!-- Saved Workspaces list -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <div class="px-3 py-1.5 bg-vscode-inner border-b border-vscode-dim shrink-0">
+            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Saved Workspaces</span>
+          </div>
+          <div id="saved-workspaces-list" class="saved-workspaces-list flex-1 overflow-y-auto p-1.5 flex flex-col gap-1">
+            <!-- Saved workspaces item list -->
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right Main Content Panel -->
+      <div class="flex-1 flex flex-col overflow-hidden bg-vscode-editor">
         <div class="workspace-area flex-1 flex flex-col overflow-hidden">
           <!-- CHAT CONTENT VIEW -->
           <div id="view-chat" class="tab-view flex-1 flex flex-col overflow-hidden">
