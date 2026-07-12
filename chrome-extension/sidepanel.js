@@ -28,7 +28,7 @@ let wasOffline = true;
 
 // Local fetch wrapper to append API token and active workspace path
 const originalFetch = window.fetch;
-const fetch = async (url, options = {}) => {
+window.fetch = async (url, options = {}) => {
   options.headers = options.headers || {};
   if (apiToken) {
     options.headers["Authorization"] = `Bearer ${apiToken}`;
@@ -467,6 +467,13 @@ async function checkServerStatus() {
         setupSSE();
         startPolling();
         await loadChatHistory();
+        
+        if (typeof pollMonitorData === "function") {
+          pollMonitorData();
+        }
+        if (typeof pollWorkspaceFiles === "function") {
+          pollWorkspaceFiles();
+        }
       }
 
       // Handle CLI session mode toggle
@@ -636,6 +643,13 @@ async function connectToWorkspace(workspacePath) {
       }
       setupSSE();
       startPolling();
+
+      if (typeof pollMonitorData === "function") {
+        pollMonitorData();
+      }
+      if (typeof pollWorkspaceFiles === "function") {
+        pollWorkspaceFiles();
+      }
     } else {
       alert("Error initializing workspace session: " + data.error);
     }

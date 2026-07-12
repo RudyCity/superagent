@@ -134,6 +134,14 @@ async function switchToWorkspace(workspacePath, mode) {
 
       // Save new last workspace path
       chrome.storage.local.set({ lastWorkspacePath: data.workspace });
+
+      // Refresh monitor and file explorer immediately
+      if (typeof pollMonitorData === "function") {
+        pollMonitorData();
+      }
+      if (typeof pollWorkspaceFiles === "function") {
+        pollWorkspaceFiles();
+      }
     } else {
       alert("Failed to switch workspace: " + (data.error || "Unknown error"));
     }

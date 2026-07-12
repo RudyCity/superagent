@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.330] - 2026-07-12
+
+### Fixed
+- **Right Side Panel Update Reliability**:
+  - Globalized the custom fetch wrapper to `window.fetch` so it is inherited by the monitor and file explorer scripts loaded in the sidepanel.
+  - Resolved race conditions where initial updates returned early because the panel was hidden during DOM load.
+  - Implemented immediate refreshes for workspace file explorer and git changes when toggling the right side panel open or switching workspaces.
+
+---
+
 ## [1.2.329] - 2026-07-12
 
 ### Fixed

@@ -11,6 +11,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (result.rightPanelOpen) {
       rightPanel.classList.remove("hidden");
       toggleBtn.classList.add("active");
+      pollMonitorData();
+      if (typeof pollWorkspaceFiles === "function") {
+        pollWorkspaceFiles();
+      }
     } else {
       rightPanel.classList.add("hidden");
       toggleBtn.classList.remove("active");
@@ -25,6 +29,9 @@ document.addEventListener("DOMContentLoaded", () => {
       toggleBtn.classList.add("active");
       chrome.storage.local.set({ rightPanelOpen: true });
       pollMonitorData();
+      if (typeof pollWorkspaceFiles === "function") {
+        pollWorkspaceFiles();
+      }
     } else {
       rightPanel.classList.add("hidden");
       toggleBtn.classList.remove("active");
