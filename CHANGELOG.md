@@ -3,9 +3,9 @@
 ## [1.2.322] - 2026-07-12
 
 ### Changed
-- **Reverted Full-Screen Placeholder for Workspace**:
-  - Restored the standard chat panel layout to always remain visible instead of hiding behind a full-screen placeholder.
-  - Keeps the chat input area disabled and displays the workspace-related placeholder text when no workspace is active, preventing layout shifts.
+- **Removed Single Session Fallback**:
+  - Removed the generic single session fallback inside resolveSession on the backend server to ensure workspace-scoped routing.
+  - Fixes auto-reconnecting to background CLI sessions when the extension does not have an active workspace connected.
 
 ---
 

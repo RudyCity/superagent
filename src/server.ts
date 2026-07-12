@@ -31,10 +31,6 @@ function resolveSession(req: http.IncomingMessage): AgentSession | null {
     if (session) return session;
   }
   
-  if (activeSessions.size === 1) {
-    return activeSessions.values().next().value || null;
-  }
-  
   if (wsPath) {
     for (const [key, session] of activeSessions.entries()) {
       if (key.toLowerCase() === wsPath.toLowerCase()) {
