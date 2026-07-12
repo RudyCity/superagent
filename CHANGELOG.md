@@ -3,13 +3,13 @@
 ## [1.2.325] - 2026-07-12
 
 ### Changed
-- **Google-Style Visual Redesign for Chrome Extension**:
-  - Redesigned color scheme, typography, and layout of the Chrome Extension side panel using premium Google-style design tokens (matching Gemini/Google Cloud Console styling).
-  - Configured Outfit, Google Sans, and Roboto typography pairings for UI elements and JetBrains Mono/Roboto Mono for logs/terminals.
-  - Reimplemented conversational chat bubbles with rounded corners (18px) and soft shadow systems for User (Google Blue tint card aligned right) and Agent (editor background card aligned left).
+- **Material-Style Visual Redesign for Chrome Extension**:
+  - Redesigned color scheme, typography, and layout of the Chrome Extension side panel using premium Material-style design tokens (matching modern cloud platform console styling).
+  - Configured Outfit and Roboto typography pairings for UI elements and JetBrains Mono/Roboto Mono for logs/terminals.
+  - Reimplemented conversational chat bubbles with rounded corners (18px) and soft shadow systems for User (Material Blue tint card aligned right) and Agent (editor background card aligned left).
   - Updated Tailwind v4 border radiuses (`--radius-*`) and shadow parameters in CSS.
 - **Project Guidelines Update**:
-  - Updated styling guidelines in `AGENTS.md` to specify Google Design aesthetics instead of the legacy VS Code dark theme rules.
+  - Updated styling guidelines in `AGENTS.md` to specify Material Design aesthetics instead of the legacy VS Code dark theme rules.
 
 ---
 

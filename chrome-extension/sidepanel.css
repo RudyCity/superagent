@@ -3,7 +3,7 @@
 @layer theme, base, components, utilities;
 @layer theme {
   :root, :host {
-    --font-sans: 'Google Sans', 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-sans: 'Outfit', 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
     --font-mono: 'JetBrains Mono', 'Roboto Mono', 'Consolas', monospace;
     --color-red-500: oklch(63.7% 0.237 25.331);
@@ -2394,7 +2394,7 @@
   --color-red-light: var(--color-red-error-light);
   --shadow-subtle: 0 1px 3px rgba(0,0,0,0.3);
   --shadow-elevation: 0 4px 12px rgba(0,0,0,0.4);
-  --font-sans: 'Google Sans', 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'Outfit', 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Roboto Mono', 'Consolas', monospace;
   --border-radius-sm: 4px;
   --border-radius-md: 8px;
