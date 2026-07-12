@@ -102,7 +102,6 @@ const btnCloseSettings = document.getElementById("btn-close-settings");
 const btnSaveSettings = document.getElementById("btn-save-settings");
 
 const tabWorkspace = document.getElementById("tab-workspace");
-const tabChat = document.getElementById("tab-chat");
 const tabHistory = document.getElementById("tab-history");
 
 const viewWorkspace = document.getElementById("view-workspace");
@@ -423,7 +422,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Tab Navigation Listeners
   if (tabWorkspace) tabWorkspace.addEventListener("click", () => handleSidebarTabClick("workspace"));
-  if (tabChat) tabChat.addEventListener("click", () => handleSidebarTabClick("chat"));
   if (tabHistory) tabHistory.addEventListener("click", () => handleSidebarTabClick("history"));
 
   // Document Refresh Listeners
@@ -1333,7 +1331,6 @@ function switchSidebarTab(tabId) {
   
   // Reset tab button active states
   if (tabWorkspace) tabWorkspace.classList.remove("active");
-  if (tabChat) tabChat.classList.remove("active");
   if (tabHistory) tabHistory.classList.remove("active");
   
   // Hide all sidebar views
@@ -1356,30 +1353,14 @@ function switchSidebarTab(tabId) {
 
 function handleSidebarTabClick(tabId) {
   const leftSidebar = document.getElementById("left-sidebar");
+  const tabButton = tabId === "workspace" ? tabWorkspace : tabHistory;
   
-  if (tabId === "chat") {
-    if (leftSidebar) {
-      const isHidden = leftSidebar.classList.contains("hidden");
-      if (isHidden) {
-        // Show sidebar and active tab
-        switchSidebarTab(activeSidebarTab);
-      } else {
-        // Collapse sidebar and focus Chat
-        leftSidebar.classList.add("hidden");
-        if (tabWorkspace) tabWorkspace.classList.remove("active");
-        if (tabHistory) tabHistory.classList.remove("active");
-        if (tabChat) tabChat.classList.add("active");
-      }
-    }
+  if (leftSidebar && !leftSidebar.classList.contains("hidden") && activeSidebarTab === tabId) {
+    // Toggle off
+    leftSidebar.classList.add("hidden");
+    if (tabButton) tabButton.classList.remove("active");
   } else {
-    const tabButton = tabId === "workspace" ? tabWorkspace : tabHistory;
-    if (leftSidebar && !leftSidebar.classList.contains("hidden") && activeSidebarTab === tabId) {
-      // Toggle off
-      leftSidebar.classList.add("hidden");
-      if (tabButton) tabButton.classList.remove("active");
-    } else {
-      switchSidebarTab(tabId);
-    }
+    switchSidebarTab(tabId);
   }
 }
 
@@ -1392,7 +1373,6 @@ function switchTab(tabId) {
     }
     if (tabWorkspace) tabWorkspace.classList.remove("active");
     if (tabHistory) tabHistory.classList.remove("active");
-    if (tabChat) tabChat.classList.add("active");
   } else {
     switchSidebarTab(tabId);
   }

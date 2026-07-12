@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.323] - 2026-07-12
+
+### Changed
+- **Activity Bar Cleanup**:
+  - Removed the redundancy of the Chat button icon in the Left Activity Bar.
+  - The left menu now only contains "Workspace" and "History" tabs.
+
+---
+
 ## [1.2.322] - 2026-07-12
 
 ### Changed
