@@ -988,7 +988,7 @@ export async function runServer(port: number, silent = false) {
           }
 
           const agent = new Agent(
-            onEvent,
+            (event: AgentEvent) => onEvent(event, agent),
             onPermission,
             onQuestion,
             customSystemPrompt,
@@ -1003,6 +1003,11 @@ export async function runServer(port: number, silent = false) {
           } else {
             agent.tier = "single";
           }
+
+          // Automatically load/resume last active session history for this workspace
+          try {
+            await agent.loadHistory(true);
+          } catch {}
 
           session = {
             agent,

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.319] - 2026-07-12
+
+### Added
+- **Workspace-Scoped Session History Loading**:
+  - Automatically loads and resumes the last active chat session and conversation history when switching workspaces on the server /api/switch-workspace endpoint.
+
+---
+
 ## [1.2.318] - 2026-07-12
 
 ### Changed
