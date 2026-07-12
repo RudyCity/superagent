@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.321] - 2026-07-12
+
+### Changed
+- **Workspace Empty State Screen**:
+  - Hides the active chat panel completely and displays a full-screen "No Workspace Connected" placeholder panel (#workspace-empty-state) when no workspace is active.
+  - Added a "+ Connect Workspace" trigger button in the empty state screen that summons the workspace add modal overlay.
+  - Automatically toggles between the empty state panel and the active chat panel based on connection/switching status.
+
+---
+
 ## [1.2.320] - 2026-07-12
 
 ### Changed

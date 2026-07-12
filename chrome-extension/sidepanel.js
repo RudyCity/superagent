@@ -294,9 +294,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnCloseAddWorkspace = document.getElementById("btn-close-add-workspace");
   const btnCancelAddWorkspace = document.getElementById("btn-cancel-add-workspace");
   const addWorkspaceOverlay = document.getElementById("add-workspace-overlay");
+  const btnEmptyStateAdd = document.getElementById("btn-empty-state-add");
 
   if (btnShowAddWorkspace && addWorkspaceOverlay) {
     btnShowAddWorkspace.addEventListener("click", () => {
+      addWorkspaceOverlay.classList.add("active");
+      if (workspacePathInput) workspacePathInput.focus();
+    });
+  }
+
+  if (btnEmptyStateAdd && addWorkspaceOverlay) {
+    btnEmptyStateAdd.addEventListener("click", () => {
       addWorkspaceOverlay.classList.add("active");
       if (workspacePathInput) workspacePathInput.focus();
     });
@@ -1395,35 +1403,22 @@ function switchTab(tabId) {
 window.updateWorkspaceRequiredUI = function() {
   const activeWorkspaceText = document.getElementById("active-workspace-text");
   const isWorkspaceConnected = activeWorkspaceText && activeWorkspaceText.textContent && activeWorkspaceText.textContent !== "Not Selected";
-  const btnNewChat = document.getElementById("btn-new-chat");
-  const chatInput = document.getElementById("chat-input");
-  const btnSend = document.getElementById("btn-send");
-  const chatActions = document.querySelector(".chat-actions");
+  const emptyState = document.getElementById("workspace-empty-state");
+  const chatContent = document.getElementById("chat-content-container");
 
   if (!isWorkspaceConnected) {
-    if (btnNewChat) btnNewChat.classList.add("hidden");
-    if (chatActions) chatActions.classList.add("hidden");
-    if (chatInput) {
-      chatInput.disabled = true;
-      chatInput.placeholder = "Please select or add a workspace in the Left Sidebar to start chatting...";
-      chatInput.value = "";
+    if (emptyState) {
+      emptyState.style.display = "flex";
     }
-    if (btnSend) {
-      btnSend.disabled = true;
-      btnSend.classList.add("opacity-50");
-      btnSend.style.pointerEvents = "none";
+    if (chatContent) {
+      chatContent.style.display = "none";
     }
   } else {
-    if (btnNewChat) btnNewChat.classList.remove("hidden");
-    if (chatActions) chatActions.classList.remove("hidden");
-    if (chatInput) {
-      chatInput.disabled = false;
-      chatInput.placeholder = "Type instructions or / for commands, ! for terminal...";
+    if (emptyState) {
+      emptyState.style.display = "none";
     }
-    if (btnSend) {
-      btnSend.disabled = false;
-      btnSend.classList.remove("opacity-50");
-      btnSend.style.pointerEvents = "auto";
+    if (chatContent) {
+      chatContent.style.display = "flex";
     }
   }
 };

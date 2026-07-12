@@ -147,92 +147,105 @@
             <span class="text-[9.5px] text-vscode-muted">Dual Control Active</span>
           </div>
 
-          <!-- Chat actions: New Chat -->
-          <div class="chat-actions flex items-center justify-between px-3.5 py-1.5 border-b border-vscode-dim bg-vscode-sidebar shrink-0 relative">
-            <button id="btn-new-chat" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 font-sans font-medium border border-vscode-dim rounded-sm cursor-pointer inline-flex items-center justify-center gap-1 bg-vscode-inner text-vscode-primary hover:bg-vscode-hover hover:text-white" title="Clear history and start a new chat">
-              <svg class="w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-              <span>New Chat</span>
-            </button>
+          <!-- Workspace Empty State Placeholder -->
+          <div id="workspace-empty-state" class="flex-1 flex flex-col items-center justify-center p-6 text-center bg-vscode-editor gap-3.5 select-none">
+            <div class="empty-state-icon text-[32px] text-vscode-muted leading-none">📂</div>
+            <div class="flex flex-col gap-1.5 max-w-[240px]">
+              <h3 class="text-[12px] font-semibold text-vscode-light uppercase tracking-wider">No Workspace Connected</h3>
+              <p class="text-[10.5px] text-vscode-muted leading-relaxed">Please connect or select a workspace folder from the Left Sidebar to start coding and chatting.</p>
+            </div>
+            <button id="btn-empty-state-add" class="btn btn-primary font-sans font-medium text-[11px] px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-blue text-white hover:bg-vscode-blue-hover h-7">+ Connect Workspace</button>
           </div>
 
-          <div class="chat-container flex-1 flex flex-col bg-vscode-editor relative overflow-hidden">
-            <div id="chat-messages" class="chat-messages flex-1 overflow-y-auto p-3.5 flex flex-col gap-3">
-              <!-- Messages stream here -->
-
-              <!-- Typing / Progress Indicator -->
-              <div id="processing-indicator" class="processing-indicator items-center gap-2 p-1">
-                <div class="spinner w-3 h-3 border-[1.5px] border-vscode-dim border-t-vscode-bright rounded-full animate-spin"></div>
-                <span id="processing-text" class="text-[11px] text-vscode-muted">Agent is thinking...</span>
-              </div>
+          <!-- Active Chat Container -->
+          <div id="chat-content-container" class="flex-1 flex flex-col overflow-hidden">
+            <!-- Chat actions: New Chat -->
+            <div class="chat-actions flex items-center justify-between px-3.5 py-1.5 border-b border-vscode-dim bg-vscode-sidebar shrink-0 relative">
+              <button id="btn-new-chat" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 font-sans font-medium border border-vscode-dim rounded-sm cursor-pointer inline-flex items-center justify-center gap-1 bg-vscode-inner text-vscode-primary hover:bg-vscode-hover hover:text-white" title="Clear history and start a new chat">
+                <svg class="w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                <span>New Chat</span>
+              </button>
             </div>
-        </div>
-      </div>
 
-        <!-- Action Footer -->
-        <div class="chat-footer bg-vscode-sidebar border-t border-vscode-dim p-3 flex flex-col gap-1.5 shrink-0 relative">
-          <!-- Autocomplete / Suggestions Popover -->
-          <div id="suggestions-popover" class="absolute bottom-[calc(100%-8px)] left-3 right-3 bg-vscode-sidebar border border-vscode-dim rounded-sm shadow-2xl overflow-hidden hidden flex-col z-20 max-h-[160px]">
-            <div id="suggestions-list" class="flex flex-col max-h-[135px] overflow-y-auto">
-              <!-- Dynamically populated suggestion rows -->
-            </div>
-            <div class="suggestions-footer px-2.5 py-1.5 border-t border-vscode-dim bg-vscode-inner flex items-center justify-between text-[9px] text-vscode-muted font-sans select-none shrink-0">
-              <span>Use ↑↓ to navigate, Enter to select</span>
-              <span>Fuzzy search active</span>
-            </div>
-          </div>
+            <div class="chat-container flex-1 flex flex-col bg-vscode-editor relative overflow-hidden">
+              <div id="chat-messages" class="chat-messages flex-1 overflow-y-auto p-3.5 flex flex-col gap-3">
+                <!-- Messages stream here -->
 
-          <!-- Persistent Task Checklist Panel (above input box) -->
-          <div id="persistent-tasks-panel" class="persistent-tasks-panel hidden border border-vscode-dim rounded-[3px] bg-vscode-inner p-1.5 mb-1 flex flex-col gap-1 font-sans text-[10px] text-vscode-primary select-none">
-            <div id="persistent-tasks-header" class="flex items-center justify-between border-b border-vscode-dim pb-0.5 mb-0.5 cursor-pointer hover:bg-vscode-hover px-1 rounded-[2px] transition-colors duration-150">
-              <div class="flex items-center gap-1">
-                <span id="persistent-tasks-chevron" class="text-[8px] text-vscode-muted font-mono select-none w-2">▼</span>
-                <span class="font-bold text-vscode-bright uppercase tracking-wider text-[8.5px]">Execution Tasks</span>
-              </div>
-              <span id="persistent-tasks-count" class="text-[8px] bg-vscode-blue/20 text-vscode-bright px-1.5 py-0.5 rounded-full font-mono">0/0</span>
-            </div>
-            <div id="persistent-tasks-content" class="flex flex-col gap-1">
-              <div id="persistent-tasks-list" class="persistent-tasks-list flex flex-col gap-0.5 overflow-y-auto max-h-[50px]"></div>
-              <div id="persistent-agents-section" class="persistent-agents-section hidden flex flex-col gap-1 border-t border-vscode-dim pt-1 mt-0.5">
-                <span class="font-bold text-vscode-bright uppercase tracking-wider text-[8.5px]">Active Agents</span>
-                <div id="persistent-agents-list" class="persistent-agents-list flex flex-wrap gap-1"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Attachment Preview Container -->
-          <div id="attachment-preview-container" class="flex flex-wrap gap-1.5 empty:hidden max-h-[60px] overflow-y-auto pb-1"></div>
-
-          <!-- Input Box Wrapper -->
-          <div class="input-box-wrapper flex flex-col border border-vscode-dim rounded-[3px] bg-vscode-editor focus-within:border-vscode-bright">
-            <textarea id="chat-input" placeholder="Type instructions or / for commands, ! for terminal..." rows="2" class="w-full bg-transparent text-vscode-primary px-2.5 py-2 font-sans text-[12px] resize-none outline-none border-none h-14"></textarea>
-            
-            <div class="input-toolbar flex items-center justify-between px-2 py-1.5 border-t border-vscode-dim/50 bg-vscode-inner/20">
-              <div class="toolbar-left flex items-center gap-1.5">
-                <!-- Attach Image Trigger -->
-                <button id="btn-attach-image" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Attach Image">🖼️</button>
-                <input type="file" id="attach-image-input" accept="image/*" class="hidden">
-                
-                <!-- Attach Document Trigger -->
-                <button id="btn-attach-doc" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Attach File/Document">📎</button>
-                <input type="file" id="attach-doc-input" accept=".txt,.md,.js,.ts,.tsx,.json,.html,.css,.py,.go,.rs,.sh,.bat,.ps1,.java,.cpp,.c,.h" class="hidden">
-
-                <!-- Grab Tab Context -->
-                <button id="btn-grab-context" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Attach Chrome Active Tab context">🌐</button>
-                <div id="context-badge" class="text-[9px] bg-green-success/20 text-green-success px-1 py-0.5 rounded-[2px] font-mono border border-green-success/30 hidden">Tab OK</div>
-
-                <!-- Input Help Button -->
-                <button id="btn-input-help" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Help Guide">❓</button>
-              </div>
-
-              <div class="toolbar-right flex items-center gap-2">
-                <div class="flex items-center gap-1 text-[9px] font-mono text-vscode-muted select-none">
-                  <select id="input-preset-select" class="bg-transparent border-none outline-none text-vscode-muted hover:text-vscode-light font-semibold cursor-pointer p-0 font-mono text-[9px] max-w-[75px]" title="Change active preset"></select>
-                  <span id="meta-model-name" class="hidden"></span>
-                  <span id="meta-speed-text" class="text-green-success ml-1">0.0 t/s</span>
+                <!-- Typing / Progress Indicator -->
+                <div id="processing-indicator" class="processing-indicator items-center gap-2 p-1">
+                  <div class="spinner w-3 h-3 border-[1.5px] border-vscode-dim border-t-vscode-bright rounded-full animate-spin"></div>
+                  <span id="processing-text" class="text-[11px] text-vscode-muted">Agent is thinking...</span>
                 </div>
-                <button id="btn-send" class="btn btn-primary btn-icon w-[24px] h-[24px] p-0 rounded-sm font-sans font-medium border border-transparent cursor-pointer inline-flex items-center justify-center transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover shrink-0">
-                  <svg viewBox="0 0 24 24" class="w-3 h-3 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-                </button>
+              </div>
+            </div>
+
+            <!-- Action Footer -->
+            <div class="chat-footer bg-vscode-sidebar border-t border-vscode-dim p-3 flex flex-col gap-1.5 shrink-0 relative">
+              <!-- Autocomplete / Suggestions Popover -->
+              <div id="suggestions-popover" class="absolute bottom-[calc(100%-8px)] left-3 right-3 bg-vscode-sidebar border border-vscode-dim rounded-sm shadow-2xl overflow-hidden hidden flex-col z-20 max-h-[160px]">
+                <div id="suggestions-list" class="flex flex-col max-h-[135px] overflow-y-auto">
+                  <!-- Dynamically populated suggestion rows -->
+                </div>
+                <div class="suggestions-footer px-2.5 py-1.5 border-t border-vscode-dim bg-vscode-inner flex items-center justify-between text-[9px] text-vscode-muted font-sans select-none shrink-0">
+                  <span>Use ↑↓ to navigate, Enter to select</span>
+                  <span>Fuzzy search active</span>
+                </div>
+              </div>
+
+              <!-- Persistent Task Checklist Panel (above input box) -->
+              <div id="persistent-tasks-panel" class="persistent-tasks-panel hidden border border-vscode-dim rounded-[3px] bg-vscode-inner p-1.5 mb-1 flex flex-col gap-1 font-sans text-[10px] text-vscode-primary select-none">
+                <div id="persistent-tasks-header" class="flex items-center justify-between border-b border-vscode-dim pb-0.5 mb-0.5 cursor-pointer hover:bg-vscode-hover px-1 rounded-[2px] transition-colors duration-150">
+                  <div class="flex items-center gap-1">
+                    <span id="persistent-tasks-chevron" class="text-[8px] text-vscode-muted font-mono select-none w-2">▼</span>
+                    <span class="font-bold text-vscode-bright uppercase tracking-wider text-[8.5px]">Execution Tasks</span>
+                  </div>
+                  <span id="persistent-tasks-count" class="text-[8px] bg-vscode-blue/20 text-vscode-bright px-1.5 py-0.5 rounded-full font-mono">0/0</span>
+                </div>
+                <div id="persistent-tasks-content" class="flex flex-col gap-1">
+                  <div id="persistent-tasks-list" class="persistent-tasks-list flex flex-col gap-0.5 overflow-y-auto max-h-[50px]"></div>
+                  <div id="persistent-agents-section" class="persistent-agents-section hidden flex flex-col gap-1 border-t border-vscode-dim pt-1 mt-0.5">
+                    <span class="font-bold text-vscode-bright uppercase tracking-wider text-[8.5px]">Active Agents</span>
+                    <div id="persistent-agents-list" class="persistent-agents-list flex flex-wrap gap-1"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Attachment Preview Container -->
+              <div id="attachment-preview-container" class="flex flex-wrap gap-1.5 empty:hidden max-h-[60px] overflow-y-auto pb-1"></div>
+
+              <!-- Input Box Wrapper -->
+              <div class="input-box-wrapper flex flex-col border border-vscode-dim rounded-[3px] bg-vscode-editor focus-within:border-vscode-bright">
+                <textarea id="chat-input" placeholder="Type instructions or / for commands, ! for terminal..." rows="2" class="w-full bg-transparent text-vscode-primary px-2.5 py-2 font-sans text-[12px] resize-none outline-none border-none h-14"></textarea>
+                
+                <div class="input-toolbar flex items-center justify-between px-2 py-1.5 border-t border-vscode-dim/50 bg-vscode-inner/20">
+                  <div class="toolbar-left flex items-center gap-1.5">
+                    <!-- Attach Image Trigger -->
+                    <button id="btn-attach-image" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Attach Image">🖼️</button>
+                    <input type="file" id="attach-image-input" accept="image/*" class="hidden">
+                    
+                    <!-- Attach Document Trigger -->
+                    <button id="btn-attach-doc" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Attach File/Document">📎</button>
+                    <input type="file" id="attach-doc-input" accept=".txt,.md,.js,.ts,.tsx,.json,.html,.css,.py,.go,.rs,.sh,.bat,.ps1,.java,.cpp,.c,.h" class="hidden">
+
+                    <!-- Grab Tab Context -->
+                    <button id="btn-grab-context" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Attach Chrome Active Tab context">🌐</button>
+                    <div id="context-badge" class="text-[9px] bg-green-success/20 text-green-success px-1 py-0.5 rounded-[2px] font-mono border border-green-success/30 hidden">Tab OK</div>
+
+                    <!-- Input Help Button -->
+                    <button id="btn-input-help" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Help Guide">❓</button>
+                  </div>
+
+                  <div class="toolbar-right flex items-center gap-2">
+                    <div class="flex items-center gap-1 text-[9px] font-mono text-vscode-muted select-none">
+                      <select id="input-preset-select" class="bg-transparent border-none outline-none text-vscode-muted hover:text-vscode-light font-semibold cursor-pointer p-0 font-mono text-[9px] max-w-[75px]" title="Change active preset"></select>
+                      <span id="meta-model-name" class="hidden"></span>
+                      <span id="meta-speed-text" class="text-green-success ml-1">0.0 t/s</span>
+                    </div>
+                    <button id="btn-send" class="btn btn-primary btn-icon w-[24px] h-[24px] p-0 rounded-sm font-sans font-medium border border-transparent cursor-pointer inline-flex items-center justify-center transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover shrink-0">
+                      <svg viewBox="0 0 24 24" class="w-3 h-3 fill-current"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
