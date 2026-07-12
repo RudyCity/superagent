@@ -14,14 +14,23 @@ function escapeHtml(str) {
 // Format markdown bold/inline-code/links/lists
 function formatMarkdown(text) {
   if (!text) return "";
-  return text
+  let html = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-vscode-bright hover:underline">$1</a>')
-    .replace(/^\s*-\s+(.+)$/gm, "<li>$1</li>");
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  // Convert raw file paths to clickable links
+  html = html.replace(/(?<![("'/=\/\\\[])\b([a-zA-Z0-9_\-\.\/\\\\]+\.(?:ts|js|tsx|jsx|html|css|json|md|py|go|rs|sh|bat|yml|yaml|txt|log|cpp|c|h))\b/g, '<a href="file:///$1" class="text-vscode-bright hover:underline">$1</a>');
+
+  // Support links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-vscode-bright hover:underline">$1</a>');
+
+  // Support list items
+  html = html.replace(/^\s*-\s+(.+)$/gm, "<li>$1</li>");
+
+  return html;
 }
 
 function parseMarkdownDoc(md) {

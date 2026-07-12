@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.307] - 2026-07-12
+
+### Fixed
+- **Chrome Extension Link Style and Custom List Icons**:
+  - Implemented the `.text-vscode-bright` CSS class inside `sidepanel.src.css` using the vscode bright color `#007fd4` so that markdown and file links are visibly styled as blue links.
+  - Upgraded raw filepath detection regex in `sidepanel-markdown.js` and `sidepanel-ui.js` to match Windows/POSIX directory paths and file names safely using lookbehinds.
+  - Replaced browser default bullet points (`disc` dots) for messages with a clean absolute-positioned dash prefix `-` inside `sidepanel.src.css`.
+
+---
+
 ## [1.2.306] - 2026-07-12
 
 ### Removed

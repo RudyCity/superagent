@@ -2476,6 +2476,26 @@
   color: var(--text-vscode-primary);
   border: 1px solid var(--border-vscode-dim);
 }
+.text-vscode-bright {
+  color: var(--color-vscode-bright) !important;
+}
+.msg-content ul, .msg-content ol {
+  padding-left: 0;
+  margin: 0;
+}
+.msg-content li {
+  list-style: none;
+  position: relative;
+  padding-left: 12px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+.msg-content li::before {
+  content: "-";
+  position: absolute;
+  left: 0;
+  color: var(--text-vscode-muted);
+}
 .msg-agent .msg-content:has(.tool-block) {
   white-space: normal;
 }

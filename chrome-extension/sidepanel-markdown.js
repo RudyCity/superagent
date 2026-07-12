@@ -93,6 +93,9 @@ function formatMarkdown(text) {
       return `<strong class="md-bold${extraClass}">${content}</strong>`;
     });
 
+    // Convert raw file paths to clickable links
+    escaped = escaped.replace(/(?<![("'/=\/\\\[])\b([a-zA-Z0-9_\-\.\/\\\\]+\.(?:ts|js|tsx|jsx|html|css|json|md|py|go|rs|sh|bat|yml|yaml|txt|log|cpp|c|h))\b/g, '<a href="file:///$1" class="text-vscode-bright hover:underline">$1</a>');
+
     // Support links
     escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-vscode-bright hover:underline">$1</a>');
 
