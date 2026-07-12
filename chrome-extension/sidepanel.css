@@ -445,6 +445,9 @@
   .mb-1 {
     margin-bottom: var(--spacing);
   }
+  .mb-1\.5 {
+    margin-bottom: calc(var(--spacing) * 1.5);
+  }
   .mb-2 {
     margin-bottom: calc(var(--spacing) * 2);
   }
@@ -459,6 +462,9 @@
   }
   .ml-2 {
     margin-left: calc(var(--spacing) * 2);
+  }
+  .ml-auto {
+    margin-left: auto;
   }
   .block {
     display: block;
@@ -1654,6 +1660,9 @@
   .opacity-50 {
     opacity: 50%;
   }
+  .opacity-85 {
+    opacity: 85%;
+  }
   .opacity-100 {
     opacity: 100%;
   }
@@ -1974,6 +1983,13 @@
     &:hover {
       @media (hover: hover) {
         color: var(--color-red-error);
+      }
+    }
+  }
+  .hover\:text-vscode-bright {
+    &:hover {
+      @media (hover: hover) {
+        color: var(--color-vscode-bright);
       }
     }
   }

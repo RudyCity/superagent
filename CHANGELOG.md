@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.331] - 2026-07-12
+
+### Changed
+- **Collapsible Process Logs**:
+  - Re-architected job finish layout to collapse all previous execution logs (tool cards and reasoning blocks) under a clean header showing "Finished in Xm Xs" instead of hiding the summary response.
+  - Left the main summary text bubble always visible for immediate readability when the agent completes its job.
+
+---
+
 ## [1.2.330] - 2026-07-12
 
 ### Fixed

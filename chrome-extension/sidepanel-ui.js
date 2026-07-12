@@ -600,70 +600,73 @@ function appendJobFinishFooter(msgEl, startTime) {
 
   // Grab the content element (the chat bubble)
   const contentDiv = msgEl.querySelector(".msg-content");
+  if (!contentDiv) return;
 
-  // Build footer container
-  const footer = document.createElement("div");
-  footer.className = "job-finish-footer";
+  // Find all tool blocks and reasoning blocks within this message content
+  const toolBlocks = Array.from(contentDiv.querySelectorAll(".tool-block"));
+  const reasoningBlocks = Array.from(contentDiv.querySelectorAll(".reasoning-block"));
+  const processElements = [...reasoningBlocks, ...toolBlocks];
 
-  // Hide all tool blocks within this message content by default
-  const toolBlocks = msgEl.querySelectorAll(".tool-block");
-  toolBlocks.forEach(tb => tb.classList.add("hidden"));
+  // If there are no process elements, we don't need a collapsible divider,
+  // but we can still prepend a small finished badge row at the top of the message
+  if (processElements.length === 0) {
+    const badgeRow = document.createElement("div");
+    badgeRow.className = "flex items-center gap-1.5 mt-1.5 mb-1.5 text-[10px] text-vscode-muted";
+    badgeRow.innerHTML = `
+      <span class="text-green-success font-bold">✓</span>
+      <span class="font-mono bg-vscode-inner border border-vscode-dim px-1.5 py-0.5 rounded font-semibold text-green-success">Finished in ${durationLabel}</span>
+    `;
+    contentDiv.insertBefore(badgeRow, contentDiv.firstChild);
+    
+    // Scroll smoothly into view
+    setTimeout(() => {
+      msgEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 100);
+    return;
+  }
 
-  // Duration badge row (styled with cursor: pointer to indicate toggle function)
-  const badgeRow = document.createElement("div");
-  badgeRow.className = "job-finish-badge-row";
-  badgeRow.style.cursor = "pointer";
-  badgeRow.title = "Click to show/hide tools usage";
+  // Build the collapsible container wrapper
+  const wrap = document.createElement("div");
+  wrap.className = "process-details-wrap hidden flex flex-col gap-1.5 mt-1.5 mb-2";
 
-  const checkIcon = document.createElement("span");
-  checkIcon.className = "job-finish-icon";
-  checkIcon.textContent = "✓";
+  // Move all process elements (tool blocks and reasoning blocks) inside the wrapper
+  processElements.forEach(el => {
+    el.classList.remove("hidden");
+    wrap.appendChild(el);
+  });
 
-  const badge = document.createElement("span");
-  badge.className = "job-finish-badge";
-  badge.textContent = `Finished in ${durationLabel}`;
+  // Build the interactive divider/toggle button
+  const divider = document.createElement("div");
+  divider.className = "process-divider flex items-center gap-2 py-1 px-1.5 rounded bg-vscode-inner border border-vscode-dim cursor-pointer text-[10px] text-vscode-muted hover:bg-vscode-hover hover:text-vscode-bright select-none transition-all duration-150 mb-2";
+  divider.title = "Click to show/hide process logs";
+  
+  divider.innerHTML = `
+    <span class="process-chevron font-mono transition-transform duration-150 inline-block">›</span>
+    <span class="process-check text-green-success font-bold">✓</span>
+    <span class="font-bold">Finished in ${durationLabel}</span>
+    <span class="process-status-text ml-auto text-[9px] italic opacity-85">Click to show process details</span>
+  `;
 
-  const toggleBtn = document.createElement("button");
-  toggleBtn.className = "job-finish-toggle";
-  toggleBtn.textContent = "Summary ▴"; // default open (visible)
-  toggleBtn.title = "Toggle summary visibility";
-
-  badgeRow.appendChild(checkIcon);
-  badgeRow.appendChild(badge);
-  badgeRow.appendChild(toggleBtn);
-
-  // Toggle logic for the original chat bubble content
-  toggleBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (contentDiv) {
-      const isHidden = contentDiv.classList.contains("hidden");
-      contentDiv.classList.toggle("hidden", !isHidden);
-      toggleBtn.textContent = isHidden ? "Summary ▴" : "Summary ▾";
+  // Toggle listener
+  divider.addEventListener("click", () => {
+    const isHidden = wrap.classList.contains("hidden");
+    wrap.classList.toggle("hidden", !isHidden);
+    
+    const chevron = divider.querySelector(".process-chevron");
+    const statusText = divider.querySelector(".process-status-text");
+    
+    if (isHidden) {
+      chevron.textContent = "⌄";
+      statusText.textContent = "Click to hide process details";
+    } else {
+      chevron.textContent = "›";
+      statusText.textContent = "Click to show process details";
     }
   });
 
-  // Clicking finished badge row will toggle the tools usage visibility
-  badgeRow.addEventListener("click", () => {
-    // If the content div is hidden, expand it first!
-    if (contentDiv && contentDiv.classList.contains("hidden")) {
-      contentDiv.classList.remove("hidden");
-      toggleBtn.textContent = "Summary ▴";
-    }
-    let anyVisible = false;
-    toolBlocks.forEach(tb => {
-      if (!tb.classList.contains("hidden")) {
-        anyVisible = true;
-      }
-    });
-    toolBlocks.forEach(tb => {
-      tb.classList.toggle("hidden", anyVisible);
-    });
-  });
-
-  footer.appendChild(badgeRow);
-
-  // Inject after the msg content (outside the msg-content div, inside .msg)
-  msgEl.appendChild(footer);
+  // Prepend divider and wrap wrapper at the top of contentDiv
+  contentDiv.insertBefore(wrap, contentDiv.firstChild);
+  contentDiv.insertBefore(divider, wrap);
 
   // Directly scroll the message into view smoothly
   setTimeout(() => {
