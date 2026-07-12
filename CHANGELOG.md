@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.324] - 2026-07-12
+
+### Fixed
+- **Workspace-Scoped History Session Filtering**:
+  - Defined resolveWorkspacePath(req) to resolve the client's current workspace directory via headers, even if no agent session has been active or initialized yet.
+  - Configured /api/history/sessions and related endpoints to use the resolved workspace path, correcting chat history session filtering.
+
+---
+
 ## [1.2.323] - 2026-07-12
 
 ### Changed

@@ -46,6 +46,17 @@ function resolveSession(req: http.IncomingMessage): AgentSession | null {
   return null;
 }
 
+function resolveWorkspacePath(req: http.IncomingMessage): string {
+  const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
+  const headerWs = req.headers["x-workspace-path"] as string;
+  const paramWs = parsedUrl.searchParams.get("workspace");
+  if (headerWs) return path.resolve(headerWs);
+  if (paramWs) return path.resolve(paramWs);
+  
+  const session = resolveSession(req);
+  return session ? session.workspace : lastActiveWorkspace;
+}
+
 export function registerCliAgent(agent: Agent, workspace: string, mode: "single" | "multi") {
   const targetWorkspace = path.resolve(workspace);
   activeSessions.set(targetWorkspace, {
@@ -263,7 +274,7 @@ export async function runServer(port: number, silent = false) {
         const session = resolveSession(req);
         sendJSON(res, 200, {
           status: "online",
-          workspace: session ? session.workspace : lastActiveWorkspace,
+          workspace: resolveWorkspacePath(req),
           mode: session ? session.mode : "single",
           sessionId: session ? session.sessionId : null,
           agentActive: !!session,
@@ -288,8 +299,8 @@ export async function runServer(port: number, silent = false) {
 
       // Get list of previous history sessions
       if (pathname === "/api/history/sessions" && req.method === "GET") {
+        const workspacePath = resolveWorkspacePath(req);
         const session = resolveSession(req);
-        const workspacePath = session ? session.workspace : lastActiveWorkspace;
         const mode = session ? session.mode : "single";
         const isMulti = mode === "multi";
         if (!workspacePath) {
@@ -556,8 +567,7 @@ export async function runServer(port: number, silent = false) {
             if (typeof result === "string" && result.startsWith("data:image/png;base64,")) {
               try {
                 const base64Data = result.replace(/^data:image\/png;base64,/, "");
-                const session = resolveSession(req);
-                const wsPath = session ? session.workspace : lastActiveWorkspace;
+                const wsPath = resolveWorkspacePath(req);
                 const outputPath = path.join(wsPath, "chrome_screenshot.png");
                 fs.writeFileSync(outputPath, base64Data, "base64");
                 resolver.resolve(`Screenshot saved to workspace at: ${outputPath}`);
@@ -604,7 +614,7 @@ export async function runServer(port: number, silent = false) {
         if (session) {
           taskPath = session.agent.getTaskFilePath();
         } else {
-          const wsPath = lastActiveWorkspace;
+          const wsPath = resolveWorkspacePath(req);
           const taskFile = "task.md";
           taskPath = wsPath ? path.join(wsPath, taskFile) : "";
         }
@@ -639,8 +649,7 @@ export async function runServer(port: number, silent = false) {
 
       // Fetch workspace files
       if (pathname === "/api/workspace/files" && req.method === "GET") {
-        const session = resolveSession(req);
-        const wsPath = session ? session.workspace : lastActiveWorkspace;
+        const wsPath = resolveWorkspacePath(req);
         if (!wsPath) {
           sendJSON(res, 200, { success: true, files: [] });
           return;
@@ -667,8 +676,7 @@ export async function runServer(port: number, silent = false) {
           return;
         }
 
-        const session = resolveSession(req);
-        const wsPath = session ? session.workspace : lastActiveWorkspace;
+        const wsPath = resolveWorkspacePath(req);
         if (!wsPath) {
           sendJSON(res, 400, { error: "No active workspace select" });
           return;
@@ -704,8 +712,7 @@ export async function runServer(port: number, silent = false) {
           return;
         }
 
-        const session = resolveSession(req);
-        const wsPath = session ? session.workspace : lastActiveWorkspace;
+        const wsPath = resolveWorkspacePath(req);
         if (!wsPath) {
           sendJSON(res, 400, { error: "No active workspace select" });
           return;
@@ -743,8 +750,7 @@ export async function runServer(port: number, silent = false) {
 
       // Fetch Git changes
       if (pathname === "/api/git/changes" && req.method === "GET") {
-        const session = resolveSession(req);
-        const wsPath = session ? session.workspace : lastActiveWorkspace;
+        const wsPath = resolveWorkspacePath(req);
         if (!wsPath) {
           sendJSON(res, 200, { success: true, changes: [] });
           return;
