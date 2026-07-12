@@ -426,17 +426,19 @@
   </div>
 
   <!-- Add Workspace Modal overlay -->
-  <div id="add-workspace-overlay" class="modal-overlay">
-    <div class="modal-card">
-      <div class="modal-header">
+  <div id="add-workspace-overlay" class="overlay absolute top-0 left-0 w-full h-full bg-black/55 backdrop-blur-[1px] z-[10000] items-center justify-center p-3">
+    <div class="modal bg-vscode-sidebar border border-vscode-bright rounded-sm shadow-2xl w-full max-w-[320px] flex flex-col">
+      <div class="modal-header p-2.5 border-b border-vscode-dim flex justify-between items-center">
         <h3 class="text-[11.5px] font-semibold text-vscode-light uppercase">Add Workspace</h3>
         <button id="btn-close-add-workspace" class="bg-transparent border-0 text-vscode-muted hover:text-vscode-light cursor-pointer text-[14px]">×</button>
       </div>
-      <div class="modal-body p-3 flex flex-col gap-2">
-        <label for="workspace-path" class="text-[10px] text-vscode-muted uppercase">Workspace Directory Path</label>
-        <div class="flex gap-1.5">
-          <input type="text" id="workspace-path" placeholder="e.g. C:\Projects\my-app" class="flex-1 bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[11px] outline-none focus:border-vscode-bright">
-          <button id="btn-browse" type="button" class="btn btn-secondary font-sans font-medium text-[10px] px-2.5 py-1 border rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover">Browse</button>
+      <div class="modal-body p-3 flex flex-col gap-2.5 max-h-[300px] overflow-y-auto">
+        <div class="form-group flex flex-col gap-1.5">
+          <label for="workspace-path" class="text-[11px] font-semibold text-vscode-primary">Workspace Directory Path</label>
+          <div class="flex gap-1.5">
+            <input type="text" id="workspace-path" placeholder="e.g. C:\Projects\my-app" class="flex-1 bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+            <button id="btn-browse" type="button" class="btn btn-secondary font-sans font-medium text-[11px] px-2.5 py-1 border rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-[30px]">Browse</button>
+          </div>
         </div>
       </div>
       <div class="modal-footer p-2.5 border-t border-vscode-dim flex justify-end gap-2">
