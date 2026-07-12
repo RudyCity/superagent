@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.308] - 2026-07-12
+
+### Added
+- **Completed Tasks 15-second Decay and Auto-Hide**:
+  - Implemented a 15-second countdown timer (`~ Hide in (Xs)`) inside `renderTasks` in `sidepanel.js` for completed tasks, matching the CLI task checklist behavior.
+  - Setup a local 1-second interval execution loop in the extension that re-renders the tasks panel dynamically while completed tasks with active countdown timers are present.
+  - Configured automated filtering that excludes completed tasks once their decay countdown is completed.
+
+---
+
 ## [1.2.307] - 2026-07-12
 
 ### Fixed

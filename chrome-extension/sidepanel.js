@@ -922,6 +922,8 @@ async function pollChecklistAndAgents() {
     }
   } catch {}
 }
+let checklistDecayInterval = null;
+
 // Render task list in the persistent panel above the input area
 function renderTasks(tasks) {
   const panel = document.getElementById("persistent-tasks-panel");
@@ -929,43 +931,96 @@ function renderTasks(tasks) {
 
   if (!tasks || tasks.length === 0) {
     panel.classList.add("hidden");
+    if (checklistDecayInterval) {
+      clearInterval(checklistDecayInterval);
+      checklistDecayInterval = null;
+    }
     return;
   }
 
-  // Initialize tracking variables on window if not yet set
-  if (typeof window.lastSerializedTasks === "undefined") {
-    window.lastSerializedTasks = "";
+  window.currentTasksList = tasks;
+  window.completedTaskTimestamps = window.completedTaskTimestamps || new Map();
+
+  const now = Date.now();
+  
+  // Record timestamps for completed tasks
+  tasks.forEach(t => {
+    if (t.status === "x") {
+      if (!window.completedTaskTimestamps.has(t.text)) {
+        window.completedTaskTimestamps.set(t.text, now);
+      }
+    } else {
+      window.completedTaskTimestamps.delete(t.text);
+    }
+  });
+
+  // Filter and map tasks with remainingSeconds
+  let activeDecayCount = 0;
+  const processedTasks = tasks.map(t => {
+    if (t.status === "x") {
+      const completionTime = window.completedTaskTimestamps.get(t.text) || now;
+      const elapsed = now - completionTime;
+      const remainingSeconds = Math.max(0, Math.ceil((15000 - elapsed) / 1000));
+      if (remainingSeconds > 0) {
+        activeDecayCount++;
+      }
+      return { ...t, remainingSeconds };
+    }
+    return t;
+  }).filter(t => {
+    return t.status !== "x" || t.remainingSeconds > 0;
+  });
+
+  // Set up 1s refresh interval if there are active decay countdowns
+  if (activeDecayCount > 0) {
+    if (!checklistDecayInterval) {
+      checklistDecayInterval = setInterval(() => {
+        renderTasks(window.currentTasksList);
+      }, 1000);
+    }
+  } else {
+    if (checklistDecayInterval) {
+      clearInterval(checklistDecayInterval);
+      checklistDecayInterval = null;
+    }
   }
 
-  const serialized = JSON.stringify(tasks);
-  if (serialized === window.lastSerializedTasks) {
-    panel.classList.remove("hidden");
+  // If all tasks are completed and expired, the list becomes empty
+  if (processedTasks.length === 0) {
+    panel.classList.add("hidden");
     return;
   }
-  window.lastSerializedTasks = serialized;
 
   panel.classList.remove("hidden");
 
   // Auto-expand content panel when tasks update
   const content = document.getElementById("persistent-tasks-content");
   const chevron = document.getElementById("persistent-tasks-chevron");
+  
+  const serialized = JSON.stringify(processedTasks);
+  if (serialized === window.lastSerializedTasks) {
+    panel.classList.remove("hidden");
+    return;
+  }
+  window.lastSerializedTasks = serialized;
+
   if (content) content.classList.remove("hidden");
   if (chevron) chevron.textContent = "▼";
 
   let completed = 0;
-  tasks.forEach(t => {
+  processedTasks.forEach(t => {
     if (t.status === "x") completed++;
   });
 
   const countEl = document.getElementById("persistent-tasks-count");
   if (countEl) {
-    countEl.textContent = `${completed}/${tasks.length}`;
+    countEl.textContent = `${completed}/${processedTasks.length}`;
   }
 
   const listEl = document.getElementById("persistent-tasks-list");
   if (listEl) {
     listEl.innerHTML = "";
-    tasks.forEach(t => {
+    processedTasks.forEach(t => {
       const row = document.createElement("div");
       row.className = "flex items-center gap-1.5 py-[1px] text-[10px] font-sans leading-tight";
 
@@ -986,7 +1041,11 @@ function renderTasks(tasks) {
 
       const textSpan = document.createElement("span");
       textSpan.className = `${textClass} flex-1 overflow-hidden text-ellipsis`;
-      textSpan.textContent = t.text;
+      if (t.status === "x" && t.remainingSeconds !== undefined) {
+        textSpan.textContent = `${t.text} ~ Hide in (${t.remainingSeconds}s)`;
+      } else {
+        textSpan.textContent = t.text;
+      }
 
       row.appendChild(iconSpan);
       row.appendChild(textSpan);
