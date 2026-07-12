@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.332] - 2026-07-12
+
+### Fixed
+- **Workspace Chat History Sync**:
+  - Fixed a bug where switching chat sessions in the history tab would complete on the server but fail to update the chat message bubble list in the UI.
+  - Ensured switching workspaces automatically refreshes the chat sessions list in the left sidebar history tab to always align with the active workspace.
+  - Enabled passing `mode` as a query parameter when fetching previous history sessions to resolve correct directory (single vs multi) even if the active server session is not yet initialized.
+
+---
+
 ## [1.2.331] - 2026-07-12
 
 ### Changed

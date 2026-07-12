@@ -300,8 +300,10 @@ export async function runServer(port: number, silent = false) {
       // Get list of previous history sessions
       if (pathname === "/api/history/sessions" && req.method === "GET") {
         const workspacePath = resolveWorkspacePath(req);
+        const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
+        const queryMode = parsedUrl.searchParams.get("mode");
         const session = resolveSession(req);
-        const mode = session ? session.mode : "single";
+        const mode = queryMode || (session ? session.mode : "single");
         const isMulti = mode === "multi";
         if (!workspacePath) {
           sendJSON(res, 200, { success: true, sessions: [] });

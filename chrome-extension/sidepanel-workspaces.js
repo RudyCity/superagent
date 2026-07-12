@@ -142,6 +142,9 @@ async function switchToWorkspace(workspacePath, mode) {
       if (typeof pollWorkspaceFiles === "function") {
         pollWorkspaceFiles();
       }
+      if (typeof loadChatHistorySessions === "function") {
+        loadChatHistorySessions();
+      }
     } else {
       alert("Failed to switch workspace: " + (data.error || "Unknown error"));
     }

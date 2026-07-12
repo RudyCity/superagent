@@ -155,13 +155,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Load saved workspace path, API token, and saved workspaces list if any
-  chrome.storage.local.get(["lastWorkspacePath", "lastApiToken", "savedWorkspaces"], (result) => {
+  chrome.storage.local.get(["lastWorkspacePath", "lastApiToken", "savedWorkspaces", "lastMode"], (result) => {
     if (result.lastWorkspacePath) {
       workspacePathInput.value = result.lastWorkspacePath;
     }
     if (result.lastApiToken) {
       apiTokenInput.value = result.lastApiToken;
       apiToken = result.lastApiToken;
+    }
+    if (result.lastMode) {
+      currentMode = result.lastMode;
+      const radio = document.querySelector(`input[name="agent-mode"][value="${result.lastMode}"]`);
+      if (radio) radio.checked = true;
     }
     renderWorkspaceListOnly();
     checkServerStatus();
@@ -414,7 +419,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Orchestration Mode Radio Change
   document.querySelectorAll('input[name="agent-mode"]').forEach(radio => {
-    radio.addEventListener("change", updatePresetsDropdown);
+    radio.addEventListener("change", (e) => {
+      currentMode = e.target.value;
+      updatePresetsDropdown();
+      if (typeof loadChatHistorySessions === "function") {
+        loadChatHistorySessions();
+      }
+    });
   });
 
   // Tab Navigation Listeners

@@ -182,7 +182,8 @@ function renderChatHistory(messages) {
 async function loadChatHistorySessions() {
   chatHistoryList.innerHTML = '<div class="p-3 text-center text-vscode-muted text-[11px]">Loading sessions...</div>';
   try {
-    const res = await fetch(`${BASE_URL}/api/history/sessions`);
+    const mode = typeof currentMode !== "undefined" ? currentMode : "single";
+    const res = await fetch(`${BASE_URL}/api/history/sessions?mode=${mode}`);
     const data = await res.json().catch(() => null);
     if (res.ok && data && data.success && Array.isArray(data.sessions)) {
       renderChatHistorySessionsList(data.sessions);
@@ -255,6 +256,7 @@ async function switchChatSession(sessionId) {
     const data = await res.json().catch(() => null);
     if (res.ok && data && data.success) {
       await checkServerStatus();
+      await loadChatHistory();
     } else {
       alert("Failed to switch chat session");
       await loadChatHistory();
