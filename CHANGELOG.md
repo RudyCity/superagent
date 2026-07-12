@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.316] - 2026-07-12
+
+### Changed
+- **Add Workspace Modal Overlay**:
+  - Moved the folder path input, browse button, and add workspace action button from the Left Sidebar into a dedicated overlay modal (#add-workspace-overlay).
+  - Added a "+" trigger button to the Left Sidebar's Workspace panel header to display the modal overlay.
+  - Hides the Add Workspace modal automatically upon a successful local server workspace session initialization.
+
+---
+
 ## [1.2.315] - 2026-07-12
 
 ### Added

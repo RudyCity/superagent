@@ -104,27 +104,15 @@
         <!-- Panel Header -->
         <div class="panel-header p-3 border-b border-vscode-dim flex items-center justify-between bg-vscode-activitybar shrink-0">
           <h3 id="left-sidebar-title" class="text-[11px] font-bold text-vscode-light uppercase tracking-wider">Workspace</h3>
+          <button id="btn-show-add-workspace" class="bg-transparent border-0 text-vscode-muted hover:text-vscode-light cursor-pointer text-[14px] leading-none px-1" title="Add Workspace">+</button>
         </div>
         
         <!-- Tab Content View: Workspace -->
         <div id="view-workspace" class="tab-view flex-1 flex flex-col overflow-hidden">
-          <!-- Workspace switcher/list & Add Workspace section -->
-          <div class="p-3 border-b border-vscode-dim flex flex-col gap-3 shrink-0">
-            <!-- Active Workspace Label -->
-            <div class="flex flex-col gap-1">
-              <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Active Workspace</span>
-              <span id="active-workspace-text" class="font-mono text-vscode-bright font-medium text-[11px] truncate block bg-vscode-inner px-2 py-1.5 border border-vscode-dim rounded-sm" title="Not Selected">Not Selected</span>
-            </div>
-
-            <!-- Add Workspace folder button/input -->
-            <div class="flex flex-col gap-1.5">
-              <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Add Workspace</span>
-              <div class="input-with-button flex gap-1">
-                <input type="text" id="workspace-path" placeholder="e.g. C:\\Projects\\my-app" required class="flex-1 bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1 font-mono text-[10.5px] outline-none h-6 focus:border-vscode-bright">
-                <button id="btn-browse" type="button" class="btn btn-secondary font-sans font-medium text-[10px] px-2 py-0.5 border rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-6">Browse</button>
-              </div>
-              <button id="btn-add-workspace" class="btn btn-primary w-full font-sans font-medium text-[10.5px] px-2.5 py-1 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-blue text-white hover:bg-vscode-blue-hover h-6">+ Add Workspace</button>
-            </div>
+          <!-- Active Workspace Label -->
+          <div class="p-3 border-b border-vscode-dim flex flex-col gap-1 shrink-0">
+            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">Active Workspace</span>
+            <span id="active-workspace-text" class="font-mono text-vscode-bright font-medium text-[11px] truncate block bg-vscode-inner px-2 py-1.5 border border-vscode-dim rounded-sm" title="Not Selected">Not Selected</span>
           </div>
 
           <!-- Saved Workspaces list -->
@@ -433,6 +421,27 @@
       </div>
       <div class="modal-footer p-2.5 border-t border-vscode-dim flex justify-end gap-2">
         <button id="btn-save-settings" class="btn btn-primary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">Save & Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Workspace Modal overlay -->
+  <div id="add-workspace-overlay" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="text-[11.5px] font-semibold text-vscode-light uppercase">Add Workspace</h3>
+        <button id="btn-close-add-workspace" class="bg-transparent border-0 text-vscode-muted hover:text-vscode-light cursor-pointer text-[14px]">×</button>
+      </div>
+      <div class="modal-body p-3 flex flex-col gap-2">
+        <label for="workspace-path" class="text-[10px] text-vscode-muted uppercase">Workspace Directory Path</label>
+        <div class="flex gap-1.5">
+          <input type="text" id="workspace-path" placeholder="e.g. C:\Projects\my-app" class="flex-1 bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[11px] outline-none focus:border-vscode-bright">
+          <button id="btn-browse" type="button" class="btn btn-secondary font-sans font-medium text-[10px] px-2.5 py-1 border rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover">Browse</button>
+        </div>
+      </div>
+      <div class="modal-footer p-2.5 border-t border-vscode-dim flex justify-end gap-2">
+        <button id="btn-cancel-add-workspace" class="btn btn-secondary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-[30px]">Cancel</button>
+        <button id="btn-add-workspace" class="btn btn-primary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">Add Workspace</button>
       </div>
     </div>
   </div>

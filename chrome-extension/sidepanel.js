@@ -286,6 +286,31 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
 
+  // Add Workspace modal listeners
+  const btnShowAddWorkspace = document.getElementById("btn-show-add-workspace");
+  const btnCloseAddWorkspace = document.getElementById("btn-close-add-workspace");
+  const btnCancelAddWorkspace = document.getElementById("btn-cancel-add-workspace");
+  const addWorkspaceOverlay = document.getElementById("add-workspace-overlay");
+
+  if (btnShowAddWorkspace && addWorkspaceOverlay) {
+    btnShowAddWorkspace.addEventListener("click", () => {
+      addWorkspaceOverlay.classList.add("active");
+      if (workspacePathInput) workspacePathInput.focus();
+    });
+  }
+
+  if (btnCloseAddWorkspace && addWorkspaceOverlay) {
+    btnCloseAddWorkspace.addEventListener("click", () => {
+      addWorkspaceOverlay.classList.remove("active");
+    });
+  }
+
+  if (btnCancelAddWorkspace && addWorkspaceOverlay) {
+    btnCancelAddWorkspace.addEventListener("click", () => {
+      addWorkspaceOverlay.classList.remove("active");
+    });
+  }
+
   // Workspace Left Sidebar Buttons
   const btnAddWorkspace = document.getElementById("btn-add-workspace");
   if (btnAddWorkspace) {
@@ -560,6 +585,15 @@ async function connectToWorkspace(workspacePath) {
     if (data.success) {
       activeWorkspaceText.textContent = workspacePath;
       activeWorkspaceText.title = workspacePath;
+      
+      // Hide the add workspace modal
+      const addWorkspaceOverlay = document.getElementById("add-workspace-overlay");
+      if (addWorkspaceOverlay) {
+        addWorkspaceOverlay.classList.remove("active");
+      }
+      if (workspacePathInput) {
+        workspacePathInput.value = "";
+      }
       
       // Save new last workspace path
       chrome.storage.local.set({ lastWorkspacePath: workspacePath });
@@ -1255,9 +1289,19 @@ let activeSidebarTab = "workspace";
 function switchSidebarTab(tabId) {
   const leftSidebar = document.getElementById("left-sidebar");
   const sidebarTitle = document.getElementById("left-sidebar-title");
+  const btnShowAddWorkspace = document.getElementById("btn-show-add-workspace");
   
   if (leftSidebar) {
     leftSidebar.classList.remove("hidden");
+  }
+  
+  // Toggle the "+" button depending on sidebar view
+  if (btnShowAddWorkspace) {
+    if (tabId === "workspace") {
+      btnShowAddWorkspace.classList.remove("hidden");
+    } else {
+      btnShowAddWorkspace.classList.add("hidden");
+    }
   }
   
   // Reset tab button active states
