@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Superagent AI Coding SidePanel",
+  "name": "Super Agent R - AI Autonomous your working.",
   "version": "1.0.0",
   "description": "Clean, Chrome-styled side panel for coding powered by the local Superagent engine.",
   "permissions": [

@@ -1475,9 +1475,6 @@
   .text-\[12px\] {
     font-size: 12px;
   }
-  .text-\[13px\] {
-    font-size: 13px;
-  }
   .text-\[14px\] {
     font-size: 14px;
   }
@@ -1590,9 +1587,6 @@
   .text-vscode-blue {
     color: var(--color-vscode-blue);
   }
-  .text-vscode-blue-hover {
-    color: var(--color-vscode-blue-hover);
-  }
   .text-vscode-bright {
     color: var(--color-vscode-bright);
   }
@@ -1669,10 +1663,6 @@
   }
   .shadow-\[0_0_6px_var\(--color-amber-warning\)\] {
     --tw-shadow: 0 0 6px var(--tw-shadow-color, var(--color-amber-warning));
-    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
-  }
-  .shadow-\[0_0_8px_var\(--color-green-success\)\] {
-    --tw-shadow: 0 0 8px var(--tw-shadow-color, var(--color-green-success));
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
   .shadow-lg {

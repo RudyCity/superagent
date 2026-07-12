@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.311] - 2026-07-12
+
+### Changed
+- **Chrome Extension Branding and Logo Refresh**:
+  - Renamed the extension to 'Super Agent R - AI Autonomous your working.' inside manifest.json and updated the sidepanel title.
+  - Replaced the extension logo icons (16x16, 48x48, and 128x128) with a newly generated abstract glowing logo.
+  - Simplified the header logo container inside sidepanel.html by renaming the heading to 'Super Agent R' and removing the decorative glow-dot.
+
+---
+
 ## [1.2.310] - 2026-07-12
 
 ### Changed
