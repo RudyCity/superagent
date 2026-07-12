@@ -71,6 +71,10 @@ async function switchToWorkspace(workspacePath, mode) {
       activeModeText.textContent = data.mode;
       currentMode = data.mode;
 
+      if (typeof window.updateWorkspaceRequiredUI === "function") {
+        window.updateWorkspaceRequiredUI();
+      }
+
       await saveWorkspace(data.workspace);
       await renderWorkspaceListOnly();
 

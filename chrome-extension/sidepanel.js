@@ -168,6 +168,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     renderWorkspaceListOnly();
     checkServerStatus();
+    if (typeof window.updateWorkspaceRequiredUI === "function") {
+      window.updateWorkspaceRequiredUI();
+    }
   });
 
   setInterval(checkServerStatus, 1000);
@@ -479,6 +482,10 @@ async function checkServerStatus() {
       } else if (planOverlay && planOverlay.classList.contains("active") && data.planState !== "PLANNING_PENDING") {
         planOverlay.classList.remove("active");
       }
+      
+      if (typeof window.updateWorkspaceRequiredUI === "function") {
+        window.updateWorkspaceRequiredUI();
+      }
     }
   } catch {
     wasOffline = true;
@@ -493,6 +500,10 @@ async function checkServerStatus() {
         eventSource.close();
         eventSource = null;
       }
+    }
+    
+    if (typeof window.updateWorkspaceRequiredUI === "function") {
+      window.updateWorkspaceRequiredUI();
     }
   }
 }
@@ -551,6 +562,10 @@ async function launchWelcomeSession() {
     setupScreen.classList.remove("active");
     workspaceScreen.classList.add("active");
 
+    if (typeof window.updateWorkspaceRequiredUI === "function") {
+      window.updateWorkspaceRequiredUI();
+    }
+
     clearChatMessages();
     appendMessage("system", "Engine initialized. Please select a workspace from Saved Workspaces below or enter a path above to start your session.");
   } catch (err) {
@@ -593,6 +608,10 @@ async function connectToWorkspace(workspacePath) {
       }
       if (workspacePathInput) {
         workspacePathInput.value = "";
+      }
+      
+      if (typeof window.updateWorkspaceRequiredUI === "function") {
+        window.updateWorkspaceRequiredUI();
       }
       
       // Save new last workspace path
@@ -1372,6 +1391,42 @@ function switchTab(tabId) {
 }
 
 // [Document rendering, markdown parsing, and sessions switcher moved to sidepanel-ui.js and sidepanel-history.js]
+
+window.updateWorkspaceRequiredUI = function() {
+  const activeWorkspaceText = document.getElementById("active-workspace-text");
+  const isWorkspaceConnected = activeWorkspaceText && activeWorkspaceText.textContent && activeWorkspaceText.textContent !== "Not Selected";
+  const btnNewChat = document.getElementById("btn-new-chat");
+  const chatInput = document.getElementById("chat-input");
+  const btnSend = document.getElementById("btn-send");
+  const chatActions = document.querySelector(".chat-actions");
+
+  if (!isWorkspaceConnected) {
+    if (btnNewChat) btnNewChat.classList.add("hidden");
+    if (chatActions) chatActions.classList.add("hidden");
+    if (chatInput) {
+      chatInput.disabled = true;
+      chatInput.placeholder = "Please select or add a workspace in the Left Sidebar to start chatting...";
+      chatInput.value = "";
+    }
+    if (btnSend) {
+      btnSend.disabled = true;
+      btnSend.classList.add("opacity-50");
+      btnSend.style.pointerEvents = "none";
+    }
+  } else {
+    if (btnNewChat) btnNewChat.classList.remove("hidden");
+    if (chatActions) chatActions.classList.remove("hidden");
+    if (chatInput) {
+      chatInput.disabled = false;
+      chatInput.placeholder = "Type instructions or / for commands, ! for terminal...";
+    }
+    if (btnSend) {
+      btnSend.disabled = false;
+      btnSend.classList.remove("opacity-50");
+      btnSend.style.pointerEvents = "auto";
+    }
+  }
+};
 
 
 

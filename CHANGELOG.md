@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.320] - 2026-07-12
+
+### Changed
+- **Mandatory Workspace Validation on Chat Inputs**:
+  - Hides the "New Chat" button and chat action bar if no active workspace is connected.
+  - Disables the chat input text field and displays a placeholder message instructing the user to connect a workspace first.
+  - Automatically restores input state and shows chat actions when a workspace session is activated.
+
+---
+
 ## [1.2.319] - 2026-07-12
 
 ### Added
