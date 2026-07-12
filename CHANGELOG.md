@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.335] - 2026-07-12
+
+### Added
+- **Chrome Extension Tab Control Permissions**:
+  - Added "tabs", "webNavigation", and "debugger" permissions to the manifest.json file to support full browser tab control, page navigation tracking, and Chrome DevTools Protocol automation.
+
+---
+
 ## [1.2.334] - 2026-07-12
 
 ### Optimized

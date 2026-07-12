@@ -6,6 +6,9 @@
   "permissions": [
     "sidePanel",
     "activeTab",
+    "tabs",
+    "webNavigation",
+    "debugger",
     "scripting",
     "storage"
   ],

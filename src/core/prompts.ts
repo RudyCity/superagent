@@ -78,6 +78,8 @@ const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR (anti-drift protocol):
   3. Will this action move closer to SUCCESS CRITERIA / acceptance criteria?
   If drifting: STOP, re-read task assignment, recalibrate.`;
 
+const CHROME_EXTENSION_CONTEXT_RULE = `- CHROME_EXTENSION_CONTEXT: If running within the Chrome Extension environment (which is active when the 'control_browser_tab' tool is available), you are connected to the user's active browser tab. The active tab's URL and title are automatically prepended to the user's messages. Use the 'control_browser_tab' tool to inspect, scroll, click, screenshot, or scrape pages when the user asks questions about their active tab or browser actions.`;
+
 // ─── Chrome Extension Agent ──────────────────────────────────────────────────
 export const CHROME_EXTENSION_SYSTEM_PROMPT = `
 # ROLE
@@ -91,6 +93,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 - BROWSER_PRIORITY: Focus on browser interaction and web analysis. Prioritize using 'control_browser_tab' for any tasks involving web searching, reading page content, or checking console logs.
 - WORKSPACE_LIMIT: Direct file modifications allowed only on plan/task/walkthrough files and web application source code within the active workspace.
 - MANDATORY: Use 'ask_question' when design scenarios or web actions are ambiguous. NEVER guess user intent.
+${CHROME_EXTENSION_CONTEXT_RULE}
 
 # LOGIC GATES
 if search_needed:
@@ -162,6 +165,7 @@ ${FAST_ANALYSIS_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${ATTENTION_HIERARCHY_RULE}
+${CHROME_EXTENSION_CONTEXT_RULE}
 
 # LOGIC GATES
 if spawning_superagent:
@@ -228,6 +232,7 @@ ${SHARED_MEMORY_RULE}
 ${CONCERN_TRACKS_RULE}
 ${SELF_INTERROGATION_RULE}
 ${CONTEXT_ANCHOR_RULE}
+${CHROME_EXTENSION_CONTEXT_RULE}
 
 # LOGIC GATES
 if spawning_subagent:
