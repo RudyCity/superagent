@@ -345,8 +345,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Tab Navigation Listeners
-  if (tabChat) tabChat.addEventListener("click", () => switchTab("chat"));
-  if (tabHistory) tabHistory.addEventListener("click", () => switchTab("history"));
+  if (tabChat) tabChat.addEventListener("click", () => handleTabClick("chat"));
+  if (tabHistory) tabHistory.addEventListener("click", () => handleTabClick("history"));
 
   // Document Refresh Listeners
   if (btnRefreshHistory) btnRefreshHistory.addEventListener("click", loadChatHistorySessions);
@@ -1210,6 +1210,11 @@ function updateSetupRecentWorkspaces() {
 function switchTab(tabId) {
   const tabs = [tabChat, tabHistory];
   const views = [viewChat, viewHistory];
+  const leftSidebar = document.getElementById("left-sidebar");
+  
+  if (leftSidebar) {
+    leftSidebar.classList.remove("hidden");
+  }
   
   tabs.forEach(t => { if (t) t.classList.remove("active"); });
   views.forEach(v => { if (v) v.classList.add("hidden"); });
@@ -1221,6 +1226,26 @@ function switchTab(tabId) {
     tabHistory.classList.add("active");
     viewHistory.classList.remove("hidden");
     loadChatHistorySessions();
+  }
+}
+
+function handleTabClick(tabId) {
+  const leftSidebar = document.getElementById("left-sidebar");
+  const tabButton = tabId === "chat" ? tabChat : tabHistory;
+  
+  if (tabButton && tabButton.classList.contains("active")) {
+    if (leftSidebar) {
+      const isHidden = leftSidebar.classList.contains("hidden");
+      if (isHidden) {
+        leftSidebar.classList.remove("hidden");
+        tabButton.classList.add("active");
+      } else {
+        leftSidebar.classList.add("hidden");
+        tabButton.classList.remove("active");
+      }
+    }
+  } else {
+    switchTab(tabId);
   }
 }
 

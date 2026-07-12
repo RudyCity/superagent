@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.312] - 2026-07-12
+
+### Changed
+- **Activity Bar Panel Toggling**:
+  - Implemented smart toggling of the Left Sidebar panel by clicking the active tab button in the activity bar, enabling users to hide/show the workspace sidebar to expand or collapse the main chat area layout.
+
+---
+
 ## [1.2.311] - 2026-07-12
 
 ### Changed
