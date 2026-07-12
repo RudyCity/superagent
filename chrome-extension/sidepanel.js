@@ -55,7 +55,6 @@ const recentWorkspacesList = document.getElementById("recent-workspaces-list");
 
 const activeWorkspaceText = document.getElementById("active-workspace-text");
 const activeModeText = document.getElementById("active-mode-text");
-const btnAbort = document.getElementById("btn-abort");
 
 const chatMessages = document.getElementById("chat-messages");
 const chatInput = document.getElementById("chat-input");
@@ -174,7 +173,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  btnAbort.addEventListener("click", abortExecution);
   btnApproveOnce.addEventListener("click", () => resolvePermission(true));
   btnApproveSession.addEventListener("click", () => resolvePermission("session"));
   btnDenyPermission.addEventListener("click", () => resolvePermission(false));

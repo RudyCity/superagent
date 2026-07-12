@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.306] - 2026-07-12
+
+### Removed
+- **Redundant Halt Execution Button**:
+  - Removed the `btn-abort` ("HALT EXECUTION") button from the workspace session header inside `sidepanel.html`.
+  - Cleaned up the `btnAbort` reference and its click listener event registration inside `sidepanel.js`.
+
+---
+
 ## [1.2.305] - 2026-07-12
 
 ### Fixed
