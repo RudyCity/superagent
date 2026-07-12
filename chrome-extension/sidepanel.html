@@ -322,18 +322,20 @@
   </div>
 
   <!-- Plan Approval overlay -->
-  <div id="plan-overlay" class="overlay absolute top-0 left-0 w-full h-full bg-black/55 backdrop-blur-[1px] z-[10000] items-center justify-center p-3">
-    <div class="modal bg-vscode-sidebar border border-vscode-bright rounded-sm shadow-2xl w-full max-w-[320px] flex flex-col">
+  <div id="plan-overlay" class="overlay absolute top-0 left-0 w-full h-full bg-black/55 backdrop-blur-[1px] z-[10000] items-center justify-center p-3 select-none">
+    <div class="modal bg-vscode-sidebar border border-vscode-bright rounded-sm shadow-2xl w-full max-w-[480px] flex flex-col max-h-[85vh]">
       <div class="modal-header p-2.5 border-b border-vscode-dim">
-        <h3 class="text-[11.5px] font-semibold text-vscode-light">📋 PLAN APPROVAL REQUIRED</h3>
+        <h3 class="text-[11.5px] font-semibold text-vscode-light flex items-center gap-1.5">📋 PLAN APPROVAL REQUIRED</h3>
       </div>
-      <div class="modal-body p-3 flex flex-col gap-1.5">
+      <div class="modal-body p-3 flex flex-col gap-2.5 overflow-hidden">
         <p class="text-[11.5px] text-vscode-primary leading-normal">The agent has written an implementation plan and is waiting for your approval before modifying any files.</p>
-        <p class="modal-label text-[10px] text-vscode-muted uppercase mt-1">Review the plan file before proceeding.</p>
+        <div id="plan-details-content" class="markdown-body text-[11px] border border-vscode-dim bg-vscode-editor rounded-sm p-3 overflow-y-auto max-h-[300px] leading-relaxed select-text">
+          Loading implementation plan...
+        </div>
       </div>
-      <div class="modal-footer p-2.5 border-t border-vscode-dim flex flex-col gap-1.5">
-        <button id="btn-approve-plan" class="btn btn-primary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">Approve &amp; Proceed</button>
+      <div class="modal-footer p-2.5 border-t border-vscode-dim flex flex-row justify-end gap-2 shrink-0">
         <button id="btn-reject-plan" class="btn btn-danger font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-red-error text-white hover:bg-[#be533f] h-[30px]">Reject Plan</button>
+        <button id="btn-approve-plan" class="btn btn-primary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">Approve &amp; Proceed</button>
       </div>
     </div>
   </div>

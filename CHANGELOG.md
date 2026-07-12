@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.334] - 2026-07-12
+
+### Optimized
+- **Plan Review Modal Integration**:
+  - Expanded the Plan Approval Overlay modal width from 320px to 480px.
+  - Embedded a scrollable, fully rendered Markdown plan details container inside the modal body.
+  - Automatically fetches the generated `implementation_plan.md` via `/api/documents` and parses it into the viewport so the user can easily read and review the plan inline without having to open the workspace file manually.
+
+---
+
 ## [1.2.333] - 2026-07-12
 
 ### Added

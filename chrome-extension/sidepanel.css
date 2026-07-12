@@ -597,6 +597,9 @@
   .max-h-\[60px\] {
     max-height: 60px;
   }
+  .max-h-\[85vh\] {
+    max-height: 85vh;
+  }
   .max-h-\[120px\] {
     max-height: 120px;
   }
@@ -692,6 +695,9 @@
   }
   .max-w-\[320px\] {
     max-width: 320px;
+  }
+  .max-w-\[480px\] {
+    max-width: 480px;
   }
   .max-w-full {
     max-width: 100%;

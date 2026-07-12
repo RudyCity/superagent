@@ -1013,6 +1013,29 @@ async function resolvePermission(approval) {
 function showPlanOverlay() {
   if (planOverlay && !planOverlay.classList.contains("active")) {
     planOverlay.classList.add("active");
+    loadPlanDetails();
+  }
+}
+
+async function loadPlanDetails() {
+  const planDetailsContainer = document.getElementById("plan-details-content");
+  if (!planDetailsContainer) return;
+  planDetailsContainer.innerHTML = '<div style="text-align: center; color: var(--text-vscode-muted); font-size: 10px; padding: 15px 0;">Loading implementation plan...</div>';
+  try {
+    const res = await fetch(`${BASE_URL}/api/documents`);
+    const data = await res.json().catch(() => null);
+    if (res.ok && data && data.plan) {
+      if (typeof renderDocument === "function") {
+        renderDocument(planDetailsContainer, data.plan, "No implementation plan content found.");
+      } else {
+        planDetailsContainer.textContent = data.plan;
+      }
+    } else {
+      planDetailsContainer.innerHTML = '<div style="text-align: center; color: var(--text-vscode-muted); font-size: 10px; padding: 15px 0;">No implementation plan found.</div>';
+    }
+  } catch (err) {
+    console.error("Failed to fetch plan documents:", err);
+    planDetailsContainer.innerHTML = '<div style="text-align: center; color: var(--text-vscode-muted); font-size: 10px; padding: 15px 0;">Error loading plan.</div>';
   }
 }
 
