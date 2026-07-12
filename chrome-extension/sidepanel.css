@@ -451,6 +451,9 @@
   .mb-4 {
     margin-bottom: calc(var(--spacing) * 4);
   }
+  .-ml-\[2px\] {
+    margin-left: calc(2px * -1);
+  }
   .ml-1 {
     margin-left: var(--spacing);
   }
@@ -605,6 +608,9 @@
   }
   .min-h-\[44px\] {
     min-height: 44px;
+  }
+  .w-1 {
+    width: var(--spacing);
   }
   .w-1\.5 {
     width: calc(var(--spacing) * 1.5);
@@ -789,6 +795,9 @@
   }
   .animate-spin {
     animation: var(--animate-spin);
+  }
+  .cursor-col-resize {
+    cursor: col-resize;
   }
   .cursor-grab {
     cursor: grab;
@@ -1930,6 +1939,13 @@
     &:hover {
       @media (hover: hover) {
         background-color: var(--color-red-error);
+      }
+    }
+  }
+  .hover\:bg-vscode-blue {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-vscode-blue);
       }
     }
   }

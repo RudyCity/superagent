@@ -118,6 +118,45 @@ const settingRpm = document.getElementById("setting-rpm");
 
 // Initialize View
 document.addEventListener("DOMContentLoaded", () => {
+  // Sidebar Draggable Resizer Logic
+  const leftSidebarElement = document.getElementById("left-sidebar");
+  const resizerElement = document.getElementById("sidebar-resizer");
+
+  if (leftSidebarElement && resizerElement) {
+    chrome.storage.local.get(["leftSidebarWidth"], (res) => {
+      if (res.leftSidebarWidth) {
+        leftSidebarElement.style.width = res.leftSidebarWidth + "px";
+      }
+    });
+
+    let isResizing = false;
+
+    resizerElement.addEventListener("mousedown", () => {
+      isResizing = true;
+      document.body.classList.add("select-none");
+      document.body.style.cursor = "col-resize";
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!isResizing) return;
+      const activityBarWidth = 48;
+      const newWidth = Math.max(120, Math.min(380, e.clientX - activityBarWidth));
+      leftSidebarElement.style.width = newWidth + "px";
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (isResizing) {
+        isResizing = false;
+        document.body.classList.remove("select-none");
+        document.body.style.cursor = "";
+        const currentWidth = parseInt(leftSidebarElement.style.width, 10);
+        if (currentWidth) {
+          chrome.storage.local.set({ leftSidebarWidth: currentWidth });
+        }
+      }
+    });
+  }
+
   // Load saved workspace path, API token, and saved workspaces list if any
   chrome.storage.local.get(["lastWorkspacePath", "lastApiToken", "savedWorkspaces"], (result) => {
     if (result.lastWorkspacePath) {

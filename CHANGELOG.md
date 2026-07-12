@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.315] - 2026-07-12
+
+### Added
+- **Draggable Left Sidebar Resizer**:
+  - Inserted a draggable splitter handle (#sidebar-resizer) between the Left Sidebar and the Right Content Panel.
+  - Implemented real-time resizing logic on mouse drag with min-width/max-width boundaries (120px to 380px).
+  - Persisted the user's custom sidebar width locally via chrome.storage.local to maintain consistency across sidepanel restarts.
+
+---
+
 ## [1.2.314] - 2026-07-12
 
 ### Changed
