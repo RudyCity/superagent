@@ -90,15 +90,31 @@ function renderChatHistory(messages) {
         const detail = buildToolDetail(tc);
         const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+        let argsSummary = "";
+        if (tc.args) {
+          const parts = Object.entries(tc.args).map(([key, val]) => {
+            let valStr = typeof val === "object" ? JSON.stringify(val) : String(val);
+            if (valStr.length > 30) valStr = valStr.slice(0, 27) + "...";
+            return `${key}: ${valStr}`;
+          });
+          argsSummary = parts.join(", ");
+        }
+
         toolBlock.innerHTML = `
-          <div class="tool-row">
-            <span class="tool-row-label ${isErr ? 'tool-row-label-error' : ''}">${esc(label)}</span>
-            ${detail ? `<span class="tool-row-detail">${esc(detail)}</span>` : ""}
-            <span class="tool-row-chevron">›</span>
+          <div class="tool-row flex items-center justify-between gap-2 cursor-pointer py-1 px-1.5 rounded bg-vscode-inner hover:bg-vscode-hover border border-vscode-dim select-none">
+            <div class="tool-row-left flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap">
+              <span class="tool-row-icon text-vscode-muted text-[10px]">🛠</span>
+              <span class="tool-row-name font-mono font-bold text-vscode-bright ${isErr ? 'tool-row-label-error' : ''}">${esc(tc.name)}</span>
+              <span class="tool-row-args font-mono text-vscode-muted text-[9px]">(${esc(argsSummary)})</span>
+            </div>
+            <div class="tool-row-right flex items-center gap-1.5 shrink-0">
+              <span class="tool-row-status font-mono text-[9px] ${isErr ? 'text-red-error' : 'text-green-success'} font-bold">${isErr ? '✗ failed' : '✓ done'}</span>
+              <span class="tool-row-chevron font-mono text-[9px] text-vscode-muted">⌄</span>
+            </div>
           </div>
           <div class="tool-expand hidden">
-            ${argsText ? `<pre class="tool-args">${esc(argsText)}</pre>` : ""}
-            <div class="tool-result-area hidden"></div>
+            ${argsText ? `<pre class="tool-args block p-1.5 bg-vscode-sidebar border border-vscode-dim rounded text-[9.5px] font-mono text-vscode-muted max-h-[120px] overflow-y-auto mt-1">${esc(argsText)}</pre>` : ""}
+            <div class="tool-result-area hidden mt-1"></div>
           </div>
         `;
 

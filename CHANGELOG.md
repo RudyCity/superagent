@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.309] - 2026-07-12
+
+### Added
+- **Interactive Tool Execution Rows in Chat Stream**:
+  - Upgraded tool block headers in `sidepanel.js` and `sidepanel-history.js` to display the raw tool name and a summary of call arguments formatted inside parentheses (`tool_name(arg: val)`).
+  - Added a live status indicator to the header row that displays `running...` (blue) while the tool executes, and updates to `✓ done` (green) or `✗ failed` (red) upon completion.
+
+---
+
 ## [1.2.308] - 2026-07-12
 
 ### Added

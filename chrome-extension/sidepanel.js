@@ -607,8 +607,6 @@ function handleSSEEvent(data) {
         currentActiveToolElement.className = "tool-block";
 
         {
-          const label = getToolLabel(e.toolCall, e.description);
-          const detail = buildToolDetail(e.toolCall);
           const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
           // Format args as preview for expanded section
@@ -619,15 +617,31 @@ function handleSSEEvent(data) {
             argsText = argsStr.length > 400 ? argsStr.slice(0, 400) + "..." : argsStr;
           } catch (_) {}
 
+          let argsSummary = "";
+          if (e.toolCall.args) {
+            const parts = Object.entries(e.toolCall.args).map(([key, val]) => {
+              let valStr = typeof val === "object" ? JSON.stringify(val) : String(val);
+              if (valStr.length > 30) valStr = valStr.slice(0, 27) + "...";
+              return `${key}: ${valStr}`;
+            });
+            argsSummary = parts.join(", ");
+          }
+
           currentActiveToolElement.innerHTML = `
-            <div class="tool-row">
-              <span class="tool-row-label">${esc(label)}</span>
-              ${detail ? `<span class="tool-row-detail">${esc(detail)}</span>` : ""}
-              <span class="tool-row-chevron">⌄</span>
+            <div class="tool-row flex items-center justify-between gap-2 cursor-pointer py-1 px-1.5 rounded bg-vscode-inner hover:bg-vscode-hover border border-vscode-dim select-none">
+              <div class="tool-row-left flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap">
+                <span class="tool-row-icon text-vscode-muted text-[10px]">🛠</span>
+                <span class="tool-row-name font-mono font-bold text-vscode-bright">${esc(e.toolCall.name)}</span>
+                <span class="tool-row-args font-mono text-vscode-muted text-[9px]">(${esc(argsSummary)})</span>
+              </div>
+              <div class="tool-row-right flex items-center gap-1.5 shrink-0">
+                <span class="tool-row-status font-mono text-[9px] text-vscode-blue font-bold">running...</span>
+                <span class="tool-row-chevron font-mono text-[9px] text-vscode-muted">⌄</span>
+              </div>
             </div>
-            <div class="tool-expand">
-              ${argsText ? `<pre class="tool-args">${esc(argsText)}</pre>` : ""}
-              <div class="tool-result-area"></div>
+            <div class="tool-expand hidden">
+              ${argsText ? `<pre class="tool-args block p-1.5 bg-vscode-sidebar border border-vscode-dim rounded text-[9.5px] font-mono text-vscode-muted max-h-[120px] overflow-y-auto mt-1">${esc(argsText)}</pre>` : ""}
+              <div class="tool-result-area mt-1"></div>
             </div>
           `;
 
@@ -652,19 +666,30 @@ function handleSSEEvent(data) {
         }
         if (currentActiveToolElement) {
           const isErr = e.toolResult && e.toolResult.isError;
+          const statusEl = currentActiveToolElement.querySelector(".tool-row-status");
+          
           if (isErr) {
-            const label = currentActiveToolElement.querySelector(".tool-row-label");
+            const label = currentActiveToolElement.querySelector(".tool-row-name");
             if (label) label.classList.add("tool-row-label-error");
+            if (statusEl) {
+              statusEl.textContent = "✗ failed";
+              statusEl.className = "tool-row-status font-mono text-[9px] text-red-error font-bold";
+            }
+          } else {
+            if (statusEl) {
+              statusEl.textContent = "✓ done";
+              statusEl.className = "tool-row-status font-mono text-[9px] text-green-success font-bold";
+            }
           }
 
           // Inline result suffix (e.g. diff stat for edits)
           const inlineSuffix = buildResultSuffix(e.toolCall, e.toolResult);
           if (inlineSuffix) {
-            const rowLabel = currentActiveToolElement.querySelector(".tool-row-label");
+            const rowLabel = currentActiveToolElement.querySelector(".tool-row-left");
             const suffixSpan = document.createElement("span");
-            suffixSpan.className = "tool-row-suffix";
+            suffixSpan.className = "tool-row-suffix shrink-0 font-mono text-[9px] text-vscode-muted ml-1";
             suffixSpan.textContent = inlineSuffix;
-            rowLabel.parentNode.insertBefore(suffixSpan, rowLabel.nextSibling);
+            rowLabel.appendChild(suffixSpan);
           }
 
           // Populate expanded result area
