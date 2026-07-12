@@ -600,11 +600,11 @@
   .max-h-\[160px\] {
     max-height: 160px;
   }
-  .max-h-\[250px\] {
-    max-height: 250px;
-  }
   .max-h-\[300px\] {
     max-height: 300px;
+  }
+  .max-h-\[380px\] {
+    max-height: 380px;
   }
   .max-h-\[calc\(100vh-140px\)\] {
     max-height: calc(100vh - 140px);
@@ -1486,6 +1486,10 @@
     --tw-leading: var(--leading-normal);
     line-height: var(--leading-normal);
   }
+  .leading-relaxed {
+    --tw-leading: var(--leading-relaxed);
+    line-height: var(--leading-relaxed);
+  }
   .leading-tight {
     --tw-leading: var(--leading-tight);
     line-height: var(--leading-tight);
@@ -1529,9 +1533,6 @@
   }
   .whitespace-nowrap {
     white-space: nowrap;
-  }
-  .whitespace-pre-wrap {
-    white-space: pre-wrap;
   }
   .tab-1 {
     tab-size: 1;
@@ -2785,7 +2786,6 @@
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--text-vscode-primary);
-  white-space: pre-wrap;
   word-break: break-word;
   max-height: 300px;
   overflow-y: auto;

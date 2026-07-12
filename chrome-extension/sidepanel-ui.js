@@ -187,7 +187,7 @@ function showSummaryModal(role, result) {
   
   if (overlay && roleEl && textEl) {
     roleEl.textContent = role;
-    textEl.textContent = result;
+    textEl.innerHTML = formatMarkdown(result);
     overlay.classList.add("active");
   }
 }
@@ -600,7 +600,7 @@ function appendJobFinishFooter(msgEl, startTime) {
 
   // Grab summary text from the agent message text content
   const contentSpan = msgEl.querySelector(".msg-content-text");
-  const summaryText = contentSpan ? contentSpan.innerText.trim() : "";
+  const summaryText = msgEl.dataset.rawMarkdown || (contentSpan ? contentSpan.textContent.trim() : "");
 
   // Build footer container
   const footer = document.createElement("div");
@@ -645,21 +645,7 @@ function appendJobFinishFooter(msgEl, startTime) {
   summaryBody.className = "job-summary-body";
 
   if (summaryText) {
-    if (summaryText.length > 1000) {
-      summaryBody.innerHTML = formatMarkdown(summaryText.slice(0, 1000) + "\n... (truncated)");
-      const expandBtn = document.createElement("button");
-      expandBtn.className = "btn-expand-result";
-      expandBtn.textContent = "Expand Full Summary";
-      expandBtn.addEventListener("click", (evt) => {
-        evt.stopPropagation();
-        summaryBody.innerHTML = formatMarkdown(summaryText);
-        expandBtn.remove();
-      });
-      summaryBody.appendChild(document.createElement("br"));
-      summaryBody.appendChild(expandBtn);
-    } else {
-      summaryBody.innerHTML = formatMarkdown(summaryText);
-    }
+    summaryBody.innerHTML = formatMarkdown(summaryText);
   } else {
     summaryBody.textContent = "No summary available.";
   }

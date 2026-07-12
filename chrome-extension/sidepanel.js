@@ -788,6 +788,7 @@ function handleSSEEvent(data) {
         if (currentAgentMessageElement) {
           const contentSpan = currentAgentMessageElement.querySelector(".msg-content-text");
           if (contentSpan) {
+            currentAgentMessageElement.dataset.rawMarkdown = contentSpan.textContent;
             contentSpan.innerHTML = formatMarkdown(contentSpan.textContent);
           }
           // Inject "Finished in Xm Xs" badge + summary footer

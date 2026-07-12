@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.313] - 2026-07-12
+
+### Fixed
+- **Summary Response Duplication and Truncation**:
+  - Saved raw streamed markdown directly onto the element dataset before HTML rendering inside sidepanel.js.
+  - Updated appendJobFinishFooter to use this raw markdown, preventing the double-formatting of stripped plain text.
+  - Removed the character length limits and truncation warnings from the collapsible summary card.
+  - Removed white-space: pre-wrap from .job-summary-body and #summary-text modal elements, allowing correct markdown document flow and layout.
+
+---
+
 ## [1.2.312] - 2026-07-12
 
 ### Changed

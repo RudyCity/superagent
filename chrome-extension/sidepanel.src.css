@@ -541,7 +541,6 @@
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--text-vscode-primary);
-  white-space: pre-wrap;
   word-break: break-word;
   max-height: 300px;
   overflow-y: auto;
