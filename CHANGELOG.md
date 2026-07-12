@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.333] - 2026-07-12
+
+### Added
+- **Browser Active Tab Indicator**:
+  - Implemented a 9px active browser tab display banner at the top of the chat input wrapper.
+  - Automatically queries the current browser window active tab title and URL dynamically on tab activations, title/URL updates, or panel loads.
+  - Injected active tab title and URL context automatically into AI prompts (transparently to the user, except for direct terminal commands starting with `!`) to make the assistant fully context-aware of what page the user is currently viewing.
+
+---
+
 ## [1.2.332] - 2026-07-12
 
 ### Fixed

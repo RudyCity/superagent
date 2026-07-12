@@ -1051,11 +1051,18 @@ async function sendChatMessage() {
   const speedText = document.getElementById("meta-speed-text");
   if (speedText) speedText.textContent = "0.0 t/s";
 
+  let finalMessage = text;
+  if (currentActiveTab && !text.startsWith("!")) {
+    const tabTitle = currentActiveTab.title || "No Title";
+    const tabUrl = currentActiveTab.url || "";
+    finalMessage = `[Current Active Browser Tab: Title: "${tabTitle}", URL: "${tabUrl}"]\n\n${text}`;
+  }
+
   try {
     const res = await fetch(`${BASE_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text })
+      body: JSON.stringify({ message: finalMessage })
     });
     if (!res.ok) {
       window.isWaitingForAgentStart = false;
@@ -1428,6 +1435,43 @@ window.updateWorkspaceRequiredUI = function() {
     }
   }
 };
+
+// Active Browser Tab Tracker
+let currentActiveTab = null;
+
+function updateCurrentTabInfo() {
+  if (typeof chrome !== "undefined" && chrome.tabs) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const titleSpan = document.getElementById("current-tab-title");
+      if (!titleSpan) return;
+      if (tabs && tabs.length > 0) {
+        currentActiveTab = tabs[0];
+        const title = currentActiveTab.title || "No Title";
+        const url = currentActiveTab.url || "";
+        titleSpan.textContent = `${title} (${url})`;
+        titleSpan.title = `${title}\n${url}`;
+      } else {
+        currentActiveTab = null;
+        titleSpan.textContent = "None (No active tab)";
+        titleSpan.title = "";
+      }
+    });
+  }
+}
+
+// Set up listeners for tab changes
+if (typeof chrome !== "undefined" && chrome.tabs) {
+  chrome.tabs.onActivated.addListener(updateCurrentTabInfo);
+  chrome.tabs.onUpdated.addListener(updateCurrentTabInfo);
+  // Also run initially
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      setTimeout(updateCurrentTabInfo, 100);
+    });
+  } else {
+    setTimeout(updateCurrentTabInfo, 100);
+  }
+}
 
 
 

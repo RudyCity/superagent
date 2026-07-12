@@ -212,6 +212,10 @@
 
               <!-- Input Box Wrapper -->
               <div class="input-box-wrapper flex flex-col border border-vscode-dim rounded-[3px] bg-vscode-editor focus-within:border-vscode-bright">
+                <div id="current-tab-info" class="text-[9px] text-vscode-muted px-2.5 py-1.5 border-b border-vscode-dim/40 bg-vscode-inner/10 flex items-center gap-1 select-none">
+                  <span class="font-bold uppercase tracking-wider text-[8px] opacity-75">Active Tab:</span>
+                  <span id="current-tab-title" class="truncate font-semibold text-vscode-bright">None (No active tab)</span>
+                </div>
                 <textarea id="chat-input" placeholder="Type instructions or / for commands, ! for terminal..." rows="2" class="w-full bg-transparent text-vscode-primary px-2.5 py-2 font-sans text-[12px] resize-none outline-none border-none h-14"></textarea>
                 
                 <div class="input-toolbar flex items-center justify-between px-2 py-1.5 border-t border-vscode-dim/50 bg-vscode-inner/20">

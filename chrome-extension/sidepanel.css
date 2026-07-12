@@ -1115,6 +1115,12 @@
       border-color: color-mix(in oklab, var(--color-vscode-dim) 30%, transparent);
     }
   }
+  .border-vscode-dim\/40 {
+    border-color: color-mix(in srgb, #444746 40%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-vscode-dim) 40%, transparent);
+    }
+  }
   .border-vscode-dim\/50 {
     border-color: color-mix(in srgb, #444746 50%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -1252,6 +1258,12 @@
   }
   .bg-vscode-inner {
     background-color: var(--color-vscode-inner);
+  }
+  .bg-vscode-inner\/10 {
+    background-color: color-mix(in srgb, #2b2c2e 10%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-vscode-inner) 10%, transparent);
+    }
   }
   .bg-vscode-inner\/20 {
     background-color: color-mix(in srgb, #2b2c2e 20%, transparent);
@@ -1659,6 +1671,9 @@
   }
   .opacity-50 {
     opacity: 50%;
+  }
+  .opacity-75 {
+    opacity: 75%;
   }
   .opacity-85 {
     opacity: 85%;
