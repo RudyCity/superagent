@@ -92,6 +92,15 @@ function formatMarkdown(text) {
       const extraClass = isShellText ? " md-bold-shell" : "";
       return `<strong class="md-bold${extraClass}">${content}</strong>`;
     });
+
+    // Support links
+    escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-vscode-bright hover:underline">$1</a>');
+
+    // Support list items
+    const listMatch = escaped.match(/^\s*-\s+(.+)$/);
+    if (listMatch) {
+      escaped = `<li>${listMatch[1]}</li>`;
+    }
     
     return escaped;
   });

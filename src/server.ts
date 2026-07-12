@@ -698,6 +698,53 @@ export async function runServer(port: number, silent = false) {
         return;
       }
 
+      // Open workspace file in system default editor
+      if (pathname === "/api/workspace/file/open" && req.method === "POST") {
+        const bodyStr = await readBody(req);
+        const body = JSON.parse(bodyStr || "{}");
+        const { filepath } = body;
+        if (!filepath) {
+          sendJSON(res, 400, { error: "Missing filepath" });
+          return;
+        }
+
+        const session = resolveSession(req);
+        const wsPath = session ? session.workspace : lastActiveWorkspace;
+        if (!wsPath) {
+          sendJSON(res, 400, { error: "No active workspace select" });
+          return;
+        }
+
+        let fullPath = filepath;
+        if (!path.isAbsolute(filepath)) {
+          fullPath = path.resolve(wsPath, filepath);
+        }
+
+        // Verify path traversal safety
+        if (!fullPath.startsWith(path.resolve(wsPath))) {
+          sendJSON(res, 403, { error: "Access denied (outside workspace)" });
+          return;
+        }
+
+        try {
+          if (fs.existsSync(fullPath)) {
+            const { execa } = await import("execa");
+            const isWindows = process.platform === "win32";
+            const isMac = process.platform === "darwin";
+            const command = isWindows ? "cmd" : (isMac ? "open" : "xdg-open");
+            const args = isWindows ? ["/c", "start", '""', fullPath] : [fullPath];
+
+            await execa(command, args, { shell: isWindows });
+            sendJSON(res, 200, { success: true });
+          } else {
+            sendJSON(res, 404, { error: "File not found" });
+          }
+        } catch (err: any) {
+          sendJSON(res, 500, { error: err.message });
+        }
+        return;
+      }
+
       // Fetch Git changes
       if (pathname === "/api/git/changes" && req.method === "GET") {
         const session = resolveSession(req);

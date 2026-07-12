@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.305] - 2026-07-12
+
+### Fixed
+- **Chrome Extension Markdown Link Parsing**:
+  - Restored links and list parsing inside `formatMarkdown` in `sidepanel-markdown.js` which previously overrode `sidepanel-ui.js` and caused markdown links to render as plain text.
+  - Added a global click listener inside `sidepanel.js` to catch clicks on local `file:///` links and send a request to a new `/api/workspace/file/open` server endpoint.
+  - Implemented the `/api/workspace/file/open` endpoint in `src/server.ts` to launch local files in their default associated programs using `execa` with path traversal protection.
+
+---
+
 ## [1.2.304] - 2026-07-12
 
 ### Added

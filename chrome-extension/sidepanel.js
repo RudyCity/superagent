@@ -197,6 +197,38 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Global link click interceptor to open local file:// links in default editor via server
+  document.addEventListener("click", async (e) => {
+    const link = e.target.closest("a");
+    if (!link) return;
+
+    const href = link.getAttribute("href");
+    if (!href) return;
+
+    if (href.startsWith("file:///")) {
+      e.preventDefault();
+      let filepath = decodeURIComponent(href.replace("file:///", ""));
+      const hasDriveLetter = /^[a-zA-Z]:/.test(filepath);
+      if (!hasDriveLetter && !filepath.startsWith("/")) {
+        filepath = "/" + filepath;
+      }
+
+      try {
+        const res = await fetch(`${BASE_URL}/api/workspace/file/open`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filepath })
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          console.error("Failed to open file:", data.error || "Unknown error");
+        }
+      } catch (err) {
+        console.error("Error opening file:", err);
+      }
+    }
+  });
+
  
   // Summary modal listeners
   const btnCloseSummary = document.getElementById("btn-close-summary");
