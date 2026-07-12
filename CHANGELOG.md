@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.317] - 2026-07-12
+
+### Changed
+- **Removed Active Workspace Card**:
+  - Removed the redundant Active Workspace card from the Left Sidebar workspace switcher.
+  - Retained the active-workspace-text span element in the HTML as a hidden element to ensure script configuration backwards compatibility.
+
+---
+
 ## [1.2.316] - 2026-07-12
 
 ### Changed
