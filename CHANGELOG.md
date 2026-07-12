@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.336] - 2026-07-12
+
+### Optimized
+- **Chrome Extension System Prompt & Context Rule**:
+  - Rewrote Chrome Extension prompt context rules inside prompts.ts using Telegraphic English guidelines (removing conversational filler and pronouns).
+  - Streamlined logic gates and structured workflow requirements to improve token efficiency and focus.
+
+---
+
 ## [1.2.335] - 2026-07-12
 
 ### Added
