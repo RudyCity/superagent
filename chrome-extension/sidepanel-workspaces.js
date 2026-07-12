@@ -34,17 +34,56 @@ async function renderWorkspaceListOnly() {
   saved.forEach(ws => {
     const isActive = ws === currentPath;
     const item = document.createElement("div");
-    item.className = "workspace-item flex items-center justify-between gap-1.5 p-1.5 rounded cursor-pointer text-[10.5px] transition-colors hover:bg-vscode-hover " + (isActive ? "bg-vscode-inner border border-vscode-dim" : "");
+    item.className = "workspace-item flex items-center gap-2.5 p-2 rounded-lg cursor-pointer border transition-all duration-150 " + 
+      (isActive 
+        ? "active bg-vscode-inner border-vscode-dim shadow-sm" 
+        : "border-transparent hover:bg-vscode-hover");
     item.title = ws;
     
-    // Format display path
-    const displayName = ws.length > 25 ? "..." + ws.slice(-22) : ws;
+    // Extract workspace name (last component of path)
+    const wsName = ws.split(/[\\/]/).filter(Boolean).pop() || ws;
+    
+    // Get first 1-2 letters of workspace name as initials
+    const cleanName = wsName.replace(/[^a-zA-Z0-9\s-_]/g, '');
+    const words = cleanName.split(/[-_\s]+/).filter(Boolean);
+    let initials = '';
+    if (words.length >= 2) {
+      initials = (words[0][0] + words[1][0]).toUpperCase();
+    } else if (words.length === 1 && words[0].length >= 2) {
+      initials = words[0].slice(0, 2).toUpperCase();
+    } else if (wsName.length > 0) {
+      initials = wsName.slice(0, Math.min(2, wsName.length)).toUpperCase();
+    } else {
+      initials = 'WS';
+    }
+
+    // Dynamic color index based on hash of workspace name
+    let hash = 0;
+    for (let i = 0; i < wsName.length; i++) {
+      hash = wsName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const colorIndex = Math.abs(hash) % 5;
+    const colorClass = `ws-avatar-color-${colorIndex}`;
+
+    // Get parent path for clean rendering
+    let parentPath = ws;
+    const normalized = ws.replace(/\\/g, '/');
+    const lastSlash = normalized.lastIndexOf('/');
+    if (lastSlash !== -1) {
+      parentPath = ws.slice(0, lastSlash);
+    }
+    let displayPath = parentPath;
+    if (displayPath.length > 25) {
+      displayPath = "..." + displayPath.slice(-22);
+    }
+
     item.innerHTML = `
-      <div class="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap">
-        <span class="ws-dot w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-green-success' : 'bg-vscode-muted'}"></span>
-        <span class="ws-path font-mono ${isActive ? 'text-vscode-bright font-medium' : 'text-vscode-primary'}">${displayName}</span>
+      <div class="ws-avatar ${colorClass}">${initials}</div>
+      <div class="flex flex-col min-w-0 flex-1 gap-0.5">
+        <span class="ws-name text-[11px] font-semibold tracking-wide truncate ${isActive ? 'text-vscode-bright' : 'text-vscode-primary'}">${wsName}</span>
+        <span class="ws-path font-mono text-[8.5px] text-vscode-muted truncate">${displayPath}</span>
       </div>
-      ${isActive ? '<span class="ws-active-badge text-[8.5px] bg-green-success/20 text-green-success px-1 py-0.5 rounded font-mono font-medium scale-90 shrink-0">active</span>' : ''}
+      ${isActive ? '<span class="ws-active-badge text-[8.5px] px-1.5 py-0.5 rounded-full font-medium shrink-0">Active</span>' : ''}
     `;
     
     if (!isActive) {

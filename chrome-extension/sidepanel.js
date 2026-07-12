@@ -85,8 +85,6 @@ const planOverlay = document.getElementById("plan-overlay");
 const btnApprovePlan = document.getElementById("btn-approve-plan");
 const btnRejectPlan = document.getElementById("btn-reject-plan");
 
-const btnGrabContext = document.getElementById("btn-grab-context");
-const contextBadge = document.getElementById("context-badge");
 
 const btnNewChat = document.getElementById("btn-new-chat");
 const chatHistoryList = document.getElementById("chat-history-list");
@@ -220,7 +218,6 @@ document.addEventListener("DOMContentLoaded", () => {
   btnApproveSession.addEventListener("click", () => resolvePermission("session"));
   btnDenyPermission.addEventListener("click", () => resolvePermission(false));
   btnSubmitAnswer.addEventListener("click", submitAnswer);
-  btnGrabContext.addEventListener("click", grabTabContext);
   btnApprovePlan.addEventListener("click", () => resolvePlanApproval("approve"));
   btnRejectPlan.addEventListener("click", () => resolvePlanApproval("reject"));
 
@@ -1014,7 +1011,6 @@ async function sendChatMessage() {
   if (!text) return;
 
   chatInput.value = "";
-  contextBadge.classList.add("hidden");
   appendMessage("user", text);
   scrollToBottom();
   showSpinner("Thinking...");

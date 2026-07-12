@@ -128,6 +128,51 @@
   flex-direction: row;
 }
 
+/* Workspace list items and initials avatars */
+.workspace-item {
+  border: 1px solid transparent;
+  transition: all 0.15s ease-in-out;
+}
+
+.workspace-item .ws-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.workspace-item.active .ws-avatar {
+  background-color: var(--accent-vscode-blue) !important;
+  color: var(--bg-vscode-editor) !important;
+}
+
+.workspace-item .ws-active-badge {
+  background-color: var(--color-green-light);
+  color: var(--color-green);
+}
+
+/* Theme-safe pastel/muted colors for initials avatars */
+.ws-avatar-color-0 { background-color: rgba(168, 199, 250, 0.15); color: #8ab4f8; }
+.ws-avatar-color-1 { background-color: rgba(196, 238, 208, 0.15); color: #81c995; }
+.ws-avatar-color-2 { background-color: rgba(253, 226, 147, 0.15); color: #fdd663; }
+.ws-avatar-color-3 { background-color: rgba(242, 139, 130, 0.15); color: #f28b82; }
+.ws-avatar-color-4 { background-color: rgba(215, 174, 251, 0.15); color: #d7aefb; }
+
+@media (prefers-color-scheme: light) {
+  .ws-avatar-color-0 { background-color: rgba(26, 115, 232, 0.1); color: #1a73e8; }
+  .ws-avatar-color-1 { background-color: rgba(24, 128, 56, 0.1); color: #188038; }
+  .ws-avatar-color-2 { background-color: rgba(176, 96, 0, 0.1); color: #b06000; }
+  .ws-avatar-color-3 { background-color: rgba(217, 48, 37, 0.1); color: #d93025; }
+  .ws-avatar-color-4 { background-color: rgba(104, 29, 168, 0.1); color: #681da8; }
+}
+
 /* Dynamic JS-injected elements styling */
 .msg {
   display: flex;

@@ -317,8 +317,6 @@ window.sendChatMessage = async function() {
   if (!text && attachedFiles.length === 0) return;
 
   chatInput.value = "";
-  const contextBadge = document.getElementById("context-badge");
-  if (contextBadge) contextBadge.classList.add("hidden");
 
   // Display user message in chat
   let displayMessageText = text;

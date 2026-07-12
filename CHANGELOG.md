@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.326] - 2026-07-12
+
+### Changed
+- **Workspace Listing Improvements**:
+  - Redesigned workspace list items to display the workspace directory name, its parent path, and an initials-based circular avatar.
+  - Used theme-safe dynamic colors (pastel backgrounds and matching texts) for workspace avatars.
+- **Chrome Active Tab Attachment Removal**:
+  - Removed "Attach Chrome Active Tab context" button and status badge from the chat input toolbar.
+  - Deleted the active tab context grabbing feature from browser scripts.
+
+---
+
 ## [1.2.325] - 2026-07-12
 
 ### Changed

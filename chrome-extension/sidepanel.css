@@ -772,12 +772,6 @@
     --tw-scale-z: 0%;
     scale: var(--tw-scale-x) var(--tw-scale-y);
   }
-  .scale-90 {
-    --tw-scale-x: 90%;
-    --tw-scale-y: 90%;
-    --tw-scale-z: 90%;
-    scale: var(--tw-scale-x) var(--tw-scale-y);
-  }
   .scale-100 {
     --tw-scale-x: 100%;
     --tw-scale-y: 100%;
@@ -1184,9 +1178,6 @@
   .bg-green-600 {
     background-color: var(--color-green-600);
   }
-  .bg-green-success {
-    background-color: var(--color-green-success);
-  }
   .bg-green-success\/15 {
     background-color: color-mix(in srgb, #c4eed0 15%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -1261,9 +1252,6 @@
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-vscode-inner) 20%, transparent);
     }
-  }
-  .bg-vscode-muted {
-    background-color: var(--color-vscode-muted);
   }
   .bg-vscode-muted\/20 {
     background-color: color-mix(in srgb, #c4c7c5 20%, transparent);
@@ -2455,6 +2443,73 @@
 }
 #workspace-screen.active {
   flex-direction: row;
+}
+.workspace-item {
+  border: 1px solid transparent;
+  transition: all 0.15s ease-in-out;
+}
+.workspace-item .ws-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+.workspace-item.active .ws-avatar {
+  background-color: var(--accent-vscode-blue) !important;
+  color: var(--bg-vscode-editor) !important;
+}
+.workspace-item .ws-active-badge {
+  background-color: var(--color-green-light);
+  color: var(--color-green);
+}
+.ws-avatar-color-0 {
+  background-color: rgba(168, 199, 250, 0.15);
+  color: #8ab4f8;
+}
+.ws-avatar-color-1 {
+  background-color: rgba(196, 238, 208, 0.15);
+  color: #81c995;
+}
+.ws-avatar-color-2 {
+  background-color: rgba(253, 226, 147, 0.15);
+  color: #fdd663;
+}
+.ws-avatar-color-3 {
+  background-color: rgba(242, 139, 130, 0.15);
+  color: #f28b82;
+}
+.ws-avatar-color-4 {
+  background-color: rgba(215, 174, 251, 0.15);
+  color: #d7aefb;
+}
+@media (prefers-color-scheme: light) {
+  .ws-avatar-color-0 {
+    background-color: rgba(26, 115, 232, 0.1);
+    color: #1a73e8;
+  }
+  .ws-avatar-color-1 {
+    background-color: rgba(24, 128, 56, 0.1);
+    color: #188038;
+  }
+  .ws-avatar-color-2 {
+    background-color: rgba(176, 96, 0, 0.1);
+    color: #b06000;
+  }
+  .ws-avatar-color-3 {
+    background-color: rgba(217, 48, 37, 0.1);
+    color: #d93025;
+  }
+  .ws-avatar-color-4 {
+    background-color: rgba(104, 29, 168, 0.1);
+    color: #681da8;
+  }
 }
 .msg {
   display: flex;
