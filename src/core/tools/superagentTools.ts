@@ -10,6 +10,7 @@
 import path from "path";
 import fs from "fs";
 import { execa } from "execa";
+import { killProcessTree } from "./shellTools.js";
 import { Tool } from "./types.js";
 import { resolveCarriageReturns } from "../../utils/text.js";
 import {
@@ -19,6 +20,8 @@ import {
   getActiveQuestionHandler,
   addHistoricalSuperagentTokens,
   appendMasterLog,
+  appendActiveToolOutput,
+  clearActiveToolOutput,
 } from "./state.js";
 import { agentLocalStorage } from "../agent.js";
 import { MasterAgent } from "../masterAgent.js";
@@ -588,12 +591,56 @@ export const invokeSuperagentTool: Tool = {
                 const pm = detectPackageManager(worktreePath);
                 if (pkg.scripts.build) {
                   appendMasterLog(`[INFO] Executing "${pm} run build" in worktree...`);
-                  await execa(pm, ["run", "build"], { cwd: worktreePath });
+                  clearActiveToolOutput();
+                  const proc = execa(pm, ["run", "build"], { cwd: worktreePath, all: true });
+                  const abortHandler = () => {
+                    killProcessTree(proc.pid);
+                  };
+                  if (signal) {
+                    if (signal.aborted) {
+                      killProcessTree(proc.pid);
+                      throw new Error("AbortError");
+                    }
+                    signal.addEventListener("abort", abortHandler);
+                  }
+                  proc.all?.on("data", (data) => {
+                    appendActiveToolOutput(data.toString());
+                  });
+                  try {
+                    await proc;
+                  } finally {
+                    clearActiveToolOutput();
+                    if (signal) {
+                      signal.removeEventListener("abort", abortHandler);
+                    }
+                  }
                 }
                 if (pkg.scripts.test) {
                   const testArgs = pm === "npm" ? ["test"] : ["run", "test"];
                   appendMasterLog(`[INFO] Executing "${pm} ${testArgs.join(" ")}" in worktree...`);
-                  await execa(pm, testArgs, { cwd: worktreePath });
+                  clearActiveToolOutput();
+                  const proc = execa(pm, testArgs, { cwd: worktreePath, all: true });
+                  const abortHandler = () => {
+                    killProcessTree(proc.pid);
+                  };
+                  if (signal) {
+                    if (signal.aborted) {
+                      killProcessTree(proc.pid);
+                      throw new Error("AbortError");
+                    }
+                    signal.addEventListener("abort", abortHandler);
+                  }
+                  proc.all?.on("data", (data) => {
+                    appendActiveToolOutput(data.toString());
+                  });
+                  try {
+                    await proc;
+                  } finally {
+                    clearActiveToolOutput();
+                    if (signal) {
+                      signal.removeEventListener("abort", abortHandler);
+                    }
+                  }
                 }
               }
             } catch (testErr: any) {
@@ -1337,12 +1384,56 @@ export const sendMessageToSuperagentTool: Tool = {
                 const pm = detectPackageManager(inst.worktreePath);
                 if (pkg.scripts.build) {
                   appendMasterLog(`[INFO] Executing "${pm} run build" in worktree...`);
-                  await execa(pm, ["run", "build"], { cwd: inst.worktreePath });
+                  clearActiveToolOutput();
+                  const proc = execa(pm, ["run", "build"], { cwd: inst.worktreePath, all: true });
+                  const abortHandler = () => {
+                    killProcessTree(proc.pid);
+                  };
+                  if (signal) {
+                    if (signal.aborted) {
+                      killProcessTree(proc.pid);
+                      throw new Error("AbortError");
+                    }
+                    signal.addEventListener("abort", abortHandler);
+                  }
+                  proc.all?.on("data", (data) => {
+                    appendActiveToolOutput(data.toString());
+                  });
+                  try {
+                    await proc;
+                  } finally {
+                    clearActiveToolOutput();
+                    if (signal) {
+                      signal.removeEventListener("abort", abortHandler);
+                    }
+                  }
                 }
                 if (pkg.scripts.test) {
                   const testArgs = pm === "npm" ? ["test"] : ["run", "test"];
                   appendMasterLog(`[INFO] Executing "${pm} ${testArgs.join(" ")}" in worktree...`);
-                  await execa(pm, testArgs, { cwd: inst.worktreePath });
+                  clearActiveToolOutput();
+                  const proc = execa(pm, testArgs, { cwd: inst.worktreePath, all: true });
+                  const abortHandler = () => {
+                    killProcessTree(proc.pid);
+                  };
+                  if (signal) {
+                    if (signal.aborted) {
+                      killProcessTree(proc.pid);
+                      throw new Error("AbortError");
+                    }
+                    signal.addEventListener("abort", abortHandler);
+                  }
+                  proc.all?.on("data", (data) => {
+                    appendActiveToolOutput(data.toString());
+                  });
+                  try {
+                    await proc;
+                  } finally {
+                    clearActiveToolOutput();
+                    if (signal) {
+                      signal.removeEventListener("abort", abortHandler);
+                    }
+                  }
                 }
               }
             } catch (testErr: any) {

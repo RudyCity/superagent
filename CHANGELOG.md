@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.357] - 2026-07-13
+
+### Added
+- **Live Output Streaming for CLI and Verification Tools**:
+  - Added SYSTEM_CALL_OUTPUT (LIVE) streaming for `android_cli` in `otherTools.ts`.
+  - Added streaming for `npm run build` and `npm test` pre-merge verification processes inside `invokeSuperagentTool` and `sendMessageToSuperagentTool` in `superagentTools.ts`.
+  - Added proper subprocess cancellation using `killProcessTree` on abort signal for all three tools.
+
+---
+
 ## [1.2.356] - 2026-07-13
 
 ### Added

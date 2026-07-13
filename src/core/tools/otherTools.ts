@@ -2,7 +2,8 @@ import fs from "fs/promises";
 import path from "path";
 import { execa } from "execa";
 import { Tool, ScheduleJob } from "./types.js";
-import { scheduledJobs, notifyScheduleTriggered } from "./state.js";
+import { scheduledJobs, notifyScheduleTriggered, appendActiveToolOutput, clearActiveToolOutput } from "./state.js";
+import { killProcessTree } from "./shellTools.js";
 import { ensureAndroidCliInstalled } from "../androidSetup.js";
 import { formatUnknownActionError } from "./helpers.js";
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro, resolveSteps, dryRunSteps, buildRepairHint, type BrowserMacroStep, type StepRunResult } from "../config/browserMacros.js";
@@ -487,13 +488,46 @@ export const androidCliTool: Tool = {
     }
     const fullCommand = isWin ? `& ${exe} ${subCommand}` : `${exe} ${subCommand}`;
     try {
-      const { stdout, stderr } = await execa(fullCommand, {
+      clearActiveToolOutput();
+      const proc = execa(fullCommand, {
         cwd,
-        cancelSignal: signal,
         shell: isWin ? "powershell.exe" : true,
+        all: true,
       });
-      return (stdout || stderr || "").trim() || "(no output)";
+
+      const abortHandler = () => {
+        killProcessTree(proc.pid);
+      };
+
+      if (signal) {
+        if (signal.aborted) {
+          killProcessTree(proc.pid);
+          throw new Error("AbortError");
+        }
+        signal.addEventListener("abort", abortHandler);
+      }
+
+      proc.all?.on("data", (data) => {
+        appendActiveToolOutput(data.toString());
+      });
+
+      try {
+        const result = await proc;
+        clearActiveToolOutput();
+        let output = (result.all || "").trim();
+        return output || "(no output)";
+      } finally {
+        if (signal) {
+          signal.removeEventListener("abort", abortHandler);
+        }
+      }
     } catch (err: unknown) {
+      clearActiveToolOutput();
+      if (signal?.aborted || (err instanceof Error && (err.name === "AbortError" || err.name === "CancelError"))) {
+        const abortErr = new Error("AbortError");
+        abortErr.name = "AbortError";
+        throw abortErr;
+      }
       const message = err instanceof Error ? err.message : String(err);
       return `Android CLI error: ${message}`;
     }

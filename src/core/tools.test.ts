@@ -51,6 +51,7 @@ vi.mock("execa", () => {
         mockResult.stdout = "src/app.tsx:10:match content";
       } else if (typeof cmd === "string" && cmd.toLowerCase().includes("android")) {
         mockResult.stdout = "mocked android output";
+        mockResult.all = "mocked android output";
       }
 
       const mockPromise: any = Promise.resolve(mockResult);
