@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.350] - 2026-07-13
+
+### Added
+- **Chrome Extension Human-like Movement Overshoot**:
+  - Integrated ghost-cursor inspired overshoot and self-correction algorithm for the virtual mouse movement. When distance is greater than 200 pixels, there is a 60% chance to overshoot the target with a slight angular offset, pause for a biological reaction delay, and then make a smooth corrective movement back to the target.
+
+---
+
 ## [1.2.349] - 2026-07-13
 
 ### Fixed

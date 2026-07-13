@@ -559,63 +559,124 @@ async function executeBrowserControl(controlId, action, target, value) {
                   return;
                 }
 
-                // Bezier control points calculation
-                const curveDirection = Math.random() < 0.5 ? 1 : -1;
-                const perpendicularX = -dy / distance;
-                const perpendicularY = dx / distance;
-                const controlOffset = distance * (0.15 + Math.random() * 0.2) * curveDirection;
+                // Decide whether to overshoot (mimicking ghost-cursor human mistake)
+                const shouldOvershoot = distance > 200 && Math.random() < 0.6;
+                let phase1TargetX = targetX;
+                let phase1TargetY = targetY;
 
-                const controlX1 = startX + dx * 0.25 + perpendicularX * controlOffset;
-                const controlY1 = startY + dy * 0.25 + perpendicularY * controlOffset;
-                const controlX2 = startX + dx * 0.75 - perpendicularX * controlOffset;
-                const controlY2 = startY + dy * 0.75 - perpendicularY * controlOffset;
+                if (shouldOvershoot) {
+                  const overshootDist = Math.min(20, Math.max(8, distance * (0.02 + Math.random() * 0.03)));
+                  // Pick a random direction slightly offset from the target vector to simulate human error
+                  const overshootAngleOffset = (Math.random() - 0.5) * 0.15; // in radians
+                  const targetAngle = Math.atan2(dy, dx) + overshootAngleOffset;
+                  phase1TargetX = targetX + Math.cos(targetAngle) * overshootDist;
+                  phase1TargetY = targetY + Math.sin(targetAngle) * overshootDist;
+                }
+
+                const p1Dx = phase1TargetX - startX;
+                const p1Dy = phase1TargetY - startY;
+                const p1Distance = Math.hypot(p1Dx, p1Dy);
+
+                // Bezier control points calculation for the main movement phase
+                const curveDirection = Math.random() < 0.5 ? 1 : -1;
+                const perpendicularX = -p1Dy / p1Distance;
+                const perpendicularY = p1Dx / p1Distance;
+                const controlOffset = p1Distance * (0.15 + Math.random() * 0.2) * curveDirection;
+
+                const controlX1 = startX + p1Dx * 0.25 + perpendicularX * controlOffset;
+                const controlY1 = startY + p1Dy * 0.25 + perpendicularY * controlOffset;
+                const controlX2 = startX + p1Dx * 0.75 - perpendicularX * controlOffset;
+                const controlY2 = startY + p1Dy * 0.75 - perpendicularY * controlOffset;
 
                 // Duration based on Fitts's law: logarithmic curve
-                const duration = Math.min(800, Math.max(300, distance * 0.6 + 150));
+                const duration = Math.min(800, Math.max(300, p1Distance * 0.55 + 150));
                 const startTime = performance.now();
 
-                return new Promise((resolve) => {
-                  const step = (now) => {
-                    const elapsed = now - startTime;
-                    const t = Math.min(1, elapsed / duration);
+                const animatePhase1 = () => {
+                  return new Promise((resolve) => {
+                    const step = (now) => {
+                      const elapsed = now - startTime;
+                      const t = Math.min(1, elapsed / duration);
 
-                    // Cubic ease-in-out curve
-                    const easeT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+                      // Cubic ease-in-out curve
+                      const easeT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-                    // Cubic Bezier formula
-                    const u = 1 - easeT;
-                    const tt = easeT * easeT;
-                    const uu = u * u;
-                    const uuu = uu * u;
-                    const ttt = tt * easeT;
+                      // Cubic Bezier formula
+                      const u = 1 - easeT;
+                      const tt = easeT * easeT;
+                      const uu = u * u;
+                      const uuu = uu * u;
+                      const ttt = tt * easeT;
 
-                    let x = uuu * startX + 3 * uu * easeT * controlX1 + 3 * u * tt * controlX2 + ttt * targetX;
-                    let y = uuu * startY + 3 * uu * easeT * controlY1 + 3 * u * tt * controlY2 + ttt * targetY;
+                      let x = uuu * startX + 3 * uu * easeT * controlX1 + 3 * u * tt * controlX2 + ttt * phase1TargetX;
+                      let y = uuu * startY + 3 * uu * easeT * controlY1 + 3 * u * tt * controlY2 + ttt * phase1TargetY;
 
-                    // Micro-jitter for biological movement representation
-                    if (t < 0.95) {
-                      x += (Math.random() - 0.5) * 0.8;
-                      y += (Math.random() - 0.5) * 0.8;
-                    }
+                      // Micro-jitter for biological movement representation
+                      if (t < 0.95) {
+                        x += (Math.random() - 0.5) * 0.8;
+                        y += (Math.random() - 0.5) * 0.8;
+                      }
 
-                    cursor.style.left = `${x}px`;
-                    cursor.style.top = `${y}px`;
+                      cursor.style.left = `${x}px`;
+                      cursor.style.top = `${y}px`;
 
-                    window.__superagent_cursor_x__ = x;
-                    window.__superagent_cursor_y__ = y;
+                      window.__superagent_cursor_x__ = x;
+                      window.__superagent_cursor_y__ = y;
 
-                    if (t < 1) {
-                      requestAnimationFrame(step);
-                    } else {
-                      cursor.style.left = `${targetX}px`;
-                      cursor.style.top = `${targetY}px`;
-                      window.__superagent_cursor_x__ = targetX;
-                      window.__superagent_cursor_y__ = targetY;
-                      resolve();
-                    }
-                  };
-                  requestAnimationFrame(step);
-                });
+                      if (t < 1) {
+                        requestAnimationFrame(step);
+                      } else {
+                        cursor.style.left = `${phase1TargetX}px`;
+                        cursor.style.top = `${phase1TargetY}px`;
+                        window.__superagent_cursor_x__ = phase1TargetX;
+                        window.__superagent_cursor_y__ = phase1TargetY;
+                        resolve();
+                      }
+                    };
+                    requestAnimationFrame(step);
+                  });
+                };
+
+                await animatePhase1();
+
+                // Phase 2: Correction movement if overshoot occurred
+                if (shouldOvershoot) {
+                  // Wait a tiny moment (human recognition delay of overshoot)
+                  await new Promise((r) => setTimeout(r, 60 + Math.random() * 50));
+
+                  const correctionStartTime = performance.now();
+                  const correctionDuration = 180 + Math.random() * 80;
+                  const cStartX = phase1TargetX;
+                  const cStartY = phase1TargetY;
+
+                  await new Promise((resolve) => {
+                    const stepCorrection = (now) => {
+                      const elapsed = now - correctionStartTime;
+                      const t = Math.min(1, elapsed / correctionDuration);
+                      const easeT = t * (2 - t); // Quadratic ease-out for correction
+
+                      const x = cStartX + (targetX - cStartX) * easeT;
+                      const y = cStartY + (targetY - cStartY) * easeT;
+
+                      cursor.style.left = `${x}px`;
+                      cursor.style.top = `${y}px`;
+
+                      window.__superagent_cursor_x__ = x;
+                      window.__superagent_cursor_y__ = y;
+
+                      if (t < 1) {
+                        requestAnimationFrame(stepCorrection);
+                      } else {
+                        cursor.style.left = `${targetX}px`;
+                        cursor.style.top = `${targetY}px`;
+                        window.__superagent_cursor_x__ = targetX;
+                        window.__superagent_cursor_y__ = targetY;
+                        resolve();
+                      }
+                    };
+                    requestAnimationFrame(stepCorrection);
+                  });
+                }
               } catch (e) {
                 // Ignore cursor animation errors
               }
