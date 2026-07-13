@@ -20,7 +20,9 @@ function renderChatHistory(messages) {
     return;
   }
 
-  messages.forEach(msg => {
+  const renderedToolCallIds = new Set();
+
+  messages.forEach((msg, msgIdx) => {
     if (msg.role === "system") {
       if (msg.content) {
         appendMessage("system", typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content));
@@ -70,9 +72,29 @@ function renderChatHistory(messages) {
 
       // 3. Render Tool Calls & Results
       const toolCalls = msg.toolCalls || [];
-      const toolResults = msg.toolResults || [];
+      let toolResults = msg.toolResults || [];
+
+      // If we don't have toolResults in this assistant message, look ahead in subsequent tool messages
+      if (toolResults.length === 0) {
+        for (let i = msgIdx + 1; i < messages.length; i++) {
+          const nextMsg = messages[i];
+          if (nextMsg.role === "tool" && Array.isArray(nextMsg.toolResults)) {
+            nextMsg.toolResults.forEach(tr => {
+              if (tr.toolCallId && toolCalls.some(tc => tc.id === tr.toolCallId)) {
+                toolResults.push(tr);
+              }
+            });
+          }
+          if (nextMsg.role === "user" || nextMsg.role === "assistant") {
+            break;
+          }
+        }
+      }
 
       toolCalls.forEach((tc, idx) => {
+        if (tc.id) {
+          renderedToolCallIds.add(tc.id);
+        }
         const tr = toolResults.find(r => r.toolCallId === tc.id) || toolResults[idx];
 
         const toolBlock = document.createElement("div");
@@ -100,6 +122,9 @@ function renderChatHistory(messages) {
           argsSummary = parts.join(", ");
         }
 
+        const statusText = tr ? (isErr ? '✗ failed' : '✓ done') : 'running...';
+        const statusClass = tr ? (isErr ? 'text-red-error' : 'text-green-success') : 'text-vscode-blue';
+
         toolBlock.innerHTML = `
           <div class="tool-row flex items-center justify-between gap-2 cursor-pointer py-1 px-1.5 rounded bg-vscode-inner hover:bg-vscode-hover border border-vscode-dim select-none">
             <div class="tool-row-left flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -108,7 +133,7 @@ function renderChatHistory(messages) {
               <span class="tool-row-args font-mono text-vscode-muted text-[9px]">(${esc(argsSummary)})</span>
             </div>
             <div class="tool-row-right flex items-center gap-1.5 shrink-0">
-              <span class="tool-row-status font-mono text-[9px] ${isErr ? 'text-red-error' : 'text-green-success'} font-bold">${isErr ? '✗ failed' : '✓ done'}</span>
+              <span class="tool-row-status font-mono text-[9px] ${statusClass} font-bold">${statusText}</span>
               <span class="tool-row-chevron font-mono text-[9px] text-vscode-muted">⌄</span>
             </div>
           </div>
@@ -147,7 +172,10 @@ function renderChatHistory(messages) {
         const lastMsgDiv = msgDivs[msgDivs.length - 1];
         const contentDiv = lastMsgDiv.querySelector(".msg-content");
         
-        msg.toolResults.forEach(tr => {
+        // Filter out results that were already rendered under assistant toolCalls
+        const unrenderedResults = msg.toolResults.filter(tr => !tr.toolCallId || !renderedToolCallIds.has(tr.toolCallId));
+
+        unrenderedResults.forEach(tr => {
           const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
           const toolBlock = document.createElement("div");
           toolBlock.className = "tool-block";

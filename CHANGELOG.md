@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.337] - 2026-07-13
+
+### Fixed
+- **Chrome Extension Chat History Tool Calls Double Rendering**:
+  - Prevented duplicate rendering of tool blocks in chat history logs when loading previous sessions.
+  - Aligned lookahead matching logic to identify associated tool results inside subsequent messages of role `tool` and aggregate them cleanly within the primary tool call UI container.
+  - Filtered out already-rendered tool calls in subsequent messages.
+
+---
+
 ## [1.2.336] - 2026-07-12
 
 ### Optimized
