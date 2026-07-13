@@ -15,8 +15,220 @@ async function executeBrowserControl(controlId, action, target, value) {
                          lowerUrl.startsWith("about:") || 
                          lowerUrl.startsWith("view-source:");
 
-    if (isRestricted && action !== "navigate" && action !== "reload" && action !== "refresh" && action !== "back" && action !== "forward") {
+    const nonRestrictedActions = ["navigate", "reload", "refresh", "back", "forward", "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window"];
+    if (isRestricted && !nonRestrictedActions.includes(action)) {
       sendBrowserResult(controlId, `Error: Cannot perform action "${action}" on a restricted page (${url || "restricted tab"}). Please navigate to a standard website first (e.g., navigate to https://google.com).`, true);
+      return;
+    }
+
+    if (action === "open") {
+      chrome.tabs.create({ url: target || "about:blank" }, (tab) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Opened new tab with ID ${tab.id} and URL ${target || "about:blank"}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "close") {
+      const tabId = target ? parseInt(target, 10) : activeTab.id;
+      if (isNaN(tabId)) {
+        sendBrowserResult(controlId, `Error: Invalid tab ID "${target}"`, true);
+        return;
+      }
+      chrome.tabs.remove(tabId, () => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Closed tab ${tabId}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "list") {
+      chrome.tabs.query({}, (allTabs) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          const tabList = allTabs.map(t => ({
+            id: t.id,
+            title: t.title,
+            url: t.url,
+            active: t.active,
+            pinned: t.pinned,
+            muted: t.mutedInfo ? t.mutedInfo.muted : false,
+            groupId: t.groupId,
+            windowId: t.windowId
+          }));
+          sendBrowserResult(controlId, JSON.stringify(tabList), false);
+        }
+      });
+      return;
+    }
+
+    if (action === "switch") {
+      const tabId = parseInt(target, 10);
+      if (isNaN(tabId)) {
+        sendBrowserResult(controlId, `Error: Invalid tab ID "${target}"`, true);
+        return;
+      }
+      chrome.tabs.update(tabId, { active: true }, (tab) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          if (tab && tab.windowId) {
+            chrome.windows.update(tab.windowId, { focused: true });
+          }
+          sendBrowserResult(controlId, `Switched to tab ${tabId}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "duplicate") {
+      const tabId = target ? parseInt(target, 10) : activeTab.id;
+      if (isNaN(tabId)) {
+        sendBrowserResult(controlId, `Error: Invalid tab ID "${target}"`, true);
+        return;
+      }
+      chrome.tabs.duplicate(tabId, (tab) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Duplicated tab ${tabId} as new tab ${tab ? tab.id : ""}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "pin" || action === "unpin") {
+      const tabId = target ? parseInt(target, 10) : activeTab.id;
+      if (isNaN(tabId)) {
+        sendBrowserResult(controlId, `Error: Invalid tab ID "${target}"`, true);
+        return;
+      }
+      const pinned = action === "pin";
+      chrome.tabs.update(tabId, { pinned }, (tab) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `${pinned ? "Pinned" : "Unpinned"} tab ${tabId}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "mute" || action === "unmute") {
+      const tabId = target ? parseInt(target, 10) : activeTab.id;
+      if (isNaN(tabId)) {
+        sendBrowserResult(controlId, `Error: Invalid tab ID "${target}"`, true);
+        return;
+      }
+      const muted = action === "mute";
+      chrome.tabs.update(tabId, { muted }, (tab) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `${muted ? "Muted" : "Unmuted"} tab ${tabId}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "move") {
+      const tabId = parseInt(target, 10);
+      const index = parseInt(value, 10);
+      if (isNaN(tabId) || isNaN(index)) {
+        sendBrowserResult(controlId, `Error: Invalid tab ID "${target}" or index "${value}"`, true);
+        return;
+      }
+      chrome.tabs.move(tabId, { index }, (tab) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Moved tab ${tabId} to index ${index}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "group") {
+      const tabIds = target.split(",").map(idStr => parseInt(idStr.trim(), 10)).filter(id => !isNaN(id));
+      if (tabIds.length === 0) {
+        sendBrowserResult(controlId, `Error: No valid tab IDs found in target "${target}"`, true);
+        return;
+      }
+      const groupId = value ? parseInt(value, 10) : undefined;
+      chrome.tabs.group({ tabIds, groupId }, (gid) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Grouped tabs [${tabIds.join(", ")}] under group ${gid}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "ungroup") {
+      const tabIds = target.split(",").map(idStr => parseInt(idStr.trim(), 10)).filter(id => !isNaN(id));
+      if (tabIds.length === 0) {
+        sendBrowserResult(controlId, `Error: No valid tab IDs found in target "${target}"`, true);
+        return;
+      }
+      chrome.tabs.ungroup(tabIds, () => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Ungrouped tabs [${tabIds.join(", ")}]`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "discard") {
+      const tabId = target ? parseInt(target, 10) : activeTab.id;
+      if (isNaN(tabId)) {
+        sendBrowserResult(controlId, `Error: Invalid tab ID "${target}"`, true);
+        return;
+      }
+      chrome.tabs.discard(tabId, (tab) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Discarded tab ${tabId}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "new_window") {
+      const url = target || undefined;
+      chrome.windows.create({ url }, (win) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Created new window with ID ${win ? win.id : ""}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "close_window") {
+      const windowId = target ? parseInt(target, 10) : activeTab.windowId;
+      if (isNaN(windowId)) {
+        sendBrowserResult(controlId, `Error: Invalid window ID "${target}"`, true);
+        return;
+      }
+      chrome.windows.remove(windowId, () => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Closed window ${windowId}`, false);
+        }
+      });
       return;
     }
 

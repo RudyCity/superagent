@@ -97,6 +97,20 @@ function resolveFilePathFromArgs(args: Record<string, unknown>, cwd: string): st
   return normalizePath(path.resolve(cwd, raw));
 }
 
+function getImageMimeType(ext: string): string | null {
+  const map: Record<string, string> = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+  };
+  return map[ext.toLowerCase()] || null;
+}
+
 export const readTool: Tool = {
   name: "read",
   description: "Read file contents with line numbers. PREFER 'filePaths' array to batch multiple reads into ONE call — never read files one-by-one. Each entry can be a string (uses global offset/limit) or {path, offset?, limit?} for per-file ranges.",
@@ -166,6 +180,15 @@ export const readTool: Tool = {
             continue;
           }
           const buffer = await fs.readFile(filePath);
+
+          const ext = path.extname(filePath).toLowerCase();
+          const mimeType = getImageMimeType(ext);
+          if (mimeType) {
+            const base64Data = buffer.toString("base64");
+            results.push(`--- File: ${rawPath} ---\ndata:${mimeType};base64,${base64Data}`);
+            continue;
+          }
+
           const checkLimit = Math.min(buffer.length, 1024);
           let isBinary = false;
           for (let i = 0; i < checkLimit; i++) {
@@ -221,7 +244,14 @@ export const readTool: Tool = {
       }
 
       const buffer = await fs.readFile(filePath);
-      
+
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeType = getImageMimeType(ext);
+      if (mimeType) {
+        const base64Data = buffer.toString("base64");
+        return `data:${mimeType};base64,${base64Data}`;
+      }
+
       // Check for binary content (first 1024 bytes check for null bytes)
       const checkLimit = Math.min(buffer.length, 1024);
       for (let i = 0; i < checkLimit; i++) {

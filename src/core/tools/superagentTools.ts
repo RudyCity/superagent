@@ -1404,10 +1404,19 @@ export const sendMessageToSuperagentTool: Tool = {
   },
 };
 
-// ─── read_peer_superagent_file ─────────────────────────────────────────────────
-// Fix 5: Allow Superagents to read files from peer Superagent worktrees (read-only).
-// This enables parallel Superagents to share schemas, types, or interfaces without
-// waiting for a full merge cycle.
+function getImageMimeType(ext: string): string | null {
+  const map: Record<string, string> = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+  };
+  return map[ext.toLowerCase()] || null;
+}
 
 export const readPeerSuperagentFileTool: Tool = {
   name: "read_peer_superagent_file",
@@ -1477,6 +1486,18 @@ export const readPeerSuperagentFileTool: Tool = {
     const MAX_SIZE_BYTES = 512 * 1024; // 512 KB
     if (stat.size > MAX_SIZE_BYTES) {
       return `Error: File "${filePath}" is too large (${Math.round(stat.size / 1024)} KB). Maximum allowed: 512 KB.`;
+    }
+
+    const ext = path.extname(resolvedTarget).toLowerCase();
+    const mimeType = getImageMimeType(ext);
+    if (mimeType) {
+      try {
+        const buffer = fs.readFileSync(resolvedTarget);
+        const base64Data = buffer.toString("base64");
+        return `File: ${filePath}\nPeer: ${peerRole} (${peer.branch})\nWorktree: ${peer.worktreePath}\n\ndata:${mimeType};base64,${base64Data}`;
+      } catch (err: any) {
+        return `Error reading file "${filePath}" from peer "${peerRole}": ${err.message}`;
+      }
     }
 
     try {

@@ -197,6 +197,13 @@ describe("File tools", () => {
     const binResult = await tool?.execute({ filePath: "temp_binary_test.bin" }, process.cwd());
     expect(binResult).toContain("Error: Cannot read binary file");
     await fs.unlink(binaryFile);
+
+    // Write image file and verify it reads as base64 Data URI
+    const pngFile = path.resolve(process.cwd(), "temp_image_test.png");
+    await fs.writeFile(pngFile, Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
+    const pngResult = await tool?.execute({ filePath: "temp_image_test.png" }, process.cwd());
+    expect(pngResult).toContain("data:image/png;base64,");
+    await fs.unlink(pngFile);
   });
 
   it("should replace file content using replaceFileContentTool and show a diff summary", async () => {

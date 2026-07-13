@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.339] - 2026-07-13
+
+### Added
+- **Image File Reading & Vision Integration**:
+  - Enhanced `readTool` (`read`) and `readPeerSuperagentFileTool` (`read_peer_superagent_file`) to detect image file extensions and read them as base64 Data URIs rather than failing with a binary error.
+  - Updated the agent execution loop in `src/core/agent.ts` to automatically scan tool outputs for base64 image Data URIs, clean them out of the raw text response, and append them as native vision image parts in subsequent turns.
+
+---
+
 ## [1.2.338] - 2026-07-13
 
 ### Fixed

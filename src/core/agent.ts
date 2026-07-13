@@ -3363,11 +3363,41 @@ for (const tc of toolCalls) {
         }> = [];
 
         const results = m.toolResults || [];
-        let pendingImagesToAppend: Array<{ toolName: string; base64List: string[] }> = [];
+        let pendingImagesToAppend: Array<{ toolName: string; base64List: string[]; mimeType?: string }> = [];
 
         for (const tr of results) {
           const resultStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
-          if (useVisionTokenSaving && resultStr.length > threshold) {
+          
+          // Check for data:image/xxx;base64,... pattern in the result
+          const dataUriRegex = /data:(image\/[a-zA-Z+.-]+);base64,([a-zA-Z0-9+/=]+(?:\r?\n)?[a-zA-Z0-9+/=]*)/g;
+          let match;
+          let cleanedResult = resultStr;
+          let hasImages = false;
+          
+          dataUriRegex.lastIndex = 0;
+          while ((match = dataUriRegex.exec(resultStr)) !== null) {
+            const mimeType = match[1];
+            const base64Data = match[2].replace(/\s/g, ""); // strip whitespace/newlines
+            
+            pendingImagesToAppend.push({
+              toolName: tr.name,
+              base64List: [base64Data],
+              mimeType,
+            });
+            hasImages = true;
+          }
+
+          if (hasImages) {
+            cleanedResult = resultStr.replace(dataUriRegex, (fullMatch, mimeType) => {
+              return `[Image (${mimeType}) attached as a vision image part]`;
+            });
+            contentParts.push({
+              type: "tool-result",
+              toolCallId: tr.toolCallId,
+              toolName: tr.name,
+              result: cleanedResult,
+            });
+          } else if (useVisionTokenSaving && resultStr.length > threshold) {
             try {
               this.writeToLogFile("INFO", `Automatically converting tool result of "${tr.name}" (size ${resultStr.length} chars) to image.`);
               let base64List = this.getCachedImages(resultStr);
@@ -3416,17 +3446,29 @@ for (const tc of toolCalls) {
           const appendParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [];
           for (const item of pendingImagesToAppend) {
             const totalPages = item.base64List.length;
-            appendParts.push({
-              type: "text",
-              text: `CRITICAL TOOL OUTPUT: The following image(s) contain the actual execution output of the tool "${item.toolName}". Read the text inside the image(s) to see the result. [Tool output for "${item.toolName}" rendered as image, split into ${totalPages} pages]:`
-            });
-            item.base64List.forEach((base64, index) => {
+            if (item.mimeType) {
+              // Direct image from tool execution
               appendParts.push({
                 type: "text",
-                text: `[Tool Output for "${item.toolName}" Page ${index + 1} of ${totalPages}]:`
+                text: `Direct image output from tool "${item.toolName}":`
               });
-              appendParts.push({ type: "image", image: base64, mimeType: "image/webp" });
-            });
+              item.base64List.forEach((base64) => {
+                appendParts.push({ type: "image", image: base64, mimeType: item.mimeType });
+              });
+            } else {
+              // Vision token saving flow
+              appendParts.push({
+                type: "text",
+                text: `CRITICAL TOOL OUTPUT: The following image(s) contain the actual execution output of the tool "${item.toolName}". Read the text inside the image(s) to see the result. [Tool output for "${item.toolName}" rendered as image, split into ${totalPages} pages]:`
+              });
+              item.base64List.forEach((base64, index) => {
+                appendParts.push({
+                  type: "text",
+                  text: `[Tool Output for "${item.toolName}" Page ${index + 1} of ${totalPages}]:`
+                });
+                appendParts.push({ type: "image", image: base64, mimeType: "image/webp" });
+              });
+            }
           }
           coreMessages.push({
             role: "user",

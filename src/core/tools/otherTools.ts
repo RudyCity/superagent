@@ -1653,22 +1653,25 @@ export function setBrowserControlHandler(handler: typeof browserControlHandler) 
 
 export const controlBrowserTabTool: Tool = {
   name: "control_browser_tab",
-  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (click selector), type (type value into selector), navigate (go to URL), scroll (scroll up/down/to selector), screenshot (capture tab view), errors (get console errors), text (get element or page text), hover (hover selector), keypress (press key e.g. Enter on selector), wait (wait for selector or ms duration), html (get outerHTML of selector or page), reload (refresh page), back (go back), forward (go forward).",
+  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click, type, navigate, scroll, screenshot, errors, text, hover, keypress, wait, html, reload, back, forward, open (open tab), close (close tab), list (list all tabs), switch (switch tab), duplicate (duplicate tab), pin, unpin, mute, unmute, move (move tab), group (group tabs), ungroup (ungroup tabs), discard (suspend tab), new_window (open window), close_window (close window).",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["click", "type", "navigate", "scroll", "screenshot", "errors", "text", "hover", "keypress", "wait", "html", "reload", "back", "forward"],
-        description: "The browser action to execute on the active tab."
+        enum: [
+          "click", "type", "navigate", "scroll", "screenshot", "errors", "text", "hover", "keypress", "wait", "html", "reload", "back", "forward",
+          "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window"
+        ],
+        description: "The browser action to execute."
       },
       target: {
         type: "string",
-        description: "CSS selector, destination URL, or wait parameter (ms duration or selector). Required for click, type, navigate, scroll, hover, keypress, and wait."
+        description: "CSS selector, destination URL, tab ID (for switch, close, duplicate, pin, unpin, mute, unmute, move, discard, close_window), or comma-separated tab IDs (for group, ungroup). Required for click, type, navigate, scroll, hover, keypress, wait, switch, move, group, and ungroup."
       },
       value: {
         type: "string",
-        description: "Text to type (type), key to press (keypress), scroll offset, or timeout in ms (wait)."
+        description: "Text to type (type), key to press (keypress), scroll offset, timeout in ms (wait), destination index (move), or group ID (group)."
       }
     },
     required: ["action"]
@@ -1678,7 +1681,7 @@ export const controlBrowserTabTool: Tool = {
       return "Error: Browser control handler is not active. Please launch the Superagent Chrome Extension and connect to activate browser control.";
     }
     const action = args.action as string;
-    if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait"].includes(action) && !args.target) {
+    if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait", "switch", "move", "group", "ungroup"].includes(action) && !args.target) {
       return `Error: Target parameter is required for action "${action}".`;
     }
     try {
