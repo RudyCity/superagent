@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.340] - 2026-07-13
+
+### Added
+- **Extended Browser Tab & Window Control**:
+  - Implemented 15 new browser control actions: `open`, `close`, `list`, `switch`, `duplicate`, `pin`, `unpin`, `mute`, `unmute`, `move`, `group`, `ungroup`, `discard`, `new_window`, `close_window`.
+  - Added the `tabGroups` permission to the Chrome extension's manifest to support tab grouping APIs.
+  - Updated the URL restriction handler to allow running background/lifecycle tab commands on system/restricted URLs.
+
+---
+
 ## [1.2.339] - 2026-07-13
 
 ### Added
