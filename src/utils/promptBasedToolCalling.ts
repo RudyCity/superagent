@@ -33,7 +33,15 @@ export interface ToolDefinition {
  *
  * Results are cached to disk to avoid repeated probes across CLI invocations.
  */
-const toolCallSupportCache = new Map<string, boolean>();
+/** TTL for probe cache entries: 24 hours in milliseconds. */
+const PROBE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface CacheEntry {
+  value: boolean;
+  timestamp: number;
+}
+
+const toolCallSupportCache = new Map<string, CacheEntry>();
 let diskCacheLoaded = false;
 
 function getCacheFilePath(): string {
@@ -53,7 +61,15 @@ function loadDiskCache(): void {
       const data = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
       for (const [key, value] of Object.entries(data)) {
         if (typeof value === "boolean") {
-          toolCallSupportCache.set(key, value);
+          // Legacy entry without timestamp — treat as expired so it gets re-probed
+          toolCallSupportCache.set(key, { value, timestamp: 0 });
+        } else if (
+          value !== null &&
+          typeof value === "object" &&
+          typeof (value as any).value === "boolean" &&
+          typeof (value as any).timestamp === "number"
+        ) {
+          toolCallSupportCache.set(key, value as CacheEntry);
         }
       }
     }
@@ -66,9 +82,9 @@ function saveDiskCache(): void {
   try {
     const cacheFile = getCacheFilePath();
     if (!cacheFile) return;
-    const data: Record<string, boolean> = {};
-    for (const [key, value] of toolCallSupportCache.entries()) {
-      data[key] = value;
+    const data: Record<string, CacheEntry> = {};
+    for (const [key, entry] of toolCallSupportCache.entries()) {
+      data[key] = entry;
     }
     const dir = path.dirname(cacheFile);
     if (!fs.existsSync(dir)) {
@@ -88,8 +104,13 @@ export async function probeToolCallSupport(
   baseUrl = ensureProtocol(baseUrl) as string;
   loadDiskCache();
   const cacheKey = `${baseUrl}::${model}`;
-  if (toolCallSupportCache.has(cacheKey)) {
-    return toolCallSupportCache.get(cacheKey)!;
+  const cached = toolCallSupportCache.get(cacheKey);
+  if (cached) {
+    const age = Date.now() - cached.timestamp;
+    if (age < PROBE_CACHE_TTL_MS) {
+      return cached.value;
+    }
+    // Stale entry — fall through to re-probe
   }
 
   const probeBody = {
@@ -126,7 +147,7 @@ export async function probeToolCallSupport(
     });
 
     if (!res.ok) {
-      toolCallSupportCache.set(cacheKey, false);
+      toolCallSupportCache.set(cacheKey, { value: false, timestamp: Date.now() });
       saveDiskCache();
       return false;
     }
@@ -138,11 +159,11 @@ export async function probeToolCallSupport(
       (choice?.message?.tool_calls && choice.message.tool_calls.length > 0)
     );
 
-    toolCallSupportCache.set(cacheKey, hasToolCalls);
+    toolCallSupportCache.set(cacheKey, { value: hasToolCalls, timestamp: Date.now() });
     saveDiskCache();
     return hasToolCalls;
   } catch {
-    toolCallSupportCache.set(cacheKey, false);
+    toolCallSupportCache.set(cacheKey, { value: false, timestamp: Date.now() });
     saveDiskCache();
     return false;
   }

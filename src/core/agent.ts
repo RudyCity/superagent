@@ -2486,6 +2486,35 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             });
             await this.saveHistory();
           } else {
+            // ── Auto-continue for planning/narration responses ──────────────
+            // Some models (e.g. GPT-5.5 via OpenRouter) output a text-only
+            // "planning" sentence (e.g. "Reading BrowserTab regions...") without
+            // issuing tool calls, then stop. On early iterations this is almost
+            // certainly NOT a final answer — inject a nudge and keep looping
+            // instead of breaking immediately.
+            const isEarlyIteration = i < 2;
+            const isPlanningText =
+              isEarlyIteration &&
+              textContent.trim().length > 0 &&
+              textContent.trim().length < 500 &&
+              !/\?$/.test(textContent.trim()); // Not a question to the user
+
+            if (isPlanningText) {
+              this.writeToLogFile(
+                "INFO",
+                `Text-only response on iteration ${i} (likely planning narration). Auto-continuing with nudge.`
+              );
+              this.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
+              this.conversation.addMessage({
+                role: "user",
+                content: "[SYS] Continue. Use the available tools to execute the plan you described.",
+                timestamp: Date.now(),
+              });
+              await this.saveHistory();
+              // Do NOT break — let the loop continue to next iteration
+              continue;
+            }
+
             const currentCwd = (this.tier === "superagent" && this.worktreePath)
               ? this.worktreePath
               : this.workingDirectory;
@@ -2502,6 +2531,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           }
           break;
         }
+
 
         const toolResults: ToolResult[] = [];
 

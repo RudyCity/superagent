@@ -1,6 +1,14 @@
 # Changelog
 
+## [1.2.360] - 2026-07-13
+
+### Fixed
+- **GPT-5.5 / Non-Claude Model Loop Stops After 1 Iteration**:
+  - **Probe cache TTL (24h)**: `probeToolCallSupport` in `promptBasedToolCalling.ts` now stores `{ value, timestamp }` instead of a bare `boolean` on disk. Cache entries older than 24 hours are treated as stale and re-probed automatically. Legacy bare-boolean entries (from older sessions) are also treated as expired and re-probed on next use. This fixes the root cause: a stale `false` cache entry for `localhost:8087/gpt-5.5` caused Superagent to activate XML prompt-based tool fallback — a Claude-specific format that GPT-5.5 does not follow — resulting in text-only responses and immediate loop termination.
+  - **Auto-continue for planning narration responses**: In `agent.ts`, when a model outputs a short text-only response (no tool calls) on the first two iterations and the text does not end with a question mark, Superagent now injects a `[SYS] Continue. Use the available tools...` nudge message and continues the loop instead of breaking immediately. This handles models like GPT-5.5 that announce their intent as text before acting, rather than issuing tool calls directly.
+
 ## [1.2.359] - 2026-07-13
+
 
 ### Fixed
 - **Anthropic 400: tool_result.tool_use_id Field Required**:
