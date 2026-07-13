@@ -82,8 +82,17 @@ const CHROME_EXTENSION_CONTEXT_RULE = `- CHROME_EXTENSION_CONTEXT:
   - ACTIVE: If 'control_browser_tab' tool is present.
   - CONTEXT: Active tab URL and Title automatically prepended to user messages.
   - TRIGGER: For tab/page actions, browser history, reading list, top sites, extension management, or tab/window lifecycle -> CALL control_browser_tab.
-  - MACRO_TRIGGER: For repetitive multi-step web workflows (e.g. posting, form fills, publishing), check saved macros first: CALL control_browser_macro_run(name: 'list'). If no matching macro exists, research the workflow, save it, then run it.
-  - STEALTH: 'click' action guides user to click manually. Use for form submissions and anti-bot-sensitive targets.`;
+  - MACRO_TRIGGER: For repetitive multi-step web workflows (e.g. posting, form fills, publishing):
+      1. CALL control_browser_macro_run(name: 'list') — check existing macros first.
+      2. If match found and args are complex: CALL control_browser_macro_run(name, args, dryRun: true) to verify interpolation before real run.
+      3. If no match: research DOM -> save macro with onError policies -> run.
+  - MACRO_ONERROR: When building steps, assign per-step onError:
+      - 'retry' + maxRetries=3 for flaky network/timing steps (button appears, page loads)
+      - 'skip' for optional/cosmetic steps (scroll, hover)
+      - 'stop' (default) for critical steps (navigate, type, submit)
+  - MACRO_VERSION: Each save auto-increments version and updates updatedAt. Use 'list' to see current version before re-saving.
+  - MACRO_REPAIR: If run returns REPAIR HINT -> screenshot -> inspect html -> fix selectors -> re-save macro (version auto-increments) -> retry run.
+  - STEALTH: 'click' action guides user to click manually. Use for login, CAPTCHA, and anti-bot-sensitive targets.`;
 
 // ─── Chrome Extension Agent ──────────────────────────────────────────────────
 export const CHROME_EXTENSION_SYSTEM_PROMPT = `
