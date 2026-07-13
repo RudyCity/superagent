@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.353] - 2026-07-13
+
+### Fixed
+- **Chrome Extension Selection Caret Typing**:
+  - Rewrote the human-like text input simulation (`typeTextHumanLike`) inside `sidepanel-browser.js` to target the active text selection caret.
+  - Implemented the W3C Selection and Range APIs for writing and deleting characters in rich text/contenteditable containers (such as Medium, Notion, Google Docs) to prevent wiping out container HTML tag structures.
+  - Aligned typing within input and textarea elements to target `selectionStart` and `selectionEnd`, moving the caret position forward dynamically.
+
+---
+
 ## [1.2.352] - 2026-07-13
 
 ### Added

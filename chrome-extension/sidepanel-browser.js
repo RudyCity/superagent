@@ -562,7 +562,8 @@ async function executeBrowserControl(controlId, action, target, value) {
 
             const typeTextHumanLike = async (element, text) => {
               const isInput = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
-              const isEditable = element.isContentEditable;
+              const isEditable = element.isContentEditable || element.closest("[contenteditable='true']");
+              
               if (!isInput && !isEditable) {
                 try {
                   element.value = text;
@@ -578,12 +579,23 @@ async function executeBrowserControl(controlId, action, target, value) {
               if (typeof element.focus === "function") {
                 element.focus();
               }
-              const editable = element.closest("[contenteditable='true']");
-              if (editable && typeof editable.focus === "function") {
-                editable.focus();
+              const editableContainer = element.closest("[contenteditable='true']") || (element.isContentEditable ? element : null);
+              if (editableContainer && typeof editableContainer.focus === "function") {
+                editableContainer.focus();
               }
 
-              let currentText = "";
+              // Initialize caret position for contenteditable if not already focused
+              if (isEditable && editableContainer) {
+                const sel = window.getSelection();
+                if (sel.rangeCount === 0 || !editableContainer.contains(sel.anchorNode)) {
+                  const range = document.createRange();
+                  range.selectNodeContents(editableContainer);
+                  range.collapse(false); // Position at the end
+                  sel.removeAllRanges();
+                  sel.addRange(range);
+                }
+              }
+
               const typoChance = 0.03;
               const keyboardNeighbors = {
                 'a': 'qwsz', 'b': 'vghn', 'c': 'xdfv', 'd': 'ersfxc', 'e': 'wsdr',
@@ -593,19 +605,79 @@ async function executeBrowserControl(controlId, action, target, value) {
                 'u': 'yhji', 'v': 'cfgb', 'w': 'qase', 'x': 'zsdc', 'y': 'tghu', 'z': 'asx'
               };
 
-              const updateElementValue = (val) => {
+              const insertChar = (char) => {
                 if (isInput) {
+                  const start = element.selectionStart;
+                  const end = element.selectionEnd;
+                  const val = element.value;
+                  const newVal = val.substring(0, start) + char + val.substring(end);
+                  
+                  // Use native setter if available to bypass React/Vue setters
                   const proto = element instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
                   const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
                   if (nativeInputValueSetter) {
-                    nativeInputValueSetter.call(element, val);
+                    nativeInputValueSetter.call(element, newVal);
                   } else {
-                    element.value = val;
+                    element.value = newVal;
                   }
+                  
+                  element.setSelectionRange(start + 1, start + 1);
                   element.dispatchEvent(new Event("input", { bubbles: true }));
-                } else if (isEditable) {
-                  element.innerText = val;
-                  element.dispatchEvent(new Event("input", { bubbles: true }));
+                } else if (isEditable && editableContainer) {
+                  const sel = window.getSelection();
+                  if (sel.rangeCount > 0) {
+                    const range = sel.getRangeAt(0);
+                    range.deleteContents();
+                    const textNode = document.createTextNode(char);
+                    range.insertNode(textNode);
+                    range.setStartAfter(textNode);
+                    range.setEndAfter(textNode);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                  }
+                  editableContainer.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+              };
+
+              const deleteChar = () => {
+                if (isInput) {
+                  const start = element.selectionStart;
+                  const end = element.selectionEnd;
+                  if (start > 0 || start !== end) {
+                    const val = element.value;
+                    const deleteStart = start === end ? start - 1 : start;
+                    const newVal = val.substring(0, deleteStart) + val.substring(end);
+                    
+                    const proto = element instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+                    if (nativeInputValueSetter) {
+                      nativeInputValueSetter.call(element, newVal);
+                    } else {
+                      element.value = newVal;
+                    }
+                    
+                    element.setSelectionRange(deleteStart, deleteStart);
+                    element.dispatchEvent(new Event("input", { bubbles: true }));
+                  }
+                } else if (isEditable && editableContainer) {
+                  const sel = window.getSelection();
+                  if (sel.rangeCount > 0) {
+                    const range = sel.getRangeAt(0);
+                    if (range.collapsed) {
+                      const node = range.startContainer;
+                      const offset = range.startOffset;
+                      if (node.nodeType === Node.TEXT_NODE && offset > 0) {
+                        node.deleteData(offset - 1, 1);
+                        range.setStart(node, offset - 1);
+                        range.setEnd(node, offset - 1);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                      }
+                    } else {
+                      range.deleteContents();
+                    }
+                  }
+                  editableContainer.dispatchEvent(new Event("input", { bubbles: true }));
                 }
               };
 
@@ -616,18 +688,18 @@ async function executeBrowserControl(controlId, action, target, value) {
                 if (Math.random() < typoChance && keyboardNeighbors[char.toLowerCase()]) {
                   const neighbors = keyboardNeighbors[char.toLowerCase()];
                   const typoChar = neighbors[Math.floor(Math.random() * neighbors.length)];
-                  const typoText = currentText + (char === char.toUpperCase() ? typoChar.toUpperCase() : typoChar);
+                  const realTypoChar = (char === char.toUpperCase() ? typoChar.toUpperCase() : typoChar);
                   
-                  updateElementValue(typoText);
-                  element.dispatchEvent(new KeyboardEvent("keydown", { key: typoChar, bubbles: true }));
-                  element.dispatchEvent(new KeyboardEvent("keypress", { key: typoChar, bubbles: true }));
-                  element.dispatchEvent(new KeyboardEvent("keyup", { key: typoChar, bubbles: true }));
+                  insertChar(realTypoChar);
+                  element.dispatchEvent(new KeyboardEvent("keydown", { key: realTypoChar, bubbles: true }));
+                  element.dispatchEvent(new KeyboardEvent("keypress", { key: realTypoChar, bubbles: true }));
+                  element.dispatchEvent(new KeyboardEvent("keyup", { key: realTypoChar, bubbles: true }));
                   
                   // Typo pause (human realization of error)
                   await new Promise(r => setTimeout(r, 80 + Math.random() * 80));
                   
                   // Backspace
-                  updateElementValue(currentText);
+                  deleteChar();
                   element.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", keyCode: 8, bubbles: true }));
                   element.dispatchEvent(new KeyboardEvent("keyup", { key: "Backspace", keyCode: 8, bubbles: true }));
                   
@@ -635,9 +707,7 @@ async function executeBrowserControl(controlId, action, target, value) {
                   await new Promise(r => setTimeout(r, 100 + Math.random() * 100));
                 }
 
-                currentText += char;
-                updateElementValue(currentText);
-                
+                insertChar(char);
                 element.dispatchEvent(new KeyboardEvent("keydown", { key: char, bubbles: true }));
                 element.dispatchEvent(new KeyboardEvent("keypress", { key: char, bubbles: true }));
                 element.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true }));
@@ -646,7 +716,11 @@ async function executeBrowserControl(controlId, action, target, value) {
                 await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
               }
 
-              element.dispatchEvent(new Event("change", { bubbles: true }));
+              if (isInput) {
+                element.dispatchEvent(new Event("change", { bubbles: true }));
+              } else if (isEditable && editableContainer) {
+                editableContainer.dispatchEvent(new Event("change", { bubbles: true }));
+              }
             };
 
             const animateCursorTo = async (element) => {
