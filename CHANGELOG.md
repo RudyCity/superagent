@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.347] - 2026-07-13
+
+### Fixed
+- **Chrome Extension Virtual Cursor**:
+  - Set `pointer-events: none !important` inline on the virtual cursor div and its inner SVG/path elements to prevent them from intercepting clicks in some environments or under custom styling.
+  - Added fallback detection to the manual click guidance handler; if a click is intercepted by the virtual cursor, the target element is programmatically clicked and the step resolves successfully, preventing click blockages.
+
+---
+
 ## [1.2.346] - 2026-07-13
 
 ### Fixed

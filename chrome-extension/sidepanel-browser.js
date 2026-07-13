@@ -507,17 +507,18 @@ async function executeBrowserControl(controlId, action, target, value) {
                   cursor.style.position = "absolute";
                   cursor.style.width = "20px";
                   cursor.style.height = "20px";
-                  cursor.style.pointerEvents = "none";
+                  cursor.style.setProperty("pointer-events", "none", "important");
                   cursor.style.zIndex = "999999999";
                   cursor.style.transition = "transform 0.15s ease-out, opacity 0.3s ease-out";
                   cursor.innerHTML = `
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M3 1V15.75L7.7 11.75L11.7 19.75L14 18.25L10 10.25L16.25 10L3 1Z" fill="black" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" style="pointer-events: none !important;">
+                      <path d="M3 1V15.75L7.7 11.75L11.7 19.75L14 18.25L10 10.25L16.25 10L3 1Z" fill="black" stroke="white" stroke-width="1.5" stroke-linejoin="round" style="pointer-events: none !important;"/>
                     </svg>
                   `;
                   document.body.appendChild(cursor);
                 }
 
+                cursor.style.setProperty("pointer-events", "none", "important");
                 if (window.__superagent_cursor_timeout__) {
                   clearTimeout(window.__superagent_cursor_timeout__);
                 }
@@ -772,11 +773,12 @@ async function executeBrowserControl(controlId, action, target, value) {
 
               return new Promise((resolve) => {
                 const clickHandler = (e) => {
-                  if (el.contains(e.target)) {
+                  const cursor = document.getElementById("__superagent_cursor__");
+                  const isCursorClick = cursor && (e.target === cursor || cursor.contains(e.target));
+                  if (el.contains(e.target) || isCursorClick) {
                     el.classList.remove("__superagent_highlight_pulse__");
                     document.removeEventListener("click", clickHandler, true);
 
-                    const cursor = document.getElementById("__superagent_cursor__");
                     if (cursor) {
                       cursor.style.transform = "scale(0.7)";
                       setTimeout(() => {
@@ -786,6 +788,10 @@ async function executeBrowserControl(controlId, action, target, value) {
                           cursor.style.opacity = "0";
                         }, 150);
                       }, 100);
+                    }
+
+                    if (isCursorClick) {
+                      el.click();
                     }
 
                     resolve(`Manually clicked element ${tgt}`);
