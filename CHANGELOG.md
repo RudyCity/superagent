@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.344] - 2026-07-13
+
+### Added
+- **Chrome Extension Human-like Virtual Mouse & Manual Click Guidance**:
+  - Implemented custom Bezier curve animation for the virtual mouse pointer with cubic ease-in-out easing and micro-jitters to mimic actual human hand motor controls.
+  - Upgraded the virtual cursor to use a realistic cursor SVG instead of a simple red dot.
+  - Added visual highlight pulsing effect to target elements.
+  - Modified the click handler to act as visual manual guidance, waiting for the user to perform the click manually before resolving, ensuring complete immunity to bot detection.
+
+---
+
 ## [1.2.343] - 2026-07-13
 
 ### Added

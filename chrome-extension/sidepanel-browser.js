@@ -498,61 +498,125 @@ async function executeBrowserControl(controlId, action, target, value) {
               });
             };
 
-            const showCursor = (element, actionType = "move") => {
+            const animateCursorTo = async (element) => {
               try {
                 let cursor = document.getElementById("__superagent_cursor__");
                 if (!cursor) {
                   cursor = document.createElement("div");
                   cursor.id = "__superagent_cursor__";
                   cursor.style.position = "absolute";
-                  cursor.style.width = "14px";
-                  cursor.style.height = "14px";
-                  cursor.style.background = "rgba(220, 38, 38, 0.75)";
-                  cursor.style.border = "2.5px solid #ffffff";
-                  cursor.style.borderRadius = "50%";
+                  cursor.style.width = "20px";
+                  cursor.style.height = "20px";
                   cursor.style.pointerEvents = "none";
                   cursor.style.zIndex = "999999999";
-                  cursor.style.transition = "left 0.2s cubic-bezier(0.25, 1, 0.5, 1), top 0.2s cubic-bezier(0.25, 1, 0.5, 1), transform 0.15s ease-out, background-color 0.15s ease-out, opacity 0.3s ease-out";
-                  cursor.style.boxShadow = "0 2px 4px rgba(0,0,0,0.4)";
+                  cursor.style.transition = "transform 0.15s ease-out, opacity 0.3s ease-out";
+                  cursor.innerHTML = `
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M3 1V15.75L7.7 11.75L11.7 19.75L14 18.25L10 10.25L16.25 10L3 1Z" fill="black" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+                    </svg>
+                  `;
                   document.body.appendChild(cursor);
                 }
-                
+
                 if (window.__superagent_cursor_timeout__) {
                   clearTimeout(window.__superagent_cursor_timeout__);
                 }
                 cursor.style.opacity = "1";
 
                 const rect = element.getBoundingClientRect();
-                const x = rect.left + rect.width / 2 + window.scrollX;
-                const y = rect.top + rect.height / 2 + window.scrollY;
-                
-                cursor.style.left = `${x - 7}px`;
-                cursor.style.top = `${y - 7}px`;
-                cursor.style.transform = "scale(1)";
-                cursor.style.backgroundColor = "rgba(220, 38, 38, 0.75)";
+                const scrollX = window.scrollX;
+                const scrollY = window.scrollY;
 
-                if (actionType === "click") {
-                  cursor.style.transform = "scale(0.7)";
-                  cursor.style.backgroundColor = "rgba(239, 68, 68, 1)";
-                  setTimeout(() => {
-                    cursor.style.transform = "scale(1.2)";
-                    setTimeout(() => {
-                      cursor.style.transform = "scale(1)";
-                    }, 150);
-                  }, 100);
-                } else if (actionType === "type") {
-                  cursor.style.transform = "scale(1.1)";
-                  cursor.style.backgroundColor = "rgba(14, 99, 156, 0.85)";
-                  setTimeout(() => {
-                    cursor.style.transform = "scale(1)";
-                  }, 150);
+                // Pick a target coordinate slightly randomized inside the target element (inner 60%) to look human-like
+                const paddingX = rect.width * 0.2;
+                const paddingY = rect.height * 0.2;
+                const targetX = rect.left + paddingX + Math.random() * (rect.width - 2 * paddingX) + scrollX;
+                const targetY = rect.top + paddingY + Math.random() * (rect.height - 2 * paddingY) + scrollY;
+
+                // Retrieve last position or start from a random edge of screen
+                let startX = window.__superagent_cursor_x__;
+                let startY = window.__superagent_cursor_y__;
+                if (startX === undefined || startY === undefined) {
+                  if (Math.random() < 0.5) {
+                    startX = scrollX + (Math.random() < 0.5 ? 0 : window.innerWidth);
+                    startY = scrollY + Math.random() * window.innerHeight;
+                  } else {
+                    startX = scrollX + Math.random() * window.innerWidth;
+                    startY = scrollY + (Math.random() < 0.5 ? 0 : window.innerHeight);
+                  }
                 }
 
-                window.__superagent_cursor_timeout__ = setTimeout(() => {
-                  cursor.style.opacity = "0";
-                }, 3000);
+                const dx = targetX - startX;
+                const dy = targetY - startY;
+                const distance = Math.hypot(dx, dy);
+
+                if (distance < 2) {
+                  cursor.style.left = `${targetX}px`;
+                  cursor.style.top = `${targetY}px`;
+                  window.__superagent_cursor_x__ = targetX;
+                  window.__superagent_cursor_y__ = targetY;
+                  return;
+                }
+
+                // Bezier control points calculation
+                const curveDirection = Math.random() < 0.5 ? 1 : -1;
+                const perpendicularX = -dy / distance;
+                const perpendicularY = dx / distance;
+                const controlOffset = distance * (0.15 + Math.random() * 0.2) * curveDirection;
+
+                const controlX1 = startX + dx * 0.25 + perpendicularX * controlOffset;
+                const controlY1 = startY + dy * 0.25 + perpendicularY * controlOffset;
+                const controlX2 = startX + dx * 0.75 - perpendicularX * controlOffset;
+                const controlY2 = startY + dy * 0.75 - perpendicularY * controlOffset;
+
+                // Duration based on Fitts's law: logarithmic curve
+                const duration = Math.min(800, Math.max(300, distance * 0.6 + 150));
+                const startTime = performance.now();
+
+                return new Promise((resolve) => {
+                  const step = (now) => {
+                    const elapsed = now - startTime;
+                    const t = Math.min(1, elapsed / duration);
+
+                    // Cubic ease-in-out curve
+                    const easeT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+                    // Cubic Bezier formula
+                    const u = 1 - easeT;
+                    const tt = easeT * easeT;
+                    const uu = u * u;
+                    const uuu = uu * u;
+                    const ttt = tt * easeT;
+
+                    let x = uuu * startX + 3 * uu * easeT * controlX1 + 3 * u * tt * controlX2 + ttt * targetX;
+                    let y = uuu * startY + 3 * uu * easeT * controlY1 + 3 * u * tt * controlY2 + ttt * targetY;
+
+                    // Micro-jitter for biological movement representation
+                    if (t < 0.95) {
+                      x += (Math.random() - 0.5) * 0.8;
+                      y += (Math.random() - 0.5) * 0.8;
+                    }
+
+                    cursor.style.left = `${x}px`;
+                    cursor.style.top = `${y}px`;
+
+                    window.__superagent_cursor_x__ = x;
+                    window.__superagent_cursor_y__ = y;
+
+                    if (t < 1) {
+                      requestAnimationFrame(step);
+                    } else {
+                      cursor.style.left = `${targetX}px`;
+                      cursor.style.top = `${targetY}px`;
+                      window.__superagent_cursor_x__ = targetX;
+                      window.__superagent_cursor_y__ = targetY;
+                      resolve();
+                    }
+                  };
+                  requestAnimationFrame(step);
+                });
               } catch (e) {
-                // Ignore cursor errors
+                // Ignore cursor animation errors
               }
             };
 
@@ -682,26 +746,74 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "click") {
-              showBanner(`Clicking element ${tgt}...`);
-              showCursor(el, "click");
-              el.click();
-              el.dispatchEvent(new Event("change", { bubbles: true }));
-              return `Clicked element ${tgt}`;
+              showBanner(`Please click the highlighted element manually...`);
+              await animateCursorTo(el);
+
+              // Inject highlighting CSS rules if not present
+              const styleId = "__superagent_highlight_style__";
+              if (!document.getElementById(styleId)) {
+                const style = document.createElement("style");
+                style.id = styleId;
+                style.textContent = `
+                  @keyframes superagent-pulse {
+                    0% { box-shadow: 0 0 0 0px rgba(14, 99, 156, 0.7); }
+                    70% { box-shadow: 0 0 0 10px rgba(14, 99, 156, 0); }
+                    100% { box-shadow: 0 0 0 0px rgba(14, 99, 156, 0); }
+                  }
+                  .__superagent_highlight_pulse__ {
+                    outline: 3px solid #0e639c !important;
+                    outline-offset: 2px !important;
+                    animation: superagent-pulse 1.5s infinite !important;
+                  }
+                `;
+                document.head.appendChild(style);
+              }
+              el.classList.add("__superagent_highlight_pulse__");
+
+              return new Promise((resolve) => {
+                const clickHandler = (e) => {
+                  if (el.contains(e.target)) {
+                    el.classList.remove("__superagent_highlight_pulse__");
+                    document.removeEventListener("click", clickHandler, true);
+
+                    const cursor = document.getElementById("__superagent_cursor__");
+                    if (cursor) {
+                      cursor.style.transform = "scale(0.7)";
+                      setTimeout(() => {
+                        cursor.style.transform = "scale(1.2)";
+                        setTimeout(() => {
+                          cursor.style.transform = "scale(1)";
+                          cursor.style.opacity = "0";
+                        }, 150);
+                      }, 100);
+                    }
+
+                    resolve(`Manually clicked element ${tgt}`);
+                  }
+                };
+                document.addEventListener("click", clickHandler, true);
+              });
             }
 
             if (act === "hover") {
               showBanner(`Hovering over element ${tgt}...`);
-              showCursor(el, "move");
+              await animateCursorTo(el);
               const rect = el.getBoundingClientRect();
               el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 }));
               el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
               el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 }));
+
+              window.__superagent_cursor_timeout__ = setTimeout(() => {
+                const cursor = document.getElementById("__superagent_cursor__");
+                if (cursor) cursor.style.opacity = "0";
+              }, 3000);
+
               return `Hovered over element ${tgt}`;
             }
 
             if (act === "keypress") {
               showBanner(`Pressing key ${val || "Enter"} on element ${tgt}...`);
-              showCursor(el, "click");
+              await animateCursorTo(el);
               const key = val || "Enter";
               const keyCode = key === "Enter" ? 13 : 0;
               const eventInit = { key, keyCode, bubbles: true, cancelable: true };
@@ -717,12 +829,18 @@ async function executeBrowserControl(controlId, action, target, value) {
                   }
                 }
               }
+
+              window.__superagent_cursor_timeout__ = setTimeout(() => {
+                const cursor = document.getElementById("__superagent_cursor__");
+                if (cursor) cursor.style.opacity = "0";
+              }, 3000);
+
               return `Pressed key "${key}" on element ${tgt}`;
             }
 
             if (act === "type") {
               showBanner(`Typing into element ${tgt}...`);
-              showCursor(el, "type");
+              await animateCursorTo(el);
               if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
                 const proto = el instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
                 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
@@ -742,6 +860,12 @@ async function executeBrowserControl(controlId, action, target, value) {
               }
               el.dispatchEvent(new Event("input", { bubbles: true }));
               el.dispatchEvent(new Event("change", { bubbles: true }));
+
+              window.__superagent_cursor_timeout__ = setTimeout(() => {
+                const cursor = document.getElementById("__superagent_cursor__");
+                if (cursor) cursor.style.opacity = "0";
+              }, 3000);
+
               return `Typed "${val}" into element ${tgt}`;
             }
 
