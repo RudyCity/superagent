@@ -747,58 +747,45 @@ async function executeBrowserControl(controlId, action, target, value) {
             }
 
             if (act === "click") {
-              showBanner(`Please click the highlighted element manually...`);
+              showBanner(`Clicking element ${tgt}...`);
               await animateCursorTo(el);
 
-              // Inject highlighting CSS rules if not present
-              const styleId = "__superagent_highlight_style__";
-              if (!document.getElementById(styleId)) {
-                const style = document.createElement("style");
-                style.id = styleId;
-                style.textContent = `
-                  @keyframes superagent-pulse {
-                    0% { box-shadow: 0 0 0 0px rgba(14, 99, 156, 0.7); }
-                    70% { box-shadow: 0 0 0 10px rgba(14, 99, 156, 0); }
-                    100% { box-shadow: 0 0 0 0px rgba(14, 99, 156, 0); }
-                  }
-                  .__superagent_highlight_pulse__ {
-                    outline: 3px solid #0e639c !important;
-                    outline-offset: 2px !important;
-                    animation: superagent-pulse 1.5s infinite !important;
-                  }
-                `;
-                document.head.appendChild(style);
+              // Small delay to simulate human hover before click
+              await new Promise((r) => setTimeout(r, 80));
+
+              // Retrieve cursor element to animate mouse down
+              const cursor = document.getElementById("__superagent_cursor__");
+              if (cursor) {
+                cursor.style.transform = "scale(0.8)";
               }
-              el.classList.add("__superagent_highlight_pulse__");
 
-              return new Promise((resolve) => {
-                const clickHandler = (e) => {
-                  const cursor = document.getElementById("__superagent_cursor__");
-                  const isCursorClick = cursor && (e.target === cursor || cursor.contains(e.target));
-                  if (el.contains(e.target) || isCursorClick) {
-                    el.classList.remove("__superagent_highlight_pulse__");
-                    document.removeEventListener("click", clickHandler, true);
+              // Dispatch human-like mousedown event
+              const rect = el.getBoundingClientRect();
+              const clientX = rect.left + rect.width / 2;
+              const clientY = rect.top + rect.height / 2;
+              el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX, clientY }));
 
-                    if (cursor) {
-                      cursor.style.transform = "scale(0.7)";
-                      setTimeout(() => {
-                        cursor.style.transform = "scale(1.2)";
-                        setTimeout(() => {
-                          cursor.style.transform = "scale(1)";
-                          cursor.style.opacity = "0";
-                        }, 150);
-                      }, 100);
-                    }
+              // Small delay to simulate mouse button press duration
+              await new Promise((r) => setTimeout(r, 60));
 
-                    if (isCursorClick) {
-                      el.click();
-                    }
+              if (cursor) {
+                cursor.style.transform = "scale(1.2)";
+              }
 
-                    resolve(`Manually clicked element ${tgt}`);
-                  }
-                };
-                document.addEventListener("click", clickHandler, true);
-              });
+              // Dispatch mouseup and click events
+              el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, clientX, clientY }));
+              el.click();
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+
+              // Final cursor release animation
+              if (cursor) {
+                setTimeout(() => {
+                  cursor.style.transform = "scale(1)";
+                  cursor.style.opacity = "0";
+                }, 100);
+              }
+
+              return `Clicked element ${tgt}`;
             }
 
             if (act === "hover") {

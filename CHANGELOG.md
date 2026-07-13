@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.348] - 2026-07-13
+
+### Changed
+- **Chrome Extension Automated Click**:
+  - Replaced manual click guidance with fully automated browser clicks. The virtual cursor still animates to target elements to visually guide the user, but now automatically dispatches realistic mousedown, mouseup, and click events with natural biological delays to simulate a human interaction without blocking execution.
+
+---
+
 ## [1.2.347] - 2026-07-13
 
 ### Fixed
