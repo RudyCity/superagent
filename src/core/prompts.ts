@@ -443,7 +443,7 @@ Verify tool availability before testing:
 - Agent-Browser: 'agent-browser --version'
 
 # CLOAKBROWSER TIPS
-- Use source-level stealth features and "humanize mode" (realistic movements/clicks) to bypass anti-bot detection.
+- Use source-level stealth features and "humanize mode" (realistic movements, manual click guidance) to bypass anti-bot detection.
 
 # REQUIRED FINAL REPORT FORMAT
 SUBAGENT TASK REPORT
