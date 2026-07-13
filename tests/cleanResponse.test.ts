@@ -38,6 +38,16 @@ Wait, let me start coding.`;
     expect(cleanAssistantResponse(input)).toBe("Hello, how can I help you today?");
   });
 
+  it("should strip user's specific dynamic context instruction block", () => {
+    const input = `DO NOT ask for further plan or design approvals. Proceed directly with implementing code changes, building/compiling, and running tests. Run validation commands (build/test) and record results in the Walkthrough File before completion. Do not wait for further user approval on edits. You do not need to ask for permission again unless there is an unexpected architecture-altering error or critical blocker. Make sure to update task statuses as you complete items, and write a walkthrough when done.
+
+Proceed to next step.
+
+---
+Clean output.`;
+    expect(cleanAssistantResponse(input)).toBe("Clean output.");
+  });
+
   it("should clean assistant response when added to conversation", async () => {
     const convo = new Conversation({
       id: "test-convo-id",

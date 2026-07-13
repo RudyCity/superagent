@@ -220,6 +220,10 @@ export function cleanAssistantResponse(text: string): string {
     /^\s*Implement all parts of the plan, verify it works \(build, run tests\), and write the walkthrough\.\s*/i,
     /^\s*Do NOT ask the user for permission or confirmation before editing files\.\s*/i,
     /^\s*Proceed directly with executing the plan, running tests\/verification, and writing the walkthrough\.\s*/i,
+    /^\s*Proceed directly with implementing code changes, building\/compiling, and running tests\.\s*/i,
+    /^\s*Run validation commands \(build\/test\) and record results in the Walkthrough File before completion\.\s*/i,
+    /^\s*Make sure to update task statuses as you complete items, and write a walkthrough when done\.\s*/i,
+    /^\s*Proceed to next step\.\s*/i,
   ];
 
   let changed = true;
@@ -230,8 +234,8 @@ export function cleanAssistantResponse(text: string): string {
     // Strip leading/trailing whitespaces/newlines/carriages
     cleaned = cleaned.replace(/^\s+/, "");
 
-    // Strip divider lines (e.g. --------------------------------------------------) at the start
-    cleaned = cleaned.replace(/^[-=]{10,}\s*[\r\n]*/, "");
+    // Strip divider lines (e.g. --- or === or longer) at the start
+    cleaned = cleaned.replace(/^[-=]{3,}\s*[\r\n]*/, "");
 
     for (const pattern of patternsToStrip) {
       const next = cleaned.replace(pattern, "");

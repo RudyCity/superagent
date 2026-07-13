@@ -1,12 +1,12 @@
 # Changelog
 
-## [1.2.354] - 2026-07-13
+## [1.2.355] - 2026-07-13
 
 ### Fixed
 - **Prompt Instruction Leakage**:
   - Enclosed dynamic execution contexts inside `<system_context_do_not_echo_or_repeat>` tags in `agent.ts`.
   - Added system prompt rules telling models not to repeat tags.
-  - Implemented `cleanAssistantResponse` in `text.ts` to strip echoed instructions from assistant messages.
+  - Implemented `cleanAssistantResponse` in `text.ts` to strip echoed instructions and multi-line separator blocks (including shorter dividers like `---`) from assistant messages.
   - Called `cleanAssistantResponse` in `addAssistantMessage` to clean messages before saving to database.
 
 ---
