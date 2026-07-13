@@ -15,9 +15,157 @@ async function executeBrowserControl(controlId, action, target, value) {
                          lowerUrl.startsWith("about:") || 
                          lowerUrl.startsWith("view-source:");
 
-    const nonRestrictedActions = ["navigate", "reload", "refresh", "back", "forward", "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window"];
+    const nonRestrictedActions = ["navigate", "reload", "refresh", "back", "forward", "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window", "top_sites", "reading_list_add", "reading_list_remove", "reading_list_get", "group_update", "group_get", "history_search", "history_delete", "history_clear", "management_list", "management_get"];
     if (isRestricted && !nonRestrictedActions.includes(action)) {
       sendBrowserResult(controlId, `Error: Cannot perform action "${action}" on a restricted page (${url || "restricted tab"}). Please navigate to a standard website first (e.g., navigate to https://google.com).`, true);
+      return;
+    }
+
+    if (action === "top_sites") {
+      chrome.topSites.get((sites) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, JSON.stringify(sites), false);
+        }
+      });
+      return;
+    }
+
+    if (action === "reading_list_add") {
+      chrome.readingList.create({ url: target, title: value || target }, () => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Added ${target} to reading list`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "reading_list_remove") {
+      chrome.readingList.remove({ url: target }, () => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Removed ${target} from reading list`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "reading_list_get") {
+      chrome.readingList.query({}, (items) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, JSON.stringify(items), false);
+        }
+      });
+      return;
+    }
+
+    if (action === "group_update") {
+      const groupId = parseInt(target, 10);
+      if (isNaN(groupId)) {
+        sendBrowserResult(controlId, `Error: Invalid group ID "${target}"`, true);
+        return;
+      }
+      let updateObj = {};
+      try {
+        updateObj = JSON.parse(value);
+      } catch (e) {
+        updateObj = { title: value };
+      }
+      chrome.tabGroups.update(groupId, updateObj, (group) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Updated group ${groupId} with metadata: ${JSON.stringify(updateObj)}`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "group_get") {
+      if (target) {
+        const groupId = parseInt(target, 10);
+        if (isNaN(groupId)) {
+          sendBrowserResult(controlId, `Error: Invalid group ID "${target}"`, true);
+          return;
+        }
+        chrome.tabGroups.get(groupId, (group) => {
+          if (chrome.runtime.lastError) {
+            sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+          } else {
+            sendBrowserResult(controlId, JSON.stringify(group), false);
+          }
+        });
+      } else {
+        chrome.tabGroups.query({}, (groups) => {
+          if (chrome.runtime.lastError) {
+            sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+          } else {
+            sendBrowserResult(controlId, JSON.stringify(groups), false);
+          }
+        });
+      }
+      return;
+    }
+
+    if (action === "history_search") {
+      const maxResults = value ? parseInt(value, 10) : 100;
+      chrome.history.search({ text: target || "", maxResults: isNaN(maxResults) ? 100 : maxResults }, (items) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, JSON.stringify(items), false);
+        }
+      });
+      return;
+    }
+
+    if (action === "history_delete") {
+      chrome.history.deleteUrl({ url: target }, () => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Deleted ${target} from history`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "history_clear") {
+      chrome.history.deleteAll(() => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, `Browser history cleared`, false);
+        }
+      });
+      return;
+    }
+
+    if (action === "management_list") {
+      chrome.management.getAll((infos) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, JSON.stringify(infos), false);
+        }
+      });
+      return;
+    }
+
+    if (action === "management_get") {
+      chrome.management.get(target, (info) => {
+        if (chrome.runtime.lastError) {
+          sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+        } else {
+          sendBrowserResult(controlId, JSON.stringify(info), false);
+        }
+      });
       return;
     }
 

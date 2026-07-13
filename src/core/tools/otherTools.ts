@@ -1653,7 +1653,7 @@ export function setBrowserControlHandler(handler: typeof browserControlHandler) 
 
 export const controlBrowserTabTool: Tool = {
   name: "control_browser_tab",
-  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click, type, navigate, scroll, screenshot, errors, text, hover, keypress, wait, html, reload, back, forward, open (open tab), close (close tab), list (list all tabs), switch (switch tab), duplicate (duplicate tab), pin, unpin, mute, unmute, move (move tab), group (group tabs), ungroup (ungroup tabs), discard (suspend tab), new_window (open window), close_window (close window).",
+  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click, type, navigate, scroll, screenshot, errors, text, hover, keypress, wait, html, reload, back, forward, open, close, list, switch, duplicate, pin, unpin, mute, unmute, move, group, ungroup, discard, new_window, close_window, top_sites (get top visited sites), reading_list_add (add reading list), reading_list_remove (remove reading list), reading_list_get (get reading list), group_update (update group title/color), group_get (get group info), history_search (search history), history_delete (delete URL from history), history_clear (clear all history), management_list (list extensions), management_get (get extension details).",
   parameters: {
     type: "object",
     properties: {
@@ -1661,17 +1661,18 @@ export const controlBrowserTabTool: Tool = {
         type: "string",
         enum: [
           "click", "type", "navigate", "scroll", "screenshot", "errors", "text", "hover", "keypress", "wait", "html", "reload", "back", "forward",
-          "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window"
+          "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window",
+          "top_sites", "reading_list_add", "reading_list_remove", "reading_list_get", "group_update", "group_get", "history_search", "history_delete", "history_clear", "management_list", "management_get"
         ],
         description: "The browser action to execute."
       },
       target: {
         type: "string",
-        description: "CSS selector, destination URL, tab ID (for switch, close, duplicate, pin, unpin, mute, unmute, move, discard, close_window), or comma-separated tab IDs (for group, ungroup). Required for click, type, navigate, scroll, hover, keypress, wait, switch, move, group, and ungroup."
+        description: "CSS selector, destination URL, tab/window/group/extension ID, comma-separated tab IDs, or history search query. Required for click, type, navigate, scroll, hover, keypress, wait, switch, move, group, ungroup, reading_list_add, reading_list_remove, group_update, history_delete, and management_get."
       },
       value: {
         type: "string",
-        description: "Text to type (type), key to press (keypress), scroll offset, timeout in ms (wait), destination index (move), or group ID (group)."
+        description: "Text to type (type), key to press (keypress), scroll offset, timeout in ms (wait), destination index (move), group ID (group), group metadata JSON or title (group_update), reading list title (reading_list_add), or history maxResults (history_search)."
       }
     },
     required: ["action"]
@@ -1681,7 +1682,7 @@ export const controlBrowserTabTool: Tool = {
       return "Error: Browser control handler is not active. Please launch the Superagent Chrome Extension and connect to activate browser control.";
     }
     const action = args.action as string;
-    if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait", "switch", "move", "group", "ungroup"].includes(action) && !args.target) {
+    if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get"].includes(action) && !args.target) {
       return `Error: Target parameter is required for action "${action}".`;
     }
     try {

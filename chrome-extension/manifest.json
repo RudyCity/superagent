@@ -11,7 +11,11 @@
     "webNavigation",
     "debugger",
     "scripting",
-    "storage"
+    "storage",
+    "history",
+    "readingList",
+    "topSites",
+    "management"
   ],
   "host_permissions": [
     "http://localhost/*",

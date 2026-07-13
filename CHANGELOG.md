@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.341] - 2026-07-13
+
+### Added
+- **Browser History, Reading List, Top Sites, and Management API Actions**:
+  - Integrated 11 additional browser control actions: `top_sites`, `reading_list_add`, `reading_list_remove`, `reading_list_get`, `group_update`, `group_get`, `history_search`, `history_delete`, `history_clear`, `management_list`, `management_get`.
+  - Added permissions for `history`, `readingList`, `topSites`, and `management` to `manifest.json`.
+  - Expanded target parameter validation and updated CLI tool schemas.
+
+---
+
 ## [1.2.340] - 2026-07-13
 
 ### Added
