@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.356] - 2026-07-13
+
+### Added
+- **Changes Summary Coloring**:
+  - Implemented `renderDiffColors` inside `chat-line.tsx` and `chat-area.tsx` to automatically highlight added/deleted line statistics (e.g. `+10` in green, `-5` in red).
+  - Integrated `renderDiffColors` into the text elements processed by `renderBoldTargetText` for seamless inline terminal styling.
+
+---
+
 ## [1.2.355] - 2026-07-13
 
 ### Fixed

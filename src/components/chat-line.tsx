@@ -30,10 +30,40 @@ export function truncateStreamDisplay(text: string, maxLines: number, width: num
   return resultLines.join("\n");
 }
 
+function renderDiffColors(text: string): React.ReactNode {
+  const diffRegex = /(\+\d+|-\d+)/g;
+  if (!diffRegex.test(text)) {
+    return text;
+  }
+  diffRegex.lastIndex = 0;
+  const parts = text.split(diffRegex);
+  return (
+    <>
+      {parts.map((p, idx) => {
+        if (p.startsWith("+")) {
+          return (
+            <Text key={idx} color="green" bold>
+              {p}
+            </Text>
+          );
+        }
+        if (p.startsWith("-")) {
+          return (
+            <Text key={idx} color="red" bold>
+              {p}
+            </Text>
+          );
+        }
+        return p;
+      })}
+    </>
+  );
+}
+
 function renderBoldTargetText(text: string): React.ReactNode {
   const regex = /(5\.\s+Struktur\s+Direktori\s+Tools|Struktur\s+Direktori\s+Tools)/gi;
   if (!regex.test(text)) {
-    return text;
+    return renderDiffColors(text);
   }
   regex.lastIndex = 0;
   const parts = text.split(regex);
@@ -47,7 +77,7 @@ function renderBoldTargetText(text: string): React.ReactNode {
             </Text>
           );
         }
-        return part;
+        return renderDiffColors(part);
       })}
     </>
   );
