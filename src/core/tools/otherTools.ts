@@ -5,7 +5,7 @@ import { Tool, ScheduleJob } from "./types.js";
 import { scheduledJobs, notifyScheduleTriggered } from "./state.js";
 import { ensureAndroidCliInstalled } from "../androidSetup.js";
 import { formatUnknownActionError } from "./helpers.js";
-import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro, resolveSteps, type BrowserMacroStep } from "../config/browserMacros.js";
+import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro, resolveSteps, dryRunSteps, buildRepairHint, type BrowserMacroStep, type StepRunResult } from "../config/browserMacros.js";
 
 export const askQuestionTool: Tool = {
   name: "ask_question",
@@ -1778,7 +1778,7 @@ export const useSkillTool: Tool = {
 
 export const controlBrowserMacroSaveTool: Tool = {
   name: "control_browser_macro_save",
-  description: "Save a reusable browser control macro preset. A macro is a named sequence of browser actions (navigate, type, click, wait, etc.) that can be executed later in one call. Steps support parameter placeholders like {{title}} that get filled in at runtime.",
+  description: "Save a reusable browser control macro preset. A macro is a named sequence of browser actions (navigate, type, click, wait, etc.) that can be executed later in one call. Steps support: {{param}} placeholders, per-step onError policy (stop/skip/retry), maxRetries, and optional label. Version and timestamps are managed automatically.",
   parameters: {
     type: "object",
     properties: {
@@ -1792,7 +1792,7 @@ export const controlBrowserMacroSaveTool: Tool = {
       },
       params: {
         type: "object",
-        description: "Optional map of parameter names to their descriptions, e.g. { \"title\": \"Article title\", \"url\": \"Target URL\" }",
+        description: "Optional map of parameter names to descriptions, e.g. { \"title\": \"Article title\" }",
         additionalProperties: { type: "string" }
       },
       steps: {
@@ -1803,7 +1803,10 @@ export const controlBrowserMacroSaveTool: Tool = {
           properties: {
             action: { type: "string", description: "Browser action (navigate, click, type, wait, scroll, screenshot, etc.)" },
             target: { type: "string", description: "CSS selector or URL. Supports {{param}} placeholders." },
-            value: { type: "string", description: "Text or value to type. Supports {{param}} placeholders." }
+            value: { type: "string", description: "Text or value to type. Supports {{param}} placeholders." },
+            label: { type: "string", description: "Human-readable label for this step shown in run output." },
+            onError: { type: "string", enum: ["stop", "skip", "retry"], description: "What to do if this step fails. Default: stop" },
+            maxRetries: { type: "number", description: "Max retry attempts when onError=retry. Default: 2" }
           },
           required: ["action"]
         }
@@ -1824,43 +1827,53 @@ export const controlBrowserMacroSaveTool: Tool = {
     if (!args.steps || !Array.isArray(args.steps) || (args.steps as any[]).length === 0) {
       return `Error: "steps" must be a non-empty array of browser action steps.`;
     }
-    const macro = {
+    const saved = saveBrowserMacro({
       name,
       description: (args.description as string) || "",
       params: (args.params as Record<string, string>) || undefined,
       steps: args.steps as BrowserMacroStep[],
-    };
-    saveBrowserMacro(macro);
-    return `Macro "${name}" saved with ${macro.steps.length} steps.`;
+    });
+    return `Macro "${name}" saved (v${saved.version}) with ${saved.steps.length} steps. Updated: ${saved.updatedAt}`;
   }
 };
 
 export const controlBrowserMacroRunTool: Tool = {
   name: "control_browser_macro_run",
-  description: "Execute a saved browser macro preset by name. Replaces parameter placeholders ({{param}}) in each step with values from the 'args' map. Runs all steps sequentially via the browser control handler. Use 'list' as name to get all available macros.",
+  description: "Execute a saved browser macro preset by name. Replaces {{param}} placeholders in each step with 'args' values. Respects per-step onError policy (stop/skip/retry). Use dryRun=true to preview resolved steps without executing. Use name='list' to see all saved macros. On failure, returns a REPAIR HINT to guide updating the macro.",
   parameters: {
     type: "object",
     properties: {
       name: {
         type: "string",
-        description: "Name of the macro to execute (e.g. medium_post), or 'list' to see all saved macros."
+        description: "Macro name to execute (e.g. medium_post), or 'list' to see all saved macros."
       },
       args: {
         type: "object",
-        description: "Key-value map of parameter values to inject into the macro steps, e.g. { \"title\": \"My Article\", \"url\": \"https://medium.com/new\" }",
+        description: "Key-value map of parameter values to inject into the macro steps.",
         additionalProperties: { type: "string" }
+      },
+      dryRun: {
+        type: "boolean",
+        description: "If true, preview resolved steps without executing them. Useful for verifying args and step order before a real run."
       }
     },
     required: ["name"]
   },
   async execute(args) {
     const name = args.name as string;
+    const argsMap = (args.args as Record<string, string>) || {};
+    const isDryRun = args.dryRun === true;
+
+    // List mode
     if (name === "list") {
       const macros = getBrowserMacros();
       if (macros.length === 0) return "No macros saved yet.";
       return macros.map(m => {
-        const paramList = m.params ? Object.entries(m.params).map(([k, v]) => `  - {{${k}}}: ${v}`).join("\n") : "  (none)";
-        return `Macro: ${m.name}\nDescription: ${m.description}\nParams:\n${paramList}\nSteps: ${m.steps.length} actions`;
+        const paramList = m.params
+          ? Object.entries(m.params).map(([k, v]) => `  - {{${k}}}: ${v}`).join("\n")
+          : "  (none)";
+        const meta = `v${m.version ?? 1} | created: ${m.createdAt ?? "unknown"} | updated: ${m.updatedAt ?? "unknown"}`;
+        return `Macro: ${m.name} (${meta})\nDescription: ${m.description}\nParams:\n${paramList}\nSteps: ${m.steps.length} actions`;
       }).join("\n\n");
     }
 
@@ -1868,24 +1881,88 @@ export const controlBrowserMacroRunTool: Tool = {
     const macro = macros.find(m => m.name.toLowerCase() === name.toLowerCase());
     if (!macro) return `Error: Macro "${name}" not found. Use name 'list' to see available macros.`;
 
-    const argsMap = (args.args as Record<string, string>) || {};
     const resolvedSteps = resolveSteps(macro.steps, argsMap);
+
+    // Dry-run mode — return preview without executing
+    if (isDryRun) {
+      const preview = dryRunSteps(macro.steps, argsMap);
+      const lines = [
+        `DRY-RUN: Macro "${name}" (v${macro.version ?? 1}) — ${preview.length} steps`,
+        `Args: ${JSON.stringify(argsMap)}`,
+        "",
+        ...preview.map(r => `  ${r.index}. [${r.action}]${r.label !== `Step ${r.index}` ? ` "${r.label}"` : ""}: ${r.output}`),
+      ];
+      return lines.join("\n");
+    }
 
     if (!browserControlHandler) {
       return "Error: Browser control handler is not active. Please launch the Chrome Extension and connect to activate browser control.";
     }
 
-    const results: string[] = [];
+    // Execute steps with per-step onError policy
+    const results: StepRunResult[] = [];
+    let aborted = false;
+
     for (let i = 0; i < resolvedSteps.length; i++) {
       const step = resolvedSteps[i];
-      try {
-        const result = await browserControlHandler(step.action, step.target || "", step.value || "");
-        results.push(`Step ${i + 1} [${step.action}]: ${result}`);
-      } catch (err: any) {
-        results.push(`Step ${i + 1} [${step.action}] FAILED: ${err.message || String(err)}`);
-        break;
+      const policy = step.onError ?? "stop";
+      const maxRetries = step.onError === "retry" ? (step.maxRetries ?? 2) : 0;
+      const label = step.label ?? `Step ${i + 1}`;
+
+      let lastError = "";
+      let attempts = 0;
+      let succeeded = false;
+      let output = "";
+
+      do {
+        attempts++;
+        try {
+          output = await browserControlHandler(step.action, step.target || "", step.value || "");
+          succeeded = true;
+        } catch (err: any) {
+          lastError = err.message || String(err);
+        }
+      } while (!succeeded && policy === "retry" && attempts <= maxRetries);
+
+      if (succeeded) {
+        results.push({ index: i + 1, label, action: step.action, target: step.target, value: step.value, status: "ok", output, attempts });
+      } else {
+        const result: StepRunResult = {
+          index: i + 1, label, action: step.action, target: step.target, value: step.value,
+          status: "failed", error: lastError, attempts
+        };
+        results.push(result);
+
+        if (policy === "skip") {
+          // log and continue
+          continue;
+        } else {
+          // stop or retry exhausted — abort
+          aborted = true;
+          break;
+        }
       }
     }
-    return results.join("\n");
+
+    // Format output
+    const lines = results.map(r => {
+      const retryNote = r.attempts && r.attempts > 1 ? ` (${r.attempts} attempts)` : "";
+      if (r.status === "ok")     return `Step ${r.index} [${r.action}]${retryNote}: ${r.output}`;
+      if (r.status === "skipped") return `Step ${r.index} [${r.action}] SKIPPED: ${r.error}`;
+      return `Step ${r.index} [${r.action}] FAILED${retryNote}: ${r.error}`;
+    });
+
+    if (aborted) {
+      lines.push(`\nAborted after step ${results.length} of ${resolvedSteps.length}.`);
+      lines.push(buildRepairHint(name, results));
+    } else {
+      const ok = results.filter(r => r.status === "ok").length;
+      const skipped = results.filter(r => r.status === "skipped").length;
+      const failed = results.filter(r => r.status === "failed").length;
+      lines.push(`\nCompleted: ${ok} ok, ${skipped} skipped, ${failed} failed.`);
+      if (failed > 0) lines.push(buildRepairHint(name, results));
+    }
+
+    return lines.join("\n");
   }
 };

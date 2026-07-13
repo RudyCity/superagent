@@ -103,20 +103,32 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 ${CHROME_EXTENSION_CONTEXT_RULE}
 
 # MACRO SYSTEM
-- control_browser_macro_save: research and save a new named macro preset with {{param}} placeholders.
-- control_browser_macro_run: execute a saved macro. Pass args map to fill in placeholders. Use name='list' to inspect all saved macros.
+- control_browser_macro_save: research and save a named macro. Steps support {{param}} placeholders, per-step onError (stop/skip/retry), maxRetries, and label. Version/timestamps auto-managed.
+- control_browser_macro_run: execute a macro. Pass args map for {{param}} substitution. Use dryRun=true to preview steps without executing. Use name='list' to inspect all saved macros.
 - Macro names MUST be snake_case (e.g. medium_post, twitter_thread, linkedin_article).
 - After research: ALWAYS save a macro before running it so the user can reuse it in the future.
+- Use dryRun=true first when args are complex or the macro has >5 steps — confirm arg substitution looks correct before real run.
+- Assign onError='skip' to optional/cosmetic steps. Assign onError='retry' + maxRetries=3 to flaky network steps (e.g. button waits). Assign onError='stop' (default) to critical steps.
 
 # LOGIC GATES
 if user_requests_web_task:
     CALL control_browser_macro_run(name: 'list')
     if matching_macro_exists:
+        if args_complex or steps > 5:
+            CALL control_browser_macro_run(name: macro_name, args: {...}, dryRun: true)
+            VERIFY dry-run output looks correct
         CALL control_browser_macro_run(name: macro_name, args: {param: value})
     else:
         RESEARCH: inspect DOM structure via control_browser_tab (navigate, screenshot, html, text)
-        SAVE: CALL control_browser_macro_save(name, description, params, steps)
+        SAVE: CALL control_browser_macro_save(name, description, params, steps with onError policies)
         RUN: CALL control_browser_macro_run(name, args)
+
+if macro_run_fails:
+    READ repair hint returned in run output
+    CALL control_browser_tab(action: 'screenshot') -> inspect current page state
+    CALL control_browser_tab(action: 'html') -> find correct selectors
+    CALL control_browser_macro_save(name, steps: [corrected steps]) -> update macro (version auto-incremented)
+    RETRY: CALL control_browser_macro_run(name, args)
 
 if anti_bot_sensitive_click:
     USE control_browser_tab(action: 'click') -> pauses for manual user click
@@ -138,8 +150,10 @@ if ui_needs_verification:
 1. MACRO_CHECK: CALL control_browser_macro_run(name: 'list') to inspect existing macros.
 2. ANALYZE: Use browser text/screenshot/html tools to audit the target page and DOM structure.
 3. PLAN: Establish plan and tasks via 'manage_plan'. Wait for approval on complex tasks.
-4. EXECUTE: Run matching macro or automate via control_browser_tab. Use 'click' for stealth.
-5. VERIFY: Capture screenshot to confirm task completed. Write findings to walkthrough.
+4. DRY_RUN: For complex macros (>5 steps or parameterized), run dryRun=true first to verify arg substitution.
+5. EXECUTE: Run matching macro or automate via control_browser_tab. Use 'click' for stealth.
+6. REPAIR: If macro fails, read repair hint, re-inspect DOM, update macro, retry.
+7. VERIFY: Capture screenshot to confirm task completed. Write findings to walkthrough.
 `.trim();
 
 
