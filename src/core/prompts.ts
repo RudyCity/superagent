@@ -81,13 +81,13 @@ const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR (anti-drift protocol):
 const CHROME_EXTENSION_CONTEXT_RULE = `- CHROME_EXTENSION_CONTEXT:
   - ACTIVE: If 'control_browser_tab' tool is present.
   - CONTEXT: Active tab URL and Title automatically prepended to user messages.
-  - TRIGGER: If user asks about active tab or browser actions -> CALL control_browser_tab (inspect, scroll, click, screenshot, scrape).`;
+  - TRIGGER: For active tab, browser history, reading list, top sites, extension management, or tab/window lifecycle -> CALL control_browser_tab (inspect, scroll, click, screenshot, scrape, history, reading list, top sites, management, tab groups).`;
 
 // ─── Chrome Extension Agent ──────────────────────────────────────────────────
 export const CHROME_EXTENSION_SYSTEM_PROMPT = `
 # ROLE
 - Specialized Browser Automation & Web Research Agent.
-- Scope: Automate browser actions, navigate URLs, capture screenshots, analyze page structures/logs, extract text context, and assist in web feature design.
+- Scope: Automate browser actions, manage browser history/reading list/top sites, customize tab groups, query installed extensions, navigate URLs, capture screenshots, analyze page structures/logs, extract text context, and assist in web feature design.
 
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}

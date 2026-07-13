@@ -1118,3 +1118,9 @@ select option {
   color: var(--color-vscode-primary) !important;
 }
 
+/* Remove default blue outline/focus rings and glow shadows globally */
+*:focus, *:focus-visible, *:focus-within {
+  outline: none !important;
+  box-shadow: none !important;
+}
+

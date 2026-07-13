@@ -1,3 +1,7 @@
+let isTabLocked = false;
+let originalTabId = null;
+let originalWindowId = null;
+
 // Execute browser automation control
 async function executeBrowserControl(controlId, action, target, value) {
   chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
@@ -174,6 +178,10 @@ async function executeBrowserControl(controlId, action, target, value) {
         if (chrome.runtime.lastError) {
           sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
         } else {
+          if (isTabLocked && tab) {
+            originalTabId = tab.id;
+            originalWindowId = tab.windowId;
+          }
           sendBrowserResult(controlId, `Opened new tab with ID ${tab.id} and URL ${target || "about:blank"}`, false);
         }
       });
@@ -227,6 +235,10 @@ async function executeBrowserControl(controlId, action, target, value) {
         if (chrome.runtime.lastError) {
           sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
         } else {
+          if (isTabLocked && tab) {
+            originalTabId = tab.id;
+            originalWindowId = tab.windowId;
+          }
           if (tab && tab.windowId) {
             chrome.windows.update(tab.windowId, { focused: true });
           }
@@ -246,6 +258,10 @@ async function executeBrowserControl(controlId, action, target, value) {
         if (chrome.runtime.lastError) {
           sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
         } else {
+          if (isTabLocked && tab) {
+            originalTabId = tab.id;
+            originalWindowId = tab.windowId;
+          }
           sendBrowserResult(controlId, `Duplicated tab ${tabId} as new tab ${tab ? tab.id : ""}`, false);
         }
       });
@@ -765,3 +781,93 @@ async function sendBrowserResult(controlId, result, isError) {
     console.error("Failed to send browser control result", err);
   }
 }
+
+// Function to lock the active tab
+window.lockCurrentTab = function() {
+  if (isTabLocked) return;
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs && tabs.length > 0) {
+      originalTabId = tabs[0].id;
+      originalWindowId = tabs[0].windowId;
+      isTabLocked = true;
+      console.log(`[TabLock] Locked to tab ID: ${originalTabId} in window ID: ${originalWindowId}`);
+    }
+  });
+};
+
+// Function to unlock the tab
+window.unlockTab = function() {
+  if (!isTabLocked) return;
+  isTabLocked = false;
+  originalTabId = null;
+  originalWindowId = null;
+  console.log(`[TabLock] Tab unlocked`);
+};
+
+// Listener to force tab revert back if switched while locked
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  if (isTabLocked) {
+    if (!originalTabId) {
+      originalTabId = activeInfo.tabId;
+      originalWindowId = activeInfo.windowId;
+      console.log(`[TabLock] Lock updated to newly active tab ID: ${originalTabId}`);
+      return;
+    }
+    if (activeInfo.tabId !== originalTabId && activeInfo.windowId === originalWindowId) {
+      chrome.tabs.update(originalTabId, { active: true }, () => {
+        if (chrome.runtime.lastError) {
+          console.error(`[TabLock] Failed to revert tab: ${chrome.runtime.lastError.message}`);
+        } else {
+          console.log(`[TabLock] Prevented switch to tab ${activeInfo.tabId}, reverted back to ${originalTabId}`);
+          
+          // Display warning banner inside the tab
+          chrome.scripting.executeScript({
+            target: { tabId: originalTabId },
+            func: () => {
+              let warning = document.getElementById("__superagent_tab_lock_warning__");
+              if (!warning) {
+                warning = document.createElement("div");
+                warning.id = "__superagent_tab_lock_warning__";
+                warning.style.position = "fixed";
+                warning.style.top = "50%";
+                warning.style.left = "50%";
+                warning.style.transform = "translate(-50%, -50%)";
+                warning.style.padding = "12px 24px";
+                warning.style.background = "rgba(220, 38, 38, 0.95)";
+                warning.style.color = "#ffffff";
+                warning.style.border = "1px solid #ffffff";
+                warning.style.borderRadius = "6px";
+                warning.style.fontFamily = "system-ui, -apple-system, sans-serif";
+                warning.style.fontSize = "14px";
+                warning.style.fontWeight = "bold";
+                warning.style.zIndex = "9999999999";
+                warning.style.boxShadow = "0 8px 24px rgba(0,0,0,0.5)";
+                warning.style.transition = "opacity 0.4s ease-out";
+                warning.textContent = "Tab switching is locked while the AI Agent is running!";
+                document.body.appendChild(warning);
+              }
+              warning.style.opacity = "1";
+              if (window.__superagent_tab_lock_timeout__) {
+                clearTimeout(window.__superagent_tab_lock_timeout__);
+              }
+              window.__superagent_tab_lock_timeout__ = setTimeout(() => {
+                warning.style.opacity = "0";
+                setTimeout(() => {
+                  if (warning.parentNode) warning.parentNode.removeChild(warning);
+                }, 400);
+              }, 2000);
+            }
+          }).catch(() => {});
+        }
+      });
+    }
+  }
+});
+
+// Listener to handle locked tab removal
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  if (isTabLocked && tabId === originalTabId) {
+    console.log(`[TabLock] Locked tab was closed, clearing reference`);
+    originalTabId = null;
+  }
+});

@@ -3408,6 +3408,10 @@ select option {
   background-color: var(--color-vscode-sidebar) !important;
   color: var(--color-vscode-primary) !important;
 }
+*:focus, *:focus-visible, *:focus-within {
+  outline: none !important;
+  box-shadow: none !important;
+}
 @property --tw-translate-x {
   syntax: "*";
   inherits: false;

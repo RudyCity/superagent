@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.342] - 2026-07-13
+
+### Added
+- **Chrome Extension Tab Locking & Focus styling**:
+  - Implemented automatic tab locking when the AI Agent is running to prevent context drift.
+  - Automatically reverts tab changes back to the active tab, displays an inline warning banner, and handles agent-initiated tab creation/switching.
+  - Added a global CSS override to `sidepanel.src.css` to disable focus outlines, rings, and box-shadow glows.
+
+---
+
 ## [1.2.341] - 2026-07-13
 
 ### Added

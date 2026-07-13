@@ -701,6 +701,7 @@ function setupSSE() {
     console.error("[SSE Connection Error]", err);
     statusBadge.textContent = "Offline";
     statusBadge.className = "status-badge status-offline";
+    if (typeof window.unlockTab === "function") window.unlockTab();
   };
 }
 
@@ -710,6 +711,7 @@ function setupSSE() {
 function handleSSEEvent(data) {
   window.isWaitingForAgentStart = false;
   if (data.type === "agent_event") {
+    if (typeof window.lockCurrentTab === "function") window.lockCurrentTab();
     const e = data.event;
     switch (e.type) {
       case "text":
@@ -908,10 +910,12 @@ function handleSSEEvent(data) {
       case "error":
         hideSpinner();
         appendMessage("system", `Error: ${e.message}`);
+        if (typeof window.unlockTab === "function") window.unlockTab();
         break;
 
       case "done":
         hideSpinner();
+        if (typeof window.unlockTab === "function") window.unlockTab();
         if (currentAgentMessageElement) {
           const contentSpan = currentAgentMessageElement.querySelector(".msg-content-text");
           if (contentSpan) {

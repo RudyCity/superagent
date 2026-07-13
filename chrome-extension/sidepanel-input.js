@@ -397,6 +397,10 @@ window.sendChatMessage = async function() {
   attachedFiles = [];
   renderAttachmentPreviews();
 
+  if (typeof window.lockCurrentTab === "function") {
+    window.lockCurrentTab();
+  }
+
   try {
     const baseUrl = typeof BASE_URL !== "undefined" ? BASE_URL : "http://localhost:7888";
     const res = await fetch(`${baseUrl}/api/chat`, {
@@ -406,12 +410,14 @@ window.sendChatMessage = async function() {
     });
     if (!res.ok) {
       window.isWaitingForAgentStart = false;
+      if (typeof window.unlockTab === "function") window.unlockTab();
       const data = await res.json();
       appendMessage("system", "Error: " + data.error);
       hideSpinner();
     }
   } catch (err) {
     window.isWaitingForAgentStart = false;
+    if (typeof window.unlockTab === "function") window.unlockTab();
     appendMessage("system", "Error: Failed to deliver prompt.");
     hideSpinner();
   }
