@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
-import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions } from "./core/config.js";
+import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
@@ -833,6 +833,7 @@ export async function runServer(port: number, silent = false) {
         const multiPresets = getPresets("multi");
         const activeSinglePresetId = getActivePresetId("single");
         const activeMultiPresetId = getActivePresetId("multi");
+        const trustedDirectories = getTrustedDirectories();
         sendJSON(res, 200, {
           settings,
           providers,
@@ -843,7 +844,8 @@ export async function runServer(port: number, silent = false) {
           activePresetId: {
             single: activeSinglePresetId,
             multi: activeMultiPresetId
-          }
+          },
+          trustedDirectories
         });
         return;
       }

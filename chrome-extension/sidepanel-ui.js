@@ -725,6 +725,13 @@ async function fetchServerConfig() {
         settingConcurrency.value = String(data.settings.concurrencyLimit ?? 0);
       }
       
+      // Sync trusted directories from server
+      if (data.trustedDirectories && Array.isArray(data.trustedDirectories)) {
+        if (typeof syncTrustedWorkspaces === "function") {
+          await syncTrustedWorkspaces(data.trustedDirectories);
+        }
+      }
+
       // Update presets dropdown for current selected mode
       updatePresetsDropdown();
     }

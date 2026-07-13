@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.343] - 2026-07-13
+
+### Added
+- **Chrome Extension Workspace Persistence & Synchronization**:
+  - Exposed `trustedDirectories` from server configuration in the `/api/config` GET endpoint response.
+  - Implemented client-side synchronization (`syncTrustedWorkspaces`) in the Chrome Extension side panel to automatically restore the saved workspaces list from the server's trusted directories list upon reloading or reinstalling.
+  - Automatically pre-populates the workspace directory path input field on the setup screen using the server's last active workspace path.
+  - Automatically synchronizes the selected orchestration mode (Single/Multi Mode radio buttons) on the setup screen with the server's current mode.
+
+---
+
 ## [1.2.342] - 2026-07-13
 
 ### Added

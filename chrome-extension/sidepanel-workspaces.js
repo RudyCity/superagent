@@ -163,3 +163,23 @@ function goToSetupScreen() {
   setupScreen.classList.add("active");
   clearChatMessages();
 }
+
+async function syncTrustedWorkspaces(trustedDirs) {
+  const saved = await loadSavedWorkspaces();
+  let changed = false;
+  const newSaved = [...saved];
+  for (const dir of trustedDirs) {
+    if (!newSaved.includes(dir)) {
+      newSaved.push(dir);
+      changed = true;
+    }
+  }
+  if (changed) {
+    await new Promise((resolve) => {
+      chrome.storage.local.set({ savedWorkspaces: newSaved }, () => {
+        resolve();
+      });
+    });
+    await renderWorkspaceListOnly();
+  }
+}

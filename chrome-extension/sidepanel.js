@@ -448,6 +448,20 @@ async function checkServerStatus() {
         fetchServerConfig();
       }
 
+      // Auto populate workspace path if empty and setup screen is active
+      if (setupScreen.classList.contains("active") && workspacePathInput && !workspacePathInput.value && data.workspace && data.workspace !== "Not Selected") {
+        workspacePathInput.value = data.workspace;
+      }
+
+      // Auto sync mode selection if setup screen is active
+      if (setupScreen.classList.contains("active") && data.mode) {
+        const radio = document.querySelector(`input[name="agent-mode"][value="${data.mode}"]`);
+        if (radio && !radio.checked) {
+          radio.checked = true;
+          currentMode = data.mode;
+        }
+      }
+
       if (data.agentRunning) {
         statusBadge.textContent = "Running";
         statusBadge.className = "status-badge status-running";
