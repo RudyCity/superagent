@@ -79,7 +79,9 @@ import {
   managePlanTool,
   getSkillsTool,
   useSkillTool,
-  controlBrowserTabTool
+  controlBrowserTabTool,
+  controlBrowserMacroSaveTool,
+  controlBrowserMacroRunTool
 } from "./otherTools.js";
 
 export const allTools: Tool[] = [
@@ -123,6 +125,8 @@ export const allTools: Tool[] = [
   getSkillsTool,
   useSkillTool,
   controlBrowserTabTool,
+  controlBrowserMacroSaveTool,
+  controlBrowserMacroRunTool,
   manageMcpTool,
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,
