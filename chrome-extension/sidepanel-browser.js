@@ -6,6 +6,19 @@ async function executeBrowserControl(controlId, action, target, value) {
       return;
     }
     const activeTab = tabs[0];
+    const url = activeTab.url || "";
+    const lowerUrl = url.toLowerCase();
+    const isRestricted = lowerUrl.startsWith("chrome://") || 
+                         lowerUrl.startsWith("chrome-extension://") || 
+                         lowerUrl.startsWith("chrome-devtools://") || 
+                         lowerUrl.startsWith("edge://") || 
+                         lowerUrl.startsWith("about:") || 
+                         lowerUrl.startsWith("view-source:");
+
+    if (isRestricted && action !== "navigate" && action !== "reload" && action !== "refresh" && action !== "back" && action !== "forward") {
+      sendBrowserResult(controlId, `Error: Cannot perform action "${action}" on a restricted page (${url || "restricted tab"}). Please navigate to a standard website first (e.g., navigate to https://google.com).`, true);
+      return;
+    }
 
     if (action === "screenshot") {
       chrome.tabs.captureVisibleTab(null, { format: "png" }, (dataUrl) => {

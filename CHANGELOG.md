@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.338] - 2026-07-13
+
+### Fixed
+- **Chrome Extension Restricted Pages Handling**:
+  - Added detection of restricted browser tabs (e.g., `chrome://`, `chrome-extension://`, `about:`, `edge://`) in `executeBrowserControl`.
+  - Blocks content script injection and screenshot capture on restricted pages and returns a friendly, instructive error message guiding users to navigate to a regular webpage first.
+
+---
+
 ## [1.2.337] - 2026-07-13
 
 ### Fixed
