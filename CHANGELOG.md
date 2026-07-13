@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.346] - 2026-07-13
+
+### Fixed
+- **Chrome Extension Newline Rendering**:
+  - Added `white-space: pre-wrap;` to `.msg-content-text` and `.reasoning-block` in `sidepanel.src.css` (and compiled `sidepanel.css`) to preserve newlines and line breaks in AI response texts and reasoning blocks, fixing the issue where text runs together without formatting.
+
+---
+
 ## [1.2.345] - 2026-07-13
 
 ### Added

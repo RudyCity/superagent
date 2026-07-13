@@ -249,6 +249,10 @@
   white-space: normal;
 }
 
+.msg-content-text {
+  white-space: pre-wrap;
+}
+
 .msg-user .msg-content {
   background: var(--accent-vscode-blue-light);
   border: 1px solid rgba(26, 115, 232, 0.15);
@@ -428,6 +432,7 @@
   font-size: 11px;
   color: #6a9955; /* Green code comment color */
   line-height: 1.4;
+  white-space: pre-wrap;
 }
 
 .reasoning-block .msg-header {
