@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.2.358] - 2026-07-13
+
+### Added
+- **Interactive Prompt Detection in android_cli**:
+  - Imported `detectInteractivePrompt` into `otherTools.ts`.
+  - androidCliTool now auto-kills and returns an error if a y/n or password prompt is detected during execution.
+- **Unified Verification Helper (`runStreamedVerification`)**:
+  - Extracted a reusable `runStreamedVerification` async helper inside `superagentTools.ts`.
+  - Combines live streaming, interactive prompt detection, and per-run log file persistence into a single function.
+  - Build and test verification in both `invokeSuperagentTool` and `sendMessageToSuperagentTool` now use this helper.
+  - Verification log files are saved to `.superagent/logs/build-<timestamp>.log` and `test-<timestamp>.log` inside each worktree.
+- **Output Throttling in state.ts**:
+  - `appendActiveToolOutput` now batches UI listener notifications using a 50ms `setTimeout` throttle.
+  - `clearActiveToolOutput` cancels any pending throttled notification and immediately notifies listeners with an empty string.
+- **Background Process Live Stream**:
+  - Added `stream` action to `manageBackgroundProcessTool` in `shellTools.ts`.
+  - When used, the action pipes all future stdout/stderr from the target background process into `SYSTEM_CALL_OUTPUT (LIVE)` in real-time, blocking until the process exits or times out.
+
+---
+
 ## [1.2.357] - 2026-07-13
 
 ### Added

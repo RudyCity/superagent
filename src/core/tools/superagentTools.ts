@@ -9,8 +9,10 @@
 
 import path from "path";
 import fs from "fs";
+import fsAsync from "fs/promises";
 import { execa } from "execa";
 import { killProcessTree } from "./shellTools.js";
+import { detectInteractivePrompt } from "./helpers.js";
 import { Tool } from "./types.js";
 import { resolveCarriageReturns } from "../../utils/text.js";
 import {
@@ -124,6 +126,82 @@ function detectPackageManager(cwd: string): string {
   if (fs.existsSync(path.join(cwd, "pnpm-lock.yaml"))) return "pnpm";
   if (fs.existsSync(path.join(cwd, "yarn.lock"))) return "yarn";
   return "npm";
+}
+
+/**
+ * Run a subprocess with:
+ *  - Real-time SYSTEM_CALL_OUTPUT (LIVE) streaming via appendActiveToolOutput
+ *  - Interactive prompt detection (kills process and returns error if triggered)
+ *  - Log persistence to a file (appended per chunk)
+ *  - Graceful abort signal handling
+ */
+async function runStreamedVerification(
+  pm: string,
+  args: string[],
+  cwd: string,
+  logPath: string,
+  signal?: AbortSignal
+): Promise<{ success: boolean; output: string; interactiveWarning?: string }> {
+  clearActiveToolOutput();
+  // Ensure log directory exists
+  await fsAsync.mkdir(path.dirname(logPath), { recursive: true });
+
+  let outputAccum = "";
+  let interactiveWarning: string | null = null;
+
+  const proc = execa(pm, args, { cwd, all: true });
+
+  const abortHandler = () => {
+    killProcessTree(proc.pid);
+  };
+
+  if (signal) {
+    if (signal.aborted) {
+      killProcessTree(proc.pid);
+      clearActiveToolOutput();
+      return { success: false, output: "Aborted before start." };
+    }
+    signal.addEventListener("abort", abortHandler);
+  }
+
+  proc.all?.on("data", (data) => {
+    const text = data.toString();
+    outputAccum += text;
+    appendActiveToolOutput(text);
+    // Persist to log file
+    try {
+      fs.appendFileSync(logPath, text);
+    } catch {
+      // Ignore log write failures
+    }
+    // Detect interactive prompts
+    if (!interactiveWarning) {
+      const warning = detectInteractivePrompt(text);
+      if (warning) {
+        interactiveWarning = warning;
+        killProcessTree(proc.pid);
+      }
+    }
+  });
+
+  try {
+    await proc;
+    clearActiveToolOutput();
+    if (interactiveWarning) {
+      return { success: false, output: outputAccum, interactiveWarning };
+    }
+    return { success: true, output: outputAccum };
+  } catch (err: any) {
+    clearActiveToolOutput();
+    if (interactiveWarning) {
+      return { success: false, output: outputAccum, interactiveWarning };
+    }
+    return { success: false, output: err?.message || String(err) };
+  } finally {
+    if (signal) {
+      signal.removeEventListener("abort", abortHandler);
+    }
+  }
 }
 
 const SUPERAGENT_REPORT_INSTRUCTION = `
@@ -578,11 +656,12 @@ export const invokeSuperagentTool: Tool = {
 
         // Run pre-merge verification in worktree directory with Auto-Debugging retries
         let retries = 3;
+        const verifyLogDir = path.join(worktreePath, ".superagent", "logs");
         while (retries > 0) {
           appendMasterLog(`[INFO] Running pre-merge verification in worktree: ${worktreePath}...`);
           const pkgPath = path.join(worktreePath, "package.json");
           let verificationPassed = true;
-          let verificationError = null;
+          let verificationError: any = null;
 
           if (fs.existsSync(pkgPath)) {
             try {
@@ -591,55 +670,25 @@ export const invokeSuperagentTool: Tool = {
                 const pm = detectPackageManager(worktreePath);
                 if (pkg.scripts.build) {
                   appendMasterLog(`[INFO] Executing "${pm} run build" in worktree...`);
-                  clearActiveToolOutput();
-                  const proc = execa(pm, ["run", "build"], { cwd: worktreePath, all: true });
-                  const abortHandler = () => {
-                    killProcessTree(proc.pid);
-                  };
-                  if (signal) {
-                    if (signal.aborted) {
-                      killProcessTree(proc.pid);
-                      throw new Error("AbortError");
+                  const buildLog = path.join(verifyLogDir, `build-${Date.now()}.log`);
+                  const buildRes = await runStreamedVerification(pm, ["run", "build"], worktreePath, buildLog, signal);
+                  if (!buildRes.success) {
+                    if (buildRes.interactiveWarning) {
+                      appendMasterLog(`[WARN] Build prompted for input: ${buildRes.interactiveWarning}`);
                     }
-                    signal.addEventListener("abort", abortHandler);
-                  }
-                  proc.all?.on("data", (data) => {
-                    appendActiveToolOutput(data.toString());
-                  });
-                  try {
-                    await proc;
-                  } finally {
-                    clearActiveToolOutput();
-                    if (signal) {
-                      signal.removeEventListener("abort", abortHandler);
-                    }
+                    throw new Error(buildRes.output);
                   }
                 }
                 if (pkg.scripts.test) {
                   const testArgs = pm === "npm" ? ["test"] : ["run", "test"];
                   appendMasterLog(`[INFO] Executing "${pm} ${testArgs.join(" ")}" in worktree...`);
-                  clearActiveToolOutput();
-                  const proc = execa(pm, testArgs, { cwd: worktreePath, all: true });
-                  const abortHandler = () => {
-                    killProcessTree(proc.pid);
-                  };
-                  if (signal) {
-                    if (signal.aborted) {
-                      killProcessTree(proc.pid);
-                      throw new Error("AbortError");
+                  const testLog = path.join(verifyLogDir, `test-${Date.now()}.log`);
+                  const testRes = await runStreamedVerification(pm, testArgs, worktreePath, testLog, signal);
+                  if (!testRes.success) {
+                    if (testRes.interactiveWarning) {
+                      appendMasterLog(`[WARN] Test prompted for input: ${testRes.interactiveWarning}`);
                     }
-                    signal.addEventListener("abort", abortHandler);
-                  }
-                  proc.all?.on("data", (data) => {
-                    appendActiveToolOutput(data.toString());
-                  });
-                  try {
-                    await proc;
-                  } finally {
-                    clearActiveToolOutput();
-                    if (signal) {
-                      signal.removeEventListener("abort", abortHandler);
-                    }
+                    throw new Error(testRes.output);
                   }
                 }
               }
@@ -1371,11 +1420,12 @@ export const sendMessageToSuperagentTool: Tool = {
 
         // Run pre-merge verification in worktree directory with Auto-Debugging retries
         let retries = 3;
+        const verifyLogDir = path.join(inst.worktreePath, ".superagent", "logs");
         while (retries > 0) {
           appendMasterLog(`[INFO] Running pre-merge verification in worktree: ${inst.worktreePath}...`);
           const pkgPath = path.join(inst.worktreePath, "package.json");
           let verificationPassed = true;
-          let verificationError = null;
+          let verificationError: any = null;
 
           if (fs.existsSync(pkgPath)) {
             try {
@@ -1384,55 +1434,25 @@ export const sendMessageToSuperagentTool: Tool = {
                 const pm = detectPackageManager(inst.worktreePath);
                 if (pkg.scripts.build) {
                   appendMasterLog(`[INFO] Executing "${pm} run build" in worktree...`);
-                  clearActiveToolOutput();
-                  const proc = execa(pm, ["run", "build"], { cwd: inst.worktreePath, all: true });
-                  const abortHandler = () => {
-                    killProcessTree(proc.pid);
-                  };
-                  if (signal) {
-                    if (signal.aborted) {
-                      killProcessTree(proc.pid);
-                      throw new Error("AbortError");
+                  const buildLog = path.join(verifyLogDir, `build-${Date.now()}.log`);
+                  const buildRes = await runStreamedVerification(pm, ["run", "build"], inst.worktreePath, buildLog, signal);
+                  if (!buildRes.success) {
+                    if (buildRes.interactiveWarning) {
+                      appendMasterLog(`[WARN] Build prompted for input: ${buildRes.interactiveWarning}`);
                     }
-                    signal.addEventListener("abort", abortHandler);
-                  }
-                  proc.all?.on("data", (data) => {
-                    appendActiveToolOutput(data.toString());
-                  });
-                  try {
-                    await proc;
-                  } finally {
-                    clearActiveToolOutput();
-                    if (signal) {
-                      signal.removeEventListener("abort", abortHandler);
-                    }
+                    throw new Error(buildRes.output);
                   }
                 }
                 if (pkg.scripts.test) {
                   const testArgs = pm === "npm" ? ["test"] : ["run", "test"];
                   appendMasterLog(`[INFO] Executing "${pm} ${testArgs.join(" ")}" in worktree...`);
-                  clearActiveToolOutput();
-                  const proc = execa(pm, testArgs, { cwd: inst.worktreePath, all: true });
-                  const abortHandler = () => {
-                    killProcessTree(proc.pid);
-                  };
-                  if (signal) {
-                    if (signal.aborted) {
-                      killProcessTree(proc.pid);
-                      throw new Error("AbortError");
+                  const testLog = path.join(verifyLogDir, `test-${Date.now()}.log`);
+                  const testRes = await runStreamedVerification(pm, testArgs, inst.worktreePath, testLog, signal);
+                  if (!testRes.success) {
+                    if (testRes.interactiveWarning) {
+                      appendMasterLog(`[WARN] Test prompted for input: ${testRes.interactiveWarning}`);
                     }
-                    signal.addEventListener("abort", abortHandler);
-                  }
-                  proc.all?.on("data", (data) => {
-                    appendActiveToolOutput(data.toString());
-                  });
-                  try {
-                    await proc;
-                  } finally {
-                    clearActiveToolOutput();
-                    if (signal) {
-                      signal.removeEventListener("abort", abortHandler);
-                    }
+                    throw new Error(testRes.output);
                   }
                 }
               }

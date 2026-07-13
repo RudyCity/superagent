@@ -17,6 +17,8 @@ export const backgroundTasks = new Map<string, BackgroundTask>();
 export const taskChangeListeners = new Set<TaskChangeListener>();
 export const activeOutputListeners = new Set<ActiveOutputListener>();
 export let activeToolOutput = "";
+let activeOutputThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+const ACTIVE_OUTPUT_THROTTLE_MS = 50;
 
 interface PersistedTask {
   id: string;
@@ -311,6 +313,11 @@ export function getActiveToolOutput() {
 
 export function clearActiveToolOutput() {
   activeToolOutput = "";
+  // Cancel any pending throttled notification and immediately notify with empty string
+  if (activeOutputThrottleTimer) {
+    clearTimeout(activeOutputThrottleTimer);
+    activeOutputThrottleTimer = null;
+  }
   for (const listener of activeOutputListeners) {
     listener("");
   }
@@ -322,8 +329,14 @@ export function appendActiveToolOutput(text: string) {
   if (lines.length > 50) {
     activeToolOutput = lines.slice(lines.length - 50).join("\n");
   }
-  for (const listener of activeOutputListeners) {
-    listener(activeToolOutput);
+  // Throttle UI listener notifications to prevent excessive re-renders
+  if (!activeOutputThrottleTimer) {
+    activeOutputThrottleTimer = setTimeout(() => {
+      activeOutputThrottleTimer = null;
+      for (const listener of activeOutputListeners) {
+        listener(activeToolOutput);
+      }
+    }, ACTIVE_OUTPUT_THROTTLE_MS);
   }
 }
 

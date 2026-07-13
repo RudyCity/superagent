@@ -5,7 +5,7 @@ import { Tool, ScheduleJob } from "./types.js";
 import { scheduledJobs, notifyScheduleTriggered, appendActiveToolOutput, clearActiveToolOutput } from "./state.js";
 import { killProcessTree } from "./shellTools.js";
 import { ensureAndroidCliInstalled } from "../androidSetup.js";
-import { formatUnknownActionError } from "./helpers.js";
+import { formatUnknownActionError, detectInteractivePrompt } from "./helpers.js";
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro, resolveSteps, dryRunSteps, buildRepairHint, type BrowserMacroStep, type StepRunResult } from "../config/browserMacros.js";
 
 export const askQuestionTool: Tool = {
@@ -507,13 +507,23 @@ export const androidCliTool: Tool = {
         signal.addEventListener("abort", abortHandler);
       }
 
+      let interactiveWarning: string | null = null;
       proc.all?.on("data", (data) => {
-        appendActiveToolOutput(data.toString());
+        const text = data.toString();
+        appendActiveToolOutput(text);
+        const warning = detectInteractivePrompt(text);
+        if (warning && !interactiveWarning) {
+          interactiveWarning = warning;
+          killProcessTree(proc.pid);
+        }
       });
 
       try {
         const result = await proc;
         clearActiveToolOutput();
+        if (interactiveWarning) {
+          return `Error: Interactive prompt detected. Execution aborted.\n\n${interactiveWarning}\n\nTo interact with this command, please run it using 'run_background_process', then send inputs using 'manage_background_process' (action: 'send_input').`;
+        }
         let output = (result.all || "").trim();
         return output || "(no output)";
       } finally {
