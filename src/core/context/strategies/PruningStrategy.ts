@@ -48,6 +48,11 @@ export class PruningStrategy implements CompactionStrategy {
         toPrune.push(moved);
         keepTokens = tokensForMessages(toKeep);
       }
+      // Ensure token-budget pruning does not leave an orphaned "tool" message at the start
+      while (toKeep.length > 0 && toKeep[0].role === "tool") {
+        const moved = toKeep.shift()!;
+        toPrune.push(moved);
+      }
     }
 
     // Enforce byte budget: reduce preserved messages/truncate contents if they exceed byte budget

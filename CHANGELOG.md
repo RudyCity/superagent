@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.359] - 2026-07-13
+
+### Fixed
+- **Anthropic 400: tool_result.tool_use_id Field Required**:
+  - Added guard in `buildMessages()` to skip individual tool results where `toolCallId` is falsy (undefined/empty), preventing the invalid `tool_use_id` field from reaching the Anthropic API.
+  - Added guard to skip empty `toolResults` arrays early, avoiding an empty `role: "tool"` message being pushed to `coreMessages`.
+  - Added guard to skip pushing a `role: "tool"` `coreMessages` entry when all its `contentParts` were filtered out.
+  - Added post-loop orphan guard in `PruningStrategy` after the token-budget `while` loop to mirror the existing byte-budget guard — prevents a `role: "tool"` message from being left at the start of `toKeep` after its paired `role: "assistant"` was pruned.
+
 ## [1.2.358] - 2026-07-13
 
 ### Added

@@ -3364,9 +3364,18 @@ for (const tc of toolCalls) {
         }> = [];
 
         const results = m.toolResults || [];
+        if (results.length === 0) {
+          continue;
+        }
+
         let pendingImagesToAppend: Array<{ toolName: string; base64List: string[]; mimeType?: string }> = [];
 
         for (const tr of results) {
+          // Skip results with missing toolCallId — Anthropic requires tool_use_id on every tool_result block
+          if (!tr.toolCallId) {
+            this.writeToLogFile("WARN", `Skipping tool result for "${tr.name}": missing toolCallId`);
+            continue;
+          }
           const resultStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
           
           // Check for data:image/xxx;base64,... pattern in the result
@@ -3436,6 +3445,11 @@ for (const tc of toolCalls) {
               result: tr.result,
             });
           }
+        }
+
+        // Do not push an empty tool message — would cause Anthropic 400
+        if (contentParts.length === 0) {
+          continue;
         }
 
         coreMessages.push({
