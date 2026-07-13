@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.349] - 2026-07-13
+
+### Fixed
+- **Chrome Extension Automated Click Focus**:
+  - Enhanced automated clicks to programmatically call `.focus()` on targeted elements and their contenteditable ancestors to ensure text carets appear correctly (e.g. in rich editors like Medium).
+  - Selectively route click triggers: use native `.click()` for native interactive elements (inputs, links, buttons) to avoid double-triggering checkbox toggles, and use bubbling MouseEvents with exact coordinate values for generic elements (divs, spans, paragraphs).
+
+---
+
 ## [1.2.348] - 2026-07-13
 
 ### Changed

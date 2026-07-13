@@ -765,6 +765,15 @@ async function executeBrowserControl(controlId, action, target, value) {
               const clientY = rect.top + rect.height / 2;
               el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX, clientY }));
 
+              // Programmatically focus the element or contenteditable container to ensure caret appears
+              if (typeof el.focus === "function") {
+                el.focus();
+              }
+              const editable = el.closest("[contenteditable='true']");
+              if (editable && typeof editable.focus === "function") {
+                editable.focus();
+              }
+
               // Small delay to simulate mouse button press duration
               await new Promise((r) => setTimeout(r, 60));
 
@@ -772,9 +781,16 @@ async function executeBrowserControl(controlId, action, target, value) {
                 cursor.style.transform = "scale(1.2)";
               }
 
-              // Dispatch mouseup and click events
+              // Dispatch mouseup event
               el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, clientX, clientY }));
-              el.click();
+
+              // Trigger click event: use native el.click() for native interactive elements, and dispatch event for custom/generic elements
+              const isNativeInteractive = el.closest("input, textarea, button, select, a");
+              if (isNativeInteractive) {
+                el.click();
+              } else {
+                el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX, clientY }));
+              }
               el.dispatchEvent(new Event("change", { bubbles: true }));
 
               // Final cursor release animation
