@@ -47,6 +47,8 @@ import {
   getSkillsTool,
   useSkillTool,
   controlBrowserTabTool,
+  controlBrowserMacroSaveTool,
+  controlBrowserMacroRunTool,
 } from "./otherTools.js";
 
 import {
@@ -95,6 +97,8 @@ export const masterToolset: Tool[] = [
   getSkillsTool,
   useSkillTool,
   controlBrowserTabTool,
+  controlBrowserMacroSaveTool,
+  controlBrowserMacroRunTool,
   writeToFileTool,       // for planning files
   replaceFileContentTool,// for planning files
   multiReplaceFileContentTool, // for planning files
@@ -144,6 +148,8 @@ export const superagentToolset: Tool[] = [
   searchPinnedKnowledgeTool,
   screenshotTool,
   controlBrowserTabTool,
+  controlBrowserMacroSaveTool,
+  controlBrowserMacroRunTool,
   androidCliTool,
   readPeerSuperagentFileTool, // read files from peer Superagent worktrees
   tdaiMemorySearchTool,
@@ -189,6 +195,8 @@ export const chromeExtensionToolset: Tool[] = [
   searchPinnedKnowledgeTool,
   screenshotTool,
   controlBrowserTabTool,
+  controlBrowserMacroSaveTool,
+  controlBrowserMacroRunTool,
   androidCliTool,
   tdaiMemorySearchTool,
   tdaiConversationSearchTool,

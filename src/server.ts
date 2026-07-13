@@ -8,6 +8,7 @@ import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, en
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
+import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
 
 interface AgentSession {
   agent: Agent;
@@ -584,6 +585,48 @@ export async function runServer(port: number, silent = false) {
           sendJSON(res, 200, { success: true });
         } else {
           sendJSON(res, 404, { error: "Browser control request not found" });
+        }
+        return;
+      }
+
+      // Browser Macro Presets CRUD
+      if (pathname === "/api/browser/macros" && req.method === "GET") {
+        sendJSON(res, 200, getBrowserMacros());
+        return;
+      }
+
+      if (pathname === "/api/browser/macros" && req.method === "POST") {
+        try {
+          const bodyStr = await readBody(req);
+          const macro = JSON.parse(bodyStr || "{}");
+          if (!macro.name || !Array.isArray(macro.steps)) {
+            sendJSON(res, 400, { error: "Macro must have 'name' and 'steps' fields." });
+            return;
+          }
+          saveBrowserMacro(macro);
+          sendJSON(res, 200, { success: true, name: macro.name });
+        } catch (err: any) {
+          sendJSON(res, 400, { error: err.message || "Invalid macro payload." });
+        }
+        return;
+      }
+
+      if (pathname === "/api/browser/macros" && req.method === "DELETE") {
+        try {
+          const bodyStr = await readBody(req);
+          const { name } = JSON.parse(bodyStr || "{}");
+          if (!name) {
+            sendJSON(res, 400, { error: "'name' field is required." });
+            return;
+          }
+          const deleted = deleteBrowserMacro(name);
+          if (deleted) {
+            sendJSON(res, 200, { success: true });
+          } else {
+            sendJSON(res, 404, { error: `Macro "${name}" not found.` });
+          }
+        } catch (err: any) {
+          sendJSON(res, 400, { error: err.message || "Invalid delete payload." });
         }
         return;
       }

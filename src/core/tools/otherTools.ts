@@ -5,6 +5,7 @@ import { Tool, ScheduleJob } from "./types.js";
 import { scheduledJobs, notifyScheduleTriggered } from "./state.js";
 import { ensureAndroidCliInstalled } from "../androidSetup.js";
 import { formatUnknownActionError } from "./helpers.js";
+import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro, resolveSteps, type BrowserMacroStep } from "../config/browserMacros.js";
 
 export const askQuestionTool: Tool = {
   name: "ask_question",
@@ -1775,6 +1776,116 @@ export const useSkillTool: Tool = {
   }
 };
 
+export const controlBrowserMacroSaveTool: Tool = {
+  name: "control_browser_macro_save",
+  description: "Save a reusable browser control macro preset. A macro is a named sequence of browser actions (navigate, type, click, wait, etc.) that can be executed later in one call. Steps support parameter placeholders like {{title}} that get filled in at runtime.",
+  parameters: {
+    type: "object",
+    properties: {
+      name: {
+        type: "string",
+        description: "Unique macro name in snake_case (e.g. medium_post, google_search)"
+      },
+      description: {
+        type: "string",
+        description: "What this macro does in plain English"
+      },
+      params: {
+        type: "object",
+        description: "Optional map of parameter names to their descriptions, e.g. { \"title\": \"Article title\", \"url\": \"Target URL\" }",
+        additionalProperties: { type: "string" }
+      },
+      steps: {
+        type: "array",
+        description: "Ordered list of browser actions to execute",
+        items: {
+          type: "object",
+          properties: {
+            action: { type: "string", description: "Browser action (navigate, click, type, wait, scroll, screenshot, etc.)" },
+            target: { type: "string", description: "CSS selector or URL. Supports {{param}} placeholders." },
+            value: { type: "string", description: "Text or value to type. Supports {{param}} placeholders." }
+          },
+          required: ["action"]
+        }
+      },
+      delete: {
+        type: "boolean",
+        description: "If true, deletes the macro with the given name instead of saving it."
+      }
+    },
+    required: ["name"]
+  },
+  async execute(args) {
+    const name = args.name as string;
+    if (args.delete === true) {
+      const deleted = deleteBrowserMacro(name);
+      return deleted ? `Macro "${name}" deleted.` : `Error: Macro "${name}" not found.`;
+    }
+    if (!args.steps || !Array.isArray(args.steps) || (args.steps as any[]).length === 0) {
+      return `Error: "steps" must be a non-empty array of browser action steps.`;
+    }
+    const macro = {
+      name,
+      description: (args.description as string) || "",
+      params: (args.params as Record<string, string>) || undefined,
+      steps: args.steps as BrowserMacroStep[],
+    };
+    saveBrowserMacro(macro);
+    return `Macro "${name}" saved with ${macro.steps.length} steps.`;
+  }
+};
 
+export const controlBrowserMacroRunTool: Tool = {
+  name: "control_browser_macro_run",
+  description: "Execute a saved browser macro preset by name. Replaces parameter placeholders ({{param}}) in each step with values from the 'args' map. Runs all steps sequentially via the browser control handler. Use 'list' as name to get all available macros.",
+  parameters: {
+    type: "object",
+    properties: {
+      name: {
+        type: "string",
+        description: "Name of the macro to execute (e.g. medium_post), or 'list' to see all saved macros."
+      },
+      args: {
+        type: "object",
+        description: "Key-value map of parameter values to inject into the macro steps, e.g. { \"title\": \"My Article\", \"url\": \"https://medium.com/new\" }",
+        additionalProperties: { type: "string" }
+      }
+    },
+    required: ["name"]
+  },
+  async execute(args) {
+    const name = args.name as string;
+    if (name === "list") {
+      const macros = getBrowserMacros();
+      if (macros.length === 0) return "No macros saved yet.";
+      return macros.map(m => {
+        const paramList = m.params ? Object.entries(m.params).map(([k, v]) => `  - {{${k}}}: ${v}`).join("\n") : "  (none)";
+        return `Macro: ${m.name}\nDescription: ${m.description}\nParams:\n${paramList}\nSteps: ${m.steps.length} actions`;
+      }).join("\n\n");
+    }
 
+    const macros = getBrowserMacros();
+    const macro = macros.find(m => m.name.toLowerCase() === name.toLowerCase());
+    if (!macro) return `Error: Macro "${name}" not found. Use name 'list' to see available macros.`;
 
+    const argsMap = (args.args as Record<string, string>) || {};
+    const resolvedSteps = resolveSteps(macro.steps, argsMap);
+
+    if (!browserControlHandler) {
+      return "Error: Browser control handler is not active. Please launch the Chrome Extension and connect to activate browser control.";
+    }
+
+    const results: string[] = [];
+    for (let i = 0; i < resolvedSteps.length; i++) {
+      const step = resolvedSteps[i];
+      try {
+        const result = await browserControlHandler(step.action, step.target || "", step.value || "");
+        results.push(`Step ${i + 1} [${step.action}]: ${result}`);
+      } catch (err: any) {
+        results.push(`Step ${i + 1} [${step.action}] FAILED: ${err.message || String(err)}`);
+        break;
+      }
+    }
+    return results.join("\n");
+  }
+};

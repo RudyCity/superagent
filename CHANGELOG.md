@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.345] - 2026-07-13
+
+### Added
+- **Browser Macro Preset System**:
+  - New `src/core/config/browserMacros.ts` module with typed `BrowserMacro` interface, disk-persistent CRUD helpers (`getBrowserMacros`, `saveBrowserMacro`, `deleteBrowserMacro`), and template interpolation utilities (`interpolateStep`, `resolveSteps`). Macros stored at `~/.superagent-r/browser-macros.json`.
+  - New AI tools `control_browser_macro_save` and `control_browser_macro_run` in `otherTools.ts`. The save tool creates named, parameterized macro presets with `{{placeholder}}` support. The run tool executes all steps sequentially and returns per-step results.
+  - Both tools registered in `masterToolset`, `superagentToolset`, and `chromeExtensionToolset` in `toolsets.ts`.
+  - REST API endpoints `GET /api/browser/macros`, `POST /api/browser/macros`, `DELETE /api/browser/macros` added to `server.ts` for full CRUD access from the Chrome Extension.
+  - Chrome Extension: new Macros sidebar tab (user icon) in `sidepanel.html` with a "Browser Macros" pane listing all saved macros with their name, description, params, and step count. Users can delete any macro from the UI. Tab integrates with the existing sidebar toggle/switch system in `sidepanel.js`.
+  - 13 unit tests added in `tests/browserMacros.test.ts` covering save, overwrite, delete, multi-macro storage, case-insensitive lookup, interpolation edge cases, and resolveSteps.
+
 ## [1.2.344] - 2026-07-13
 
 ### Added

@@ -101,10 +101,12 @@ const btnSaveSettings = document.getElementById("btn-save-settings");
 
 const tabWorkspace = document.getElementById("tab-workspace");
 const tabHistory = document.getElementById("tab-history");
+const tabMacros = document.getElementById("tab-macros");
 
 const viewWorkspace = document.getElementById("view-workspace");
 const viewChat = document.getElementById("view-chat");
 const viewHistory = document.getElementById("view-history");
+const viewMacros = document.getElementById("view-macros");
 
 const btnRefreshHistory = document.getElementById("btn-refresh-history-sidebar");
 const modelPresetSelect = document.getElementById("model-preset");
@@ -431,6 +433,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Tab Navigation Listeners
   if (tabWorkspace) tabWorkspace.addEventListener("click", () => handleSidebarTabClick("workspace"));
   if (tabHistory) tabHistory.addEventListener("click", () => handleSidebarTabClick("history"));
+  if (tabMacros) tabMacros.addEventListener("click", () => handleSidebarTabClick("macros"));
+
 
   // Document Refresh Listeners
   if (btnRefreshHistory) btnRefreshHistory.addEventListener("click", loadChatHistorySessions);
@@ -1406,10 +1410,12 @@ function switchSidebarTab(tabId) {
   // Reset tab button active states
   if (tabWorkspace) tabWorkspace.classList.remove("active");
   if (tabHistory) tabHistory.classList.remove("active");
+  if (tabMacros) tabMacros.classList.remove("active");
   
   // Hide all sidebar views
   if (viewWorkspace) viewWorkspace.classList.add("hidden");
   if (viewHistory) viewHistory.classList.add("hidden");
+  if (viewMacros) viewMacros.classList.add("hidden");
   
   if (tabId === "workspace") {
     if (tabWorkspace) tabWorkspace.classList.add("active");
@@ -1422,12 +1428,18 @@ function switchSidebarTab(tabId) {
     if (sidebarTitle) sidebarTitle.textContent = "History";
     activeSidebarTab = "history";
     loadChatHistorySessions();
+  } else if (tabId === "macros") {
+    if (tabMacros) tabMacros.classList.add("active");
+    if (viewMacros) viewMacros.classList.remove("hidden");
+    if (sidebarTitle) sidebarTitle.textContent = "Browser Macros";
+    activeSidebarTab = "macros";
+    loadBrowserMacrosList();
   }
 }
 
 function handleSidebarTabClick(tabId) {
   const leftSidebar = document.getElementById("left-sidebar");
-  const tabButton = tabId === "workspace" ? tabWorkspace : tabHistory;
+  const tabButton = tabId === "workspace" ? tabWorkspace : tabId === "history" ? tabHistory : tabMacros;
   
   if (leftSidebar && !leftSidebar.classList.contains("hidden") && activeSidebarTab === tabId) {
     // Toggle off
@@ -1447,10 +1459,59 @@ function switchTab(tabId) {
     }
     if (tabWorkspace) tabWorkspace.classList.remove("active");
     if (tabHistory) tabHistory.classList.remove("active");
+    if (tabMacros) tabMacros.classList.remove("active");
   } else {
     switchSidebarTab(tabId);
   }
 }
+
+// ─── Browser Macros Panel ────────────────────────────────────────────────────
+async function loadBrowserMacrosList() {
+  const container = document.getElementById("macros-list");
+  if (!container || !BASE_URL) return;
+  container.innerHTML = `<div class="p-3 text-center text-vscode-muted text-[11px]">Loading...</div>`;
+  try {
+    const res = await fetch(`${BASE_URL}/api/browser/macros`);
+    const macros = await res.json();
+    if (!macros || macros.length === 0) {
+      container.innerHTML = `<div class="p-3 text-center text-vscode-muted text-[11px]">No macros saved yet.<br>Ask the AI agent to create one with <code>control_browser_macro_save</code>.</div>`;
+      return;
+    }
+    container.innerHTML = "";
+    macros.forEach(macro => {
+      const card = document.createElement("div");
+      card.className = "p-2 rounded border border-vscode-dim bg-vscode-inner flex flex-col gap-1 text-[11px]";
+      const paramList = macro.params ? Object.entries(macro.params).map(([k, v]) => `<span class="text-vscode-muted">{{${k}}}</span>: ${v}`).join(", ") : "";
+      card.innerHTML = `
+        <div class="flex justify-between items-start gap-1">
+          <div>
+            <span class="font-semibold text-vscode-light">${macro.name}</span>
+            <span class="ml-2 text-vscode-muted">(${macro.steps.length} steps)</span>
+          </div>
+          <button class="btn-macro-delete text-vscode-muted hover:text-red-400 text-[10px] cursor-pointer border-0 bg-transparent" data-name="${macro.name}" title="Delete macro">✕</button>
+        </div>
+        <div class="text-vscode-muted leading-relaxed">${macro.description || ""}</div>
+        ${paramList ? `<div class="text-vscode-muted text-[10px]">Params: ${paramList}</div>` : ""}
+      `;
+      card.querySelector(".btn-macro-delete").addEventListener("click", async (e) => {
+        const name = e.target.dataset.name;
+        if (!confirm(`Delete macro "${name}"?`)) return;
+        await fetch(`${BASE_URL}/api/browser/macros`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name })
+        });
+        loadBrowserMacrosList();
+      });
+      container.appendChild(card);
+    });
+  } catch (err) {
+    container.innerHTML = `<div class="p-3 text-center text-vscode-muted text-[11px]">Failed to load macros: ${err.message}</div>`;
+  }
+}
+
+const btnRefreshMacros = document.getElementById("btn-refresh-macros");
+if (btnRefreshMacros) btnRefreshMacros.addEventListener("click", loadBrowserMacrosList);
 
 // [Document rendering, markdown parsing, and sessions switcher moved to sidepanel-ui.js and sidepanel-history.js]
 
