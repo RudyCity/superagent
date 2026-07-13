@@ -498,8 +498,166 @@ async function executeBrowserControl(controlId, action, target, value) {
               });
             };
 
+            const isElementInViewport = (element) => {
+              const rect = element.getBoundingClientRect();
+              return (
+                rect.top >= 0 &&
+                rect.left >= 0 &&
+                rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+                rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+              );
+            };
+
+            const scrollIntoViewAndWait = async (element) => {
+              if (isElementInViewport(element)) return;
+
+              element.scrollIntoView({ behavior: "smooth", block: "center" });
+
+              await new Promise((resolve) => {
+                let lastTop = null;
+                let lastLeft = null;
+                let samePositionCount = 0;
+                const check = () => {
+                  const rect = element.getBoundingClientRect();
+                  if (rect.top === lastTop && rect.left === lastLeft) {
+                    samePositionCount++;
+                    if (samePositionCount >= 3) {
+                      resolve();
+                      return;
+                    }
+                  } else {
+                    samePositionCount = 0;
+                    lastTop = rect.top;
+                    lastLeft = rect.left;
+                  }
+                  requestAnimationFrame(check);
+                };
+                requestAnimationFrame(check);
+              });
+
+              await new Promise((r) => setTimeout(r, 100));
+            };
+
+            const startCursorTremor = () => {
+              if (window.__superagent_cursor_tremor_interval__) {
+                clearInterval(window.__superagent_cursor_tremor_interval__);
+              }
+              const cursor = document.getElementById("__superagent_cursor__");
+              if (!cursor) return;
+
+              let angle = 0;
+              window.__superagent_cursor_tremor_interval__ = setInterval(() => {
+                const opacity = parseFloat(cursor.style.opacity || "1");
+                if (opacity <= 0.01) {
+                  clearInterval(window.__superagent_cursor_tremor_interval__);
+                  return;
+                }
+                const dx = Math.sin(angle) * 0.4;
+                const dy = Math.cos(angle * 1.3) * 0.4;
+                const currentScale = cursor.style.transform.match(/scale\([^)]+\)/) || "scale(1)";
+                cursor.style.transform = `${currentScale} translate(${dx}px, ${dy}px)`;
+                angle += 0.2;
+              }, 40);
+            };
+
+            const typeTextHumanLike = async (element, text) => {
+              const isInput = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
+              const isEditable = element.isContentEditable;
+              if (!isInput && !isEditable) {
+                try {
+                  element.value = text;
+                } catch (e) {
+                  element.innerText = text;
+                }
+                element.dispatchEvent(new Event("input", { bubbles: true }));
+                element.dispatchEvent(new Event("change", { bubbles: true }));
+                return;
+              }
+
+              // Focus element first
+              if (typeof element.focus === "function") {
+                element.focus();
+              }
+              const editable = element.closest("[contenteditable='true']");
+              if (editable && typeof editable.focus === "function") {
+                editable.focus();
+              }
+
+              let currentText = "";
+              const typoChance = 0.03;
+              const keyboardNeighbors = {
+                'a': 'qwsz', 'b': 'vghn', 'c': 'xdfv', 'd': 'ersfxc', 'e': 'wsdr',
+                'f': 'rtgvcd', 'g': 'tyhbvf', 'h': 'yujnbg', 'i': 'ujko', 'j': 'uikmnh',
+                'k': 'ijlm', 'l': 'okp', 'm': 'njk', 'n': 'bhjm', 'o': 'iklp',
+                'p': 'ol', 'q': 'wa', 'r': 'edft', 's': 'wedxza', 't': 'rfgy',
+                'u': 'yhji', 'v': 'cfgb', 'w': 'qase', 'x': 'zsdc', 'y': 'tghu', 'z': 'asx'
+              };
+
+              const updateElementValue = (val) => {
+                if (isInput) {
+                  const proto = element instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+                  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+                  if (nativeInputValueSetter) {
+                    nativeInputValueSetter.call(element, val);
+                  } else {
+                    element.value = val;
+                  }
+                  element.dispatchEvent(new Event("input", { bubbles: true }));
+                } else if (isEditable) {
+                  element.innerText = val;
+                  element.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+              };
+
+              for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                
+                // Typos simulation (only for letters)
+                if (Math.random() < typoChance && keyboardNeighbors[char.toLowerCase()]) {
+                  const neighbors = keyboardNeighbors[char.toLowerCase()];
+                  const typoChar = neighbors[Math.floor(Math.random() * neighbors.length)];
+                  const typoText = currentText + (char === char.toUpperCase() ? typoChar.toUpperCase() : typoChar);
+                  
+                  updateElementValue(typoText);
+                  element.dispatchEvent(new KeyboardEvent("keydown", { key: typoChar, bubbles: true }));
+                  element.dispatchEvent(new KeyboardEvent("keypress", { key: typoChar, bubbles: true }));
+                  element.dispatchEvent(new KeyboardEvent("keyup", { key: typoChar, bubbles: true }));
+                  
+                  // Typo pause (human realization of error)
+                  await new Promise(r => setTimeout(r, 80 + Math.random() * 80));
+                  
+                  // Backspace
+                  updateElementValue(currentText);
+                  element.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", keyCode: 8, bubbles: true }));
+                  element.dispatchEvent(new KeyboardEvent("keyup", { key: "Backspace", keyCode: 8, bubbles: true }));
+                  
+                  // Correction pause (re-typing correct key)
+                  await new Promise(r => setTimeout(r, 100 + Math.random() * 100));
+                }
+
+                currentText += char;
+                updateElementValue(currentText);
+                
+                element.dispatchEvent(new KeyboardEvent("keydown", { key: char, bubbles: true }));
+                element.dispatchEvent(new KeyboardEvent("keypress", { key: char, bubbles: true }));
+                element.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true }));
+
+                // Delay between key presses (approx. 50ms to 150ms per key)
+                await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+              }
+
+              element.dispatchEvent(new Event("change", { bubbles: true }));
+            };
+
             const animateCursorTo = async (element) => {
               try {
+                if (window.__superagent_cursor_tremor_interval__) {
+                  clearInterval(window.__superagent_cursor_tremor_interval__);
+                }
+
+                // Smoothly scroll target element into viewport if offscreen
+                await scrollIntoViewAndWait(element);
+
                 let cursor = document.getElementById("__superagent_cursor__");
                 if (!cursor) {
                   cursor = document.createElement("div");
@@ -556,6 +714,7 @@ async function executeBrowserControl(controlId, action, target, value) {
                   cursor.style.top = `${targetY}px`;
                   window.__superagent_cursor_x__ = targetX;
                   window.__superagent_cursor_y__ = targetY;
+                  startCursorTremor();
                   return;
                 }
 
@@ -588,8 +747,10 @@ async function executeBrowserControl(controlId, action, target, value) {
                 const controlX2 = startX + p1Dx * 0.75 - perpendicularX * controlOffset;
                 const controlY2 = startY + p1Dy * 0.75 - perpendicularY * controlOffset;
 
-                // Duration based on Fitts's law: logarithmic curve
-                const duration = Math.min(800, Math.max(300, p1Distance * 0.55 + 150));
+                // Duration based on Fitts's law: movement time is logarithmic curve of (distance / size)
+                const targetSize = Math.min(rect.width, rect.height);
+                const ID = Math.log2((2 * p1Distance) / Math.max(10, targetSize) + 1);
+                const duration = Math.min(950, Math.max(280, 150 + ID * 80));
                 const startTime = performance.now();
 
                 const animatePhase1 = () => {
@@ -677,6 +838,8 @@ async function executeBrowserControl(controlId, action, target, value) {
                     requestAnimationFrame(stepCorrection);
                   });
                 }
+
+                startCursorTremor();
               } catch (e) {
                 // Ignore cursor animation errors
               }
@@ -911,25 +1074,7 @@ async function executeBrowserControl(controlId, action, target, value) {
             if (act === "type") {
               showBanner(`Typing into element ${tgt}...`);
               await animateCursorTo(el);
-              if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-                const proto = el instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
-                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-                if (nativeInputValueSetter) {
-                  nativeInputValueSetter.call(el, val);
-                } else {
-                  el.value = val;
-                }
-              } else if (el.isContentEditable) {
-                el.innerText = val;
-              } else {
-                try {
-                  el.value = val;
-                } catch (e) {
-                  el.innerText = val;
-                }
-              }
-              el.dispatchEvent(new Event("input", { bubbles: true }));
-              el.dispatchEvent(new Event("change", { bubbles: true }));
+              await typeTextHumanLike(el, val);
 
               window.__superagent_cursor_timeout__ = setTimeout(() => {
                 const cursor = document.getElementById("__superagent_cursor__");

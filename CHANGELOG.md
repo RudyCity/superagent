@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.351] - 2026-07-13
+
+### Added
+- **Chrome Extension Human-like Interaction Suite**:
+  - Simulated biological tremors/micro-movements for the virtual cursor when stationary (low-frequency sub-pixel oscillation breathing effect).
+  - Target-size aware movement duration following Fitts's Law (`ID = log2(2 * distance / size + 1)`), moving faster for large items and slowing down for precise adjustments on smaller targets.
+  - Smooth scrolling for off-screen elements with settling detection (polling position until motion stops) to ensure elements are static before cursor tracking.
+  - Character-by-character keyboard input simulation with randomized typing speeds (50ms - 150ms delay) and typo simulation (backspacing to fix mistakes).
+
+---
+
 ## [1.2.350] - 2026-07-13
 
 ### Added
