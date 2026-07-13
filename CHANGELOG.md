@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.352] - 2026-07-13
+
+### Added
+- **Chrome Extension Inspect & Annotation Picker**:
+  - Integrated a visual Inspect Element tool (🔍 button) next to the chat input in the toolbar.
+  - Clicking it injects a promise-based content picker overlay onto the active web page.
+  - Hovering elements highlights them with a blue border and shows a tooltip containing their unique CSS selector and metadata annotation.
+  - Clicking an element intercepts the click, resolves the selector, and inserts it at the current cursor caret position in the chat input.
+  - Pressing Escape exits inspect mode.
+
+---
+
 ## [1.2.351] - 2026-07-13
 
 ### Added

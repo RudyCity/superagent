@@ -36,6 +36,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Initialize Attachment Buttons & Inputs
   initAttachmentHandlers();
 
+  // Initialize Inspect Element Handler
+  initInspectHandler();
+
   // Input Help Button Listener
   const helpBtn = document.getElementById("btn-input-help");
   if (helpBtn) {
@@ -422,3 +425,238 @@ window.sendChatMessage = async function() {
     hideSpinner();
   }
 };
+
+function initInspectHandler() {
+  const inspectBtn = document.getElementById("btn-inspect-element");
+  const chatInput = document.getElementById("chat-input");
+  if (!inspectBtn || !chatInput) return;
+
+  inspectBtn.addEventListener("click", async () => {
+    // Disable button during inspect to prevent double triggers
+    inspectBtn.disabled = true;
+    inspectBtn.style.opacity = "0.5";
+
+    // Query active tab
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      if (!tabs || tabs.length === 0) {
+        inspectBtn.disabled = false;
+        inspectBtn.style.opacity = "1";
+        return;
+      }
+      const activeTab = tabs[0];
+
+      try {
+        // Execute inspect script
+        chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          func: () => {
+            return new Promise((resolve) => {
+              const styleId = "__superagent_inspect_style__";
+              const tooltipId = "__superagent_inspect_tooltip__";
+              const outlineClass = "__superagent_inspect_overlay__";
+
+              // Inject styling
+              let style = document.getElementById(styleId);
+              if (!style) {
+                style = document.createElement("style");
+                style.id = styleId;
+                style.textContent = `
+                  .${outlineClass} {
+                    outline: 2px dashed #0a84ff !important;
+                    outline-offset: 1px !important;
+                    cursor: crosshair !important;
+                  }
+                `;
+                document.head.appendChild(style);
+              }
+
+              // Create tooltip
+              let tooltip = document.getElementById(tooltipId);
+              if (!tooltip) {
+                tooltip = document.createElement("div");
+                tooltip.id = tooltipId;
+                tooltip.style.position = "fixed";
+                tooltip.style.zIndex = "10000000000";
+                tooltip.style.padding = "6px 10px";
+                tooltip.style.background = "rgba(10, 132, 255, 0.95)";
+                tooltip.style.color = "#ffffff";
+                tooltip.style.borderRadius = "4px";
+                tooltip.style.fontFamily = "system-ui, -apple-system, sans-serif";
+                tooltip.style.fontSize = "11px";
+                tooltip.style.pointerEvents = "none";
+                tooltip.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.3)";
+                tooltip.style.maxWidth = "280px";
+                tooltip.style.wordBreak = "break-all";
+                document.body.appendChild(tooltip);
+              }
+
+              let currentEl = null;
+
+              function getUniqueSelector(el) {
+                if (el.getAttribute("data-testid")) {
+                  return `[data-testid="${el.getAttribute("data-testid")}"]`;
+                }
+                if (el.id) {
+                  const id = el.id.trim();
+                  if (id && document.querySelectorAll(`#${CSS.escape(id)}`).length === 1) {
+                    return `#${id}`;
+                  }
+                }
+                if (el.tagName === "INPUT" && el.name) {
+                  return `input[name="${el.name}"]`;
+                }
+                if (el.tagName === "INPUT" && el.type === "submit") {
+                  return `input[type="submit"]`;
+                }
+                
+                const path = [];
+                let current = el;
+                while (current && current.nodeType === Node.ELEMENT_NODE) {
+                  let selector = current.nodeName.toLowerCase();
+                  if (current.getAttribute("data-testid")) {
+                    selector = `[data-testid="${current.getAttribute("data-testid")}"]`;
+                    path.unshift(selector);
+                    break;
+                  }
+                  if (current.id) {
+                    const id = current.id.trim();
+                    if (id && document.querySelectorAll(`#${CSS.escape(id)}`).length === 1) {
+                      path.unshift(`#${id}`);
+                      break;
+                    }
+                  }
+                  let classList = current.classList ? Array.from(current.classList).filter(c => !c.startsWith("__superagent")) : [];
+                  if (classList.length > 0) {
+                    selector += "." + classList.map(c => CSS.escape(c)).join(".");
+                  }
+                  if (current.parentNode) {
+                    let siblings = Array.from(current.parentNode.children).filter(c => c.nodeName === current.nodeName);
+                    if (siblings.length > 1) {
+                      let index = siblings.indexOf(current) + 1;
+                      selector += `:nth-of-type(${index})`;
+                    }
+                  }
+                  path.unshift(selector);
+                  current = current.parentNode;
+                }
+                return path.join(" > ");
+              }
+
+              function getElementDescription(el) {
+                if (el.placeholder) return `Placeholder: "${el.placeholder}"`;
+                if (el.title) return `Title: "${el.title}"`;
+                if (el.name) return `Name: "${el.name}"`;
+                
+                let text = el.innerText || el.textContent;
+                if (text) {
+                  text = text.trim().replace(/\s+/g, " ");
+                  if (text.length > 40) text = text.slice(0, 37) + "...";
+                  return `Text: "${text}"`;
+                }
+                return `Tag: <${el.tagName.toLowerCase()}>`;
+              }
+
+              const onMouseOver = (e) => {
+                const el = e.target;
+                if (el === tooltip || el.closest(`#${tooltipId}`) || el.tagName === "HTML" || el.tagName === "BODY") return;
+
+                if (currentEl !== el) {
+                  if (currentEl) {
+                    currentEl.classList.remove(outlineClass);
+                  }
+                  currentEl = el;
+                  currentEl.classList.add(outlineClass);
+                }
+
+                const selector = getUniqueSelector(el);
+                const desc = getElementDescription(el);
+                tooltip.innerHTML = `<div style="font-weight: bold; margin-bottom: 2px;">${selector}</div><div style="opacity: 0.85;">${desc}</div>`;
+                
+                const padding = 10;
+                let left = e.clientX + padding;
+                let top = e.clientY + padding;
+                
+                if (left + tooltip.offsetWidth > window.innerWidth) {
+                  left = e.clientX - tooltip.offsetWidth - padding;
+                }
+                if (top + tooltip.offsetHeight > window.innerHeight) {
+                  top = e.clientY - tooltip.offsetHeight - padding;
+                }
+                
+                tooltip.style.left = `${left}px`;
+                tooltip.style.top = `${top}px`;
+              };
+
+              const onClick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                cleanup();
+                if (currentEl) {
+                  const selector = getUniqueSelector(currentEl);
+                  const desc = getElementDescription(currentEl);
+                  resolve({ selector, description: desc });
+                } else {
+                  resolve(null);
+                }
+              };
+
+              const onKeyDown = (e) => {
+                if (e.key === "Escape") {
+                  cleanup();
+                  resolve(null);
+                }
+              };
+
+              function cleanup() {
+                if (currentEl) {
+                  currentEl.classList.remove(outlineClass);
+                }
+                window.removeEventListener("mouseover", onMouseOver, true);
+                window.removeEventListener("click", onClick, true);
+                window.removeEventListener("keydown", onKeyDown, true);
+                if (tooltip && tooltip.parentNode) {
+                  tooltip.parentNode.removeChild(tooltip);
+                }
+                if (style && style.parentNode) {
+                  style.parentNode.removeChild(style);
+                }
+              }
+
+              window.addEventListener("mouseover", onMouseOver, true);
+              window.addEventListener("click", onClick, true);
+              window.addEventListener("keydown", onKeyDown, true);
+            });
+          }
+        }, (results) => {
+          inspectBtn.disabled = false;
+          inspectBtn.style.opacity = "1";
+
+          if (results && results[0] && results[0].result) {
+            const { selector, description } = results[0].result;
+            if (selector) {
+              // Insert selector at current cursor position in chatInput
+              const startPos = chatInput.selectionStart;
+              const endPos = chatInput.selectionEnd;
+              const originalText = chatInput.value;
+              
+              const insertText = originalText.substring(0, startPos).endsWith(" ") || startPos === 0
+                ? selector
+                : " " + selector;
+
+              chatInput.value = originalText.substring(0, startPos) +
+                               insertText +
+                               originalText.substring(endPos);
+              
+              const newPos = startPos + insertText.length;
+              chatInput.focus();
+              chatInput.setSelectionRange(newPos, newPos);
+            }
+          }
+        });
+      } catch (err) {
+        inspectBtn.disabled = false;
+        inspectBtn.style.opacity = "1";
+      }
+    });
+  });
+}
