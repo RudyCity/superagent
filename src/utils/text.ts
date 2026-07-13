@@ -178,3 +178,73 @@ export function minimizePathInDescription(str: string): string {
 
   return str;
 }
+
+export function cleanAssistantResponse(text: string): string {
+  if (!text) return "";
+  let cleaned = text;
+
+  // List of regex patterns of commonly echoed system instruction phrases/blocks
+  const patternsToStrip = [
+    /^\s*Proceed to step-by-step coding and execution! Keep implementation plans and tasks in sync\. Make sure to update task statuses as you complete items\. Write a walkthrough when done\.\s*/i,
+    /^\s*- Do NOT perform planning steps \(no get_skills\/use_skill calls or plan\/task modifications for planning\)\.\s*/i,
+    /^\s*- Do NOT ask for permission\/confirmation to make changes or run tests\.\s*/i,
+    /^\s*- Proceed directly to execution\.\s*/i,
+    /^\s*TESTING & COMPILING:\s*/i,
+    /^\s*- Ensure the project builds successfully and all tests pass before completing your work\.\s*/i,
+    /^\s*- When done, document all modifications, compile logs, and test run reports inside the Walkthrough File before reporting completion\.\s*/i,
+    /^\s*We are ready to start\. Proceed!\s*/i,
+    /^\s*Do NOT ask for additional design or plan approvals from the user unless you hit a critical architectural blocker\.\s*/i,
+    /^\s*Ensure you record your test results and write a final walkthrough summary to the Walkthrough File before completion\.\s*/i,
+    /^\s*Please proceed directly with modifying files, compiling\/building, running tests, and completing the user's tasks\.\s*/i,
+    /^\s*Do not wait or ask for confirmation unless there is a critical architectural error or a blocker\.\s*/i,
+    /^\s*Move quickly to complete the implementation\.\s*/i,
+    /^\s*Make sure to update task statuses using `?manage_tasks`?\(action: 'update'\) as you finish tasks\.\s*/i,
+    /^\s*Do NOT ask for further plan or design approvals\.\s*/i,
+    /^\s*Focus on writing clean code, building, running tests, and completing the tasks\.\s*/i,
+    /^\s*Keep implementation plans and tasks in sync\.\s*/i,
+    /^\s*No further design approvals or plan confirmations are needed\.\s*/i,
+    /^\s*Proceed directly to implementation and verification\.\s*/i,
+    /^\s*Do not wait for any further approvals\.\s*/i,
+    /^\s*Proceed directly with the implementation\.\s*/i,
+    /^\s*Run validation commands \(build\/test\) and record results in the Walkthrough File\.\s*/i,
+    /^\s*Do not ask for further confirmation or wait for user input\.\s*/i,
+    /^\s*Proceed to implement the plan immediately\.\s*/i,
+    /^\s*Do not wait or ask for further confirmation\.\s*/i,
+    /^\s*Proceed directly to editing code\.\s*/i,
+    /^\s*Run validation commands \(build\/test\) and record results in the Walkthrough File\.\s*/i,
+    /^\s*Focus on editing code, building, running tests, and completing the tasks\.\s*/i,
+    /^\s*Do not wait for further user approval on edits\.\s*/i,
+    /^\s*You do not need to ask for permission again unless there is an unexpected architecture-altering error or critical blocker\.\s*/i,
+    /^\s*Do not perform unnecessary Q&A, and proceed directly to editing code\.\s*/i,
+    /^\s*Do NOT wait or ask for confirmation\.\s*/i,
+    /^\s*Implement all parts of the plan, verify it works \(build, run tests\), and write the walkthrough\.\s*/i,
+    /^\s*Do NOT ask the user for permission or confirmation before editing files\.\s*/i,
+    /^\s*Proceed directly with executing the plan, running tests\/verification, and writing the walkthrough\.\s*/i,
+  ];
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const beforeLen = cleaned.length;
+
+    // Strip leading/trailing whitespaces/newlines/carriages
+    cleaned = cleaned.replace(/^\s+/, "");
+
+    // Strip divider lines (e.g. --------------------------------------------------) at the start
+    cleaned = cleaned.replace(/^[-=]{10,}\s*[\r\n]*/, "");
+
+    for (const pattern of patternsToStrip) {
+      const next = cleaned.replace(pattern, "");
+      if (next !== cleaned) {
+        cleaned = next;
+        changed = true;
+      }
+    }
+
+    if (cleaned.length !== beforeLen) {
+      changed = true;
+    }
+  }
+
+  return cleaned.trim();
+}

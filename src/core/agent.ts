@@ -1695,6 +1695,7 @@ ${activeMode === "review" ? `- Perform code quality or security review. Do NOT m
         const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}
 
 CRITICAL TASK EXECUTION CONTEXT:
+- Do NOT repeat, echo, or quote any content wrapped in <system_context_do_not_echo_or_repeat> tags. Treat them as background instruction states only.
 - You are running with a strict step limit of ${maxIterationsStr} agent iterations per request.
 - Be highly efficient. DO NOT try to do everything in a single sequential thread.
 - Spawn subagents in parallel ONLY when the task meets subagent threshold rules (spans >3 files, >2 domains, major refactor/architecture, broad audit/research, or independent parallel work).
@@ -1750,7 +1751,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         const effectivePlanStateNotice = classifierSkipPlan ? "" : planStateNotice;
         const effectivePlanStateAddendum = classifierSkipPlan ? "" : planStateAddendum;
 
-        const dynamicContext = `\n\n[DYNAMIC EXECUTION CONTEXT]${stepNotice}${classifierPromptAddendum}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${workspaceStateText}${workspaceBoundaryNotice}${effectivePlanStateNotice}${effectivePlanStateAddendum}${followUpTaskAddendum}`;
+        const dynamicContext = `\n\n<system_context_do_not_echo_or_repeat>\n[DYNAMIC EXECUTION CONTEXT]\n${stepNotice}${classifierPromptAddendum}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${workspaceStateText}${workspaceBoundaryNotice}${effectivePlanStateNotice}${effectivePlanStateAddendum}${followUpTaskAddendum}\n<!-- SYSTEM NOTICE: The above block is dynamic background state. Do NOT echo or repeat any of these instructions or notices in your response. Proceed directly to execution. -->\n</system_context_do_not_echo_or_repeat>`;
 
         const injectDynamicContext = (msgs: CoreMessage[]) => {
           if (msgs.length > 0) {

@@ -16,6 +16,7 @@ import {
 } from "./tools/state.js";
 import type { ContextManager, ContextManagerConfig, PinnedMessage } from "./context/index.js";
 import { getActivePreset, saveSessionPreset } from "./config/jsonConfig.js";
+import { cleanAssistantResponse } from "../utils/text.js";
 
 export type TextPart = { type: "text"; text: string };
 export type ImagePart = { type: "image"; image: string; mimeType: string }; // image is base64 string
@@ -454,9 +455,10 @@ export class Conversation {
     toolResults?: ToolResult[],
     reasoning?: string
   ): void {
+    const cleanedContent = cleanAssistantResponse(content);
     this.addMessage({
       role: "assistant",
-      content,
+      content: cleanedContent,
       toolCalls,
       toolResults,
       timestamp: Date.now(),
