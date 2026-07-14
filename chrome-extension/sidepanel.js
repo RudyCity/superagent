@@ -405,8 +405,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         if (res.ok) {
           settingsOverlay.classList.remove("active");
-          // Refresh configuration locally
-          fetchServerConfig();
+          // Refresh configuration and sync any newly trusted directories
+          fetchServerConfig(true);
         } else {
           alert("Failed to save settings to server.");
         }
@@ -449,7 +449,7 @@ async function checkServerStatus() {
     if (data.status === "online") {
       if (wasOffline) {
         wasOffline = false;
-        fetchServerConfig();
+        fetchServerConfig(true); // sync workspaces when server comes back online
       }
 
       // Auto populate workspace path if empty and setup screen is active

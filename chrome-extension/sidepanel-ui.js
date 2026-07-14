@@ -704,7 +704,7 @@ function updateSetupRecentWorkspaces() {
 }
 
 // Fetch Server Config
-async function fetchServerConfig() {
+async function fetchServerConfig(syncWorkspaces = false) {
   try {
     const res = await fetch(`${BASE_URL}/api/config`);
     if (!res.ok) return;
@@ -725,8 +725,10 @@ async function fetchServerConfig() {
         settingConcurrency.value = String(data.settings.concurrencyLimit ?? 0);
       }
       
-      // Sync trusted directories from server
-      if (data.trustedDirectories && Array.isArray(data.trustedDirectories)) {
+      // Only sync trusted directories when explicitly requested.
+      // Skipping this during preset changes prevents the workspace list
+      // from re-rendering and visually shuffling on every preset switch.
+      if (syncWorkspaces && data.trustedDirectories && Array.isArray(data.trustedDirectories)) {
         if (typeof syncTrustedWorkspaces === "function") {
           await syncTrustedWorkspaces(data.trustedDirectories);
         }
@@ -1012,7 +1014,9 @@ async function changeActivePreset(selectedId) {
       body: JSON.stringify(configUpdate)
     });
     if (res.ok) {
-      fetchServerConfig();
+      // Do NOT sync workspaces here — preset changes are unrelated to the
+      // workspace list and syncing would cause it to visually shuffle.
+      fetchServerConfig(false);
     }
   } catch (err) {
     console.error("Failed to update preset:", err);
