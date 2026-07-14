@@ -252,3 +252,68 @@ export function cleanAssistantResponse(text: string): string {
 
   return cleaned.trim();
 }
+
+export interface PasteState {
+  isPasted: boolean;
+  pastePrefixLength: number;
+  pasteSuffixLength: number;
+}
+
+export function updatePasteState(
+  input: string,
+  sanitizedVal: string,
+  currentState: PasteState
+): PasteState {
+  const { isPasted, pastePrefixLength, pasteSuffixLength } = currentState;
+  const lengthDiff = sanitizedVal.length - input.length;
+  const containsNewline = sanitizedVal.includes("\n");
+
+  if (isPasted) {
+    const { inserted: oldInserted } = getPasteSplit(input, pastePrefixLength, pasteSuffixLength);
+    const newIdx = sanitizedVal.indexOf(oldInserted);
+    if (newIdx !== -1 && oldInserted.length > 0) {
+      const newlyInsertedStart = newIdx + oldInserted.length;
+      const newlyInsertedEnd = sanitizedVal.length - pasteSuffixLength;
+      const newlyInsertedLength = newlyInsertedEnd - newlyInsertedStart;
+      const newlyInsertedText = sanitizedVal.slice(newlyInsertedStart, newlyInsertedEnd);
+      const isContinuation = newlyInsertedLength > 0 && (newlyInsertedLength > 1 || newlyInsertedText.includes("\n"));
+
+      if (isContinuation) {
+        return {
+          isPasted: true,
+          pastePrefixLength: newIdx,
+          pasteSuffixLength
+        };
+      } else {
+        return {
+          isPasted: true,
+          pastePrefixLength: newIdx,
+          pasteSuffixLength: sanitizedVal.length - (newIdx + oldInserted.length)
+        };
+      }
+    } else {
+      return {
+        isPasted: false,
+        pastePrefixLength: 0,
+        pasteSuffixLength: 0
+      };
+    }
+  } else {
+    if (lengthDiff < 0) {
+      return { isPasted: false, pastePrefixLength: 0, pasteSuffixLength: 0 };
+    } else if (lengthDiff > 15 || containsNewline) {
+      const { prefix, suffix } = getInsertion(input, sanitizedVal);
+      return {
+        isPasted: true,
+        pastePrefixLength: prefix.length,
+        pasteSuffixLength: suffix.length
+      };
+    } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
+      return { isPasted: false, pastePrefixLength: 0, pasteSuffixLength: 0 };
+    } else if (lengthDiff > 0 && lengthDiff <= 15 && !containsNewline) {
+      return { isPasted: false, pastePrefixLength: 0, pasteSuffixLength: 0 };
+    }
+  }
+
+  return currentState;
+}

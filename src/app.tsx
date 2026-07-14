@@ -26,7 +26,7 @@ import { ActiveAgentsList } from "./components/active-agents-list.js";
 import { TaskChecklist } from "./components/task-checklist.js";
 import { HistoryPanel } from "./components/history-panel.js";
 import { execa } from "execa";
-import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences } from "./utils/text.js";
+import { resolveCarriageReturns, formatArgs, formatCompactNumber, filterSuggestions, getInsertion, getPasteSplit, stripSgrMouseSequences, updatePasteState } from "./utils/text.js";
 import { reconstructChatLines } from "./utils/uiHelpers.js";
 import { getTruncatedAssistantIndexes } from "./utils/responseScroll.js";
 import { wrapTextForDisplay } from "./utils/responseScroll.js";
@@ -1127,34 +1127,14 @@ export function App({
   const handleInputChange = useCallback((val: string) => {
     const sanitizedVal = stripSgrMouseSequences(val);
 
-    const lengthDiff = sanitizedVal.length - input.length;
-    const containsNewline = sanitizedVal.includes("\n");
-    if (isPasted) {
-      const { inserted: oldInserted } = getPasteSplit(input, pastePrefixLength, pasteSuffixLength);
-      const newIdx = sanitizedVal.indexOf(oldInserted);
-      if (newIdx !== -1 && oldInserted.length > 0) {
-        // Paste block is intact, update lengths
-        setPastePrefixLength(newIdx);
-        setPasteSuffixLength(sanitizedVal.length - (newIdx + oldInserted.length));
-      } else {
-        // Paste block modified or deleted, clear paste state
-        setIsPasted(false);
-      }
-    } else {
-      if (lengthDiff < 0) {
-        setIsPasted(false);
-      } else if (lengthDiff > 15 || containsNewline) {
-        setIsPasted(true);
-        const { prefix, suffix } = getInsertion(input, sanitizedVal);
-        setPastePrefixLength(prefix.length);
-        setPasteSuffixLength(suffix.length);
-      } else if (sanitizedVal.length === 0 || (sanitizedVal.length <= 200 && !containsNewline)) {
-        setIsPasted(false);
-      } else if (lengthDiff > 0 && lengthDiff <= 15 && !containsNewline) {
-        // Normal typing resumes after paste — clear paste state
-        setIsPasted(false);
-      }
-    }
+    const nextPasteState = updatePasteState(input, sanitizedVal, {
+      isPasted,
+      pastePrefixLength,
+      pasteSuffixLength,
+    });
+    setIsPasted(nextPasteState.isPasted);
+    setPastePrefixLength(nextPasteState.pastePrefixLength);
+    setPasteSuffixLength(nextPasteState.pasteSuffixLength);
     setInput(sanitizedVal);
     if (lastTabPrefix) {
       const suggs = getSuggestions(lastTabPrefix);

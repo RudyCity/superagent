@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.361] - 2026-07-14
+
+### Fixed
+- **Paste Leak Bug Fix**:
+  - Extracted paste state logic to `updatePasteState` helper in `src/utils/text.ts` and added unit tests in `tests/paste.test.ts`.
+  - Fixed an issue where pasted content split across multiple chunks ended up leaking into input suffix/prefix and showing in the console.
+  - Refactored `handleInputChange` in `src/app.tsx` to delegate to `updatePasteState`.
+
 ## [1.2.360] - 2026-07-13
 
 ### Fixed
