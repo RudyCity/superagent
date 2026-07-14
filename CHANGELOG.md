@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.363] - 2026-07-14
+
+### Fixed
+- **Chrome Extension console.error Hook Safety**:
+  - Wrapped chrome-extension/main-world.js console.error interception in safe try-catch blocks to prevent potential JSON.stringify circular structure exceptions and event dispatch failures from interrupting/breaking host web pages.
+
 ## [1.2.362] - 2026-07-14
 
 ### Fixed
