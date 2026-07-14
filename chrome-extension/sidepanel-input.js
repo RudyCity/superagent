@@ -668,10 +668,14 @@ function initInspectHandler() {
           if (results && results[0] && results[0].result) {
             const { tagLabel, selector, description } = results[0].result;
             if (tagLabel) {
-              // Insert a compact tag label at cursor position.
-              // Full CSS selector is appended in parentheses for AI context.
-              const insertLabel = selector && selector !== tagLabel
-                ? `${tagLabel} (selector: ${selector})`
+              // Build the insert label: tag label + selector + description for full AI context.
+              // Example: <button#submit> (selector: #submit, Text: "Login")
+              const parts = [];
+              if (selector && selector !== tagLabel) parts.push(`selector: ${selector}`);
+              if (description) parts.push(description);
+
+              const insertLabel = parts.length > 0
+                ? `${tagLabel} (${parts.join(", ")})`
                 : tagLabel;
 
               const startPos = chatInput.selectionStart;
