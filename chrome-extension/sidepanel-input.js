@@ -556,6 +556,39 @@ function initInspectHandler() {
                 return `Tag: <${el.tagName.toLowerCase()}>`;
               }
 
+              // Build a compact tag label like <button#submit.btn> or <input[type=email]>
+              function buildTagLabel(el) {
+                const tag = el.tagName.toLowerCase();
+                let label = "<" + tag;
+
+                // Append id if present and unique
+                if (el.id && el.id.trim()) {
+                  label += "#" + el.id.trim();
+                }
+
+                // Append up to 2 meaningful classes (skip utility/superagent internal classes)
+                const classes = Array.from(el.classList || [])
+                  .filter(c => !c.startsWith("__superagent") && c.trim().length > 0)
+                  .slice(0, 2);
+                if (classes.length > 0) {
+                  label += "." + classes.join(".");
+                }
+
+                // Append key attribute for inputs/buttons/links
+                if (el.type && el.tagName === "INPUT") {
+                  label += `[type=${el.type}]`;
+                } else if (el.href && el.tagName === "A") {
+                  const href = el.getAttribute("href") || "";
+                  const short = href.length > 20 ? href.slice(0, 17) + "…" : href;
+                  label += `[href="${short}"]`;
+                } else if (el.name && !el.id) {
+                  label += `[name="${el.name}"]`;
+                }
+
+                label += ">";
+                return label;
+              }
+
               const onMouseOver = (e) => {
                 const el = e.target;
                 if (el === tooltip || el.closest(`#${tooltipId}`) || el.tagName === "HTML" || el.tagName === "BODY") return;
@@ -568,9 +601,9 @@ function initInspectHandler() {
                   currentEl.classList.add(outlineClass);
                 }
 
-                const selector = getUniqueSelector(el);
+                const tagLabel = buildTagLabel(el);
                 const desc = getElementDescription(el);
-                tooltip.innerHTML = `<div style="font-weight: bold; margin-bottom: 2px;">${selector}</div><div style="opacity: 0.85;">${desc}</div>`;
+                tooltip.innerHTML = `<div style="font-weight: bold; margin-bottom: 2px; font-family: monospace;">${tagLabel}</div><div style="opacity: 0.85;">${desc}</div>`;
                 
                 const padding = 10;
                 let left = e.clientX + padding;
@@ -592,9 +625,10 @@ function initInspectHandler() {
                 e.stopPropagation();
                 cleanup();
                 if (currentEl) {
+                  const tagLabel = buildTagLabel(currentEl);
                   const selector = getUniqueSelector(currentEl);
                   const desc = getElementDescription(currentEl);
-                  resolve({ selector, description: desc });
+                  resolve({ tagLabel, selector, description: desc });
                 } else {
                   resolve(null);
                 }
@@ -632,16 +666,20 @@ function initInspectHandler() {
           inspectBtn.style.opacity = "1";
 
           if (results && results[0] && results[0].result) {
-            const { selector, description } = results[0].result;
-            if (selector) {
-              // Insert selector at current cursor position in chatInput
+            const { tagLabel, selector, description } = results[0].result;
+            if (tagLabel) {
+              // Insert a compact tag label at cursor position.
+              // Full CSS selector is appended in parentheses for AI context.
+              const insertLabel = selector && selector !== tagLabel
+                ? `${tagLabel} (selector: ${selector})`
+                : tagLabel;
+
               const startPos = chatInput.selectionStart;
               const endPos = chatInput.selectionEnd;
               const originalText = chatInput.value;
               
-              const insertText = originalText.substring(0, startPos).endsWith(" ") || startPos === 0
-                ? selector
-                : " " + selector;
+              const needsSpace = startPos > 0 && !originalText.substring(0, startPos).endsWith(" ");
+              const insertText = (needsSpace ? " " : "") + insertLabel;
 
               chatInput.value = originalText.substring(0, startPos) +
                                insertText +
