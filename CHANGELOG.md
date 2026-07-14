@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.362] - 2026-07-14
+
+### Fixed
+- **Failing Payload Too Large Retry Test**:
+  - Appended a question mark to the mock success texts and assertions in tests/agentPayloadTooLargeRetry.test.ts to prevent the agent from classifying the mock response as planning narration and triggering the auto-continue loop.
+
 ## [1.2.361] - 2026-07-14
 
 ### Fixed

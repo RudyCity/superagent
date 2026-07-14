@@ -75,7 +75,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
         // Succeed on retry
         return {
           fullStream: (async function* () {
-            yield { type: "text-delta", textDelta: "Success after compaction" };
+            yield { type: "text-delta", textDelta: "Success after compaction?" };
           })(),
           usage: Promise.resolve({ promptTokens: 10, completionTokens: 5 }),
         } as any;
@@ -88,7 +88,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true, undefined, expect.any(Number));
       expect(delaySpy).toHaveBeenCalledWith(1, 1000, expect.anything());
 
-      const successDelta = onEvent.mock.calls.some((call) => call[0].content === "Success after compaction");
+      const successDelta = onEvent.mock.calls.some((call) => call[0].content === "Success after compaction?");
       expect(successDelta).toBe(true);
     });
   });
@@ -121,7 +121,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
           throw new Error("Payload Too Large (status: 413) - response body snippet: Request entity too large");
         }
         return {
-          text: "Success after compaction",
+          text: "Success after compaction?",
           usage: { promptTokens: 10, completionTokens: 5 },
         } as any;
       });
@@ -133,7 +133,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true, undefined, expect.any(Number));
       expect(delaySpy).toHaveBeenCalledWith(1, 1000, expect.anything());
 
-      const successDelta = onEvent.mock.calls.some((call) => call[0].content === "Success after compaction");
+      const successDelta = onEvent.mock.calls.some((call) => call[0].content === "Success after compaction?");
       expect(successDelta).toBe(true);
     });
   });
