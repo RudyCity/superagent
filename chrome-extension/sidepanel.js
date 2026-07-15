@@ -1,5 +1,5 @@
 const BASE_URL = "http://localhost:7888";
-const MAX_SAVED_WORKSPACES = 10;
+const MAX_SAVED_WORKSPACES = 100;
 
 let eventSource = null;
 let currentAgentMessageElement = null;

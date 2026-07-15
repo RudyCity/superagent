@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.370] - 2026-07-15
+
+### Fixed
+- **Workspace Truncation Bug in Chrome Extension**:
+  - Increased `MAX_SAVED_WORKSPACES` limit from 10 to 100 in `sidepanel.js` to prevent the workspaces list from being truncated/sliced to 10 when switching or saving workspaces.
+
 ## [1.2.369] - 2026-07-15
 
 ### Added
