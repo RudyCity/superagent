@@ -75,7 +75,7 @@ const pendingPermissions = new Map<string, (approval: boolean | "session") => vo
 const pendingQuestions = new Map<string, (answer: any) => void>();
 const pendingBrowserControls = new Map<string, { resolve: (val: string) => void, reject: (err: any) => void }>();
 
-setBrowserControlHandler((action, target, value) => {
+function executeBrowserControlOnClient(action: string, target: string, value?: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const controlId = Math.random().toString(36).substring(2, 9);
     pendingBrowserControls.set(controlId, { resolve, reject });
@@ -84,9 +84,13 @@ setBrowserControlHandler((action, target, value) => {
       controlId,
       action,
       target,
-      value
+      value: value ?? ""
     });
   });
+}
+
+setBrowserControlHandler((action, target, value) => {
+  return executeBrowserControlOnClient(action, target, value);
 });
 
 function broadcastEvent(event: any) {
@@ -585,6 +589,47 @@ export async function runServer(port: number, silent = false) {
           sendJSON(res, 200, { success: true });
         } else {
           sendJSON(res, 404, { error: "Browser control request not found" });
+        }
+        return;
+      }
+
+      // Vision Elements Detection via UI-DETR-1
+      if (pathname === "/api/browser/detect-ui" && req.method === "POST") {
+        try {
+          const bodyStr = await readBody(req);
+          const body = JSON.parse(bodyStr || "{}");
+          const threshold = parseFloat(body.threshold ?? "0.35");
+          
+          const screenshotResult = await executeBrowserControlOnClient("screenshot", "", "");
+          if (screenshotResult.includes("Error") || screenshotResult.includes("failed")) {
+            sendJSON(res, 500, { error: `Failed to capture screenshot: ${screenshotResult}` });
+            return;
+          }
+          
+          let screenshotPath: string;
+          let screenshotBase64: string = "";
+          
+          const wsPath = resolveWorkspacePath(req);
+          
+          if (screenshotResult.startsWith("data:image/png;base64,")) {
+            screenshotBase64 = screenshotResult.replace(/^data:image\/png;base64,/, "");
+            const os = await import("os");
+            const tmpPath = path.join(os.tmpdir(), "sa_detect_ui.png");
+            fs.writeFileSync(tmpPath, screenshotBase64, "base64");
+            screenshotPath = tmpPath;
+          } else {
+            const match = screenshotResult.match(/Screenshot saved to workspace at: (.+)/);
+            screenshotPath = match ? match[1].trim() : path.join(wsPath, "chrome_screenshot.png");
+          }
+          
+          const scriptPath = path.join(process.cwd(), "scripts", "detect_ui.py");
+          const { execa } = await import("execa");
+          const { stdout } = await execa("python", [scriptPath, "--image", screenshotPath, "--threshold", String(threshold)]);
+          const data = JSON.parse(stdout);
+          
+          sendJSON(res, 200, { elements: data.elements ?? [], screenshotBase64 });
+        } catch (err: any) {
+          sendJSON(res, 500, { error: err.message });
         }
         return;
       }

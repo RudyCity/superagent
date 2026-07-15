@@ -98,6 +98,12 @@
           <button id="tab-macros" class="tab-btn w-10 h-10 flex items-center justify-center rounded-md cursor-pointer transition-colors text-vscode-muted hover:text-vscode-light relative" title="Browser Macros">
             <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg>
           </button>
+
+          <!-- Vision Tab -->
+          <button id="tab-vision" class="tab-btn w-10 h-10 flex items-center justify-center rounded-md cursor-pointer transition-colors text-vscode-muted hover:text-vscode-light relative" title="Vision Detection">
+            <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+            <span id="vision-nav-badge" class="hidden absolute top-1 right-1 w-2 h-2 bg-amber-warning rounded-full"></span>
+          </button>
         </div>
       </aside>
 
@@ -140,6 +146,29 @@
           </div>
           <div id="macros-list" class="flex-1 overflow-y-auto p-1.5 flex flex-col gap-1.5">
             <div class="p-3 text-center text-vscode-muted text-[11px]">No macros saved yet</div>
+          </div>
+        </div>
+
+        <!-- Tab Content View: Vision -->
+        <div id="view-vision" class="tab-view flex-1 flex flex-col overflow-hidden hidden">
+          <div class="px-3 py-1.5 bg-vscode-inner border-b border-vscode-dim shrink-0 flex justify-between items-center gap-1">
+            <span class="text-[10px] font-bold text-vscode-muted uppercase tracking-wider">UI Vision</span>
+            <div class="flex items-center gap-1">
+              <button id="btn-vision-detect" class="btn btn-primary text-[9px] px-2 py-0.5 cursor-pointer h-5">Detect</button>
+              <button id="btn-vision-clear" class="btn btn-secondary text-[9px] px-1.5 py-0.5 cursor-pointer h-5">Clear</button>
+            </div>
+          </div>
+          <div class="px-2 py-1.5 border-b border-vscode-dim shrink-0 flex items-center gap-2">
+            <span class="text-[9px] text-vscode-muted">Confidence:</span>
+            <input id="vision-threshold" type="range" min="10" max="90" value="35" class="flex-1 h-1 accent-vscode-blue cursor-pointer">
+            <span id="vision-threshold-val" class="text-[9px] font-mono text-vscode-light w-8 text-right">0.35</span>
+          </div>
+          <div id="vision-screenshot-container" class="relative overflow-hidden shrink-0 bg-vscode-inner border-b border-vscode-dim" style="min-height:80px;max-height:160px;">
+            <div id="vision-screenshot-empty" class="flex items-center justify-center h-[80px] text-[10px] text-vscode-muted select-none">No screenshot yet</div>
+            <canvas id="vision-canvas" class="hidden w-full" style="image-rendering:pixelated;"></canvas>
+          </div>
+          <div id="vision-elements-list" class="flex-1 overflow-y-auto p-1.5 flex flex-col gap-1">
+            <div id="vision-elements-empty" class="p-3 text-center text-vscode-muted text-[11px]">Run detection to see elements</div>
           </div>
         </div>
       </aside>
@@ -479,5 +508,6 @@
   <script src="sidepanel-monitor.js"></script>
   <script src="sidepanel-input.js"></script>
   <script src="sidepanel-explorer.js"></script>
+  <script src="sidepanel-vision.js"></script>
 </body>
 </html>

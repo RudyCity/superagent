@@ -1698,7 +1698,7 @@ export function setBrowserControlHandler(handler: typeof browserControlHandler) 
 
 export const controlBrowserTabTool: Tool = {
   name: "control_browser_tab",
-  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (guides the user to click manually for stealth), type, navigate, scroll, screenshot, detect_ui (runs UI-DETR-1 to detect UI elements and coordinates), errors, text, hover, keypress, wait, html, reload, back, forward, open, close, list, switch, duplicate, pin, unpin, mute, unmute, move, group, ungroup, discard, new_window, close_window, top_sites (get top visited sites), reading_list_add (add reading list), reading_list_remove (remove reading list), reading_list_get (get reading list), group_update (update group title/color), group_get (get group info), history_search (search history), history_delete (delete URL from history), history_clear (clear all history), management_list (list extensions), management_get (get extension details).",
+  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (guides the user to click manually for stealth), type, navigate, scroll, screenshot, detect_ui (runs UI-DETR-1 to detect UI elements and coordinates), errors, text, hover, keypress, wait, html, reload, back, forward, open, close, list, switch, duplicate, pin, unpin, mute, unmute, move, group, ungroup, discard, new_window, close_window, top_sites (get top visited sites), reading_list_add (add reading list), reading_list_remove (remove reading list), reading_list_get (get reading list), group_update (update group title/color), group_get (get group info), history_search (search history), history_delete (delete URL from history), history_clear (clear all history), management_list (list extensions), management_get (get extension details), show_detections (shows visual bounding boxes), hide_detections (hides bounding boxes), dom_info (gets DOM info for coordinates).",
   parameters: {
     type: "object",
     properties: {
@@ -1707,13 +1707,14 @@ export const controlBrowserTabTool: Tool = {
         enum: [
           "click", "type", "navigate", "scroll", "screenshot", "detect_ui", "errors", "text", "hover", "keypress", "wait", "html", "reload", "back", "forward",
           "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window",
-          "top_sites", "reading_list_add", "reading_list_remove", "reading_list_get", "group_update", "group_get", "history_search", "history_delete", "history_clear", "management_list", "management_get"
+          "top_sites", "reading_list_add", "reading_list_remove", "reading_list_get", "group_update", "group_get", "history_search", "history_delete", "history_clear", "management_list", "management_get",
+          "show_detections", "hide_detections", "dom_info"
         ],
         description: "The browser action to execute."
       },
       target: {
         type: "string",
-        description: "CSS selector, destination URL, tab/window/group/extension ID, comma-separated tab IDs, or history search query. Required for click, type, navigate, scroll, hover, keypress, wait, switch, move, group, ungroup, reading_list_add, reading_list_remove, group_update, history_delete, and management_get."
+        description: "CSS selector, destination URL, tab/window/group/extension ID, comma-separated tab IDs, or history search query. Required for click, type, navigate, scroll, hover, keypress, wait, switch, move, group, ungroup, reading_list_add, reading_list_remove, group_update, history_delete, management_get, show_detections, and dom_info."
       },
       value: {
         type: "string",
@@ -1726,17 +1727,26 @@ export const controlBrowserTabTool: Tool = {
     if (!browserControlHandler) {
       return "Error: Browser control handler is not active. Please launch the Superagent Chrome Extension and connect to activate browser control.";
     }
+    const handler = browserControlHandler!;
     const action = args.action as string;
-    if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get"].includes(action) && !args.target) {
+    if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get", "show_detections", "dom_info"].includes(action) && !args.target) {
       return `Error: Target parameter is required for action "${action}".`;
     }
     if (action === "detect_ui") {
       try {
-        const screenshotResult = await browserControlHandler("screenshot", "", "");
+        const screenshotResult = await handler("screenshot", "", "");
         if (screenshotResult.includes("Error") || screenshotResult.includes("failed")) {
           return `Failed to capture screenshot for detection: ${screenshotResult}`;
         }
-        const screenshotPath = path.join(cwd, "chrome_screenshot.png");
+        let screenshotPath: string;
+        if (screenshotResult.startsWith("data:image/png;base64,")) {
+          const base64Data = screenshotResult.replace(/^data:image\/png;base64,/, "");
+          screenshotPath = path.join(cwd, "chrome_screenshot.png");
+          await fs.writeFile(screenshotPath, Buffer.from(base64Data, "base64"));
+        } else {
+          const match = screenshotResult.match(/Screenshot saved to workspace at: (.+)/);
+          screenshotPath = match ? match[1].trim() : path.join(cwd, "chrome_screenshot.png");
+        }
         const scriptPath = path.join(cwd, "scripts", "detect_ui.py");
         const threshold = args.value ? parseFloat(String(args.value)) : 0.35;
         const { stdout } = await execa("python", [scriptPath, "--image", screenshotPath, "--threshold", String(isNaN(threshold) ? 0.35 : threshold)]);
@@ -1748,11 +1758,33 @@ export const controlBrowserTabTool: Tool = {
           if (data.elements.length === 0) {
             return "UI Detection finished: No elements detected on the page.";
           }
-          let responseStr = "Detected UI elements (use click/type/hover with target='X,Y'):\n";
-          for (const el of data.elements) {
+          // Auto show overlay in browser (non-fatal)
+          try {
+            await handler("show_detections", JSON.stringify(data.elements), "");
+          } catch (_) {}
+
+          // DOM reconciliation: enrich each detected element with live DOM info
+          const enriched = await Promise.all(
+            data.elements.map(async (el: any) => {
+              try {
+                const [cx, cy] = el.center;
+                const domRaw = await handler("dom_info", `${cx},${cy}`, "");
+                const dom = JSON.parse(domRaw);
+                return { ...el, dom };
+              } catch {
+                return el;
+              }
+            })
+          );
+
+          let responseStr = "Detected UI elements (coordinate or CSS selector):\n";
+          for (const el of enriched) {
             const [cx, cy] = el.center;
-            const [xmin, ymin, xmax, ymax] = el.box;
-            responseStr += `- ${el.label} at coordinate ${cx},${cy} (box: [${xmin}, ${ymin}, ${xmax}, ${ymax}], confidence: ${el.score})\n`;
+            const score = Math.round(el.score * 100);
+            const coordHint = `${cx},${cy}`;
+            const selectorHint = el.dom?.id ? ` | #${el.dom.id}` : el.dom?.selector ? ` | ${el.dom.selector}` : "";
+            const ariaHint = el.dom?.ariaLabel ? ` | aria: "${el.dom.ariaLabel}"` : el.dom?.innerText ? ` | text: "${el.dom.innerText.slice(0, 30)}"` : "";
+            responseStr += `- ${el.label} @ ${coordHint}${selectorHint}${ariaHint} (${score}%)\n`;
           }
           return responseStr.trim();
         }
@@ -1762,7 +1794,7 @@ export const controlBrowserTabTool: Tool = {
       }
     }
     try {
-      const result = await browserControlHandler(action, args.target as string, args.value as string);
+      const result = await handler(action, args.target as string, args.value as string);
       return result;
     } catch (err: any) {
       return `Browser control failed: ${err.message || String(err)}`;

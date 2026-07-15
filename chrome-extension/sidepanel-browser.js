@@ -475,6 +475,117 @@ async function executeBrowserControl(controlId, action, target, value) {
       return;
     }
 
+    if (action === "show_detections") {
+      try {
+        chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          args: [target],
+          func: (elementsJson) => {
+            try {
+              const elements = JSON.parse(elementsJson);
+              const existing = document.getElementById("__sa_detr_overlay__");
+              if (existing) existing.remove();
+
+              const overlay = document.createElement("div");
+              overlay.id = "__sa_detr_overlay__";
+              overlay.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483646;";
+              document.body.appendChild(overlay);
+
+              const COLORS = {
+                button: "#4285F4", input: "#34A853", select: "#FBBC05",
+                checkbox: "#EA4335", link: "#9C27B0", text: "#00BCD4",
+                image: "#FF5722", default: "#607D8B"
+              };
+
+              elements.forEach((el) => {
+                const [x1, y1, x2, y2] = el.box;
+                const color = COLORS[el.label] || COLORS.default;
+                const box = document.createElement("div");
+                box.style.cssText = `position:fixed;left:${x1}px;top:${y1}px;width:${x2-x1}px;height:${y2-y1}px;border:2px solid ${color};box-sizing:border-box;pointer-events:none;`;
+                
+                const label = document.createElement("div");
+                label.style.cssText = `position:absolute;top:-18px;left:0;background:${color};color:white;font-size:10px;font-family:monospace;padding:1px 4px;white-space:nowrap;border-radius:2px 2px 0 0;`;
+                label.textContent = `${el.label} ${Math.round(el.score * 100)}%`;
+                box.appendChild(label);
+                overlay.appendChild(box);
+              });
+            } catch(e) {}
+          }
+        }, () => {
+          sendBrowserResult(controlId, "Detection overlay shown", false);
+        });
+      } catch (err) {
+        sendBrowserResult(controlId, `Error: show_detections failed: ${err.message}`, true);
+      }
+      return;
+    }
+
+    if (action === "hide_detections") {
+      try {
+        chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          func: () => {
+            const el = document.getElementById("__sa_detr_overlay__");
+            if (el) el.remove();
+          }
+        }, () => {
+          sendBrowserResult(controlId, "Detection overlay hidden", false);
+        });
+      } catch (err) {
+        sendBrowserResult(controlId, `Error: hide_detections failed: ${err.message}`, true);
+      }
+      return;
+    }
+
+    if (action === "dom_info") {
+      try {
+        chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          args: [target],
+          func: (coordStr) => {
+            const [x, y] = coordStr.split(",").map(Number);
+            const el = document.elementFromPoint(x, y);
+            if (!el) return JSON.stringify({ found: false });
+            
+            function buildSelector(node) {
+              if (node.id) return "#" + node.id;
+              if (node.getAttribute?.("data-testid")) return `[data-testid="${node.getAttribute("data-testid")}"]`;
+              if (node.name && ["INPUT","SELECT","TEXTAREA"].includes(node.tagName)) return `${node.tagName.toLowerCase()}[name="${node.name}"]`;
+              const parts = [];
+              let cur = node;
+              while (cur && cur !== document.body) {
+                let idx = 1, sib = cur.previousElementSibling;
+                while (sib) { if (sib.tagName === cur.tagName) idx++; sib = sib.previousElementSibling; }
+                parts.unshift(`${cur.tagName.toLowerCase()}:nth-of-type(${idx})`);
+                cur = cur.parentElement;
+              }
+              return parts.join(" > ");
+            }
+            
+            return JSON.stringify({
+              found: true,
+              tagName: el.tagName,
+              id: el.id || null,
+              ariaLabel: el.getAttribute("aria-label") || null,
+              placeholder: el.getAttribute("placeholder") || null,
+              innerText: (el.innerText || "").slice(0, 80).trim(),
+              selector: buildSelector(el),
+              isClickable: ["A","BUTTON","INPUT","SELECT","TEXTAREA"].includes(el.tagName) || el.getAttribute("role") === "button"
+            });
+          }
+        }, (results) => {
+          if (chrome.runtime.lastError) {
+            sendBrowserResult(controlId, JSON.stringify({ found: false, error: chrome.runtime.lastError.message }), false);
+            return;
+          }
+          sendBrowserResult(controlId, results?.[0]?.result ?? JSON.stringify({ found: false }), false);
+        });
+      } catch (err) {
+        sendBrowserResult(controlId, JSON.stringify({ found: false, error: err.message }), false);
+      }
+      return;
+    }
+
     try {
       chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
@@ -1076,6 +1187,18 @@ async function executeBrowserControl(controlId, action, target, value) {
 
             if (act === "click") {
               showBanner(`Clicking element ${tgt}...`);
+              // Orange highlight ring before click
+              const highlightRing = document.createElement("div");
+              const targetRect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+              if (targetRect) {
+                const pad = 3;
+                highlightRing.style.cssText = `position:fixed;left:${targetRect.left-pad}px;top:${targetRect.top-pad}px;width:${targetRect.width+pad*2}px;height:${targetRect.height+pad*2}px;border:3px solid #FF6B35;border-radius:4px;pointer-events:none;z-index:2147483645;box-shadow:0 0 0 2px rgba(255,107,53,0.3);transition:opacity 0.2s;`;
+                document.body.appendChild(highlightRing);
+                setTimeout(() => {
+                  highlightRing.style.opacity = "0";
+                  setTimeout(() => highlightRing.remove(), 220);
+                }, 420);
+              }
               await animateCursorTo(cursorTarget);
 
               // Small delay to simulate human hover before click

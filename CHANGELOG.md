@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.2.365] - 2026-07-15
+
+### Added
+- **Interactive Vision Panel in Chrome Extension Sidebar** (#2):
+  - Added a dedicated "Vision" tab to the extension sidebar that renders the active tab's screenshot on a canvas.
+  - Automatically draws bounding boxes with category labels and confidence percentages directly over the visual elements.
+  - Added an interactive element list next to the canvas showing coordinates and labels, with click-to-trigger coordinate automation.
+  - Placed a confidence threshold slider in the panel to live-filter detections.
+- **On-Page Bounding Box Overlay** (#1):
+  - Added `show_detections` action to inject a high-priority, absolute-positioned canvas overlay in the active page DOM, displaying color-coded borders and tags over detected components.
+- **Pre-Click Visual Element Highlight** (#4):
+  - Injected an orange animated highlight ring that flashes around coordinate click targets for 400ms before triggering events, improving user visibility.
+- **Auto-Detect Navigation Trigger** (#5):
+  - Added `webNavigation.onCompleted` listener in `background.js` to broadcast main frame loads.
+  - Injected a visual alert dot badge on the Vision tab button, warning when the current screenshot is out of date.
+- **DOM-to-Vision Reconciliation** (#6):
+  - Added `dom_info` action that queries elements at coordinate targets using `document.elementFromPoint()`.
+  - Automatically parses unique CSS selectors (using data-testid, IDs, input tags, or nth-of-type paths) and merges them with coordinate predictions in `detect_ui` outputs.
+- **Base64 Screenshot Handling** (#3):
+  - Enhanced `detect_ui` backend logic to natively support base64 PNG dataURLs and write them directly, eliminating hardcoded filesystem dependencies.
+
 ## [1.2.364] - 2026-07-15
 
 ### Added

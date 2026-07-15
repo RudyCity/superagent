@@ -43,17 +43,28 @@ describe("detect_ui action — controlBrowserTabTool", () => {
       "../src/core/tools/otherTools.js"
     );
 
-    const mockHandler = vi.fn().mockResolvedValue(
-      "Screenshot saved to workspace at: " + path.join(tmpDir, "chrome_screenshot.png")
-    );
+    const mockHandler = vi.fn().mockImplementation(async (action, target, value) => {
+      if (action === "screenshot") {
+        return "Screenshot saved to workspace at: " + path.join(tmpDir, "chrome_screenshot.png");
+      }
+      if (action === "dom_info") {
+        if (target === "45,35") {
+          return JSON.stringify({ found: true, id: "my-id" });
+        }
+        if (target === "200,115") {
+          return JSON.stringify({ found: true, selector: "div > input" });
+        }
+      }
+      return "OK";
+    });
     setBrowserControlHandler(mockHandler);
 
     const result = await controlBrowserTabTool.execute({ action: "detect_ui" }, tmpDir, undefined);
 
     expect(typeof result).toBe("string");
     expect(result).toContain("Detected UI elements");
-    expect(result).toContain("button at coordinate 45,35");
-    expect(result).toContain("input at coordinate 200,115");
+    expect(result).toContain("button @ 45,35 | #my-id (92%)");
+    expect(result).toContain("input @ 200,115 | div > input (85%)");
   });
 
   it("returns no-elements message when model finds nothing", async () => {
@@ -64,9 +75,12 @@ describe("detect_ui action — controlBrowserTabTool", () => {
       "../src/core/tools/otherTools.js"
     );
 
-    const mockHandler = vi.fn().mockResolvedValue(
-      "Screenshot saved to workspace at: " + path.join(tmpDir, "chrome_screenshot.png")
-    );
+    const mockHandler = vi.fn().mockImplementation(async (action) => {
+      if (action === "screenshot") {
+        return "Screenshot saved to workspace at: " + path.join(tmpDir, "chrome_screenshot.png");
+      }
+      return "OK";
+    });
     setBrowserControlHandler(mockHandler);
 
     const result = await controlBrowserTabTool.execute({ action: "detect_ui" }, tmpDir, undefined);

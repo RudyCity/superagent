@@ -102,11 +102,13 @@ const btnSaveSettings = document.getElementById("btn-save-settings");
 const tabWorkspace = document.getElementById("tab-workspace");
 const tabHistory = document.getElementById("tab-history");
 const tabMacros = document.getElementById("tab-macros");
+const tabVision = document.getElementById("tab-vision");
 
 const viewWorkspace = document.getElementById("view-workspace");
 const viewChat = document.getElementById("view-chat");
 const viewHistory = document.getElementById("view-history");
 const viewMacros = document.getElementById("view-macros");
+const viewVision = document.getElementById("view-vision");
 
 const btnRefreshHistory = document.getElementById("btn-refresh-history-sidebar");
 const modelPresetSelect = document.getElementById("model-preset");
@@ -434,10 +436,16 @@ document.addEventListener("DOMContentLoaded", () => {
   if (tabWorkspace) tabWorkspace.addEventListener("click", () => handleSidebarTabClick("workspace"));
   if (tabHistory) tabHistory.addEventListener("click", () => handleSidebarTabClick("history"));
   if (tabMacros) tabMacros.addEventListener("click", () => handleSidebarTabClick("macros"));
+  if (tabVision) tabVision.addEventListener("click", () => handleSidebarTabClick("vision"));
 
 
   // Document Refresh Listeners
   if (btnRefreshHistory) btnRefreshHistory.addEventListener("click", loadChatHistorySessions);
+
+  // Initialize UI Vision panel controller
+  if (typeof initVisionPanel === "function") {
+    initVisionPanel();
+  }
 
 });
 
@@ -1411,11 +1419,13 @@ function switchSidebarTab(tabId) {
   if (tabWorkspace) tabWorkspace.classList.remove("active");
   if (tabHistory) tabHistory.classList.remove("active");
   if (tabMacros) tabMacros.classList.remove("active");
+  if (tabVision) tabVision.classList.remove("active");
   
   // Hide all sidebar views
   if (viewWorkspace) viewWorkspace.classList.add("hidden");
   if (viewHistory) viewHistory.classList.add("hidden");
   if (viewMacros) viewMacros.classList.add("hidden");
+  if (viewVision) viewVision.classList.add("hidden");
   
   if (tabId === "workspace") {
     if (tabWorkspace) tabWorkspace.classList.add("active");
@@ -1434,12 +1444,17 @@ function switchSidebarTab(tabId) {
     if (sidebarTitle) sidebarTitle.textContent = "Browser Macros";
     activeSidebarTab = "macros";
     loadBrowserMacrosList();
+  } else if (tabId === "vision") {
+    if (tabVision) tabVision.classList.add("active");
+    if (viewVision) viewVision.classList.remove("hidden");
+    if (sidebarTitle) sidebarTitle.textContent = "UI Vision";
+    activeSidebarTab = "vision";
   }
 }
 
 function handleSidebarTabClick(tabId) {
   const leftSidebar = document.getElementById("left-sidebar");
-  const tabButton = tabId === "workspace" ? tabWorkspace : tabId === "history" ? tabHistory : tabMacros;
+  const tabButton = tabId === "workspace" ? tabWorkspace : tabId === "history" ? tabHistory : tabId === "macros" ? tabMacros : tabVision;
   
   if (leftSidebar && !leftSidebar.classList.contains("hidden") && activeSidebarTab === tabId) {
     // Toggle off
@@ -1460,6 +1475,7 @@ function switchTab(tabId) {
     if (tabWorkspace) tabWorkspace.classList.remove("active");
     if (tabHistory) tabHistory.classList.remove("active");
     if (tabMacros) tabMacros.classList.remove("active");
+    if (tabVision) tabVision.classList.remove("active");
   } else {
     switchSidebarTab(tabId);
   }
@@ -1565,6 +1581,15 @@ function updateCurrentTabInfo() {
 if (typeof chrome !== "undefined" && chrome.tabs) {
   chrome.tabs.onActivated.addListener(updateCurrentTabInfo);
   chrome.tabs.onUpdated.addListener(updateCurrentTabInfo);
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === "PAGE_NAVIGATION_COMPLETE") {
+      window.__lastNavigationUrl = message.url;
+      const badge = document.getElementById("vision-nav-badge");
+      const visionBtn = document.getElementById("tab-vision");
+      if (badge) badge.classList.remove("hidden");
+      if (visionBtn) visionBtn.title = "Vision — Page changed, re-detect recommended";
+    }
+  });
   // Also run initially
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
