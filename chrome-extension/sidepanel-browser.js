@@ -1,6 +1,7 @@
 let isTabLocked = false;
 let originalTabId = null;
 let originalWindowId = null;
+const activeChains = new Map();
 
 // Execute browser automation control
 async function executeBrowserControl(controlId, action, target, value) {
@@ -586,6 +587,71 @@ async function executeBrowserControl(controlId, action, target, value) {
       return;
     }
 
+    if (action === "highlight_element") {
+      try {
+        chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          args: [target],
+          func: (targetCoord) => {
+            const existing = document.querySelectorAll(".__sa_hover_highlight__");
+            existing.forEach(el => el.remove());
+            
+            if (targetCoord === "clear" || !targetCoord) return;
+            
+            const [x, y] = targetCoord.split(",").map(Number);
+            if (isNaN(x) || isNaN(y)) return;
+            
+            const el = document.elementFromPoint(x, y);
+            if (!el) return;
+            
+            const rect = el.getBoundingClientRect();
+            const highlight = document.createElement("div");
+            highlight.className = "__sa_hover_highlight__";
+            highlight.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;border:3px dashed #FFBC05;background-color:rgba(251,188,5,0.15);box-sizing:border-box;pointer-events:none;z-index:2147483645;transition:all 0.15s ease-out;`;
+            document.body.appendChild(highlight);
+          }
+        }, () => {
+          sendBrowserResult(controlId, "Element highlighted", false);
+        });
+      } catch (err) {
+        sendBrowserResult(controlId, `Error: highlight_element failed: ${err.message}`, true);
+      }
+      return;
+    }
+
+    if (action === "execute_chain") {
+      try {
+        const steps = JSON.parse(target);
+        if (!Array.isArray(steps)) throw new Error("Steps must be a JSON array");
+        
+        const runNextStep = async (idx) => {
+          if (idx >= steps.length) {
+            sendBrowserResult(controlId, "Chain executed successfully", false);
+            return;
+          }
+          const step = steps[idx];
+          const stepControlId = `chain-step-${controlId}-${idx}`;
+          
+          activeChains.set(stepControlId, async (result, isError) => {
+            activeChains.delete(stepControlId);
+            if (isError) {
+              sendBrowserResult(controlId, `Chain failed at step ${idx} (${step.action}): ${result}`, true);
+            } else {
+              await new Promise(r => setTimeout(r, 250));
+              runNextStep(idx + 1);
+            }
+          });
+          
+          executeBrowserControl(stepControlId, step.action, step.target, step.value || "");
+        };
+        
+        runNextStep(0);
+      } catch (err) {
+        sendBrowserResult(controlId, `Chain parsing failed: ${err.message}`, true);
+      }
+      return;
+    }
+
     try {
       chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
@@ -1161,15 +1227,29 @@ async function executeBrowserControl(controlId, action, target, value) {
               return el.innerText || "";
             }
 
-            // Resolve target selector or coordinate
-            const coordMatch = typeof tgt === "string" && tgt.match(/^(\d+),(\d+)$/);
+            // Resolve target selector or coordinate (with optional fallback selector separated by |)
+            const coordMatch = typeof tgt === "string" && tgt.match(/^(\d+),(\d+)(?:\|(.+))?$/);
             let el, clientX, clientY;
             let cursorTarget;
 
             if (coordMatch) {
               clientX = parseInt(coordMatch[1], 10);
               clientY = parseInt(coordMatch[2], 10);
+              const selectorBackup = coordMatch[3];
+              
               el = document.elementFromPoint(clientX, clientY);
+              
+              // Smart fallback: if element is null/body/html and we have a backup selector
+              if ((!el || el === document.body || el === document.documentElement) && selectorBackup) {
+                const fallbackEl = document.querySelector(selectorBackup);
+                if (fallbackEl) {
+                  el = fallbackEl;
+                  const rect = el.getBoundingClientRect();
+                  clientX = rect.left + rect.width / 2;
+                  clientY = rect.top + rect.height / 2;
+                }
+              }
+              
               if (!el) {
                 el = document.body;
               }
@@ -1333,6 +1413,11 @@ async function executeBrowserControl(controlId, action, target, value) {
 }
 
 async function sendBrowserResult(controlId, result, isError) {
+  if (activeChains.has(controlId)) {
+    const callback = activeChains.get(controlId);
+    callback(result, isError);
+    return;
+  }
   try {
     await fetch(`${BASE_URL}/api/browser/result`, {
       method: "POST",

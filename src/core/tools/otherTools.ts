@@ -1698,7 +1698,7 @@ export function setBrowserControlHandler(handler: typeof browserControlHandler) 
 
 export const controlBrowserTabTool: Tool = {
   name: "control_browser_tab",
-  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (guides the user to click manually for stealth), type, navigate, scroll, screenshot, detect_ui (runs UI-DETR-1 to detect UI elements and coordinates), errors, text, hover, keypress, wait, html, reload, back, forward, open, close, list, switch, duplicate, pin, unpin, mute, unmute, move, group, ungroup, discard, new_window, close_window, top_sites (get top visited sites), reading_list_add (add reading list), reading_list_remove (remove reading list), reading_list_get (get reading list), group_update (update group title/color), group_get (get group info), history_search (search history), history_delete (delete URL from history), history_clear (clear all history), management_list (list extensions), management_get (get extension details), show_detections (shows visual bounding boxes), hide_detections (hides bounding boxes), dom_info (gets DOM info for coordinates).",
+  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (guides the user to click manually for stealth), type, navigate, scroll, screenshot, detect_ui (runs UI-DETR-1 to detect UI elements and coordinates), errors, text, hover, keypress, wait, html, reload, back, forward, open, close, list, switch, duplicate, pin, unpin, mute, unmute, move, group, ungroup, discard, new_window, close_window, top_sites (get top visited sites), reading_list_add (add reading list), reading_list_remove (remove reading list), reading_list_get (get reading list), group_update (update group title/color), group_get (get group info), history_search (search history), history_delete (delete URL from history), history_clear (clear all history), management_list (list extensions), management_get (get extension details), show_detections (shows visual bounding boxes), hide_detections (hides bounding boxes), dom_info (gets DOM info for coordinates), execute_chain (executes a JSON sequence of actions), highlight_element (highlights coordinates on webpage).",
   parameters: {
     type: "object",
     properties: {
@@ -1708,17 +1708,17 @@ export const controlBrowserTabTool: Tool = {
           "click", "type", "navigate", "scroll", "screenshot", "detect_ui", "errors", "text", "hover", "keypress", "wait", "html", "reload", "back", "forward",
           "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window",
           "top_sites", "reading_list_add", "reading_list_remove", "reading_list_get", "group_update", "group_get", "history_search", "history_delete", "history_clear", "management_list", "management_get",
-          "show_detections", "hide_detections", "dom_info"
+          "show_detections", "hide_detections", "dom_info", "execute_chain", "highlight_element"
         ],
         description: "The browser action to execute."
       },
       target: {
         type: "string",
-        description: "CSS selector, destination URL, tab/window/group/extension ID, comma-separated tab IDs, or history search query. Required for click, type, navigate, scroll, hover, keypress, wait, switch, move, group, ungroup, reading_list_add, reading_list_remove, group_update, history_delete, management_get, show_detections, and dom_info."
+        description: "CSS selector, destination URL, tab/window/group/extension ID, comma-separated tab IDs, history search query, or JSON chain string. Required for click, type, navigate, scroll, hover, keypress, wait, switch, move, group, ungroup, reading_list_add, reading_list_remove, group_update, history_delete, management_get, show_detections, dom_info, execute_chain, and highlight_element."
       },
       value: {
         type: "string",
-        description: "Text to type (type), key to press (keypress), scroll offset, timeout in ms (wait), destination index (move), group ID (group), group metadata JSON or title (group_update), reading list title (reading_list_add), history maxResults (history_search), or confidence threshold (detect_ui)."
+        description: "Text to type (type), key to press (keypress), scroll offset, timeout in ms (wait), destination index (move), group ID (group), group metadata JSON or title (group_update), reading list title (reading_list_add), history maxResults (history_search), confidence threshold (detect_ui), or execute_chain values."
       }
     },
     required: ["action"]
@@ -1729,7 +1729,7 @@ export const controlBrowserTabTool: Tool = {
     }
     const handler = browserControlHandler!;
     const action = args.action as string;
-    if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get", "show_detections", "dom_info"].includes(action) && !args.target) {
+    if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get", "show_detections", "dom_info", "execute_chain", "highlight_element"].includes(action) && !args.target) {
       return `Error: Target parameter is required for action "${action}".`;
     }
     if (action === "detect_ui") {
@@ -1738,19 +1738,27 @@ export const controlBrowserTabTool: Tool = {
         if (screenshotResult.includes("Error") || screenshotResult.includes("failed")) {
           return `Failed to capture screenshot for detection: ${screenshotResult}`;
         }
-        let screenshotPath: string;
+        let screenshotBase64 = "";
         if (screenshotResult.startsWith("data:image/png;base64,")) {
-          const base64Data = screenshotResult.replace(/^data:image\/png;base64,/, "");
-          screenshotPath = path.join(cwd, "chrome_screenshot.png");
-          await fs.writeFile(screenshotPath, Buffer.from(base64Data, "base64"));
+          screenshotBase64 = screenshotResult.replace(/^data:image\/png;base64,/, "");
         } else {
           const match = screenshotResult.match(/Screenshot saved to workspace at: (.+)/);
-          screenshotPath = match ? match[1].trim() : path.join(cwd, "chrome_screenshot.png");
+          const screenshotPath = match ? match[1].trim() : path.join(cwd, "chrome_screenshot.png");
+          try {
+            screenshotBase64 = await fs.readFile(screenshotPath, { encoding: "base64" });
+          } catch {}
         }
-        const scriptPath = path.join(cwd, "scripts", "detect_ui.py");
+        
         const threshold = args.value ? parseFloat(String(args.value)) : 0.35;
-        const { stdout } = await execa("python", [scriptPath, "--image", screenshotPath, "--threshold", String(isNaN(threshold) ? 0.35 : threshold)]);
-        const data = JSON.parse(stdout);
+        const response = await fetch("http://127.0.0.1:8095/detect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image_base64: screenshotBase64 || undefined,
+            threshold: isNaN(threshold) ? 0.35 : threshold
+          })
+        });
+        const data = await response.json() as any;
         if (data.error) {
           return `UI Detection failed: ${data.error}`;
         }
@@ -1788,9 +1796,9 @@ export const controlBrowserTabTool: Tool = {
           }
           return responseStr.trim();
         }
-        return `UI Detection returned unexpected output: ${stdout}`;
+        return `UI Detection returned unexpected output: ${JSON.stringify(data)}`;
       } catch (err: any) {
-        return `UI Detection execution failed: ${err.stderr || err.message}`;
+        return `UI Detection execution failed: ${err.message || String(err)}`;
       }
     }
     try {

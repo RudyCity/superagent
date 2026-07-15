@@ -21,6 +21,7 @@ interface AgentSession {
 export const activeSessions = new Map<string, AgentSession>();
 let lastActiveWorkspace: string = process.cwd();
 let isBrowseDialogOpen = false;
+let visionServerProcess: any = null;
 
 function resolveSession(req: http.IncomingMessage): AgentSession | null {
   const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
@@ -236,6 +237,35 @@ const onQuestion = (question: any, options?: string[], isMultiSelect?: boolean) 
 
 export async function runServer(port: number, silent = false) {
   registerQuestionHandler(onQuestion);
+
+  // Start the Python Vision Server in the background
+  try {
+    const { execa } = await import("execa");
+    const scriptPath = path.join(process.cwd(), "scripts", "vision_server.py");
+    visionServerProcess = execa("python", [scriptPath, "8095"]);
+    if (!silent) {
+      console.log("🚀 Starting Python UI-DETR-1 Vision Server on port 8095...");
+    }
+    
+    visionServerProcess.catch((err: any) => {
+      if (!silent) {
+        console.error("[Vision Server Process Terminated/Failed]", err.message);
+      }
+    });
+
+    const cleanup = () => {
+      if (visionServerProcess) {
+        try { visionServerProcess.kill(); } catch {}
+      }
+    };
+    process.on("exit", cleanup);
+    process.on("SIGINT", () => { cleanup(); process.exit(0); });
+    process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+  } catch (err: any) {
+    if (!silent) {
+      console.error("Failed to spawn Python Vision Server:", err.message);
+    }
+  }
   const server = http.createServer(async (req, res) => {
     const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
     const pathname = parsedUrl.pathname;
@@ -606,7 +636,7 @@ export async function runServer(port: number, silent = false) {
             return;
           }
           
-          let screenshotPath: string;
+          let screenshotPath: string = "";
           let screenshotBase64: string = "";
           
           const wsPath = resolveWorkspacePath(req);
@@ -614,18 +644,33 @@ export async function runServer(port: number, silent = false) {
           if (screenshotResult.startsWith("data:image/png;base64,")) {
             screenshotBase64 = screenshotResult.replace(/^data:image\/png;base64,/, "");
             const os = await import("os");
-            const tmpPath = path.join(os.tmpdir(), "sa_detect_ui.png");
-            fs.writeFileSync(tmpPath, screenshotBase64, "base64");
-            screenshotPath = tmpPath;
+            screenshotPath = path.join(os.tmpdir(), "sa_detect_ui.png");
+            fs.writeFileSync(screenshotPath, screenshotBase64, "base64");
           } else {
             const match = screenshotResult.match(/Screenshot saved to workspace at: (.+)/);
             screenshotPath = match ? match[1].trim() : path.join(wsPath, "chrome_screenshot.png");
           }
           
-          const scriptPath = path.join(process.cwd(), "scripts", "detect_ui.py");
-          const { execa } = await import("execa");
-          const { stdout } = await execa("python", [scriptPath, "--image", screenshotPath, "--threshold", String(threshold)]);
-          const data = JSON.parse(stdout);
+          // Call local Python Inference Server
+          const response = await fetch("http://127.0.0.1:8095/detect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              image_base64: screenshotBase64 || undefined,
+              image_path: screenshotBase64 ? undefined : screenshotPath,
+              threshold
+            })
+          });
+          
+          const data = await response.json() as any;
+          if (data.error) {
+            sendJSON(res, 500, { error: `Vision Server Error: ${data.error}` });
+            return;
+          }
+          
+          if (!screenshotBase64 && fs.existsSync(screenshotPath)) {
+            screenshotBase64 = fs.readFileSync(screenshotPath).toString("base64");
+          }
           
           sendJSON(res, 200, { elements: data.elements ?? [], screenshotBase64 });
         } catch (err: any) {
@@ -691,6 +736,9 @@ export async function runServer(port: number, silent = false) {
       // Shutdown server process
       if (pathname === "/api/shutdown" && req.method === "POST") {
         sendJSON(res, 200, { success: true, message: "Server shutting down..." });
+        if (visionServerProcess) {
+          try { visionServerProcess.kill(); } catch {}
+        }
         setTimeout(() => {
           process.exit(0);
         }, 500);

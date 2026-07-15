@@ -3,41 +3,36 @@ import path from "path";
 import os from "os";
 import fs from "fs";
 
-// ─── Mock execa at top level (required by Vitest hoisting) ───────────────────
-vi.mock("execa", () => ({
-  execa: vi.fn()
-}));
-
 // ─── Unit tests for UI-DETR-1 detect_ui integration ──────────────────────────
 
 const tmpDir = path.join(os.tmpdir(), `superagent-test-detr-${Date.now()}`);
 
-const DETECTED_RESULT = JSON.stringify({
+const DETECTED_RESULT = {
   success: true,
   elements: [
     { label: "button", score: 0.92, box: [10, 20, 80, 50], center: [45, 35] },
     { label: "input", score: 0.85, box: [100, 100, 300, 130], center: [200, 115] },
   ]
-});
+};
 
-const EMPTY_RESULT = JSON.stringify({ success: true, elements: [] });
+const EMPTY_RESULT = { success: true, elements: [] };
 
 describe("detect_ui action — controlBrowserTabTool", () => {
   beforeEach(async () => {
     fs.mkdirSync(tmpDir, { recursive: true });
-    fs.mkdirSync(path.join(tmpDir, "scripts"), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, "scripts", "detect_ui.py"), "# stub");
     fs.writeFileSync(path.join(tmpDir, "chrome_screenshot.png"), "dummy");
   });
 
   afterEach(() => {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-    vi.resetAllMocks();
+    vi.restoreAllMocks();
   });
 
-  it("returns detected elements as a formatted string on success", async () => {
-    const { execa } = await import("execa");
-    vi.mocked(execa).mockResolvedValue({ stdout: DETECTED_RESULT, stderr: "" } as any);
+  it("returns detected elements as a formatted string on success via fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => DETECTED_RESULT
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     const { setBrowserControlHandler, controlBrowserTabTool } = await import(
       "../src/core/tools/otherTools.js"
@@ -61,6 +56,7 @@ describe("detect_ui action — controlBrowserTabTool", () => {
 
     const result = await controlBrowserTabTool.execute({ action: "detect_ui" }, tmpDir, undefined);
 
+    expect(fetchMock).toHaveBeenCalled();
     expect(typeof result).toBe("string");
     expect(result).toContain("Detected UI elements");
     expect(result).toContain("button @ 45,35 | #my-id (92%)");
@@ -68,8 +64,10 @@ describe("detect_ui action — controlBrowserTabTool", () => {
   });
 
   it("returns no-elements message when model finds nothing", async () => {
-    const { execa } = await import("execa");
-    vi.mocked(execa).mockResolvedValue({ stdout: EMPTY_RESULT, stderr: "" } as any);
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => EMPTY_RESULT
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     const { setBrowserControlHandler, controlBrowserTabTool } = await import(
       "../src/core/tools/otherTools.js"
@@ -100,26 +98,30 @@ describe("detect_ui action — controlBrowserTabTool", () => {
   });
 });
 
-describe("coordinate-based target — detect_ui coordinate pattern", () => {
-  it("regex pattern matches valid coordinates", () => {
-    const validCoordinates = ["150,230", "0,0", "1920,1080", "800,600"];
-    const invalidCoordinates = ["button.submit", "#id", "150", "150,230,5", "abc,def"];
+describe("coordinate-based target with optional selector pattern", () => {
+  it("regex pattern matches valid coordinates and selectors", () => {
+    const validCoordinates = ["150,230", "0,0", "1920,1080", "800,600", "150,230|#backup", "400,200|button.primary"];
+    const invalidCoordinates = ["button.submit", "#id", "150", "abc,def"];
+
+    const regex = /^(\d+),(\d+)(?:\|(.+))?$/;
 
     for (const coord of validCoordinates) {
-      expect(/^(\d+),(\d+)$/.test(coord)).toBe(true);
+      expect(regex.test(coord)).toBe(true);
     }
     for (const coord of invalidCoordinates) {
-      expect(/^(\d+),(\d+)$/.test(coord)).toBe(false);
+      expect(regex.test(coord)).toBe(false);
     }
   });
 
-  it("extracts correct X and Y from coordinate string", () => {
-    const tgt = "320,480";
-    const match = tgt.match(/^(\d+),(\d+)$/);
+  it("extracts correct X, Y and backup selector from coordinate string", () => {
+    const tgt = "320,480|#submit-btn";
+    const match = tgt.match(/^(\d+),(\d+)(?:\|(.+))?$/);
     expect(match).not.toBeNull();
     if (match) {
       expect(parseInt(match[1], 10)).toBe(320);
       expect(parseInt(match[2], 10)).toBe(480);
+      expect(match[3]).toBe("#submit-btn");
     }
   });
 });
+

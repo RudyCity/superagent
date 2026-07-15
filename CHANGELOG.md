@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.366] - 2026-07-15
+
+### Added
+- **Local-Only Python Inference Daemon Server**:
+  - Replaced slow subprocess execution with a persistent, local-only (`127.0.0.1:8095`) Python HTTP server.
+  - Pre-loads `racineai/UI-DETR-1` once at startup, reducing inference latency from ~4s to ~150ms.
+  - Automatically spawns the daemon on Node server boot and cleans it up on process termination/exit.
+- **Sequential Action Chaining**:
+  - Added `execute_chain` action to run a sequence of multiple browser operations (clicks, keypresses, scrolls) in a single tool call.
+- **Hover Highlight Syncing**:
+  - Synchronized item hover states from the extension Vision sidebar to both the canvas overlay and the actual webpage via `highlight_element`.
+- **Smart DOM Selector Fallback**:
+  - Enhanced coordinate resolution to support target coordinates with backup CSS selectors (e.g. `"X,Y|selector"`).
+  - Automatically falls back to standard DOM selectors if coordinate targets drift due to scrolling.
+
 ## [1.2.365] - 2026-07-15
 
 ### Added

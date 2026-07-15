@@ -81,6 +81,44 @@ function initVisionPanel() {
   });
 
   function renderDetections(screenshotBase64, elements) {
+    let currentImg = null;
+
+    function drawCanvas(hoveredElement = null) {
+      if (!currentImg) return;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(currentImg, 0, 0);
+
+      elements.forEach(el => {
+        const [x1, y1, x2, y2] = el.box;
+        const isHovered = hoveredElement === el;
+        const color = LABEL_COLORS[el.label] || LABEL_COLORS.default;
+
+        if (isHovered) {
+          ctx.strokeStyle = "#FFBC05";
+          ctx.lineWidth = 6;
+          ctx.shadowColor = "#FFBC05";
+          ctx.shadowBlur = 10;
+        } else {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 3;
+          ctx.shadowBlur = 0;
+        }
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.shadowBlur = 0; // reset
+
+        // Draw label background
+        ctx.fillStyle = isHovered ? "#FFBC05" : color;
+        ctx.font = "bold 14px monospace";
+        const labelText = `${el.label} ${Math.round(el.score * 100)}%`;
+        const textWidth = ctx.measureText(labelText).width;
+        ctx.fillRect(x1, y1 - 20, textWidth + 8, 20);
+
+        // Draw label text
+        ctx.fillStyle = isHovered ? "black" : "white";
+        ctx.fillText(labelText, x1 + 4, y1 - 5);
+      });
+    }
+
     // Draw screenshot + bounding boxes on canvas
     if (screenshotBase64) {
       const img = new Image();
@@ -94,27 +132,8 @@ function initVisionPanel() {
         canvas.classList.remove("hidden");
         emptyScreenshot.classList.add("hidden");
 
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-
-        elements.forEach(el => {
-          const [x1, y1, x2, y2] = el.box;
-          const color = LABEL_COLORS[el.label] || LABEL_COLORS.default;
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 3;
-          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-          
-          // Draw label background
-          ctx.fillStyle = color;
-          ctx.font = "bold 14px monospace";
-          const labelText = `${el.label} ${Math.round(el.score * 100)}%`;
-          const textWidth = ctx.measureText(labelText).width;
-          ctx.fillRect(x1, y1 - 20, textWidth + 8, 20);
-          
-          // Draw label text
-          ctx.fillStyle = "white";
-          ctx.fillText(labelText, x1 + 4, y1 - 5);
-        });
+        currentImg = img;
+        drawCanvas(null);
       };
       img.src = "data:image/png;base64," + screenshotBase64;
     }
@@ -155,6 +174,21 @@ function initVisionPanel() {
         e.stopPropagation();
         if (typeof executeBrowserControl === "function") {
           executeBrowserControl("vision-manual", "click", `${cx},${cy}`, "");
+        }
+      });
+
+      // Hover on list item updates canvas and highlights element on real webpage
+      item.addEventListener("mouseenter", () => {
+        drawCanvas(el);
+        if (typeof executeBrowserControl === "function") {
+          executeBrowserControl("vision-manual", "highlight_element", `${cx},${cy}`, "");
+        }
+      });
+
+      item.addEventListener("mouseleave", () => {
+        drawCanvas(null);
+        if (typeof executeBrowserControl === "function") {
+          executeBrowserControl("vision-manual", "highlight_element", "clear", "");
         }
       });
 
