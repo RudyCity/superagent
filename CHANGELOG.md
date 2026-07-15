@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.372] - 2026-07-15
+
+### Fixed
+- **Custom Provider Tool Calling**:
+  - Fixed 400 Bad Request error ("request is invalid for this model") when using tool calling on custom proxy endpoints (such as OpenRouter and Nexotao).
+  - Modified the custom `fetch` wrapper in `models.ts` to automatically strip the `"strict": true` property from tool definitions for custom base URLs/providers. This ensures maximum compatibility with upstream models that do not support OpenAI's strict tool schemas.
+
 ## [1.2.371] - 2026-07-15
 
 ### Fixed

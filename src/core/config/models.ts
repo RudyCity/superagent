@@ -524,6 +524,31 @@ export function getModelInstanceForString(modelStr: string) {
       "X-Title": "SuperAgent CLI",
     },
     fetch: async (url, options) => {
+      // Strip strict mode from tools if calling a custom base URL (e.g. OpenRouter, Nexotao)
+      // because custom/proxy endpoints often reject "strict: true" for non-supported models.
+      if (options && options.body && typeof options.body === "string" && baseUrl) {
+        try {
+          const bodyJson = JSON.parse(options.body);
+          if (bodyJson.tools && Array.isArray(bodyJson.tools)) {
+            let bodyChanged = false;
+            bodyJson.tools = bodyJson.tools.map((tool: any) => {
+              if (tool.function && "strict" in tool.function) {
+                const newFunc = { ...tool.function };
+                delete newFunc.strict;
+                bodyChanged = true;
+                return { ...tool, function: newFunc };
+              }
+              return tool;
+            });
+            if (bodyChanged) {
+              options.body = JSON.stringify(bodyJson);
+            }
+          }
+        } catch {
+          // Ignore parsing/modification errors
+        }
+      }
+
       const response = await globalThis.fetch(url, options);
       
       let isStreamingRequest = false;
