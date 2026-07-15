@@ -1714,7 +1714,7 @@ export const controlBrowserTabTool: Tool = {
       },
       target: {
         type: "string",
-        description: "CSS selector, destination URL, tab/window/group/extension ID, comma-separated tab IDs, history search query, or JSON chain string. Required for click, type, navigate, scroll, hover, keypress, wait, switch, move, group, ungroup, reading_list_add, reading_list_remove, group_update, history_delete, management_get, show_detections, dom_info, execute_chain, and highlight_element."
+        description: "CSS selector, destination URL, tab/window/group/extension ID, comma-separated tab IDs, history search query, or JSON chain string. Required for click, type, navigate, scroll, hover, keypress, switch, move, group, ungroup, reading_list_add, reading_list_remove, group_update, history_delete, management_get, show_detections, dom_info, execute_chain, and highlight_element. For wait, either target (selector or duration) or value (duration) must be provided."
       },
       value: {
         type: "string",
@@ -1729,8 +1729,11 @@ export const controlBrowserTabTool: Tool = {
     }
     const handler = browserControlHandler!;
     const action = args.action as string;
-    if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get", "show_detections", "dom_info", "execute_chain", "highlight_element"].includes(action) && !args.target) {
+    if (["click", "type", "navigate", "scroll", "hover", "keypress", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get", "show_detections", "dom_info", "execute_chain", "highlight_element"].includes(action) && !args.target) {
       return `Error: Target parameter is required for action "${action}".`;
+    }
+    if (action === "wait" && !args.target && !args.value) {
+      return `Error: Either target (CSS selector or milliseconds) or value (milliseconds) is required for action "wait".`;
     }
     if (action === "detect_ui") {
       try {
@@ -1802,7 +1805,7 @@ export const controlBrowserTabTool: Tool = {
       }
     }
     try {
-      const result = await handler(action, args.target as string, args.value as string);
+      const result = await handler(action, (args.target as string) || "", (args.value as string) || "");
       return result;
     } catch (err: any) {
       return `Browser control failed: ${err.message || String(err)}`;

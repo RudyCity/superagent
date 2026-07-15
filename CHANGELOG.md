@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.367] - 2026-07-15
+
+### Fixed
+- **Browser Control Tab Wait Action**:
+  - Made target parameter optional for the wait action, allowing simple duration-based waiting using only the value parameter.
+  - Added validation check to ensure at least target (selector/duration) or value (duration) is specified.
+  - Enhanced browser extension side panel implementation to support numeric durations in either target or value, and added specific handling for page_load/document_load checks with configurable timeouts.
+  - Added comprehensive test suite for browser control wait action validation.
+
 ## [1.2.366] - 2026-07-15
 
 ### Added

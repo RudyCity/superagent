@@ -1174,13 +1174,44 @@ async function executeBrowserControl(controlId, action, target, value) {
             };
 
             if (act === "wait") {
-              showBanner(`Waiting for ${tgt}...`);
-              const timeout = parseInt(val || "5000", 10);
-              if (!isNaN(Number(tgt))) {
-                const ms = parseInt(tgt, 10);
-                await new Promise(r => setTimeout(r, ms));
-                return `Waited for ${ms}ms`;
+              const valNum = parseInt(val, 10);
+              const tgtNum = parseInt(tgt, 10);
+
+              if (val && !isNaN(valNum) && (!tgt || isNaN(tgtNum))) {
+                showBanner(`Waiting for ${valNum}ms...`);
+                await new Promise(r => setTimeout(r, valNum));
+                return `Waited for ${valNum}ms`;
               }
+
+              if (tgt && !isNaN(tgtNum)) {
+                showBanner(`Waiting for ${tgtNum}ms...`);
+                await new Promise(r => setTimeout(r, tgtNum));
+                return `Waited for ${tgtNum}ms`;
+              }
+
+              if (tgt === "page_load" || tgt === "document_load") {
+                showBanner("Waiting for page load...");
+                const timeout = (val && !isNaN(valNum)) ? valNum : 5000;
+                if (document.readyState === "complete") {
+                  return "Page loaded";
+                }
+                const startTime = Date.now();
+                await new Promise((resolve, reject) => {
+                  const interval = setInterval(() => {
+                    if (document.readyState === "complete") {
+                      clearInterval(interval);
+                      resolve();
+                    } else if (Date.now() - startTime > timeout) {
+                      clearInterval(interval);
+                      reject(new Error("Timeout waiting for page load"));
+                    }
+                  }, 100);
+                });
+                return "Page loaded";
+              }
+
+              showBanner(`Waiting for selector ${tgt}...`);
+              const timeout = (val && !isNaN(valNum)) ? valNum : 5000;
               await waitForSelector(tgt, timeout);
               return `Element ${tgt} is now present`;
             }
