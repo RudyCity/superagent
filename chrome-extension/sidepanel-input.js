@@ -19,9 +19,16 @@ const TERMINAL_SHORTCUTS = [
   { command: "!npm start", desc: "Start the local application" }
 ];
 
+const TAG_SUGGESTIONS = [
+  { command: "@inspect", desc: "Inspect page element and add as tag", usage: "@inspect" },
+  { command: "@tab", desc: "Tag the active browser tab", usage: "@tab" }
+];
+
 let activeSuggestions = [];
 let highlightedSuggestionIndex = 0;
 let attachedFiles = [];
+let activeInputTags = [];
+let editingTagIndex = -1;
 
 document.addEventListener("DOMContentLoaded", () => {
   const chatInput = document.getElementById("chat-input");
@@ -38,6 +45,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initialize Inspect Element Handler
   initInspectHandler();
+
+  // Tag Active Tab Click Listener
+  const tagTabBtn = document.getElementById("btn-tag-tab");
+  if (tagTabBtn) {
+    tagTabBtn.addEventListener("click", triggerTabTag);
+  }
+
+  // Tag Modal Listeners
+  const closeBtn = document.getElementById("btn-close-tag-modal");
+  const cancelBtn = document.getElementById("btn-cancel-tag-modal");
+  const saveBtn = document.getElementById("btn-save-tag-modal");
+
+  if (closeBtn) closeBtn.addEventListener("click", closeTagModal);
+  if (cancelBtn) cancelBtn.addEventListener("click", closeTagModal);
+  if (saveBtn) saveBtn.addEventListener("click", saveTagModal);
+
+  const tagModalOverlay = document.getElementById("tag-details-overlay");
+  if (tagModalOverlay) {
+    tagModalOverlay.addEventListener("click", (e) => {
+      if (e.target === tagModalOverlay) closeTagModal();
+    });
+  }
 
   // Input Help Button Listener
   const helpBtn = document.getElementById("btn-input-help");
@@ -78,6 +107,10 @@ function handleInputChange() {
   } else if (currentWord.startsWith("!")) {
     const query = currentWord.slice(1);
     activeSuggestions = TERMINAL_SHORTCUTS.filter(cmd => fuzzyMatch(cmd.command, "!" + query));
+    showSuggestions(activeSuggestions);
+  } else if (currentWord.startsWith("@")) {
+    const query = currentWord.slice(1);
+    activeSuggestions = TAG_SUGGESTIONS.filter(cmd => fuzzyMatch(cmd.command, "@" + query));
     showSuggestions(activeSuggestions);
   } else {
     hideSuggestions();
@@ -145,6 +178,25 @@ function selectSuggestion(s) {
   const textAfterCursor = text.slice(cursorPosition);
   
   const words = textBeforeCursor.split(/\s+/);
+
+  if (s.command.startsWith("@")) {
+    words.pop(); // Remove the "@query" word
+    const newTextBeforeCursor = words.join(" ") + (words.length > 0 ? " " : "");
+    chatInput.value = newTextBeforeCursor + textAfterCursor;
+    chatInput.focus();
+    const newCursorPos = newTextBeforeCursor.length;
+    chatInput.setSelectionRange(newCursorPos, newCursorPos);
+    hideSuggestions();
+
+    if (s.command === "@inspect") {
+      const inspectBtn = document.getElementById("btn-inspect-element");
+      if (inspectBtn) inspectBtn.click();
+    } else if (s.command === "@tab") {
+      triggerTabTag();
+    }
+    return;
+  }
+  
   words[words.length - 1] = s.command;
   
   const newTextBeforeCursor = words.join(" ") + " ";
@@ -317,16 +369,23 @@ window.sendChatMessage = async function() {
 
   const text = chatInput.value.trim();
   
-  if (!text && attachedFiles.length === 0) return;
+  if (!text && attachedFiles.length === 0 && activeInputTags.length === 0) return;
 
   chatInput.value = "";
 
   // Display user message in chat
   let displayMessageText = text;
-  if (attachedFiles.length > 0) {
-    const attachedNames = attachedFiles.map(f => `${f.type === "image" ? "🖼️" : "📄"} ${f.name}`).join(", ");
-    displayMessageText = text ? `${text}\n\n[Attachments: ${attachedNames}]` : `[Attachments: ${attachedNames}]`;
+  const tagChipsText = activeInputTags.map(t => `${t.type === "tab" ? "🌐" : "🔍"} ${t.label}`).join(", ");
+  const attachmentChipsText = attachedFiles.map(f => `${f.type === "image" ? "🖼️" : "📄"} ${f.name}`).join(", ");
+  
+  const chipSummaries = [];
+  if (tagChipsText) chipSummaries.push(`Tags: ${tagChipsText}`);
+  if (attachmentChipsText) chipSummaries.push(`Attachments: ${attachmentChipsText}`);
+  
+  if (chipSummaries.length > 0) {
+    displayMessageText = text ? `${text}\n\n[${chipSummaries.join(" | ")}]` : `[${chipSummaries.join(" | ")}]`;
   }
+  
   appendMessage("user", displayMessageText);
   scrollToBottom(true);
   showSpinner("Thinking...");
@@ -340,6 +399,8 @@ window.sendChatMessage = async function() {
       displayHelpInfo();
       attachedFiles = [];
       renderAttachmentPreviews();
+      activeInputTags = [];
+      renderInputTags();
       return;
     }
     if (text === "/clear") {
@@ -353,6 +414,8 @@ window.sendChatMessage = async function() {
       }
       attachedFiles = [];
       renderAttachmentPreviews();
+      activeInputTags = [];
+      renderInputTags();
       return;
     }
     if (text === "/settings") {
@@ -362,12 +425,41 @@ window.sendChatMessage = async function() {
       if (btnSettings) btnSettings.click();
       attachedFiles = [];
       renderAttachmentPreviews();
+      activeInputTags = [];
+      renderInputTags();
       return;
     }
   }
 
   // Construct message payload
   let payloadMessage = text;
+
+  // Append tags to the text prompt
+  let tagContext = "";
+  if (activeInputTags && activeInputTags.length > 0) {
+    activeInputTags.forEach(tag => {
+      if (tag.type === "tab") {
+        const desc = tag.value.description ? ` (Description: "${tag.value.description}")` : "";
+        tagContext += `\n\n[Tagged Browser Tab: Title: "${tag.value.title}", URL: "${tag.value.url}"${desc}]`;
+      } else if (tag.type === "inspect") {
+        const desc = tag.value.description ? `, Description: "${tag.value.description}"` : "";
+        const htmlContext = tag.value.html ? `\nHTML:\n\`\`\`html\n${tag.value.html}\n\`\`\`` : "";
+        tagContext += `\n\n[Tagged Inspected Element: ${tag.value.tagLabel} (selector: ${tag.value.selector}${desc})${htmlContext}]`;
+      }
+    });
+  }
+
+  // Fallback to active tab info if no tab tags are present, maintaining backward compatibility
+  const hasTabTag = activeInputTags && activeInputTags.some(t => t.type === "tab");
+  if (!hasTabTag && window.currentActiveTab && !text.startsWith("!")) {
+    const tabTitle = window.currentActiveTab.title || "No Title";
+    const tabUrl = window.currentActiveTab.url || "";
+    tagContext += `\n\n[Current Active Browser Tab: Title: "${tabTitle}", URL: "${tabUrl}"]`;
+  }
+
+  if (tagContext) {
+    payloadMessage += tagContext;
+  }
 
   // Append documents to the text prompt
   const documents = attachedFiles.filter(f => f.type === "document");
@@ -399,6 +491,10 @@ window.sendChatMessage = async function() {
   // Clear attached files list
   attachedFiles = [];
   renderAttachmentPreviews();
+
+  // Clear tags list
+  activeInputTags = [];
+  renderInputTags();
 
   if (typeof window.lockCurrentTab === "function") {
     window.lockCurrentTab();
@@ -628,7 +724,7 @@ function initInspectHandler() {
                   const tagLabel = buildTagLabel(currentEl);
                   const selector = getUniqueSelector(currentEl);
                   const desc = getElementDescription(currentEl);
-                  resolve({ tagLabel, selector, description: desc });
+                  resolve({ tagLabel, selector, description: desc, html: currentEl.outerHTML });
                 } else {
                   resolve(null);
                 }
@@ -666,32 +762,13 @@ function initInspectHandler() {
           inspectBtn.style.opacity = "1";
 
           if (results && results[0] && results[0].result) {
-            const { tagLabel, selector, description } = results[0].result;
+            const { tagLabel, selector, description, html } = results[0].result;
             if (tagLabel) {
-              // Build the insert label: tag label + selector + description for full AI context.
-              // Example: <button#submit> (selector: #submit, Text: "Login")
-              const parts = [];
-              if (selector && selector !== tagLabel) parts.push(`selector: ${selector}`);
-              if (description) parts.push(description);
-
-              const insertLabel = parts.length > 0
-                ? `${tagLabel} (${parts.join(", ")})`
-                : tagLabel;
-
-              const startPos = chatInput.selectionStart;
-              const endPos = chatInput.selectionEnd;
-              const originalText = chatInput.value;
-              
-              const needsSpace = startPos > 0 && !originalText.substring(0, startPos).endsWith(" ");
-              const insertText = (needsSpace ? " " : "") + insertLabel;
-
-              chatInput.value = originalText.substring(0, startPos) +
-                               insertText +
-                               originalText.substring(endPos);
-              
-              const newPos = startPos + insertText.length;
-              chatInput.focus();
-              chatInput.setSelectionRange(newPos, newPos);
+              addInputTag({
+                type: "inspect",
+                label: `🔍 ${tagLabel}`,
+                value: { tagLabel, selector, description, html }
+              });
             }
           }
         });
@@ -702,3 +779,151 @@ function initInspectHandler() {
     });
   });
 }
+
+function triggerTabTag() {
+  if (typeof chrome !== "undefined" && chrome.tabs) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs.length > 0) {
+        const activeTab = tabs[0];
+        addInputTag({
+          type: "tab",
+          label: `🌐 Tab: ${activeTab.title || "No Title"}`,
+          value: {
+            title: activeTab.title || "No Title",
+            url: activeTab.url || "",
+            description: ""
+          }
+        });
+      } else {
+        addInputTag({
+          type: "tab",
+          label: "🌐 Tab: Active Tab",
+          value: {
+            title: "Active Tab",
+            url: "",
+            description: ""
+          }
+        });
+      }
+    });
+  } else {
+    addInputTag({
+      type: "tab",
+      label: "🌐 Tab: Mock Tab",
+      value: {
+        title: "Mock Tab",
+        url: "http://example.com",
+        description: ""
+      }
+    });
+  }
+}
+
+function addInputTag(tag) {
+  // Prevent duplicate tags of the same type and value
+  const isDuplicate = activeInputTags.some(t => t.type === tag.type && JSON.stringify(t.value) === JSON.stringify(tag.value));
+  if (isDuplicate) return;
+
+  activeInputTags.push(tag);
+  renderInputTags();
+}
+
+function renderInputTags() {
+  const container = document.getElementById("input-tags-container");
+  if (!container) return;
+
+  container.innerHTML = "";
+  activeInputTags.forEach((tag, index) => {
+    const chip = document.createElement("div");
+    chip.className = "tag-chip flex items-center gap-1.5 px-2 py-1 rounded-[2px] bg-vscode-blue-light border border-vscode-blue/30 text-[10px] text-vscode-blue font-semibold shrink-0 max-w-[180px] cursor-pointer hover:bg-vscode-blue-light/80";
+
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "truncate flex-1 font-mono";
+    
+    let displayText = tag.label;
+    if (tag.value.description) {
+      const descSnippet = tag.value.description.length > 15 ? tag.value.description.slice(0, 12) + "..." : tag.value.description;
+      displayText += ` (${descSnippet})`;
+    }
+    labelSpan.textContent = displayText;
+    labelSpan.title = `${tag.label}${tag.value.description ? `\nDescription: ${tag.value.description}` : ""}`;
+    chip.appendChild(labelSpan);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "hover:text-red-error ml-1 bg-none border-none p-0 cursor-pointer text-vscode-muted";
+    removeBtn.textContent = "×";
+    removeBtn.addEventListener("click", (e) => {
+      e.stopPropagation(); // Prevent opening modal
+      activeInputTags.splice(index, 1);
+      renderInputTags();
+    });
+
+    chip.addEventListener("click", (e) => {
+      if (e.target !== removeBtn) {
+        openTagModal(index);
+      }
+    });
+
+    chip.appendChild(removeBtn);
+    container.appendChild(chip);
+  });
+}
+
+function openTagModal(index) {
+  const tag = activeInputTags[index];
+  if (!tag) return;
+
+  editingTagIndex = index;
+  const overlay = document.getElementById("tag-details-overlay");
+  const title = document.getElementById("tag-modal-title");
+  const descText = document.getElementById("tag-modal-desc");
+  const detailsLabel = document.getElementById("tag-modal-details-label");
+  const detailsVal = document.getElementById("tag-modal-details-val");
+
+  if (!overlay || !title || !descText || !detailsLabel || !detailsVal) return;
+
+  title.textContent = tag.type === "tab" ? "Edit Tab Tag" : "Edit Inspect Tag";
+  descText.value = tag.value.description || "";
+  
+  if (tag.type === "tab") {
+    detailsLabel.textContent = "URL";
+    detailsVal.value = tag.value.url || "";
+  } else {
+    detailsLabel.textContent = "HTML Source Code";
+    detailsVal.value = tag.value.html || "";
+  }
+
+  overlay.classList.add("active");
+}
+
+function closeTagModal() {
+  const overlay = document.getElementById("tag-details-overlay");
+  if (overlay) {
+    overlay.classList.remove("active");
+  }
+  editingTagIndex = -1;
+}
+
+function saveTagModal() {
+  if (editingTagIndex === -1) return;
+  const tag = activeInputTags[editingTagIndex];
+  if (!tag) return;
+
+  const descText = document.getElementById("tag-modal-desc");
+  if (descText) {
+    tag.value.description = descText.value;
+  }
+
+  renderInputTags();
+  closeTagModal();
+}
+
+function clearInputTags() {
+  activeInputTags = [];
+  renderInputTags();
+}
+
+// Expose tags API globally
+window.activeInputTags = activeInputTags;
+window.clearInputTags = clearInputTags;
+window.renderInputTags = renderInputTags;

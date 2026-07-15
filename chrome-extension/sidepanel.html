@@ -261,6 +261,8 @@
                   <span class="font-bold uppercase tracking-wider text-[8px] opacity-75">Active Tab:</span>
                   <span id="current-tab-title" class="truncate font-semibold text-vscode-bright">None (No active tab)</span>
                 </div>
+                <!-- Tags Container -->
+                <div id="input-tags-container" class="flex flex-wrap gap-1.5 px-2.5 pt-2 empty:hidden max-h-[60px] overflow-y-auto"></div>
                 <textarea id="chat-input" placeholder="Type instructions or / for commands, ! for terminal..." rows="2" class="w-full bg-transparent text-vscode-primary px-2.5 py-2 font-sans text-[12px] resize-none outline-none border-none h-14"></textarea>
                 
                 <div class="input-toolbar flex items-center justify-between px-2 py-1.5 border-t border-vscode-dim/50 bg-vscode-inner/20">
@@ -274,6 +276,8 @@
                     <input type="file" id="attach-doc-input" accept=".txt,.md,.js,.ts,.tsx,.json,.html,.css,.py,.go,.rs,.sh,.bat,.ps1,.java,.cpp,.c,.h" class="hidden">
                     <!-- Inspect Element Trigger -->
                     <button id="btn-inspect-element" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Inspect Page Element">🔍</button>
+                    <!-- Tag Active Tab Trigger -->
+                    <button id="btn-tag-tab" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Tag Active Tab">🌐</button>
                     <!-- Input Help Button -->
                     <button id="btn-input-help" class="btn btn-secondary p-1 h-6 w-6 text-[11px] border-none rounded-sm bg-transparent cursor-pointer inline-flex items-center justify-center text-vscode-muted hover:text-vscode-light hover:bg-vscode-hover" title="Help Guide">❓</button>
                   </div>
@@ -495,6 +499,35 @@
       <div class="modal-footer p-2.5 border-t border-vscode-dim flex justify-end gap-2">
         <button id="btn-cancel-add-workspace" class="btn btn-secondary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-[30px]">Cancel</button>
         <button id="btn-add-workspace" class="btn btn-primary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">Add Workspace</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tag Details Edit Modal -->
+  <div id="tag-details-overlay" class="overlay absolute top-0 left-0 w-full h-full bg-black/55 backdrop-blur-[1px] z-[10000] items-center justify-center p-3">
+    <div class="modal bg-vscode-sidebar border border-vscode-bright rounded-sm shadow-2xl w-full max-w-[320px] flex flex-col">
+      <div class="modal-header p-2.5 border-b border-vscode-dim flex justify-between items-center">
+        <h3 id="tag-modal-title" class="text-[11.5px] font-semibold text-vscode-light uppercase">Tag Details</h3>
+        <button id="btn-close-tag-modal" class="bg-transparent border-0 text-vscode-muted hover:text-vscode-light cursor-pointer text-[14px]">×</button>
+      </div>
+      <div class="modal-body p-3 flex flex-col gap-2.5 max-h-[350px] overflow-y-auto">
+        
+        <!-- Editable Description -->
+        <div class="form-group flex flex-col gap-1.5">
+          <label for="tag-modal-desc" class="text-[11px] font-semibold text-vscode-primary">Description (AI context)</label>
+          <textarea id="tag-modal-desc" rows="3" class="w-full bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-sans text-[12px] resize-none outline-none focus:border-vscode-bright"></textarea>
+        </div>
+
+        <!-- Tag Details: HTML or URL -->
+        <div id="tag-modal-details-section" class="form-group flex flex-col gap-1.5">
+          <label id="tag-modal-details-label" class="text-[11px] font-semibold text-vscode-primary">HTML Code</label>
+          <textarea id="tag-modal-details-val" rows="6" readonly class="w-full bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-muted px-2.5 py-1.5 font-mono text-[11px] resize-none outline-none select-all"></textarea>
+        </div>
+
+      </div>
+      <div class="modal-footer p-2.5 border-t border-vscode-dim flex justify-end gap-2">
+        <button id="btn-cancel-tag-modal" class="btn btn-secondary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-inner text-vscode-primary border-vscode-dim hover:bg-vscode-hover h-[30px]">Cancel</button>
+        <button id="btn-save-tag-modal" class="btn btn-primary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">Save Changes</button>
       </div>
     </div>
   </div>

@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.368] - 2026-07-15
+
+### Added
+- **Interactive Input Tags System in Chrome Extension**:
+  - Introduced autocomplete suggestions when typing `@` (`@inspect` and `@tab`) to reference page elements or the active tab.
+  - Implemented tag chips container inside the input wrapper above the textarea for visual rendering of active tags.
+  - Added a "Tag Active Tab" button (🌐) in the toolbar.
+  - Refactored element inspection to capture the inspected element's full HTML code (`outerHTML`).
+  - Added a "Tag Details" modal overlay allowing the user to view the full HTML code of an inspected element and edit custom description context for any tag.
+  - Integrated tag details and HTML code directly into `window.sendChatMessage` prompt context injection.
+
 ## [1.2.367] - 2026-07-15
 
 ### Fixed
