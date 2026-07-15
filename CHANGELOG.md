@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.371] - 2026-07-15
+
+### Fixed
+- **Mistral Model Limits**:
+  - Updated context window limits for Mistral flagship/latest models (such as `mistral-large-latest`, `mistral-small-latest`, `codestral-latest`, and `mistral-medium-latest` along with their corresponding `~` prefixed aliases) to correct sizes (262,144 or 256,000 tokens) in `model_limits.ts`.
+  - Added new version-specific fallback checks in `getStaticModelLimit` to ensure correct matching of context lengths for these model groups.
+
 ## [1.2.370] - 2026-07-15
 
 ### Fixed

@@ -298,6 +298,11 @@ describe("loginWizardLogic", () => {
       expect(getContextWindowLimit("gemini-2.5-flash")).toBe(1000000);
       expect(getContextWindowLimit("gemini-2.5-pro")).toBe(1048576);
       expect(getContextWindowLimit("unknown-fictional-model")).toBe(128000);
+      expect(getContextWindowLimit("mistral-large-latest")).toBe(262144);
+      expect(getContextWindowLimit("~mistralai/mistral-large-latest")).toBe(262144);
+      expect(getContextWindowLimit("mistralai/mistral-small-latest")).toBe(262144);
+      expect(getContextWindowLimit("codestral-latest")).toBe(256000);
+      expect(getContextWindowLimit("mistral-medium-latest")).toBe(262144);
     });
   });
 });

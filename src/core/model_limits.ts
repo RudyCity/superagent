@@ -194,6 +194,7 @@ export const MODEL_LIMITS: Record<string, number> = {
 
   // Mistralai Models
   "mistralai/codestral-2508": 256000,
+  "mistralai/codestral-latest": 256000,
   "mistralai/devstral-2512": 262144,
   "mistralai/ministral-14b-2512": 262144,
   "mistralai/ministral-3b-2512": 131072,
@@ -201,15 +202,18 @@ export const MODEL_LIMITS: Record<string, number> = {
   "mistralai/mistral-large": 128000,
   "mistralai/mistral-large-2407": 131072,
   "mistralai/mistral-large-2512": 262144,
+  "mistralai/mistral-large-latest": 262144,
   "mistralai/mistral-medium-3": 131072,
   "mistralai/mistral-medium-3-5": 262144,
   "mistralai/mistral-medium-3.1": 131072,
+  "mistralai/mistral-medium-latest": 262144,
   "mistralai/mistral-nemo": 131072,
   "mistralai/mistral-saba": 32768,
   "mistralai/mistral-small-24b-instruct-2501": 32768,
   "mistralai/mistral-small-2603": 262144,
   "mistralai/mistral-small-3.1-24b-instruct": 128000,
   "mistralai/mistral-small-3.2-24b-instruct": 128000,
+  "mistralai/mistral-small-latest": 262144,
   "mistralai/mixtral-8x22b-instruct": 65536,
   "mistralai/voxtral-small-24b-2507": 32000,
 
@@ -465,6 +469,12 @@ export const MODEL_LIMITS: Record<string, number> = {
   "~google/gemini-flash-latest": 1048576,
   "~google/gemini-pro-latest": 1048576,
 
+  // ~mistralai Models
+  "~mistralai/codestral-latest": 256000,
+  "~mistralai/mistral-large-latest": 262144,
+  "~mistralai/mistral-medium-latest": 262144,
+  "~mistralai/mistral-small-latest": 262144,
+
   // ~moonshotai Models
   "~moonshotai/kimi-latest": 262144,
 
@@ -539,7 +549,12 @@ export function getStaticModelLimit(model: string): number | null {
   if (m.includes("qwen2.5-coder") || m.includes("qwen-2.5-coder")) return 128000;
   if (m.includes("qwen")) return 1000000; // Qwen-Plus default is 1M
 
+  if (m.includes("mistral-large-latest") || m.includes("mistral-large-3") || m.includes("mistral-large-2512")) return 262144;
   if (m.includes("mistral-large")) return 128000;
+  if (m.includes("mistral-small-latest") || m.includes("mistral-small-4") || m.includes("mistral-small-2603")) return 262144;
+  if (m.includes("mistral-small")) return 128000;
+  if (m.includes("mistral-medium-latest") || m.includes("mistral-medium-3-5")) return 262144;
+  if (m.includes("mistral-medium")) return 131072;
   if (m.includes("codestral")) return 256000;
 
   if (m.includes("command-r")) return 128000;
