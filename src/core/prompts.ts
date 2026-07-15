@@ -100,6 +100,9 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 - MACRO_FIRST: ALWAYS call control_browser_macro_run(name:'list') before any multi-step workflow. Match found → run it. No match → research DOM → save → run.
 - STEALTH: 'click' action pauses for manual user click (anti-bot). Mandatory for login, CAPTCHA, form submit, and any bot-sensitive target. Never auto-click these.
 - INSPECT_ELEMENT: When user refers to a page element using tag-label syntax (e.g. \`<button#submit>\`, \`<input.search[type=text]>\`), the selector in parentheses is the precise CSS locator — use it directly in control_browser_tab actions.
+- VISION_DETECTION: Use 'detect_ui' when selectors are missing, dynamic, or unstable.
+- ACTION_CHAINING: Use 'execute_chain' for multi-step sequences to minimize turn count. Target parameter must be a JSON array string of action objects.
+- RESILIENT_CLICK: For coordinate clicks, ALWAYS use the format "X,Y|backup-selector" if a CSS locator is available to support automatic scroll-drift fallback.
 - AMBIGUITY: Call ask_question if browser action or workflow intent is unclear.
 
 # MACRO SYSTEM
@@ -121,7 +124,11 @@ if user_requests_web_task:
             VERIFY dry-run substitution is correct
         CALL control_browser_macro_run(name, args)
     else:
-        RESEARCH via control_browser_tab (screenshot, html, text)
+        CALL control_browser_tab(action:'detect_ui')
+        if sequential_workflow:
+            CALL control_browser_tab(action:'execute_chain', target:JSON_string_of_steps)
+        else:
+            RESEARCH via control_browser_tab (screenshot, html, text)
         SAVE via control_browser_macro_save(name, steps with onError policies)
         RUN via control_browser_macro_run(name, args)
 
@@ -136,9 +143,7 @@ if anti_bot_sensitive_click:
     USE control_browser_tab(action:'click') → pauses for manual user click
 
 if search_needed:
-    CALL control_browser_tab(action:'navigate', target:'https://www.google.com')
-    CALL control_browser_tab(action:'type', target:'input[name="q"]', value:query)
-    CALL control_browser_tab(action:'click', target:'input[type="submit"]')
+    CALL control_browser_tab(action:'execute_chain', target:'[{"action":"navigate","target":"https://www.google.com"},{"action":"type","target":"input[name=\\"q\\"]","value":"{{query}}"},{"action":"click","target":"input[type=\\"submit\\"]"}]')
 
 if ui_verification_needed:
     CALL control_browser_tab(action:'screenshot')

@@ -6,10 +6,14 @@ describe("Python Vision Inference Server daemon", () => {
   let serverProcess: any = null;
   const testPort = 8096;
 
-  afterAll(() => {
+  afterAll(async () => {
     if (serverProcess) {
       try {
-        serverProcess.kill();
+        if (process.platform === "win32") {
+          await execa("taskkill", ["/F", "/T", "/PID", String(serverProcess.pid)]);
+        } else {
+          serverProcess.kill();
+        }
       } catch {}
     }
   });
@@ -19,6 +23,7 @@ describe("Python Vision Inference Server daemon", () => {
     
     // Spawn the daemon
     serverProcess = execa("python", [scriptPath, String(testPort)]);
+    serverProcess.catch(() => {});
     
     // Wait for server to boot (give it enough time to import torch/transformers)
     let isHealthy = false;

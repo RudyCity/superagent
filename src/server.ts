@@ -23,6 +23,19 @@ let lastActiveWorkspace: string = process.cwd();
 let isBrowseDialogOpen = false;
 let visionServerProcess: any = null;
 
+export const killVisionServerProcess = () => {
+  if (visionServerProcess) {
+    try {
+      if (process.platform === "win32") {
+        const { execSync } = require("child_process");
+        execSync(`taskkill /F /T /PID ${visionServerProcess.pid}`, { stdio: "ignore" });
+      } else {
+        visionServerProcess.kill();
+      }
+    } catch {}
+  }
+};
+
 function resolveSession(req: http.IncomingMessage): AgentSession | null {
   const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
   let wsPath = req.headers["x-workspace-path"] as string || parsedUrl.searchParams.get("workspace");
@@ -254,9 +267,7 @@ export async function runServer(port: number, silent = false) {
     });
 
     const cleanup = () => {
-      if (visionServerProcess) {
-        try { visionServerProcess.kill(); } catch {}
-      }
+      killVisionServerProcess();
     };
     process.on("exit", cleanup);
     process.on("SIGINT", () => { cleanup(); process.exit(0); });
@@ -736,9 +747,7 @@ export async function runServer(port: number, silent = false) {
       // Shutdown server process
       if (pathname === "/api/shutdown" && req.method === "POST") {
         sendJSON(res, 200, { success: true, message: "Server shutting down..." });
-        if (visionServerProcess) {
-          try { visionServerProcess.kill(); } catch {}
-        }
+        killVisionServerProcess();
         setTimeout(() => {
           process.exit(0);
         }, 500);
