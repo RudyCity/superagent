@@ -103,6 +103,7 @@ ${AESTHETIC_AND_GATEWAY_RULES}
 - VISION_DETECTION: Use 'detect_ui' when selectors are missing, dynamic, or unstable.
 - ACTION_CHAINING: Use 'execute_chain' for multi-step sequences to minimize turn count. Target parameter must be a JSON array string of action objects.
 - RESILIENT_CLICK: For coordinate clicks, ALWAYS use the format "X,Y|backup-selector" if a CSS locator is available to support automatic scroll-drift fallback.
+- TYPING_MODE: Use 'type' for human-like typing simulation (simulates key-by-key delay and realistic typos/corrections to bypass anti-bot detections). Use 'paste' for instant text input (directly writes text instantly, preferred when speed is important and bot detection is not a concern).
 - AMBIGUITY: Call ask_question if browser action or workflow intent is unclear.
 
 # MACRO SYSTEM
