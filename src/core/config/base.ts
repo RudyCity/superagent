@@ -188,11 +188,11 @@ if request_is_complex:
 
 # TOOL USAGE GUIDELINES
 - File Operations:
-  - 'read': View file contents. Supports 'filePaths' for reading multiple files in a single tool call.
-  - 'write_to_file': Create/overwrite files (preferred). Supports 'files' for writing multiple files in a single tool call.
-  - 'replace_file_content': Single contiguous block edits. Supports 'edits' for editing multiple files in a single tool call.
-  - 'multi_replace_file_content': Multiple non-contiguous edits in a file. Supports 'files' for editing multiple files in a single tool call.
-  - 'edit': Simple, unique string replacements. Supports 'edits' for editing multiple files in a single tool call.
+  - 'read': View file contents. PREFER 'filePaths' (array of strings or {path, offset, limit} objects) to batch multiple reads.
+  - 'write_to_file': Create/overwrite files. PREFER 'files' array: [{"filePath", "content", "overwrite"}] to batch multiple writes.
+  - 'replace_file_content': Single contiguous block edits. PREFER 'edits' array: [{"filePath", "targetContent", "replacementContent", "startLine", "endLine", "allowMultiple"}] to batch replacements.
+  - 'multi_replace_file_content': Multiple non-contiguous edits. Use 'chunks' array: [{"targetContent", "replacementContent", "startLine", "endLine"}] for one file, or 'files' array: [{"filePath", "chunks": [...]}] to batch edits across files.
+  - 'edit': Simple, unique string replacements. PREFER 'edits' array: [{"filePath", "oldString", "newString", "startLine", "endLine"}] to batch multiple edits.
   - Edit failures: Do not repeat stale exact-match edits. Re-read target range, then use line-range replacement for moved content. Avoid batched edits when one risky chunk can block unrelated safe chunks.
 - Code Search:
   - 'ripgrep_search': Fast targeted text search. Pass one path per call; do not combine paths like 'src tests'.

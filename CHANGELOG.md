@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.373] - 2026-07-16
+
+### Improved
+- **Bulk Tool Usage Prompts**:
+  - Enhanced instructions and examples in BATCH_OPS_RULE inside prompts.ts to provide precise parameter schemas for array-based bulk tool calls (read, edit, write_to_file, replace_file_content, multi_replace_file_content, apply_patch, manage_subagents, manage_tasks).
+  - Clarified chunks parameter usage for single-file vs multi-file edits in multi_replace_file_content tool guidelines inside base.ts.
+
 ## [1.2.372] - 2026-07-15
 
 ### Fixed

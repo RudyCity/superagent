@@ -12,15 +12,18 @@ const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill/terminate parent or 
 
 const REASONING_RULE = `- REASONING: If your active model supports reasoning/thinking, utilize it to think through complex problems, verify assumptions, plan tasks, and explain design choices before acting.`;
 
-const BATCH_OPS_RULE = `- BATCH_OPS: Use bulk/array parameters for ALL multi-file and multi-task operations in ONE call:
-  - read: 'filePaths' array (supports per-file {path, offset, limit} objects)
-  - edit: 'edits' array
-  - write_to_file: 'files' array
-  - replace_file_content: 'edits' array
-  - multi_replace_file_content: 'files' array
-  - apply_patch: 'patches' array
-  - manage_subagents: 'conversationIds' array (must be an array of strings, e.g. for logs or report actions, never use singular 'conversation_id')
-  - manage_tasks: use bulk actions ('add_bulk', 'update_bulk', 'remove_bulk') instead of looping single task updates
+const BATCH_OPS_RULE = `- BATCH_OPS: Batch all multi-file and multi-task operations in ONE tool call:
+  - read: 'filePaths' array parameter (either strings: ["path1", "path2"] or objects: [{"path": "path1", "offset": 1, "limit": 800}])
+  - edit: 'edits' array parameter: [{"filePath": "path", "oldString": "search", "newString": "replace", "startLine"?: 1, "endLine"?: 10}]
+  - write_to_file: 'files' array parameter: [{"filePath": "path", "content": "text", "overwrite"?: true}]
+  - replace_file_content: 'edits' array parameter: [{"filePath": "path", "targetContent": "old", "replacementContent": "new", "startLine": 1, "endLine": 10, "allowMultiple"?: false}]
+  - multi_replace_file_content: 'chunks' array parameter (for single file non-contiguous edits): [{"targetContent": "old", "replacementContent": "new", "startLine": 1, "endLine": 10}] OR 'files' array parameter (for multi-file non-contiguous edits): [{"filePath": "path", "chunks": [{"targetContent": "old", "replacementContent": "new", "startLine": 1, "endLine": 10}]}]
+  - apply_patch: 'patches' array parameter: [{"filePath": "path", "patchContent": "diff"}]
+  - manage_subagents: 'conversationIds' array parameter (must be an array of strings, e.g. action: "kill", conversationIds: ["id1", "id2"], never use singular "conversation_id")
+  - manage_tasks: use bulk actions ('add_bulk', 'update_bulk', 'remove_bulk') instead of looping single task updates:
+    - add_bulk: action: "add_bulk", texts: ["task1", "task2"]
+    - update_bulk: action: "update_bulk", indices: [1, 2], status: "x"
+    - remove_bulk: action: "remove_bulk", indices: [1, 2]
   - subagents: spawn independent subagents with multiple invoke_subagent tool calls in one turn when runtime supports parallel tool calls
   NEVER call file or task tools sequentially when operating on multiple items. Batch all operations upfront.`;
 
