@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.369] - 2026-07-15
+
+### Added
+- **Instant Paste Mode in Browser Control Tab**:
+  - Introduced a new `paste` action to the browser tab control tool `control_browser_tab`.
+  - Implemented the `pasteTextInstant` function in the Chrome extension sidepanel-browser script to bypass key-by-key typing delays and simulated typos, allowing instant text insertion.
+  - Updated validation and descriptions inside `otherTools.ts`.
+
 ## [1.2.368] - 2026-07-15
 
 ### Added

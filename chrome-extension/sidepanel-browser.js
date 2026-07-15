@@ -737,6 +737,81 @@ async function executeBrowserControl(controlId, action, target, value) {
               }, 40);
             };
 
+            const pasteTextInstant = async (element, text) => {
+               const isInput = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
+               const isEditable = element.isContentEditable || element.closest("[contenteditable='true']");
+               
+               if (!isInput && !isEditable) {
+                 try {
+                   element.value = text;
+                 } catch (e) {
+                   element.innerText = text;
+                 }
+                 element.dispatchEvent(new Event("input", { bubbles: true }));
+                 element.dispatchEvent(new Event("change", { bubbles: true }));
+                 return;
+               }
+
+               // Focus element first
+               if (typeof element.focus === "function") {
+                 element.focus();
+               }
+               const editableContainer = element.closest("[contenteditable='true']") || (element.isContentEditable ? element : null);
+               if (editableContainer && typeof editableContainer.focus === "function") {
+                 editableContainer.focus();
+               }
+
+               // Initialize caret position for contenteditable if not already focused
+               if (isEditable && editableContainer) {
+                 const sel = window.getSelection();
+                 if (sel.rangeCount === 0 || !editableContainer.contains(sel.anchorNode)) {
+                   const range = document.createRange();
+                   range.selectNodeContents(editableContainer);
+                   range.collapse(false); // Position at the end
+                   sel.removeAllRanges();
+                   sel.addRange(range);
+                 }
+               }
+
+               if (isInput) {
+                 const start = element.selectionStart;
+                 const end = element.selectionEnd;
+                 const val = element.value;
+                 const newVal = val.substring(0, start) + text + val.substring(end);
+                 
+                 // Use native setter if available to bypass React/Vue setters
+                 const proto = element instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+                 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+                 if (nativeInputValueSetter) {
+                   nativeInputValueSetter.call(element, newVal);
+                 } else {
+                   element.value = newVal;
+                 }
+                 
+                 element.setSelectionRange(start + text.length, start + text.length);
+                 element.dispatchEvent(new Event("input", { bubbles: true }));
+               } else if (isEditable && editableContainer) {
+                 const sel = window.getSelection();
+                 if (sel.rangeCount > 0) {
+                   const range = sel.getRangeAt(0);
+                   range.deleteContents();
+                   const textNode = document.createTextNode(text);
+                   range.insertNode(textNode);
+                   range.setStartAfter(textNode);
+                   range.setEndAfter(textNode);
+                   sel.removeAllRanges();
+                   sel.addRange(range);
+                 }
+                 editableContainer.dispatchEvent(new Event("input", { bubbles: true }));
+               }
+
+               if (isInput) {
+                 element.dispatchEvent(new Event("change", { bubbles: true }));
+               } else if (isEditable && editableContainer) {
+                 editableContainer.dispatchEvent(new Event("change", { bubbles: true }));
+               }
+             };
+
             const typeTextHumanLike = async (element, text) => {
               const isInput = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
               const isEditable = element.isContentEditable || element.closest("[contenteditable='true']");
@@ -1416,6 +1491,19 @@ async function executeBrowserControl(controlId, action, target, value) {
               }, 3000);
 
               return `Typed "${val}" into element ${tgt}`;
+            }
+
+            if (act === "paste") {
+              showBanner(`Pasting into element ${tgt}...`);
+              await animateCursorTo(cursorTarget);
+              await pasteTextInstant(el, val);
+
+              window.__superagent_cursor_timeout__ = setTimeout(() => {
+                const cursor = document.getElementById("__superagent_cursor__");
+                if (cursor) cursor.style.opacity = "0";
+              }, 3000);
+
+              return `Pasted "${val}" into element ${tgt}`;
             }
 
             return `Error: Unknown action ${act}`;
