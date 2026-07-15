@@ -1698,14 +1698,14 @@ export function setBrowserControlHandler(handler: typeof browserControlHandler) 
 
 export const controlBrowserTabTool: Tool = {
   name: "control_browser_tab",
-  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (guides the user to click manually for stealth), type, navigate, scroll, screenshot, errors, text, hover, keypress, wait, html, reload, back, forward, open, close, list, switch, duplicate, pin, unpin, mute, unmute, move, group, ungroup, discard, new_window, close_window, top_sites (get top visited sites), reading_list_add (add reading list), reading_list_remove (remove reading list), reading_list_get (get reading list), group_update (update group title/color), group_get (get group info), history_search (search history), history_delete (delete URL from history), history_clear (clear all history), management_list (list extensions), management_get (get extension details).",
+  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (guides the user to click manually for stealth), type, navigate, scroll, screenshot, detect_ui (runs UI-DETR-1 to detect UI elements and coordinates), errors, text, hover, keypress, wait, html, reload, back, forward, open, close, list, switch, duplicate, pin, unpin, mute, unmute, move, group, ungroup, discard, new_window, close_window, top_sites (get top visited sites), reading_list_add (add reading list), reading_list_remove (remove reading list), reading_list_get (get reading list), group_update (update group title/color), group_get (get group info), history_search (search history), history_delete (delete URL from history), history_clear (clear all history), management_list (list extensions), management_get (get extension details).",
   parameters: {
     type: "object",
     properties: {
       action: {
         type: "string",
         enum: [
-          "click", "type", "navigate", "scroll", "screenshot", "errors", "text", "hover", "keypress", "wait", "html", "reload", "back", "forward",
+          "click", "type", "navigate", "scroll", "screenshot", "detect_ui", "errors", "text", "hover", "keypress", "wait", "html", "reload", "back", "forward",
           "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window",
           "top_sites", "reading_list_add", "reading_list_remove", "reading_list_get", "group_update", "group_get", "history_search", "history_delete", "history_clear", "management_list", "management_get"
         ],
@@ -1717,7 +1717,7 @@ export const controlBrowserTabTool: Tool = {
       },
       value: {
         type: "string",
-        description: "Text to type (type), key to press (keypress), scroll offset, timeout in ms (wait), destination index (move), group ID (group), group metadata JSON or title (group_update), reading list title (reading_list_add), or history maxResults (history_search)."
+        description: "Text to type (type), key to press (keypress), scroll offset, timeout in ms (wait), destination index (move), group ID (group), group metadata JSON or title (group_update), reading list title (reading_list_add), history maxResults (history_search), or confidence threshold (detect_ui)."
       }
     },
     required: ["action"]
@@ -1729,6 +1729,37 @@ export const controlBrowserTabTool: Tool = {
     const action = args.action as string;
     if (["click", "type", "navigate", "scroll", "hover", "keypress", "wait", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get"].includes(action) && !args.target) {
       return `Error: Target parameter is required for action "${action}".`;
+    }
+    if (action === "detect_ui") {
+      try {
+        const screenshotResult = await browserControlHandler("screenshot", "", "");
+        if (screenshotResult.includes("Error") || screenshotResult.includes("failed")) {
+          return `Failed to capture screenshot for detection: ${screenshotResult}`;
+        }
+        const screenshotPath = path.join(cwd, "chrome_screenshot.png");
+        const scriptPath = path.join(cwd, "scripts", "detect_ui.py");
+        const threshold = args.value ? parseFloat(String(args.value)) : 0.35;
+        const { stdout } = await execa("python", [scriptPath, "--image", screenshotPath, "--threshold", String(isNaN(threshold) ? 0.35 : threshold)]);
+        const data = JSON.parse(stdout);
+        if (data.error) {
+          return `UI Detection failed: ${data.error}`;
+        }
+        if (data.success && Array.isArray(data.elements)) {
+          if (data.elements.length === 0) {
+            return "UI Detection finished: No elements detected on the page.";
+          }
+          let responseStr = "Detected UI elements (use click/type/hover with target='X,Y'):\n";
+          for (const el of data.elements) {
+            const [cx, cy] = el.center;
+            const [xmin, ymin, xmax, ymax] = el.box;
+            responseStr += `- ${el.label} at coordinate ${cx},${cy} (box: [${xmin}, ${ymin}, ${xmax}, ${ymax}], confidence: ${el.score})\n`;
+          }
+          return responseStr.trim();
+        }
+        return `UI Detection returned unexpected output: ${stdout}`;
+      } catch (err: any) {
+        return `UI Detection execution failed: ${err.stderr || err.message}`;
+      }
     }
     try {
       const result = await browserControlHandler(action, args.target as string, args.value as string);

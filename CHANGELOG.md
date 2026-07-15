@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.364] - 2026-07-15
+
+### Added
+- **Visual UI Detection via UI-DETR-1 Model** (`detect_ui` action):
+  - Added `detect_ui` action to `control_browser_tab` tool. When called, it automatically takes a screenshot of the active Chrome tab, runs the `racineai/UI-DETR-1` object detection model (via `scripts/detect_ui.py`), and returns a list of all detected interactive UI elements with their visual coordinates.
+  - Output format: `- <label> at coordinate X,Y (box: [...], confidence: <score>)` — coordinates can be passed directly to `click`, `type`, and `hover` actions.
+  - Added `scripts/detect_ui.py` — Python inference script using the Hugging Face `transformers` pipeline to load and run `racineai/UI-DETR-1`. Supports a configurable confidence threshold (default: 0.35).
+- **Coordinate-Based Browser Interactions** (`X,Y` target pattern):
+  - `click`, `type`, `hover`, and `keypress` actions in the Chrome extension (`sidepanel-browser.js`) now accept a coordinate string (e.g., `"320,480"`) as the `target` parameter in addition to CSS selectors.
+  - When a coordinate target is detected, the extension resolves the element at those coordinates via `document.elementFromPoint(x, y)` and dispatches mouse events at the exact coordinate, enabling visual-based automation that is robust against DOM/class name changes.
+
 ## [1.2.363] - 2026-07-14
 
 ### Fixed

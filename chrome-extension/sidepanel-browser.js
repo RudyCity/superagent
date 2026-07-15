@@ -723,14 +723,35 @@ async function executeBrowserControl(controlId, action, target, value) {
               }
             };
 
-            const animateCursorTo = async (element) => {
+            const animateCursorTo = async (elementOrCoords) => {
               try {
                 if (window.__superagent_cursor_tremor_interval__) {
                   clearInterval(window.__superagent_cursor_tremor_interval__);
                 }
 
-                // Smoothly scroll target element into viewport if offscreen
-                await scrollIntoViewAndWait(element);
+                let targetX, targetY;
+                let targetWidth = 20;
+                let targetHeight = 20;
+                const scrollX = window.scrollX;
+                const scrollY = window.scrollY;
+
+                if (elementOrCoords && typeof elementOrCoords.getBoundingClientRect === "function") {
+                  // Smoothly scroll target element into viewport if offscreen
+                  await scrollIntoViewAndWait(elementOrCoords);
+                  const rect = elementOrCoords.getBoundingClientRect();
+                  targetWidth = rect.width;
+                  targetHeight = rect.height;
+                  // Pick a target coordinate slightly randomized inside the target element (inner 60%) to look human-like
+                  const paddingX = rect.width * 0.2;
+                  const paddingY = rect.height * 0.2;
+                  targetX = rect.left + paddingX + Math.random() * (rect.width - 2 * paddingX) + scrollX;
+                  targetY = rect.top + paddingY + Math.random() * (rect.height - 2 * paddingY) + scrollY;
+                } else if (elementOrCoords && typeof elementOrCoords.x === "number" && typeof elementOrCoords.y === "number") {
+                  targetX = elementOrCoords.x + scrollX;
+                  targetY = elementOrCoords.y + scrollY;
+                } else {
+                  return;
+                }
 
                 let cursor = document.getElementById("__superagent_cursor__");
                 if (!cursor) {
@@ -755,16 +776,6 @@ async function executeBrowserControl(controlId, action, target, value) {
                   clearTimeout(window.__superagent_cursor_timeout__);
                 }
                 cursor.style.opacity = "1";
-
-                const rect = element.getBoundingClientRect();
-                const scrollX = window.scrollX;
-                const scrollY = window.scrollY;
-
-                // Pick a target coordinate slightly randomized inside the target element (inner 60%) to look human-like
-                const paddingX = rect.width * 0.2;
-                const paddingY = rect.height * 0.2;
-                const targetX = rect.left + paddingX + Math.random() * (rect.width - 2 * paddingX) + scrollX;
-                const targetY = rect.top + paddingY + Math.random() * (rect.height - 2 * paddingY) + scrollY;
 
                 // Retrieve last position or start from a random edge of screen
                 let startX = window.__superagent_cursor_x__;
@@ -822,7 +833,7 @@ async function executeBrowserControl(controlId, action, target, value) {
                 const controlY2 = startY + p1Dy * 0.75 - perpendicularY * controlOffset;
 
                 // Duration based on Fitts's law: movement time is logarithmic curve of (distance / size)
-                const targetSize = Math.min(rect.width, rect.height);
+                const targetSize = Math.min(targetWidth, targetHeight);
                 const ID = Math.log2((2 * p1Distance) / Math.max(10, targetSize) + 1);
                 const duration = Math.min(950, Math.max(280, 150 + ID * 80));
                 const startTime = performance.now();
@@ -1039,14 +1050,33 @@ async function executeBrowserControl(controlId, action, target, value) {
               return el.innerText || "";
             }
 
-            const el = document.querySelector(tgt);
-            if (!el) {
-              return `Error: Element not found for selector: ${tgt}`;
+            // Resolve target selector or coordinate
+            const coordMatch = typeof tgt === "string" && tgt.match(/^(\d+),(\d+)$/);
+            let el, clientX, clientY;
+            let cursorTarget;
+
+            if (coordMatch) {
+              clientX = parseInt(coordMatch[1], 10);
+              clientY = parseInt(coordMatch[2], 10);
+              el = document.elementFromPoint(clientX, clientY);
+              if (!el) {
+                el = document.body;
+              }
+              cursorTarget = { x: clientX, y: clientY };
+            } else {
+              el = document.querySelector(tgt);
+              if (!el) {
+                return `Error: Element not found for selector: ${tgt}`;
+              }
+              const rect = el.getBoundingClientRect();
+              clientX = rect.left + rect.width / 2;
+              clientY = rect.top + rect.height / 2;
+              cursorTarget = el;
             }
 
             if (act === "click") {
               showBanner(`Clicking element ${tgt}...`);
-              await animateCursorTo(el);
+              await animateCursorTo(cursorTarget);
 
               // Small delay to simulate human hover before click
               await new Promise((r) => setTimeout(r, 80));
@@ -1058,9 +1088,6 @@ async function executeBrowserControl(controlId, action, target, value) {
               }
 
               // Dispatch human-like mousedown event
-              const rect = el.getBoundingClientRect();
-              const clientX = rect.left + rect.width / 2;
-              const clientY = rect.top + rect.height / 2;
               el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX, clientY }));
 
               // Programmatically focus the element or contenteditable container to ensure caret appears
@@ -1104,11 +1131,10 @@ async function executeBrowserControl(controlId, action, target, value) {
 
             if (act === "hover") {
               showBanner(`Hovering over element ${tgt}...`);
-              await animateCursorTo(el);
-              const rect = el.getBoundingClientRect();
-              el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 }));
+              await animateCursorTo(cursorTarget);
+              el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, clientX, clientY }));
               el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true }));
-              el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2 }));
+              el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX, clientY }));
 
               window.__superagent_cursor_timeout__ = setTimeout(() => {
                 const cursor = document.getElementById("__superagent_cursor__");
@@ -1120,7 +1146,7 @@ async function executeBrowserControl(controlId, action, target, value) {
 
             if (act === "keypress") {
               showBanner(`Pressing key ${val || "Enter"} on element ${tgt}...`);
-              await animateCursorTo(el);
+              await animateCursorTo(cursorTarget);
               const key = val || "Enter";
               const keyCode = key === "Enter" ? 13 : 0;
               const eventInit = { key, keyCode, bubbles: true, cancelable: true };
@@ -1147,7 +1173,7 @@ async function executeBrowserControl(controlId, action, target, value) {
 
             if (act === "type") {
               showBanner(`Typing into element ${tgt}...`);
-              await animateCursorTo(el);
+              await animateCursorTo(cursorTarget);
               await typeTextHumanLike(el, val);
 
               window.__superagent_cursor_timeout__ = setTimeout(() => {
