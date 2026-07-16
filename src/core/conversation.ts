@@ -155,7 +155,7 @@ export class Conversation {
         lastCapturedTimestamp: this.lastCapturedTimestamp,
         activePreset,
       };
-      await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+      await fs.writeFile(filePath, JSON.stringify(data), "utf-8");
 
       try {
         const userMessages = this.messages.filter((m) => m.role === "user");
@@ -244,7 +244,7 @@ export class Conversation {
         lastCapturedTimestamp: this.lastCapturedTimestamp,
         activePreset,
       };
-      fsSync.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+      fsSync.writeFileSync(filePath, JSON.stringify(data), "utf-8");
 
       try {
         const userMessages = this.messages.filter((m) => m.role === "user");
@@ -467,6 +467,9 @@ export class Conversation {
     };
 
     const truncateResult = (tr: ToolResult): ToolResult => {
+      if (tr.result.includes("[truncated —") || tr.result.includes("[Error truncated]")) {
+        return tr;
+      }
       if (tr.isError) {
         const trimmed = tr.result.length > ERROR_CHARS
           ? `${tr.result.substring(0, ERROR_CHARS)}... [Error truncated]`

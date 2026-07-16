@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.377] - 2026-07-16
+
+### Optimized
+- **Conversation History Serialization**:
+  - Saved history JSON files (`{sessionId}.json`) in minified format instead of pretty-printing with 2-space indentation, reducing file size and CPU/disk usage.
+  - Optimized `stripOldToolResults` to skip already truncated results, avoiding redundant regex execution, string splits, and array slicing.
+
 ## [1.2.376] - 2026-07-16
 
 ### Optimized
