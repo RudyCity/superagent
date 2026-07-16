@@ -83,7 +83,7 @@ export class TokenTracker {
     const useVision = supportsVision && (settings.autoVisionTokenSaving ?? false);
     const threshold = getDynamicVisionThreshold(this.model);
 
-    let tokens = this.countContent(message.content);
+    let tokens = this.countContent(message.content, useVision, threshold);
 
     if (message.toolCalls) {
       for (const call of message.toolCalls) {
@@ -124,7 +124,7 @@ export class TokenTracker {
       let cached = this.breakdownCache.get(hash);
 
       if (!cached) {
-        let content = this.countContent(msg.content);
+        let content = this.countContent(msg.content, useVision, threshold);
         let tcTokens = 0;
         if (msg.toolCalls) {
           for (const call of msg.toolCalls) {
@@ -190,13 +190,8 @@ export class TokenTracker {
     return breakdown;
   }
 
-  private countContent(content: MessageContent): number {
+  private countContent(content: MessageContent, useVision: boolean, threshold: number): number {
     if (!content) return 0;
-    
-    const settings = getSettings();
-    const supportsVision = this.modelSupportsVision(this.model);
-    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? false);
-    const threshold = getDynamicVisionThreshold(this.model);
 
     if (typeof content === "string") {
       const isMemoryContext = content.startsWith("[TencentDB Agent Memory Context]:");
