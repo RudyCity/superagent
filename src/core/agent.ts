@@ -1615,6 +1615,17 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         const stepNotice = stepsRemaining <= 5
           ? `\n- Current Step: ${currentStep} of ${maxIterationsStr} (WARNING: Only ${stepsRemaining} steps remaining!)`
           : "";
+        const modelInstance = this.getModel();
+        const modelName = modelInstance ? modelInstance.modelId : "";
+        const supportsVision = this.modelSupportsVision(modelName);
+        const settings = getSettings();
+        const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
+        // Inform the conversation so stripOldToolResults retains more cycles
+        // when vision is active — buildMessages() will image-convert large results.
+        this.conversation.setVisionMode(useVisionTokenSaving);
+        const threshold = getDynamicVisionThreshold(modelName);
+        const visionMode = settings.visionMode ?? 1;
+
         // ── Live Workspace State block ─────────────────────────────────────────
         let workspaceStateText = "";
         if (this.tier !== "subagent") {
@@ -1689,7 +1700,11 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         };
 
         // Inject dynamic context into the active messages list
-        injectDynamicContext(messages);
+        if (useVisionTokenSaving && visionMode === 2) {
+          messages = this.buildMessages(supportsNativeTools, dynamicContext);
+        } else {
+          injectDynamicContext(messages);
+        }
 
         // ── Pre-flight payload size (byte) safety check ───────────────────
         // Prevents 413 Payload Too Large errors when large tool results or files
@@ -1711,8 +1726,12 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             const targetBudget = Math.max(20 * 1024, maxPayloadBytes - systemSize - toolsSize - 5000);
             await this.compactHistoryIfNeeded(signal, true, undefined, targetBudget);
             // Rebuild messages from compacted conversation
-            messages = this.buildMessages(supportsNativeTools);
-            injectDynamicContext(messages);
+            if (useVisionTokenSaving && visionMode === 2) {
+              messages = this.buildMessages(supportsNativeTools, dynamicContext);
+            } else {
+              messages = this.buildMessages(supportsNativeTools);
+              injectDynamicContext(messages);
+            }
           }
         }
 
@@ -1761,8 +1780,12 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             const targetHistoryBudget = Math.max(1000, safetyMax - estSysTokens - dynamicContextTokens);
             await this.compactHistoryIfNeeded(signal, false, targetHistoryBudget);
             // Rebuild messages from compacted conversation
-            messages = this.buildMessages(supportsNativeTools);
-            injectDynamicContext(messages);
+            if (useVisionTokenSaving && visionMode === 2) {
+              messages = this.buildMessages(supportsNativeTools, dynamicContext);
+            } else {
+              messages = this.buildMessages(supportsNativeTools);
+              injectDynamicContext(messages);
+            }
             const afterEstMsgTokens = this.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
             const afterEstTotal = afterEstMsgTokens + estSysTokens;
             this.writeToLogFile("INFO", `Post-compaction estimated total: ~${afterEstTotal.toLocaleString()} tokens.`);
@@ -1792,17 +1815,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         let prependSystemMessage: any = null;
         let prependSystemAssistantMessage: any = null;
 
-        const modelInstance = this.getModel();
-        const modelName = modelInstance ? modelInstance.modelId : "";
-        const supportsVision = this.modelSupportsVision(modelName);
-        const settings = getSettings();
-        const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
-        // Inform the conversation so stripOldToolResults retains more cycles
-        // when vision is active — buildMessages() will image-convert large results.
-        this.conversation.setVisionMode(useVisionTokenSaving);
-        const threshold = getDynamicVisionThreshold(modelName);
 
-        const visionMode = settings.visionMode ?? 1;
         if (useVisionTokenSaving && visionMode === 1 && finalSystemPrompt.length > threshold && !this.customSystemPrompt) {
           try {
             this.writeToLogFile("INFO", `Automatically converting system prompt (size ${finalSystemPrompt.length} chars) to image.`);
@@ -2032,8 +2045,12 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
 
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
                 await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
-                messages = this.buildMessages(supportsNativeTools);
-                injectDynamicContext(messages);
+                if (useVisionTokenSaving && visionMode === 2) {
+                  messages = this.buildMessages(supportsNativeTools, dynamicContext);
+                } else {
+                  messages = this.buildMessages(supportsNativeTools);
+                  injectDynamicContext(messages);
+                }
 
                 const afterPayloadBytes = Buffer.byteLength(JSON.stringify(messages), "utf-8") + systemSize + toolsSize + 5000;
                 this.writeToLogFile("INFO", `413 Compaction (non-stream): After size: ${(afterPayloadBytes / 1024).toFixed(1)} KB`);
@@ -2327,8 +2344,12 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
 
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
                 await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
-                messages = this.buildMessages(supportsNativeTools);
-                injectDynamicContext(messages);
+                if (useVisionTokenSaving && visionMode === 2) {
+                  messages = this.buildMessages(supportsNativeTools, dynamicContext);
+                } else {
+                  messages = this.buildMessages(supportsNativeTools);
+                  injectDynamicContext(messages);
+                }
 
                 const afterPayloadBytes = Buffer.byteLength(JSON.stringify(messages), "utf-8") + systemSize + toolsSize + 5000;
                 this.writeToLogFile("INFO", `413 Compaction (stream): After size: ${(afterPayloadBytes / 1024).toFixed(1)} KB`);
@@ -3100,7 +3121,7 @@ for (const tc of toolCalls) {
     return false;
   }
 
-  private buildMessages(supportsNativeTools = true): CoreMessage[] {
+  private buildMessages(supportsNativeTools = true, dynamicContext?: string): CoreMessage[] {
     const coreMessages: CoreMessage[] = [];
 
     let modelName = "";
@@ -3145,6 +3166,11 @@ for (const tc of toolCalls) {
       const systemPrompt = this.config.systemPrompt || "";
       if (systemPrompt) {
         compiledText = `=== SYSTEM INSTRUCTIONS ===\n${systemPrompt}\n\n` + compiledText;
+      }
+
+      // Append dynamic execution context at the end of compiled text in Mode 2
+      if (dynamicContext) {
+        compiledText += `\n=== DYNAMIC EXECUTION CONTEXT ===\n${dynamicContext}\n`;
       }
 
       const cleanText = minifyTextForImage(compiledText);

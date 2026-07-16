@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.385] - 2026-07-16
+
+### Fixed
+- **Mode 2 Pure Image Flow**: Integrated the dynamic execution context (which contains plan state, workspace state, scratchpad, etc.) directly into the compiled images in Mode 2 instead of appending it as a plaintext user message part. This completely eliminates large text inputs from Mode 2 API payloads.
+
 ## [1.2.384] - 2026-07-16
 
 ### Fixed
