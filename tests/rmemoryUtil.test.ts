@@ -7,11 +7,11 @@ describe("rmemoryUtil - isRmemoryActive", () => {
     vi.clearAllMocks();
   });
 
-  it("should always return false", async () => {
+  it("should return the settings value", async () => {
     updateSettings({ enableRmemory: false });
     expect(await isRmemoryActive(true)).toBe(false);
 
     updateSettings({ enableRmemory: true });
-    expect(await isRmemoryActive(true)).toBe(false);
+    expect(await isRmemoryActive(true)).toBe(true);
   });
 });

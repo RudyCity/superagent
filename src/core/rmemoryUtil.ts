@@ -249,6 +249,6 @@ export function getRMemorySessionKey(historyPath: string | null): string {
 }
 
 export async function isRmemoryActive(forceRefresh = false): Promise<boolean> {
-  return false;
+  return !!getSettings().enableRmemory;
 }
 

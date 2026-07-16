@@ -788,7 +788,7 @@ export function getSettings(): SystemSettings {
     rmemoryGatewayUrl: s.rmemoryGatewayUrl ?? "http://127.0.0.1:8420",
     rmemoryGatewayApiKey: s.rmemoryGatewayApiKey ?? "sk-xxxx",
     rmemoryServiceId: s.rmemoryServiceId ?? "default",
-    enableRmemory: false,
+    enableRmemory: s.enableRmemory ?? true,
     maxChecklistVisible: s.maxChecklistVisible ?? 3,
     maxHistoryVisible: s.maxHistoryVisible ?? 3,
     maxProcsVisible: s.maxProcsVisible ?? 3,

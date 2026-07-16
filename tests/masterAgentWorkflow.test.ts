@@ -38,6 +38,13 @@ vi.mock("execa", () => ({
   execa: vi.fn().mockResolvedValue({ stdout: "" }),
 }));
 
+// Mock rmemoryUtil to isolate workflow tests from RMemory active state
+vi.mock("../src/core/rmemoryUtil.js", () => ({
+  getRMemoryClient: vi.fn(),
+  getRMemorySessionKey: vi.fn().mockReturnValue("test-sess"),
+  isRmemoryActive: vi.fn().mockResolvedValue(false),
+}));
+
 describe("Master Agent Workflow & Guardrails", () => {
   const originalEnv = process.env;
   const testConfigDir = path.join(os.tmpdir(), `superagent-master-workflow-${process.pid}`);
