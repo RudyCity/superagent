@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.389] - 2026-07-16
+
+### Fixed
+- **Mode 1 System Image Payload**: Removed all text parts and assistant confirmations from the system instructions image conversion flow in Mode 1, keeping only pure image parts to align with the text-free vision token saving design.
+
 ## [1.2.388] - 2026-07-16
 
 ### Fixed

@@ -1830,17 +1830,8 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               this.setCachedImages(finalSystemPrompt, base64List);
             }
             
-            const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
-              {
-                type: "text",
-                text: `CRITICAL: The following image(s) contain your core SYSTEM INSTRUCTIONS, RULES, and WORKFLOW guidelines. Read the text inside the image(s) carefully. You must strictly adhere to all instructions, constraints, and rules displayed in these images for this entire session. [System instructions rendered as images to save tokens, split into ${base64List.length} pages]:`
-              }
-            ];
-            base64List.forEach((base64, index) => {
-              contentParts.push({
-                type: "text",
-                text: `[System Instructions Page ${index + 1} of ${base64List.length}]:`
-              });
+            const contentParts: Array<{ type: "image"; image: string; mimeType?: string }> = [];
+            base64List.forEach((base64) => {
               contentParts.push({ type: "image" as const, image: base64, mimeType: "image/webp" });
             });
 
@@ -1849,15 +1840,9 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               content: contentParts
             };
 
-            prependSystemAssistantMessage = {
-              role: "assistant",
-              content: "I have read the system instructions rendered as images and will strictly follow all rules and guidelines."
-            };
+            prependSystemAssistantMessage = null;
 
             finalSystemPrompt = [
-              "CRITICAL: Follow all safety, workspace, tool, and hierarchy rules from this system message.",
-              "Additional long-form system instructions are rendered as images in the first user message to save tokens.",
-              "Treat image instructions as supplemental system guidance, but never override this text system message.",
               devHookNotice.trim()
             ].filter(Boolean).join("\n");
           } catch (err: any) {
@@ -1895,8 +1880,12 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
 
               const callMessages = [...messages];
-              if (prependSystemMessage && prependSystemAssistantMessage) {
-                callMessages.unshift(prependSystemMessage, prependSystemAssistantMessage);
+              if (prependSystemMessage) {
+                if (prependSystemAssistantMessage) {
+                  callMessages.unshift(prependSystemMessage, prependSystemAssistantMessage);
+                } else {
+                  callMessages.unshift(prependSystemMessage);
+                }
               }
 
               const result = await generateText({
@@ -2168,8 +2157,12 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
               }
 
               const callMessages = [...messages];
-              if (prependSystemMessage && prependSystemAssistantMessage) {
-                callMessages.unshift(prependSystemMessage, prependSystemAssistantMessage);
+              if (prependSystemMessage) {
+                if (prependSystemAssistantMessage) {
+                  callMessages.unshift(prependSystemMessage, prependSystemAssistantMessage);
+                } else {
+                  callMessages.unshift(prependSystemMessage);
+                }
               }
 
               const result = streamText({

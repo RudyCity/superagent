@@ -240,22 +240,18 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     await agent.sendMessage("hello");
 
     // Check if generateText or streamText was called and captured options
-    expect(lastGenerateTextOptions).not.toBeNull();
-    // System parameter should keep critical guidance while image content carries long instructions
-    expect(lastGenerateTextOptions.system).toContain("Follow all safety, workspace, tool, and hierarchy rules");
-    expect(lastGenerateTextOptions.system).toContain("rendered as images in the first user message");
-    
-    // Messages array should contain prepended user and assistant messages with the images
-    const msgs = lastGenerateTextOptions.messages;
-    expect(msgs.length).toBeGreaterThanOrEqual(3); // prepend user + prepend assistant + original user message
-    expect(msgs[0].role).toBe("user");
-    expect(msgs[0].content[0].text).toContain("System instructions rendered as images");
-    const imagePart = msgs[0].content.find((p: any) => p.type === "image");
-    expect(imagePart).toBeDefined();
-    expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
-
-    expect(msgs[1].role).toBe("assistant");
-    expect(msgs[1].content).toContain("read the system instructions rendered as images");
+     expect(lastGenerateTextOptions).not.toBeNull();
+     // System parameter should be empty in this test (no devHookNotice active)
+     expect(lastGenerateTextOptions.system).toBe("");
+     
+     // Messages array should contain prepended user message with images + original user message
+     const msgs = lastGenerateTextOptions.messages;
+     expect(msgs.length).toBe(6);
+     expect(msgs[0].role).toBe("user");
+     expect(msgs[0].content[0].type).toBe("image");
+     const imagePart = msgs[0].content.find((p: any) => p.type === "image");
+     expect(imagePart).toBeDefined();
+     expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
   });
 
   it("converts a TencentDB Agent Memory Context user message to image parts even if it is shorter than the threshold", () => {
