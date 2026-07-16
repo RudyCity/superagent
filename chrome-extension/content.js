@@ -1,9 +1,17 @@
-// Capture runtime errors and unhandled promise rejections
-if (!window.__capturedErrors) {
-  window.__capturedErrors = [];
+// Diagnostics are injected only after explicit per-tab consent.
+if (!window.__superagentDiagnosticsInstalled) {
+  window.__superagentDiagnosticsInstalled = true;
+  window.__capturedErrors = window.__capturedErrors || [];
+
+  const pushCapturedError = (entry) => {
+    window.__capturedErrors.push(entry);
+    if (window.__capturedErrors.length > 100) {
+      window.__capturedErrors.splice(0, window.__capturedErrors.length - 100);
+    }
+  };
 
   window.addEventListener("error", (e) => {
-    window.__capturedErrors.push({
+    pushCapturedError({
       type: "exception",
       message: e.message,
       source: e.filename,
@@ -15,7 +23,7 @@ if (!window.__capturedErrors) {
   });
 
   window.addEventListener("unhandledrejection", (e) => {
-    window.__capturedErrors.push({
+    pushCapturedError({
       type: "unhandled_rejection",
       message: e.reason ? (e.reason.message || String(e.reason)) : "Unknown rejection",
       stack: e.reason ? e.reason.stack : null,
@@ -23,10 +31,9 @@ if (!window.__capturedErrors) {
     });
   });
 
-  // Listen for console.error messages from the main world injection
   window.addEventListener("superagent-console-error", (e) => {
     if (e.detail) {
-      window.__capturedErrors.push({
+      pushCapturedError({
         type: "console_error",
         message: e.detail.message,
         timestamp: e.detail.timestamp
@@ -34,4 +41,3 @@ if (!window.__capturedErrors) {
     }
   });
 }
-

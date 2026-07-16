@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.376] - 2026-07-16
+
+### Optimized
+- **Terminal Input Rendering Performance**:
+  - Replaced O(N) character-by-character loops with O(1) string slices in `ChatTextInput.tsx` for rendering collapsed pasted block prefixes, suffixes, and long visible text windows.
+  - Eliminated terminal freeze and input lag when navigating or typing in inputs with large pasted segments.
+
+### Fixed
+- **Paste State Duplication & Reset**:
+  - Unified paste state detection by calling `updatePasteState` in `multi-agent-dashboard.tsx` instead of duplicate implementation.
+  - Reset `pastePrefixLength` and `pasteSuffixLength` when clearing/submitting inputs in `app.tsx`.
+
 ## [1.2.375] - 2026-07-16
 
 ### Fixed

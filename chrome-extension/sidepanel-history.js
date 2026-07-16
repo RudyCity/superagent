@@ -242,14 +242,7 @@ function renderChatHistorySessionsList(sessions) {
       minute: '2-digit'
     });
 
-    item.innerHTML = `
-      <div class="flex justify-between items-center text-[11px] font-medium">
-        <span class="history-name text-vscode-light truncate max-w-[170px]" title="${s.displayName}">${escapeHtml(s.displayName)}</span>
-        <span class="history-count text-vscode-muted text-[10px] shrink-0">${s.messageCount} msgs</span>
-      </div>
-      <div class="text-[10px] text-vscode-muted truncate" title="${s.preview}">${escapeHtml(s.preview)}</div>
-      <div class="text-[9px] text-vscode-muted/70 text-right mt-0.5">${formattedDate}</div>
-    `;
+
 
     item.addEventListener("click", async () => {
       await switchChatSession(s.id);

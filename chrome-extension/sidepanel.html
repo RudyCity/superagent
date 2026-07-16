@@ -43,6 +43,10 @@
       <div class="form-group flex flex-col gap-1.5">
         <label for="api-token" class="text-[11px] font-semibold text-vscode-primary">Engine API Token</label>
         <input type="password" id="api-token" placeholder="Optional connection security token" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+        <label class="flex items-center gap-2 text-[11px] text-vscode-muted leading-tight">
+          <input type="checkbox" id="remember-token" class="accent-vscode-bright">
+          Remember token on this device
+        </label>
         <span class="input-hint text-[11px] text-vscode-muted leading-tight">The authentication token if required by the local Superagent server.</span>
       </div>
 

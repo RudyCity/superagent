@@ -110,13 +110,7 @@ async function updateGitChanges() {
 
         const filename = c.filepath.split("/").pop().split("\\").pop();
 
-        item.innerHTML = `
-          <div class="flex items-center gap-2 overflow-hidden flex-1 mr-2">
-            <span class="px-1 py-0.5 rounded-[2px] font-mono text-[9px] font-bold ${statusClass}">${statusLabel}</span>
-            <span class="font-mono text-vscode-light overflow-hidden text-ellipsis whitespace-nowrap" title="${c.filepath}">${filename}</span>
-          </div>
-        `;
-        container.appendChild(item);
+
       });
     }
   } catch (err) {

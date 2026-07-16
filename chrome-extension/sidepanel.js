@@ -48,6 +48,7 @@ const workspaceScreen = document.getElementById("workspace-screen");
 
 const workspacePathInput = document.getElementById("workspace-path");
 const apiTokenInput = document.getElementById("api-token");
+const rememberTokenInput = document.getElementById("remember-token");
 const btnInit = document.getElementById("btn-init");
 const btnBrowse = document.getElementById("btn-browse");
 const recentWorkspacesContainer = document.getElementById("recent-workspaces-container");
@@ -158,25 +159,26 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Load saved workspace path, API token, and saved workspaces list if any
-  chrome.storage.local.get(["lastWorkspacePath", "lastApiToken", "savedWorkspaces", "lastMode"], (result) => {
-    if (result.lastWorkspacePath) {
-      workspacePathInput.value = result.lastWorkspacePath;
+
+
+  chrome.storage.session.get(["apiToken"], (sessionResult) => {
+    if (sessionResult.apiToken) {
+      apiToken = sessionResult.apiToken;
+      apiTokenInput.value = apiToken;
     }
-    if (result.lastApiToken) {
-      apiTokenInput.value = result.lastApiToken;
-      apiToken = result.lastApiToken;
-    }
-    if (result.lastMode) {
-      currentMode = result.lastMode;
-      const radio = document.querySelector(`input[name="agent-mode"][value="${result.lastMode}"]`);
-      if (radio) radio.checked = true;
-    }
-    renderWorkspaceListOnly();
-    checkServerStatus();
-    if (typeof window.updateWorkspaceRequiredUI === "function") {
-      window.updateWorkspaceRequiredUI();
-    }
+    chrome.storage.local.get(["rememberToken", "savedApiToken", "lastMode"], (result) => {
+      if (rememberTokenInput) rememberTokenInput.checked = result.rememberToken === true;
+      if (!apiToken && result.rememberToken && result.savedApiToken) {
+        apiToken = result.savedApiToken;
+        apiTokenInput.value = apiToken;
+        chrome.storage.session.set({ apiToken });
+      }
+      if (result.lastMode) {
+        currentMode = result.lastMode;
+        const radio = document.querySelector(`input[name="agent-mode"][value="${result.lastMode}"]`);
+        if (radio) radio.checked = true;
+      }
+    });
   });
 
   setInterval(checkServerStatus, 1000);
@@ -562,12 +564,16 @@ async function launchWelcomeSession() {
   const mode = document.querySelector('input[name="agent-mode"]:checked').value;
   const token = apiTokenInput.value.trim();
   const resume = document.getElementById("resume-session").checked;
-
+  const rememberToken = rememberTokenInput?.checked === true;
   apiToken = token;
   currentMode = mode;
-
-  // Save settings and token locally
-  chrome.storage.local.set({ lastApiToken: token, lastMode: mode, lastResume: resume });
+  chrome.storage.session.set({ apiToken: token });
+  chrome.storage.local.set({ lastMode: mode, lastResume: resume, rememberToken });
+  if (rememberToken) {
+    chrome.storage.local.set({ savedApiToken: token });
+  } else {
+    chrome.storage.local.remove(["savedApiToken", "lastApiToken"]);
+  }
 
   btnInit.disabled = true;
   btnInit.textContent = "LAUNCHING...";

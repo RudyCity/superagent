@@ -567,6 +567,8 @@ export function App({
 
         setInput("");
         setIsPasted(false);
+        setPastePrefixLength(0);
+        setPasteSuffixLength(0);
         setLastTabPrefix(null);
         setHistoryIndex(-1);
         setScrollOffset(0);
@@ -601,6 +603,8 @@ export function App({
       if (activeWizard) {
         setInput("");
         setIsPasted(false);
+        setPastePrefixLength(0);
+        setPasteSuffixLength(0);
         setLastTabPrefix(null);
         setHistoryIndex(-1);
         setScrollOffset(0);
@@ -662,6 +666,8 @@ export function App({
 
       setInput("");
       setIsPasted(false);
+      setPastePrefixLength(0);
+      setPasteSuffixLength(0);
       setLastTabPrefix(null);
       setHistoryIndex(-1);
       setScrollOffset(0);

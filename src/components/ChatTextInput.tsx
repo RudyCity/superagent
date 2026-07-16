@@ -192,10 +192,10 @@ export default function ChatTextInput({
 
     if (showCursor && focus) {
       if (cursorOffset <= prefix.length) {
-        let i = 0;
-        for (const char of prefix) {
-          renderedPrefix += i === cursorOffset ? blinkInverse(char) : char;
-          i++;
+        if (cursorOffset < prefix.length) {
+          renderedPrefix = prefix.slice(0, cursorOffset) + blinkInverse(prefix[cursorOffset]) + prefix.slice(cursorOffset + 1);
+        } else {
+          renderedPrefix = prefix;
         }
         if (cursorOffset === prefix.length) {
           renderedPlaceholderPart = chalk.yellow.bold(blinkInverse(placeholderText[0]) + placeholderText.slice(1));
@@ -204,13 +204,13 @@ export default function ChatTextInput({
       } else if (cursorOffset >= prefix.length + inserted.length) {
         renderedPrefix = prefix;
         const suffixCursor = cursorOffset - prefix.length - inserted.length;
-        let i = 0;
-        for (const char of suffix) {
-          renderedSuffix += i === suffixCursor ? blinkInverse(char) : char;
-          i++;
-        }
-        if (suffixCursor === suffix.length) {
-          renderedSuffix += blinkInverse(" ");
+        if (suffixCursor < suffix.length) {
+          renderedSuffix = suffix.slice(0, suffixCursor) + blinkInverse(suffix[suffixCursor]) + suffix.slice(suffixCursor + 1);
+        } else {
+          renderedSuffix = suffix;
+          if (suffixCursor === suffix.length) {
+            renderedSuffix += blinkInverse(" ");
+          }
         }
       } else {
         renderedPrefix = prefix;
@@ -239,10 +239,10 @@ export default function ChatTextInput({
       let result = "";
       if (before.length > 0) result += chalk.grey(`⋯${before.length}⋯`);
       const localCursor = cursorOffset - windowStart;
-      let i = 0;
-      for (const char of visible) {
-        result += i === localCursor ? blinkInverse(char) : char;
-        i++;
+      if (localCursor < visible.length) {
+        result += visible.slice(0, localCursor) + blinkInverse(visible[localCursor]) + visible.slice(localCursor + 1);
+      } else {
+        result += visible;
       }
       if (after.length > 0) result += chalk.grey(`⋯${after.length}⋯`);
       if (cursorOffset === value.length) {
@@ -250,16 +250,17 @@ export default function ChatTextInput({
       }
       renderedValue = result;
     } else {
-      renderedValue = value.length > 0 ? "" : blinkInverse(" ");
-      let i = 0;
-      for (const char of value) {
-        renderedValue +=
-          i === cursorOffset ? blinkInverse(char) : char;
-        i++;
-      }
-      // Cursor block at end when cursor past last character.
-      if (value.length > 0 && cursorOffset === value.length) {
-        renderedValue += blinkInverse(" ");
+      if (value.length > 0) {
+        if (cursorOffset < value.length) {
+          renderedValue = value.slice(0, cursorOffset) + blinkInverse(value[value.charCodeAt(cursorOffset) === undefined ? 0 : cursorOffset]) + value.slice(cursorOffset + 1);
+        } else {
+          renderedValue = value;
+          if (cursorOffset === value.length) {
+            renderedValue += blinkInverse(" ");
+          }
+        }
+      } else {
+        renderedValue = blinkInverse(" ");
       }
     }
   }

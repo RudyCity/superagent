@@ -2,10 +2,32 @@ let isTabLocked = false;
 let originalTabId = null;
 let originalWindowId = null;
 const activeChains = new Map();
+const consentCache = new Map();
+const sensitiveBrowserActions = new Set([
+  "navigate", "reload", "refresh", "back", "forward", "open", "close", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "history_clear", "errors", "screenshot", "execute_script"
+]);
+
+function browserConsentKey(tabId, origin, action, target, value) {
+  return `${tabId}|${origin}|${action}|${JSON.stringify([target || "", value || ""])}`;
+}
+
+async function requireBrowserConsent(tab, action, target, value) {
+  if (!sensitiveBrowserActions.has(action)) return true;
+  const origin = (() => {
+    try { return new URL(tab.url || "").origin; } catch (_) { return tab.url || "unknown"; }
+  })();
+  const key = browserConsentKey(tab.id, origin, action, target, value);
+  const cached = consentCache.get(key);
+  if (cached && cached > Date.now()) return true;
+  consentCache.delete(key);
+  const ok = window.confirm(`Allow browser-control action?\n\nOrigin: ${origin}\nAction: ${action}\nParameters: ${[target, value].filter(Boolean).join(" / ") || "(none)"}\n\nConsent expires in 60 seconds and is bound to this tab, origin, action, and parameters.`);
+  if (ok) consentCache.set(key, Date.now() + 60000);
+  return ok;
+}
 
 // Execute browser automation control
 async function executeBrowserControl(controlId, action, target, value) {
-  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+  chrome.tabs.query({ active: true, currentWindow: true }, async function (tabs) {
     if (!tabs || tabs.length === 0) {
       sendBrowserResult(controlId, "Error: No active tab found in current window.", true);
       return;
@@ -23,6 +45,11 @@ async function executeBrowserControl(controlId, action, target, value) {
     const nonRestrictedActions = ["navigate", "reload", "refresh", "back", "forward", "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window", "top_sites", "reading_list_add", "reading_list_remove", "reading_list_get", "group_update", "group_get", "history_search", "history_delete", "history_clear", "management_list", "management_get"];
     if (isRestricted && !nonRestrictedActions.includes(action)) {
       sendBrowserResult(controlId, `Error: Cannot perform action "${action}" on a restricted page (${url || "restricted tab"}). Please navigate to a standard website first (e.g., navigate to https://google.com).`, true);
+      return;
+    }
+
+    if (!(await requireBrowserConsent(activeTab, action, target, value))) {
+      sendBrowserResult(controlId, "Denied by user (consent gate).", true);
       return;
     }
 
@@ -456,19 +483,35 @@ async function executeBrowserControl(controlId, action, target, value) {
       try {
         chrome.scripting.executeScript({
           target: { tabId: activeTab.id },
-          func: () => {
-            return window.__capturedErrors || [];
-          }
-        }, (results) => {
+          files: ["main-world.js"]
+        }, () => {
           if (chrome.runtime.lastError) {
             sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
             return;
           }
-          if (!results || results.length === 0) {
-            sendBrowserResult(controlId, "[]", false);
-            return;
-          }
-          sendBrowserResult(controlId, JSON.stringify(results[0].result), false);
+          chrome.scripting.executeScript({
+            target: { tabId: activeTab.id },
+            files: ["content.js"]
+          }, () => {
+            if (chrome.runtime.lastError) {
+              sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+              return;
+            }
+            chrome.scripting.executeScript({
+              target: { tabId: activeTab.id },
+              func: () => window.__capturedErrors || []
+            }, (results) => {
+              if (chrome.runtime.lastError) {
+                sendBrowserResult(controlId, `Error: ${chrome.runtime.lastError.message}`, true);
+                return;
+              }
+              if (!results || results.length === 0) {
+                sendBrowserResult(controlId, "[]", false);
+                return;
+              }
+              sendBrowserResult(controlId, JSON.stringify(results[0].result), false);
+            });
+          });
         });
       } catch (err) {
         sendBrowserResult(controlId, `Error: Script injection failed: ${err.message || String(err)}`, true);
