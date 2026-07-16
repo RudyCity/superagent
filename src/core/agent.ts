@@ -3122,11 +3122,6 @@ for (const tc of toolCalls) {
         }
       }
 
-      // Include system prompt at top of compiled text in Mode 2
-      const systemPrompt = this.config.systemPrompt || "";
-      if (systemPrompt) {
-        compiledText = `=== SYSTEM INSTRUCTIONS ===\n${systemPrompt}\n\n` + compiledText;
-      }
 
       // Append dynamic execution context at the end of compiled text in Mode 2
       if (dynamicContext) {

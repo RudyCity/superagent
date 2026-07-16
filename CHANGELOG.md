@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.393] - 2026-07-16
+
+### Fixed
+- **Mode 2 Image Compilation Cleanups**: Completely removed the system instructions from Mode 2's compiled history images to prevent duplication and save canvas rendering space, since the system instructions are already passed in the plaintext system parameter.
+
 ## [1.2.392] - 2026-07-16
 
 ### Optimized
