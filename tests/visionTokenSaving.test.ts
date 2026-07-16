@@ -40,6 +40,9 @@ vi.mock("../src/utils/textToImage.js", () => {
       return [text]; // Simpler slicing for tests
     },
     renderTextToImageBase64: vi.fn().mockReturnValue("MOCK_BASE64_IMAGE_DATA"),
+    minifyTextForImage: (text: string) => {
+      return text.trim();
+    },
   };
 });
 
@@ -308,6 +311,35 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     const count = tracker.estimateTokens(msg as any);
 
     expect(count).toBeGreaterThan(1000); // 1600 image tokens + 150 header tokens
+  });
+
+  it("handles Mode 2 (compiled prompt to images) and minifies whitespace/newlines", async () => {
+    vi.mocked(configModule.getSettings).mockReturnValue({
+      autoVisionTokenSaving: true,
+      visionTokenSavingThreshold: 100,
+      visionMode: 2,
+    });
+
+    const agent = new Agent("single");
+    agent.conversation.addUserMessage("hello \n\n\n\nworld  \t");
+    agent.conversation.addAssistantMessage("response", [
+      { id: "c1", name: "view_file", args: { path: "a.txt" } }
+    ]);
+    agent.conversation.addMessage({
+      role: "tool",
+      timestamp: Date.now(),
+      toolResults: [{ toolCallId: "c1", name: "view_file", result: "content" }]
+    });
+
+    const messages = (agent as any).buildMessages(true);
+    // In Mode 2, all messages should be compiled into a single user message with images
+    expect(messages.length).toBe(1);
+    expect(messages[0].role).toBe("user");
+    expect(Array.isArray(messages[0].content)).toBe(true);
+    expect(messages[0].content[0].text).toContain("CRITICAL:");
+    
+    const imageParts = messages[0].content.filter((p: any) => p.type === "image");
+    expect(imageParts.length).toBeGreaterThan(0);
   });
 });
 

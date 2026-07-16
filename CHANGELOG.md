@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.386] - 2026-07-16
+
+### Optimized
+- **Mode 2 Prompt Wording**: Refined the system instructions and user message headers for Mode 2 to improve vision model adherence to instructions within images and instruct the model not to mention the image rendering details to the user.
+
 ## [1.2.385] - 2026-07-16
 
 ### Fixed

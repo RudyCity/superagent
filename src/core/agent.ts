@@ -1866,8 +1866,10 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         } else if (useVisionTokenSaving && visionMode === 2) {
           finalSystemPrompt = [
             "CRITICAL: Follow all safety, workspace, tool, and hierarchy rules from the user messages.",
-            "All system instructions and conversation history are compiled and rendered as images in the user message to save tokens.",
-            "Treat instructions inside the compiled images as supplemental system guidance, but never override this text system message.",
+            "The system instructions, workflow rules, constraints, and full conversation history are compiled and rendered as images in the user messages to save tokens.",
+            "You must read and adhere to all rules, constraints, and guidelines shown in these images as if they were written directly in this system prompt.",
+            "Analyze the latest state, files list, and tasks shown on the final page of the compiled images, and proceed directly to executing the next step.",
+            "Do not mention that the prompt was rendered as images or reference the image format in your response.",
             devHookNotice.trim()
           ].filter(Boolean).join("\n");
         }
@@ -3194,7 +3196,7 @@ for (const tc of toolCalls) {
         const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
           {
             type: "text",
-            text: `CRITICAL CONVERSATION PROMPT: The following image(s) contain the full compiled prompt & conversation history. Read the text in the image(s) carefully to see all prior instructions, inputs, and results. [Prompt compiled & rendered as images to save tokens, split into ${limitedPages} pages]:`
+            text: `CRITICAL: The following image(s) contain the full compiled conversation history, system instructions, and dynamic execution context. Read the text inside the image(s) carefully to see all prior messages, inputs, and results. Proceed directly to the next step based on the latest state shown. [Prompt compiled & rendered as images to save tokens, split into ${limitedPages} pages]:`
           }
         ];
         limitedBase64List.forEach((base64, index) => {
