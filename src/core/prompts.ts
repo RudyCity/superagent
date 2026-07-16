@@ -12,20 +12,17 @@ const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill/terminate parent or 
 
 const REASONING_RULE = `- REASONING: If your active model supports reasoning/thinking, utilize it to think through complex problems, verify assumptions, plan tasks, and explain design choices before acting.`;
 
-const BATCH_OPS_RULE = `- BATCH_OPS: Batch all multi-file and multi-task operations in ONE tool call:
-  - read: 'filePaths' array parameter (either strings: ["path1", "path2"] or objects: [{"path": "path1", "offset": 1, "limit": 800}])
-  - edit: 'edits' array parameter: [{"filePath": "path", "oldString": "search", "newString": "replace", "startLine"?: 1, "endLine"?: 10}]
-  - write_to_file: 'files' array parameter: [{"filePath": "path", "content": "text", "overwrite"?: true}]
-  - replace_file_content: 'edits' array parameter: [{"filePath": "path", "targetContent": "old", "replacementContent": "new", "startLine": 1, "endLine": 10, "allowMultiple"?: false}]
-  - multi_replace_file_content: 'chunks' array parameter (for single file non-contiguous edits): [{"targetContent": "old", "replacementContent": "new", "startLine": 1, "endLine": 10}] OR 'files' array parameter (for multi-file non-contiguous edits): [{"filePath": "path", "chunks": [{"targetContent": "old", "replacementContent": "new", "startLine": 1, "endLine": 10}]}]
-  - apply_patch: 'patches' array parameter: [{"filePath": "path", "patchContent": "diff"}]
-  - manage_subagents: 'conversationIds' array parameter (must be an array of strings, e.g. action: "kill", conversationIds: ["id1", "id2"], never use singular "conversation_id")
-  - manage_tasks: use bulk actions ('add_bulk', 'update_bulk', 'remove_bulk') instead of looping single task updates:
-    - add_bulk: action: "add_bulk", texts: ["task1", "task2"]
-    - update_bulk: action: "update_bulk", indices: [1, 2], status: "x"
-    - remove_bulk: action: "remove_bulk", indices: [1, 2]
-  - subagents: spawn independent subagents with multiple invoke_subagent tool calls in one turn when runtime supports parallel tool calls
-  NEVER call file or task tools sequentially when operating on multiple items. Batch all operations upfront.`;
+const BATCH_OPS_RULE = `- BATCH_OPS: Batch all multi-file, multi-edit, multi-task, and multi-agent operations in ONE tool call/turn:
+  - read: MUST use 'filePaths' array for multiple files/ranges; do not call read sequentially.
+  - edit: MUST use 'edits' array for multiple exact replacements.
+  - write_to_file: MUST use 'files' array for multiple writes.
+  - replace_file_content: MUST use 'edits' array for multiple contiguous replacements.
+  - multi_replace_file_content: MUST use 'files' array for multi-file non-contiguous edits; use 'chunks' for one file.
+  - apply_patch: MUST use 'patches' array for multiple patches.
+  - manage_subagents: MUST use 'conversationIds' array for report/logs/kill on multiple agents.
+  - manage_tasks: MUST use 'add_bulk', 'update_bulk', 'remove_bulk' for multiple task changes.
+  - subagents/superagents: spawn independent agents concurrently with multiple invoke_* tool calls before awaiting/monitoring.
+  PLAN BATCHES UPFRONT: identify all files/tasks/agents first, then issue batched calls. Sequential single-item calls are allowed only when one item exists, dependency order is required, or a previous call failed and must be re-read.`;
 
 const FAST_ANALYSIS_RULE = `- FAST_ANALYSIS:
   - ALWAYS use grep/ripgrep to pinpoint exact locations first. NEVER read files or list folders blindly.
@@ -79,7 +76,8 @@ const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR (anti-drift protocol):
   1. Am I still working toward the PRIMARY OBJECTIVE?
   2. Am I within declared BOUNDARIES/WORKSPACE_LIMIT?
   3. Will this action move closer to SUCCESS CRITERIA / acceptance criteria?
-  If drifting: STOP, re-read task assignment, recalibrate.`;
+  4. Can this be batched, delegated, or run in parallel safely?
+  If drifting or under-batching: STOP, re-read task assignment, recalibrate.`;
 
 const CHROME_EXTENSION_CONTEXT_RULE = `- CHROME_EXTENSION_CONTEXT:
   - ACTIVE: If 'control_browser_tab' tool is present.
@@ -222,9 +220,10 @@ if post_merge:
     if verification_passed: proceed to cleanup.
 
 if multiple_superagents_ready:
-    ASSESS: Are tasks truly independent? Check shared file overlap.
-    if independent: spawn concurrently.
+    ASSESS: Are tasks truly independent? Check shared file overlap, task dependencies, and shared config/test files.
+    if independent: spawn concurrently in one tool-call turn.
     if overlapping_files: spawn sequentially, merge between.
+    if mixed: group independent batches, await each batch, then merge/continue.
 
 # WORKFLOW
 1. ANALYZE: Use direct search/read tools for small scoped audits; spawn a researcher Superagent only for broad or multi-domain exploration. Split request into 1-5 independent feature tasks.
@@ -277,7 +276,8 @@ ${CHROME_EXTENSION_CONTEXT_RULE}
 # LOGIC GATES
 if spawning_subagent:
     CALL manage_tasks(action: 'add' or 'add_bulk') to document task FIRST.
-    # Use 'add_bulk' with 'texts' array when adding multiple tasks at once (more efficient than multiple 'add' calls).
+    # Use 'add_bulk' with 'texts' array when adding multiple tasks at once.
+    if multiple_independent_subagents: issue multiple invoke_subagent calls in same turn, then manage_subagents(action:'report', conversationIds:[...]).
 
 if decision_point:
     CALL ask_question()

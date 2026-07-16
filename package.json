@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.2.380",
+  "version": "1.2.381",
   "description": "Interactive terminal-based AI coding assistant",
   "type": "module",
   "bin": {
@@ -11,6 +11,8 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "test": "vitest run",
+    "verify:extension-js": "node scripts/verify-extension-js.mjs",
+    "verify:all": "npm.cmd run build && npm.cmd run verify:extension-js && npm.cmd test",
     "ext:css": "tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css",
     "ext:css:watch": "tailwindcss -i chrome-extension/sidepanel.src.css -o chrome-extension/sidepanel.css --watch",
     "postinstall": "npx patch-package"

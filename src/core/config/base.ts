@@ -171,6 +171,7 @@ ${shellPrompt}
 # LOGIC GATES
 if spawning_subagent:
     CALL manage_tasks(action: 'add' or 'add_bulk') to document task FIRST.
+    if multiple_independent_subagents: issue multiple invoke_subagent calls in same turn, then manage_subagents(action:'report', conversationIds:[...]).
 
 if decision_point:
     CALL ask_question()
@@ -188,11 +189,12 @@ if request_is_complex:
 
 # TOOL USAGE GUIDELINES
 - File Operations:
-  - 'read': View file contents. PREFER 'filePaths' (array of strings or {path, offset, limit} objects) to batch multiple reads.
-  - 'write_to_file': Create/overwrite files. PREFER 'files' array: [{"filePath", "content", "overwrite"}] to batch multiple writes.
-  - 'replace_file_content': Single contiguous block edits. PREFER 'edits' array: [{"filePath", "targetContent", "replacementContent", "startLine", "endLine", "allowMultiple"}] to batch replacements.
-  - 'multi_replace_file_content': Multiple non-contiguous edits. Use 'chunks' array: [{"targetContent", "replacementContent", "startLine", "endLine"}] for one file, or 'files' array: [{"filePath", "chunks": [...]}] to batch edits across files.
-  - 'edit': Simple, unique string replacements. PREFER 'edits' array: [{"filePath", "oldString", "newString", "startLine", "endLine"}] to batch multiple edits.
+  - 'read': View file contents. MUST use 'filePaths' for multiple files/ranges.
+  - 'write_to_file': Create/overwrite files. MUST use 'files' for multiple writes.
+  - 'replace_file_content': Single contiguous block edits. MUST use 'edits' for multiple replacements.
+  - 'multi_replace_file_content': Multiple non-contiguous edits. Use 'chunks' for one file, or 'files' to batch across files.
+  - 'edit': Simple, unique string replacements. MUST use 'edits' for multiple exact replacements.
+  - 'apply_patch': MUST use 'patches' for multiple patches.
   - Edit failures: Do not repeat stale exact-match edits. Re-read target range, then use line-range replacement for moved content. Avoid batched edits when one risky chunk can block unrelated safe chunks.
 - Code Search:
   - 'ripgrep_search': Fast targeted text search. Pass one path per call; do not combine paths like 'src tests'.
@@ -206,9 +208,11 @@ if request_is_complex:
   - 'fetch_url': Extract text from specific webpage.
 - Delegation & Timers:
   - 'schedule': Timers or cron notifications. Use to check background tasks or subagents instead of busy-waiting.
-  - 'invoke_subagent': Asynchronous subagents ('researcher', 'coder', 'reviewer'). Monitor via 'manage_subagents' (list/logs/report). Communicate via 'send_message'. Use action 'report' (singular), not 'reports'.
+  - 'invoke_subagent': Asynchronous subagents ('researcher', 'coder', 'reviewer'). For independent work, issue multiple invoke_subagent calls in one turn before monitoring. Monitor multiple agents with manage_subagents conversationIds array. Use action 'report' (singular), not 'reports'.
 - Best Practices:
-  - Prefer bulk parameters ('filePaths', 'files', 'edits') when operating on multiple files to minimize round-trip tool execution overhead.
+  - Plan batches upfront: identify all target files/tasks/agents before tool calls.
+  - Prefer bulk parameters ('filePaths', 'files', 'edits', 'patches', 'conversationIds') when operating on multiple items.
+  - Sequential single-item calls are allowed only when one item exists, dependency order is required, or recovery from failed call needs fresh context.
   - Limit file reading: Use 'offset' and 'limit' on large files.
   - Failures: Do not repeat identical failed calls. Investigate paths/args, then adjust parameters.
   - Code edits: Complete implementation only. No placeholders or incomplete '// TODO' comments.

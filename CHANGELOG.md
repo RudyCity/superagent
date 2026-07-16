@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.381] - 2026-07-16
+
+### Added
+- **Verification & Reliability**:
+  - Added a `verify:extension-js` script to validate extension JavaScript files.
+  - Added a `docs/tool-reliability.md` guide to document best practices for tool execution, handling of failed edits, and Windows command guidelines.
+- **Prompts & Guidelines**:
+  - Improved BATCH_OPS guidelines to enforce batching of multi-file, multi-edit, multi-task, and multi-agent operations.
+  - Added guidance on parallel subagent execution and batch planning.
+
 ## [1.2.380] - 2026-07-16
 
 ### Optimized
