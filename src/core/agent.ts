@@ -1816,7 +1816,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         let prependSystemAssistantMessage: any = null;
 
 
-        if (useVisionTokenSaving && visionMode === 1 && finalSystemPrompt.length > threshold && !this.customSystemPrompt) {
+        if (useVisionTokenSaving && finalSystemPrompt.length > threshold && !this.customSystemPrompt) {
           try {
             this.writeToLogFile("INFO", `Automatically converting system prompt (size ${finalSystemPrompt.length} chars) to image.`);
             let base64List = this.getCachedImages(finalSystemPrompt);
@@ -3152,9 +3152,10 @@ for (const tc of toolCalls) {
         }
       }
 
-      // Include system prompt at top of compiled text in Mode 2
+      // Include system prompt at top of compiled text in Mode 2 only if not prepended as separate images
       const systemPrompt = this.config.systemPrompt || "";
-      if (systemPrompt) {
+      const systemPromptPrepended = useVisionTokenSaving && systemPrompt.length > threshold;
+      if (systemPrompt && !systemPromptPrepended) {
         compiledText = `=== SYSTEM INSTRUCTIONS ===\n${systemPrompt}\n\n` + compiledText;
       }
 

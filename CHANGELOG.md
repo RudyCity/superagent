@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.390] - 2026-07-16
+
+### Fixed
+- **Mode 2 Unified System Image Prepending**: Enabled system prompt image conversion and prepending for Mode 2 when it exceeds the token threshold. Prevented duplicate system prompt image compilation by skipping its inclusion inside the compiled history block in Mode 2 when it has already been prepended.
+
 ## [1.2.389] - 2026-07-16
 
 ### Fixed
