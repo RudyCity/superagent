@@ -1865,11 +1865,6 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           }
         } else if (useVisionTokenSaving && visionMode === 2) {
           finalSystemPrompt = [
-            "CRITICAL: Follow all safety, workspace, tool, and hierarchy rules from the user messages.",
-            "The system instructions, workflow rules, constraints, and full conversation history are compiled and rendered as images in the user messages to save tokens.",
-            "You must read and adhere to all rules, constraints, and guidelines shown in these images as if they were written directly in this system prompt.",
-            "Analyze the latest state, files list, and tasks shown on the final page of the compiled images, and proceed directly to executing the next step.",
-            "Do not mention that the prompt was rendered as images or reference the image format in your response.",
             devHookNotice.trim()
           ].filter(Boolean).join("\n");
         }

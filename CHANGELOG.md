@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.388] - 2026-07-16
+
+### Fixed
+- **Mode 2 System Text Removal**: Completely removed the system text placeholder prompt in Mode 2, leaving the text system parameter empty (or only containing development hook overrides) to ensure zero double-sent system text.
+
 ## [1.2.387] - 2026-07-16
 
 ### Fixed
