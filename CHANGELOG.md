@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.391] - 2026-07-16
+
+### Fixed
+- **System Prompt Text Parameter Reversion**: Reverted system prompt image conversion and prepending logic entirely, keeping the system prompt strictly as a plaintext parameter in both Mode 1 and Mode 2.
+
 ## [1.2.390] - 2026-07-16
 
 ### Fixed

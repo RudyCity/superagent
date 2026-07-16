@@ -223,36 +223,6 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     expect(imagePart).toBeDefined();
   });
 
-  it("converts a large system prompt to image and prepends it to messages during execution", async () => {
-    vi.mocked(configModule.getSettings).mockReturnValue({
-      autoVisionTokenSaving: true,
-      visionTokenSavingThreshold: 100, // Small threshold
-    });
-
-    const agent = new Agent(
-      vi.fn(),
-      vi.fn().mockResolvedValue(true),
-      vi.fn().mockResolvedValue("yes")
-    );
-    agent.tier = "master";
-    agent.planState = "APPROVED"; // skip planning to go straight to execution loop
-
-    await agent.sendMessage("hello");
-
-    // Check if generateText or streamText was called and captured options
-     expect(lastGenerateTextOptions).not.toBeNull();
-     // System parameter should be empty in this test (no devHookNotice active)
-     expect(lastGenerateTextOptions.system).toBe("");
-     
-     // Messages array should contain prepended user message with images + original user message
-     const msgs = lastGenerateTextOptions.messages;
-     expect(msgs.length).toBe(6);
-     expect(msgs[0].role).toBe("user");
-     expect(msgs[0].content[0].type).toBe("image");
-     const imagePart = msgs[0].content.find((p: any) => p.type === "image");
-     expect(imagePart).toBeDefined();
-     expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
-  });
 
   it("converts a TencentDB Agent Memory Context user message to image parts even if it is shorter than the threshold", () => {
     vi.mocked(configModule.getTierModelConfig).mockReturnValue({

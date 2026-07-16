@@ -1816,43 +1816,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         let prependSystemAssistantMessage: any = null;
 
 
-        if (useVisionTokenSaving && finalSystemPrompt.length > threshold && !this.customSystemPrompt) {
-          try {
-            this.writeToLogFile("INFO", `Automatically converting system prompt (size ${finalSystemPrompt.length} chars) to image.`);
-            let base64List = this.getCachedImages(finalSystemPrompt);
-            if (!base64List) {
-              const pages = sliceTextIntoPages(finalSystemPrompt);
-              base64List = [];
-              for (const page of pages) {
-                const base64 = renderTextToImageBase64(page);
-                base64List.push(base64);
-              }
-              this.setCachedImages(finalSystemPrompt, base64List);
-            }
-            
-            const contentParts: Array<{ type: "image"; image: string; mimeType?: string }> = [];
-            base64List.forEach((base64) => {
-              contentParts.push({ type: "image" as const, image: base64, mimeType: "image/webp" });
-            });
-
-            prependSystemMessage = {
-              role: "user",
-              content: contentParts
-            };
-
-            prependSystemAssistantMessage = null;
-
-            finalSystemPrompt = [
-              devHookNotice.trim()
-            ].filter(Boolean).join("\n");
-          } catch (err: any) {
-            this.writeToLogFile("WARN", `Failed to automatically convert system prompt to image: ${err.message}. Falling back to text.`);
-          }
-        } else if (useVisionTokenSaving && visionMode === 2) {
-          finalSystemPrompt = [
-            devHookNotice.trim()
-          ].filter(Boolean).join("\n");
-        }
+        // System prompt is kept as text only for both Mode 1 and Mode 2 as requested by user.
 
         let textContent = "";
         let reasoningContent = ""; // DeepSeek R1 thinking tokens — displayed in UI but NOT stored in history
@@ -3152,10 +3116,9 @@ for (const tc of toolCalls) {
         }
       }
 
-      // Include system prompt at top of compiled text in Mode 2 only if not prepended as separate images
+      // Include system prompt at top of compiled text in Mode 2
       const systemPrompt = this.config.systemPrompt || "";
-      const systemPromptPrepended = useVisionTokenSaving && systemPrompt.length > threshold;
-      if (systemPrompt && !systemPromptPrepended) {
+      if (systemPrompt) {
         compiledText = `=== SYSTEM INSTRUCTIONS ===\n${systemPrompt}\n\n` + compiledText;
       }
 
