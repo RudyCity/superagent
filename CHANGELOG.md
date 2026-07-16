@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.395] - 2026-07-16
+
+### Fixed
+- **JavaScript Heap Out of Memory**: Limited Vitest `maxWorkers` to 4 (or available CPUs) in `vitest.config.ts` to prevent OOM errors on high-core machines.
+- **EventEmitter Memory Leak Warning**: Instantiated fresh EventEmitter mock sockets for each call in `tests/enhancedFeatures.test.ts` to stop listener accumulation on retries.
+- **Robust Vision Server Tests**: Skipped `tests/visionServer.test.ts` gracefully if Python launcher or ML packages (torch, huggingface_hub, rfdetr) are missing.
+
 ## [1.2.394] - 2026-07-16
 
 ### Changed

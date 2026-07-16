@@ -406,11 +406,12 @@ describe("Superagent Proposed Enhancements Tests", () => {
       });
 
       // Mock net.createConnection to return a mock socket that emits error
-      const mockSocket = new (await import("events")).EventEmitter() as any;
-      mockSocket.end = vi.fn();
-      mockSocket.destroy = vi.fn();
-      mockSocket.on("error", () => {}); // Prevent unhandled throw
+      const { EventEmitter } = await import("events");
       (globalThis as any).mockNet.mockImplementation(() => {
+        const mockSocket = new EventEmitter() as any;
+        mockSocket.end = vi.fn();
+        mockSocket.destroy = vi.fn();
+        mockSocket.on("error", () => {}); // Prevent unhandled throw
         setTimeout(() => {
           mockSocket.emit("error", new Error("port closed"));
         }, 10);
@@ -451,10 +452,11 @@ describe("Superagent Proposed Enhancements Tests", () => {
       });
 
       // Mock net.createConnection to return a mock socket that emits connect
-      const mockSocket = new (await import("events")).EventEmitter() as any;
-      mockSocket.end = vi.fn();
-      mockSocket.destroy = vi.fn();
+      const { EventEmitter } = await import("events");
       (globalThis as any).mockNet.mockImplementation(() => {
+        const mockSocket = new EventEmitter() as any;
+        mockSocket.end = vi.fn();
+        mockSocket.destroy = vi.fn();
         setTimeout(() => {
           mockSocket.emit("connect");
         }, 10);
