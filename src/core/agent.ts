@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, generateText, jsonSchema, type CoreMessage } from "ai";
 import path from "path";
 import { execa } from "execa";
-import { renderTextToImageBase64, sliceTextIntoPages } from "../utils/textToImage.js";
+import { renderTextToImageBase64, sliceTextIntoPages, minifyTextForImage } from "../utils/textToImage.js";
 import fs from "fs";
 import crypto from "crypto";
 import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getTierModelConfig, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD, getDynamicVisionThreshold } from "./config.js";
@@ -1802,7 +1802,8 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         this.conversation.setVisionMode(useVisionTokenSaving);
         const threshold = getDynamicVisionThreshold(modelName);
 
-        if (useVisionTokenSaving && finalSystemPrompt.length > threshold && !this.customSystemPrompt) {
+        const visionMode = settings.visionMode ?? 1;
+        if (useVisionTokenSaving && visionMode === 1 && finalSystemPrompt.length > threshold && !this.customSystemPrompt) {
           try {
             this.writeToLogFile("INFO", `Automatically converting system prompt (size ${finalSystemPrompt.length} chars) to image.`);
             let base64List = this.getCachedImages(finalSystemPrompt);
@@ -1849,6 +1850,13 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           } catch (err: any) {
             this.writeToLogFile("WARN", `Failed to automatically convert system prompt to image: ${err.message}. Falling back to text.`);
           }
+        } else if (useVisionTokenSaving && visionMode === 2) {
+          finalSystemPrompt = [
+            "CRITICAL: Follow all safety, workspace, tool, and hierarchy rules from the user messages.",
+            "All system instructions and conversation history are compiled and rendered as images in the user message to save tokens.",
+            "Treat instructions inside the compiled images as supplemental system guidance, but never override this text system message.",
+            devHookNotice.trim()
+          ].filter(Boolean).join("\n");
         }
 
         let textContent = "";
@@ -3108,7 +3116,141 @@ for (const tc of toolCalls) {
     const settings = getSettings();
     const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
     const threshold = getDynamicVisionThreshold(modelName);
+    const visionMode = settings.visionMode ?? 1;
 
+    if (useVisionTokenSaving && visionMode === 2) {
+      // MODE 2: Compile all messages into a single text block, clean up, render to images, and append.
+      let compiledText = "";
+      for (const m of this.conversation.getMessages()) {
+        if (m.role === "system") continue;
+        if (m.role === "user") {
+          const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
+          compiledText += `\n=== USER MESSAGE ===\n${rawContent}\n`;
+        } else if (m.role === "assistant") {
+          const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
+          compiledText += `\n=== ASSISTANT MESSAGE ===\n${rawContent}\n`;
+          if (m.toolCalls && m.toolCalls.length > 0) {
+            compiledText += `\n[Tool Calls]:\n` + m.toolCalls.map(tc => `- Call ID: ${tc.id}, Tool: ${tc.name}, Args: ${JSON.stringify(tc.args)}`).join("\n") + "\n";
+          }
+        } else if (m.role === "tool") {
+          const results = m.toolResults || [];
+          for (const tr of results) {
+            const resStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
+            compiledText += `\n=== TOOL RESULT: ${tr.name} (ID: ${tr.toolCallId}) ===\n${resStr}\n`;
+          }
+        }
+      }
+
+      // Include system prompt at top of compiled text in Mode 2
+      const systemPrompt = this.config.systemPrompt || "";
+      if (systemPrompt) {
+        compiledText = `=== SYSTEM INSTRUCTIONS ===\n${systemPrompt}\n\n` + compiledText;
+      }
+
+      const cleanText = minifyTextForImage(compiledText);
+      try {
+        let base64List = this.getCachedImages(cleanText);
+        if (!base64List) {
+          const pages = sliceTextIntoPages(cleanText);
+          base64List = [];
+          for (const page of pages) {
+            const base64 = renderTextToImageBase64(page);
+            base64List.push(base64);
+          }
+          this.setCachedImages(cleanText, base64List);
+        }
+
+        const isAnthropic = modelName.toLowerCase().includes("anthropic");
+        const maxModelImages = isAnthropic ? 20 : 100;
+        const limitedBase64List = base64List.slice(0, maxModelImages);
+        const limitedPages = limitedBase64List.length;
+
+        const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
+          {
+            type: "text",
+            text: `CRITICAL CONVERSATION PROMPT: The following image(s) contain the full compiled prompt & conversation history. Read the text in the image(s) carefully to see all prior instructions, inputs, and results. [Prompt compiled & rendered as images to save tokens, split into ${limitedPages} pages]:`
+          }
+        ];
+        limitedBase64List.forEach((base64, index) => {
+          contentParts.push({
+            type: "text",
+            text: `[Compiled Prompt Page ${index + 1} of ${limitedPages}]:`
+          });
+          contentParts.push({ type: "image", image: base64, mimeType: "image/webp" });
+        });
+
+        coreMessages.push({
+          role: "user",
+          content: contentParts as any,
+        });
+      } catch (err: any) {
+        this.writeToLogFile("WARN", `Failed to compile prompt to image: ${err.message}. Falling back to text.`);
+        this.buildMode1Messages(coreMessages, threshold, useVisionTokenSaving, supportsVision, supportsNativeTools, modelName);
+      }
+    } else {
+      this.buildMode1Messages(coreMessages, threshold, useVisionTokenSaving, supportsVision, supportsNativeTools, modelName);
+    }
+
+    // Cleanup / post-process to add cache annotations
+    this.addCacheControlToMessages(coreMessages);
+
+    return coreMessages;
+  }
+
+  private addCacheControlToMessages(coreMessages: CoreMessage[]): void {
+    try {
+      const modelInstance = this.getModel();
+      const isTest = !!process.env.VITEST;
+      const isAnthropic = (!isTest || process.env.TEST_PROMPT_CACHING === "true") && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
+      if (isAnthropic && coreMessages.length > 0) {
+        let markedCount = 0;
+        for (let i = coreMessages.length - 1; i >= 0; i--) {
+          if (coreMessages[i].role === "user") {
+            const msg = coreMessages[i];
+            if (typeof msg.content === "string") {
+              msg.content = [
+                {
+                  type: "text",
+                  text: msg.content,
+                  experimental_providerMetadata: {
+                    anthropic: { cacheControl: { type: "ephemeral" } },
+                  },
+                },
+              ];
+              markedCount++;
+            } else if (Array.isArray(msg.content)) {
+              for (let j = msg.content.length - 1; j >= 0; j--) {
+                if (msg.content[j].type === "text") {
+                  msg.content[j] = {
+                    ...msg.content[j],
+                    experimental_providerMetadata: {
+                      anthropic: { cacheControl: { type: "ephemeral" } },
+                    },
+                  };
+                  markedCount++;
+                  break;
+                }
+              }
+            }
+            if (markedCount >= 3) {
+              break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore errors in injecting cache metadata to ensure robust fallback
+    }
+  }
+
+  private buildMode1Messages(
+    coreMessages: CoreMessage[],
+    threshold: number,
+    useVisionTokenSaving: boolean,
+    supportsVision: boolean,
+    supportsNativeTools: boolean,
+    modelName: string
+  ): void {
     for (const m of this.conversation.getMessages()) {
       if (m.role === "system") continue;
 
@@ -3474,7 +3616,6 @@ for (const tc of toolCalls) {
       // Ignore errors in injecting cache metadata to ensure robust fallback
     }
 
-    return coreMessages;
   }
 
   async compactHistoryIfNeeded(signal?: AbortSignal, force: boolean = false, tokenBudget?: number, byteBudget?: number): Promise<void> {

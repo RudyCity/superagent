@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.384] - 2026-07-16
+
+### Fixed
+- **Mode 2 Token Saving**: Minimized the system prompt text to a placeholder notice when Mode 2 is active, preventing the full system instructions from being sent twice (once as text and once inside the compiled images), achieving true visual-only token savings.
+
 ## [1.2.383] - 2026-07-16
 
 ### Fixed
