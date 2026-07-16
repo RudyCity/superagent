@@ -250,8 +250,8 @@ export class TokenTracker {
   private hashMessage(message: Message): string {
     const text = contentToString(message.content);
     const contentLen = text.length;
-    // First 64 chars as discriminator — cheap and collision-resistant enough
-    const contentPrefix = text.slice(0, 64).replace(/\s+/g, " ");
+    let contentPrefix = text.length <= 64 ? text : text.substring(0, 64);
+    contentPrefix = contentPrefix.replace(/\s+/g, " ");
     return `${message.role}:${contentLen}:${message.timestamp || 0}:${message.toolCalls?.length || 0}:${message.toolResults?.length || 0}:${contentPrefix}`;
   }
 }

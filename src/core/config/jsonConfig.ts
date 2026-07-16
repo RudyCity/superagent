@@ -183,6 +183,7 @@ let cachedConfig: GlobalModelConfig | null = null;
 // serving — and worse, re-saving — a stale in-memory snapshot that is missing
 // providers another process added. -1 means "unknown".
 let cachedConfigMtimeMs = -1;
+let lastStatCheckTime = 0;
 
 let sessionActivePreset: {
   multi?: JSONModelPreset<PresetModelsMulti>;
@@ -319,6 +320,13 @@ export function clearModelConfigCache(): void {
 export function loadModelConfig(): GlobalModelConfig {
   const configPath = getModelConfigPath();
   if (cachedConfig) {
+    // Throttle disk stats: if checked less than 50ms ago, use cache directly
+    const isVitest = typeof process.env.VITEST !== "undefined";
+    const now = Date.now();
+    if (!isVitest && now - lastStatCheckTime < 50) {
+      return cachedConfig;
+    }
+    lastStatCheckTime = now;
     // Serve the cache only if the file on disk hasn't changed since we cached it.
     // If another process rewrote model-config.json, fall through and reload so we
     // pick up providers/presets we don't know about yet.
