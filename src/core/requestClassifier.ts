@@ -487,12 +487,12 @@ const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
   question: [
     "read", "glob", "grep", "ripgrep_search", "web_search", "get_skills",
     "fetch_url", "search_history", "load_pinned_session", "search_pinned_knowledge",
-    "tdai_memory_search", "tdai_conversation_search", "tdai_read_cos",
+    "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos",
   ],
   research: [
     "read", "glob", "grep", "ripgrep_search", "web_search", "fetch_url",
     "get_skills", "search_history", "load_pinned_session", "search_pinned_knowledge",
-    "tdai_memory_search", "tdai_conversation_search", "tdai_read_cos",
+    "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos",
   ],
   simple_edit: null,
   complex_task: null,
