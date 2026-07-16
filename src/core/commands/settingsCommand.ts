@@ -1,7 +1,7 @@
 import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
 import { getSettings, updateSettings, getContextWindowLimit, getEffectiveMasterModel, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD } from "../config.js";
-import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts";
+
 import { getConfiguredProviders, getTierModelWithProvider } from "../config/providers.js";
 import fs from "fs";
 import os from "os";

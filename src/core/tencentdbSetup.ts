@@ -11,7 +11,7 @@
 
 import { getSettings, getEffectiveMasterModel } from "./config.js";
 import { getConfiguredProviders, getTierModelWithProvider } from "./config/providers.js";
-import { MemoryClient } from "@tencentdb-agent-memory/memory-sdk-ts";
+
 import fs from "fs";
 import os from "os";
 import path from "path";

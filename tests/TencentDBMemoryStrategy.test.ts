@@ -8,15 +8,16 @@ const mockSearchAtomic = vi.fn();
 const mockReadCore = vi.fn();
 const mockListScenarios = vi.fn();
 
-vi.mock("@tencentdb-agent-memory/memory-sdk-ts", () => {
-  class MockMemoryClient {
-    addConversation = mockAddConversation;
-    searchAtomic = mockSearchAtomic;
-    readCore = mockReadCore;
-    listScenarios = mockListScenarios;
-  }
+vi.mock("../src/core/tencentdbUtil.js", () => {
   return {
-    MemoryClient: MockMemoryClient,
+    getTencentDBClient: () => ({
+      addConversation: mockAddConversation,
+      searchAtomic: mockSearchAtomic,
+      readCore: mockReadCore,
+      listScenarios: mockListScenarios,
+    }),
+    getTencentDBSessionKey: () => "test-sess",
+    isTencentdbActive: async () => true,
   };
 });
 

@@ -134,7 +134,7 @@ export function normalizeForMatching(str: string): string {
   return str
     .replace(/\r\n/g, "\n")
     .split("\n")
-    .map(line => line.trimEnd())
+    .map(line => line.trim())
     .join("\n");
 }
 

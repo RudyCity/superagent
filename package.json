@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.2.396",
+  "version": "1.2.397",
   "description": "Interactive terminal-based AI coding assistant",
   "type": "module",
   "bin": {
@@ -24,7 +24,7 @@
     "@anthropic-ai/tokenizer": "^0.0.4",
     "@modelcontextprotocol/sdk": "^1.4.0",
     "@napi-rs/canvas": "^1.0.2",
-    "@tencentdb-agent-memory/memory-tencentdb": "^1.0.0",
+    "r-memory": "git+https://github.com/RudyCity/r-memory.git",
     "ai": "^4.3.16",
     "execa": "^9.5.2",
     "fast-glob": "^3.3.3",

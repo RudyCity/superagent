@@ -8,16 +8,7 @@ if (!console.Console) {
   console.Console = Console;
 }
 
-const mockListScenarios = vi.fn();
 
-vi.mock("@tencentdb-agent-memory/memory-sdk-ts", () => {
-  class MockMemoryClient {
-    listScenarios = mockListScenarios;
-  }
-  return {
-    MemoryClient: MockMemoryClient,
-  };
-});
 
 let mockSettings = {
   enableTencentdbMemory: false,

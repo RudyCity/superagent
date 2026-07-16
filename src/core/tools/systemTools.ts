@@ -1,3 +1,9 @@
+
+function fuzzyMatch(text: string, pattern: string): boolean {
+  const cleanText = text.replace(/\s+/g, ' ');
+  const cleanPattern = pattern.replace(/\s+/g, ' ');
+  return cleanText.includes(cleanPattern);
+}
 import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
@@ -438,7 +444,7 @@ export const editTool: Tool = {
                 const endIdx = endLine !== undefined ? Math.min(lines.length, endLine) : lines.length;
 
                 const targetSubNormContent = normLines.slice(startIdx, endIdx).join("\n");
-                if (!targetSubNormContent.includes(normOldStr)) {
+                if (!targetSubNormContent.includes(normOldStr) && !fuzzyMatch(targetSubNormContent, normOldStr)) {
                   throw new Error(`oldString not found within lines ${startLine || 1} to ${endLine || lines.length} of ${edit.filePath} (matching normalized content)`);
                 }
                 const count = targetSubNormContent.split(normOldStr).length - 1;
@@ -459,7 +465,7 @@ export const editTool: Tool = {
                   updated = content.slice(0, matchOrigStart) + newStr + content.slice(matchOrigEnd);
                 }
               } else {
-                if (!normContent.includes(normOldStr)) {
+                if (!normContent.includes(normOldStr) && !fuzzyMatch(normContent, normOldStr)) {
                   throw new Error(`oldString not found in ${edit.filePath} (matching normalized content)`);
                 }
 
@@ -531,7 +537,7 @@ export const editTool: Tool = {
         const endIdx = endLine !== undefined ? Math.min(lines.length, endLine) : lines.length;
 
         const targetSubNormContent = normLines.slice(startIdx, endIdx).join("\n");
-        if (!targetSubNormContent.includes(normOldStr)) {
+        if (!targetSubNormContent.includes(normOldStr) && !fuzzyMatch(targetSubNormContent, normOldStr)) {
           return `Error: oldString not found within lines ${startLine || 1} to ${endLine || lines.length} of ${filePath} (matching normalized content).
 Fix: Re-read the target file range to find the updated text. The lines may have shifted.`;
         }
@@ -1118,7 +1124,7 @@ export const replaceFileContentTool: Tool = {
                const normSliceText = normalizeForMatching(sliceText);
                const normTargetContent = normalizeForMatching(targetContent);
 
-               if (!normSliceText.includes(normTargetContent)) {
+               if (!normSliceText.includes(normTargetContent) && !fuzzyMatch(normSliceText, normTargetContent)) {
                  throw new Error(`targetContent not found in specified line range [${startLine}, ${endLine}] (matching normalized content)`);
                }
 
@@ -1224,7 +1230,7 @@ export const replaceFileContentTool: Tool = {
       const normSliceText = normalizeForMatching(sliceText);
       const normTargetContent = normalizeForMatching(targetContent);
 
-      if (!normSliceText.includes(normTargetContent)) {
+      if (!normSliceText.includes(normTargetContent) && !fuzzyMatch(normSliceText, normTargetContent)) {
         return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] (matching normalized content).`;
       }
 

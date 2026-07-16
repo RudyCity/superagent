@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.397] - 2026-07-17
+
+### Changed
+- **TencentDB to R-Memory Migration**: Completed the migration of the memory system from the remote TencentDB gateway to the local `r-memory` library. Implemented a local `MemoryClient` adapter wrapping `r-memory`'s `RMemory` class and local file reads. Updated all memory strategy and tool test mocks to target `tencentdbUtil` directly.
+
 ## [1.2.396] - 2026-07-16
 
 ### Changed
