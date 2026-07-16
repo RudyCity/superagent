@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.375] - 2026-07-16
+
+### Fixed
+- **Empty Response on Resume**:
+  - Fixed empty response bug and NaN token usage when resuming large sessions using custom providers (such as 9router) that return `content-type: text/event-stream` for non-streaming requests.
+  - Skips text/event-stream SSE reconstruction if the response body is a plain JSON object starting with `{`.
+  - Cleans up `transfer-encoding` and `content-length` headers from reconstructed `Response` objects to prevent stream reading issues in the client.
+  - Refactored fetch interceptor try-catch block to return a new `Response` instead of a consumed response object upon parsing/formatting failures.
+
 ## [1.2.374] - 2026-07-16
 
 ### Optimized

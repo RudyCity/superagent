@@ -577,12 +577,21 @@ export function getModelInstanceForString(modelStr: string) {
       }
 
       if (!isStreamingRequest) {
+        let text = "";
         try {
-          let text = await response.text();
+          text = await response.text();
+        } catch {
+          return response;
+        }
+
+        try {
           const contentType = response.headers.get("content-type") || "";
-          const isEventStream = contentType.includes("text/event-stream") || text.trim().startsWith("data:");
+          const isEventStream = (contentType.includes("text/event-stream") || text.trim().startsWith("data:")) && !text.trim().startsWith("{");
 
           const headers = new Headers(response.headers);
+          headers.delete("transfer-encoding");
+          headers.delete("content-length");
+
           if (isEventStream) {
             headers.set("content-type", "application/json");
             text = JSON.stringify(reconstructChatCompletionFromSse(text));
@@ -602,7 +611,14 @@ export function getModelInstanceForString(modelStr: string) {
             headers,
           });
         } catch {
-          // Ignore failures and fall back to original response
+          const headers = new Headers(response.headers);
+          headers.delete("transfer-encoding");
+          headers.delete("content-length");
+          return new Response(text, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+          });
         }
       }
       return response;
