@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.383] - 2026-07-16
+
+### Fixed
+- **Mode 2 Image Rendering**: Implemented a `wrapLongLines` helper to wrap lines longer than 120 characters in the text-to-image pipeline. This prevents WebP encoder dimension failures (which happen when lines exceed 1800+ characters, causing the canvas to exceed WebP's 16383px limit) and dramatically improves OCR readability for the vision model.
+
 ## [1.2.382] - 2026-07-16
 
 ### Added

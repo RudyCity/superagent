@@ -17,7 +17,7 @@ export function normalizePathsForImage(text: string): string {
 /**
  * Slice text into readable pages
  */
-export function sliceTextIntoPages(text: string, maxLines = 150, maxPages = 3): string[] {
+export function sliceTextIntoPages(text: string, maxLines = 150, maxPages = 100): string[] {
   const lines = text.split(/\r?\n/);
   const pages: string[] = [];
   
@@ -35,12 +35,69 @@ export function sliceTextIntoPages(text: string, maxLines = 150, maxPages = 3): 
 }
 
 /**
+ * Minify and compress whitespace/newlines similar to pxpipe
+ */
+export function minifyTextForImage(text: string): string {
+  return text
+    // Replace trailing spaces on each line
+    .replace(/[ \t]+$/gm, "")
+    // Replace multiple consecutive empty lines with a single empty line
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Wrap lines longer than a max character limit.
+ * Helps prevent WebP canvas dimension failures (WebP max is 16383px wide)
+ * and keeps text legible for AI vision.
+ */
+export function wrapLongLines(text: string, maxCharsPerLine = 120): string {
+  const lines = text.split(/\r?\n/);
+  const wrappedLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.length <= maxCharsPerLine) {
+      wrappedLines.push(line);
+    } else {
+      let remaining = line;
+      while (remaining.length > maxCharsPerLine) {
+        let splitIndex = maxCharsPerLine;
+        
+        // Search backward for word boundaries or common delimiters to split cleanly
+        const delimiters = [" ", "\t", ",", ";", "/", "\\", "|"];
+        let bestIndex = -1;
+        for (const delimiter of delimiters) {
+          const idx = remaining.lastIndexOf(delimiter, maxCharsPerLine);
+          if (idx > maxCharsPerLine - 25 && idx > bestIndex) {
+            bestIndex = idx;
+          }
+        }
+        
+        if (bestIndex !== -1) {
+          splitIndex = bestIndex + 1; // Include the delimiter on the current line
+        }
+        
+        wrappedLines.push(remaining.substring(0, splitIndex));
+        remaining = remaining.substring(splitIndex);
+      }
+      if (remaining.length > 0) {
+        wrappedLines.push(remaining);
+      }
+    }
+  }
+
+  return wrappedLines.join("\n");
+}
+
+/**
  * Render a text chunk into a WebP image synchronously and return its base64 data.
  */
 export function renderTextToImageBase64(text: string): string {
   // Normalize paths before rendering so AI vision models read them correctly
   const normalized = normalizePathsForImage(text);
-  const lines = normalized.split(/\r?\n/);
+  // Wrap long lines to prevent WebP 16383px dimension limits and keep text readable
+  const wrapped = wrapLongLines(normalized, 120);
+  const lines = wrapped.split(/\r?\n/);
   const fontSize = 15;
   const lineHeight = 20;
   const padding = 16;
