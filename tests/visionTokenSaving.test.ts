@@ -336,7 +336,7 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     expect(messages.length).toBe(1);
     expect(messages[0].role).toBe("user");
     expect(Array.isArray(messages[0].content)).toBe(true);
-    expect(messages[0].content[0].text).toContain("CRITICAL:");
+    expect(messages[0].content[0].type).toBe("image");
     
     const imageParts = messages[0].content.filter((p: any) => p.type === "image");
     expect(imageParts.length).toBeGreaterThan(0);

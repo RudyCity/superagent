@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.387] - 2026-07-16
+
+### Fixed
+- **Mode 2 Pure Image Payload**: Removed all text parts from the Mode 2 user message content array, leaving only image parts for the vision model, rendering a true pure-image prompt delivery.
+
 ## [1.2.386] - 2026-07-16
 
 ### Optimized

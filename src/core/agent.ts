@@ -3193,17 +3193,8 @@ for (const tc of toolCalls) {
         const limitedBase64List = base64List.slice(0, maxModelImages);
         const limitedPages = limitedBase64List.length;
 
-        const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
-          {
-            type: "text",
-            text: `CRITICAL: The following image(s) contain the full compiled conversation history, system instructions, and dynamic execution context. Read the text inside the image(s) carefully to see all prior messages, inputs, and results. Proceed directly to the next step based on the latest state shown. [Prompt compiled & rendered as images to save tokens, split into ${limitedPages} pages]:`
-          }
-        ];
-        limitedBase64List.forEach((base64, index) => {
-          contentParts.push({
-            type: "text",
-            text: `[Compiled Prompt Page ${index + 1} of ${limitedPages}]:`
-          });
+        const contentParts: Array<{ type: "image"; image: string; mimeType?: string }> = [];
+        limitedBase64List.forEach((base64) => {
           contentParts.push({ type: "image", image: base64, mimeType: "image/webp" });
         });
 
