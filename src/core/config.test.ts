@@ -555,6 +555,7 @@ describe("config", () => {
       const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
       const spyExistsSync = vi.spyOn(fs, "existsSync").mockReturnValue(true);
       const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(["D__projects_my_awesome_project_123"] as any);
+      const spyWriteFileSync = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
 
       let mtimeValue = new Date(1000);
       const spyStatSync = vi.spyOn(fs, "statSync").mockImplementation(() => ({
@@ -562,7 +563,11 @@ describe("config", () => {
       } as any));
 
       let readCount = 0;
-      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation(() => {
+      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation((filePath: any) => {
+        const fileStr = String(filePath);
+        if (fileStr.endsWith("metadata.json")) {
+          throw new Error("Metadata file not found");
+        }
         readCount++;
         return JSON.stringify({
           messages: [{ role: "user", content: `msg_${readCount}` }],
@@ -598,6 +603,59 @@ describe("config", () => {
         spyReaddirSync.mockRestore();
         spyStatSync.mockRestore();
         spyReadFileSync.mockRestore();
+        spyWriteFileSync.mockRestore();
+      }
+    });
+
+    it("should load metadata from metadata.json when it exists and is up-to-date", () => {
+      const mockCwd = "D:\\projects\\my-awesome-project";
+      const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
+      const spyExistsSync = vi.spyOn(fs, "existsSync").mockReturnValue(true);
+      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(["D__projects_my_awesome_project_123"] as any);
+      const spyWriteFileSync = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
+
+      let mtimeValue = new Date(1000);
+      const spyStatSync = vi.spyOn(fs, "statSync").mockImplementation(() => ({
+        mtime: mtimeValue,
+        mtimeMs: 1000,
+      } as any));
+
+      let readCountFull = 0;
+      let readCountMeta = 0;
+      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation((filePath: any) => {
+        const fileStr = String(filePath);
+        if (fileStr.endsWith("metadata.json")) {
+          readCountMeta++;
+          return JSON.stringify({
+            mtimeMs: 1000,
+            displayName: "Cached Display Name",
+            messageCount: 5,
+            preview: "Cached Preview",
+            workingDirectory: mockCwd,
+          });
+        }
+        readCountFull++;
+        return JSON.stringify({
+          messages: [{ role: "user", content: `full_msg` }],
+        });
+      });
+
+      try {
+        clearHistoryCache();
+
+        const sessions = listHistorySessions();
+        expect(sessions.length).toBe(1);
+        expect(sessions[0].displayName).toBe("Cached Display Name");
+        expect(sessions[0].preview).toBe("Cached Preview");
+        expect(readCountMeta).toBe(1);
+        expect(readCountFull).toBe(0); // Should not have read the full file!
+      } finally {
+        spyCwd.mockRestore();
+        spyExistsSync.mockRestore();
+        spyReaddirSync.mockRestore();
+        spyStatSync.mockRestore();
+        spyReadFileSync.mockRestore();
+        spyWriteFileSync.mockRestore();
       }
     });
   });

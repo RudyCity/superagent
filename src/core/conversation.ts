@@ -156,6 +156,41 @@ export class Conversation {
         activePreset,
       };
       await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+
+      try {
+        const userMessages = this.messages.filter((m) => m.role === "user");
+        const lastUser = userMessages[userMessages.length - 1];
+        const lastUserText = lastUser ? contentToString(lastUser.content) : "";
+        const preview = lastUser
+          ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
+          : "(no user messages)";
+
+        const cleanName = path.basename(filePath, ".json").replace(/_\d+$/, "");
+        const folderPathName = cleanName
+          .replace(/^([a-zA-Z])__/, "$1:\\")
+          .replace(/^_+/, "/")
+          .replace(/_/g, "/");
+
+        const displayName = lastUser && lastUserText && lastUserText.trim()
+          ? lastUserText.trim().slice(0, 60).replace(/\n/g, " ") + (lastUserText.trim().length > 60 ? "…" : "")
+          : folderPathName;
+
+        const stat = await fs.stat(filePath);
+        const mtimeMs = stat.mtimeMs !== undefined ? stat.mtimeMs : stat.mtime.getTime();
+
+        const metadata = {
+          mtimeMs,
+          displayName,
+          messageCount: this.messages.length,
+          preview,
+          workingDirectory,
+        };
+
+        const metadataPath = path.join(path.dirname(filePath), "metadata.json");
+        await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
+      } catch (metaErr) {
+        // Fail silently or log
+      }
     } catch (err) {
       console.error("Failed to save history:", err);
     }
@@ -210,6 +245,41 @@ export class Conversation {
         activePreset,
       };
       fsSync.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+
+      try {
+        const userMessages = this.messages.filter((m) => m.role === "user");
+        const lastUser = userMessages[userMessages.length - 1];
+        const lastUserText = lastUser ? contentToString(lastUser.content) : "";
+        const preview = lastUser
+          ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
+          : "(no user messages)";
+
+        const cleanName = path.basename(filePath, ".json").replace(/_\d+$/, "");
+        const folderPathName = cleanName
+          .replace(/^([a-zA-Z])__/, "$1:\\")
+          .replace(/^_+/, "/")
+          .replace(/_/g, "/");
+
+        const displayName = lastUser && lastUserText && lastUserText.trim()
+          ? lastUserText.trim().slice(0, 60).replace(/\n/g, " ") + (lastUserText.trim().length > 60 ? "…" : "")
+          : folderPathName;
+
+        const stat = fsSync.statSync(filePath);
+        const mtimeMs = stat.mtimeMs !== undefined ? stat.mtimeMs : stat.mtime.getTime();
+
+        const metadata = {
+          mtimeMs,
+          displayName,
+          messageCount: this.messages.length,
+          preview,
+          workingDirectory,
+        };
+
+        const metadataPath = path.join(path.dirname(filePath), "metadata.json");
+        fsSync.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
+      } catch (metaErr) {
+        // Fail silently
+      }
     } catch (err) {
       console.error("Failed to save history synchronously:", err);
     }

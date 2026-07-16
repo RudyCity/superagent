@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.374] - 2026-07-16
+
+### Optimized
+- **Session History Loading (/resume command)**:
+  - Optimized the session listing logic by introducing a tiny metadata.json cache next to the main {sessionId}.json file inside the history directories.
+  - Avoided reading and JSON-parsing large session history files synchronously on startup, leading to sub-millisecond execution times for history retrieval.
+  - Automatically writes metadata.json on every history save (saveToFile and saveToFileSync) and lazily backfills it on the first list request if missing or outdated.
+  - Eliminated redundant fs.existsSync calls before fs.statSync in the listing loop.
+
 ## [1.2.373] - 2026-07-16
 
 ### Improved
