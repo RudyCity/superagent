@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.392] - 2026-07-16
+
+### Optimized
+- **System Prompt Vision Parser Instructions**: Added explicit parsing instructions to the system prompt text parameter in both Mode 1 and Mode 2, directing the model to use its vision capabilities to read and analyze the conversation history and dynamic context rendered as WebP images.
+
 ## [1.2.391] - 2026-07-16
 
 ### Fixed

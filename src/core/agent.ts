@@ -1817,6 +1817,12 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
 
 
         // System prompt is kept as text only for both Mode 1 and Mode 2 as requested by user.
+        if (useVisionTokenSaving) {
+          const visionNotice = visionMode === 2
+            ? "\n\nCRITICAL CONVERSATION PROMPT: The entire conversation history, messages, and dynamic execution context have been compiled and rendered as WebP images inside the user message to save input tokens. You must use your vision capability to read the text inside these images carefully to see all prior messages, inputs, dynamic context, and results. Proceed to execute the next step or tool call directly. Do not mention that the prompt was rendered as images or reference the image format in your response."
+            : "\n\nCRITICAL CONVERSATION PROMPT: Some large user messages or tool results in your conversation history have been rendered as WebP images to save input tokens. You must use your vision capability to read and analyze the text inside these images carefully to see all prior messages, inputs, and results.";
+          finalSystemPrompt += visionNotice;
+        }
 
         let textContent = "";
         let reasoningContent = ""; // DeepSeek R1 thinking tokens — displayed in UI but NOT stored in history
