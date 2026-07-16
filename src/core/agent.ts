@@ -7,6 +7,7 @@ import { renderTextToImageBase64, sliceTextIntoPages } from "../utils/textToImag
 import fs from "fs";
 import crypto from "crypto";
 import { getConfig, getContextWindowLimit, getGlobalConfigDir, ensureGlobalConfigDir, getModelInstanceForTier, getModelInstanceForString, loadAgentSkills, getSettings, getTierModel, getTierModelConfig, getPackageRootDir, getModelConnectionDetailsForTier, clearHistoryCache, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD, getDynamicVisionThreshold } from "./config.js";
+import { GuidelineLoader } from "./agent/GuidelineLoader.js";
 import { Conversation } from "./conversation.js";
 import { getToolDefinitions, backgroundTasks, isTaskInWorkspace } from "./tools.js";
 import type { Tool, AgentTier, ViolationRecord } from "./tools.js";
@@ -336,6 +337,14 @@ export class Agent {
     this.planState = "APPROVED";
   }
 
+  public dispose(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.skillContentCache.clear();
+    this.preloadedSkillKeys.clear();
+  }
+
   /**
    * Build and cache the guidelines text (agents.md + mandatory preloaded skills).
    * Called once per Agent instance lifetime — subsequent calls return the cache.
@@ -416,127 +425,20 @@ export class Agent {
   }
 
   private buildGuidelinesText(userQuery?: string): string {
-    let text = "";
-    try {
-      // agents.md: only load from project workspace paths (never global)
-      const searchPaths = [
-        path.join(process.cwd(), "agents.md"),
-        path.join(this.workingDirectory, "agents.md"),
-      ];
-      if (!this.workspaceCache?.agentsMd) {
-        for (const p of searchPaths) {
-          if (fs.existsSync(p)) {
-            text += `\n\nPROJECT GUIDELINES (agents.md):\n${fs.readFileSync(p, "utf-8")}\n`;
-            break;
-          }
-        }
-      }
-
-      // Dynamically determine target skills based on current state and query
-      const targetSkills: Array<{ key: string; label: string }> = [];
-
-      // Always include Karpathy Guidelines (universal coding rules)
-      const karpathy = Agent.MANDATORY_SKILLS.find(s => s.key === "karpathy-guidelines");
-      if (karpathy) targetSkills.push(karpathy);
-
-      // Always include Pragmatic Minimalism (forces lean coding & reviews)
-      const minimalism = Agent.MANDATORY_SKILLS.find(s => s.key === "pragmatic-minimalism");
-      if (minimalism) targetSkills.push(minimalism);
-
-      // Planning-related guidelines: only load during planning phase
-      if (!this.isSimpleTask && (this.planState === "IDLE" || this.planState === "PLANNING_PENDING")) {
-        const planning = Agent.MANDATORY_SKILLS.find(s => s.key === "superagent-planning");
-        const writing = Agent.MANDATORY_SKILLS.find(s => s.key === "writing-plans");
-        if (planning) targetSkills.push(planning);
-        if (writing) targetSkills.push(writing);
-      }
-
-      // Execution-related guidelines: only load during execution phase
-      if (!this.isSimpleTask && this.planState === "APPROVED") {
-        const executing = Agent.MANDATORY_SKILLS.find(s => s.key === "executing-plans");
-        const subagent = Agent.MANDATORY_SKILLS.find(s => s.key === "subagent-driven-development");
-        const verification = Agent.MANDATORY_SKILLS.find(s => s.key === "verification-before-completion");
-        if (executing) targetSkills.push(executing);
-        if (subagent) targetSkills.push(subagent);
-        if (verification) targetSkills.push(verification);
-      }
-
-      // Track management guidelines: only load if track is query-relevant
-      const hasTrackQuery = userQuery && /track|milestone/i.test(userQuery);
-      if (hasTrackQuery) {
-        const track = Agent.MANDATORY_SKILLS.find(s => s.key === "track-management");
-        if (track) targetSkills.push(track);
-      }
-
-      // Debugging guidelines: only load if query mentions debugging/error terms
-      const hasDebugQuery = userQuery && /debug|error|fail|bug|crash|incorrect|fix|issue|broken|slow|diagnose/i.test(userQuery);
-      if (hasDebugQuery) {
-        const debugging = Agent.MANDATORY_SKILLS.find(s => s.key === "systematic-debugging");
-        if (debugging) targetSkills.push(debugging);
-      }
-
-      // Master agent orchestration: only load for master agent tier
-      if (this.tier === "master") {
-        const orchestration = Agent.MASTER_ONLY_SKILLS.find(s => s.key === "master-agent-orchestration");
-        if (orchestration) targetSkills.push(orchestration);
-      }
-
-      // Clear preloaded keys for this construction turn
-      this.preloadedSkillKeys.clear();
-
-      for (const skill of targetSkills) {
-        let trimmedContent = this.skillContentCache.get(skill.key) || "";
-        if (!trimmedContent) {
-          const candidatePaths = [
-            path.join(process.cwd(), ".agents", "skills", skill.key, "SKILL.md"),
-            path.join(this.workingDirectory, ".agents", "skills", skill.key, "SKILL.md"),
-            path.join(getPackageRootDir(), ".agents", "skills", skill.key, "SKILL.md"),
-          ];
-          for (const p of candidatePaths) {
-            if (fs.existsSync(p)) {
-              const rawContent = fs.readFileSync(p, "utf-8");
-              // Trim body to MAX_SKILL_LINES, preserving YAML frontmatter
-              trimmedContent = Agent.trimSkillContent(rawContent, p);
-              this.skillContentCache.set(skill.key, trimmedContent);
-              break;
-            }
-          }
-        }
-
-        if (trimmedContent) {
-          text += `\n\n${skill.label}:\n${trimmedContent}\n`;
-          this.preloadedSkillKeys.add(skill.key);
-        }
-      }
-    } catch {
-      // Ignore guideline loading errors — non-critical
-    }
-
-    return text;
+    return GuidelineLoader.buildGuidelines({
+      workingDirectory: this.workingDirectory,
+      workspaceCacheAgentsMd: this.workspaceCache?.agentsMd,
+      isSimpleTask: this.isSimpleTask,
+      planState: this.planState,
+      userQuery,
+      tier: this.tier,
+      skillContentCache: this.skillContentCache,
+      preloadedSkillKeys: this.preloadedSkillKeys
+    });
   }
 
-
-  /**
-   * Mark already-preloaded skill entries in the INSTALLED AGENT SKILLS list.
-   * This prevents the AI from wasting tokens re-reading skill files whose content
-   * is already injected earlier in the same system prompt.
-   */
   private markPreloadedSkillsInList(skillsPrompt: string): string {
-    if (this.preloadedSkillKeys.size === 0) return skillsPrompt;
-    let result = skillsPrompt;
-    for (const key of this.preloadedSkillKeys) {
-      // Match "Instruction File: <path>" lines containing this skill key in the path
-      const escapedKey = key.replace(/[-]/g, "[-]");
-      const regex = new RegExp(
-        `(Instruction File: [^\\n]*${escapedKey}[^\\n]*)`,
-        "gi"
-      );
-      result = result.replace(
-        regex,
-        `$1 [Content already loaded in context above — no need to re-read]`
-      );
-    }
-    return result;
+    return GuidelineLoader.markPreloadedSkills(skillsPrompt, this.preloadedSkillKeys);
   }
 
   /**

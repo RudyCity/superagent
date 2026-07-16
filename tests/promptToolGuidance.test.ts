@@ -64,4 +64,13 @@ describe("prompt and command guidance", () => {
     expect(base).toContain("Plan batches upfront");
     expect(base).toContain("conversationIds");
   });
+
+  it("requires single-agent cognitive scale-up guidelines in prompts", () => {
+    const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
+    const skillsConfig = fs.readFileSync(path.resolve(process.cwd(), "src/core/config/skills.ts"), "utf-8");
+
+    expect(prompts).toContain("single-agent-cognitive-scaleup");
+    expect(prompts).toContain("optimal non-human reasoning");
+    expect(skillsConfig).toContain("single-agent-cognitive-scaleup");
+  });
 });

@@ -1247,7 +1247,7 @@ export function App({
     return "Enter value...";
   };
 
-  const suggestions = getSuggestions(lastTabPrefix || input);
+  const suggestions = (activeWizard && activeWizard.type !== "question" && activeWizard.type !== "model") ? [] : getSuggestions(lastTabPrefix || input);
 
   // Bind Keyboard Handler Hook
   useKeyboardHandler({

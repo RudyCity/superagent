@@ -465,7 +465,7 @@ export function MultiAgentDashboard({
     }
   }, [activeWizard]);
 
-  const suggestions = getDashboardSuggestions(lastTabPrefix || query);
+  const suggestions = activeWizard ? [] : getDashboardSuggestions(lastTabPrefix || query);
   const suggestionDescs = getSuggestionDescriptions();
 
   useEffect(() => {

@@ -81,7 +81,11 @@ export function formatUnknownActionError(action: string, validActions: readonly 
 }
 
 export function normalizeWindowsPackageRunner(command: string): string {
-  return command.replace(/^(npm|npx|pnpm|yarn)(?=\s|$)/, "$1.cmd");
+  // If running on win32, ensure package runners like npm/npx use .cmd to avoid Git Bash execution errors.
+  if (process.platform === "win32") {
+    return command.replace(/^(npm|npx|pnpm|yarn)(?=\s|$)/, "$1.cmd");
+  }
+  return command;
 }
 
 export function formatCommandForPowerShell(command: string): string {

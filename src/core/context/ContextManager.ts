@@ -423,4 +423,9 @@ export class ContextManager {
   private generateId(): string {
     return `compact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
+
+  public dispose(): void {
+    this.eventEmitter.removeAllListeners();
+    this.pinnedMessages.clear();
+  }
 }

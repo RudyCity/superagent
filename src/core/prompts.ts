@@ -10,7 +10,7 @@
 
 const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill/terminate parent or unrelated runtime processes. Do NOT run global process-kill commands such as 'taskkill /IM node.exe', 'taskkill /IM bun.exe', 'pkill node', 'pkill bun', or 'pkill -f tsx'. If a child process is locked, kill ONLY its specific process ID (PID) using 'taskkill /F /T /PID <pid>' or 'kill -9 <pid>'.`;
 
-const REASONING_RULE = `- REASONING: If your active model supports reasoning/thinking, utilize it to think through complex problems, verify assumptions, plan tasks, and explain design choices before acting.`;
+const REASONING_RULE = `- REASONING: Before executing actions/tools, utilize your reasoning/thinking capabilities to analyze the codebase, verify assumptions, plan tasks, and evaluate edge cases. If doing complex operations, you MUST read the 'single-agent-cognitive-scaleup' skill first for optimal non-human reasoning.`;
 
 const BATCH_OPS_RULE = `- BATCH_OPS: Batch all multi-file, multi-edit, multi-task, and multi-agent operations in ONE tool call/turn:
   - read: MUST use 'filePaths' array for multiple files/ranges; do not call read sequentially.

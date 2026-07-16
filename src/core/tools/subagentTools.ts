@@ -70,25 +70,32 @@ function extractSubagentReport(agentInstance: any, subagentId?: string): string 
       if (fs.existsSync(reportFile)) {
         const raw = fs.readFileSync(reportFile, "utf-8");
         const report = JSON.parse(raw);
-        // Convert to readable markdown for the parent agent
-        const lines: string[] = [
-          `### SUBAGENT TASK REPORT (JSON verified)`,
-          `- **Goal**: ${report.goal || "N/A"}`,
-          `- **Status**: ${report.status || "unknown"}`,
-        ];
-        if (Array.isArray(report.actionsTaken) && report.actionsTaken.length > 0) {
-          lines.push(`- **Actions Taken**:`);
-          for (const a of report.actionsTaken) lines.push(`  - ${a}`);
+        // Basic schema validation check
+        if (
+          typeof report.subagentId === "string" &&
+          typeof report.goal === "string" &&
+          typeof report.status === "string"
+        ) {
+          // Convert to readable markdown for the parent agent
+          const lines: string[] = [
+            `### SUBAGENT TASK REPORT (JSON verified)`,
+            `- **Goal**: ${report.goal || "N/A"}`,
+            `- **Status**: ${report.status || "unknown"}`,
+          ];
+          if (Array.isArray(report.actionsTaken) && report.actionsTaken.length > 0) {
+            lines.push(`- **Actions Taken**:`);
+            for (const a of report.actionsTaken) lines.push(`  - ${a}`);
+          }
+          if (Array.isArray(report.keyFindings) && report.keyFindings.length > 0) {
+            lines.push(`- **Key Findings**:`);
+            for (const f of report.keyFindings) lines.push(`  - ${f}`);
+          }
+          if (report.nextSteps) lines.push(`- **Next Steps**: ${report.nextSteps}`);
+          if (report.verificationPassed !== undefined) {
+            lines.push(`- **Verification**: ${report.verificationPassed ? "✅ passed" : "❌ failed"}`);
+          }
+          return lines.join("\n");
         }
-        if (Array.isArray(report.keyFindings) && report.keyFindings.length > 0) {
-          lines.push(`- **Key Findings**:`);
-          for (const f of report.keyFindings) lines.push(`  - ${f}`);
-        }
-        if (report.nextSteps) lines.push(`- **Next Steps**: ${report.nextSteps}`);
-        if (report.verificationPassed !== undefined) {
-          lines.push(`- **Verification**: ${report.verificationPassed ? "✅ passed" : "❌ failed"}`);
-        }
-        return lines.join("\n");
       }
     } catch {
       // Fall through to markdown extraction

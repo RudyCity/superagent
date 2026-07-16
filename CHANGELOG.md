@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.382] - 2026-07-16
+
+### Added
+- **Guideline Loader**: Introduced `GuidelineLoader` to dynamically load, compress, and inject mandatory skills (such as `karpathy-guidelines` and `pragmatic-minimalism`) directly into system prompts. Avoids redundant re-reading of skills by flagging them as preloaded.
+
+### Modified
+- **Context & Token Management**: Added event emitter cleanup/disposal logic in `ContextManager` and optimized token calculation in `TokenTracker`.
+- **Agent Framework**: Cleaned up codebase logic inside `agent.ts` and UI dashboards.
+
 ## [1.2.381] - 2026-07-16
 
 ### Added

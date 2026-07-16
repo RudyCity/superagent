@@ -264,7 +264,7 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
 
 # SKILL DISCOVERY
 - RULE: call get_skills(query) BEFORE coding, planning, or executing any command.
-  - EXCEPT: Do NOT call get_skills(query) or use_skill() if the current mode is 'ask' (lightweight Q&A) or if the relevant skill is already preloaded/defined in your system prompt context (e.g. karpathy-guidelines, pragmatic-minimalism, systematic-debugging, superagent-planning, writing-plans, executing-plans, track-management, subagent-driven-development, verification-before-completion, master-agent-orchestration).
+  - EXCEPT: Do NOT call get_skills(query) or use_skill() if the current mode is 'ask' (lightweight Q&A) or if the relevant skill is already preloaded/defined in your system prompt context (e.g. karpathy-guidelines, pragmatic-minimalism, systematic-debugging, superagent-planning, writing-plans, executing-plans, track-management, subagent-driven-development, verification-before-completion, master-agent-orchestration, single-agent-cognitive-scaleup).
 - QUERY CONSTRUCTION (critical for accurate results):
   - Build query from: [task_type] + [technology] + [goal]
   - Examples:
