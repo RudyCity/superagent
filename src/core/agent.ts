@@ -861,11 +861,16 @@ If none of the options are suitable, still pick the closest one.`;
             const sorted = matchedDirs.map(d => {
               const dirPath = path.join(historyDir, d);
               const filePath = path.join(dirPath, `${d}.json`);
-              let mtime = 0;
-              try {
-                mtime = fs.statSync(filePath).mtime.getTime();
-              } catch {
-                mtime = fs.statSync(dirPath).mtime.getTime();
+              const match = d.match(/_(\d+)$/);
+              let mtime = match ? parseInt(match[1], 10) : 0;
+              if (mtime === 0) {
+                try {
+                  mtime = fs.statSync(filePath).mtime.getTime();
+                } catch {
+                  try {
+                    mtime = fs.statSync(dirPath).mtime.getTime();
+                  } catch {}
+                }
               }
               return { filePath, mtime };
             }).sort((a, b) => b.mtime - a.mtime);

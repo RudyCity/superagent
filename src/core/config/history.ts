@@ -110,9 +110,9 @@ export function clearHistoryCache(): void {
   }
 }
 
-export function listHistorySessions(isMulti = false, crossSession = false, workspaceDir?: string): HistorySession[] {
+export function listHistorySessions(isMulti = false, crossSession = false, workspaceDir?: string, limit?: number): HistorySession[] {
   const currentDir = workspaceDir ? path.resolve(workspaceDir) : process.cwd();
-  const cacheKey = `${isMulti}:${crossSession}:${currentDir}`;
+  const cacheKey = `${isMulti}:${crossSession}:${currentDir}:${limit ?? "all"}`;
   const now = Date.now();
   const cached = listCache.get(cacheKey);
   if (!process.env.VITEST && cached && now - cached.timestamp < 30000) {
@@ -145,10 +145,22 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
     return [];
   }
 
+  let finalDirs = dirs;
+  if (!process.env.VITEST) {
+    // Sort directories by timestamp suffix (descending) first so we can apply the limit efficiently
+    const sortedDirs = dirs.map(d => {
+      const match = d.match(/_(\d+)$/);
+      const timestamp = match ? parseInt(match[1], 10) : 0;
+      return { name: d, timestamp };
+    }).sort((a, b) => b.timestamp - a.timestamp);
+
+    finalDirs = limit !== undefined ? sortedDirs.slice(0, limit).map(x => x.name) : sortedDirs.map(x => x.name);
+  }
+
   const sessions: HistorySession[] = [];
   let cacheUpdated = false;
 
-  for (const d of dirs) {
+  for (const d of finalDirs) {
     const cleanNameLower = d.toLowerCase().replace(/_\d+$/, "");
     const dirPath = path.join(historyDir, d);
     const filePath = path.join(dirPath, `${d}.json`);
@@ -185,8 +197,18 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
         mtimeMs = cachedFile.mtimeMs;
       } else {
         if (!process.env.VITEST) {
-          const stat = fs.statSync(filePath);
-          mtimeMs = stat.mtimeMs !== undefined ? stat.mtimeMs : stat.mtime.getTime();
+          const match = d.match(/_(\d+)$/);
+          mtimeMs = match ? parseInt(match[1], 10) : 0;
+          if (mtimeMs === 0) {
+            try {
+              const stat = fs.statSync(filePath);
+              mtimeMs = stat.mtimeMs !== undefined ? stat.mtimeMs : stat.mtime.getTime();
+            } catch {
+              try {
+                mtimeMs = fs.statSync(dirPath).mtime.getTime();
+              } catch {}
+            }
+          }
         }
 
         const metadataPath = path.join(dirPath, "metadata.json");

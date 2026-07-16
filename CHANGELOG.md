@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.380] - 2026-07-16
+
+### Optimized
+- **Resume Command Performance**:
+  - Implemented directory name timestamp parsing to sort and filter folders before executing file operations, reducing statSync calls.
+  - Added a limit parameter to `listHistorySessions` to restrict metadata parsing to only the top N newest sessions.
+  - Resolved session mode mismatch where single-agent mode wizard loaded multi-agent cache and vice versa.
+
 ## [1.2.379] - 2026-07-16
 
 ### Changed
