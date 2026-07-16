@@ -68,7 +68,7 @@ export class PruningStrategy implements CompactionStrategy {
             const settings = getSettings();
             const name = modelName.toLowerCase();
             const supportsVision = name.includes("claude-3") || name.includes("gpt-4o") || name.includes("gpt-4-vision") || name.includes("gemini") || name.includes("gemma-3") || name.includes("vision");
-            useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true);
+            useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? false);
             visionThreshold = getDynamicVisionThreshold(modelName);
           } else {
             useVisionTokenSaving = false;

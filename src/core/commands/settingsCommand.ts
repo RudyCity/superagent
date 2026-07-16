@@ -143,7 +143,7 @@ export const settingsCommand: SlashCommand = {
         `│ • Focus Level (Depth): ${s.focus?.toUpperCase() ?? "OFF"}`,
         `│ • Focus Custom Budget: ${s.focusBudget} tokens`,
         `│ • Force Prompt Tools : ${s.forcePromptBasedToolCalling ? "ENABLED" : "DISABLED"}`,
-        `│ • Auto Vision Token  : ${s.autoVisionTokenSaving ?? true ? "ENABLED" : "DISABLED"}`,
+        `│ • Auto Vision Token  : ${s.autoVisionTokenSaving ?? false ? "ENABLED" : "DISABLED"}`,
         `│ • Vision Threshold   : ${s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD} chars`,
         `│ • Hide Timeline Line : ${s.hideTimeline ? "ENABLED" : "DISABLED"}`,
         `│ • Request Classifier : ${s.classifierEnabled !== false ? "ENABLED" : "DISABLED"}`,
@@ -709,7 +709,7 @@ export const settingAutoVisionCommand: SlashCommand = {
     if (!val) {
       ctx.addLine({
         type: "system",
-        content: `Usage: /setting-auto-vision <on|off>\nCurrent value: ${getSettings().autoVisionTokenSaving ?? true ? "on" : "off"}`,
+        content: `Usage: /setting-auto-vision <on|off>\nCurrent value: ${getSettings().autoVisionTokenSaving ?? false ? "on" : "off"}`,
         timestamp: now,
       });
       return;

@@ -1619,7 +1619,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         const modelName = modelInstance ? modelInstance.modelId : "";
         const supportsVision = this.modelSupportsVision(modelName);
         const settings = getSettings();
-        const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
+        const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? false) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
         // Inform the conversation so stripOldToolResults retains more cycles
         // when vision is active — buildMessages() will image-convert large results.
         this.conversation.setVisionMode(useVisionTokenSaving);
@@ -3092,7 +3092,7 @@ for (const tc of toolCalls) {
     }
 
     const settings = getSettings();
-    const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
+    const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? false) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
     const threshold = getDynamicVisionThreshold(modelName);
     
 

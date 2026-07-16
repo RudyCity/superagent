@@ -109,7 +109,7 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     focus: "off",
     focusBudget: 4000,
     forcePromptBasedToolCalling: false,
-    autoVisionTokenSaving: true,
+    autoVisionTokenSaving: false,
     visionTokenSavingThreshold: DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
   },
   trustedDirectories: [],
@@ -786,7 +786,7 @@ export function getSettings(): SystemSettings {
     maxProcsVisible: s.maxProcsVisible ?? 3,
     focus: s.focus ?? "off",
     focusBudget: s.focusBudget ?? 4000,
-    autoVisionTokenSaving: s.autoVisionTokenSaving ?? true,
+    autoVisionTokenSaving: s.autoVisionTokenSaving ?? false,
     visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
     hideTimeline: s.hideTimeline ?? false,
   };

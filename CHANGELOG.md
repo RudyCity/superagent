@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.396] - 2026-07-16
+
+### Changed
+- **Default Auto Vision Off**: Changed the default value of `autoVisionTokenSaving` from `true` to `false` in configuration defaults and all fallback checks throughout the codebase.
+
 ## [1.2.395] - 2026-07-16
 
 ### Fixed

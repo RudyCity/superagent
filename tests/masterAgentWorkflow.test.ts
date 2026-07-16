@@ -452,6 +452,7 @@ describe("Master Agent Workflow & Guardrails", () => {
 
     await agent.sendMessage("write plan");
 
+    console.log("DEBUG ONEVENT CALLS:", onEvent.mock.calls.map(c => JSON.stringify(c[0])));
     const toolEndEvent = onEvent.mock.calls.find(call => call[0].type === "tool_end" && call[0].toolResult.name === "write_to_file");
     expect(toolEndEvent).toBeDefined();
     // Should NOT be an error - delegation context is auto-injected now

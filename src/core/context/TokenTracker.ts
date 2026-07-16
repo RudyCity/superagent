@@ -80,7 +80,7 @@ export class TokenTracker {
 
     const settings = getSettings();
     const supportsVision = this.modelSupportsVision(this.model);
-    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? true);
+    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? false);
     const threshold = getDynamicVisionThreshold(this.model);
 
     let tokens = this.countContent(message.content);
@@ -116,7 +116,7 @@ export class TokenTracker {
 
     const settings = getSettings();
     const supportsVision = this.modelSupportsVision(this.model);
-    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? true);
+    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? false);
     const threshold = getDynamicVisionThreshold(this.model);
 
     for (const msg of messages) {
@@ -172,7 +172,7 @@ export class TokenTracker {
     if (systemPrompt) {
       const settings = getSettings();
       const supportsVision = this.modelSupportsVision(this.model);
-      const useVision = supportsVision && (settings.autoVisionTokenSaving ?? true);
+      const useVision = supportsVision && (settings.autoVisionTokenSaving ?? false);
       const threshold = getDynamicVisionThreshold(this.model);
 
       let sysTokens = 0;
@@ -195,7 +195,7 @@ export class TokenTracker {
     
     const settings = getSettings();
     const supportsVision = this.modelSupportsVision(this.model);
-    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? true);
+    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? false);
     const threshold = getDynamicVisionThreshold(this.model);
 
     if (typeof content === "string") {

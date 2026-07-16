@@ -18,7 +18,7 @@ vi.mock("../src/core/config/jsonConfig.js", async (importOriginal) => {
       rateLimitRequests: 10,
       rateLimitInterval: 1000,
       disableStreaming: false,
-      contextWindowLimit: 10000,
+      contextWindowLimit: 200000,
       maxIterations: 2,
     }),
   };
