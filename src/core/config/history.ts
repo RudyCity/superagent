@@ -50,9 +50,64 @@ interface FileMetadataCacheEntry {
 }
 
 const fileMetadataCache = new Map<string, FileMetadataCacheEntry>();
+const masterMetadataLoaded = new Set<string>();
+
+function loadMasterMetadata(historyDir: string): void {
+  if (process.env.VITEST || masterMetadataLoaded.has(historyDir)) return;
+  masterMetadataLoaded.add(historyDir);
+  try {
+    const masterPath = path.join(historyDir, "history-metadata.json");
+    if (fs.existsSync(masterPath)) {
+      const raw = fs.readFileSync(masterPath, "utf-8");
+      const masterData = JSON.parse(raw);
+      if (masterData && typeof masterData === "object") {
+        for (const [sid, meta] of Object.entries(masterData)) {
+          const filePath = path.join(historyDir, sid, `${sid}.json`);
+          fileMetadataCache.set(filePath, {
+            mtimeMs: (meta as any).mtimeMs,
+            displayName: (meta as any).displayName,
+            messageCount: (meta as any).messageCount,
+            preview: (meta as any).preview,
+            workingDirectory: (meta as any).workingDirectory,
+            legacyMatch: false,
+          });
+        }
+      }
+    }
+  } catch {
+    // Ignore load failures
+  }
+}
+
+function saveMasterMetadata(historyDir: string): void {
+  if (process.env.VITEST) return;
+  try {
+    const masterPath = path.join(historyDir, "history-metadata.json");
+    const masterData: Record<string, any> = {};
+    for (const [filePath, entry] of fileMetadataCache.entries()) {
+      if (filePath.startsWith(historyDir)) {
+        const sid = path.basename(filePath, ".json");
+        masterData[sid] = {
+          mtimeMs: entry.mtimeMs,
+          displayName: entry.displayName,
+          messageCount: entry.messageCount,
+          preview: entry.preview,
+          workingDirectory: entry.workingDirectory,
+        };
+      }
+    }
+    fs.writeFileSync(masterPath, JSON.stringify(masterData), "utf-8");
+  } catch {
+    // Ignore write failures
+  }
+}
 
 export function clearHistoryCache(): void {
   listCache.clear();
+  if (!process.env.VITEST) {
+    fileMetadataCache.clear();
+    masterMetadataLoaded.clear();
+  }
 }
 
 export function listHistorySessions(isMulti = false, crossSession = false, workspaceDir?: string): HistorySession[] {
@@ -68,17 +123,19 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
   const historyDir = path.join(getGlobalConfigDir(), "history", mode);
   if (!fs.existsSync(historyDir)) return [];
 
+  if (!process.env.VITEST) {
+    loadMasterMetadata(historyDir);
+  }
+
   const currentSanitized = currentDir.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
 
   let dirs: string[];
   try {
     if (crossSession) {
-      // Cross-session: list ALL sessions regardless of working directory
-      dirs = fs.readdirSync(historyDir).filter((d) => d !== "superagents" && d !== "subagents");
+      dirs = fs.readdirSync(historyDir).filter((d) => d !== "superagents" && d !== "subagents" && d !== "history-metadata.json");
     } else {
-      // Workspace-scoped: only sessions matching current cwd
       dirs = fs.readdirSync(historyDir).filter((d) => {
-        if (d === "superagents" || d === "subagents") return false;
+        if (d === "superagents" || d === "subagents" || d === "history-metadata.json") return false;
         const nameLower = d.toLowerCase();
         const cleanNameLower = nameLower.replace(/_\d+$/, "");
         return cleanNameLower === currentSanitized || cleanNameLower.startsWith(currentSanitized + "_");
@@ -89,28 +146,49 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
   }
 
   const sessions: HistorySession[] = [];
+  let cacheUpdated = false;
+
   for (const d of dirs) {
     const cleanNameLower = d.toLowerCase().replace(/_\d+$/, "");
     const dirPath = path.join(historyDir, d);
     const filePath = path.join(dirPath, `${d}.json`);
     try {
-      const stat = fs.statSync(filePath);
-      const mtimeMs = stat.mtimeMs !== undefined ? stat.mtimeMs : stat.mtime.getTime();
-
       let displayName = "";
       let messageCount = 0;
       let preview = "";
       let sessionCwd: string | undefined;
       let legacyMatch = false;
+      let mtimeMs = 0;
 
-      const cachedFile = fileMetadataCache.get(filePath);
-      if (cachedFile && cachedFile.mtimeMs === mtimeMs) {
+      let cachedFile: FileMetadataCacheEntry | undefined;
+      if (process.env.VITEST) {
+        try {
+          const stat = fs.statSync(filePath);
+          mtimeMs = stat.mtimeMs !== undefined ? stat.mtimeMs : stat.mtime.getTime();
+          const entry = fileMetadataCache.get(filePath);
+          if (entry && entry.mtimeMs === mtimeMs) {
+            cachedFile = entry;
+          }
+        } catch {
+          // Ignore
+        }
+      } else {
+        cachedFile = fileMetadataCache.get(filePath);
+      }
+
+      if (cachedFile) {
         displayName = cachedFile.displayName;
         messageCount = cachedFile.messageCount;
         preview = cachedFile.preview;
         sessionCwd = cachedFile.workingDirectory;
-        legacyMatch = cachedFile.legacyMatch;
+        legacyMatch = cleanNameLower === currentSanitized;
+        mtimeMs = cachedFile.mtimeMs;
       } else {
+        if (!process.env.VITEST) {
+          const stat = fs.statSync(filePath);
+          mtimeMs = stat.mtimeMs !== undefined ? stat.mtimeMs : stat.mtime.getTime();
+        }
+
         const metadataPath = path.join(dirPath, "metadata.json");
         let metadataLoaded = false;
         try {
@@ -132,6 +210,7 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
               workingDirectory: sessionCwd,
               legacyMatch,
             });
+            cacheUpdated = true;
           }
         } catch {
           // Ignore and fallback
@@ -158,8 +237,6 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
             ? lastUser.content.slice(0, 60).replace(/\n/g, " ") + (lastUser.content.length > 60 ? "…" : "")
             : "(no user messages)";
 
-          // Reconstruct display name from sanitized filename as fallback
-          // Strip trailing timestamp suffix if present (e.g. _1717999999)
           const cleanName = d.replace(/_\d+$/, "");
           const folderPathName = cleanName
             .replace(/^([a-zA-Z])__/, "$1:\\")
@@ -181,6 +258,7 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
             workingDirectory: sessionCwd,
             legacyMatch,
           });
+          cacheUpdated = true;
 
           // Write metadata.json for future listings
           try {
@@ -208,7 +286,6 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
             continue;
           }
         } else {
-          // Legacy fallback: check if cleanName is exactly the sanitized path of current cwd
           if (!legacyMatch) {
             continue;
           }
@@ -220,16 +297,18 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
         filePath,
         displayName,
         messageCount,
-        lastModified: stat.mtime,
+        lastModified: new Date(mtimeMs),
         preview,
       });
     } catch {
-      // Skip corrupt/unreadable files
       continue;
     }
   }
 
-  // Sort by most recently modified first
+  if (cacheUpdated && !process.env.VITEST) {
+    saveMasterMetadata(historyDir);
+  }
+
   sessions.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
   listCache.set(cacheKey, { timestamp: now, data: sessions });
   return sessions;

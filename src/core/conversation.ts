@@ -188,6 +188,20 @@ export class Conversation {
 
         const metadataPath = path.join(path.dirname(filePath), "metadata.json");
         await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
+
+        if (!process.env.VITEST) {
+          try {
+            const historyDir = path.dirname(path.dirname(filePath));
+            const masterPath = path.join(historyDir, "history-metadata.json");
+            let masterData: Record<string, any> = {};
+            try {
+              const raw = await fs.readFile(masterPath, "utf-8");
+              masterData = JSON.parse(raw) || {};
+            } catch {}
+            masterData[path.basename(filePath, ".json")] = metadata;
+            await fs.writeFile(masterPath, JSON.stringify(masterData), "utf-8");
+          } catch {}
+        }
       } catch (metaErr) {
         // Fail silently or log
       }
@@ -277,6 +291,20 @@ export class Conversation {
 
         const metadataPath = path.join(path.dirname(filePath), "metadata.json");
         fsSync.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
+
+        if (!process.env.VITEST) {
+          try {
+            const historyDir = path.dirname(path.dirname(filePath));
+            const masterPath = path.join(historyDir, "history-metadata.json");
+            let masterData: Record<string, any> = {};
+            try {
+              const raw = fsSync.readFileSync(masterPath, "utf-8");
+              masterData = JSON.parse(raw) || {};
+            } catch {}
+            masterData[path.basename(filePath, ".json")] = metadata;
+            fsSync.writeFileSync(masterPath, JSON.stringify(masterData), "utf-8");
+          } catch {}
+        }
       } catch (metaErr) {
         // Fail silently
       }

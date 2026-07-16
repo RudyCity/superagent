@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.378] - 2026-07-16
+
+### Optimized
+- **Resume Session Wizard Performance**:
+  - Implemented a unified `history-metadata.json` cache file in the history folders to store metadata (name, message count, preview, workspace, modification timestamp) for all history sessions.
+  - Optimized `listHistorySessions` to use memory cached session metadata directly without executing synchronous `statSync`, `readFileSync`, or `JSON.parse` operations for every folder.
+  - Enabled automatic updates to `history-metadata.json` during both asynchronous and synchronous history saves.
+
 ## [1.2.377] - 2026-07-16
 
 ### Optimized
