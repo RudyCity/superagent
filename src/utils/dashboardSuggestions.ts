@@ -221,6 +221,10 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
       return filterSuggestions(possibilities, query);
     }
 
+
+
+
+
     if (mainCommand === "/setting-classifier" || mainCommand === "/classifier") {
       const possibilities = [
         `${parts[0]} on`,

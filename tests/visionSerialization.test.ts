@@ -17,6 +17,9 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
     }),
     getContextWindowLimit: vi.fn().mockReturnValue(8000),
     getTierModel: vi.fn(),
+    getSettings: vi.fn().mockReturnValue({
+      autoVisionTokenSaving: false,
+    }),
   };
 });
 

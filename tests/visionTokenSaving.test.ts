@@ -82,6 +82,10 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     }
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    vi.mocked(configModule.getSettings).mockReturnValue({
+      autoVisionTokenSaving: true,
+      visionTokenSavingThreshold: 100,
+    });
   });
 
   afterEach(() => {
@@ -90,33 +94,7 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     }
   });
 
-  it("converts a large user message to image parts if vision model is active and feature is enabled", async () => {
-    const agent = new Agent("single");
-    
-    // Add user message shorter than threshold
-    agent.conversation.addUserMessage("short message");
-    
-    // Add user message longer than threshold (threshold is 100 chars)
-    const longText = "a".repeat(150);
-    agent.conversation.addUserMessage(longText);
 
-    // Call private buildMessages method
-    const messages = (agent as any).buildMessages(true);
-
-    expect(messages.length).toBe(2);
-    // First message should be raw text since it's short
-    expect(messages[0].role).toBe("user");
-    expect(messages[0].content).toBe("short message");
-
-    // Second message should be converted to an image
-    expect(messages[1].role).toBe("user");
-    expect(Array.isArray(messages[1].content)).toBe(true);
-    expect(messages[1].content[0].type).toBe("text");
-    expect(messages[1].content[0].text).toContain("rendered as images");
-    const imagePart = messages[1].content.find((p: any) => p.type === "image");
-    expect(imagePart).toBeDefined();
-    expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
-  });
 
   it("does not convert user message to image if feature is disabled", async () => {
     // Override getSettings to disable saving
@@ -136,53 +114,7 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     expect(messages[0].content).toBe(longText);
   });
 
-  it("converts a large tool message to image and appends a subsequent user message with the image data", async () => {
-    // Re-enable settings
-    vi.mocked(configModule.getSettings).mockReturnValue({
-      autoVisionTokenSaving: true,
-      visionTokenSavingThreshold: 100,
-    });
 
-    const agent = new Agent("single");
-    
-    // In native tool call workflow, we must have a preceding assistant message with tool calls
-    agent.conversation.addAssistantMessage("running file read", [{
-      id: "call-1",
-      name: "view_file",
-      args: { path: "somefile.txt" }
-    }]);
-
-    // Add a tool response longer than threshold
-    const longResult = "b".repeat(150);
-    agent.conversation.addMessage({
-      role: "tool",
-      timestamp: Date.now(),
-      toolResults: [{
-        toolCallId: "call-1",
-        name: "view_file",
-        result: longResult
-      }]
-    });
-
-    const messages = (agent as any).buildMessages(true);
-
-    // Messages should be: Assistant, Tool (with placeholder), and User (with image)
-    expect(messages.length).toBe(3);
-    
-    expect(messages[0].role).toBe("assistant");
-    
-    // Tool result message should contain placeholder
-    expect(messages[1].role).toBe("tool");
-    expect(messages[1].content[0].type).toBe("tool-result");
-    expect(messages[1].content[0].result).toContain("rendered as image in the subsequent message");
-
-    // The appended User message should contain the image
-    expect(messages[2].role).toBe("user");
-    expect(messages[2].content[0].text).toContain("rendered as image");
-    const imagePart = messages[2].content.find((p: any) => p.type === "image");
-    expect(imagePart).toBeDefined();
-    expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
-  });
 
   it("honors configured supportsVision: false even if model name suggests vision support", () => {
     vi.mocked(configModule.getTierModelConfig).mockReturnValue({
@@ -224,31 +156,7 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
   });
 
 
-  it("converts a TencentDB Agent Memory Context user message to image parts even if it is shorter than the threshold", () => {
-    vi.mocked(configModule.getTierModelConfig).mockReturnValue({
-      providerProfileId: "fake-key",
-      model: "gpt-4o",
-      supportsVision: true,
-    });
-    vi.mocked(configModule.getSettings).mockReturnValue({
-      autoVisionTokenSaving: true,
-      visionTokenSavingThreshold: 10000, // Large threshold
-    });
 
-    const agent = new Agent("single");
-    const memoryMsg = "[TencentDB Agent Memory Context]:\n- L1 preference: user prefers TypeScript";
-    agent.conversation.addUserMessage(memoryMsg);
-
-    const messages = (agent as any).buildMessages(true);
-
-    expect(messages.length).toBe(1);
-    expect(messages[0].role).toBe("user");
-    expect(Array.isArray(messages[0].content)).toBe(true);
-    expect(messages[0].content[0].text).toContain("TencentDB Agent Memory Context rendered as images");
-    const imagePart = messages[0].content.find((p: any) => p.type === "image");
-    expect(imagePart).toBeDefined();
-    expect(imagePart.image).toBe("MOCK_BASE64_IMAGE_DATA");
-  });
 
   it("uses the correct dynamic threshold based on model provider in getDynamicVisionThreshold", async () => {
     const { getDynamicVisionThreshold: realGetDynamic } = await import("../src/core/config/jsonConfig.js");
@@ -283,7 +191,6 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     vi.mocked(configModule.getSettings).mockReturnValue({
       autoVisionTokenSaving: true,
       visionTokenSavingThreshold: 100,
-      visionMode: 2,
     });
 
     const agent = new Agent("single");

@@ -1624,8 +1624,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         // when vision is active — buildMessages() will image-convert large results.
         this.conversation.setVisionMode(useVisionTokenSaving);
         const threshold = getDynamicVisionThreshold(modelName);
-        const visionMode = settings.visionMode ?? 1;
-
+        
         // ── Live Workspace State block ─────────────────────────────────────────
         let workspaceStateText = "";
         if (this.tier !== "subagent") {
@@ -1700,7 +1699,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
         };
 
         // Inject dynamic context into the active messages list
-        if (useVisionTokenSaving && visionMode === 2) {
+        if (useVisionTokenSaving) {
           messages = this.buildMessages(supportsNativeTools, dynamicContext);
         } else {
           injectDynamicContext(messages);
@@ -1726,7 +1725,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             const targetBudget = Math.max(20 * 1024, maxPayloadBytes - systemSize - toolsSize - 5000);
             await this.compactHistoryIfNeeded(signal, true, undefined, targetBudget);
             // Rebuild messages from compacted conversation
-            if (useVisionTokenSaving && visionMode === 2) {
+            if (useVisionTokenSaving) {
               messages = this.buildMessages(supportsNativeTools, dynamicContext);
             } else {
               messages = this.buildMessages(supportsNativeTools);
@@ -1780,7 +1779,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             const targetHistoryBudget = Math.max(1000, safetyMax - estSysTokens - dynamicContextTokens);
             await this.compactHistoryIfNeeded(signal, false, targetHistoryBudget);
             // Rebuild messages from compacted conversation
-            if (useVisionTokenSaving && visionMode === 2) {
+            if (useVisionTokenSaving) {
               messages = this.buildMessages(supportsNativeTools, dynamicContext);
             } else {
               messages = this.buildMessages(supportsNativeTools);
@@ -1818,9 +1817,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
 
         // System prompt is kept as text only for both Mode 1 and Mode 2 as requested by user.
         if (useVisionTokenSaving) {
-          const visionNotice = visionMode === 2
-            ? "\n\nCRITICAL CONVERSATION PROMPT: The entire conversation history, messages, and dynamic execution context have been compiled and rendered as WebP images inside the user message to save input tokens. You must use your vision capability to read the text inside these images carefully to see all prior messages, inputs, dynamic context, and results. Proceed to execute the next step or tool call directly. Do not mention that the prompt was rendered as images or reference the image format in your response."
-            : "\n\nCRITICAL CONVERSATION PROMPT: Some large user messages or tool results in your conversation history have been rendered as WebP images to save input tokens. You must use your vision capability to read and analyze the text inside these images carefully to see all prior messages, inputs, and results.";
+          const visionNotice = "\n\nCRITICAL CONVERSATION PROMPT: The entire conversation history, messages, and dynamic execution context have been compiled and rendered as WebP images inside the user message to save input tokens. You must use your vision capability to read the text inside these images carefully to see all prior messages, inputs, dynamic context, and results. Proceed to execute the next step or tool call directly. Do not mention that the prompt was rendered as images or reference the image format in your response.";
           finalSystemPrompt += visionNotice;
         }
 
@@ -2001,7 +1998,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
 
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
                 await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
-                if (useVisionTokenSaving && visionMode === 2) {
+                if (useVisionTokenSaving) {
                   messages = this.buildMessages(supportsNativeTools, dynamicContext);
                 } else {
                   messages = this.buildMessages(supportsNativeTools);
@@ -2304,7 +2301,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
 
                 this.onEvent({ type: "text", content: `\n[SYS] Payload too large (413) detected. Compacting conversation history before retrying...\n` });
                 await this.compactHistoryIfNeeded(signal, true, undefined, currentByteBudget);
-                if (useVisionTokenSaving && visionMode === 2) {
+                if (useVisionTokenSaving) {
                   messages = this.buildMessages(supportsNativeTools, dynamicContext);
                 } else {
                   messages = this.buildMessages(supportsNativeTools);
@@ -3097,9 +3094,9 @@ for (const tc of toolCalls) {
     const settings = getSettings();
     const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? true) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
     const threshold = getDynamicVisionThreshold(modelName);
-    const visionMode = settings.visionMode ?? 1;
+    
 
-    if (useVisionTokenSaving && visionMode === 2) {
+    if (useVisionTokenSaving) {
       // MODE 2: Compile all messages into a single text block, clean up, render to images, and append.
       let compiledText = "";
       for (const m of this.conversation.getMessages()) {
@@ -3157,10 +3154,10 @@ for (const tc of toolCalls) {
         });
       } catch (err: any) {
         this.writeToLogFile("WARN", `Failed to compile prompt to image: ${err.message}. Falling back to text.`);
-        this.buildMode1Messages(coreMessages, threshold, useVisionTokenSaving, supportsVision, supportsNativeTools, modelName);
+        this.buildPlaintextMessages(coreMessages, supportsVision, supportsNativeTools, modelName);
       }
     } else {
-      this.buildMode1Messages(coreMessages, threshold, useVisionTokenSaving, supportsVision, supportsNativeTools, modelName);
+      this.buildPlaintextMessages(coreMessages, supportsVision, supportsNativeTools, modelName);
     }
 
     // Cleanup / post-process to add cache annotations
@@ -3215,10 +3212,8 @@ for (const tc of toolCalls) {
     }
   }
 
-  private buildMode1Messages(
+    private buildPlaintextMessages(
     coreMessages: CoreMessage[],
-    threshold: number,
-    useVisionTokenSaving: boolean,
     supportsVision: boolean,
     supportsNativeTools: boolean,
     modelName: string
@@ -3228,69 +3223,21 @@ for (const tc of toolCalls) {
 
       if (m.role === "user") {
         let sdkContent: string | Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = "";
-        const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
-        const isMemoryContext = rawContent.startsWith("[TencentDB Agent Memory Context]:");
 
-        if (useVisionTokenSaving && (rawContent.length > threshold || isMemoryContext)) {
-          try {
-            let base64List = this.getCachedImages(rawContent);
-            if (!base64List) {
-              const pages = sliceTextIntoPages(rawContent);
-              base64List = [];
-              for (const page of pages) {
-                const base64 = renderTextToImageBase64(page);
-                base64List.push(base64);
-              }
-              this.setCachedImages(rawContent, base64List);
-            }
-            const totalPages = base64List.length;
-            const headerText = isMemoryContext
-              ? `CRITICAL CONTEXT: The following image(s) contain the persistent TencentDB Agent Memory Context (system state and facts). Read the text in the image(s) to understand the background state. [TencentDB Agent Memory Context rendered as images to save tokens, split into ${totalPages} pages]:`
-              : `CRITICAL USER INPUT: The following image(s) contain the text content of the user message. Read the text in the image(s) carefully to understand the user's request and instructions. [Content of user message rendered as images to save tokens, split into ${totalPages} pages]:`;
-            const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
-              { type: "text", text: headerText }
-            ];
-            base64List.forEach((base64, index) => {
-              const pageLabel = isMemoryContext
-                ? `[TencentDB Agent Memory Context Page ${index + 1} of ${totalPages}]:`
-                : `[User Message Page ${index + 1} of ${totalPages}]:`;
-              contentParts.push({ type: "text", text: pageLabel });
-              contentParts.push({ type: "image", image: base64, mimeType: "image/webp" });
-            });
-            sdkContent = contentParts;
-          } catch (err: any) {
-            this.writeToLogFile("WARN", `Failed to automatically convert user message to image: ${err.message}. Falling back to text.`);
-            sdkContent = typeof m.content === "string"
-              ? m.content
-              : (m.content as any[]).map((p: any) => {
-                  if (p.type === "image") {
-                    if (supportsVision) {
-                      return { type: "image" as const, image: p.image, mimeType: p.mimeType };
-                    }
-                    return {
-                      type: "text" as const,
-                      text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/webp"};base64,${p.image}]`
-                    };
-                  }
-                  return { type: "text" as const, text: p.text };
-                });
-          }
-        } else {
-          sdkContent = typeof m.content === "string"
-            ? m.content
-            : (m.content as any[]).map((p: any) => {
-                if (p.type === "image") {
-                  if (supportsVision) {
-                    return { type: "image" as const, image: p.image, mimeType: p.mimeType };
-                  }
-                  return {
-                    type: "text" as const,
-                    text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/webp"};base64,${p.image}]`
-                  };
+        sdkContent = typeof m.content === "string"
+          ? m.content
+          : (m.content as any[]).map((p: any) => {
+              if (p.type === "image") {
+                if (supportsVision) {
+                  return { type: "image" as const, image: p.image, mimeType: p.mimeType };
                 }
-                return { type: "text" as const, text: p.text };
-              });
-        }
+                return {
+                  type: "text" as const,
+                  text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/webp"};base64,${p.image}]`
+                };
+              }
+              return { type: "text" as const, text: p.text };
+            });
 
         coreMessages.push({
           role: "user",
@@ -3340,50 +3287,10 @@ for (const tc of toolCalls) {
           // Reconstruct XML responses for prompt-based tool calling
           const results = m.toolResults || [];
           const resultText = results.map(tr => `<tool_response name="${tr.name}">\n${tr.result}\n</tool_response>`).join("\n");
-          
-          if (useVisionTokenSaving && resultText.length > threshold) {
-            try {
-              let base64List = this.getCachedImages(resultText);
-              if (!base64List) {
-                const pages = sliceTextIntoPages(resultText);
-                base64List = [];
-                for (const page of pages) {
-                  const base64 = renderTextToImageBase64(page);
-                  base64List.push(base64);
-                }
-                this.setCachedImages(resultText, base64List);
-              }
-              const totalPages = base64List.length;
-              const contentParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [
-                {
-                  type: "text",
-                  text: `CRITICAL TOOL OUTPUT: The following image(s) contain the execution results/responses of your recently invoked tools. Read the text in the image(s) carefully to see the output. [Tool responses rendered as images to save tokens, split into ${totalPages} pages]:`
-                }
-              ];
-              base64List.forEach((base64, index) => {
-                contentParts.push({
-                  type: "text",
-                  text: `[Tool Responses Page ${index + 1} of ${totalPages}]:`
-                });
-                contentParts.push({ type: "image", image: base64, mimeType: "image/webp" });
-              });
-              coreMessages.push({
-                role: "user",
-                content: contentParts as any,
-              });
-            } catch (err: any) {
-              this.writeToLogFile("WARN", `Failed to automatically convert XML tool results to image: ${err.message}. Falling back to text.`);
-              coreMessages.push({
-                role: "user",
-                content: resultText,
-              });
-            }
-          } else {
-            coreMessages.push({
-              role: "user",
-              content: resultText,
-            });
-          }
+          coreMessages.push({
+            role: "user",
+            content: resultText,
+          });
           continue;
         }
 
@@ -3452,50 +3359,14 @@ for (const tc of toolCalls) {
             cleanedResult = resultStr.replace(dataUriRegex, (fullMatch, mimeType) => {
               return `[Image (${mimeType}) attached as a vision image part]`;
             });
-            contentParts.push({
-              type: "tool-result",
-              toolCallId: tr.toolCallId,
-              toolName: tr.name,
-              result: cleanedResult,
-            });
-          } else if (useVisionTokenSaving && resultStr.length > threshold) {
-            try {
-              this.writeToLogFile("INFO", `Automatically converting tool result of "${tr.name}" (size ${resultStr.length} chars) to image.`);
-              let base64List = this.getCachedImages(resultStr);
-              if (!base64List) {
-                const pages = sliceTextIntoPages(resultStr);
-                base64List = [];
-                for (const page of pages) {
-                  const base64 = renderTextToImageBase64(page);
-                  base64List.push(base64);
-                }
-                this.setCachedImages(resultStr, base64List);
-              }
-              
-              pendingImagesToAppend.push({ toolName: tr.name, base64List });
-              contentParts.push({
-                type: "tool-result",
-                toolCallId: tr.toolCallId,
-                toolName: tr.name,
-                result: `[Tool result for "${tr.name}" rendered as image in the subsequent message to save tokens]`,
-              });
-            } catch (err: any) {
-              this.writeToLogFile("WARN", `Failed to automatically convert native tool result of "${tr.name}" to image: ${err.message}. Falling back to text.`);
-              contentParts.push({
-                type: "tool-result",
-                toolCallId: tr.toolCallId,
-                toolName: tr.name,
-                result: tr.result,
-              });
-            }
-          } else {
-            contentParts.push({
-              type: "tool-result",
-              toolCallId: tr.toolCallId,
-              toolName: tr.name,
-              result: tr.result,
-            });
           }
+
+          contentParts.push({
+            type: "tool-result",
+            toolCallId: tr.toolCallId,
+            toolName: tr.name,
+            result: cleanedResult,
+          });
         }
 
         // Do not push an empty tool message — would cause Anthropic 400
@@ -3511,7 +3382,6 @@ for (const tc of toolCalls) {
         if (pendingImagesToAppend.length > 0) {
           const appendParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [];
           for (const item of pendingImagesToAppend) {
-            const totalPages = item.base64List.length;
             if (item.mimeType) {
               // Direct image from tool execution
               appendParts.push({
@@ -3520,19 +3390,6 @@ for (const tc of toolCalls) {
               });
               item.base64List.forEach((base64) => {
                 appendParts.push({ type: "image", image: base64, mimeType: item.mimeType });
-              });
-            } else {
-              // Vision token saving flow
-              appendParts.push({
-                type: "text",
-                text: `CRITICAL TOOL OUTPUT: The following image(s) contain the actual execution output of the tool "${item.toolName}". Read the text inside the image(s) to see the result. [Tool output for "${item.toolName}" rendered as image, split into ${totalPages} pages]:`
-              });
-              item.base64List.forEach((base64, index) => {
-                appendParts.push({
-                  type: "text",
-                  text: `[Tool Output for "${item.toolName}" Page ${index + 1} of ${totalPages}]:`
-                });
-                appendParts.push({ type: "image", image: base64, mimeType: "image/webp" });
               });
             }
           }
@@ -3587,10 +3444,9 @@ for (const tc of toolCalls) {
     } catch (e) {
       // Ignore errors in injecting cache metadata to ensure robust fallback
     }
-
   }
 
-  async compactHistoryIfNeeded(signal?: AbortSignal, force: boolean = false, tokenBudget?: number, byteBudget?: number): Promise<void> {
+async compactHistoryIfNeeded(signal?: AbortSignal, force: boolean = false, tokenBudget?: number, byteBudget?: number): Promise<void> {
     await this.ensureContextManager();
     const contextManager = this.conversation.getContextManager();
 

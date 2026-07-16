@@ -559,6 +559,8 @@ export function getStaticModelLimit(model: string): number | null {
 
   if (m.includes("command-r")) return 128000;
 
+  if (m.includes("big-pickle")) return 200000;
+
   if (m.includes("grok-4.5")) return 500000;
   if (m.includes("grok-4.20")) return 2000000;
   if (m.includes("grok-4")) return 1000000;

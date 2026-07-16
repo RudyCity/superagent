@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.394] - 2026-07-16
+
+### Changed
+- **Unified Vision Mode**: Removed Mode 1 (per-block image conversion) entirely, keeping Mode 2 (full history compilation to images) as the single unified vision token saving mode. Removed `visionMode` from configuration schema, settings defaults, validation/sanitation, and command suggestion descriptions.
+
 ## [1.2.393] - 2026-07-16
 
 ### Fixed

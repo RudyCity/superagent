@@ -22,6 +22,9 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
       systemPrompt: "Base Master Agent Prompt Content",
     }),
     getContextWindowLimit: vi.fn().mockReturnValue(8000),
+    getSettings: vi.fn().mockReturnValue({
+      autoVisionTokenSaving: false,
+    }),
   };
 });
 
