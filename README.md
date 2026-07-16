@@ -23,7 +23,7 @@ Unlike standard headless execution bots or basic shell wrappers, Superagent is d
 - **Real-Time Context Window Tracking & Intelligent Compacting**: Traditional assistants run blind to token consumption. Superagent features a continuous visual dashboard tracking prompt tokens, completion costs, and remaining context windows, powered by a modular **Context Manager** with model-specific tokenizers (OpenAI/Anthropic). When the context grows too large, automatic compaction kicks in using pluggable strategies — truncation, LLM-powered summarization, or semantic-aware scoring. Use `/compact now` to force compaction on demand, `/pin` to protect important messages from being compacted, and `/compaction-history` to audit all compaction events.
 - **Global Pinned Knowledge Store**: Pinned messages are automatically stored in a persistent, cross-session knowledge base. Use `/knowledge` to browse and search pinned knowledge across ALL sessions and projects. AI agents can access this via `search_pinned_knowledge` and `load_pinned_session` tools, enabling them to learn from previous sessions' decisions and context.
 - **Granular Session Checkpoints**: Never lose progress. Superagent lets you snapshot your conversational and code states into checkpoints (via `/checkpoint`). If an experimental approach fails, you can revert back instantly to a previous checkpoint, restoring the entire session timeline.
-- **3-Tier Multi-Agent Orchestration**: Instead of doing all work sequentially under a single LLM thread, Superagent supports a full 3-tier agent hierarchy. A **Master Agent** orchestrates one or more **Superagents**, each isolated in their own git worktree for independent feature development. Superagents can further delegate atomic operations to ephemeral **Subagents**. It adopts explicit multi-stage planning, structured delegation with constraints and acceptance criteria, and automated self-verification. Launch with `superagent --multi`.
+- **3-Tier Multi-Agent Orchestration (Experimental)**: Instead of doing all work sequentially under a single LLM thread, Superagent supports a full 3-tier agent hierarchy. A **Master Agent** orchestrates one or more **Superagents**, each isolated in their own git worktree for independent feature development. Superagents can further delegate atomic operations to ephemeral **Subagents**. It adopts explicit multi-stage planning, structured delegation with constraints and acceptance criteria, and automated self-verification. Launch with `superagent --multi`. *Note: Multi-agent mode is currently experimental.*
 - **Pre-Merge Auto-Debugging Loop**: Ensures code quality at merge boundaries. Before any Superagent task is merged, a verification script runs builds and tests. If a failure occurs, the Master Agent triggers an auto-debugging loop (up to 3 retries), prompting the Superagent to analyze the logs, implement a fix, and verify it dynamically.
 - **Visible, Non-Headless Interactive Terminals**: Most agents run shell commands in the background without visibility or interactivity. With `/terminal`, Superagent spawns a real, popped-up host emulator terminal window. This is perfect for running interactive servers, watch scripts, and commands that require manual inputs.
 - **Global Config & Repository Hygiene**: No messy `.env` or log files cluttering your project codebase. All API keys, environment settings, and session logs are kept safe and clean in your user's global directory (`~/.superagent-r/`).
@@ -87,7 +87,11 @@ A rich terminal interface showing live statistics on active prompt sizes, comple
 ### 2. Session Management & Checkpoints
 Allows developers to save the current state of a coding conversation and restore it at any point using `/checkpoint save <name>` and `/checkpoint restore <id>`. This allows you to safely experiment with different implementations. Checkpoints can be browsed, restored, or deleted via an interactive wizard (launched by `/checkpoint`, `/checkpoint list`, or `Ctrl+P` in multi-agent mode). Use the `--resume` or `-r` flag to continue where you left off. Multi-agent sessions are fully serialized, ensuring smooth restore and resume of running tasks and interactive prompts. **Auto-checkpointing** creates snapshots automatically on every user message and before destructive tool operations, with a cooldown to prevent excessive saves — ensuring you always have a safe rollback point.
 
-### 3. 3-Tier Multi-Agent Orchestration (`--multi`)
+### 3. 3-Tier Multi-Agent Orchestration (`--multi`) (Experimental)
+
+> [!WARNING]
+> Multi-agent mode (`--multi`) is currently experimental and not recommended for production environments.
+
 Launch with `superagent --multi` to activate the full 3-tier hierarchy:
 
 ```
@@ -225,7 +229,11 @@ Built into the core agent loop (`agent.ts`), the auto-checkpoint system:
 ### 6. Atomic Config Persistence
 Model configuration (`model-config.json`) uses atomic write operations to prevent file corruption. If the process is interrupted (e.g., Ctrl+C), the config file remains intact — writes are first written to a temporary file and then atomically renamed, ensuring zero risk of partial/corrupt state.
 
-### 8. Chrome Extension Integration & Local Server
+### 8. Chrome Extension Integration & Local Server (Experimental)
+
+> [!WARNING]
+> The Chrome Extension integration and local server are currently experimental features.
+
 Superagent features a built-in REST API and Server-Sent Events (SSE) server (`server.ts`) that enables two-way integration with the browser via a Chrome Extension SidePanel:
 - **Local Server Engine**: Run with `superagent --server`, starting an HTTP server on port 7888 (or custom port). The CLI automatically trust-checks the workspace directory initialized by the browser client.
 - **Bi-directional Streaming (SSE)**: Streams real-time thoughts, reasoning blocks, and tool executions to the Chrome SidePanel dynamically.
@@ -293,7 +301,11 @@ Custom providers (e.g., self-hosted Claude API proxies, Ollama, vLLM) are suppor
 
 To dynamically switch your active API provider or model at runtime, use the `/login` or `/model` slash commands. Changes take effect immediately without restarting the assistant.
 
-### 🔌 Chrome Extension Setup
+### 🔌 Chrome Extension Setup (Experimental)
+
+> [!WARNING]
+> The Chrome Extension is currently experimental and may contain bugs or incomplete features.
+
 Superagent includes a developer Chrome Extension that provides a cyberpunk-themed sidepanel interface to interact with your agent workspace directly inside the browser.
 
 #### Installation

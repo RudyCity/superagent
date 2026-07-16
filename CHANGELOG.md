@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.379] - 2026-07-16
+
+### Changed
+- **Documentation**:
+  - Marked Chrome Extension Integration and 3-Tier Multi-Agent Orchestration (`--multi`) features as experimental in the README.
+
 ## [1.2.378] - 2026-07-16
 
 ### Optimized
