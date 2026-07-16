@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.398] - 2026-07-17
+
+### Changed
+- **Renamed TencentDB to RMemory**: Renamed all occurrences of "TencentDB" / "tencentdb" and tool prefix "tdai_" to "RMemory" / "rmemory" and "rmemory_" across the entire codebase. This includes updating filenames, class names, strategy registries, variable names, settings configuration keys, slash commands, and test suites.
+
 ## [1.2.397] - 2026-07-17
 
 ### Changed

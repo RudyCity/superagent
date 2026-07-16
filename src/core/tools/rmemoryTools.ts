@@ -1,17 +1,17 @@
 import { Tool } from "./types.js";
-import { getTencentDBClient } from "../tencentdbUtil.js";
+import { getRMemoryClient } from "../rmemoryUtil.js";
 
 // Helper to get MemoryClient using the active global settings
 function getClient() {
-  return getTencentDBClient(5000); // 5 seconds timeout for tools
+  return getRMemoryClient(5000); // 5 seconds timeout for tools
 }
 
 function formatError(err: unknown): string {
   return (err as Error).message || String(err);
 }
 
-export const tdaiMemorySearchTool: Tool = {
-  name: "tdai_memory_search",
+export const rmemorySearchTool: Tool = {
+  name: "rmemory_search",
   description: "Search through the user's long-term structured memories (L1). Use this to recall specific facts, user preferences, instructions, or context from previous conversations.",
   parameters: {
     type: "object",
@@ -41,13 +41,13 @@ export const tdaiMemorySearchTool: Tool = {
         .map((item) => `- [${item.type || "memory"}] ${item.content}`)
         .join("\n");
     } catch (err) {
-      return `Memory search failed: ${formatError(err)}. Make sure the TencentDB memory gateway is running on the configured port.`;
+      return `Memory search failed: ${formatError(err)}. Make sure the RMemory system is initialized.`;
     }
   },
 };
 
-export const tdaiConversationSearchTool: Tool = {
-  name: "tdai_conversation_search",
+export const rmemoryConversationSearchTool: Tool = {
+  name: "rmemory_conversation_search",
   description: "Search raw past conversation history (L0). Use this to find specific messages, exact words, or dialogue details that the user said previously.",
   parameters: {
     type: "object",
@@ -77,13 +77,13 @@ export const tdaiConversationSearchTool: Tool = {
         .map((m) => `[${m.timestamp || "unknown"}] ${m.role}: ${m.content}`)
         .join("\n\n");
     } catch (err) {
-      return `Conversation search failed: ${formatError(err)}. Make sure the TencentDB memory gateway is running on the configured port.`;
+      return `Conversation search failed: ${formatError(err)}. Make sure the RMemory system is initialized.`;
     }
   },
 };
 
-export const tdaiReadCosTool: Tool = {
-  name: "tdai_read_cos",
+export const rmemoryReadCosTool: Tool = {
+  name: "rmemory_read_cos",
   description: "Read a scenario file details (L2 index) using a path from Scene Navigation (e.g. 'scene_blocks/xxx.md').",
   parameters: {
     type: "object",
@@ -106,13 +106,13 @@ export const tdaiReadCosTool: Tool = {
       }
       return `=== File: ${filePath} ===\n\n${res.content}`;
     } catch (err) {
-      return `Failed to read scenario block file: ${formatError(err)}. Make sure the path is correct and the gateway is running.`;
+      return `Failed to read scenario block file: ${formatError(err)}. Make sure the path is correct and RMemory is initialized.`;
     }
   },
 };
 
-export const tdaiMemorySaveTool: Tool = {
-  name: "tdai_memory_save",
+export const rmemorySaveTool: Tool = {
+  name: "rmemory_save",
   description: "Save a structured atomic memory (L1) to long-term storage. Specify scope as 'project' (default, workspace-specific) or 'global' (universal preference).",
   parameters: {
     type: "object",
@@ -153,13 +153,13 @@ export const tdaiMemorySaveTool: Tool = {
       const res = await client.updateAtomic({ id, content });
       return `Memory saved successfully (${scope} scope). ID: ${res.id}, updated at: ${res.updated_at}`;
     } catch (err) {
-      return `Failed to save memory: ${formatError(err)}. Make sure the TencentDB memory gateway is running.`;
+      return `Failed to save memory: ${formatError(err)}. Make sure RMemory is initialized.`;
     }
   },
 };
 
-export const tdaiConversationAddTool: Tool = {
-  name: "tdai_conversation_add",
+export const rmemoryConversationAddTool: Tool = {
+  name: "rmemory_conversation_add",
   description: "Record a conversation message (L0) into the conversation history store. Use to log exchanges for future context retrieval.",
   parameters: {
     type: "object",
@@ -194,7 +194,7 @@ export const tdaiConversationAddTool: Tool = {
       });
       return `Conversation message added. Accepted IDs: ${res.accepted_ids.join(", ")}. Total messages in session: ${res.total_count}`;
     } catch (err) {
-      return `Failed to add conversation message: ${formatError(err)}. Make sure the TencentDB memory gateway is running.`;
+      return `Failed to add conversation message: ${formatError(err)}. Make sure RMemory is initialized.`;
     }
   },
 };

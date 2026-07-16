@@ -83,7 +83,7 @@ import { getDashboardSuggestions, getSuggestionDescriptions } from "../utils/das
 import { useDashboardSessions } from "../hooks/useDashboardSessions.js";
 import { useDashboardMouse } from "../hooks/useDashboardMouse.js";
 import { useDashboardKeyboard } from "../hooks/useDashboardKeyboard.js";
-import { useTencentdbStatus } from "../hooks/useTencentdbStatus.js";
+import { useRmemoryStatus } from "../hooks/useRmemoryStatus.js";
 
 
 // Read version from package.json
@@ -144,7 +144,7 @@ export function MultiAgentDashboard({
     return getEffectiveMasterModel("auto") || getDefaultModel();
   });
   const [lastSpeed, setLastSpeed] = useState<number | null>(null);
-  const tencentdbStatus = useTencentdbStatus();
+  const rmemoryStatus = useRmemoryStatus();
   const [isExecutingTool, setIsExecutingTool] = useState(false);
   const [activeToolOutput, setActiveToolOutput] = useState("");
   const [procsSelectedIndex, setProcsSelectedIndex] = useState(0);
@@ -1444,7 +1444,7 @@ export function MultiAgentDashboard({
         activeWizard={activeWizard}
         wizardOptions={wizardOptions}
         focusArea={focusArea}
-        tencentdbStatus={tencentdbStatus}
+        rmemoryStatus={rmemoryStatus}
         workspace={agent?.workingDirectory || process.cwd()}
         isProcessing={isProcessing}
       />

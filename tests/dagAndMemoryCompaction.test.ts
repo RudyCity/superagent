@@ -13,7 +13,7 @@ vi.mock("execa", () => ({
 
 // Mock config
 vi.mock("../src/core/config.js", () => {
-  let settings = { enableTencentdbMemory: false };
+  let settings = { enableRmemory: false };
   return {
     getSettings: () => settings,
     setSettings: (s: any) => { settings = s; },
@@ -23,18 +23,18 @@ vi.mock("../src/core/config.js", () => {
   };
 });
 
-// Mock tencentdbClient
+// Mock rmemoryClient
 const mockUpdateAtomic = vi.fn().mockResolvedValue({ id: "1", updated_at: "now" });
 const mockDeleteAtomic = vi.fn().mockResolvedValue({ deleted_count: 1 });
-vi.mock("../src/core/tencentdbUtil.js", () => {
+vi.mock("../src/core/rmemoryUtil.js", () => {
   return {
-    getTencentDBClient: () => ({
+    getRMemoryClient: () => ({
       updateAtomic: mockUpdateAtomic,
       deleteAtomic: mockDeleteAtomic,
     }),
-    isTencentdbActive: vi.fn().mockImplementation(async () => {
+    isRmemoryActive: vi.fn().mockImplementation(async () => {
       const { getSettings } = await import("../src/core/config.js");
-      return !!getSettings().enableTencentdbMemory;
+      return !!getSettings().enableRmemory;
     }),
   };
 });
@@ -263,11 +263,11 @@ describe("Shared Memory Compaction", () => {
     expect(finalWritten[0].projectPath).toBeUndefined();
   });
 
-  it("should sync updates and deletions to TencentDB if enabled", async () => {
-    // Import and update mock config to enable TencentDB Memory
+  it("should sync updates and deletions to RMemory if enabled", async () => {
+    // Import and update mock config to enable RMemory Memory
     const { getSettings } = await import("../src/core/config.js");
     const settings = getSettings();
-    settings.enableTencentdbMemory = true;
+    settings.enableRmemory = true;
 
     const memories = [
       { key: "to-prune", value: "prune me", source: "system", timestamp: Date.now() - 10 * 24 * 60 * 60 * 1000 } // old TTL

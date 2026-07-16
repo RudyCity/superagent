@@ -10,7 +10,7 @@ import {
 import { SummarizationStrategy } from "./strategies/SummarizationStrategy.js";
 import { PruningStrategy } from "./strategies/PruningStrategy.js";
 import { PinningStrategy } from "./strategies/PinningStrategy.js";
-import { TencentDBMemoryStrategy } from "./strategies/TencentDBMemoryStrategy.js";
+import { RMemoryStrategy } from "./strategies/RMemoryStrategy.js";
 import { SemanticAnalyzer } from "./SemanticAnalyzer.js";
 import { CompactionHistory } from "./CompactionHistory.js";
 
@@ -84,7 +84,7 @@ export class ContextManager {
 
     this.strategies = [
       new PinningStrategy(),
-      new TencentDBMemoryStrategy({ historyFilePath: config.historyFilePath }),
+      new RMemoryStrategy({ historyFilePath: config.historyFilePath }),
       summarizationStrategy,
       new PruningStrategy(),
     ];

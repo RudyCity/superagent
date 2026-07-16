@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-  tdaiMemorySearchTool,
-  tdaiConversationSearchTool,
-  tdaiReadCosTool,
-  tdaiMemorySaveTool,
-  tdaiConversationAddTool,
-} from "../src/core/tools/tencentdbMemoryTools.js";
+  rmemorySearchTool,
+  rmemoryConversationSearchTool,
+  rmemoryReadCosTool,
+  rmemorySaveTool,
+  rmemoryConversationAddTool,
+} from "../src/core/tools/rmemoryTools.js";
 
 const mockAddConversation = vi.fn();
 const mockSearchAtomic = vi.fn();
@@ -14,9 +14,9 @@ const mockReadFile = vi.fn();
 const mockUpdateAtomic = vi.fn();
 const mockReadScenario = vi.fn();
 
-vi.mock("../src/core/tencentdbUtil.js", () => {
+vi.mock("../src/core/rmemoryUtil.js", () => {
   return {
-    getTencentDBClient: () => ({
+    getRMemoryClient: () => ({
       addConversation: mockAddConversation,
       searchAtomic: mockSearchAtomic,
       searchConversation: mockSearchConversation,
@@ -24,19 +24,19 @@ vi.mock("../src/core/tencentdbUtil.js", () => {
       updateAtomic: mockUpdateAtomic,
       readScenario: mockReadScenario,
     }),
-    getTencentDBSessionKey: () => "test-sess",
-    isTencentdbActive: async () => true,
+    getRMemorySessionKey: () => "test-sess",
+    isRmemoryActive: async () => true,
   };
 });
 
-describe("TencentDB Memory Tools", () => {
+describe("RMemory Tools", () => {
   it("should define tool metadata", () => {
-    expect(tdaiMemorySearchTool.name).toBe("tdai_memory_search");
-    expect(tdaiConversationSearchTool.name).toBe("tdai_conversation_search");
-    expect(tdaiReadCosTool.name).toBe("tdai_read_cos");
+    expect(rmemorySearchTool.name).toBe("rmemory_search");
+    expect(rmemoryConversationSearchTool.name).toBe("rmemory_conversation_search");
+    expect(rmemoryReadCosTool.name).toBe("rmemory_read_cos");
   });
 
-  describe("tdai_memory_search", () => {
+  describe("rmemory_search", () => {
     it("should successfully search structured memories", async () => {
       mockSearchAtomic.mockResolvedValue({
         items: [
@@ -44,25 +44,25 @@ describe("TencentDB Memory Tools", () => {
         ]
       });
 
-      const result = await tdaiMemorySearchTool.execute({ query: "preferences" }, ".");
+      const result = await rmemorySearchTool.execute({ query: "preferences" }, ".");
       expect(result).toContain("- [persona] User likes dark mode");
       expect(mockSearchAtomic).toHaveBeenCalledWith({ query: "preferences", limit: 5 });
     });
 
     it("should return fallback message if no memories found", async () => {
       mockSearchAtomic.mockResolvedValue({ items: [] });
-      const result = await tdaiMemorySearchTool.execute({ query: "preferences" }, ".");
+      const result = await rmemorySearchTool.execute({ query: "preferences" }, ".");
       expect(result).toBe("No memories found matching the query.");
     });
 
     it("should handle error when gateway fails", async () => {
       mockSearchAtomic.mockRejectedValue(new Error("Gateway connection refused"));
-      const result = await tdaiMemorySearchTool.execute({ query: "preferences" }, ".");
+      const result = await rmemorySearchTool.execute({ query: "preferences" }, ".");
       expect(result).toContain("Memory search failed");
     });
   });
 
-  describe("tdai_conversation_search", () => {
+  describe("rmemory_conversation_search", () => {
     it("should successfully search conversation history", async () => {
       mockSearchConversation.mockResolvedValue({
         messages: [
@@ -70,19 +70,19 @@ describe("TencentDB Memory Tools", () => {
         ]
       });
 
-      const result = await tdaiConversationSearchTool.execute({ query: "hello" }, ".");
+      const result = await rmemoryConversationSearchTool.execute({ query: "hello" }, ".");
       expect(result).toContain("user: hello world");
       expect(mockSearchConversation).toHaveBeenCalledWith({ query: "hello", limit: 5 });
     });
 
     it("should handle error when gateway fails", async () => {
       mockSearchConversation.mockRejectedValue(new Error("Gateway connection refused"));
-      const result = await tdaiConversationSearchTool.execute({ query: "hello" }, ".");
+      const result = await rmemoryConversationSearchTool.execute({ query: "hello" }, ".");
       expect(result).toContain("Conversation search failed");
     });
   });
 
-  describe("tdai_read_cos", () => {
+  describe("rmemory_read_cos", () => {
     it("should successfully read scenario file content", async () => {
       mockReadScenario.mockResolvedValue({
         path: "scene_blocks/style.md",
@@ -90,7 +90,7 @@ describe("TencentDB Memory Tools", () => {
         created_at: "2026-06-26T10:00:00.000Z",
         updated_at: "2026-06-26T10:00:00.000Z"
       });
-      const result = await tdaiReadCosTool.execute({ path: "scene_blocks/style.md" }, ".");
+      const result = await rmemoryReadCosTool.execute({ path: "scene_blocks/style.md" }, ".");
       expect(result).toContain("=== File: scene_blocks/style.md ===");
       expect(result).toContain("use tabs instead of spaces");
       expect(mockReadScenario).toHaveBeenCalledWith({ path: "scene_blocks/style.md" });
@@ -103,25 +103,25 @@ describe("TencentDB Memory Tools", () => {
         created_at: null,
         updated_at: null
       });
-      const result = await tdaiReadCosTool.execute({ path: "scene_blocks/style.md" }, ".");
+      const result = await rmemoryReadCosTool.execute({ path: "scene_blocks/style.md" }, ".");
       expect(result).toContain("Failed to read scenario block file: File not found");
     });
 
     it("should handle error when file read fails", async () => {
       mockReadScenario.mockRejectedValue(new Error("Network error"));
-      const result = await tdaiReadCosTool.execute({ path: "scene_blocks/style.md" }, ".");
+      const result = await rmemoryReadCosTool.execute({ path: "scene_blocks/style.md" }, ".");
       expect(result).toContain("Failed to read scenario block file");
     });
   });
 
-  describe("tdai_memory_save", () => {
+  describe("rmemory_save", () => {
     it("should successfully save memory with upsert and default project scope", async () => {
       mockUpdateAtomic.mockResolvedValue({
         id: "user-identity",
         updated_at: "2026-06-26T10:00:00.000Z",
       });
 
-      const result = await tdaiMemorySaveTool.execute(
+      const result = await rmemorySaveTool.execute(
         { id: "user-identity", content: "User name is Rudy", type: "identity" },
         "."
       );
@@ -139,7 +139,7 @@ describe("TencentDB Memory Tools", () => {
         updated_at: "2026-06-26T10:00:00.000Z",
       });
 
-      const result = await tdaiMemorySaveTool.execute(
+      const result = await rmemorySaveTool.execute(
         { id: "global-pref", content: "Prefer dark mode", scope: "global" },
         "."
       );
@@ -156,7 +156,7 @@ describe("TencentDB Memory Tools", () => {
         updated_at: "2026-06-26T10:00:00.000Z",
       });
 
-      const result = await tdaiMemorySaveTool.execute(
+      const result = await rmemorySaveTool.execute(
         { id: "simple-note", content: "A simple note" },
         "."
       );
@@ -169,19 +169,19 @@ describe("TencentDB Memory Tools", () => {
 
     it("should handle error when gateway fails", async () => {
       mockUpdateAtomic.mockRejectedValue(new Error("Gateway connection refused"));
-      const result = await tdaiMemorySaveTool.execute({ id: "test", content: "test" }, ".");
+      const result = await rmemorySaveTool.execute({ id: "test", content: "test" }, ".");
       expect(result).toContain("Failed to save memory");
     });
   });
 
-  describe("tdai_conversation_add", () => {
+  describe("rmemory_conversation_add", () => {
     it("should successfully add conversation message", async () => {
       mockAddConversation.mockResolvedValue({
         accepted_ids: ["msg-1"],
         total_count: 5,
       });
 
-      const result = await tdaiConversationAddTool.execute(
+      const result = await rmemoryConversationAddTool.execute(
         { session_id: "session-1", role: "user", content: "Hello" },
         "."
       );
@@ -195,7 +195,7 @@ describe("TencentDB Memory Tools", () => {
 
     it("should handle error when gateway fails", async () => {
       mockAddConversation.mockRejectedValue(new Error("Gateway connection refused"));
-      const result = await tdaiConversationAddTool.execute(
+      const result = await rmemoryConversationAddTool.execute(
         { session_id: "session-1", role: "user", content: "Hello" },
         "."
       );

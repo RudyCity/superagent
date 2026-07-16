@@ -46,10 +46,10 @@ describe("tool registry consistency", () => {
       "run_command",
       "bash",
       "manage_mcp",
-      "tdai_memory_save",
-      "tdai_conversation_add",
+      "rmemory_save",
+      "rmemory_conversation_add",
     ]));
-    expect(reviewerNames).not.toEqual(expect.arrayContaining(["tdai_memory_save", "tdai_conversation_add"]));
-    expect(manualTesterNames).not.toEqual(expect.arrayContaining(["tdai_memory_save", "tdai_conversation_add"]));
+    expect(reviewerNames).not.toEqual(expect.arrayContaining(["rmemory_save", "rmemory_conversation_add"]));
+    expect(manualTesterNames).not.toEqual(expect.arrayContaining(["rmemory_save", "rmemory_conversation_add"]));
   });
 });

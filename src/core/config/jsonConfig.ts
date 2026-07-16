@@ -53,11 +53,11 @@ export interface SystemSettings {
   classifierConfidenceThreshold?: "high" | "medium" | "low";
   /** Custom keyword overrides per request category */
   classifierKeywords?: Record<string, string[]>;
-  tencentdbGatewayUrl?: string;
-  tencentdbGatewayApiKey?: string;
-  tencentdbServiceId?: string;
-  enableTencentdbMemory?: boolean;
-  tencentdbPollIntervalMs?: number;
+  rmemoryGatewayUrl?: string;
+  rmemoryGatewayApiKey?: string;
+  rmemoryServiceId?: string;
+  enableRmemory?: boolean;
+  rmemoryPollIntervalMs?: number;
   maxChecklistVisible?: number;
   maxHistoryVisible?: number;
   maxProcsVisible?: number;
@@ -785,10 +785,10 @@ export function getSettings(): SystemSettings {
     classifierEnabled: s.classifierEnabled ?? true,
     classifierConfidenceThreshold: s.classifierConfidenceThreshold ?? "high",
     classifierKeywords: s.classifierKeywords ?? {},
-    tencentdbGatewayUrl: s.tencentdbGatewayUrl ?? "http://127.0.0.1:8420",
-    tencentdbGatewayApiKey: s.tencentdbGatewayApiKey ?? "sk-xxxx",
-    tencentdbServiceId: s.tencentdbServiceId ?? "default",
-    enableTencentdbMemory: false,
+    rmemoryGatewayUrl: s.rmemoryGatewayUrl ?? "http://127.0.0.1:8420",
+    rmemoryGatewayApiKey: s.rmemoryGatewayApiKey ?? "sk-xxxx",
+    rmemoryServiceId: s.rmemoryServiceId ?? "default",
+    enableRmemory: false,
     maxChecklistVisible: s.maxChecklistVisible ?? 3,
     maxHistoryVisible: s.maxHistoryVisible ?? 3,
     maxProcsVisible: s.maxProcsVisible ?? 3,

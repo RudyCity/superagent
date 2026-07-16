@@ -9,15 +9,15 @@ import path from "path";
 import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
-import { spawnTencentdbGateway } from "../tencentdbSetup.js";
+import { spawnRmemoryGateway } from "../rmemorySetup.js";
 import { execa } from "execa";
 
-// Active terminal window viewer state for TencentDB
+// Active terminal window viewer state for RMemory
 let activeViewerProcess: any = null;
 let activeCloseSignalPath: string | null = null;
 
-function showTencentdbWindow(ctx: any) {
-  const globalDataDir = path.join(os.homedir(), ".superagent-r", "tencentdb-memory");
+function showRmemoryWindow(ctx: any) {
+  const globalDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
   const logDir = path.join(globalDataDir, "logs");
   const logPath = path.join(logDir, "gateway.log");
 
@@ -31,13 +31,13 @@ function showTencentdbWindow(ctx: any) {
     return;
   }
 
-  const taskId = "tencentdb-gateway-viewer";
-  const windowLabel = "TencentDB Memory Gateway Logs";
+  const taskId = "rmemory-gateway-viewer";
+  const windowLabel = "RMemory Memory Gateway Logs";
   const safeLog = logPath.replace(/\\/g, "\\\\").replace(/'/g, "''");
   const safeTitle = windowLabel.replace(/"/g, "");
   const safeCwd = globalDataDir.replace(/"/g, "");
 
-  const closeSignalPath = path.join(logDir, "tencentdb-gateway-viewer.close");
+  const closeSignalPath = path.join(logDir, "rmemory-gateway-viewer.close");
   if (fs.existsSync(closeSignalPath)) {
     try { fs.unlinkSync(closeSignalPath); } catch {}
   }
@@ -52,7 +52,7 @@ function showTencentdbWindow(ctx: any) {
         `$closeSignalPath = '${safeCloseSignal}'`,
         `$lastPos = 0`,
         `try {`,
-        `  Write-Host "=== ${safeTitle} === (close window or run '/setting-tencentdb hide' to hide)" -ForegroundColor Cyan`,
+        `  Write-Host "=== ${safeTitle} === (close window or run '/setting-rmemory hide' to hide)" -ForegroundColor Cyan`,
         `  Write-Host ''`,
         `  while ($true) {`,
         `    if (Test-Path $closeSignalPath) { break }`,
@@ -72,7 +72,7 @@ function showTencentdbWindow(ctx: any) {
         `}`,
       ].join("\n");
 
-      const viewerScriptPath = path.join(logDir, "tencentdb-gateway-viewer.ps1");
+      const viewerScriptPath = path.join(logDir, "rmemory-gateway-viewer.ps1");
       fs.writeFileSync(viewerScriptPath, viewerScript, "utf8");
 
       const viewerProc = execa(
@@ -105,7 +105,7 @@ function showTencentdbWindow(ctx: any) {
   }
 }
 
-function hideTencentdbWindow() {
+function hideRmemoryWindow() {
   if (activeCloseSignalPath) {
     try {
       fs.writeFileSync(activeCloseSignalPath, "close", "utf8");
@@ -568,13 +568,13 @@ export const settingProcsLimitCommand: SlashCommand = {
   }
 };
 
-export const settingTencentdbCommand: SlashCommand = {
-  name: "setting-tencentdb",
-  description: "Configure TencentDB memory strategy and gateway URL",
+export const settingRmemoryCommand: SlashCommand = {
+  name: "setting-rmemory",
+  description: "Configure RMemory memory strategy and gateway URL",
   async execute(args, ctx) {
     ctx.addLine({
       type: "error",
-      content: "TencentDB Memory is disabled in this build.",
+      content: "RMemory Memory is disabled in this build.",
       timestamp: Date.now(),
     });
   }
@@ -910,7 +910,7 @@ registry.register(settingMaxIterationsCommand);
 registry.register(settingChecklistLimitCommand);
 registry.register(settingHistoryLimitCommand);
 registry.register(settingProcsLimitCommand);
-registry.register(settingTencentdbCommand);
+registry.register(settingRmemoryCommand);
 registry.register(settingFocusCommand);
 registry.register(settingFocusBudgetCommand);
 registry.register(settingForcePromptToolsCommand);

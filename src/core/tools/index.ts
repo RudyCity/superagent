@@ -54,12 +54,12 @@ import {
 } from "./superagentTools.js";
 
 import {
-  tdaiMemorySearchTool,
-  tdaiConversationSearchTool,
-  tdaiReadCosTool,
-  tdaiMemorySaveTool,
-  tdaiConversationAddTool,
-} from "./tencentdbMemoryTools.js";
+  rmemorySearchTool,
+  rmemoryConversationSearchTool,
+  rmemoryReadCosTool,
+  rmemorySaveTool,
+  rmemoryConversationAddTool,
+} from "./rmemoryTools.js";
 
 import { manageMcpTool } from "./mcpTools.js";
 import { saveSharedMemoryTool } from "./sharedMemoryTools.js";
@@ -128,11 +128,11 @@ export const allTools: Tool[] = [
   controlBrowserMacroSaveTool,
   controlBrowserMacroRunTool,
   manageMcpTool,
-  tdaiMemorySearchTool,
-  tdaiConversationSearchTool,
-  tdaiReadCosTool,
-  tdaiMemorySaveTool,
-  tdaiConversationAddTool,
+  rmemorySearchTool,
+  rmemoryConversationSearchTool,
+  rmemoryReadCosTool,
+  rmemorySaveTool,
+  rmemoryConversationAddTool,
   saveSharedMemoryTool,
   readPeerSuperagentFileTool,
 ];

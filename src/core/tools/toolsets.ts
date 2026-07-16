@@ -62,12 +62,12 @@ import {
 } from "./superagentTools.js";
 
 import {
-  tdaiMemorySearchTool,
-  tdaiConversationSearchTool,
-  tdaiReadCosTool,
-  tdaiMemorySaveTool,
-  tdaiConversationAddTool,
-} from "./tencentdbMemoryTools.js";
+  rmemorySearchTool,
+  rmemoryConversationSearchTool,
+  rmemoryReadCosTool,
+  rmemorySaveTool,
+  rmemoryConversationAddTool,
+} from "./rmemoryTools.js";
 import { manageMcpTool } from "./mcpTools.js";
 import { saveSharedMemoryTool } from "./sharedMemoryTools.js";
 
@@ -104,11 +104,11 @@ export const masterToolset: Tool[] = [
   multiReplaceFileContentTool, // for planning files
   runCommandTool,        // for running validation / test commands
   bashTool,              // for running validation / test commands
-  tdaiMemorySearchTool,
-  tdaiConversationSearchTool,
-  tdaiReadCosTool,
-  tdaiMemorySaveTool,
-  tdaiConversationAddTool,
+  rmemorySearchTool,
+  rmemoryConversationSearchTool,
+  rmemoryReadCosTool,
+  rmemorySaveTool,
+  rmemoryConversationAddTool,
 ];
 
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
@@ -152,11 +152,11 @@ export const superagentToolset: Tool[] = [
   controlBrowserMacroRunTool,
   androidCliTool,
   readPeerSuperagentFileTool, // read files from peer Superagent worktrees
-  tdaiMemorySearchTool,
-  tdaiConversationSearchTool,
-  tdaiReadCosTool,
-  tdaiMemorySaveTool,
-  tdaiConversationAddTool,
+  rmemorySearchTool,
+  rmemoryConversationSearchTool,
+  rmemoryReadCosTool,
+  rmemorySaveTool,
+  rmemoryConversationAddTool,
   saveSharedMemoryTool,
 ];
 
@@ -198,11 +198,11 @@ export const chromeExtensionToolset: Tool[] = [
   controlBrowserMacroSaveTool,
   controlBrowserMacroRunTool,
   androidCliTool,
-  tdaiMemorySearchTool,
-  tdaiConversationSearchTool,
-  tdaiReadCosTool,
-  tdaiMemorySaveTool,
-  tdaiConversationAddTool,
+  rmemorySearchTool,
+  rmemoryConversationSearchTool,
+  rmemoryReadCosTool,
+  rmemorySaveTool,
+  rmemoryConversationAddTool,
   saveSharedMemoryTool,
 ];
 
@@ -222,11 +222,11 @@ export const subagentToolsets: Record<string, Tool[]> = {
     askQuestionTool,
     getSkillsTool,
     useSkillTool,
-    tdaiMemorySearchTool,
-    tdaiConversationSearchTool,
-    tdaiReadCosTool,
-    tdaiMemorySaveTool,
-    tdaiConversationAddTool,
+    rmemorySearchTool,
+    rmemoryConversationSearchTool,
+    rmemoryReadCosTool,
+    rmemorySaveTool,
+    rmemoryConversationAddTool,
     saveSharedMemoryTool,
   ],
 
@@ -246,11 +246,11 @@ export const subagentToolsets: Record<string, Tool[]> = {
     askQuestionTool,
     getSkillsTool,
     useSkillTool,
-    tdaiMemorySearchTool,
-    tdaiConversationSearchTool,
-    tdaiReadCosTool,
-    tdaiMemorySaveTool,
-    tdaiConversationAddTool,
+    rmemorySearchTool,
+    rmemoryConversationSearchTool,
+    rmemoryReadCosTool,
+    rmemorySaveTool,
+    rmemoryConversationAddTool,
     saveSharedMemoryTool,
   ],
 
@@ -265,9 +265,9 @@ export const subagentToolsets: Record<string, Tool[]> = {
     askQuestionTool,
     getSkillsTool,
     useSkillTool,
-    tdaiMemorySearchTool,
-    tdaiConversationSearchTool,
-    tdaiReadCosTool,
+    rmemorySearchTool,
+    rmemoryConversationSearchTool,
+    rmemoryReadCosTool,
   ],
 
   "manual-tester": [
@@ -282,9 +282,9 @@ export const subagentToolsets: Record<string, Tool[]> = {
     askQuestionTool,
     getSkillsTool,
     useSkillTool,
-    tdaiMemorySearchTool,
-    tdaiConversationSearchTool,
-    tdaiReadCosTool,
+    rmemorySearchTool,
+    rmemoryConversationSearchTool,
+    rmemoryReadCosTool,
   ],
 };
 

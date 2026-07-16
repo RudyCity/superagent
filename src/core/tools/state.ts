@@ -205,7 +205,7 @@ export function loadAndSyncPersistedTasks(): void {
             existing.completedAt = completedAt;
             itemChanged = true;
           }
-          const expectedHidden = item.isHidden !== undefined ? item.isHidden : (item.id === "tencentdb-gateway" ? true : undefined);
+          const expectedHidden = item.isHidden !== undefined ? item.isHidden : (item.id === "rmemory-gateway" ? true : undefined);
           if (existing.isHidden !== expectedHidden) {
             existing.isHidden = expectedHidden;
             itemChanged = true;
@@ -231,7 +231,7 @@ export function loadAndSyncPersistedTasks(): void {
             autoRetry: item.autoRetry,
             onExit: item.onExit,
             completedAt,
-            isHidden: item.isHidden !== undefined ? item.isHidden : (item.id === "tencentdb-gateway" ? true : undefined),
+            isHidden: item.isHidden !== undefined ? item.isHidden : (item.id === "rmemory-gateway" ? true : undefined),
             cwd: item.cwd,
           };
           if (item.logPath && fs.existsSync(item.logPath)) {

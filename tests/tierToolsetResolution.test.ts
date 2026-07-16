@@ -30,11 +30,11 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
   };
 });
 
-// Mock tencentdbUtil
-vi.mock("../src/core/tencentdbUtil.js", () => ({
-  getTencentDBClient: vi.fn(),
-  getTencentDBSessionKey: vi.fn().mockReturnValue("test-sess"),
-  isTencentdbActive: vi.fn().mockResolvedValue(true),
+// Mock rmemoryUtil
+vi.mock("../src/core/rmemoryUtil.js", () => ({
+  getRMemoryClient: vi.fn(),
+  getRMemorySessionKey: vi.fn().mockReturnValue("test-sess"),
+  isRmemoryActive: vi.fn().mockResolvedValue(true),
 }));
 
 // Mock ai SDK partially

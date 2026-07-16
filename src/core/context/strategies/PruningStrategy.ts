@@ -198,7 +198,7 @@ function estimateMessagePayloadBytes(
 
   if (msg.role === "user") {
     const rawContent = typeof msg.content === "string" ? msg.content : contentToString(msg.content);
-    const isMemoryContext = rawContent.startsWith("[TencentDB Agent Memory Context]:");
+    const isMemoryContext = rawContent.startsWith("[RMemory Agent Memory Context]:");
     if (useVisionTokenSaving && (rawContent.length > visionThreshold || isMemoryContext)) {
       const lines = rawContent.split(/\r?\n/).length;
       const pages = Math.min(3, Math.ceil(lines / 150));

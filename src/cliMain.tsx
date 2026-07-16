@@ -146,9 +146,9 @@ export async function runCli() {
   await ensureRgInstalled().catch(() => {});
   await ensureAndroidCliInstalled().catch(() => {});
 
-  // Auto-setup TencentDB Memory Gateway if enabled
-  const { runTencentdbSetup } = await import("./core/tencentdbSetup.js");
-  runTencentdbSetup().catch(() => {});
+  // Auto-setup RMemory Gateway if enabled
+  const { runRmemorySetup } = await import("./core/rmemorySetup.js");
+  runRmemorySetup().catch(() => {});
 
   // Initialize MCP Servers
   const { initMcpServers } = await import("./core/mcp/McpManager.js");

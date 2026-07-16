@@ -24,7 +24,7 @@ import {
 } from "./permissions.js";
 import type { ToolCall, ToolResult } from "./conversation.js";
 import { contentToString, Message } from "./conversation.js";
-import { getTencentDBClient, getTencentDBSessionKey, isTencentdbActive } from "./tencentdbUtil.js";
+import { getRMemoryClient, getRMemorySessionKey, isRmemoryActive } from "./rmemoryUtil.js";
 import { AsyncLocalStorage } from "async_hooks";
 import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./taskChecklist.js";
 import { createCheckpoint } from "./checkpoints.js";
@@ -682,8 +682,8 @@ If none of the options are suitable, still pick the closest one.`;
       }
     }
 
-    if (!(await isTencentdbActive())) {
-      tools = tools.filter((t) => !t.name.startsWith("tdai_"));
+    if (!(await isRmemoryActive())) {
+      tools = tools.filter((t) => !t.name.startsWith("rmemory_"));
     }
     return tools;
   }
@@ -846,12 +846,12 @@ If none of the options are suitable, still pick the closest one.`;
     }
     process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
 
-    // Incrementally sync new messages to TencentDB if enabled before saving to file,
+    // Incrementally sync new messages to RMemory if enabled before saving to file,
     // so we can persist the updated lastCapturedTimestamp in a single write.
     try {
-      await this.syncConversationToTencentDB();
+      await this.syncConversationToRmemory();
     } catch (err: any) {
-      this.writeToLogFile("WARN", `Failed to incrementally sync conversation to TencentDB: ${err.message}`);
+      this.writeToLogFile("WARN", `Failed to incrementally sync conversation to RMemory: ${err.message}`);
     }
 
     await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState, this.workingDirectory);
@@ -1196,12 +1196,12 @@ CRITICAL GOAL MODE RULES:
           }
         }
 
-        // On first iteration, prepopulate the TencentDB Memory context if enabled
+        // On first iteration, prepopulate the RMemory Memory context if enabled
         if (i === 0) {
           try {
-            await this.prepopulateTencentDBMemoryContext();
+            await this.prepopulateRmemoryContext();
           } catch (err: any) {
-            this.writeToLogFile("WARN", `Failed to prepopulate TencentDB Memory context: ${err.message}`);
+            this.writeToLogFile("WARN", `Failed to prepopulate RMemory Memory context: ${err.message}`);
           }
         }
 
@@ -1441,12 +1441,12 @@ After all subagents finish, you MUST perform this verification loop before consi
           } catch {}
         }
 
-        if (!(await isTencentdbActive())) {
+        if (!(await isRmemoryActive())) {
           activeSystemPrompt = activeSystemPrompt
-            .replace(/'save_shared_memory' or 'tdai_memory_save'/g, "'save_shared_memory'")
-            .replace(/or 'tdai_memory_save'/g, "")
-            .replace(/, 'tdai_memory_save'/g, "")
-            .replace(/tdai_[a-zA-Z0-9_]+/g, "");
+            .replace(/'save_shared_memory' or 'rmemory_memory_save'/g, "'save_shared_memory'")
+            .replace(/or 'rmemory_memory_save'/g, "")
+            .replace(/, 'rmemory_memory_save'/g, "")
+            .replace(/rmemory_[a-zA-Z0-9_]+/g, "");
         }
 
         let devHookNotice = "";
@@ -3743,24 +3743,24 @@ ${formatted}`;
     this.lastAutoCheckpointAt = 0;
   }
 
-  private async prepopulateTencentDBMemoryContext(): Promise<void> {
+  private async prepopulateRmemoryContext(): Promise<void> {
     const messages = this.conversation.getMessages();
     // Check if we already have a memory context message in the conversation
     const hasMemoryContext = messages.some(
-      (m) => m.role === "user" && contentToString(m.content).startsWith("[TencentDB Agent Memory Context]:")
+      (m) => m.role === "user" && contentToString(m.content).startsWith("[RMemory Agent Memory Context]:")
     );
     if (hasMemoryContext) return;
 
     // Fetch the memories
     const settings = getSettings();
-    if (!settings.enableTencentdbMemory) return;
+    if (!settings.enableRmemory) return;
 
-    const client = getTencentDBClient(2000); // 2s timeout for fast startup check
+    const client = getRMemoryClient(2000); // 2s timeout for fast startup check
 
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
     const query = lastUserMsg ? contentToString(lastUserMsg.content) : "latest coding context";
 
-    this.writeToLogFile("INFO", `Pre-populating TencentDB memory context for query: "${query.slice(0, 50)}"...`);
+    this.writeToLogFile("INFO", `Pre-populating RMemory memory context for query: "${query.slice(0, 50)}"...`);
 
     // Fetch in parallel
     const [searchResult, persona, scenarios] = await Promise.allSettled([
@@ -3806,21 +3806,21 @@ ${formatted}`;
 
     const memoryMessage: Message = {
       role: "user",
-      content: `[TencentDB Agent Memory Context]:\n${summaryText}`,
+      content: `[RMemory Agent Memory Context]:\n${summaryText}`,
       timestamp: Date.now(),
     };
 
     this.conversation.replaceMessages([memoryMessage, ...messages]);
-    this.writeToLogFile("INFO", "TencentDB memory context successfully pre-populated and injected.");
+    this.writeToLogFile("INFO", "RMemory memory context successfully pre-populated and injected.");
   }
 
-  private async syncConversationToTencentDB(): Promise<void> {
+  private async syncConversationToRmemory(): Promise<void> {
     const settings = getSettings();
-    if (!settings.enableTencentdbMemory) return;
+    if (!settings.enableRmemory) return;
 
-    const client = getTencentDBClient(3000); // 3s timeout to prevent CLI hang
+    const client = getRMemoryClient(3000); // 3s timeout to prevent CLI hang
     const historyPath = this.getCurrentHistoryFilePath();
-    const sessionKey = getTencentDBSessionKey(historyPath);
+    const sessionKey = getRMemorySessionKey(historyPath);
 
     const messages = this.conversation.getMessages();
     const lastCaptured = this.conversation.lastCapturedTimestamp || 0;
@@ -3842,7 +3842,7 @@ ${formatted}`;
       });
 
     if (newMessages.length > 0) {
-      this.writeToLogFile("INFO", `Incrementally syncing ${newMessages.length} new messages to TencentDB (session: ${sessionKey})...`);
+      this.writeToLogFile("INFO", `Incrementally syncing ${newMessages.length} new messages to RMemory (session: ${sessionKey})...`);
       await client.addConversation({
         session_id: sessionKey,
         messages: newMessages,

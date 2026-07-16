@@ -1569,11 +1569,11 @@ export function useModelWizard(ctx: ModelWizardContext) {
           } else {
             delete presetModels.MODEL_SINGLE_SUBAGENT_CLASSIFIER;
           }
-        } else if (tier === "tencentdb") {
+        } else if (tier === "rmemory") {
           if (isMulti) {
-            delete presetModels.MODEL_MULTI_SUBAGENT_TENCENTDB;
+            delete presetModels.MODEL_MULTI_SUBAGENT_RMEMORY;
           } else {
-            delete presetModels.MODEL_SINGLE_SUBAGENT_TENCENTDB;
+            delete presetModels.MODEL_SINGLE_SUBAGENT_RMEMORY;
           }
         } else if (tier === "single") {
           delete presetModels.MODEL_SINGLE;
@@ -1978,7 +1978,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           setTierModel(presetMode, "coder", finalModelName, undefined, supportsVision);
           setTierModel(presetMode, "reviewer", finalModelName, undefined, supportsVision);
           setTierModel(presetMode, "classifier", finalModelName, undefined, supportsVision);
-          setTierModel(presetMode, "tencentdb", finalModelName, undefined, supportsVision);
+          setTierModel(presetMode, "rmemory", finalModelName, undefined, supportsVision);
           targetLabel = "All Subagent Models";
           switchActiveProvider(profileName);
         } else if (tier === "all") {
@@ -2235,13 +2235,13 @@ export function useModelWizard(ctx: ModelWizardContext) {
           presetModels.MODEL_SINGLE_SUBAGENT_CLASSIFIER = finalModelName;
           presetModels.MODEL_SINGLE_SUBAGENT_CLASSIFIER_VISION = String(supportsVision);
         }
-      } else if (tier === "tencentdb") {
+      } else if (tier === "rmemory") {
         if (isMulti) {
-          presetModels.MODEL_MULTI_SUBAGENT_TENCENTDB = finalModelName;
-          presetModels.MODEL_MULTI_SUBAGENT_TENCENTDB_VISION = String(supportsVision);
+          presetModels.MODEL_MULTI_SUBAGENT_RMEMORY = finalModelName;
+          presetModels.MODEL_MULTI_SUBAGENT_RMEMORY_VISION = String(supportsVision);
         } else {
-          presetModels.MODEL_SINGLE_SUBAGENT_TENCENTDB = finalModelName;
-          presetModels.MODEL_SINGLE_SUBAGENT_TENCENTDB_VISION = String(supportsVision);
+          presetModels.MODEL_SINGLE_SUBAGENT_RMEMORY = finalModelName;
+          presetModels.MODEL_SINGLE_SUBAGENT_RMEMORY_VISION = String(supportsVision);
         }
       } else if (tier === "default") {
         presetModels.MODEL = finalModelName;

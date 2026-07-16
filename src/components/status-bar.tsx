@@ -17,7 +17,7 @@ export interface StatusBarProps {
   worktreeCount: number;
   lastSpeed: number | null;
   formatCompactNumber: (val: number) => string;
-  tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
+  rmemoryStatus?: "online" | "offline" | "checking" | "disabled";
   activeDevHook?: string | null;
   workspace?: string;
   focus?: string;

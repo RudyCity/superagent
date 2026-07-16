@@ -2,20 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import React from "react";
 import { render } from "ink";
 import { Console } from "node:console";
-import { useTencentdbStatus } from "../src/hooks/useTencentdbStatus.js";
+import { useRmemoryStatus } from "../src/hooks/useRmemoryStatus.js";
 
 if (!console.Console) {
   console.Console = Console;
 }
 
-
-
 let mockSettings = {
-  enableTencentdbMemory: false,
-  tencentdbGatewayUrl: "http://127.0.0.1:8420",
-  tencentdbGatewayApiKey: "sk-xxxx",
-  tencentdbServiceId: "default",
-  tencentdbPollIntervalMs: 30000,
+  enableRmemory: false,
+  rmemoryGatewayUrl: "http://127.0.0.1:8420",
+  rmemoryGatewayApiKey: "sk-xxxx",
+  rmemoryServiceId: "default",
+  rmemoryPollIntervalMs: 30000,
 };
 
 vi.mock("../src/core/config/jsonConfig.js", () => {
@@ -24,14 +22,15 @@ vi.mock("../src/core/config/jsonConfig.js", () => {
   };
 });
 
-describe("useTencentdbStatus Hook", () => {
+describe("useRmemoryStatus Hook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSettings = {
-      enableTencentdbMemory: false,
-      tencentdbGatewayUrl: "http://127.0.0.1:8420",
-      tencentdbGatewayApiKey: "sk-xxxx",
-      tencentdbServiceId: "default",
+      enableRmemory: false,
+      rmemoryGatewayUrl: "http://127.0.0.1:8420",
+      rmemoryGatewayApiKey: "sk-xxxx",
+      rmemoryServiceId: "default",
+      rmemoryPollIntervalMs: 30000,
     };
   });
 
@@ -48,14 +47,14 @@ describe("useTencentdbStatus Hook", () => {
   it("should always return disabled", async () => {
     let hookStatus = "";
     const TestComponent = () => {
-      hookStatus = useTencentdbStatus();
+      hookStatus = useRmemoryStatus();
       return null;
     };
 
     const { unmount } = render(React.createElement(TestComponent));
     expect(hookStatus).toBe("disabled");
 
-    mockSettings.enableTencentdbMemory = true;
+    mockSettings.enableRmemory = true;
     expect(hookStatus).toBe("disabled");
     unmount();
   });

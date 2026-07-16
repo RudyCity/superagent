@@ -20,7 +20,7 @@ export interface DashboardStatusBarProps {
   activeWizard: any;
   wizardOptions: string[];
   focusArea: string;
-  tencentdbStatus?: "online" | "offline" | "checking" | "disabled";
+  rmemoryStatus?: "online" | "offline" | "checking" | "disabled";
   workspace?: string;
   isProcessing?: boolean;
 }
@@ -57,7 +57,7 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
   activeWizard,
   wizardOptions,
   focusArea,
-  tencentdbStatus,
+  rmemoryStatus,
   workspace,
   isProcessing = false,
 }: DashboardStatusBarProps) {
@@ -87,16 +87,16 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
           </>
         )}
         <Text color="gray"> │ </Text>
-        {tencentdbStatus === "online" && (
+        {rmemoryStatus === "online" && (
           <Text color="magenta" bold>🧠 Mem: ON</Text>
         )}
-        {tencentdbStatus === "offline" && (
+        {rmemoryStatus === "offline" && (
           <Text color="red" bold>🧠 Mem: OFFLINE</Text>
         )}
-        {tencentdbStatus === "checking" && (
+        {rmemoryStatus === "checking" && (
           <Text color="yellow" bold>🧠 Mem: CHECKING</Text>
         )}
-        {(tencentdbStatus === "disabled" || !tencentdbStatus) && (
+        {(rmemoryStatus === "disabled" || !rmemoryStatus) && (
           <Text color="gray" dimColor>🧠 Mem: OFF</Text>
         )}
       </Box>

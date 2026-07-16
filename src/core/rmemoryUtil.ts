@@ -5,7 +5,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const globalDataDir = path.join(os.homedir(), ".superagent-r", "tencentdb-memory");
+const globalDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
 
 let rMemoryInstance: RMemory | null = null;
 
@@ -229,11 +229,11 @@ export class MemoryClient {
   }
 }
 
-export function getTencentDBClient(timeoutMs = 3000): MemoryClient {
+export function getRMemoryClient(timeoutMs = 3000): MemoryClient {
   const settings = getSettings();
-  const endpoint = settings.tencentdbGatewayUrl || "http://127.0.0.1:8420";
-  const apiKey = settings.tencentdbGatewayApiKey || "sk-xxxx";
-  const serviceId = settings.tencentdbServiceId || "default";
+  const endpoint = settings.rmemoryGatewayUrl || "http://127.0.0.1:8420";
+  const apiKey = settings.rmemoryGatewayApiKey || "sk-xxxx";
+  const serviceId = settings.rmemoryServiceId || "default";
 
   return new MemoryClient({
     endpoint,
@@ -243,12 +243,12 @@ export function getTencentDBClient(timeoutMs = 3000): MemoryClient {
   });
 }
 
-export function getTencentDBSessionKey(historyPath: string | null): string {
+export function getRMemorySessionKey(historyPath: string | null): string {
   const keySource = historyPath || process.cwd();
   return createHash("sha1").update(keySource).digest("hex").slice(0, 8);
 }
 
-export async function isTencentdbActive(forceRefresh = false): Promise<boolean> {
+export async function isRmemoryActive(forceRefresh = false): Promise<boolean> {
   return false;
 }
 

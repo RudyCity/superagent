@@ -589,15 +589,15 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(addedLines[addedLines.length - 1].content).toContain("Rate limit capacity set to: 15");
   });
 
-  it("should support /setting-tencentdb command variants by printing disabled error message", async () => {
-    await handleSlashCommand("/setting-tencentdb", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("TencentDB Memory is disabled in this build.");
+  it("should support /setting-rmemory command variants by printing disabled error message", async () => {
+    await handleSlashCommand("/setting-rmemory", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("RMemory Memory is disabled in this build.");
 
-    await handleSlashCommand("/setting-tencentdb invalid", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("TencentDB Memory is disabled in this build.");
+    await handleSlashCommand("/setting-rmemory invalid", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("RMemory Memory is disabled in this build.");
 
-    await handleSlashCommand("/setting-tencentdb hide-bg-procs", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("TencentDB Memory is disabled in this build.");
+    await handleSlashCommand("/setting-rmemory hide-bg-procs", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("RMemory Memory is disabled in this build.");
   });
 
   it("should configure focus level when running /setting-focus", () => {

@@ -1,7 +1,7 @@
 /**
- * tencentdbSetup.ts — Auto-detect and run TencentDB Memory Gateway on startup.
+ * rmemorySetup.ts — Auto-detect and run RMemory Gateway on startup.
  *
- * Checks if the TencentDB Memory Gateway is enabled in settings and running.
+ * Checks if the RMemory Gateway is enabled in settings and running.
  * If enabled but offline, automatically clones, installs, and starts the
  * gateway in the background.
  *
@@ -26,9 +26,9 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 
 /**
- * Spawns the TencentDB Memory Gateway process completely silently in the background.
+ * Spawns the RMemory Gateway process completely silently in the background.
  */
-export function spawnTencentdbGateway(options: {
+export function spawnRmemoryGateway(options: {
   gatewayDir: string;
   globalDataDir: string;
   llmApiKey: string;
@@ -43,7 +43,7 @@ export function spawnTencentdbGateway(options: {
     TDAI_LLM_API_KEY: options.llmApiKey,
     TDAI_LLM_BASE_URL: options.llmBaseUrl,
     TDAI_LLM_MODEL: options.llmModel,
-    MEMORY_TENCENTDB_GATEWAY_PORT: "8420",
+    MEMORY_RMEMORY_GATEWAY_PORT: "8420",
   };
 
   // Run directly via node with --import tsx and shell: false to ensure NO console window is opened on Windows
@@ -58,9 +58,9 @@ export function spawnTencentdbGateway(options: {
 }
 
 /**
- * Check and start the TencentDB Memory Gateway if enabled and offline.
+ * Check and start the RMemory Gateway if enabled and offline.
  * Non-blocking: runs asynchronously in the background.
  */
-export async function runTencentdbSetup(): Promise<void> {
+export async function runRmemorySetup(): Promise<void> {
   return;
 }

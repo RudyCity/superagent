@@ -194,7 +194,7 @@ export class TokenTracker {
     if (!content) return 0;
 
     if (typeof content === "string") {
-      const isMemoryContext = content.startsWith("[TencentDB Agent Memory Context]:");
+      const isMemoryContext = content.startsWith("[RMemory Agent Memory Context]:");
       if (useVision && (content.length > threshold || isMemoryContext)) {
         const lines = content.split(/\r?\n/);
         const pageCount = Math.min(3, Math.ceil(lines.length / 150));

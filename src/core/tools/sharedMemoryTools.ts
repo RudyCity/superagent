@@ -145,13 +145,13 @@ export const saveSharedMemoryTool: Tool = {
       fs.writeFileSync(tempPath, JSON.stringify(finalMemories, null, 2), "utf-8");
       fs.renameSync(tempPath, sharedMemPath);
 
-      // Sync to TencentDB Memory if enabled
+      // Sync to RMemory Memory if enabled
       try {
         const { getSettings } = await import("../config.js");
         const settings = getSettings();
-        if (settings.enableTencentdbMemory) {
-          const { getTencentDBClient } = await import("../tencentdbUtil.js");
-          const client = getTencentDBClient(2000);
+        if (settings.enableRmemory) {
+          const { getRMemoryClient } = await import("../rmemoryUtil.js");
+          const client = getRMemoryClient(2000);
           
           const scopeTag = scope === "global" ? "[global]" : `[project:${path.basename(projectPath)}]`;
           
@@ -161,7 +161,7 @@ export const saveSharedMemoryTool: Tool = {
             content: `[${source}] ${scopeTag} ${key}: ${value}`
           });
 
-          // 2. Delete any pruned entries from TencentDB
+          // 2. Delete any pruned entries from RMemory
           if (prunedMemories.length > 0) {
             const prunedIds = prunedMemories.map(m => `shared-memory-${m.key}`);
             await client.deleteAtomic({ ids: prunedIds });

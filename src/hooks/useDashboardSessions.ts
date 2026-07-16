@@ -42,7 +42,7 @@ export function useDashboardSessions(
         });
       }
 
-      // Check for active agents or background tasks (exclude hidden tasks like tencentdb-gateway)
+      // Check for active agents or background tasks (exclude hidden tasks like rmemory-gateway)
       const hasActiveAgentsOrTasks =
         [...superagentInstances.values()].some((i) => i.status === "running") ||
         [...subagentInstances.values()].some((s) => s.status === "running") ||

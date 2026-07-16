@@ -8,10 +8,10 @@ import {
 import { Message, contentToString } from "../../conversation.js";
 import { getSettings } from "../../config.js";
 import { SummarizationStrategy } from "./SummarizationStrategy.js";
-import { getTencentDBClient, getTencentDBSessionKey } from "../../tencentdbUtil.js";
+import { getRMemoryClient, getRMemorySessionKey } from "../../rmemoryUtil.js";
 
-export class TencentDBMemoryStrategy implements CompactionStrategy {
-  name = "tencentdb-memory";
+export class RMemoryStrategy implements CompactionStrategy {
+  name = "rmemory";
   private historyFilePath?: string;
   private lastCapturedTimestamp = 0;
   private lastConnectAttempt = 0;
@@ -23,7 +23,7 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
 
   canHandle(context: CompactionContext): boolean {
     const settings = getSettings();
-    return !!settings.enableTencentdbMemory && context.messages.length > 5;
+    return !!settings.enableRmemory && context.messages.length > 5;
   }
 
   async execute(
@@ -38,8 +38,8 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
       return fallback.execute(messages, options);
     }
 
-    const client = getTencentDBClient(3000); // 3s timeout to prevent CLI hang
-    const sessionKey = getTencentDBSessionKey(this.historyFilePath || null);
+    const client = getRMemoryClient(3000); // 3s timeout to prevent CLI hang
+    const sessionKey = getRMemorySessionKey(this.historyFilePath || null);
 
     const historyPath = this.historyFilePath || "";
     // Lazily load lastCapturedTimestamp from persisted compaction history
@@ -49,13 +49,13 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
         const fileData = await fs.readFile(historyPath, "utf-8");
         const events = JSON.parse(fileData);
         if (Array.isArray(events)) {
-          const tdbEvents = events.filter(
+          const rmemoryEvents = events.filter(
             (e: any) =>
-              e.strategy === "tencentdb-memory" ||
-              e.metadata?.strategy === "tencentdb-memory"
+              e.strategy === "rmemory" ||
+              e.metadata?.strategy === "rmemory"
           );
           let maxWatermark = 0;
-          for (const e of tdbEvents) {
+          for (const e of rmemoryEvents) {
             const watermark =
               e.metadata?.lastCapturedTimestamp || e.lastCapturedTimestamp || 0;
             if (watermark > maxWatermark) {
@@ -154,7 +154,7 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
 
       const memoryMessage: Message = {
         role: "user",
-        content: `[TencentDB Agent Memory Context]:\n${summaryText || "No prior memories recalled."}`,
+        content: `[RMemory Agent Memory Context]:\n${summaryText || "No prior memories recalled."}`,
         timestamp: Date.now(),
       };
 
@@ -163,7 +163,7 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
       return {
         messages: result,
         metadata: {
-          strategy: "tencentdb-memory",
+          strategy: "rmemory",
           messagesBefore: messages.length,
           messagesAfter: result.length,
           summary: summaryText || "No prior memories recalled.",
@@ -173,7 +173,7 @@ export class TencentDBMemoryStrategy implements CompactionStrategy {
     } catch (error) {
       this.lastConnectAttempt = Date.now();
       if (!this.gatewayOffline) {
-        console.warn("TencentDBMemoryStrategy gateway connection failed, falling back to SummarizationStrategy. Offline cooldown active for 5m. Error:", (error as Error).message);
+        console.warn("RMemoryStrategy gateway connection failed, falling back to SummarizationStrategy. Offline cooldown active for 5m. Error:", (error as Error).message);
         this.gatewayOffline = true;
       }
       

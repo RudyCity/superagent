@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { TencentDBMemoryStrategy } from "../src/core/context/strategies/TencentDBMemoryStrategy.js";
+import { RMemoryStrategy } from "../src/core/context/strategies/RMemoryStrategy.js";
 import { Message } from "../src/core/conversation.js";
 import { CompactionContext } from "../src/core/context/CompactionStrategy.js";
 
@@ -8,34 +8,34 @@ const mockSearchAtomic = vi.fn();
 const mockReadCore = vi.fn();
 const mockListScenarios = vi.fn();
 
-vi.mock("../src/core/tencentdbUtil.js", () => {
+vi.mock("../src/core/rmemoryUtil.js", () => {
   return {
-    getTencentDBClient: () => ({
+    getRMemoryClient: () => ({
       addConversation: mockAddConversation,
       searchAtomic: mockSearchAtomic,
       readCore: mockReadCore,
       listScenarios: mockListScenarios,
     }),
-    getTencentDBSessionKey: () => "test-sess",
-    isTencentdbActive: async () => true,
+    getRMemorySessionKey: () => "test-sess",
+    isRmemoryActive: async () => true,
   };
 });
 
 vi.mock("../src/core/config.js", () => {
   return {
     getSettings: () => ({
-      tencentdbGatewayUrl: "http://127.0.0.1:8420",
-      tencentdbGatewayApiKey: "sk-xxxx",
-      tencentdbServiceId: "default",
-      enableTencentdbMemory: true,
+      rmemoryGatewayUrl: "http://127.0.0.1:8420",
+      rmemoryGatewayApiKey: "sk-xxxx",
+      rmemoryServiceId: "default",
+      enableRmemory: true,
     }),
   };
 });
 
-describe("TencentDBMemoryStrategy", () => {
+describe("RMemoryStrategy", () => {
   it("should define strategy interface", () => {
-    const strategy = new TencentDBMemoryStrategy();
-    expect(strategy.name).toBe("tencentdb-memory");
+    const strategy = new RMemoryStrategy();
+    expect(strategy.name).toBe("rmemory");
   });
 
   it("should successfully compact and format memories when gateway is active", async () => {
@@ -52,7 +52,7 @@ describe("TencentDBMemoryStrategy", () => {
       entries: [{ path: "scene_blocks/coding-style.md" }]
     });
 
-    const strategy = new TencentDBMemoryStrategy({ historyFilePath: "conversation_test.json" });
+    const strategy = new RMemoryStrategy({ historyFilePath: "conversation_test.json" });
     const messages: Message[] = [];
     for (let i = 0; i < 15; i++) {
       messages.push({
@@ -83,17 +83,17 @@ describe("TencentDBMemoryStrategy", () => {
     // Verify output structure
     expect(result.messages.length).toBeLessThanOrEqual(6); // 1 memory message + 5 preserved
     expect(result.messages[0].role).toBe("user");
-    expect(result.messages[0].content).toContain("[TencentDB Agent Memory Context]");
+    expect(result.messages[0].content).toContain("[RMemory Agent Memory Context]");
     expect(result.messages[0].content).toContain("User profile");
     expect(result.messages[0].content).toContain("TypeScript");
     expect(result.messages[0].content).toContain("scene_blocks/coding-style.md");
-    expect(result.metadata.strategy).toBe("tencentdb-memory");
+    expect(result.metadata.strategy).toBe("rmemory");
   });
 
   it("should fallback to SummarizationStrategy when gateway calls throw an error", async () => {
     mockAddConversation.mockRejectedValue(new Error("Gateway connection timeout"));
 
-    const strategy = new TencentDBMemoryStrategy({ historyFilePath: "conversation_test.json" });
+    const strategy = new RMemoryStrategy({ historyFilePath: "conversation_test.json" });
     const messages: Message[] = [];
     for (let i = 0; i < 15; i++) {
       messages.push({
@@ -114,7 +114,7 @@ describe("TencentDBMemoryStrategy", () => {
     // First call: gateway fails
     mockAddConversation.mockRejectedValue(new Error("Connection refused"));
 
-    const strategy = new TencentDBMemoryStrategy({ historyFilePath: "conversation_test.json" });
+    const strategy = new RMemoryStrategy({ historyFilePath: "conversation_test.json" });
     const messages: Message[] = [];
     for (let i = 0; i < 15; i++) {
       messages.push({
