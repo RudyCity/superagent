@@ -251,7 +251,7 @@ const c = 3;
     it("should run build and test scripts from package.json", async () => {
       vi.spyOn(fs, "existsSync").mockImplementation((p) => {
         const pathStr = p.toString();
-        if (pathStr.endsWith("bun.lockb") || pathStr.endsWith("pnpm-lock.yaml") || pathStr.endsWith("yarn.lock")) return false;
+        if (pathStr.endsWith("bun.lockb") || pathStr.endsWith("bun.lock") || pathStr.endsWith("pnpm-lock.yaml") || pathStr.endsWith("yarn.lock")) return false;
         if (pathStr.endsWith("package.json")) return true;
         return true;
       });
@@ -273,7 +273,7 @@ const c = 3;
     it("should report build failure as hard error", async () => {
       vi.spyOn(fs, "existsSync").mockImplementation((p) => {
         const pathStr = p.toString();
-        if (pathStr.endsWith("bun.lockb") || pathStr.endsWith("pnpm-lock.yaml") || pathStr.endsWith("yarn.lock")) return false;
+        if (pathStr.endsWith("bun.lockb") || pathStr.endsWith("bun.lock") || pathStr.endsWith("pnpm-lock.yaml") || pathStr.endsWith("yarn.lock")) return false;
         if (pathStr.endsWith("package.json")) return true;
         return true;
       });
@@ -300,7 +300,7 @@ const c = 3;
     it("should report lint failure as warning, not hard error", async () => {
       vi.spyOn(fs, "existsSync").mockImplementation((p) => {
         const pathStr = p.toString();
-        if (pathStr.endsWith("bun.lockb") || pathStr.endsWith("pnpm-lock.yaml") || pathStr.endsWith("yarn.lock")) return false;
+        if (pathStr.endsWith("bun.lockb") || pathStr.endsWith("bun.lock") || pathStr.endsWith("pnpm-lock.yaml") || pathStr.endsWith("yarn.lock")) return false;
         if (pathStr.endsWith("package.json")) return true;
         return true;
       });

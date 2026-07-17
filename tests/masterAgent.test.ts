@@ -262,7 +262,7 @@ return "theirs";
           err.exitCode = 1;
           throw err;
         }
-        if (cmd === "npm" && args && args[0] === "test") {
+        if (args && args.includes("test")) {
           throw new Error("Tests failed!");
         }
         return Promise.resolve({ stdout: "" } as any);

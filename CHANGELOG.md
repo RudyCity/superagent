@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.443] - 2026-07-17
+
+### Fixed
+- **Test Suite Package Manager Detection**: Updated post-merge validation mocks in `tests/postMergeValidation.test.ts` and `tests/masterAgent.test.ts` to correctly handle `bun.lock` alongside `bun.lockb`. This prevents test suite validation failures on local environments that have Bun configured.
+
 ## [1.2.442] - 2026-07-17
 
 ### Fixed
