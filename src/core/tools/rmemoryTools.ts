@@ -74,8 +74,11 @@ export const rmemoryConversationSearchTool: Tool = {
         return "No matching conversation history found.";
       }
       return res.messages
-        .map((m) => `[${m.timestamp || "unknown"}] ${m.role}: ${m.content}`)
-        .join("\n\n");
+        .map((m) => {
+          const dateStr = m.timestamp ? new Date(m.timestamp).toLocaleString() : "unknown";
+          return `[${dateStr}] ${m.role}: ${m.content}`;
+        })
+        .join("\n----------------------------------------------------------------------\n");
     } catch (err) {
       return `Conversation search failed: ${formatError(err)}. Make sure the RMemory system is initialized.`;
     }
@@ -104,7 +107,7 @@ export const rmemoryReadCosTool: Tool = {
       if (!res || res.content === null) {
         return `Failed to read scenario block file: File not found: ${filePath}`;
       }
-      return `=== File: ${filePath} ===\n\n${res.content}`;
+      return `----------------------------------------------------------------------\nSCENARIO BLOCK FILE: ${filePath}\n----------------------------------------------------------------------\n\n${res.content}\n----------------------------------------------------------------------`;
     } catch (err) {
       return `Failed to read scenario block file: ${formatError(err)}. Make sure the path is correct and RMemory is initialized.`;
     }

@@ -91,7 +91,7 @@ describe("RMemory Tools", () => {
         updated_at: "2026-06-26T10:00:00.000Z"
       });
       const result = await rmemoryReadCosTool.execute({ path: "scene_blocks/style.md" }, ".");
-      expect(result).toContain("=== File: scene_blocks/style.md ===");
+      expect(result).toContain("SCENARIO BLOCK FILE: scene_blocks/style.md");
       expect(result).toContain("use tabs instead of spaces");
       expect(mockReadScenario).toHaveBeenCalledWith({ path: "scene_blocks/style.md" });
     });

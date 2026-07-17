@@ -192,8 +192,9 @@ export async function searchHistory(
       return `No matches found for query: "${query}"`;
     }
     const lines = [
-      `[OFFLINE FUZZY SEARCH] Found ${scoredSessions.length} matching session(s) for "${query}":`,
-      "",
+      "----------------------------------------------------------------------",
+      `[OFFLINE FUZZY SEARCH] Found ${scoredSessions.length} matching session(s) for "${query}"`,
+      "----------------------------------------------------------------------",
     ];
     for (const item of scoredSessions.slice(0, 5)) {
       const pct = Math.round(item.score * 100);
@@ -213,7 +214,7 @@ export async function searchHistory(
         }
       }
       lines.push(matchedTurns.join("\n"));
-      lines.push("");
+      lines.push("----------------------------------------------------------------------");
     }
     return lines.join("\n").trim();
   };
@@ -359,7 +360,7 @@ Please summarize what was discussed, decided, or implemented in this session reg
     const summaryResults = await Promise.all(summaryPromises);
     for (const res of summaryResults) {
       if (res) {
-        reports.push(`📁 **${res.displayName}**\n${res.summary}`);
+        reports.push(`📁 ${res.displayName}\n${res.summary}`);
       }
     }
 
@@ -369,7 +370,13 @@ Please summarize what was discussed, decided, or implemented in this session reg
       return noSemanticResult;
     }
 
-    const finalResult = `[AI SEMANTIC SEARCH] Found relevant history for "${query}":\n\n` + reports.join("\n\n");
+    const finalResult = [
+      "----------------------------------------------------------------------",
+      `[AI SEMANTIC SEARCH] Found relevant history for "${query}"`,
+      "----------------------------------------------------------------------",
+      reports.join("\n----------------------------------------------------------------------\n"),
+      "----------------------------------------------------------------------",
+    ].join("\n");
     semanticSearchCache.set(cacheKey, { sig, result: finalResult });
     return finalResult;
   } catch (err: unknown) {

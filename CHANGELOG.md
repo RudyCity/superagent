@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.402] - 2026-07-17
+
+### Improved
+- **Memory & History Output Layout**: Tidied up formatting of /memory status, search, list-scenes, read-scene, read-persona, and /search-history command results. Implemented unified, clean ASCII separators, removed forbidden markdown bold elements from the output text, and aligned columns for visual clarity.
+
 ## [1.2.401] - 2026-07-17
 
 ### Optimized

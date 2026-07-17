@@ -43,11 +43,15 @@ export const memoryCommand: SlashCommand = {
           : "None (no turns synchronized yet)";
 
         const lines = [
+          "----------------------------------------------------------------------",
+          "RMEMORY STATUS",
+          "----------------------------------------------------------------------",
           "RMemory Memory Status: Active",
-          `  Session ID: ${sessionKey}`,
-          `  Embedding Provider: ${settings.rmemoryEmbeddingProvider || "local"}`,
-          `  Embedding Model: ${settings.rmemoryEmbeddingModel || "text-embedding-3-small"}`,
-          `  Last Sync Watermark: ${watermarkStr}`,
+          `Session ID: ${sessionKey}`,
+          `Embedding Provider: ${settings.rmemoryEmbeddingProvider || "local"}`,
+          `Embedding Model: ${settings.rmemoryEmbeddingModel || "text-embedding-3-small"}`,
+          `Last Sync Watermark: ${watermarkStr}`,
+          "----------------------------------------------------------------------",
         ];
 
         ctx.addLine({
@@ -94,10 +98,17 @@ export const memoryCommand: SlashCommand = {
           return;
         }
 
-        const lines = [`=== Search Results for: "${query}" ===`];
+        const lines = [
+          "----------------------------------------------------------------------",
+          `MEMORY SEARCH RESULTS FOR: "${query}"`,
+          "----------------------------------------------------------------------",
+        ];
         for (const item of items) {
-          const typeTag = item.type ? `[${item.type}]` : "";
-          lines.push(`- ID: ${item.id} ${typeTag}\n  Content: ${item.content}\n  Score: ${item.score?.toFixed(4) || "N/A"}`);
+          const typeTag = item.type ? ` [Type: ${item.type}]` : "";
+          lines.push(`ID: ${item.id}${typeTag}`);
+          lines.push(`Score: ${item.score?.toFixed(4) || "N/A"}`);
+          lines.push(`Content: ${item.content}`);
+          lines.push("----------------------------------------------------------------------");
         }
 
         ctx.addLine({
@@ -207,10 +218,15 @@ export const memoryCommand: SlashCommand = {
           return;
         }
 
-        const lines = ["=== Scenario Blocks (L2) ==="];
+        const lines = [
+          "----------------------------------------------------------------------",
+          "SCENARIO BLOCKS (L2)",
+          "----------------------------------------------------------------------",
+        ];
         for (const entry of entries) {
           lines.push(`- ${entry.path}`);
         }
+        lines.push("----------------------------------------------------------------------");
 
         ctx.addLine({
           type: "system",
@@ -257,7 +273,7 @@ export const memoryCommand: SlashCommand = {
 
         ctx.addLine({
           type: "system",
-          content: `=== File: ${filePath} ===\n\n${res.content}`,
+          content: `----------------------------------------------------------------------\nSCENARIO BLOCK FILE: ${filePath}\n----------------------------------------------------------------------\n\n${res.content}\n----------------------------------------------------------------------`,
           timestamp: Date.now(),
         });
       } catch (err: any) {
@@ -290,7 +306,7 @@ export const memoryCommand: SlashCommand = {
 
         ctx.addLine({
           type: "system",
-          content: `=== User Persona (persona.md) ===\n\n${res.content}`,
+          content: `----------------------------------------------------------------------\nUSER PERSONA (persona.md)\n----------------------------------------------------------------------\n\n${res.content}\n----------------------------------------------------------------------`,
           timestamp: Date.now(),
         });
       } catch (err: any) {
@@ -304,17 +320,21 @@ export const memoryCommand: SlashCommand = {
     }
 
     const helpLines = [
+      "----------------------------------------------------------------------",
+      "RMEMORY COMMAND USAGE",
+      "----------------------------------------------------------------------",
       "Usage: /memory <subcommand> [args]",
       "",
       "Subcommands:",
-      "  /memory status               Check RMemory connection and config status",
-      "  /memory search <query>       Perform a vector search through your long-term memories (L1)",
-      "  /memory add <id> <val>       Save or overwrite a long-term structured memory",
-      "  /memory delete <id>          Delete a specific long-term structured memory",
-      "  /memory list-scenes          List all scenario navigation blocks (L2)",
-      "  /memory read-scene <path>    Read the content of a specific scenario block",
-      "  /memory read-persona         Read the user persona profile (L3)",
-      "  /memory help                 Show this help menu",
+      "  status               Check RMemory connection and config status",
+      "  search <query>       Perform a vector search through your long-term memories (L1)",
+      "  add <id> <val>       Save or overwrite a long-term structured memory",
+      "  delete <id>          Delete a specific long-term structured memory",
+      "  list-scenes          List all scenario navigation blocks (L2)",
+      "  read-scene <path>    Read the content of a specific scenario block",
+      "  read-persona         Read the user persona profile (L3)",
+      "  help                 Show this help menu",
+      "----------------------------------------------------------------------",
     ];
 
     ctx.addLine({

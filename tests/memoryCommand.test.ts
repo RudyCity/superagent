@@ -65,7 +65,7 @@ describe("/memory Command Suite", () => {
     await handleSlashCommand("/memory search typescript", mockCtx as any);
 
     expect(mockClient.searchAtomic).toHaveBeenCalledWith({ query: "typescript", limit: 5 });
-    expect(addedLines.some((l) => l.content.includes("Search Results for: \"typescript\""))).toBe(true);
+    expect(addedLines.some((l) => l.content.includes("MEMORY SEARCH RESULTS FOR: \"typescript\""))).toBe(true);
     expect(addedLines.some((l) => l.content.includes("Score: 0.9500"))).toBe(true);
   });
 
