@@ -535,6 +535,7 @@ export const invokeSubagentTool: Tool = {
         instance.status = "completed";
         instance.completedAt = Date.now();
         instance.result = extractSubagentReport(agentInstance, subagentId);
+        instance.agent = undefined;
         notifySubagentsChanged();
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
         return `Subagent "${typeName}" (Role: ${role}) finished. Report:\n\n${instance.result || "(no report)"}`;
@@ -546,7 +547,10 @@ export const invokeSubagentTool: Tool = {
         instance.completedAt = Date.now();
         notifySubagentsChanged();
         appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${err.message}`);
-        instance.agent.writeToLogFile("SUBAGENT_FAILED", err.message);
+        if (instance.agent) {
+          instance.agent.writeToLogFile("SUBAGENT_FAILED", err.message);
+        }
+        instance.agent = undefined;
         return `Subagent failed: ${err.message}`;
       }
     } else {
@@ -556,6 +560,7 @@ export const invokeSubagentTool: Tool = {
         instance.status = "completed";
         instance.completedAt = Date.now();
         instance.result = extractSubagentReport(agentInstance, subagentId);
+        instance.agent = undefined;
         notifySubagentsChanged();
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
       }).catch((err: any) => {
@@ -566,7 +571,10 @@ export const invokeSubagentTool: Tool = {
         instance.completedAt = Date.now();
         notifySubagentsChanged();
         appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${err.message || err}`);
-        instance.agent.writeToLogFile("SUBAGENT_FAILED", err.message || String(err));
+        if (instance.agent) {
+          instance.agent.writeToLogFile("SUBAGENT_FAILED", err.message || String(err));
+        }
+        instance.agent = undefined;
       });
 
       return `Invoked subagent "${typeName}" (Role: ${role}) in background. Conversation ID: ${subagentId}`;
@@ -828,12 +836,16 @@ export const sendMessageTool: Tool = {
           }
         }
         instance.result = result;
+        instance.agent = undefined;
         notifySubagentsChanged();
         return `Subagent "${recipientId}" finished. Report:\n\n${result || "(no report)"}`;
       } catch (err: any) {
         instance.status = "error";
         notifySubagentsChanged();
-        agentInstance.writeToLogFile("SUBAGENT_FAILED", err.message);
+        if (agentInstance) {
+          agentInstance.writeToLogFile("SUBAGENT_FAILED", err.message);
+        }
+        instance.agent = undefined;
         return `Subagent failed: ${err.message}`;
       }
     } else {
@@ -848,11 +860,15 @@ export const sendMessageTool: Tool = {
           }
         }
         instance.result = result;
+        instance.agent = undefined;
         notifySubagentsChanged();
       }).catch((err: any) => {
         instance.status = "error";
         notifySubagentsChanged();
-        agentInstance.writeToLogFile("SUBAGENT_FAILED", err.message || String(err));
+        if (agentInstance) {
+          agentInstance.writeToLogFile("SUBAGENT_FAILED", err.message || String(err));
+        }
+        instance.agent = undefined;
       });
 
       return `Message sent to subagent "${recipientId}". Subagent is processing.`;

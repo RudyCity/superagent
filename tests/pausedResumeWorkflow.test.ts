@@ -4,6 +4,8 @@ import { sendMessageToSuperagentTool, awaitSuperagentsTool } from "../src/core/t
 import { sendMessageTool } from "../src/core/tools/subagentTools.js";
 import { agentLocalStorage } from "../src/core/agent.js";
 
+let mockLatestAgent: any = null;
+
 // Mock Agent and agentLocalStorage completely before any imports
 vi.mock("../src/core/agent.js", () => {
   const { AsyncLocalStorage } = require("async_hooks");
@@ -26,6 +28,9 @@ vi.mock("../src/core/agent.js", () => {
     });
     public getCurrentHistoryFilePath = vi.fn().mockReturnValue("/dummy/history.json");
     public loadHistoryFromPath = vi.fn().mockResolvedValue(undefined);
+    constructor() {
+      mockLatestAgent = this;
+    }
   }
   return {
     Agent: MockAgent,
@@ -37,12 +42,14 @@ describe("Paused Resume Workflow", () => {
   beforeEach(() => {
     superagentInstances.clear();
     subagentInstances.clear();
+    mockLatestAgent = null;
     vi.restoreAllMocks();
   });
 
   afterEach(() => {
     superagentInstances.clear();
     subagentInstances.clear();
+    mockLatestAgent = null;
   });
 
   describe("sendMessageToSuperagentTool with paused state", () => {
@@ -77,8 +84,9 @@ describe("Paused Resume Workflow", () => {
       const inst = superagentInstances.get(instanceId);
       expect(inst).toBeDefined();
       expect(inst!.status).toBe("completed");
-      expect(inst!.agent.loadHistoryFromPath).toHaveBeenCalledWith("/dummy/history.json");
-      expect(inst!.agent.sendMessage).toHaveBeenCalledWith("please continue");
+      expect(mockLatestAgent).toBeDefined();
+      expect(mockLatestAgent.loadHistoryFromPath).toHaveBeenCalledWith("/dummy/history.json");
+      expect(mockLatestAgent.sendMessage).toHaveBeenCalledWith("please continue");
     });
   });
 
@@ -112,8 +120,9 @@ describe("Paused Resume Workflow", () => {
       const inst = subagentInstances.get(instanceId);
       expect(inst).toBeDefined();
       expect(inst!.status).toBe("completed");
-      expect(inst!.agent.loadHistoryFromPath).toHaveBeenCalledWith("/dummy/sub-history.json");
-      expect(inst!.agent.sendMessage).toHaveBeenCalledWith("continue searching");
+      expect(mockLatestAgent).toBeDefined();
+      expect(mockLatestAgent.loadHistoryFromPath).toHaveBeenCalledWith("/dummy/sub-history.json");
+      expect(mockLatestAgent.sendMessage).toHaveBeenCalledWith("continue searching");
     });
   });
 

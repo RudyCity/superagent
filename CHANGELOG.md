@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.435] - 2026-07-17
+
+### Optimized
+- **Memory Footprint Optimization**: Freed up massive memory allocations in long-running CLI sessions by nullifying the underlying `agent` reference of completed and errored subagents and superagents, allowing V8 to garbage collect their large message histories, caches, and WASM-based tiktoken tokenizers.
+
 ## [1.2.434] - 2026-07-17
 
 ### Added
