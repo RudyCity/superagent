@@ -1509,6 +1509,13 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
           : wizardAllOptions;
         const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
         finalValue = filteredOptions[clampedIndex] || cleanVal;
+      } else if (activeWizard.type === "workspace" && activeWizard.step === 1) {
+        const lc = val.trim();
+        const filteredOptions = lc
+          ? filterSuggestions(wizardOptions, lc)
+          : wizardOptions;
+        const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+        finalValue = filteredOptions[clampedIndex] || cleanVal;
       } else {
         const hasOptions = wizardOptions.length > 0;
         finalValue = hasOptions && wizardSelectedIndex >= 0 && wizardSelectedIndex < wizardOptions.length

@@ -829,16 +829,26 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
           />
         )}
 
-        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 1 && wizardOptions.length > 0 && (
-          <WizardDialog
-            title="📁 WORKSPACE MANAGER — Select workspace (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
-            description="Select a workspace directory to switch to:"
-            borderColor="cyan"
-            options={wizardOptions}
-            selectedIndex={wizardSelectedIndex}
-            maxVisible={10}
-          />
-        )}
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 1 && wizardOptions.length > 0 && (() => {
+          const searchQuery = input.trim();
+          const filteredOptions = searchQuery
+            ? filterSuggestions(wizardOptions, searchQuery)
+            : wizardOptions;
+          const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filteredOptions.length - 1));
+          const searchTitle = searchQuery
+            ? `📁 WORKSPACE MANAGER — 🔍 "${searchQuery}" (${filteredOptions.length}/${wizardOptions.length} results):`
+            : `📁 WORKSPACE MANAGER — Select workspace (type to filter, ↑/↓ Navigate, Enter: Select, Esc: Cancel):`;
+          return (
+            <WizardDialog
+              title={searchTitle}
+              description="Select a workspace directory to switch to:"
+              borderColor="cyan"
+              options={filteredOptions.length > 0 ? filteredOptions : ["(no results)"]}
+              selectedIndex={clampedIndex}
+              maxVisible={10}
+            />
+          );
+        })()}
 
         {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 2 && (
           <WizardDialog

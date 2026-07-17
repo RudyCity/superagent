@@ -126,8 +126,32 @@ export function DashboardWizard({
         </>
       )}
 
-      {/* All other wizard types (not model search, not plan_approve) */}
-      {(activeWizard.type !== "model" || (activeWizard.step !== 3 && activeWizard.step !== 4 && activeWizard.step !== 15 && activeWizard.step !== 24 && activeWizard.step !== 25 && activeWizard.step !== 30 && activeWizard.step !== 34 && activeWizard.step !== 35 && activeWizard.step !== 40)) && activeWizard.type !== "plan_approve" && (
+      {/* Workspace Manager step 1 — filtered by query */}
+      {activeWizard.type === "workspace" && activeWizard.step === 1 && (() => {
+        const lc = query.trim();
+        const filtered = lc
+          ? filterSuggestions(wizardOptions, lc)
+          : wizardOptions;
+        const clampedIndex = Math.min(wizardSelectedIndex, Math.max(0, filtered.length - 1));
+        const searchTitle = lc
+          ? `📁 SELECT WORKSPACE — 🔍 "${query.trim()}" (${filtered.length}/${wizardOptions.length} results):`
+          : `📁 SELECT WORKSPACE (type to filter, ↑/↓ navigate, Enter select):`;
+        
+        return (
+          <WizardDialog
+            title={searchTitle}
+            description="Select a registered workspace directory to switch to, or choose to add a new one:"
+            borderColor={wizardBorderColor}
+            options={filtered.length > 0 ? filtered : ["(no results)"]}
+            selectedIndex={clampedIndex}
+            maxVisible={10}
+            terminalWidth={terminalWidth}
+          />
+        );
+      })()}
+
+      {/* All other wizard types (not model search, not plan_approve, not workspace step 1) */}
+      {(activeWizard.type !== "model" || (activeWizard.step !== 3 && activeWizard.step !== 4 && activeWizard.step !== 15 && activeWizard.step !== 24 && activeWizard.step !== 25 && activeWizard.step !== 30 && activeWizard.step !== 34 && activeWizard.step !== 35 && activeWizard.step !== 40)) && activeWizard.type !== "plan_approve" && (activeWizard.type !== "workspace" || activeWizard.step !== 1) && (
         <Box flexDirection="column">
           {activeWizard.type === "question" && activeWizard.questions && activeWizard.currentQuestionIndex !== undefined && (
             <Box flexDirection="row" flexWrap="wrap" marginBottom={1}>

@@ -994,6 +994,34 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           }
           return;
         }
+      } else if (activeWizard.type === "workspace" && activeWizard.step === 1 && wizardOptions.length > 0) {
+        const searchQuery = input.trim();
+        const filtered = searchQuery
+          ? filterSuggestions(wizardOptions, searchQuery)
+          : wizardOptions;
+        if (key.upArrow) {
+          setWizardSelectedIndex((prev) => {
+            const currentMax = Math.max(0, filtered.length - 1);
+            const clampedPrev = Math.min(prev, currentMax);
+            return Math.max(0, clampedPrev - 1);
+          });
+          return;
+        }
+        if (key.downArrow) {
+          setWizardSelectedIndex((prev) => {
+            const currentMax = Math.max(0, filtered.length - 1);
+            const clampedPrev = Math.min(prev, currentMax);
+            return Math.min(currentMax, clampedPrev + 1);
+          });
+          return;
+        }
+        if (key.return) {
+          const selectedVal = filtered[wizardSelectedIndex] ?? filtered[0];
+          if (selectedVal) {
+            handleWizardSubmit(selectedVal);
+          }
+          return;
+        }
       } else if (activeWizard.type === "plan_approve") {
         if (activeWizard.step === 2) {
           // Step 2: custom feedback input — Escape goes back to step 1

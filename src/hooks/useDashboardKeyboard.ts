@@ -387,6 +387,16 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
               const clampedPrev = Math.min(prev, currentMax);
               return Math.max(0, clampedPrev - 1);
             });
+          } else if (activeWizard.type === "workspace" && activeWizard.step === 1) {
+            const lc = query.trim();
+            const len = lc
+              ? filterSuggestions(wizardOptions, lc).length
+              : wizardOptions.length;
+            setWizardSelectedIndex((prev) => {
+              const currentMax = Math.max(0, len - 1);
+              const clampedPrev = Math.min(prev, currentMax);
+              return Math.max(0, clampedPrev - 1);
+            });
           } else {
             setWizardSelectedIndex((prev) => Math.max(0, prev - 1));
           }
@@ -402,6 +412,16 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
             const len = lc
               ? filterSuggestions(wizardAllOptions, lc).length
               : wizardAllOptions.length;
+            setWizardSelectedIndex((prev) => {
+              const currentMax = Math.max(0, len - 1);
+              const clampedPrev = Math.min(prev, currentMax);
+              return Math.min(currentMax, clampedPrev + 1);
+            });
+          } else if (activeWizard.type === "workspace" && activeWizard.step === 1) {
+            const lc = query.trim();
+            const len = lc
+              ? filterSuggestions(wizardOptions, lc).length
+              : wizardOptions.length;
             setWizardSelectedIndex((prev) => {
               const currentMax = Math.max(0, len - 1);
               const clampedPrev = Math.min(prev, currentMax);
