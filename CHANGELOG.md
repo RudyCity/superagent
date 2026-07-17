@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.449] - 2026-07-17
+
+### Fixed
+- **Model Download Progress**: Fixed download progress display going over 100% (showing values like 1011.3%) by removing redundant multiplication by 100 on the progress percentage returned by Hugging Face Transformers.js.
+
 ## [1.2.448] - 2026-07-17
 
 ### Fixed

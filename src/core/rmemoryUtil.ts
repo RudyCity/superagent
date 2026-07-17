@@ -82,7 +82,7 @@ class OptimizedLocalTextEmbeddingProvider {
                 type: "model_download",
                 modelName: "embedding",
                 status: "progress",
-                progress: pct * 100
+                progress: pct
               });
             } else {
               const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";

@@ -505,7 +505,7 @@ export async function warmUpClassifier(onProgress?: (event: any) => void): Promi
                 type: "model_download",
                 modelName: "classifier",
                 status: "progress",
-                progress: pct * 100
+                progress: pct
               });
             } else {
               const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
@@ -584,7 +584,7 @@ export async function classifyWithLLM(
                 type: "model_download",
                 modelName: "classifier",
                 status: "progress",
-                progress: pct * 100
+                progress: pct
               });
             } else {
               const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
