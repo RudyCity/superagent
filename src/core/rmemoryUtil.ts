@@ -40,6 +40,7 @@ class OptimizedLocalTextEmbeddingProvider {
   private async getExtractor() {
     if (!this.extractor) {
       const { pipeline } = await import("@huggingface/transformers");
+      let downloadStarted = false;
       this.extractor = await pipeline("feature-extraction", this.modelName, {
         device: this.device as any,
         dtype: this.dtype as any,
@@ -47,7 +48,19 @@ class OptimizedLocalTextEmbeddingProvider {
           intraOpNumThreads: 2,
           interOpNumThreads: 1,
         },
+        progress_callback: (data: any) => {
+          if (data.status === "downloading" && !downloadStarted) {
+            downloadStarted = true;
+            console.log(`\n[INFO] Downloading local embedding model (~100MB) to cache...`);
+          } else if (data.status === "progress") {
+            const pct = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
+            process.stdout.write(`\r[INFO] Downloading embedding model: ${pct}%`);
+          }
+        }
       });
+      if (downloadStarted) {
+        console.log(`\n[INFO] Embedding model loaded successfully.`);
+      }
     }
     return this.extractor;
   }

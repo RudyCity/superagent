@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.427] - 2026-07-17
+
+### Added
+- **Download Percentage Progress**: Added inline percentage progress updates to the CLI output when downloading local embedding and local router models.
+
 ## [1.2.426] - 2026-07-17
 
 ### Changed

@@ -478,9 +478,15 @@ export async function warmUpClassifier(): Promise<void> {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
             console.log(`\n[INFO] Pre-loading/downloading local classifier model (~66MB) to cache...`);
+          } else if (data.status === "progress") {
+            const pct = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
+            process.stdout.write(`\r[INFO] Downloading classifier model: ${pct}%`);
           }
         }
       });
+      if (downloadStarted) {
+        console.log(`\n[INFO] Classifier model loaded successfully.`);
+      }
     }
   } catch {
     // Ignore warm-up failure (will retry on demand)
@@ -506,9 +512,15 @@ export async function classifyWithLLM(
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
             console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
+          } else if (data.status === "progress") {
+            const pct = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
+            process.stdout.write(`\r[INFO] Downloading classifier model: ${pct}%`);
           }
         }
       });
+      if (downloadStarted) {
+        console.log(`\n[INFO] Classifier model loaded successfully.`);
+      }
     }
 
     const prompt = `Task: ${userInput.substring(0, 400)}\nAnalysis:`;
