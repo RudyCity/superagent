@@ -47,6 +47,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-hide-timeline": "Hide or show the timeline lines connecting turns (on or off)",
   "/setting-classifier": "Enable or disable multi-category request classifier (on or off)",
   "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
+  "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
 };
 
 export function getDashboardSuggestions(originalQuery: string): string[] {
@@ -221,9 +222,13 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
       return filterSuggestions(possibilities, query);
     }
 
-
-
-
+    if (mainCommand === "/setting-advisor" || mainCommand === "/advisor") {
+      const possibilities = [
+        `${parts[0]} on`,
+        `${parts[0]} off`,
+      ];
+      return filterSuggestions(possibilities, query);
+    }
 
     if (mainCommand === "/setting-classifier" || mainCommand === "/classifier") {
       const possibilities = [

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.434] - 2026-07-17
+
+### Added
+- **Advisor Help & Suggestion Integration**: Integrated the `/setting-advisor` command description into the `/settings` help list screen, status dashboard display, and terminal/dashboard auto-completion suggestions list.
+
 ## [1.2.433] - 2026-07-17
 
 ### Added
