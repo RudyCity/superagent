@@ -3,3 +3,7 @@
 ## Response Formatting
 
 - **No markdown decoration in AI responses**: Do NOT use `**bold**`, `##` headings, `*italic*`, `__underline__`, or any other markdown formatting syntax in AI-generated responses or tool output intended for the terminal. Plain prose and single-level bullet points (`-`) are allowed. This applies to all agents (Master, Superagent, Subagent) and all user-facing text.
+
+## Mandatory Skills
+
+- **Design Tasks**: When building, designing, or refactoring user interfaces, layouts, components, or web applications, you MUST treat the hallmark skill (.agents/skills/hallmark/SKILL.md) as a mandatory skill and read its instructions using the view_file tool before proceeding.

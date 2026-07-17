@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.421] - 2026-07-17
+
+### Added
+- **Mandatory Hallmark Design Skill Rule**: Registered hallmark as a workspace-scoped mandatory skill in AGENTS.md, enforcing that the Hallmark guidelines are always read when designing or building user interfaces.
+
 ## [1.2.420] - 2026-07-17
 
 ### Added
