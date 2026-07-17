@@ -145,6 +145,8 @@ export const helpCommand: SlashCommand = {
         "              Usage: /goal <description>  (e.g. /goal implement JWT auth end-to-end)",
         "  /init     - Initialize project (Git setup, agents.md generation, system audit)",
         "  /agents   - List active subagents and defined subagent types",
+        "  /workspace - Manage project workspaces (shortcut: /w)",
+        "               Usage: /workspace [list|add <path>|use <path-or-index>]",
         "  /worktrees - Manage Git worktrees (alias: /worktree)",
         "               Usage: /worktrees [list|prune|remove <path-or-branch>]",
         "  /processes - List running background processes (shortcut: /procs)",
