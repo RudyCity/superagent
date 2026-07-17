@@ -39,14 +39,42 @@ export class RealtimeAdvisor {
     }
 
     // 2. Check for consecutively repeated identical tool calls
-    const callKeys = toolCalls.map(tc => `${tc.name}:${JSON.stringify(tc.args)}`).sort();
-    const currentCallKey = callKeys.join("|");
+    const allArePolling = toolCalls.every(tc => isPollingOrStatusCall(tc.name, tc.args));
 
-    if (currentCallKey === this.lastCallKey) {
-      this.consecutiveSameCallCount++;
-    } else {
-      this.consecutiveSameCallCount = 1;
-      this.lastCallKey = currentCallKey;
+    if (!allArePolling) {
+      const callKeys = toolCalls.map(tc => `${tc.name}:${JSON.stringify(tc.args)}`).sort();
+      const currentCallKey = callKeys.join("|");
+
+      if (currentCallKey === this.lastCallKey) {
+        this.consecutiveSameCallCount++;
+      } else {
+        this.consecutiveSameCallCount = 1;
+        this.lastCallKey = currentCallKey;
+      }
+
+      // If repeating the exact same calls
+      if (this.consecutiveSameCallCount >= 3) {
+        const toolNames = toolCalls.map(tc => tc.name).join(", ");
+        if (this.consecutiveSameCallCount >= 5) {
+          return {
+            action: "pause_execution",
+            message: `Advisor detected an infinite loop of executing the same tool calls (${toolNames}) consecutively ${this.consecutiveSameCallCount} times. Pausing execution.`,
+          };
+        }
+
+        const hasError = toolResults.some(r => r.isError);
+        if (hasError) {
+          return {
+            action: "warn_agent",
+            message: `ADVISOR WARNING: You have executed the exact same tool calls (${toolNames}) consecutively ${this.consecutiveSameCallCount} times, and they returned errors. Do not repeat the same failing actions. Change your approach or inspect your input parameters.`,
+          };
+        } else {
+          return {
+            action: "warn_agent",
+            message: `ADVISOR WARNING: You have executed the exact same tool calls (${toolNames}) consecutively ${this.consecutiveSameCallCount} times without any state changes. Check if you are stuck in a loop and try a different action.`,
+          };
+        }
+      }
     }
 
     // Track consecutive errors
@@ -55,29 +83,6 @@ export class RealtimeAdvisor {
       this.consecutiveErrorsCount += toolResults.filter(r => r.isError).length;
     } else {
       this.consecutiveErrorsCount = 0;
-    }
-
-    // If repeating the exact same calls
-    if (this.consecutiveSameCallCount >= 3) {
-      const toolNames = toolCalls.map(tc => tc.name).join(", ");
-      if (this.consecutiveSameCallCount >= 5) {
-        return {
-          action: "pause_execution",
-          message: `Advisor detected an infinite loop of executing the same tool calls (${toolNames}) consecutively ${this.consecutiveSameCallCount} times. Pausing execution.`,
-        };
-      }
-
-      if (hasError) {
-        return {
-          action: "warn_agent",
-          message: `ADVISOR WARNING: You have executed the exact same tool calls (${toolNames}) consecutively ${this.consecutiveSameCallCount} times, and they returned errors. Do not repeat the same failing actions. Change your approach or inspect your input parameters.`,
-        };
-      } else {
-        return {
-          action: "warn_agent",
-          message: `ADVISOR WARNING: You have executed the exact same tool calls (${toolNames}) consecutively ${this.consecutiveSameCallCount} times without any state changes. Check if you are stuck in a loop and try a different action.`,
-        };
-      }
     }
 
     // 3. Check for general consecutive errors threshold
@@ -97,3 +102,30 @@ export class RealtimeAdvisor {
     this.lastCallKey = "";
   }
 }
+
+function isPollingOrStatusCall(name: string, args: any): boolean {
+  const normalizedName = name.replace(/^default_api:/, "",);
+  if (normalizedName === "manage_subagents") {
+    const action = args?.action;
+    return action === "list" || action === "report" || action === "logs" || action === "violations";
+  }
+  if (normalizedName === "manage_superagents") {
+    const action = args?.action;
+    return action === "list" || action === "report" || action === "logs" || action === "violations";
+  }
+  if (normalizedName === "manage_background_process") {
+    const action = args?.action;
+    return action === "list" || action === "status" || action === "stream";
+  }
+  if (normalizedName === "view_background_processes") {
+    return true;
+  }
+  if (normalizedName === "manage_tasks" && args?.action === "list") {
+    return true;
+  }
+  if (normalizedName === "manage_task" && (args?.action === "status" || args?.action === "list")) {
+    return true;
+  }
+  return false;
+}
+

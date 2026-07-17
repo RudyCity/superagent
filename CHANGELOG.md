@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.451] - 2026-07-17
+
+### Fixed
+- **Advisor Loop Warnings**: Excluded status polling and waiting tools from triggering consecutive same call loop warnings (including `manage_subagents` for subagent status updates, `manage_superagents` for superagent status, `manage_background_process` / `view_background_processes` for background processes, `manage_tasks` for checklists, and external `manage_task` status checks). Added test coverage to prevent regressions and preserve loop state for other tool calls.
+
 ## [1.2.450] - 2026-07-17
 
 ### Added

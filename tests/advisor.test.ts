@@ -114,4 +114,44 @@ describe("Real-Time Execution Advisor", () => {
     expect(result.action).toBe("warn_agent");
     expect(result.message).toContain("5 consecutive tool execution errors");
   });
+
+  it("should not count consecutively identical polling/status tool calls as loops", () => {
+    const toolCalls: ToolCall[] = [
+      { id: "1", name: "manage_subagents", args: { action: "report", conversationIds: ["subagent-1"] } }
+    ];
+    const toolResults: ToolResult[] = [
+      { toolCallId: "1", name: "manage_subagents", result: "No report available yet." }
+    ];
+
+    for (let i = 0; i < 6; i++) {
+      const result = advisor.evaluateStep(toolCalls, toolResults);
+      expect(result.action).toBe("pass");
+    }
+  });
+
+  it("should preserve loop count state for non-polling calls when polling calls are interleaved", () => {
+    const globCalls: ToolCall[] = [{ id: "1", name: "glob", args: { pattern: "*.ts" } }];
+    const globResults: ToolResult[] = [{ toolCallId: "1", name: "glob", result: "index.ts" }];
+
+    const pollCalls: ToolCall[] = [{ id: "2", name: "manage_subagents", args: { action: "report" } }];
+    const pollResults: ToolResult[] = [{ toolCallId: "2", name: "manage_subagents", result: "No report available yet." }];
+
+    // 1st glob call
+    let result = advisor.evaluateStep(globCalls, globResults);
+    expect(result.action).toBe("pass");
+
+    // Interleaved polling call (should be ignored for loop detection)
+    result = advisor.evaluateStep(pollCalls, pollResults);
+    expect(result.action).toBe("pass");
+
+    // 2nd glob call
+    result = advisor.evaluateStep(globCalls, globResults);
+    expect(result.action).toBe("pass");
+
+    // 3rd glob call (should warn because consecutive count of glob is now 3)
+    result = advisor.evaluateStep(globCalls, globResults);
+    expect(result.action).toBe("warn_agent");
+    expect(result.message).toContain("executed the exact same tool calls");
+  });
 });
+
