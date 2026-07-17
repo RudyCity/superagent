@@ -15,6 +15,9 @@ import {
   shouldSkipPlanInjection,
   getCategoryPromptAddendum,
   meetsThreshold,
+  mapSupraTelemetryToCategory,
+  warmUpClassifier,
+  clearLocalClassifierCache,
   type RequestCategory,
   type ClassificationResult,
 } from "../src/core/requestClassifier.js";
@@ -484,6 +487,7 @@ describe("classifyHeuristic Enhancements", () => {
 describe("classifyRequest (Optimized Pipeline)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearLocalClassifierCache();
   });
 
   it("should bypass LLM and return conversation immediately for empty input", async () => {
@@ -593,4 +597,51 @@ describe("classifyRequest (Optimized Pipeline)", () => {
     expect(result.reason).toContain("Local Classifier failed");
   });
 });
+
+describe("mapSupraTelemetryToCategory", () => {
+  it("should map code: true + route: big model to complex_task", () => {
+    const result = mapSupraTelemetryToCategory("Domain: Code | Complexity: 5 | Route: big model", "question");
+    expect(result).toBe("complex_task");
+  });
+
+  it("should map code: true + route: big model with heuristic debug to debug", () => {
+    const result = mapSupraTelemetryToCategory("Domain: Code | Complexity: 5 | Route: big model", "debug");
+    expect(result).toBe("debug");
+  });
+
+  it("should map code: true + route: small model to simple_edit", () => {
+    const result = mapSupraTelemetryToCategory("Domain: Code | Complexity: 2 | Route: small model", "question");
+    expect(result).toBe("simple_edit");
+  });
+
+  it("should map code: true + route: small model with heuristic command to command", () => {
+    const result = mapSupraTelemetryToCategory("Domain: Code | Complexity: 2 | Route: small model", "command");
+    expect(result).toBe("command");
+  });
+
+  it("should map high complexity non-code to research", () => {
+    const result = mapSupraTelemetryToCategory("Domain: research | Complexity: 3 | Route: big model", "question");
+    expect(result).toBe("research");
+  });
+
+  it("should preserve conversation category if matched by heuristic", () => {
+    const result = mapSupraTelemetryToCategory("Domain: Chat | Complexity: 1 | Route: small model", "conversation");
+    expect(result).toBe("conversation");
+  });
+
+  it("should default to question for low complexity read-only queries", () => {
+    const result = mapSupraTelemetryToCategory("Domain: general | Complexity: 1 | Route: small model", "question");
+    expect(result).toBe("question");
+  });
+});
+
+describe("warmUpClassifier", () => {
+  it("should call pipeline pre-warmup if not disabled", async () => {
+    const { pipeline } = await import("@huggingface/transformers");
+    await warmUpClassifier();
+    expect(pipeline).toHaveBeenCalledWith("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", expect.any(Object));
+  });
+});
+
+
 

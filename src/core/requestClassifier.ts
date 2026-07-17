@@ -11,6 +11,7 @@
  */
 
 import { Tool } from "./tools/types.js";
+import { getSettings } from "./config/jsonConfig.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -406,6 +407,14 @@ export function classifyHeuristic(
 let localClassifierPipeline: any = null;
 
 /**
+ * Clear the local classifier cache. Used for testing purposes.
+ */
+export function clearLocalClassifierCache(): void {
+  localClassifierPipeline = null;
+}
+
+
+/**
  * Maps the structured output of Supra-Router-51M telemetry into Superagent's RequestCategory.
  */
 export function mapSupraTelemetryToCategory(
@@ -454,6 +463,31 @@ export function mapSupraTelemetryToCategory(
 }
 
 /**
+ * Warm up/pre-load the local classifier model in the background.
+ * Call this during app startup to eliminate first-use classification delay.
+ */
+export async function warmUpClassifier(): Promise<void> {
+  const settings = getSettings();
+  if (settings.classifierEnabled === false) return;
+  try {
+    const { pipeline } = await import("@huggingface/transformers");
+    if (!localClassifierPipeline) {
+      let downloadStarted = false;
+      localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
+        progress_callback: (data: any) => {
+          if (data.status === "downloading" && !downloadStarted) {
+            downloadStarted = true;
+            console.log(`\n[INFO] Pre-loading/downloading local classifier model (~66MB) to cache...`);
+          }
+        }
+      });
+    }
+  } catch {
+    // Ignore warm-up failure (will retry on demand)
+  }
+}
+
+/**
  * Phase 2: Local 51M Causal LM classification. Uses Supra-Router-51M-ONNX via transformers.js.
  * Only called when heuristic confidence is below threshold.
  */
@@ -466,10 +500,12 @@ export async function classifyWithLLM(
     const { pipeline } = await import("@huggingface/transformers");
 
     if (!localClassifierPipeline) {
+      let downloadStarted = false;
       localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
         progress_callback: (data: any) => {
-          if (data.status === "downloading" && data.progress === 0) {
-            console.log(`[INFO] Downloading local classifier model (${data.file})...`);
+          if (data.status === "downloading" && !downloadStarted) {
+            downloadStarted = true;
+            console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
           }
         }
       });

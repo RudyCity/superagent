@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.423] - 2026-07-17
+
+### Improved
+- **Classifier Background Pre-Warming**: Added `warmUpClassifier()` to trigger asynchronous pre-loading of the local `Supra-Router-51M-ONNX` weights during Agent class construction. This eliminates the warm-up latency on the user's first ambiguous query.
+- **Optimized Download Logs**: Cleaned up the progress callback handler to print a single informational log when downloading the classifier model rather than spamming the CLI.
+- **Test Isolation**: Introduced `clearLocalClassifierCache()` to reset global pipeline state between vitest test suites.
+
 ## [1.2.422] - 2026-07-17
 
 ### Improved
