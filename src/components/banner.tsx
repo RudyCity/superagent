@@ -17,6 +17,8 @@ try {
   // fallback
 }
 
+import { getSettings } from "../core/config.js";
+
 function isGitRepo(): boolean {
   try {
     execSync("git rev-parse --is-inside-work-tree", {
@@ -31,6 +33,16 @@ function isGitRepo(): boolean {
 
 export function Banner() {
   const hasGit = isGitRepo();
+
+  let rmemoryActive = false;
+  let classifierActive = false;
+  try {
+    const settings = getSettings();
+    rmemoryActive = !!settings.enableRmemory;
+    classifierActive = settings.classifierEnabled !== false;
+  } catch {
+    // Ignore config read failures
+  }
 
   return (
     <Box flexDirection="column" paddingX={1} marginY={1}>
@@ -48,6 +60,26 @@ export function Banner() {
             <Text bold color="cyan">/help</Text>
             <Text dimColor> to explore commands</Text>
           </Box>
+        </Box>
+      </Box>
+
+      <Box flexDirection="column" marginTop={1} paddingX={1} borderStyle="single" borderColor="gray">
+        <Box marginBottom={0.5}>
+          <Text bold color="cyan">⚙ SYSTEM SERVICES STATUS</Text>
+        </Box>
+        <Box flexDirection="row">
+          <Text color="gray">RMemory Gateway: </Text>
+          <Text color={rmemoryActive ? "green" : "gray"}>
+            {rmemoryActive ? "● ONLINE" : "○ OFFLINE"}
+          </Text>
+          <Text color="gray"> (Local Embeddings)</Text>
+        </Box>
+        <Box flexDirection="row">
+          <Text color="gray">Local Router:    </Text>
+          <Text color={classifierActive ? "green" : "gray"}>
+            {classifierActive ? "● ONLINE" : "○ OFFLINE"}
+          </Text>
+          <Text color="gray"> (Supra-Router-51M-ONNX)</Text>
         </Box>
       </Box>
 

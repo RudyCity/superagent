@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.424] - 2026-07-17
+
+### Added
+- **Startup System Services Status Panel**: Integrated a clean Cyberpunk-themed status panel inside the welcome `Banner` component. This panel queries current configuration settings at startup and visually reports whether local services are active, specifically indicating the status of **RMemory Gateway (Local Embeddings)** and **Local Router (Supra-Router-51M-ONNX)**.
+
 ## [1.2.423] - 2026-07-17
 
 ### Improved
