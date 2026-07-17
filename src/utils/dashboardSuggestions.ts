@@ -242,6 +242,33 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
       return filterSuggestions(possibilities, query);
     }
 
+    if (mainCommand === "/memory") {
+      const possibilities = [
+        "/memory status",
+        "/memory search",
+        "/memory add",
+        "/memory delete",
+        "/memory list-scenes",
+        "/memory read-scene",
+        "/memory read-persona",
+        "/memory help"
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/setting-rmemory") {
+      const possibilities = [
+        "/setting-rmemory on",
+        "/setting-rmemory off",
+        "/setting-rmemory provider",
+        "/setting-rmemory provider local",
+        "/setting-rmemory provider openai",
+        "/setting-rmemory model",
+        "/setting-rmemory dimensions"
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
     if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {
       const subSuggestions = [`${parts[0]} init`, `${parts[0]} dev`, `${parts[0]} list`, `${parts[0]} active`];
       if (parts.length === 1) {
