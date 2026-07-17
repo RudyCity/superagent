@@ -28,6 +28,7 @@ import { getRMemoryClient, getRMemorySessionKey, isRmemoryActive } from "./rmemo
 import { AsyncLocalStorage } from "async_hooks";
 import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./taskChecklist.js";
 import { createCheckpoint } from "./checkpoints.js";
+import { RealtimeAdvisor } from "./advisor.js";
 
 export function checkPlanStructure(content: string): boolean {
   const hasTitle = /^#\s+.+/m.test(content);
@@ -332,6 +333,7 @@ export class Agent {
   /** Keys of skills that were successfully preloaded into guidelinesText */
   private preloadedSkillKeys: Set<string> = new Set();
   private gitStartSnapshot: Record<string, { added: number; deleted: number }> | null = null;
+  private advisor = new RealtimeAdvisor();
 
   public approvePlan(): void {
     this.planState = "APPROVED";
@@ -1142,6 +1144,7 @@ If none of the options are suitable, still pick the closest one.`;
   }
 
   private async runAgentLoop(): Promise<void> {
+    this.advisor.reset();
     const signal = this.abortController?.signal;
     const isGoalMode = !!this.goalMode;
     const defaultMax = getSettings().maxIterations === 0 ? Infinity : (getSettings().maxIterations || 50);
@@ -3011,6 +3014,31 @@ for (const tc of toolCalls) {
           timestamp: Date.now(),
         });
         await this.saveHistory();
+
+        // ── Real-Time Advisor evaluation ────────────────────────────────────
+        const advisorResult = this.advisor.evaluateStep(toolCalls, toolResults);
+        if (advisorResult.action === "warn_agent" && advisorResult.message) {
+          this.onEvent({
+            type: "text",
+            content: `\n⚠️ [Advisor] Warning: ${advisorResult.message}\n`,
+          });
+          this.conversation.addMessage({
+            role: "user",
+            content: advisorResult.message,
+            timestamp: Date.now(),
+          });
+          await this.saveHistory();
+        } else if (advisorResult.action === "pause_execution" && advisorResult.message) {
+          this.onEvent({
+            type: "text",
+            content: `\n❌ [Advisor] Critical: ${advisorResult.message}\n`,
+          });
+          this.onEvent({
+            type: "error",
+            message: advisorResult.message,
+          });
+          break;
+        }
 
         // ── Post-iteration compaction check ──────────────────────────────────
         // Tool results can be large (file reads, command outputs, etc).

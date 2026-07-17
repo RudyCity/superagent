@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.431] - 2026-07-17
+
+### Added
+- **Real-Time Execution Advisor**: Added a real-time advisor subsystem that monitors tool execution loops, repeated errors, and hallucinated tools across all agent tiers (master agent, superagents, subagents, and single agent). It raises helpful guidance warnings or pauses execution when stuck.
+
 ## [1.2.430] - 2026-07-17
 
 ### Changed
