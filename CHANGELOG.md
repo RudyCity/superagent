@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.408] - 2026-07-17
+
+### Fixed
+- **RMemory Sync Batching and Truncation**: Implemented batch processing (max 8 messages at a time) and text truncation (max 8,000 characters per message/pin) during conversation and pinned knowledge indexing in the RMemory utility. This prevents ONNX Runtime memory allocation failures (OOM) and extremely high CPU consumption on startup when syncing long conversation histories.
+
 ## [1.2.407] - 2026-07-17
 
 ### Added

@@ -89,14 +89,26 @@ export class MemoryClient {
       };
     }
 
-    const texts = options.messages.map(msg => msg.content);
-    let embeddings: number[][];
-    if (rMemory.provider && typeof rMemory.provider.embedTexts === "function") {
-      embeddings = await rMemory.provider.embedTexts(texts, "passage");
-    } else {
-      embeddings = await Promise.all(
-        texts.map(text => rMemory.provider.embedText(text, "passage"))
-      );
+    // Pre-process messages to truncate excessively long content and avoid OOM / ONNX allocation failures on CPU
+    const texts = options.messages.map(msg => {
+      const content = msg.content || "";
+      return content.length > 8000 ? content.substring(0, 8000) + "... [truncated]" : content;
+    });
+
+    // Chunk text embedding generation to keep concurrent batch size small (max 8)
+    const BATCH_SIZE = 8;
+    const embeddings: number[][] = [];
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batch = texts.slice(i, i + BATCH_SIZE);
+      let batchEmbeddings: number[][];
+      if (rMemory.provider && typeof rMemory.provider.embedTexts === "function") {
+        batchEmbeddings = await rMemory.provider.embedTexts(batch, "passage");
+      } else {
+        batchEmbeddings = await Promise.all(
+          batch.map(text => rMemory.provider.embedText(text, "passage"))
+        );
+      }
+      embeddings.push(...batchEmbeddings);
     }
 
     for (let i = 0; i < options.messages.length; i++) {
@@ -104,7 +116,7 @@ export class MemoryClient {
       const id = Math.random().toString(36).substring(7);
       await rMemory.addMemory({
         id,
-        content: msg.content,
+        content: texts[i],
         embedding: embeddings[i],
         metadata: {
           session: options.session_id,
@@ -178,9 +190,14 @@ export class MemoryClient {
   }): Promise<{ id: string; updated_at: string }> {
     const rMemory = await getRMemory();
     
+    const content = options.content || "";
+    const truncatedContent = content.length > 8000
+      ? content.substring(0, 8000) + "... [truncated]"
+      : content;
+
     await rMemory.addMemory({
       id: options.id,
-      content: options.content,
+      content: truncatedContent,
       metadata: {
         type: "memory",
       },
