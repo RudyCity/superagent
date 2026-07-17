@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.456] - 2026-07-17
+
+### Changed
+- **Chrome Extension Redesign**: Redesigned the Chrome extension's sidepanel UI to adhere to a clean, premium Material-inspired Design style. Added the "Outfit" Google Font, revised theme color variables for cool grey/white light mode and dark charcoal/grey backgrounds with Material blue accents, and configured premium component styling for buttons, inputs, checkboxes, selects, and mode cards with soft box-shadows and 8-16px rounded corners.
+
 ## [1.2.455] - 2026-07-17
 
 ### Fixed

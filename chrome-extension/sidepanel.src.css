@@ -2,12 +2,12 @@
 
 @theme {
   /* Material-inspired Design Colors mapped as Tailwind utility tokens (Default: Dark Mode) */
-  --color-vscode-editor: #131314;       /* Clean dark background */
+  --color-vscode-editor: #0f0f0f;       /* Clean dark charcoal background */
   --color-vscode-sidebar: #1e1f20;      /* Clean dark sidebar */
   --color-vscode-activitybar: #1e1f20;  /* Clean dark activitybar */
-  --color-vscode-inner: #2b2c2e;        /* Input background / inner cards */
+  --color-vscode-inner: #2d2f31;        /* Input background / inner cards */
   --color-vscode-hover: #3c3d3f;        /* Menu hover states */
-  --color-vscode-dim: #444746;          /* Borders */
+  --color-vscode-dim: #2d2f31;          /* Borders */
   --color-vscode-bright: #a8c7fa;       /* Material Blue accent */
   --color-vscode-blue: #a8c7fa;         /* Primary buttons */
   --color-vscode-blue-hover: #c2e7ff;   /* Primary button hover */
@@ -28,10 +28,10 @@
   --font-mono: 'JetBrains Mono', 'Roboto Mono', 'Consolas', monospace;
 
   /* Material-style border radiuses for Tailwind rounded- utility classes */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
 }
 
 :root {
@@ -56,14 +56,14 @@
   --color-red: var(--color-red-error);
   --color-red-light: var(--color-red-error-light);
   
-  --shadow-subtle: 0 1px 3px rgba(0,0,0,0.3);
-  --shadow-elevation: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-subtle: 0 1px 3px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.24);
+  --shadow-elevation: 0 4px 6px rgba(0,0,0,0.16), 0 1px 10px rgba(0,0,0,0.12);
   --font-sans: 'Outfit', 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Roboto Mono', 'Consolas', monospace;
-  --border-radius-sm: 4px;
-  --border-radius-md: 8px;
-  --border-radius-lg: 12px;
-  --border-radius-xl: 16px;
+  --border-radius-sm: 6px;
+  --border-radius-md: 10px;
+  --border-radius-lg: 14px;
+  --border-radius-xl: 18px;
   --border-radius-pill: 100px;
 }
 
@@ -71,29 +71,103 @@
   :root {
     --bg-vscode-editor: #ffffff;
     --bg-vscode-sidebar: #f0f4f9;       /* Material-style sidebar */
-    --bg-vscode-activitybar: #e9eef6;
-    --bg-vscode-inner: #dfe3eb;
-    --bg-vscode-hover: #d3d7df;
-    --border-vscode-dim: #dadce0;
+    --bg-vscode-activitybar: #f8f9fa;   /* Clean light grey background */
+    --bg-vscode-inner: #f0f4f9;         /* Cool light grey/blue */
+    --bg-vscode-hover: #e3e6eb;         /* Hover state */
+    --border-vscode-dim: #e0e3e9;       /* Cool grey borders */
     --border-vscode-bright: #1a73e8;    /* Material Blue light */
-    --accent-vscode-blue: #1a73e8;
-    --accent-vscode-blue-hover: #1557b0;
+    --accent-vscode-blue: #1a73e8;      /* Primary button */
+    --accent-vscode-blue-hover: #0b57d0; /* Darker Material Blue hover */
     --accent-vscode-blue-light: rgba(26, 115, 232, 0.08);
-    --text-vscode-primary: #3c4043;
-    --text-vscode-muted: #5f6368;
-    --text-vscode-light: #1f1f1f;
-    --color-green: #188038;
-    --color-green-light: rgba(24, 128, 56, 0.08);
-    --color-amber: #f9ab00;
-    --color-amber-light: rgba(249, 171, 0, 0.08);
-    --color-red: #d93025;
-    --color-red-light: rgba(217, 48, 37, 0.08);
-    --shadow-subtle: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15);
-    --shadow-elevation: 0 4px 8px 3px rgba(60,64,67,0.15);
+    --text-vscode-primary: #1f1f1f;     /* Clean dark text */
+    --text-vscode-muted: #5f6368;       /* Clean muted text */
+    --text-vscode-light: #000000;       /* High-contrast text */
+    --color-green: #137333;
+    --color-green-light: rgba(19, 115, 51, 0.08);
+    --color-amber: #b06000;
+    --color-amber-light: rgba(176, 96, 0, 0.08);
+    --color-red: #c5221f;
+    --color-red-light: rgba(197, 34, 31, 0.08);
+    --shadow-subtle: 0 1px 3px 0 rgba(60,64,67,0.12), 0 1px 2px 0 rgba(60,64,67,0.24);
+    --shadow-elevation: 0 4px 6px 0 rgba(60,64,67,0.16), 0 1px 10px 0 rgba(60,64,67,0.12);
   }
 }
 
-/* Custom Checkbox (Fallback custom rules for checkmarks) */
+/* Premium Button Overrides */
+.btn {
+  border-radius: var(--border-radius-md) !important;
+  font-family: var(--font-sans);
+  box-shadow: var(--shadow-subtle);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background-color: var(--accent-vscode-blue) !important;
+  color: var(--bg-vscode-editor) !important;
+  font-weight: 500;
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-vscode-blue-hover) !important;
+  box-shadow: var(--shadow-elevation);
+}
+
+.btn-secondary {
+  background-color: var(--bg-vscode-inner) !important;
+  color: var(--text-vscode-primary) !important;
+  border: 1px solid var(--border-vscode-dim) !important;
+}
+
+.btn-secondary:hover {
+  background-color: var(--bg-vscode-hover) !important;
+  border-color: var(--text-vscode-muted) !important;
+}
+
+.btn-danger {
+  background-color: var(--color-red) !important;
+  color: #ffffff !important;
+}
+
+.btn-danger:hover {
+  filter: brightness(0.95);
+  box-shadow: var(--shadow-elevation);
+}
+
+/* Inputs, Textareas and Dropdowns Centered Design Rules */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+textarea,
+select {
+  border-radius: var(--border-radius-md) !important;
+  border: 1px solid var(--border-vscode-dim) !important;
+  background-color: var(--bg-vscode-inner) !important;
+  color: var(--text-vscode-primary) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-family: inherit;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="search"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--border-vscode-bright) !important;
+  background-color: var(--bg-vscode-editor) !important;
+  box-shadow: 0 0 0 1px var(--border-vscode-bright) !important;
+}
+
+/* Checkboxes and Radios */
+.checkmark {
+  border-radius: 4px !important;
+}
+
 .checkbox-container input:checked + .checkmark {
   background: var(--accent-vscode-blue);
   border-color: var(--border-vscode-bright);
@@ -101,19 +175,30 @@
 .checkbox-container input:checked + .checkmark::after {
   content: "";
   position: absolute;
-  left: 4px;
-  top: 1px;
+  left: 4.5px;
+  top: 1.5px;
   width: 3px;
-  height: 7px;
-  border: solid #ffffff;
+  height: 6px;
+  border: solid var(--bg-vscode-editor);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
 
-/* Radio checkmark override for mode cards */
+/* Mode options */
+.mode-card {
+  border-radius: var(--border-radius-lg) !important;
+  box-shadow: var(--shadow-subtle);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.mode-card:hover {
+  border-color: var(--text-vscode-muted);
+  box-shadow: var(--shadow-elevation);
+}
+
 .mode-option input[type="radio"]:checked + .mode-card {
-  border-color: var(--border-vscode-bright);
-  background: rgba(0, 127, 212, 0.1);
+  border-color: var(--border-vscode-bright) !important;
+  background: var(--accent-vscode-blue-light) !important;
 }
 
 /* Panels */
