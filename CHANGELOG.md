@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.415] - 2026-07-17
+
+### Improved
+- **Skills Index Hash Persistence**: Optimized `get_skills` semantic search by persisting the computed skills list hash to disk (`~/.superagent-r/rmemory/skills.hash`). This prevents re-indexing (re-embedding all 50+ local skill descriptions) on every new CLI invocation/session if the installed skills haven't changed, reducing subsequent cold starts to < 10ms.
+
 ## [1.2.414] - 2026-07-17
 
 ### Improved

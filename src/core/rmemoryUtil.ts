@@ -437,6 +437,18 @@ function computeSkillsHash(skills: Array<{ name: string; description: string }>)
 
 async function indexSkillsIfNeeded(skills: Array<{ name: string; description: string; path: string }>): Promise<void> {
   const newHash = computeSkillsHash(skills);
+
+  if (!skillsIndexHash) {
+    const hashPath = path.join(skillsDataDir, "skills.hash");
+    if (fs.existsSync(hashPath)) {
+      try {
+        skillsIndexHash = fs.readFileSync(hashPath, "utf-8").trim();
+      } catch {
+        // ignore read errors
+      }
+    }
+  }
+
   if (newHash === skillsIndexHash) return; // nothing changed
 
   const index = await getSkillsIndex();
@@ -475,6 +487,12 @@ async function indexSkillsIfNeeded(skills: Array<{ name: string; description: st
   }
 
   skillsIndexHash = newHash;
+  try {
+    const hashPath = path.join(skillsDataDir, "skills.hash");
+    fs.writeFileSync(hashPath, newHash, "utf-8");
+  } catch {
+    // ignore write errors
+  }
 }
 
 export interface LoadedSkillRef {
