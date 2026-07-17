@@ -477,7 +477,7 @@ export async function isRmemoryActive(forceRefresh = false): Promise<boolean> {
 
 // ---------------------------------------------------------------------------
 // Skill Semantic Search — standalone RMemory index for get_skills
-// Uses the same local MiniLM model, but a separate DB (skills.db) so it never
+// Uses the same local embedding model, but a separate DB (skills.db) so it never
 // pollutes conversation memory. Active regardless of enableRmemory setting.
 // ---------------------------------------------------------------------------
 
@@ -582,7 +582,7 @@ export interface LoadedSkillRef {
 }
 
 /**
- * Semantic skill search using local MiniLM embeddings via RMemory.
+ * Semantic skill search using local embeddings via RMemory.
  * Falls back gracefully (returns []) on any error so callers can use TF-IDF fallback.
  */
 export async function searchSkillsByQuery(
