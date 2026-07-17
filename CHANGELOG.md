@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.409] - 2026-07-17
+
+### Optimized
+- **Low-Spec Local Embedding Optimization**: Implemented `OptimizedLocalTextEmbeddingProvider` utilizing `Xenova/all-MiniLM-L6-v2` as the default local embedding model (reducing layer count from 12 to 6, cutting CPU overhead in half). Integrated thread limiting for ONNX Runtime (`intraOpNumThreads: 2`, `interOpNumThreads: 1`) to ensure local embedding generation never consumes 100% CPU on multi-core systems, keeping the terminal CLI highly responsive during background indexing.
+
 ## [1.2.408] - 2026-07-17
 
 ### Fixed

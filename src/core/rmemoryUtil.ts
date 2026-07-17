@@ -7,6 +7,66 @@ import os from "os";
 
 const globalDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
 
+class OptimizedLocalTextEmbeddingProvider {
+  readonly dimensions = 384;
+  private modelName: string;
+  private device: string;
+  private dtype: string;
+  private extractor: any = null;
+
+  constructor(options: { modelName?: string; device?: string; dtype?: string } = {}) {
+    this.modelName = options.modelName || "Xenova/all-MiniLM-L6-v2";
+    this.device = options.device || "cpu";
+    this.dtype = options.dtype || "q8";
+  }
+
+  private async getExtractor() {
+    if (!this.extractor) {
+      const { pipeline } = await import("@huggingface/transformers");
+      this.extractor = await pipeline("feature-extraction", this.modelName, {
+        device: this.device as any,
+        dtype: this.dtype as any,
+        session_options: {
+          intraOpNumThreads: 2,
+          interOpNumThreads: 1,
+        },
+      });
+    }
+    return this.extractor;
+  }
+
+  async embedText(text: string): Promise<number[]> {
+    const extractor = await this.getExtractor();
+    const output = await extractor(text, {
+      pooling: "mean",
+      normalize: true,
+    });
+    return Array.from(output.data);
+  }
+
+  async embedTexts(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    const extractor = await this.getExtractor();
+    const output = await extractor(texts, {
+      pooling: "mean",
+      normalize: true,
+    });
+    const dims = this.dimensions;
+    const data = output.data;
+    const results: number[][] = [];
+    for (let i = 0; i < texts.length; i++) {
+      const start = i * dims;
+      const end = start + dims;
+      results.push(Array.from(data.subarray(start, end)));
+    }
+    return results;
+  }
+
+  async embedImage(image: string | Buffer | Uint8Array): Promise<number[]> {
+    throw new Error("LocalTextEmbeddingProvider does not support image embeddings.");
+  }
+}
+
 let rMemoryInstance: any = null;
 
 async function getRMemory(): Promise<any> {
@@ -16,7 +76,7 @@ async function getRMemory(): Promise<any> {
     }
     const dbPath = path.join(globalDataDir, "vectors.db");
     
-    const { RMemory, LocalTextEmbeddingProvider, OpenAIEmbeddingProvider } = await import("r-memory");
+    const { RMemory, OpenAIEmbeddingProvider } = await import("r-memory");
     const settings = getSettings();
     
     let provider;
@@ -40,7 +100,8 @@ async function getRMemory(): Promise<any> {
         dimensions: settings.rmemoryEmbeddingDimensions || 1536,
       });
     } else {
-      provider = new LocalTextEmbeddingProvider({
+      provider = new OptimizedLocalTextEmbeddingProvider({
+        modelName: "Xenova/all-MiniLM-L6-v2",
         dtype: "q8",
         device: "cpu",
       });
