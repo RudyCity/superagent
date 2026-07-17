@@ -106,23 +106,25 @@ function countKeywordMatches(
 const CONVERSATION_EXACT: ReadonlySet<string> = new Set([
   // English affirmations / short replies
   "ok", "okay", "yes", "no", "y", "n",
-  "proceed", "continue", "go", "go ahead", "sure", "yep", "yup", "nah", "nope",
+  "proceed", "continue", "go", "sure", "yep", "yup", "nah", "nope",
   "thanks", "thank you", "thx",
   "good", "great", "nice", "cool", "awesome", "perfect", "excellent",
   "done", "got it", "understood", "noted", "got",
   "hi", "hello", "hey",
   "next", "skip", "pass",
   // Indonesian affirmations / acknowledgments
-  "oke", "iya", "ya", "sip", "siap",
+  // Note: "ya" intentionally omitted — too ambiguous (variable name, Python keyword,
+  // yes-answer to agent confirmation that should still route through the main loop).
+  "oke", "iya", "sip", "siap",
   "lanjut", "lanjutkan",
-  "mantap", "mantul", "keren", "bagus", "oke",
+  "mantap", "mantul", "keren", "bagus",
   "gas", "gass", "gassss",
   "ngerti", "paham", "mengerti",
   "halo", "hai",
-  "oke deh", "oke dong", "yaudah", "ya udah", "udah", "sudah",
+  "yaudah", "udah", "sudah",
   "terima kasih", "makasih", "trims",
   "benar", "betul", "tepat",
-  "setuju", "oke setuju",
+  "setuju",
 ]);
 
 /** Phrase patterns that strongly indicate conversation (matched as substring) */

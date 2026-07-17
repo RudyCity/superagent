@@ -3137,29 +3137,64 @@ for (const tc of toolCalls) {
             : "You are a helpful AI coding assistant. The user sent a short conversational message. Respond naturally and concisely.";
 
           const startTime = Date.now();
-          const result = streamText({
-            model: modelInstance,
-            system: convSystemPrompt,
-            messages: coreMessages,
-            abortSignal: signal,
-          });
-
+          const useStreaming = !this.config.disableStreaming;
           let textContent = "";
-          for await (const delta of result.fullStream) {
-            if (signal?.aborted) {
-              const err = new Error("AbortError");
-              err.name = "AbortError";
-              throw err;
-            }
-            if (delta.type === "text-delta") {
-              textContent += delta.textDelta;
-              this.onEvent({ type: "text", content: delta.textDelta });
-            }
-          }
 
-          // Emit token usage
-          try {
-            const usage = await result.usage;
+          if (useStreaming) {
+            const result = streamText({
+              model: modelInstance,
+              system: convSystemPrompt,
+              messages: coreMessages,
+              abortSignal: signal,
+            });
+
+            for await (const delta of result.fullStream) {
+              if (signal?.aborted) {
+                const err = new Error("AbortError");
+                err.name = "AbortError";
+                throw err;
+              }
+              if (delta.type === "text-delta") {
+                textContent += delta.textDelta;
+                this.onEvent({ type: "text", content: delta.textDelta });
+              }
+            }
+
+            // Emit token usage (streaming path)
+            try {
+              const usage = await result.usage;
+              if (usage) {
+                const durationMs = Date.now() - startTime;
+                if (durationMs > 0 && usage.completionTokens > 0) {
+                  this.lastSpeed = usage.completionTokens / (durationMs / 1000);
+                }
+                this.onEvent({
+                  type: "token_usage",
+                  promptTokens: usage.promptTokens || 0,
+                  completionTokens: usage.completionTokens || 0,
+                  durationMs,
+                });
+                try {
+                  const { addMasterTokens } = await import("./tools/state.js");
+                  addMasterTokens(usage.promptTokens || 0, usage.completionTokens || 0);
+                } catch { /* non-critical */ }
+              }
+            } catch { /* non-critical */ }
+          } else {
+            // disableStreaming=true: use generateText to match main agent loop behavior
+            const result = await generateText({
+              model: modelInstance,
+              system: convSystemPrompt,
+              messages: coreMessages,
+              abortSignal: signal,
+            });
+            textContent = result.text || "";
+            if (textContent) {
+              this.onEvent({ type: "text", content: textContent });
+            }
+
+            // Emit token usage (non-streaming path)
+            const usage = result.usage;
             if (usage) {
               const durationMs = Date.now() - startTime;
               if (durationMs > 0 && usage.completionTokens > 0) {
@@ -3176,7 +3211,7 @@ for (const tc of toolCalls) {
                 addMasterTokens(usage.promptTokens || 0, usage.completionTokens || 0);
               } catch { /* non-critical */ }
             }
-          } catch { /* non-critical */ }
+          }
 
           // Persist assistant reply
           if (textContent.trim()) {

@@ -77,7 +77,8 @@ describe("Agent - Planning Nudge Skip on Conversation and Question", () => {
     agent.tier = "master";
     agent.planState = "APPROVED"; // Simple task or conversation
 
-    // Explicitly set classification to conversation/high — triggers fast-path
+    // Explicitly set classification to conversation/high — triggers fast-path.
+    // Config has disableStreaming:true so fast-path will use generateText.
     agent.currentClassification = {
       category: "conversation",
       confidence: "high",
@@ -86,14 +87,20 @@ describe("Agent - Planning Nudge Skip on Conversation and Question", () => {
       classificationTokens: 0,
     };
 
+    // Provide mock response for the fast-path generateText call
+    vi.mocked(generateText).mockResolvedValue({
+      text: "Hello! How can I help you?",
+      usage: { promptTokens: 5, completionTokens: 5, totalTokens: 10 },
+    } as any);
+
     await agent.sendMessage("hai");
 
-    // Fast-path uses streamText, NOT generateText
+    // Config has disableStreaming=true → fast-path uses generateText, NOT streamText
+    expect(generateText).toHaveBeenCalledTimes(1);
     const { streamText } = await import("ai");
-    expect(streamText).toHaveBeenCalledTimes(1);
-    expect(generateText).not.toHaveBeenCalled();
+    expect(streamText).not.toHaveBeenCalled();
 
-    // Verify messages in history does not contain the system nudge
+    // Verify no planning nudge in history
     const messages = agent.getConversationMessages();
     const sysNudgeMsg = messages.find(
       (m) => typeof m.content === "string" && m.content.includes("[SYS] Continue")
