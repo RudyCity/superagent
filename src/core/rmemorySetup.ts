@@ -64,10 +64,37 @@ export function spawnRmemoryGateway(options: {
 export async function runRmemorySetup(): Promise<void> {
   const { getSettings } = await import("./config.js");
   if (getSettings().enableRmemory) {
-    import("./historySearch.js")
-      .then(({ syncAllHistoryToRMemory }) => {
-        syncAllHistoryToRMemory().catch(() => {});
-      })
-      .catch(() => {});
+    try {
+      const isTsx = __filename.endsWith(".ts") || __filename.includes("src");
+      const entryFile = isTsx
+        ? path.join(PROJECT_ROOT, "src", "cli.tsx")
+        : path.join(PROJECT_ROOT, "dist", "cli.js");
+
+      const args = isTsx
+        ? ["--import", "tsx", entryFile, "--sync-history-only"]
+        : [entryFile, "--sync-history-only"];
+
+      const logDir = path.join(os.homedir(), ".superagent-r", "logs");
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+      const outLog = fs.openSync(path.join(logDir, "rmemory-sync.log"), "a");
+      const errLog = fs.openSync(path.join(logDir, "rmemory-sync.err"), "a");
+
+      const child = spawn(process.execPath, args, {
+        cwd: PROJECT_ROOT,
+        detached: true,
+        shell: false,
+        windowsHide: true,
+        stdio: ["ignore", outLog, errLog],
+        env: {
+          ...process.env,
+        },
+      });
+      child.unref();
+    } catch (err) {
+      console.error("Failed to spawn background history sync process:", err);
+    }
   }
 }
+

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.406] - 2026-07-17
+
+### Fixed
+- **CLI Startup Hang**: Resolved a major issue where the terminal UI would freeze and become unresponsive to keyboard inputs on startup when RMemory is enabled. Moving the CPU-intensive history search syncing process (`syncAllHistoryToRMemory`) to a detached background child process prevents it from blocking the main process event loop.
+
 ## [1.2.405] - 2026-07-17
 
 ### Added

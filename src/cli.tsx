@@ -1,5 +1,15 @@
 #!/usr/bin/env node
 
+if (process.argv.includes("--sync-history-only")) {
+  try {
+    const { syncAllHistoryToRMemory } = await import("./core/historySearch.js");
+    await syncAllHistoryToRMemory();
+  } catch (err) {
+    console.error("History sync background process failed:", err);
+  }
+  process.exit(0);
+}
+
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.log(`
 Usage: superagent [options] [prompt]
