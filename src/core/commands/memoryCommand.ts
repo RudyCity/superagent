@@ -219,7 +219,7 @@ export const memoryCommand: SlashCommand = {
         await ctx.agent.saveHistory();
         ctx.addLine({
           type: "system",
-          content: "✓ Synchronization complete.",
+          content: "Synchronization complete.",
           timestamp: Date.now(),
         });
       } catch (err: any) {

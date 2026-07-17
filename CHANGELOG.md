@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.430] - 2026-07-17
+
+### Changed
+- **Simplify /memory sync output**: Removed the checkmark icon (`✓`) from the synchronization success message.
+
 ## [1.2.429] - 2026-07-17
 
 ### Optimized
