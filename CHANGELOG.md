@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.419] - 2026-07-17
+
+### Added
+- **Okapi BM25 Unit Tests**: Added unit tests to `tests/historySearch.test.ts` to directly verify term frequency saturation, document length normalization, IDF weighting for rare terms, and subsequence fuzzy penalties.
+
 ## [1.2.418] - 2026-07-17
 
 ### Improved

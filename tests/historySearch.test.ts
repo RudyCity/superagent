@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { fuzzyScore, searchHistory, clearSemanticSearchCache } from "../src/core/historySearch.js";
+import { fuzzyScore, searchHistory, clearSemanticSearchCache, computeBm25FuzzyScore } from "../src/core/historySearch.js";
 import { searchHistoryTool } from "../src/core/tools/otherTools.js";
 import { agentLocalStorage } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
@@ -68,6 +68,48 @@ describe("historySearch", () => {
     it("should fuzzy score character subsequences", () => {
       const score = fuzzyScore("refactor background task", "rfctr bckgrnd");
       expect(score).toBeGreaterThan(0.4);
+    });
+  });
+
+  describe("computeBm25FuzzyScore", () => {
+    const docFreqs = { react: 1, vue: 2 };
+    const numDocs = 3;
+
+    it("should award higher score to rare terms (higher IDF)", () => {
+      // "react" is rarer (df=1) than "vue" (df=2), so its IDF is higher
+      const scoreReact = computeBm25FuzzyScore("react framework", ["react"], docFreqs, numDocs, 10, 10);
+      const scoreVue = computeBm25FuzzyScore("vue framework", ["vue"], docFreqs, numDocs, 10, 10);
+      expect(scoreReact).toBeGreaterThan(scoreVue);
+    });
+
+    it("should saturate term frequency score growth", () => {
+      // Document 1 mentions "react" once
+      const scoreOnce = computeBm25FuzzyScore("react", ["react"], docFreqs, numDocs, 10, 10);
+      // Document 2 mentions "react" 5 times
+      const scoreFive = computeBm25FuzzyScore("react react react react react", ["react"], docFreqs, numDocs, 10, 10);
+
+      // Score for 5 mentions should be larger, but NOT 5 times larger due to saturation limit
+      expect(scoreFive).toBeGreaterThan(scoreOnce);
+      expect(scoreFive).toBeLessThan(scoreOnce * 2.5);
+    });
+
+    it("should normalize score based on document length", () => {
+      // Document 1 is short (10 words)
+      const scoreShort = computeBm25FuzzyScore("react coding tutorial", ["react"], docFreqs, numDocs, 10, 10);
+      // Document 2 is very long (100 words) but also mentions "react" once
+      const scoreLong = computeBm25FuzzyScore("react " + "word ".repeat(99), ["react"], docFreqs, numDocs, 100, 10);
+
+      // Shorter document wins because it has higher keyword density/less noise
+      expect(scoreShort).toBeGreaterThan(scoreLong);
+    });
+
+    it("should apply penalty for fuzzy/subsequence matches", () => {
+      // Exact match "react"
+      const scoreExact = computeBm25FuzzyScore("react coding", ["react"], docFreqs, numDocs, 10, 10);
+      // Fuzzy subsequence match "rct" -> matches "react"
+      const scoreFuzzy = computeBm25FuzzyScore("react coding", ["rct"], { rct: 1 }, numDocs, 10, 10);
+
+      expect(scoreExact).toBeGreaterThan(scoreFuzzy);
     });
   });
 
