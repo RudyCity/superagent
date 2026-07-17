@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.440] - 2026-07-17
+
+### Added
+- **Subagent Collision Prevention Skill**: New skill `.agents/skills/preventing-subagent-collisions/SKILL.md` providing a complete coordination guide for parallel subagents. Covers pre-assignment workflow, serialization gates, shared file protocol, and integration with `manage_plan` + `_task.md` as the coordination hub.
+- **`fileScope` Parameter in `invoke_subagent`**: New optional `fileScope: string[]` parameter that auto-injects a structured `## FILE SCOPE (Enforced)` block at the top of the subagent system prompt. Enforces file boundaries structurally without relying on parent prose.
+- **Coder Subagent Report Fields**: Added `Files Changed` and `Scope Compliance` fields to coder subagent final report format so the parent can audit file touches and scope violations from the report alone.
+- **`[agent: role]` Annotation in `manage_tasks list`**: `manage_tasks(action: 'list')` now parses and displays `[agent: role]` prefix from task descriptions as a suffix, e.g. `1. [/] Implement JWT middleware (agent: auth-coder)`. Enables task ownership tracking across parallel agents.
+
+### Optimized
+- **Base Prompt — Single-Agent Mode**: Added `TASK_OWNERSHIP`, `NO_SELF_ASSIGN`, and `SHARED_FILES` rules to the `spawning_subagent` logic gate in `base.ts`.
+- **Master Agent Prompt**: Added `ANNOTATE` (plan task annotation with `[agent: role]`) and `STATUS` (task status lifecycle) rules to the `multiple_superagents_ready` gate.
+- **Superagent Prompt**: Added `COLLISION_GUARD` rule to `spawning_subagent` gate; appended pre-assign enforcement to `LEADERSHIP_AND_DELEGATION` rule.
+- **All Subagent Prompts**: Added `Do NOT call manage_tasks or manage_plan` to every subagent LIMIT line (researcher, coder, reviewer, manual-tester).
+- **Coder Subagent**: Added `SCOPE_GUARD` and `SHARED_FILE_GUARD` rules — coder must only touch files in its assigned scope and must stop and report if a shared/read-only file needs modification.
+
 ## [1.2.439] - 2026-07-17
 
 ### Fixed

@@ -119,13 +119,22 @@ git pull --rebase origin main
 Then create the plan with pre-assigned tasks via `manage_plan`.
 
 ### Phase 2 — Parallel Spawn
-Issue all `invoke_subagent` calls in one turn (parallel, not sequential):
+Issue all `invoke_subagent` calls in one turn (parallel, not sequential).
+
+Use `fileScope` parameter to enforce file boundaries structurally — the tool
+auto-injects a `## FILE SCOPE (Enforced)` block into the subagent's system prompt:
 
 ```
-invoke_subagent(typeName: "researcher", role: "researcher", prompt: "...researcher task...")
-invoke_subagent(typeName: "coder", role: "coder-a", prompt: "...billing task...")
-invoke_subagent(typeName: "coder", role: "coder-b", prompt: "...auth task...")
+invoke_subagent(typeName: "researcher", role: "researcher", prompt: "...researcher task...",
+  fileScope: ["src/**", "tests/**"])
+invoke_subagent(typeName: "coder", role: "coder-a", prompt: "...billing task...",
+  fileScope: ["src/billing/**", "tests/unit/billing/**"])
+invoke_subagent(typeName: "coder", role: "coder-b", prompt: "...auth task...",
+  fileScope: ["src/auth/**", "tests/unit/auth/**"])
 ```
+
+> If `fileScope` is omitted, the parent MUST include file scope explicitly in the `prompt` prose.
+> Using `fileScope` is strongly preferred — it cannot be forgotten.
 
 Monitor with:
 ```
