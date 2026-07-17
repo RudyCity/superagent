@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.444] - 2026-07-17
+
+### Fixed
+- **Superagent Package Manager Detection**: Updated `detectPackageManager` in `src/core/tools/superagentTools.ts` to check for `bun.lock` in addition to `bun.lockb`. This ensures that Superagent running on environments with text-based `bun.lock` configured will properly run via Bun rather than falling back to npm.
+
 ## [1.2.443] - 2026-07-17
 
 ### Fixed
