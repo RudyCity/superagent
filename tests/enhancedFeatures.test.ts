@@ -366,14 +366,14 @@ describe("Superagent Proposed Enhancements Tests", () => {
     it("should autoRetry failed command with npx prefix", async () => {
       vi.useFakeTimers();
       (globalThis as any).mockExeca.mockImplementation((cmd: string) => {
-        const isNpx = cmd.includes("npx ");
+        const isRunner = cmd.includes("npx ") || cmd.includes("bunx ") || cmd.includes("pnpm dlx ") || cmd.includes("yarn dlx ");
         const mockProc: any = {
           all: {
             on: vi.fn(),
           },
           on: vi.fn((event, cb) => {
             if (event === "close") {
-              cb(isNpx ? 0 : 1);
+              cb(isRunner ? 0 : 1);
             }
           }),
         };

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.438] - 2026-07-17
+
+### Fixed
+- **autoRetry Test Compatibility**: Updated `enhancedFeatures.test.ts` auto-retry mock to detect any package runner prefix (bunx, npx, pnpm dlx, yarn dlx) so the test passes regardless of which lockfile is present on the machine.
+
 ## [1.2.437] - 2026-07-17
 
 ### Added
