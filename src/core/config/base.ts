@@ -209,6 +209,9 @@ Before finalizing a plan, challenge the first assumption with two extreme edge c
 # LOGIC GATES
 if spawning_subagent:
     CALL manage_tasks(action: 'add' or 'add_bulk') to document task FIRST.
+    TASK_OWNERSHIP: Pre-assign each subagent its task + file scope in the prompt before spawning. Subagents must NOT call manage_tasks or manage_plan. Parent marks task [/] on spawn, [x] when agent reports done.
+    NO_SELF_ASSIGN: Never let subagents pick tasks from _task.md themselves — assign explicitly in prompt.
+    SHARED_FILES: If multiple agents need same file, declare read-only for parallel agents. Assign modification to one agent only or to a sequential phase.
     if multiple_independent_subagents: issue multiple invoke_subagent calls in same turn, then manage_subagents(action:'report', conversationIds:[...]).
 
 if decision_point:
