@@ -287,6 +287,77 @@ export function removeSessionFromKnowledge(sourceSessionPath: string): number {
  * Search knowledge entries by query (fuzzy match on content, tag, role).
  * Optionally filter by workingDirectory.
  */
+const stopWords = new Set([
+  "a", "an", "the", "and", "or", "but", "if", "then", "else", "of", "at", "by", "for", "with",
+  "about", "against", "between", "into", "through", "during", "before", "after", "above", "below",
+  "to", "from", "up", "down", "in", "out", "on", "off", "over", "under", "again", "further",
+  "then", "once", "here", "there", "when", "where", "why", "how", "all", "any", "both", "each",
+  "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same",
+  "so", "than", "too", "very", "can", "will", "just", "should", "now"
+]);
+
+function computeKnowledgeTfidfScore(
+  entry: KnowledgeEntry,
+  queryTerms: string[],
+  docFreqs: Record<string, number>,
+  numDocs: number
+): number {
+  const content = entry.content.toLowerCase();
+  const preview = entry.preview.toLowerCase();
+  const tag = (entry.tag || "").toLowerCase();
+  
+  let score = 0;
+
+  for (const term of queryTerms) {
+    const df = docFreqs[term] || 0;
+    const idf = Math.log((numDocs - df + 0.5) / (df + 0.5) + 1.0) + 1.0;
+
+    let tf = 0;
+    let matchPenalty = 1.0;
+
+    // Check matches in tag (highest priority)
+    if (tag.includes(term)) {
+      tf += 3;
+    }
+    
+    // Check matches in content
+    if (content.includes(term)) {
+      let pos = content.indexOf(term);
+      while (pos !== -1) {
+        tf += 1;
+        pos = content.indexOf(term, pos + term.length);
+      }
+    } else {
+      // Fuzzy subsequence match fallback
+      let lastIdx = -1;
+      let possibleMatch = true;
+      for (let j = 0; j < term.length; j++) {
+        const idx = content.indexOf(term[j], lastIdx + 1);
+        if (idx === -1) {
+          possibleMatch = false;
+          break;
+        }
+        lastIdx = idx;
+      }
+      if (possibleMatch) {
+        tf = 1;
+        matchPenalty = 0.4;
+      }
+    }
+
+    if (tf > 0) {
+      const tfWeight = 1 + Math.log(tf);
+      score += tfWeight * idf * matchPenalty;
+    }
+  }
+
+  return score;
+}
+
+/**
+ * Search knowledge entries by query (fuzzy match on content, tag, role).
+ * Optionally filter by workingDirectory.
+ */
 export async function searchKnowledge(
   query: string,
   options?: { workingDirectory?: string; tag?: string; limit?: number }
@@ -327,8 +398,6 @@ export async function searchKnowledge(
   }
 
   const store = readStore();
-  const q = query.toLowerCase();
-
   let entries = store.entries;
 
   // Filter by working directory if specified
@@ -343,33 +412,53 @@ export async function searchKnowledge(
     entries = entries.filter((e) => e.tag?.toLowerCase() === tag);
   }
 
-  // Score and sort
-  const scored = entries.map((entry) => {
-    let score = 0;
-    const content = entry.content.toLowerCase();
-    const preview = entry.preview.toLowerCase();
-    const tag = (entry.tag || "").toLowerCase();
+  // Tokenize query
+  const queryTerms = query.toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .split(/\s+/)
+    .filter((k) => k.length > 1 && !stopWords.has(k));
 
-    if (content.includes(q)) score += 10;
-    if (preview.includes(q)) score += 5;
-    if (tag.includes(q)) score += 3;
+  const finalQueryTerms = queryTerms.length > 0 ? queryTerms : query.toLowerCase().split(/\s+/).filter(Boolean);
 
-    // Word-level matching
-    const words = q.split(/\s+/).filter(Boolean);
-    for (const word of words) {
-      if (content.includes(word)) score += 2;
-      if (preview.includes(word)) score += 1;
+  // Calculate Document Frequency
+  const numDocs = entries.length;
+  const docFreqs: Record<string, number> = {};
+  for (const term of finalQueryTerms) {
+    let freq = 0;
+    for (const entry of entries) {
+      if (entry.content.toLowerCase().includes(term) || (entry.tag || "").toLowerCase().includes(term)) {
+        freq++;
+      } else {
+        const c = entry.content.toLowerCase();
+        let lastIdx = -1;
+        let possibleMatch = true;
+        for (let j = 0; j < term.length; j++) {
+          const idx = c.indexOf(term[j], lastIdx + 1);
+          if (idx === -1) {
+            possibleMatch = false;
+            break;
+          }
+          lastIdx = idx;
+        }
+        if (possibleMatch) {
+          freq++;
+        }
+      }
     }
+    docFreqs[term] = freq;
+  }
 
-    return { entry, score };
-  });
+  // Score and sort
+  const scored = entries
+    .map((entry) => {
+      const score = computeKnowledgeTfidfScore(entry, finalQueryTerms, docFreqs, numDocs);
+      return { entry, score };
+    })
+    .filter((s) => s.score > 0);
 
   scored.sort((a, b) => b.score - a.score || b.entry.pinnedAt - a.entry.pinnedAt);
 
-  return scored
-    .filter((s) => s.score > 0)
-    .slice(0, limit)
-    .map((s) => s.entry);
+  return scored.slice(0, limit).map((s) => s.entry);
 }
 
 export async function syncAllPinnedToRMemory(): Promise<void> {

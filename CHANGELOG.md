@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.417] - 2026-07-17
+
+### Improved
+- **Local Hybrid TF-IDF + Fuzzy Pinned Knowledge Search**: Upgraded the local fallback search algorithm in `searchKnowledge` (when `enableRmemory` is `false`) from basic substring matching to a local Hybrid TF-IDF + Fuzzy search, aligning it with the optimized `searchHistory` algorithm for higher ranking quality and typo tolerance.
+
 ## [1.2.416] - 2026-07-17
 
 ### Improved
