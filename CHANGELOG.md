@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.407] - 2026-07-17
+
+### Added
+- **Single-Mode Memory Status**: Added RMemory connection status display to the footer status bar of the single-agent console interface. The footer now displays "Mem: ON", "Mem: OFFLINE", "Mem: CHECKING", or "Mem: OFF", matching the multi-agent dashboard footer layout.
+
 ## [1.2.406] - 2026-07-17
 
 ### Fixed

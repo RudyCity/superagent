@@ -65,6 +65,7 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
     formatCompactNumber,
     lastSpeed,
     isProcessing = false,
+    rmemoryStatus,
   } = props;
 
   return (
@@ -101,6 +102,30 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
             <>
               <Text color="gray"> │ </Text>
               <Text color="yellowBright" bold>⚡ {lastSpeed.toFixed(1)} t/s</Text>
+            </>
+          )}
+          {rmemoryStatus === "online" && (
+            <>
+              <Text color="gray"> │ </Text>
+              <Text color="magenta" bold>🧠 Mem: ON</Text>
+            </>
+          )}
+          {rmemoryStatus === "offline" && (
+            <>
+              <Text color="gray"> │ </Text>
+              <Text color="red" bold>🧠 Mem: OFFLINE</Text>
+            </>
+          )}
+          {rmemoryStatus === "checking" && (
+            <>
+              <Text color="gray"> │ </Text>
+              <Text color="yellow" bold>🧠 Mem: CHECKING</Text>
+            </>
+          )}
+          {(rmemoryStatus === "disabled" || !rmemoryStatus) && (
+            <>
+              <Text color="gray"> │ </Text>
+              <Text color="gray" dimColor>🧠 Mem: OFF</Text>
             </>
           )}
         </Box>
