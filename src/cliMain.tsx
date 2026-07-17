@@ -439,6 +439,15 @@ export async function runCli() {
           case "token_usage":
             // Quietly ignore or log in non-TTY mode
             break;
+          case "model_download":
+            if (event.status === "downloading") {
+              process.stdout.write(`\n[INFO] Downloading local ${event.modelName} model to cache...\n`);
+            } else if (event.status === "progress" && typeof event.progress === "number") {
+              process.stdout.write(`\r[INFO] Downloading ${event.modelName} model: ${event.progress.toFixed(1)}%`);
+            } else if (event.status === "loaded") {
+              process.stdout.write(`\n[INFO] ${event.modelName} model loaded successfully.\n`);
+            }
+            break;
         }
       },
       async (toolCall, description) => {

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.447] - 2026-07-17
+
+### Fixed
+- **Model Download Progress**: Redirected local HuggingFace classifier and embedding model downloading progress outputs from standard output/footer directly into the scrollable chat feed (system logs) in-place, preventing terminal DOM layout corruption.
+
 ## [1.2.446] - 2026-07-17
 
 ### Added

@@ -1741,6 +1741,44 @@ export function App({
             timestamp: Date.now(),
           });
           break;
+        case "model_download": {
+          const { modelName, status, progress } = event;
+          setLines((prev) => {
+            const updated = [...prev];
+            const searchKey = `Downloading local ${modelName} model`;
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].type === "system" && (updated[i].content.includes(searchKey) || updated[i].content.includes(`Local ${modelName} model`))) {
+                if (status === "progress" && typeof progress === "number") {
+                  updated[i] = {
+                    ...updated[i],
+                    content: `⏳ Downloading local ${modelName} model: ${progress.toFixed(1)}%`,
+                  };
+                } else if (status === "loaded") {
+                  updated[i] = {
+                    ...updated[i],
+                    content: `✅ Local ${modelName} model loaded successfully.`,
+                  };
+                }
+                return updated;
+              }
+            }
+            let initialContent = "";
+            if (status === "downloading") {
+              initialContent = `⏳ Downloading local ${modelName} model (~${modelName === "embedding" ? "100MB" : "66MB"}) to cache...`;
+            } else if (status === "progress" && typeof progress === "number") {
+              initialContent = `⏳ Downloading local ${modelName} model: ${progress.toFixed(1)}%`;
+            } else if (status === "loaded") {
+              initialContent = `✅ Local ${modelName} model loaded successfully.`;
+            }
+            updated.push({
+              type: "system",
+              content: initialContent,
+              timestamp: Date.now(),
+            });
+            return updated;
+          });
+          break;
+        }
       }
       // Always sync planState for UI indicators (e.g. PENDING_PLAN banner),
       // but only open the approval wizard on "done" — after flushBuffer() has

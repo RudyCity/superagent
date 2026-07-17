@@ -65,7 +65,8 @@ export type AgentEvent =
   | { type: "illegal_operation"; violation: ViolationRecord }
   | { type: "token_usage"; promptTokens: number; completionTokens: number; durationMs?: number }
   | { type: "checkpoint_auto"; name: string; id: string }
-  | { type: "tool_progress"; toolCallId: string; message: string };
+  | { type: "tool_progress"; toolCallId: string; message: string }
+  | { type: "model_download"; modelName: "classifier" | "embedding"; status: "downloading" | "progress" | "loaded"; progress?: number };
 
 export type PermissionHandler = (
   toolCall: ToolCall,
@@ -598,10 +599,15 @@ If none of the options are suitable, still pick the closest one.`;
     this.onPermission = onPermission;
     this.onQuestion = onQuestion;
 
+    // Register this agent's event handler for progress updates from utilities
+    import("./tools/state.js").then(({ registerProgressCallback }) => {
+      registerProgressCallback((event) => this.onEvent(event));
+    }).catch(() => {});
+
     // Asynchronously pre-load/warm up the local 51M classifier model in the background
     if (process.env.NODE_ENV !== "test") {
       import("./requestClassifier.js")
-        .then(({ warmUpClassifier }) => warmUpClassifier())
+        .then(({ warmUpClassifier }) => warmUpClassifier((event) => this.onEvent(event)))
         .catch(() => {});
     }
   }

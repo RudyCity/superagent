@@ -49,6 +49,12 @@ class OptimizedLocalTextEmbeddingProvider {
         };
         return this.extractor;
       }
+      let onProgress: ((event: any) => void) | undefined = undefined;
+      try {
+        const { getProgressCallback } = await import("./tools/state.js");
+        const cb = getProgressCallback();
+        if (cb) onProgress = cb;
+      } catch {}
       let downloadStarted = false;
       this.extractor = await pipeline("feature-extraction", this.modelName, {
         device: this.device as any,
@@ -60,15 +66,41 @@ class OptimizedLocalTextEmbeddingProvider {
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
-            console.log(`\n[INFO] Downloading local embedding model (~100MB) to cache...`);
+            if (onProgress) {
+              onProgress({
+                type: "model_download",
+                modelName: "embedding",
+                status: "downloading"
+              });
+            } else {
+              console.log(`\n[INFO] Downloading local embedding model (~100MB) to cache...`);
+            }
           } else if (data.status === "progress") {
-            const pct = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
-            process.stdout.write(`\r[INFO] Downloading embedding model: ${pct}%`);
+            const pct = typeof data.progress === "number" ? data.progress : 0;
+            if (onProgress) {
+              onProgress({
+                type: "model_download",
+                modelName: "embedding",
+                status: "progress",
+                progress: pct * 100
+              });
+            } else {
+              const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
+              process.stdout.write(`\r[INFO] Downloading embedding model: ${pctStr}%`);
+            }
           }
         }
       });
       if (downloadStarted) {
-        console.log(`\n[INFO] Embedding model loaded successfully.`);
+        if (onProgress) {
+          onProgress({
+            type: "model_download",
+            modelName: "embedding",
+            status: "loaded"
+          });
+        } else {
+          console.log(`\n[INFO] Embedding model loaded successfully.`);
+        }
       }
     }
     return this.extractor;

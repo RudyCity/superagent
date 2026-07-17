@@ -466,10 +466,18 @@ export function mapSupraTelemetryToCategory(
  * Warm up/pre-load the local classifier model in the background.
  * Call this during app startup to eliminate first-use classification delay.
  */
-export async function warmUpClassifier(): Promise<void> {
+export async function warmUpClassifier(onProgress?: (event: any) => void): Promise<void> {
   const settings = getSettings();
   if (settings.classifierEnabled === false) return;
   try {
+    let progressCb = onProgress;
+    if (!progressCb) {
+      try {
+        const { getProgressCallback } = await import("./tools/state.js");
+        const cb = getProgressCallback();
+        if (cb) progressCb = cb;
+      } catch {}
+    }
     const { pipeline } = await import("@huggingface/transformers");
     const isMocked = (pipeline as any).mock || (pipeline as any)._isMockFunction || typeof (pipeline as any).mockImplementation === "function";
     if (process.env.NODE_ENV === "test" && !isMocked) {
@@ -481,15 +489,41 @@ export async function warmUpClassifier(): Promise<void> {
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
-            console.log(`\n[INFO] Pre-loading/downloading local classifier model (~66MB) to cache...`);
+            if (progressCb) {
+              progressCb({
+                type: "model_download",
+                modelName: "classifier",
+                status: "downloading"
+              });
+            } else {
+              console.log(`\n[INFO] Pre-loading/downloading local classifier model (~66MB) to cache...`);
+            }
           } else if (data.status === "progress") {
-            const pct = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
-            process.stdout.write(`\r[INFO] Downloading classifier model: ${pct}%`);
+            const pct = typeof data.progress === "number" ? data.progress : 0;
+            if (progressCb) {
+              progressCb({
+                type: "model_download",
+                modelName: "classifier",
+                status: "progress",
+                progress: pct * 100
+              });
+            } else {
+              const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
+              process.stdout.write(`\r[INFO] Downloading classifier model: ${pctStr}%`);
+            }
           }
         }
       });
       if (downloadStarted) {
-        console.log(`\n[INFO] Classifier model loaded successfully.`);
+        if (progressCb) {
+          progressCb({
+            type: "model_download",
+            modelName: "classifier",
+            status: "loaded"
+          });
+        } else {
+          console.log(`\n[INFO] Classifier model loaded successfully.`);
+        }
       }
     }
   } catch {
@@ -504,9 +538,18 @@ export async function warmUpClassifier(): Promise<void> {
 export async function classifyWithLLM(
   userInput: string,
   model: any,
-  heuristicResult: ClassificationResult
+  heuristicResult: ClassificationResult,
+  onProgress?: (event: any) => void
 ): Promise<ClassificationResult> {
   try {
+    let progressCb = onProgress;
+    if (!progressCb) {
+      try {
+        const { getProgressCallback } = await import("./tools/state.js");
+        const cb = getProgressCallback();
+        if (cb) progressCb = cb;
+      } catch {}
+    }
     const { pipeline } = await import("@huggingface/transformers");
     const isMocked = (pipeline as any).mock || (pipeline as any)._isMockFunction || typeof (pipeline as any).mockImplementation === "function";
     if (process.env.NODE_ENV === "test" && !isMocked) {
@@ -525,15 +568,41 @@ export async function classifyWithLLM(
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
-            console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
+            if (progressCb) {
+              progressCb({
+                type: "model_download",
+                modelName: "classifier",
+                status: "downloading"
+              });
+            } else {
+              console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
+            }
           } else if (data.status === "progress") {
-            const pct = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
-            process.stdout.write(`\r[INFO] Downloading classifier model: ${pct}%`);
+            const pct = typeof data.progress === "number" ? data.progress : 0;
+            if (progressCb) {
+              progressCb({
+                type: "model_download",
+                modelName: "classifier",
+                status: "progress",
+                progress: pct * 100
+              });
+            } else {
+              const pctStr = typeof data.progress === "number" ? data.progress.toFixed(1) : "0.0";
+              process.stdout.write(`\r[INFO] Downloading classifier model: ${pctStr}%`);
+            }
           }
         }
       });
       if (downloadStarted) {
-        console.log(`\n[INFO] Classifier model loaded successfully.`);
+        if (progressCb) {
+          progressCb({
+            type: "model_download",
+            modelName: "classifier",
+            status: "loaded"
+          });
+        } else {
+          console.log(`\n[INFO] Classifier model loaded successfully.`);
+        }
       }
     }
 
@@ -583,6 +652,7 @@ export async function classifyRequest(
     confidenceThreshold?: ClassificationConfidence;
     customKeywords?: Partial<Record<RequestCategory, string[]>>;
     skipLLM?: boolean;
+    onProgress?: (event: any) => void;
   }
 ): Promise<ClassificationResult> {
   // Extract text from multimodal input
@@ -615,7 +685,7 @@ export async function classifyRequest(
 
   // Phase 2: LLM classification for low-confidence heuristic results
   if (!options?.skipLLM && model) {
-    return classifyWithLLM(text, model, heuristicResult);
+    return classifyWithLLM(text, model, heuristicResult, options?.onProgress);
   }
 
   // Fallback to heuristic when LLM is unavailable or skipped

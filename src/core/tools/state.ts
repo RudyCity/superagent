@@ -486,6 +486,18 @@ export function appendMasterLog(msg: string) {
   }
 }
 
+// ─── Global Progress Callbacks ────────────────────────────────────────────────
+export type ProgressCallback = (event: any) => void;
+let globalProgressCallback: ProgressCallback | null = null;
+
+export function registerProgressCallback(callback: ProgressCallback) {
+  globalProgressCallback = callback;
+}
+
+export function getProgressCallback(): ProgressCallback | null {
+  return globalProgressCallback;
+}
+
 // ─── Tools Error Log ─────────────────────────────────────────────────────────
 // Dedicated log file for tool execution errors across all tiers.
 
