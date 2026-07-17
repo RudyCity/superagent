@@ -892,6 +892,13 @@ If none of the options are suitable, still pick the closest one.`;
     if (!isTestEnv) {
       try {
         const settings = getSettings();
+        // Phase 1: Always check heuristic classifier first to detect conversation/fast-path
+        const { classifyHeuristic } = await import("./requestClassifier.js");
+        const textInput = typeof userInput === "string"
+          ? userInput
+          : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
+        const heuristicResult = classifyHeuristic(textInput, settings.classifierKeywords as any);
+        
         if (settings.classifierEnabled !== false) {
           // Multi-category request classification for token optimization
           const { classifyRequest } = await import("./requestClassifier.js");
@@ -943,45 +950,69 @@ If none of the options are suitable, still pick the closest one.`;
             }
           }
         } else {
-          // Fallback to legacy simpleTask classification when classifier is disabled
+          // Fallback to legacy classification when classifier is disabled
+          // Populate currentClassification with heuristic if it detected conversation
+          if (heuristicResult.category === "conversation") {
+            this.currentClassification = heuristicResult;
+            this.writeToLogFile("INFO", `Heuristic fallback detected conversation: ${heuristicResult.reason}`);
+          }
+
           if (this.planState === "IDLE") {
-            const model = this.getModel();
-            const threshold = settings.simpleTaskFileThreshold ?? 3;
-            const classificationPrompt = `You are a helper that classifies if a user request is a "simple task".
-  A request is a "simple task" if it expects modification or creation of fewer than ${threshold} files and does NOT introduce any new architecture, major system changes, or complex orchestration.
-  For example, simple refactorings, adding single simple functions, modifying specific existing logic, or fixing a simple bug are simple tasks.
+            if (this.currentClassification?.category === "conversation") {
+              this.isSimpleTask = true;
+              this.planState = "APPROVED";
+              this.simpleTaskApproved = true;
+            } else {
+              const model = this.getModel();
+              const threshold = settings.simpleTaskFileThreshold ?? 3;
+              const classificationPrompt = `You are a helper that classifies if a user request is a "simple task" or a general chat/conversation.
+  Reply with "chat" if the request is a general greeting, discussion/conversation, or simple question/acknowledgment that does not require executing tools or making code changes.
+  Reply with "yes" if it is a simple task that expects modification or creation of fewer than ${threshold} files and does NOT introduce any new architecture, major system changes, or complex orchestration (e.g. simple refactoring, adding a simple helper, fixing a simple bug).
+  Reply with "no" if it is a complex task requiring extensive work, multiple files, or planning.
 
   User request: "${userInput}"
 
-  Reply with EXACTLY "yes" if it is a simple task, or "no" if it is not. Reply with nothing else.`;
+  Reply with EXACTLY "chat", "yes", or "no". Reply with nothing else.`;
 
-            const response = await generateText({
-              model,
-              prompt: classificationPrompt,
-            });
-
-            try {
-              const { addMasterTokens } = await import("./tools/state.js");
-              addMasterTokens(response.usage?.promptTokens || 0, response.usage?.completionTokens || 0);
-            } catch {}
-
-            const classification = response.text.trim().toLowerCase();
-            if (classification === "yes" || classification.includes("yes")) {
-              this.isSimpleTask = true;
-              this.planState = "APPROVED";
-
-              const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
-              const lowerInput = userInputText.toLowerCase();
-              const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
-              const preApprovalWords = settings.simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
-              const hasPreApproval = preApprovalWords.some(word => {
-                if (word.includes(' ')) {
-                  return lowerInput.includes(word);
-                }
-                return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
+              const response = await generateText({
+                model,
+                prompt: classificationPrompt,
               });
-              if (hasPreApproval) {
+
+              try {
+                const { addMasterTokens } = await import("./tools/state.js");
+                addMasterTokens(response.usage?.promptTokens || 0, response.usage?.completionTokens || 0);
+              } catch {}
+
+              const classification = response.text.trim().toLowerCase();
+              if (classification === "chat" || classification.includes("chat")) {
+                this.currentClassification = {
+                  category: "conversation",
+                  confidence: "medium",
+                  reason: "Legacy fallback classified as chat/conversation",
+                  heuristicOnly: false,
+                  classificationTokens: (response.usage?.promptTokens || 0) + (response.usage?.completionTokens || 0),
+                };
+                this.isSimpleTask = true;
+                this.planState = "APPROVED";
                 this.simpleTaskApproved = true;
+              } else if (classification === "yes" || classification.includes("yes")) {
+                this.isSimpleTask = true;
+                this.planState = "APPROVED";
+
+                const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
+                const lowerInput = userInputText.toLowerCase();
+                const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
+                const preApprovalWords = settings.simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
+                const hasPreApproval = preApprovalWords.some(word => {
+                  if (word.includes(' ')) {
+                    return lowerInput.includes(word);
+                  }
+                  return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
+                });
+                if (hasPreApproval) {
+                  this.simpleTaskApproved = true;
+                }
               }
             }
           }

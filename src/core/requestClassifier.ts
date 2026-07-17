@@ -125,6 +125,8 @@ const CONVERSATION_EXACT: ReadonlySet<string> = new Set([
   "terima kasih", "makasih", "trims",
   "benar", "betul", "tepat",
   "setuju",
+  // Discussion indicators
+  "diskusi", "ngobrol",
 ]);
 
 /** Phrase patterns that strongly indicate conversation (matched as substring) */
@@ -143,6 +145,9 @@ const CONVERSATION_PHRASES: readonly string[] = [
   "iya betul", "iya benar", "iya tepat", "oke betul",
   "oke deh lanjut", "ya udah lanjut", "gass aja",
   "sip lanjut", "gas bro",
+  "diskusi aja", "cuma nanya", "cuma diskusi", "hanya diskusi",
+  "kita diskusi", "mari diskusi", "mau diskusi", "mau ngobrol",
+  "ngobrol aja", "cuma ngobrol",
 ];
 
 /** Question starter words */

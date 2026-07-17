@@ -1555,51 +1555,14 @@ export const getSkillsTool: Tool = {
         let aiSuccess = false;
 
         try {
-          const { getModelInstance } = await import("../config.js");
-          const { generateText } = await import("ai");
-          const model = getModelInstance();
-
-          if (model) {
-            const candidates = skills.map((s, idx) => ({
-              index: idx,
-              name: s.name,
-              description: s.description,
-            }));
-
-            const prompt = `You are an expert at matching developer tasks to the correct specialized skill guides.
-
-Task/Query: "${args.query}"
-
-Available skills (index, name, description):
-${JSON.stringify(candidates, null, 2)}
-
-# MATCHING RULES
-- Match skills whose name or description directly addresses the task, technology, or workflow in the query.
-- TIER 1 (must include): Skills that are a direct, primary match for the exact task type (e.g. query says "debug" → include systematic-debugging, diagnosing-bugs).
-- TIER 2 (include if relevant): Skills that cover a closely related sub-task or prerequisite (e.g. query says "write tests" → include tdd, testing-anti-patterns, condition-based-waiting).
-- TIER 3 (skip): Skills that are only tangentially or thematically related but don't add actionable value for THIS specific query.
-- Be precise, not inclusive: prefer returning 3-6 highly relevant skills over 10+ loosely related ones.
-- If the query is about a specific technology (e.g. "React", "PostgreSQL", "Docker"), prioritize skills that explicitly mention that technology.
-- If the query mentions a workflow action (e.g. "deploy", "refactor", "review", "plan", "test"), prioritize skills for that exact action.
-- Return results ordered by relevance (most relevant index first).
-- Maximum 8 indices. Minimum 0.
-
-Return ONLY a valid JSON array of integers (the index values). Example: [3, 7, 1]
-If nothing matches: []`;
-
-            const result = await generateText({
-              model,
-              prompt,
-            });
-
-            const filterResult = result.text;
-            const jsonMatch = filterResult.match(/\[\s*(?:\d+\s*(?:,\s*\d+\s*)*)?\]/);
-            const indices: number[] = jsonMatch ? JSON.parse(jsonMatch[0]).filter((i: any) => typeof i === "number" && i >= 0 && i < skills.length) : [];
-            aiFiltered = indices.map(idx => skills[idx]).filter(Boolean);
+          const { searchSkillsByQuery } = await import("../rmemoryUtil.js");
+          const semanticResults = await searchSkillsByQuery(query, skills, 8);
+          if (semanticResults.length > 0) {
+            aiFiltered = semanticResults;
             aiSuccess = true;
           }
         } catch (err) {
-          // Gracefully ignore AI search errors and fallback to keyword search
+          // Gracefully ignore embedding errors and fallback to keyword search
         }
 
         if (aiSuccess && aiFiltered.length > 0) {

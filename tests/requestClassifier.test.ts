@@ -72,6 +72,9 @@ describe("classifyHeuristic", () => {
       "done", "got it", "understood", "noted",
       "hi", "hello", "hey", "halo",
       "sounds good", "that's fine", "i agree", "approved", "lgtm",
+      "diskusi", "ngobrol", "diskusi aja", "cuma nanya", "cuma diskusi",
+      "hanya diskusi", "kita diskusi", "mari diskusi", "mau diskusi",
+      "mau ngobrol", "ngobrol aja", "cuma ngobrol"
     ];
 
     it.each(conversationInputs)("should classify '%s' as conversation with high confidence", (input) => {

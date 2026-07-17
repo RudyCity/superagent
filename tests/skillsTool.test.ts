@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getSkillsTool, useSkillTool } from "../src/core/tools/otherTools.js";
 
 // Mock the config module
@@ -9,10 +9,10 @@ vi.mock("../src/core/config.js", () => {
   };
 });
 
-// Mock ai SDK
-vi.mock("ai", () => {
+// Mock rmemoryUtil for semantic search
+vi.mock("../src/core/rmemoryUtil.js", () => {
   return {
-    generateText: vi.fn(),
+    searchSkillsByQuery: vi.fn(),
   };
 });
 
@@ -33,6 +33,10 @@ vi.mock("fs", () => {
 });
 
 describe("get_skills Tool", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("should return no skills found when list is empty", async () => {
     const { getInstalledSkills } = await import("../src/core/config.js");
     vi.mocked(getInstalledSkills).mockReturnValue([]);
@@ -65,8 +69,10 @@ describe("get_skills Tool", () => {
   });
 
   it("should filter skills by query correctly case-insensitively", async () => {
-    const { getInstalledSkills, getModelInstance } = await import("../src/core/config.js");
-    vi.mocked(getInstalledSkills).mockReturnValue([
+    const { getInstalledSkills } = await import("../src/core/config.js");
+    const { searchSkillsByQuery } = await import("../src/core/rmemoryUtil.js");
+
+    const mockSkills = [
       {
         name: "React Basics",
         description: "Learn standard react components",
@@ -79,29 +85,32 @@ describe("get_skills Tool", () => {
         author: "web-dev",
         path: "/path/to/vue-basics/SKILL.md",
       },
-    ]);
-    vi.mocked(getModelInstance).mockReturnValue(undefined); // ensure fallback path is used
+    ];
+    vi.mocked(getInstalledSkills).mockReturnValue(mockSkills);
 
-    // Test filtering matching React
+    // Simulate embedding failure → tool falls back to TF-IDF keyword matching
+    vi.mocked(searchSkillsByQuery).mockRejectedValue(new Error("Embedding unavailable"));
+
+    // TF-IDF fallback: "React" matches only React Basics by keyword
     const reactResult = await getSkillsTool.execute({ query: "React" }, "/cwd");
     expect(reactResult).toContain("React Basics");
     expect(reactResult).not.toContain("Vue Basics");
 
-    // Test filtering matching basics
+    // TF-IDF fallback: "basics" matches both skills
     const basicsResult = await getSkillsTool.execute({ query: "basics" }, "/cwd");
     expect(basicsResult).toContain("React Basics");
     expect(basicsResult).toContain("Vue Basics");
 
-    // Test filtering matching nothing
+    // TF-IDF fallback: "angular" matches nothing
     const emptyResult = await getSkillsTool.execute({ query: "angular" }, "/cwd");
     expect(emptyResult).toBe("No skills found matching query: angular");
   });
 
-  it("should support AI semantic filtering when model is configured", async () => {
-    const { getInstalledSkills, getModelInstance } = await import("../src/core/config.js");
-    const { generateText } = await import("ai");
+  it("should support RMemory semantic filtering when embedding is available", async () => {
+    const { getInstalledSkills } = await import("../src/core/config.js");
+    const { searchSkillsByQuery } = await import("../src/core/rmemoryUtil.js");
 
-    vi.mocked(getInstalledSkills).mockReturnValue([
+    const mockSkills = [
       {
         name: "React Basics",
         description: "Learn standard react components",
@@ -114,24 +123,21 @@ describe("get_skills Tool", () => {
         author: "web-dev",
         path: "/path/to/vue-basics/SKILL.md",
       },
-    ]);
+    ];
+    vi.mocked(getInstalledSkills).mockReturnValue(mockSkills);
 
-    const fakeModel = { modelId: "fake-model" };
-    vi.mocked(getModelInstance).mockReturnValue(fakeModel as any);
-
-    // Mock semantic filter to only match Vue Basics (index 1)
-    vi.mocked(generateText).mockResolvedValue({
-      text: "[1]",
-    } as any);
+    // Mock semantic search to only return Vue Basics (simulates embedding match)
+    vi.mocked(searchSkillsByQuery).mockResolvedValue([mockSkills[1]]);
 
     const result = await getSkillsTool.execute({ query: "Vue UI library" }, "/cwd");
     expect(result).toContain("Vue Basics");
     expect(result).not.toContain("React Basics");
-    expect(generateText).toHaveBeenCalled();
+    expect(searchSkillsByQuery).toHaveBeenCalledWith("vue ui library", mockSkills, 8);
   });
 
   it("should fall back to smart keyword matching when AI returns empty or fails", async () => {
-    const { getInstalledSkills, getModelInstance } = await import("../src/core/config.js");
+    const { getInstalledSkills } = await import("../src/core/config.js");
+    const { searchSkillsByQuery } = await import("../src/core/rmemoryUtil.js");
     vi.mocked(getInstalledSkills).mockReturnValue([
       {
         name: "auth-implementation-patterns",
@@ -146,7 +152,8 @@ describe("get_skills Tool", () => {
         path: "/path/to/istio/SKILL.md",
       },
     ]);
-    vi.mocked(getModelInstance).mockReturnValue(undefined);
+    // Simulate embedding failure → TF-IDF fallback takes over
+    vi.mocked(searchSkillsByQuery).mockRejectedValue(new Error("Embedding unavailable"));
 
     const result = await getSkillsTool.execute({ query: "rbac role user management" }, "/cwd");
     expect(result).toContain("auth-implementation-patterns");
@@ -154,7 +161,8 @@ describe("get_skills Tool", () => {
   });
 
   it("should automatically include skill contents when a query is provided and the file exists", async () => {
-    const { getInstalledSkills, getModelInstance } = await import("../src/core/config.js");
+    const { getInstalledSkills } = await import("../src/core/config.js");
+    const { searchSkillsByQuery } = await import("../src/core/rmemoryUtil.js");
     vi.mocked(getInstalledSkills).mockReturnValue([
       {
         name: "Mock Skill",
@@ -163,7 +171,8 @@ describe("get_skills Tool", () => {
         path: "/path/to/mock-skill/SKILL.md",
       },
     ]);
-    vi.mocked(getModelInstance).mockReturnValue(undefined);
+    // Simulate embedding failure → TF-IDF fallback, skill still included in results
+    vi.mocked(searchSkillsByQuery).mockRejectedValue(new Error("Embedding unavailable"));
 
     const result = await getSkillsTool.execute({ query: "testing" }, "/cwd");
     expect(result).toContain("Mock Skill");

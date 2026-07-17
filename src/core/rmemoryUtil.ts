@@ -399,3 +399,120 @@ export async function isRmemoryActive(forceRefresh = false): Promise<boolean> {
   return !!getSettings().enableRmemory;
 }
 
+// ---------------------------------------------------------------------------
+// Skill Semantic Search — standalone RMemory index for get_skills
+// Uses the same local MiniLM model, but a separate DB (skills.db) so it never
+// pollutes conversation memory. Active regardless of enableRmemory setting.
+// ---------------------------------------------------------------------------
+
+const skillsDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
+let skillsIndexInstance: any = null;
+let skillsIndexHash: string = "";
+
+async function getSkillsIndex(): Promise<any> {
+  if (!skillsIndexInstance) {
+    if (!fs.existsSync(skillsDataDir)) {
+      fs.mkdirSync(skillsDataDir, { recursive: true });
+    }
+    const dbPath = path.join(skillsDataDir, "skills.db");
+    const { RMemory } = await import("r-memory");
+    const provider = new OptimizedLocalTextEmbeddingProvider({
+      modelName: "Xenova/all-MiniLM-L6-v2",
+      dtype: "q8",
+      device: "cpu",
+    });
+    skillsIndexInstance = new RMemory({
+      dbPath,
+      collectionName: "skills",
+      embeddingProvider: provider,
+    });
+  }
+  return skillsIndexInstance;
+}
+
+function computeSkillsHash(skills: Array<{ name: string; description: string }>): string {
+  const combined = skills.map((s) => `${s.name}::${s.description}`).join("|");
+  return createHash("sha1").update(combined).digest("hex");
+}
+
+async function indexSkillsIfNeeded(skills: Array<{ name: string; description: string; path: string }>): Promise<void> {
+  const newHash = computeSkillsHash(skills);
+  if (newHash === skillsIndexHash) return; // nothing changed
+
+  const index = await getSkillsIndex();
+
+  // Clear stale index
+  try {
+    index.clear();
+  } catch {
+    // ignore if already empty
+  }
+
+  // Batch-embed all skill texts (name + description)
+  const texts = skills.map((s) => `${s.name}: ${s.description}`);
+  const BATCH = 16;
+  const allEmbeddings: number[][] = [];
+
+  for (let i = 0; i < texts.length; i += BATCH) {
+    const batch = texts.slice(i, i + BATCH);
+    let batchEmbeddings: number[][];
+    if (index.provider && typeof index.provider.embedTexts === "function") {
+      batchEmbeddings = await index.provider.embedTexts(batch);
+    } else {
+      batchEmbeddings = await Promise.all(batch.map((t: string) => index.provider.embedText(t)));
+    }
+    allEmbeddings.push(...batchEmbeddings);
+  }
+
+  // Store each skill as a memory entry keyed by its name
+  for (let i = 0; i < skills.length; i++) {
+    await index.addMemory({
+      id: `skill-${i}`,
+      content: texts[i],
+      embedding: allEmbeddings[i],
+      metadata: { name: skills[i].name, skillPath: skills[i].path },
+    });
+  }
+
+  skillsIndexHash = newHash;
+}
+
+export interface LoadedSkillRef {
+  name: string;
+  description: string;
+  path: string;
+  author?: string;
+}
+
+/**
+ * Semantic skill search using local MiniLM embeddings via RMemory.
+ * Falls back gracefully (returns []) on any error so callers can use TF-IDF fallback.
+ */
+export async function searchSkillsByQuery(
+  query: string,
+  skills: LoadedSkillRef[],
+  limit = 8,
+): Promise<LoadedSkillRef[]> {
+  if (!query || skills.length === 0) return [];
+
+  try {
+    await indexSkillsIfNeeded(skills);
+    const index = await getSkillsIndex();
+
+    const results = await index.query({ query, limit, hybrid: true });
+    if (!results || results.length === 0) return [];
+
+    // Map results back to full LoadedSkillRef objects via skill name in metadata
+    const found: LoadedSkillRef[] = [];
+    for (const r of results) {
+      const skillName: string | undefined = r.memory?.metadata?.name;
+      if (!skillName) continue;
+      const match = skills.find((s) => s.name === skillName);
+      if (match) found.push(match);
+    }
+    return found;
+  } catch {
+    return [];
+  }
+}
+

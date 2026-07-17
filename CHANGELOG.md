@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.414] - 2026-07-17
+
+### Improved
+- **`get_skills` Semantic Search via RMemory**: Replaced the expensive LLM call (`generateText` with the main model) used for skill filtering with a lightweight local embedding similarity search powered by the existing RMemory infrastructure (`r-memory` + `Xenova/all-MiniLM-L6-v2`, ~23MB ONNX model). Skills are indexed on demand into a dedicated `~/.superagent-r/rmemory/skills.db` (separate from conversation memory) and re-indexed automatically when the skill list changes. Query embedding + cosine similarity runs in under 10ms after warm-up. The TF-IDF keyword fallback is unchanged and activates if embedding fails.
+
+## [1.2.413] - 2026-07-17
+
+### Added
+- **Indonesian Discussion Classifier Keywords**: Added `diskusi`, `ngobrol`, `diskusi aja`, `cuma nanya`, `cuma diskusi`, `hanya diskusi`, `kita diskusi`, `mari diskusi`, `mau diskusi`, `mau ngobrol`, `ngobrol aja`, `cuma ngobrol` to the `requestClassifier` heuristic keywords and phrases. This prevents conversational discussion requests from triggering complex execution plans or worktree steps.
+
 ## [1.2.412] - 2026-07-17
 
 ### Fixed
