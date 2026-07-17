@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.454] - 2026-07-17
+
+### Changed
+- **r-memory Update**: Updated the `r-memory` dependency to version 1.3.0 which natively supports the Bun runtime. Removed the temporary sqlite patch (`patches/r-memory+1.2.0.patch`) and added a new patch (`patches/r-memory+1.3.0.patch`) to pre-compile the library on installation.
+
 ## [1.2.453] - 2026-07-17
 
 ### Fixed

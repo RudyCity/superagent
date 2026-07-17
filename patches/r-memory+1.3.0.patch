@@ -1,0 +1,1695 @@
+diff --git a/node_modules/r-memory/.bun-tag b/node_modules/r-memory/.bun-tag
+new file mode 100644
+index 0000000..08f03eb
+--- /dev/null
++++ b/node_modules/r-memory/.bun-tag
+@@ -0,0 +1 @@
++RudyCity-r-memory-c8c94ea
+\ No newline at end of file
+diff --git a/node_modules/r-memory/.gitignore b/node_modules/r-memory/.gitignore
+new file mode 100644
+index 0000000..bb1e205
+--- /dev/null
++++ b/node_modules/r-memory/.gitignore
+@@ -0,0 +1,14 @@
++node_modules/
++dist/
++.env
++*.db
++*.sqlite
++*.sqlite3
++.cache/
++.models/
++.idea/
++.vscode/
++npm-debug.log*
++yarn-debug.log*
++yarn-error.log*
++.DS_Store
+diff --git a/node_modules/r-memory/dist/database/sqlite.d.ts b/node_modules/r-memory/dist/database/sqlite.d.ts
+new file mode 100644
+index 0000000..30f28f5
+--- /dev/null
++++ b/node_modules/r-memory/dist/database/sqlite.d.ts
+@@ -0,0 +1,25 @@
++import type { Memory, QueryResult, DatabaseAdapter } from '../types.js';
++export declare class SQLiteAdapter implements DatabaseAdapter {
++    private db;
++    private isVectorExtensionLoaded;
++    private tableName;
++    private vecTableName;
++    private ftsTableName;
++    private cacheTableName;
++    private vecCacheTableName;
++    private dimensions;
++    constructor(dbPath: string, collectionName: string | undefined, dimensions: number);
++    private initialize;
++    insert(id: string, content: string, embedding: number[], metadata: Record<string, any>): void;
++    query(queryEmbedding: number[], limit?: number, filter?: Record<string, any>): QueryResult[];
++    queryLexical(queryText: string, limit?: number, filter?: Record<string, any>): QueryResult[];
++    getById(id: string): Memory | null;
++    getAll(filter?: Record<string, any>): Memory[];
++    delete(id: string): void;
++    setCache(queryText: string, responseText: string, embedding: number[], ttlSeconds: number): void;
++    getCache(queryEmbedding: number[], threshold: number): string | null;
++    clearCache(): void;
++    clear(): void;
++    close(): void;
++    getIsVectorExtensionLoaded(): boolean;
++}
+diff --git a/node_modules/r-memory/dist/database/sqlite.js b/node_modules/r-memory/dist/database/sqlite.js
+new file mode 100644
+index 0000000..cf17544
+--- /dev/null
++++ b/node_modules/r-memory/dist/database/sqlite.js
+@@ -0,0 +1,641 @@
++let Database;
++if (typeof Bun !== 'undefined') {
++    // @ts-ignore
++    const { Database: BunDatabase } = await import("bun:sqlite");
++    Database = class BunDatabaseWrapper {
++        db;
++        constructor(dbPath) {
++            this.db = new BunDatabase(dbPath, { create: true });
++        }
++        exec(sql) {
++            this.db.run(sql);
++        }
++        pragma(sql) {
++            this.db.run(`PRAGMA ${sql}`);
++        }
++        loadExtension(path) {
++            this.db.loadExtension(path);
++        }
++        transaction(fn) {
++            return this.db.transaction(fn);
++        }
++        prepare(sql) {
++            const query = this.db.query(sql);
++            return {
++                get(...args) {
++                    const res = query.get(...args);
++                    return res === null ? undefined : res;
++                },
++                run(...args) {
++                    return query.run(...args);
++                },
++                all(...args) {
++                    return query.all(...args);
++                }
++            };
++        }
++        close() {
++            this.db.close();
++        }
++    };
++}
++else {
++    const { default: BetterSqlite3 } = await import("better-sqlite3");
++    Database = BetterSqlite3;
++}
++import * as sqliteVec from 'sqlite-vec';
++export class SQLiteAdapter {
++    db;
++    isVectorExtensionLoaded = false;
++    tableName;
++    vecTableName;
++    ftsTableName;
++    cacheTableName;
++    vecCacheTableName;
++    dimensions;
++    constructor(dbPath, collectionName = 'memories', dimensions) {
++        this.tableName = `memories_${collectionName}`;
++        this.vecTableName = `vec_memories_${collectionName}`;
++        this.ftsTableName = `fts_${collectionName}`;
++        this.cacheTableName = `cache_memories_${collectionName}`;
++        this.vecCacheTableName = `vec_cache_memories_${collectionName}`;
++        this.dimensions = dimensions;
++        // Initialize database connection
++        this.db = new Database(dbPath);
++        // Set journal mode to WAL for better performance
++        this.db.pragma('journal_mode = WAL');
++        this.initialize();
++    }
++    initialize() {
++        // Attempt to load sqlite-vec extension
++        try {
++            if (typeof this.db.loadExtension === 'function') {
++                this.db.loadExtension(sqliteVec.getLoadablePath());
++            }
++            else {
++                sqliteVec.load(this.db);
++            }
++            // Verify it is working
++            const version = this.db.prepare('SELECT vec_version()').get();
++            if (version) {
++                this.isVectorExtensionLoaded = true;
++            }
++        }
++        catch (e) {
++            // Fallback mode will be used
++            this.isVectorExtensionLoaded = false;
++        }
++        if (this.isVectorExtensionLoaded) {
++            // Vector Mode schema
++            this.db.exec(`
++        CREATE TABLE IF NOT EXISTS ${this.tableName} (
++          rowid INTEGER PRIMARY KEY AUTOINCREMENT,
++          id TEXT UNIQUE NOT NULL,
++          content TEXT NOT NULL,
++          metadata TEXT NOT NULL, -- JSON stringified metadata
++          created_at INTEGER NOT NULL
++        );
++        
++        CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_id ON ${this.tableName}(id);
++      `);
++            // sqlite-vec virtual table
++            this.db.exec(`
++        CREATE VIRTUAL TABLE IF NOT EXISTS ${this.vecTableName} USING vec0(
++          rowid INTEGER PRIMARY KEY, -- Maps directly to rowid in the metadata table
++          embedding float[${this.dimensions}]
++        );
++      `);
++            // Semantic Cache Tables (Vector Mode)
++            this.db.exec(`
++        CREATE TABLE IF NOT EXISTS ${this.cacheTableName} (
++          rowid INTEGER PRIMARY KEY AUTOINCREMENT,
++          query_text TEXT UNIQUE NOT NULL,
++          response_text TEXT NOT NULL,
++          created_at INTEGER NOT NULL,
++          ttl_seconds INTEGER NOT NULL
++        );
++
++        CREATE VIRTUAL TABLE IF NOT EXISTS ${this.vecCacheTableName} USING vec0(
++          rowid INTEGER PRIMARY KEY,
++          embedding float[${this.dimensions}]
++        );
++      `);
++        }
++        else {
++            // Fallback Mode schema
++            this.db.exec(`
++        CREATE TABLE IF NOT EXISTS ${this.tableName} (
++          rowid INTEGER PRIMARY KEY AUTOINCREMENT,
++          id TEXT UNIQUE NOT NULL,
++          content TEXT NOT NULL,
++          metadata TEXT NOT NULL, -- JSON stringified metadata
++          embedding BLOB NOT NULL, -- Serialized Float32Array
++          created_at INTEGER NOT NULL
++        );
++        
++        CREATE UNIQUE INDEX IF NOT EXISTS idx_${this.tableName}_id ON ${this.tableName}(id);
++      `);
++            // Semantic Cache Table (Fallback Mode)
++            this.db.exec(`
++        CREATE TABLE IF NOT EXISTS ${this.cacheTableName} (
++          rowid INTEGER PRIMARY KEY AUTOINCREMENT,
++          query_text TEXT UNIQUE NOT NULL,
++          response_text TEXT NOT NULL,
++          embedding BLOB NOT NULL, -- Serialized Float32Array
++          created_at INTEGER NOT NULL,
++          ttl_seconds INTEGER NOT NULL
++        );
++      `);
++            // Register the cosine similarity function
++            this.db.function('vec_distance_cosine', (a, b) => {
++                if (!Buffer.isBuffer(a) || !Buffer.isBuffer(b)) {
++                    return 1.0;
++                }
++                // Map buffer to Float32Array
++                const arrA = new Float32Array(a.buffer, a.byteOffset, a.byteLength / 4);
++                const arrB = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
++                let dotProduct = 0;
++                const len = Math.min(arrA.length, arrB.length);
++                for (let i = 0; i < len; i++) {
++                    dotProduct += arrA[i] * arrB[i];
++                }
++                return 1.0 - dotProduct;
++            });
++        }
++        // Initialize FTS5 Virtual Table for Lexical Search
++        this.db.exec(`
++      CREATE VIRTUAL TABLE IF NOT EXISTS ${this.ftsTableName} USING fts5(
++        content,
++        content='${this.tableName}',
++        content_rowid='rowid'
++      );
++    `);
++        // Create database triggers to automatically synchronize FTS5 index with memories content
++        this.db.exec(`
++      CREATE TRIGGER IF NOT EXISTS trg_${this.tableName}_ai AFTER INSERT ON ${this.tableName} BEGIN
++        INSERT INTO ${this.ftsTableName}(rowid, content) VALUES (new.rowid, new.content);
++      END;
++
++      CREATE TRIGGER IF NOT EXISTS trg_${this.tableName}_ad AFTER DELETE ON ${this.tableName} BEGIN
++        INSERT INTO ${this.ftsTableName}(${this.ftsTableName}, rowid, content) VALUES('delete', old.rowid, old.content);
++      END;
++
++      CREATE TRIGGER IF NOT EXISTS trg_${this.tableName}_au AFTER UPDATE ON ${this.tableName} BEGIN
++        INSERT INTO ${this.ftsTableName}(${this.ftsTableName}, rowid, content) VALUES('delete', old.rowid, old.content);
++        INSERT INTO ${this.ftsTableName}(rowid, content) VALUES (new.rowid, new.content);
++      END;
++    `);
++        // Auto-create index on metadata fields
++        this.db.exec(`
++      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_meta_docid ON ${this.tableName}(json_extract(metadata, '$._documentId'));
++      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_meta_session ON ${this.tableName}(json_extract(metadata, '$.session'));
++    `);
++    }
++    insert(id, content, embedding, metadata) {
++        const floatArray = new Float32Array(embedding);
++        const buffer = Buffer.from(floatArray.buffer, floatArray.byteOffset, floatArray.byteLength);
++        const metadataStr = JSON.stringify(metadata);
++        const createdAt = Date.now();
++        if (this.isVectorExtensionLoaded) {
++            const insertMeta = this.db.prepare(`
++        INSERT INTO ${this.tableName} (id, content, metadata, created_at)
++        VALUES (?, ?, ?, ?)
++        ON CONFLICT(id) DO UPDATE SET
++          content = excluded.content,
++          metadata = excluded.metadata,
++          created_at = excluded.created_at
++      `);
++            const insertVec = this.db.prepare(`
++        INSERT INTO ${this.vecTableName} (rowid, embedding)
++        VALUES (?, ?)
++      `);
++            const runTx = this.db.transaction(() => {
++                const existing = this.db.prepare(`SELECT rowid FROM ${this.tableName} WHERE id = ?`).get(id);
++                if (existing) {
++                    this.db.prepare(`DELETE FROM ${this.vecTableName} WHERE rowid = ?`).run(BigInt(existing.rowid));
++                }
++                const info = insertMeta.run(id, content, metadataStr, createdAt);
++                const rowid = info.lastInsertRowid;
++                insertVec.run(BigInt(rowid), buffer);
++            });
++            runTx();
++        }
++        else {
++            const stmt = this.db.prepare(`
++        INSERT INTO ${this.tableName} (id, content, metadata, embedding, created_at)
++        VALUES (?, ?, ?, ?, ?)
++        ON CONFLICT(id) DO UPDATE SET
++          content = excluded.content,
++          metadata = excluded.metadata,
++          embedding = excluded.embedding,
++          created_at = excluded.created_at
++      `);
++            stmt.run(id, content, metadataStr, buffer, createdAt);
++        }
++    }
++    query(queryEmbedding, limit = 5, filter) {
++        const floatArray = new Float32Array(queryEmbedding);
++        const buffer = Buffer.from(floatArray.buffer, floatArray.byteOffset, floatArray.byteLength);
++        const whereClauses = [];
++        const params = [];
++        if (filter) {
++            for (const [key, value] of Object.entries(filter)) {
++                whereClauses.push(`json_extract(m.metadata, '$.${key}') = ?`);
++                params.push(value);
++            }
++        }
++        if (this.isVectorExtensionLoaded) {
++            let sql = `
++        SELECT 
++          m.id, 
++          m.content, 
++          m.metadata, 
++          m.created_at,
++          v.distance
++        FROM ${this.vecTableName} v
++        JOIN ${this.tableName} m ON m.rowid = v.rowid
++        WHERE v.embedding MATCH ? AND k = ?
++      `;
++            const queryParams = [buffer, limit];
++            if (whereClauses.length > 0) {
++                sql += ` AND ${whereClauses.map(c => c.replace('m.', 'm.')).join(' AND ')}`;
++                queryParams.push(...params);
++            }
++            const stmt = this.db.prepare(sql);
++            const rows = stmt.all(...queryParams);
++            return rows.map(row => ({
++                memory: {
++                    id: row.id,
++                    content: row.content,
++                    metadata: JSON.parse(row.metadata),
++                    createdAt: row.created_at
++                },
++                distance: row.distance
++            }));
++        }
++        else if (typeof this.db.function === 'function') {
++            let sql = `
++        SELECT 
++          id, 
++          content, 
++          metadata, 
++          created_at,
++          vec_distance_cosine(embedding, ?) as distance
++        FROM ${this.tableName} m
++        WHERE 1=1
++      `;
++            const queryParams = [buffer];
++            if (whereClauses.length > 0) {
++                sql += ` AND ${whereClauses.join(' AND ')}`;
++                queryParams.push(...params);
++            }
++            sql += ` ORDER BY distance ASC LIMIT ?`;
++            queryParams.push(limit);
++            const stmt = this.db.prepare(sql);
++            const rows = stmt.all(...queryParams);
++            return rows.map(row => ({
++                memory: {
++                    id: row.id,
++                    content: row.content,
++                    metadata: JSON.parse(row.metadata),
++                    createdAt: row.created_at
++                },
++                distance: row.distance
++            }));
++        }
++        else {
++            // JS-side fallback mode when db.function is not available (like bun:sqlite fallback)
++            let sql = `
++        SELECT 
++          id, 
++          content, 
++          metadata, 
++          created_at,
++          embedding
++        FROM ${this.tableName} m
++        WHERE 1=1
++      `;
++            const queryParams = [];
++            if (whereClauses.length > 0) {
++                sql += ` AND ${whereClauses.join(' AND ')}`;
++                queryParams.push(...params);
++            }
++            const stmt = this.db.prepare(sql);
++            const rows = stmt.all(...queryParams);
++            const computeDistance = (a, b) => {
++                let dotProduct = 0;
++                const len = Math.min(a.length, b.length);
++                for (let i = 0; i < len; i++) {
++                    dotProduct += a[i] * b[i];
++                }
++                return 1.0 - dotProduct;
++            };
++            const queryArr = new Float32Array(queryEmbedding);
++            const results = rows.map(row => {
++                const rowBuf = Buffer.isBuffer(row.embedding)
++                    ? row.embedding
++                    : Buffer.from(row.embedding);
++                const arr = new Float32Array(rowBuf.buffer, rowBuf.byteOffset, rowBuf.byteLength / 4);
++                const dist = computeDistance(arr, queryArr);
++                return {
++                    memory: {
++                        id: row.id,
++                        content: row.content,
++                        metadata: JSON.parse(row.metadata),
++                        createdAt: row.created_at
++                    },
++                    distance: dist
++                };
++            });
++            results.sort((a, b) => a.distance - b.distance);
++            return results.slice(0, limit);
++        }
++    }
++    queryLexical(queryText, limit = 5, filter) {
++        const whereClauses = [];
++        const params = [];
++        if (filter) {
++            for (const [key, value] of Object.entries(filter)) {
++                whereClauses.push(`json_extract(m.metadata, '$.${key}') = ?`);
++                params.push(value);
++            }
++        }
++        let sql = `
++      SELECT 
++        m.id, 
++        m.content, 
++        m.metadata, 
++        m.created_at,
++        bm25(${this.ftsTableName}) as score
++      FROM ${this.ftsTableName} f
++      JOIN ${this.tableName} m ON m.rowid = f.rowid
++      WHERE f.content MATCH ?
++    `;
++        const queryParams = [queryText];
++        if (whereClauses.length > 0) {
++            sql += ` AND ${whereClauses.map(c => c.replace('m.', 'm.')).join(' AND ')}`;
++            queryParams.push(...params);
++        }
++        sql += ` ORDER BY score ASC LIMIT ?`;
++        queryParams.push(limit);
++        try {
++            const stmt = this.db.prepare(sql);
++            const rows = stmt.all(...queryParams);
++            return rows.map(row => ({
++                memory: {
++                    id: row.id,
++                    content: row.content,
++                    metadata: JSON.parse(row.metadata),
++                    createdAt: row.created_at
++                },
++                distance: row.score
++            }));
++        }
++        catch (e) {
++            return [];
++        }
++    }
++    getById(id) {
++        if (this.isVectorExtensionLoaded) {
++            const stmt = this.db.prepare(`SELECT rowid, id, content, metadata, created_at FROM ${this.tableName} WHERE id = ?`);
++            const row = stmt.get(id);
++            if (!row)
++                return null;
++            let embedding;
++            try {
++                const vecRow = this.db.prepare(`SELECT embedding FROM ${this.vecTableName} WHERE rowid = ?`).get(BigInt(row.rowid));
++                if (vecRow && vecRow.embedding) {
++                    const arr = new Float32Array(vecRow.embedding.buffer, vecRow.embedding.byteOffset, vecRow.embedding.byteLength / 4);
++                    embedding = Array.from(arr);
++                }
++            }
++            catch (e) { }
++            return {
++                id: row.id,
++                content: row.content,
++                metadata: JSON.parse(row.metadata),
++                createdAt: row.created_at,
++                embedding
++            };
++        }
++        else {
++            const stmt = this.db.prepare(`SELECT id, content, metadata, embedding, created_at FROM ${this.tableName} WHERE id = ?`);
++            const row = stmt.get(id);
++            if (!row)
++                return null;
++            let embedding;
++            if (row.embedding) {
++                const arr = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
++                embedding = Array.from(arr);
++            }
++            return {
++                id: row.id,
++                content: row.content,
++                metadata: JSON.parse(row.metadata),
++                createdAt: row.created_at,
++                embedding
++            };
++        }
++    }
++    getAll(filter) {
++        const whereClauses = [];
++        const params = [];
++        if (filter) {
++            for (const [key, value] of Object.entries(filter)) {
++                whereClauses.push(`json_extract(metadata, '$.${key}') = ?`);
++                params.push(value);
++            }
++        }
++        let sql = `SELECT id, content, metadata, created_at FROM ${this.tableName}`;
++        if (whereClauses.length > 0) {
++            sql += ` WHERE ${whereClauses.join(' AND ')}`;
++        }
++        const stmt = this.db.prepare(sql);
++        const rows = stmt.all(...params);
++        return rows.map(row => ({
++            id: row.id,
++            content: row.content,
++            metadata: JSON.parse(row.metadata),
++            createdAt: row.created_at
++        }));
++    }
++    delete(id) {
++        if (this.isVectorExtensionLoaded) {
++            const getRowid = this.db.prepare(`SELECT rowid FROM ${this.tableName} WHERE id = ?`);
++            const deleteMeta = this.db.prepare(`DELETE FROM ${this.tableName} WHERE id = ?`);
++            const deleteVec = this.db.prepare(`DELETE FROM ${this.vecTableName} WHERE rowid = ?`);
++            const runTx = this.db.transaction(() => {
++                const row = getRowid.get(id);
++                if (row) {
++                    deleteVec.run(BigInt(row.rowid));
++                    deleteMeta.run(id);
++                }
++            });
++            runTx();
++        }
++        else {
++            const stmt = this.db.prepare(`DELETE FROM ${this.tableName} WHERE id = ?`);
++            stmt.run(id);
++        }
++    }
++    // Semantic Cache Implementation
++    setCache(queryText, responseText, embedding, ttlSeconds) {
++        const floatArray = new Float32Array(embedding);
++        const buffer = Buffer.from(floatArray.buffer, floatArray.byteOffset, floatArray.byteLength);
++        const createdAt = Math.floor(Date.now() / 1000);
++        if (this.isVectorExtensionLoaded) {
++            const insertMeta = this.db.prepare(`
++        INSERT INTO ${this.cacheTableName} (query_text, response_text, created_at, ttl_seconds)
++        VALUES (?, ?, ?, ?)
++        ON CONFLICT(query_text) DO UPDATE SET
++          response_text = excluded.response_text,
++          created_at = excluded.created_at,
++          ttl_seconds = excluded.ttl_seconds
++      `);
++            const insertVec = this.db.prepare(`
++        INSERT OR REPLACE INTO ${this.vecCacheTableName} (rowid, embedding)
++        VALUES (?, ?)
++      `);
++            const runTx = this.db.transaction(() => {
++                const existing = this.db.prepare(`SELECT rowid FROM ${this.cacheTableName} WHERE query_text = ?`).get(queryText);
++                if (existing) {
++                    this.db.prepare(`DELETE FROM ${this.vecCacheTableName} WHERE rowid = ?`).run(BigInt(existing.rowid));
++                }
++                const info = insertMeta.run(queryText, responseText, createdAt, ttlSeconds);
++                insertVec.run(BigInt(info.lastInsertRowid), buffer);
++            });
++            runTx();
++        }
++        else {
++            const stmt = this.db.prepare(`
++        INSERT INTO ${this.cacheTableName} (query_text, response_text, embedding, created_at, ttl_seconds)
++        VALUES (?, ?, ?, ?, ?)
++        ON CONFLICT(query_text) DO UPDATE SET
++          response_text = excluded.response_text,
++          embedding = excluded.embedding,
++          created_at = excluded.created_at,
++          ttl_seconds = excluded.ttl_seconds
++      `);
++            stmt.run(queryText, responseText, buffer, createdAt, ttlSeconds);
++        }
++    }
++    getCache(queryEmbedding, threshold) {
++        const floatArray = new Float32Array(queryEmbedding);
++        const buffer = Buffer.from(floatArray.buffer, floatArray.byteOffset, floatArray.byteLength);
++        const now = Math.floor(Date.now() / 1000);
++        if (this.isVectorExtensionLoaded) {
++            const stmt = this.db.prepare(`
++        SELECT 
++          c.response_text,
++          c.created_at,
++          c.ttl_seconds,
++          v.distance
++        FROM ${this.vecCacheTableName} v
++        JOIN ${this.cacheTableName} c ON c.rowid = v.rowid
++        WHERE v.embedding MATCH ? AND k = 1
++      `);
++            try {
++                const row = stmt.get(buffer);
++                if (row && row.distance <= threshold && (row.created_at + row.ttl_seconds > now)) {
++                    return row.response_text;
++                }
++            }
++            catch (e) { }
++            return null;
++        }
++        else if (typeof this.db.function === 'function') {
++            const stmt = this.db.prepare(`
++        SELECT 
++          response_text,
++          created_at,
++          ttl_seconds,
++          vec_distance_cosine(embedding, ?) as distance
++        FROM ${this.cacheTableName}
++        WHERE (created_at + ttl_seconds > ?)
++        ORDER BY distance ASC
++        LIMIT 1
++      `);
++            try {
++                const row = stmt.get(buffer, now);
++                if (row && row.distance <= threshold) {
++                    return row.response_text;
++                }
++            }
++            catch (e) { }
++            return null;
++        }
++        else {
++            // JS-side fallback mode for cache (like bun:sqlite fallback)
++            const stmt = this.db.prepare(`
++        SELECT 
++          response_text,
++          created_at,
++          ttl_seconds,
++          embedding
++        FROM ${this.cacheTableName}
++        WHERE (created_at + ttl_seconds > ?)
++      `);
++            try {
++                const rows = stmt.all(now);
++                const computeDistance = (a, b) => {
++                    let dotProduct = 0;
++                    const len = Math.min(a.length, b.length);
++                    for (let i = 0; i < len; i++) {
++                        dotProduct += a[i] * b[i];
++                    }
++                    return 1.0 - dotProduct;
++                };
++                const queryArr = new Float32Array(queryEmbedding);
++                let bestRow = null;
++                let minDistance = Infinity;
++                for (const row of rows) {
++                    const rowBuf = Buffer.isBuffer(row.embedding)
++                        ? row.embedding
++                        : Buffer.from(row.embedding);
++                    const arr = new Float32Array(rowBuf.buffer, rowBuf.byteOffset, rowBuf.byteLength / 4);
++                    const dist = computeDistance(arr, queryArr);
++                    if (dist < minDistance) {
++                        minDistance = dist;
++                        bestRow = row;
++                    }
++                }
++                if (bestRow && minDistance <= threshold) {
++                    return bestRow.response_text;
++                }
++            }
++            catch (e) { }
++            return null;
++        }
++    }
++    clearCache() {
++        const runTx = this.db.transaction(() => {
++            if (this.isVectorExtensionLoaded) {
++                this.db.exec(`DELETE FROM ${this.vecCacheTableName}`);
++            }
++            this.db.exec(`DELETE FROM ${this.cacheTableName}`);
++        });
++        runTx();
++    }
++    clear() {
++        const runTx = this.db.transaction(() => {
++            // 1. Delete memories (triggers FTS sync)
++            this.db.exec(`DELETE FROM ${this.tableName}`);
++            // 2. Clear vectors
++            if (this.isVectorExtensionLoaded) {
++                this.db.exec(`DELETE FROM ${this.vecTableName}`);
++            }
++            // 3. Clear cache
++            this.clearCache();
++            // 4. Reset sequences
++            this.db.exec(`DELETE FROM sqlite_sequence WHERE name='${this.tableName}'`);
++            this.db.exec(`DELETE FROM sqlite_sequence WHERE name='${this.cacheTableName}'`);
++        });
++        runTx();
++    }
++    close() {
++        this.db.close();
++    }
++    getIsVectorExtensionLoaded() {
++        return this.isVectorExtensionLoaded;
++    }
++}
+diff --git a/node_modules/r-memory/dist/embeddings/local.d.ts b/node_modules/r-memory/dist/embeddings/local.d.ts
+new file mode 100644
+index 0000000..fa0d6fe
+--- /dev/null
++++ b/node_modules/r-memory/dist/embeddings/local.d.ts
+@@ -0,0 +1,30 @@
++import type { EmbeddingProvider, LocalEmbeddingConfig } from '../types.js';
++export declare class LocalTextEmbeddingProvider implements EmbeddingProvider {
++    readonly dimensions = 384;
++    private modelName;
++    private device;
++    private dtype;
++    private extractor;
++    constructor(config?: LocalEmbeddingConfig);
++    private getExtractor;
++    embedText(text: string, context?: 'query' | 'passage'): Promise<number[]>;
++    embedTexts(texts: string[], context?: 'query' | 'passage'): Promise<number[][]>;
++    embedImage(image: string | Buffer | Uint8Array): Promise<number[]>;
++}
++export declare class LocalCLIPEmbeddingProvider implements EmbeddingProvider {
++    readonly dimensions = 512;
++    private modelId;
++    private device;
++    private dtype;
++    private tokenizer;
++    private textModel;
++    private processor;
++    private visionModel;
++    constructor(config?: LocalEmbeddingConfig);
++    private initTextModel;
++    private initVisionModel;
++    embedText(text: string, context?: 'query' | 'passage'): Promise<number[]>;
++    embedTexts(texts: string[], context?: 'query' | 'passage'): Promise<number[][]>;
++    embedImage(imageInput: string | Buffer | Uint8Array): Promise<number[]>;
++    private normalize;
++}
+diff --git a/node_modules/r-memory/dist/embeddings/local.js b/node_modules/r-memory/dist/embeddings/local.js
+new file mode 100644
+index 0000000..854931f
+--- /dev/null
++++ b/node_modules/r-memory/dist/embeddings/local.js
+@@ -0,0 +1,156 @@
++// Lazy load transformers.js to avoid loading it if only OpenAI-compatible is used
++let transformersModule = null;
++async function getTransformers() {
++    if (!transformersModule) {
++        // Dynamically import @huggingface/transformers to keep it ESM compatible
++        transformersModule = await import('@huggingface/transformers');
++    }
++    return transformersModule;
++}
++export class LocalTextEmbeddingProvider {
++    dimensions = 384;
++    modelName;
++    device;
++    dtype;
++    extractor = null;
++    constructor(config = {}) {
++        this.modelName = config.modelName || 'Xenova/multilingual-e5-small';
++        this.device = config.device || 'cpu';
++        this.dtype = config.dtype || 'fp32';
++    }
++    async getExtractor() {
++        if (!this.extractor) {
++            const { pipeline } = await getTransformers();
++            this.extractor = await pipeline('feature-extraction', this.modelName, {
++                device: this.device,
++                dtype: this.dtype
++            });
++        }
++        return this.extractor;
++    }
++    async embedText(text, context = 'passage') {
++        const extractor = await this.getExtractor();
++        // E5 models require a prefix
++        let processedText = text;
++        if (this.modelName.includes('e5-small')) {
++            processedText = `${context}: ${text}`;
++        }
++        const output = await extractor(processedText, {
++            pooling: 'mean',
++            normalize: true
++        });
++        return Array.from(output.data);
++    }
++    async embedTexts(texts, context = 'passage') {
++        if (texts.length === 0)
++            return [];
++        const extractor = await this.getExtractor();
++        // E5 models require a prefix
++        const processedTexts = this.modelName.includes('e5-small')
++            ? texts.map(t => `${context}: ${t}`)
++            : texts;
++        const output = await extractor(processedTexts, {
++            pooling: 'mean',
++            normalize: true
++        });
++        const dims = this.dimensions;
++        const data = output.data; // Float32Array containing all embeddings in a flat array
++        const results = [];
++        for (let i = 0; i < texts.length; i++) {
++            const start = i * dims;
++            const end = start + dims;
++            results.push(Array.from(data.subarray(start, end)));
++        }
++        return results;
++    }
++    async embedImage(image) {
++        throw new Error('LocalTextEmbeddingProvider does not support image embeddings. Use LocalCLIPEmbeddingProvider for multimodal memories.');
++    }
++}
++export class LocalCLIPEmbeddingProvider {
++    dimensions = 512;
++    modelId;
++    device;
++    dtype;
++    tokenizer = null;
++    textModel = null;
++    processor = null;
++    visionModel = null;
++    constructor(config = {}) {
++        this.modelId = config.modelName || 'Xenova/clip-vit-base-patch32';
++        this.device = config.device || 'cpu';
++        this.dtype = config.dtype || 'fp32';
++    }
++    async initTextModel() {
++        if (!this.tokenizer || !this.textModel) {
++            const { AutoTokenizer, CLIPTextModelWithProjection } = await getTransformers();
++            this.tokenizer = await AutoTokenizer.from_pretrained(this.modelId);
++            this.textModel = await CLIPTextModelWithProjection.from_pretrained(this.modelId, {
++                device: this.device,
++                dtype: this.dtype
++            });
++        }
++    }
++    async initVisionModel() {
++        if (!this.processor || !this.visionModel) {
++            const { AutoProcessor, CLIPVisionModelWithProjection } = await getTransformers();
++            this.processor = await AutoProcessor.from_pretrained(this.modelId);
++            this.visionModel = await CLIPVisionModelWithProjection.from_pretrained(this.modelId, {
++                device: this.device,
++                dtype: this.dtype
++            });
++        }
++    }
++    async embedText(text, context) {
++        await this.initTextModel();
++        const textInputs = this.tokenizer(text, { padding: true, truncation: true });
++        const { text_embeds } = await this.textModel(textInputs);
++        // Normalize CLIP embedding to unit length
++        const rawData = Array.from(text_embeds.data);
++        return this.normalize(rawData);
++    }
++    async embedTexts(texts, context) {
++        if (texts.length === 0)
++            return [];
++        await this.initTextModel();
++        const textInputs = this.tokenizer(texts, { padding: true, truncation: true });
++        const { text_embeds } = await this.textModel(textInputs);
++        const dims = this.dimensions;
++        const data = text_embeds.data; // Float32Array containing all embeddings
++        const results = [];
++        for (let i = 0; i < texts.length; i++) {
++            const start = i * dims;
++            const end = start + dims;
++            const rawVector = Array.from(data.subarray(start, end));
++            results.push(this.normalize(rawVector));
++        }
++        return results;
++    }
++    async embedImage(imageInput) {
++        await this.initVisionModel();
++        const { RawImage } = await getTransformers();
++        let rawImage;
++        if (typeof imageInput === 'string') {
++            rawImage = await RawImage.read(imageInput);
++        }
++        else {
++            // Convert buffer or typed array to global Blob for RawImage compatibility
++            const blob = new Blob([imageInput]);
++            rawImage = await RawImage.read(blob);
++        }
++        const imageInputs = await this.processor(rawImage);
++        const { image_embeds } = await this.visionModel(imageInputs);
++        const rawData = Array.from(image_embeds.data);
++        return this.normalize(rawData);
++    }
++    normalize(vector) {
++        let sumSq = 0;
++        for (let i = 0; i < vector.length; i++) {
++            sumSq += vector[i] * vector[i];
++        }
++        const magnitude = Math.sqrt(sumSq);
++        if (magnitude === 0)
++            return vector;
++        return vector.map(x => x / magnitude);
++    }
++}
+diff --git a/node_modules/r-memory/dist/embeddings/openai.d.ts b/node_modules/r-memory/dist/embeddings/openai.d.ts
+new file mode 100644
+index 0000000..3cd1b07
+--- /dev/null
++++ b/node_modules/r-memory/dist/embeddings/openai.d.ts
+@@ -0,0 +1,20 @@
++import type { EmbeddingProvider } from '../types.js';
++export interface OpenAIEmbeddingConfig {
++    baseURL?: string;
++    apiKey?: string;
++    model?: string;
++    dimensions?: number;
++    sendDimensionsParam?: boolean;
++}
++export declare class OpenAIEmbeddingProvider implements EmbeddingProvider {
++    readonly dimensions: number;
++    private baseURL;
++    private apiKey;
++    private model;
++    private sendDimensionsParam;
++    constructor(config?: OpenAIEmbeddingConfig);
++    embedText(text: string, context?: 'query' | 'passage'): Promise<number[]>;
++    embedTexts(texts: string[], context?: 'query' | 'passage'): Promise<number[][]>;
++    embedImage(image: string | Buffer | Uint8Array): Promise<number[]>;
++    private normalize;
++}
+diff --git a/node_modules/r-memory/dist/embeddings/openai.js b/node_modules/r-memory/dist/embeddings/openai.js
+new file mode 100644
+index 0000000..33388aa
+--- /dev/null
++++ b/node_modules/r-memory/dist/embeddings/openai.js
+@@ -0,0 +1,105 @@
++export class OpenAIEmbeddingProvider {
++    dimensions;
++    baseURL;
++    apiKey;
++    model;
++    sendDimensionsParam;
++    constructor(config = {}) {
++        this.baseURL = config.baseURL || 'https://api.openai.com/v1';
++        this.apiKey = config.apiKey || process.env.OPENAI_API_KEY || '';
++        this.model = config.model || 'text-embedding-3-small';
++        this.dimensions = config.dimensions || 1536; // Default OpenAI dimensions
++        this.sendDimensionsParam = config.sendDimensionsParam !== false;
++    }
++    async embedText(text, context) {
++        const url = `${this.baseURL.replace(/\/$/, '')}/embeddings`;
++        const body = {
++            input: text,
++            model: this.model
++        };
++        // Only send dimensions if it's not the default or if explicitly enabled
++        if (this.sendDimensionsParam && this.dimensions !== 1536 && this.model.includes('text-embedding-3')) {
++            body.dimensions = this.dimensions;
++        }
++        const headers = {
++            'Content-Type': 'application/json'
++        };
++        if (this.apiKey) {
++            headers['Authorization'] = `Bearer ${this.apiKey}`;
++        }
++        const response = await fetch(url, {
++            method: 'POST',
++            headers,
++            body: JSON.stringify(body)
++        });
++        if (!response.ok) {
++            const errorText = await response.text();
++            throw new Error(`OpenAI API Error (${response.status}): ${errorText}`);
++        }
++        const resJson = (await response.json());
++        if (!resJson.data || resJson.data.length === 0 || !resJson.data[0].embedding) {
++            throw new Error(`Invalid response format from OpenAI embeddings API: ${JSON.stringify(resJson)}`);
++        }
++        let embedding = resJson.data[0].embedding;
++        // If the returned embedding dimension doesn't match the target, truncate and normalize (Matryoshka style)
++        if (embedding.length !== this.dimensions) {
++            embedding = embedding.slice(0, this.dimensions);
++            embedding = this.normalize(embedding);
++        }
++        return embedding;
++    }
++    async embedTexts(texts, context) {
++        if (texts.length === 0)
++            return [];
++        const url = `${this.baseURL.replace(/\/$/, '')}/embeddings`;
++        const body = {
++            input: texts,
++            model: this.model
++        };
++        if (this.sendDimensionsParam && this.dimensions !== 1536 && this.model.includes('text-embedding-3')) {
++            body.dimensions = this.dimensions;
++        }
++        const headers = {
++            'Content-Type': 'application/json'
++        };
++        if (this.apiKey) {
++            headers['Authorization'] = `Bearer ${this.apiKey}`;
++        }
++        const response = await fetch(url, {
++            method: 'POST',
++            headers,
++            body: JSON.stringify(body)
++        });
++        if (!response.ok) {
++            const errorText = await response.text();
++            throw new Error(`OpenAI API Error (${response.status}): ${errorText}`);
++        }
++        const resJson = (await response.json());
++        if (!resJson.data || resJson.data.length !== texts.length) {
++            throw new Error(`Invalid response format from OpenAI embeddings API: ${JSON.stringify(resJson)}`);
++        }
++        // Sort responses by original index to ensure correct ordering (OpenAI returns index field)
++        const sortedData = [...resJson.data].sort((a, b) => a.index - b.index);
++        return sortedData.map(item => {
++            let embedding = item.embedding;
++            if (embedding.length !== this.dimensions) {
++                embedding = embedding.slice(0, this.dimensions);
++                embedding = this.normalize(embedding);
++            }
++            return embedding;
++        });
++    }
++    async embedImage(image) {
++        throw new Error('OpenAIEmbeddingProvider does not support image embeddings natively. Please use LocalCLIPEmbeddingProvider or a custom multimodal provider for image data.');
++    }
++    normalize(vector) {
++        let sumSq = 0;
++        for (let i = 0; i < vector.length; i++) {
++            sumSq += vector[i] * vector[i];
++        }
++        const magnitude = Math.sqrt(sumSq);
++        if (magnitude === 0)
++            return vector;
++        return vector.map(x => x / magnitude);
++    }
++}
+diff --git a/node_modules/r-memory/dist/index.d.ts b/node_modules/r-memory/dist/index.d.ts
+new file mode 100644
+index 0000000..08717e9
+--- /dev/null
++++ b/node_modules/r-memory/dist/index.d.ts
+@@ -0,0 +1,83 @@
++import type { Memory, QueryResult, EmbeddingProvider, RMemoryConfig, QueryOptions, DocumentIngestOptions, ConsolidateOptions } from './types.js';
++import { extractTextFromPDF, extractTextFromDocx, extractTextFromXlsx, chunkText, chunkTextParentChild } from './utils/document.js';
++export type { Memory, QueryResult, EmbeddingProvider, RMemoryConfig, QueryOptions, DocumentIngestOptions, ConsolidateOptions };
++export { LocalTextEmbeddingProvider, LocalCLIPEmbeddingProvider } from './embeddings/local.js';
++import { OpenAIEmbeddingProvider } from './embeddings/openai.js';
++import type { OpenAIEmbeddingConfig } from './embeddings/openai.js';
++export { OpenAIEmbeddingProvider };
++export type { OpenAIEmbeddingConfig };
++export { extractTextFromPDF, extractTextFromDocx, extractTextFromXlsx, chunkText, chunkTextParentChild };
++export declare class RMemory {
++    private db;
++    private provider;
++    private collectionName;
++    constructor(config: RMemoryConfig);
++    /**
++     * Adds a memory to the agent's database.
++     * If an image is provided, its embedding is generated. Otherwise, the text embedding of content is used.
++     *
++     * @param options Memory insertion options
++     * @returns The memory ID (generated if not provided)
++     */
++    addMemory(options: {
++        id?: string;
++        content: string;
++        image?: string | Buffer | Uint8Array;
++        metadata?: Record<string, any>;
++        embedding?: number[];
++    }): Promise<string>;
++    /**
++     * Queries memories based on semantic similarity, support for lexical query, and hybrid search.
++     * Resolves parent-child references dynamically and applies optional time-decay recency weights.
++     *
++     * @param options Query configuration options
++     * @returns Array of query results containing memory details and similarity score
++     */
++    query(options: QueryOptions): Promise<QueryResult[]>;
++    /**
++     * Performs hybrid search combining semantic (Vector) and lexical (FTS5) queries,
++     * merged using Reciprocal Rank Fusion (RRF).
++     */
++    private queryHybrid;
++    /**
++     * Extracts text, chunks it, and adds a whole document to the database.
++     * Performs parallel batch embedding generation to accelerate ingestion speed.
++     *
++     * @param options Document ingestion configuration
++     * @returns Array of generated memory IDs for each chunk
++     */
++    addDocument(options: DocumentIngestOptions): Promise<string[]>;
++    /**
++     * Retrieves a cached LLM response for a query based on semantic similarity.
++     */
++    getSemanticCache(queryText: string, threshold?: number): Promise<string | null>;
++    /**
++     * Caches an LLM response for a query.
++     */
++    setSemanticCache(queryText: string, responseText: string, ttlSeconds?: number): Promise<void>;
++    /**
++     * Clears the semantic cache.
++     */
++    clearCache(): void;
++    /**
++     * Consolidates older, highly similar memories by clustering them and merging
++     * using a developer-provided summarizer LLM callback.
++     */
++    consolidate(summarizer: (texts: string[]) => Promise<string>, options?: ConsolidateOptions): Promise<void>;
++    /**
++     * Deletes a memory by its ID.
++     */
++    delete(id: string): void;
++    /**
++     * Clears all memories from the collection.
++     */
++    clear(): void;
++    /**
++     * Closes the underlying database connection.
++     */
++    close(): void;
++    /**
++     * Returns whether the fast native sqlite-vec extension was successfully loaded.
++     */
++    isVectorExtensionLoaded(): boolean;
++}
+diff --git a/node_modules/r-memory/dist/index.js b/node_modules/r-memory/dist/index.js
+new file mode 100644
+index 0000000..6d9388d
+--- /dev/null
++++ b/node_modules/r-memory/dist/index.js
+@@ -0,0 +1,359 @@
++import { randomUUID } from 'node:crypto';
++import { readFileSync } from 'node:fs';
++import { SQLiteAdapter } from './database/sqlite.js';
++import { extractTextFromPDF, extractTextFromDocx, extractTextFromXlsx, chunkText, chunkTextParentChild } from './utils/document.js';
++export { LocalTextEmbeddingProvider, LocalCLIPEmbeddingProvider } from './embeddings/local.js';
++import { OpenAIEmbeddingProvider } from './embeddings/openai.js';
++export { OpenAIEmbeddingProvider };
++export { extractTextFromPDF, extractTextFromDocx, extractTextFromXlsx, chunkText, chunkTextParentChild };
++export class RMemory {
++    db;
++    provider;
++    collectionName;
++    constructor(config) {
++        this.provider = config.embeddingProvider;
++        this.collectionName = config.collectionName || 'memories';
++        // Initialize DB adapter with dynamic dimensions
++        this.db = new SQLiteAdapter(config.dbPath, this.collectionName, this.provider.dimensions);
++    }
++    /**
++     * Adds a memory to the agent's database.
++     * If an image is provided, its embedding is generated. Otherwise, the text embedding of content is used.
++     *
++     * @param options Memory insertion options
++     * @returns The memory ID (generated if not provided)
++     */
++    async addMemory(options) {
++        const id = options.id || randomUUID();
++        const content = options.content;
++        const metadata = options.metadata || {};
++        let embedding;
++        if (options.embedding) {
++            embedding = options.embedding;
++        }
++        else if (options.image) {
++            embedding = await this.provider.embedImage(options.image);
++            metadata._hasImage = true;
++        }
++        else {
++            embedding = await this.provider.embedText(content, 'passage');
++        }
++        this.db.insert(id, content, embedding, metadata);
++        return id;
++    }
++    /**
++     * Queries memories based on semantic similarity, support for lexical query, and hybrid search.
++     * Resolves parent-child references dynamically and applies optional time-decay recency weights.
++     *
++     * @param options Query configuration options
++     * @returns Array of query results containing memory details and similarity score
++     */
++    async query(options) {
++        const limit = options.limit ?? 5;
++        const filter = options.filter;
++        // 1. Ingest query and compute raw search results
++        let rawResults;
++        if (options.hybrid && typeof options.query === 'string') {
++            rawResults = await this.queryHybrid(options.query, limit, filter);
++        }
++        else {
++            let queryEmbedding;
++            if (typeof options.query === 'string') {
++                queryEmbedding = await this.provider.embedText(options.query, 'query');
++            }
++            else {
++                queryEmbedding = await this.provider.embedImage(options.query);
++            }
++            rawResults = this.db.query(queryEmbedding, limit, filter);
++        }
++        // 2. Apply optional Time Decay (Recency Weighting)
++        if (options.decayFactor !== undefined && options.decayFactor > 0) {
++            const now = Date.now();
++            rawResults.forEach(res => {
++                // Compute age in hours
++                const ageHours = (now - res.memory.createdAt) / (1000 * 60 * 60);
++                const decayMultiplier = Math.exp(-options.decayFactor * ageHours);
++                // Decay similarity score (where similarity is 1.0 - distance)
++                const similarity = 1.0 - res.distance;
++                const decayedSimilarity = similarity * decayMultiplier;
++                // Convert back to cosine distance
++                res.distance = 1.0 - decayedSimilarity;
++            });
++            // Sort by decayed distance ascending (closer matches first)
++            rawResults.sort((a, b) => a.distance - b.distance);
++        }
++        // 3. Resolve Parent-Child References
++        // Swap child chunk content with parent content if _parentId is present in metadata
++        const resolvedResults = [];
++        for (const res of rawResults) {
++            const parentId = res.memory.metadata._parentId;
++            if (parentId) {
++                const parentMemory = this.db.getById(parentId);
++                if (parentMemory) {
++                    resolvedResults.push({
++                        ...res,
++                        memory: {
++                            ...res.memory,
++                            content: parentMemory.content, // Return parent rich context
++                            metadata: {
++                                ...res.memory.metadata,
++                                _childContent: res.memory.content // Preserve child text
++                            }
++                        }
++                    });
++                    continue;
++                }
++            }
++            resolvedResults.push(res);
++        }
++        return resolvedResults.slice(0, limit);
++    }
++    /**
++     * Performs hybrid search combining semantic (Vector) and lexical (FTS5) queries,
++     * merged using Reciprocal Rank Fusion (RRF).
++     */
++    async queryHybrid(queryText, limit, filter) {
++        const candidateLimit = limit * 2;
++        const queryEmbedding = await this.provider.embedText(queryText, 'query');
++        const semanticResults = this.db.query(queryEmbedding, candidateLimit, filter);
++        const lexicalResults = this.db.queryLexical(queryText, candidateLimit, filter);
++        const rrfScores = {};
++        semanticResults.forEach((res, index) => {
++            const id = res.memory.id;
++            if (!rrfScores[id]) {
++                rrfScores[id] = { memory: res.memory, distance: res.distance };
++            }
++            rrfScores[id].semanticRank = index + 1;
++        });
++        lexicalResults.forEach((res, index) => {
++            const id = res.memory.id;
++            if (!rrfScores[id]) {
++                rrfScores[id] = { memory: res.memory, distance: 1.0 };
++            }
++            rrfScores[id].lexicalRank = index + 1;
++        });
++        const k = 60;
++        const combined = [];
++        for (const [id, info] of Object.entries(rrfScores)) {
++            let score = 0;
++            if (info.semanticRank !== undefined) {
++                score += 1.0 / (k + info.semanticRank);
++            }
++            if (info.lexicalRank !== undefined) {
++                score += 1.0 / (k + info.lexicalRank);
++            }
++            combined.push({
++                memory: info.memory,
++                distance: info.distance,
++                score: score
++            });
++        }
++        combined.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
++        return combined;
++    }
++    /**
++     * Extracts text, chunks it, and adds a whole document to the database.
++     * Performs parallel batch embedding generation to accelerate ingestion speed.
++     *
++     * @param options Document ingestion configuration
++     * @returns Array of generated memory IDs for each chunk
++     */
++    async addDocument(options) {
++        const docId = options.id || randomUUID();
++        const customMetadata = options.metadata || {};
++        const chunkSize = options.chunkSize ?? 500;
++        const chunkOverlap = options.chunkOverlap ?? Math.min(100, Math.floor(chunkSize * 0.2));
++        let buffer;
++        if (typeof options.pathOrBuffer === 'string') {
++            buffer = readFileSync(options.pathOrBuffer);
++        }
++        else {
++            buffer = options.pathOrBuffer;
++        }
++        let text = '';
++        switch (options.type) {
++            case 'pdf':
++                text = await extractTextFromPDF(buffer);
++                break;
++            case 'docx':
++                text = await extractTextFromDocx(buffer);
++                break;
++            case 'xlsx':
++                text = await extractTextFromXlsx(buffer);
++                break;
++            case 'txt':
++                text = buffer.toString('utf-8');
++                break;
++            default:
++                throw new Error(`Unsupported document type: ${options.type}`);
++        }
++        const chunkIds = [];
++        if (options.parentChild) {
++            const parentChunkSize = options.parentChunkSize ?? 1000;
++            const parentChunkOverlap = options.parentChunkOverlap ?? Math.min(200, Math.floor(parentChunkSize * 0.2));
++            const parentChildData = chunkTextParentChild(text, parentChunkSize, parentChunkOverlap, chunkSize, chunkOverlap);
++            // Collect all child texts across parents to generate batch embeddings in one call
++            const allChildTexts = [];
++            parentChildData.forEach(p => allChildTexts.push(...p.childChunks));
++            const allChildEmbeddings = await this.provider.embedTexts(allChildTexts, 'passage');
++            let childEmbedIndex = 0;
++            for (let pIdx = 0; pIdx < parentChildData.length; pIdx++) {
++                const parentId = `${docId}-parent-${pIdx}`;
++                const parentText = parentChildData[pIdx].parentText;
++                // Store parent chunk without embedding (saves space)
++                const dummyEmbedding = new Array(this.provider.dimensions).fill(0);
++                await this.addMemory({
++                    id: parentId,
++                    content: parentText,
++                    metadata: { _isParent: true, _documentId: docId },
++                    embedding: dummyEmbedding
++                });
++                // Store child chunks with pre-computed batch embeddings
++                const childTexts = parentChildData[pIdx].childChunks;
++                for (let cIdx = 0; cIdx < childTexts.length; cIdx++) {
++                    const childId = `${docId}-child-${pIdx}-${cIdx}`;
++                    const childMetadata = {
++                        ...customMetadata,
++                        _documentId: docId,
++                        _parentId: parentId
++                    };
++                    await this.addMemory({
++                        id: childId,
++                        content: childTexts[cIdx],
++                        metadata: childMetadata,
++                        embedding: allChildEmbeddings[childEmbedIndex++]
++                    });
++                    chunkIds.push(childId);
++                }
++            }
++        }
++        else {
++            // Flat Ingestion with Batch Embedding
++            const chunks = chunkText(text, chunkSize, chunkOverlap);
++            const embeddings = await this.provider.embedTexts(chunks, 'passage');
++            for (let i = 0; i < chunks.length; i++) {
++                const chunkId = `${docId}-chunk-${i}`;
++                const chunkMetadata = {
++                    ...customMetadata,
++                    _documentId: docId,
++                    _chunkIndex: i,
++                    _chunkCount: chunks.length
++                };
++                await this.addMemory({
++                    id: chunkId,
++                    content: chunks[i],
++                    metadata: chunkMetadata,
++                    embedding: embeddings[i]
++                });
++                chunkIds.push(chunkId);
++            }
++        }
++        return chunkIds;
++    }
++    /**
++     * Retrieves a cached LLM response for a query based on semantic similarity.
++     */
++    async getSemanticCache(queryText, threshold = 0.05) {
++        const queryEmbedding = await this.provider.embedText(queryText, 'query');
++        return this.db.getCache(queryEmbedding, threshold);
++    }
++    /**
++     * Caches an LLM response for a query.
++     */
++    async setSemanticCache(queryText, responseText, ttlSeconds = 3600) {
++        const queryEmbedding = await this.provider.embedText(queryText, 'query');
++        this.db.setCache(queryText, responseText, queryEmbedding, ttlSeconds);
++    }
++    /**
++     * Clears the semantic cache.
++     */
++    clearCache() {
++        this.db.clearCache();
++    }
++    /**
++     * Consolidates older, highly similar memories by clustering them and merging
++     * using a developer-provided summarizer LLM callback.
++     */
++    async consolidate(summarizer, options = {}) {
++        const threshold = options.threshold ?? 0.15;
++        const filter = options.filter;
++        // Retrieve all memories in the collection (without vector query)
++        const allMemories = this.db.getAll(filter);
++        if (allMemories.length <= 1)
++            return;
++        const visited = new Set();
++        for (let i = 0; i < allMemories.length; i++) {
++            const current = allMemories[i];
++            if (visited.has(current.id))
++                continue;
++            if (current.metadata._isParent)
++                continue;
++            // Load full memory record containing its embedding float array
++            const fullCurrent = this.db.getById(current.id);
++            if (!fullCurrent || !fullCurrent.embedding)
++                continue;
++            // Query database for nearest neighbors of current memory
++            const matches = this.db.query(fullCurrent.embedding, 30, filter);
++            const cluster = [];
++            for (const match of matches) {
++                if (visited.has(match.memory.id))
++                    continue;
++                if (match.memory.metadata._isParent)
++                    continue;
++                if (match.distance <= threshold) {
++                    cluster.push(match.memory);
++                }
++            }
++            // Summarize and consolidate if there's overlap (> 1 similar memory)
++            if (cluster.length > 1) {
++                const clusterTexts = cluster.map(m => m.content);
++                try {
++                    const summary = await summarizer(clusterTexts);
++                    // Delete merged child memories
++                    const clusterIds = cluster.map(m => m.id);
++                    clusterIds.forEach(id => {
++                        visited.add(id);
++                        this.db.delete(id);
++                    });
++                    // Insert summarized memory back
++                    const consolidatedMetadata = {
++                        _isConsolidated: true,
++                        _consolidatedCount: cluster.length,
++                        _sourceIds: clusterIds
++                    };
++                    await this.addMemory({
++                        content: summary,
++                        metadata: consolidatedMetadata
++                    });
++                }
++                catch (e) {
++                    console.error('Error consolidating cluster:', e);
++                }
++            }
++        }
++    }
++    /**
++     * Deletes a memory by its ID.
++     */
++    delete(id) {
++        this.db.delete(id);
++    }
++    /**
++     * Clears all memories from the collection.
++     */
++    clear() {
++        this.db.clear();
++    }
++    /**
++     * Closes the underlying database connection.
++     */
++    close() {
++        this.db.close();
++    }
++    /**
++     * Returns whether the fast native sqlite-vec extension was successfully loaded.
++     */
++    isVectorExtensionLoaded() {
++        return this.db.getIsVectorExtensionLoaded();
++    }
++}
+diff --git a/node_modules/r-memory/dist/types.d.ts b/node_modules/r-memory/dist/types.d.ts
+new file mode 100644
+index 0000000..6d4efca
+--- /dev/null
++++ b/node_modules/r-memory/dist/types.d.ts
+@@ -0,0 +1,63 @@
++export interface Memory {
++    id: string;
++    content: string;
++    metadata: Record<string, any>;
++    createdAt: number;
++    embedding?: number[];
++}
++export interface QueryResult {
++    memory: Memory;
++    distance: number;
++    score?: number;
++}
++export interface EmbeddingProvider {
++    readonly dimensions: number;
++    embedText(text: string, context?: 'query' | 'passage'): Promise<number[]>;
++    embedTexts(texts: string[], context?: 'query' | 'passage'): Promise<number[][]>;
++    embedImage(image: string | Buffer | Uint8Array): Promise<number[]>;
++}
++export interface RMemoryConfig {
++    dbPath: string;
++    collectionName?: string;
++    embeddingProvider: EmbeddingProvider;
++}
++export interface QueryOptions {
++    query: string | Buffer | Uint8Array;
++    limit?: number;
++    filter?: Record<string, any>;
++    hybrid?: boolean;
++    decayFactor?: number;
++}
++export interface DocumentIngestOptions {
++    id?: string;
++    pathOrBuffer: string | Buffer;
++    type: 'pdf' | 'docx' | 'xlsx' | 'txt';
++    metadata?: Record<string, any>;
++    chunkSize?: number;
++    chunkOverlap?: number;
++    parentChild?: boolean;
++    parentChunkSize?: number;
++    parentChunkOverlap?: number;
++}
++export interface LocalEmbeddingConfig {
++    modelName?: string;
++    device?: 'cpu' | 'gpu' | 'webgpu';
++    dtype?: 'fp32' | 'fp16' | 'q8' | 'q4';
++}
++export interface ConsolidateOptions {
++    filter?: Record<string, any>;
++    threshold?: number;
++}
++export interface DatabaseAdapter {
++    insert(id: string, content: string, embedding: number[], metadata: Record<string, any>): void;
++    query(queryEmbedding: number[], limit: number, filter?: Record<string, any>): QueryResult[];
++    queryLexical(queryText: string, limit: number, filter?: Record<string, any>): QueryResult[];
++    getById(id: string): Memory | null;
++    getAll(filter?: Record<string, any>): Memory[];
++    delete(id: string): void;
++    clear(): void;
++    close(): void;
++    setCache(queryText: string, responseText: string, embedding: number[], ttlSeconds: number): void;
++    getCache(queryEmbedding: number[], threshold: number): string | null;
++    clearCache(): void;
++}
+diff --git a/node_modules/r-memory/dist/types.js b/node_modules/r-memory/dist/types.js
+new file mode 100644
+index 0000000..cb0ff5c
+--- /dev/null
++++ b/node_modules/r-memory/dist/types.js
+@@ -0,0 +1 @@
++export {};
+diff --git a/node_modules/r-memory/dist/utils/document.d.ts b/node_modules/r-memory/dist/utils/document.d.ts
+new file mode 100644
+index 0000000..d059ca5
+--- /dev/null
++++ b/node_modules/r-memory/dist/utils/document.d.ts
+@@ -0,0 +1,29 @@
++/**
++ * Extracts raw text from a PDF document buffer.
++ */
++export declare function extractTextFromPDF(buffer: Buffer): Promise<string>;
++/**
++ * Extracts raw text from a Microsoft Word (.docx) document buffer.
++ */
++export declare function extractTextFromDocx(buffer: Buffer): Promise<string>;
++/**
++ * Extracts comma-separated spreadsheet data from an Excel (.xlsx, .xls, .csv) document buffer.
++ */
++export declare function extractTextFromXlsx(buffer: Buffer): Promise<string>;
++/**
++ * Splitting text into smaller semantic passages using a sliding window approach with word alignment.
++ *
++ * @param text The full text to split
++ * @param chunkSize The maximum size of each chunk (characters)
++ * @param chunkOverlap The overlap size between consecutive chunks (characters)
++ */
++export declare function chunkText(text: string, chunkSize?: number, chunkOverlap?: number): string[];
++export interface ParentChildChunks {
++    parentText: string;
++    childChunks: string[];
++}
++/**
++ * Splits text hierarchically into parent chunks and child chunks.
++ * Useful for Parent-Child retrieval.
++ */
++export declare function chunkTextParentChild(text: string, parentSize?: number, parentOverlap?: number, childSize?: number, childOverlap?: number): ParentChildChunks[];
+diff --git a/node_modules/r-memory/dist/utils/document.js b/node_modules/r-memory/dist/utils/document.js
+new file mode 100644
+index 0000000..3fe5ac6
+--- /dev/null
++++ b/node_modules/r-memory/dist/utils/document.js
+@@ -0,0 +1,83 @@
++import pdf from 'pdf-parse';
++import mammoth from 'mammoth';
++import * as XLSX from 'xlsx';
++/**
++ * Extracts raw text from a PDF document buffer.
++ */
++export async function extractTextFromPDF(buffer) {
++    // pdf-parse library exports a default function
++    const data = await pdf(buffer);
++    return data.text || '';
++}
++/**
++ * Extracts raw text from a Microsoft Word (.docx) document buffer.
++ */
++export async function extractTextFromDocx(buffer) {
++    const result = await mammoth.extractRawText({ buffer });
++    return result.value || '';
++}
++/**
++ * Extracts comma-separated spreadsheet data from an Excel (.xlsx, .xls, .csv) document buffer.
++ */
++export async function extractTextFromXlsx(buffer) {
++    const workbook = XLSX.read(buffer, { type: 'buffer' });
++    let text = '';
++    for (const sheetName of workbook.SheetNames) {
++        const sheet = workbook.Sheets[sheetName];
++        const csv = XLSX.utils.sheet_to_csv(sheet);
++        if (csv.trim()) {
++            text += `Sheet: ${sheetName}\n${csv}\n`;
++        }
++    }
++    return text;
++}
++/**
++ * Splitting text into smaller semantic passages using a sliding window approach with word alignment.
++ *
++ * @param text The full text to split
++ * @param chunkSize The maximum size of each chunk (characters)
++ * @param chunkOverlap The overlap size between consecutive chunks (characters)
++ */
++export function chunkText(text, chunkSize = 500, chunkOverlap = 100) {
++    if (chunkSize <= 0)
++        throw new Error('chunkSize must be greater than 0');
++    if (chunkOverlap < 0 || chunkOverlap >= chunkSize) {
++        throw new Error('chunkOverlap must be non-negative and less than chunkSize');
++    }
++    const chunks = [];
++    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\s+/g, ' ');
++    let index = 0;
++    while (index < normalizedText.length) {
++        let end = index + chunkSize;
++        let chunk = normalizedText.substring(index, end);
++        // Align with word boundary if not at the very end of the text
++        if (end < normalizedText.length) {
++            const lastSpace = chunk.lastIndexOf(' ');
++            // Only align if space is found in the last 20% of the chunk
++            if (lastSpace > chunkSize * 0.8) {
++                chunk = chunk.substring(0, lastSpace);
++            }
++        }
++        const trimmed = chunk.trim();
++        if (trimmed) {
++            chunks.push(trimmed);
++        }
++        const step = chunk.length - chunkOverlap;
++        index += step > 0 ? step : 1; // Safely advance by at least 1 character
++    }
++    return chunks;
++}
++/**
++ * Splits text hierarchically into parent chunks and child chunks.
++ * Useful for Parent-Child retrieval.
++ */
++export function chunkTextParentChild(text, parentSize = 1000, parentOverlap = 200, childSize = 200, childOverlap = 50) {
++    const parents = chunkText(text, parentSize, parentOverlap);
++    return parents.map(parentText => {
++        const childChunks = chunkText(parentText, childSize, childOverlap);
++        return {
++            parentText,
++            childChunks
++        };
++    });
++}
