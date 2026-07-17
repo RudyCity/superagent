@@ -284,7 +284,7 @@ if spawning_subagent:
     CALL manage_tasks(action: 'add' or 'add_bulk') to document task FIRST.
     # Use 'add_bulk' with 'texts' array when adding multiple tasks at once.
     COLLISION_GUARD: Each subagent gets one disjoint file scope in its prompt. Mark task [/] on spawn (manage_tasks update), [x] when agent reports done. Subagents must NOT self-assign from _task.md or call manage_tasks/manage_plan.
-    if multiple_independent_subagents: issue multiple invoke_subagent calls in same turn, then manage_subagents(action:'report', conversationIds:[...]).
+    if multiple_independent_subagents: use_skill('preventing-subagent-collisions') FIRST -> follow workflow, then issue all invoke_subagent calls in same turn with fileScope param, then manage_subagents(action:'report', conversationIds:[...]).
 
 if decision_point:
     CALL ask_question()
