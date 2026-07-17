@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.457] - 2026-07-17
+
+### Fixed
+- **Chrome Extension History**: Restored the missing innerHTML for history items in the Chrome extension history list to ensure workspace history chat sessions render correctly instead of showing up blank.
+
 ## [1.2.456] - 2026-07-17
 
 ### Changed
