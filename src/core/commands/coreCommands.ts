@@ -160,7 +160,7 @@ export const helpCommand: SlashCommand = {
         "  /skills   - List all installed agent skills and templates",
         "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",
         "  /memory   - Manage and inspect RMemory long-term memory",
-        "              Usage: /memory [status|search <query>|add <key> <val>|delete <key>|list-scenes|read-scene <path>|read-persona]",
+        "              Usage: /memory [status|sync|search <query>|add <key> <val>|delete <key>|list-scenes|read-scene <path>|read-persona]",
         "  /mcp      - Manage Model Context Protocol (MCP) servers",
         "              Usage: /mcp [list|add <name> <command> [args...]|remove <name>|reload]",
         "  /image paste      - Attach an image from the system clipboard",

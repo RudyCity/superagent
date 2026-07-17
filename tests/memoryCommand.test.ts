@@ -123,4 +123,19 @@ describe("/memory Command Suite", () => {
     expect(mockClient.readCore).toHaveBeenCalled();
     expect(addedLines.some((l) => l.content.includes("persona content details"))).toBe(true);
   });
+
+  it("should trigger manual sync of conversation history", async () => {
+    const saveHistoryMock = vi.fn().mockResolvedValue(undefined);
+    const syncCtx = {
+      ...mockCtx,
+      agent: {
+        ...mockCtx.agent,
+        saveHistory: saveHistoryMock,
+      },
+    };
+
+    await handleSlashCommand("/memory sync", syncCtx as any);
+    expect(saveHistoryMock).toHaveBeenCalled();
+    expect(addedLines.some((l) => l.content.includes("Synchronization complete"))).toBe(true);
+  });
 });

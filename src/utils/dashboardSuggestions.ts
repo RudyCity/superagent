@@ -245,6 +245,7 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
     if (mainCommand === "/memory") {
       const possibilities = [
         "/memory status",
+        "/memory sync",
         "/memory search",
         "/memory add",
         "/memory delete",

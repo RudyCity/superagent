@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.428] - 2026-07-17
+
+### Added
+- **Manual Sync Command**: Added `/memory sync` subcommand allowing users to manually force synchronization of their current conversation history to the RMemory database.
+
 ## [1.2.427] - 2026-07-17
 
 ### Added

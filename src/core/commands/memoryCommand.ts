@@ -199,6 +199,39 @@ export const memoryCommand: SlashCommand = {
       return;
     }
 
+    if (subcommand === "sync") {
+      if (!ctx.agent) {
+        ctx.addLine({
+          type: "error",
+          content: "No active agent session to sync.",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      ctx.addLine({
+        type: "system",
+        content: "Synchronizing conversation history to RMemory database...",
+        timestamp: Date.now(),
+      });
+
+      try {
+        await ctx.agent.saveHistory();
+        ctx.addLine({
+          type: "system",
+          content: "✓ Synchronization complete.",
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to synchronize: ${err.message}`,
+          timestamp: Date.now(),
+        });
+      }
+      return;
+    }
+
     if (subcommand === "list-scenes") {
       ctx.addLine({
         type: "system",
@@ -330,6 +363,7 @@ export const memoryCommand: SlashCommand = {
       "  search <query>       Perform a vector search through your long-term memories (L1)",
       "  add <id> <val>       Save or overwrite a long-term structured memory",
       "  delete <id>          Delete a specific long-term structured memory",
+      "  sync                 Manually trigger synchronization of history to RMemory database",
       "  list-scenes          List all scenario navigation blocks (L2)",
       "  read-scene <path>    Read the content of a specific scenario block",
       "  read-persona         Read the user persona profile (L3)",
