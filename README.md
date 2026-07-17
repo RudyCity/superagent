@@ -286,6 +286,36 @@ Superagent features a built-in REST API and Server-Sent Events (SSE) server (`se
    ```
    *(To uninstall the global symlink, run `npm unlink` inside this directory).*
 
+### Linking and Running in Another Project
+
+If you want to use the local development version of Superagent inside another project using Bun:
+
+1. In the `superagent` repository root directory, register the package:
+   ```bash
+   bun link
+   ```
+
+2. In your target project's root directory, link the registered package:
+   ```bash
+   bun link superagent
+   ```
+
+3. Start the assistant in your target project using `bunx`:
+   ```bash
+   bunx superagent
+   ```
+   Alternatively, you can add a script in your target project's `package.json`:
+   ```json
+   "scripts": {
+     "superagent": "superagent"
+   }
+   ```
+   And run it using:
+   ```bash
+   bun run superagent
+   ```
+
+
 4. Configure Global API Credentials:
    Superagent stores all configuration — provider credentials, model settings, rate limits, and system settings — in a centralized JSON config file at `~/.superagent-r/model-config.json`. The easiest way to configure everything is through the interactive slash commands:
    ```

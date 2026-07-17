@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.446] - 2026-07-17
+
+### Added
+- **README Documentation**: Added instructions for linking and running the local Superagent package inside other projects using `bun link` and `bunx`.
+
 ## [1.2.445] - 2026-07-17
 
 ### Added
