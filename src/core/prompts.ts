@@ -203,6 +203,8 @@ ${FAST_ANALYSIS_RULE}
     - Architecture: '## Architecture'
 - WORKTREE_CLEANUP: Manage, clean, and prune Git worktree workspaces using 'git_worktree'.
 - TRANSACTIONAL_MERGE: Merge completed branches using 'merge_superagents'. If merge conflicts occur, abort merge (no auto-resolution). Run universal validation post-merge. Auto-revert if validation fails.
+- WORKTREE_SHARED_FILES: Superagents inside worktrees must NEVER modify: package.json (version bump), CHANGELOG.md, AGENTS.md, README.md, or any root-level config. These are POST-MERGE ONLY files. Instruct each Superagent to include its proposed version/changelog entry in its final report — Master Agent writes them ONCE after all merges.
+- POST_MERGE_SERIAL: After all merge_superagents complete, perform in strict order: (1) bun run build, (2) bun test, (3) bump version in package.json, (4) prepend all changelog entries to CHANGELOG.md, (5) update AGENTS.md/README.md if needed, (6) single commit, (7) prune worktrees.
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
 ${ATTENTION_HIERARCHY_RULE}
@@ -267,6 +269,7 @@ ${MANDATORY_HALLMARK_RULE}
 - LEADERSHIP_AND_DELEGATION: Maintain coordinator mindset. Delegate atomic tasks to Subagents ('researcher', 'coder', 'reviewer', 'manual-tester') via 'invoke_subagent'. If multiple tasks are independent, issue multiple invoke_subagent tool calls in one turn when runtime supports parallel tool calls. Direct, review, and integrate outputs. Pre-assign each subagent one explicit task + file scope in its prompt. Subagents must NOT call manage_tasks or manage_plan — only parent manages task status.
 - PRE_MERGE_VALIDATION: Run build & test suites inside worktree before finishing. Fix all failures first.
 - GIT_COMMIT: Add & commit changes to branch ${branch} only for explicit multi-agent handoff/finalization tasks. Do not commit if user or orchestrator says no commits.
+- WORKTREE_PROTECTED_FILES: Do NOT modify package.json (version), CHANGELOG.md, AGENTS.md, README.md, or any root-level config inside this worktree. These are post-merge files owned by the Master Agent. Instead, include your proposed version bump and changelog entry in your final report — Master Agent applies them after all branches are merged.
 - PLAN_LIMIT: View, edit, sync, and update task status via 'manage_tasks' and 'manage_plan'. Direct file edits/writes to task or plan files are BLOCKED.
 - BACKGROUND_WAIT: When running a long-running process in the background via 'run_background_process', always use 'manage_background_process' (action: 'wait') to block and await its completion instead of polling 'status' in a loop to conserve resources and avoid step limit issues.
 ${FILE_EDIT_SAFETY_RULE}
@@ -321,6 +324,8 @@ SUPERAGENT TASK REPORT
 - Tests: [passed / failed / test count]
 - Self-Critique: [Potential gaps, untested edge cases]
 - Confidence: [High / Medium / Low — with brief reasoning]
+- Proposed Version Bump: [patch / minor / major — reason] (Master Agent applies post-merge)
+- Proposed Changelog Entry: [Exact text to prepend to CHANGELOG.md] (Master Agent writes post-merge)
 - Notes: [Blockers or orchestrator recommendations]
 - Status: Completed / Blocked / Partial
 `.trim();
