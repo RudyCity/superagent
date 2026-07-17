@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.400] - 2026-07-17
+
+### Added
+- **RMemory Documentation and Prompts**: Updated remembering-conversations skill instructions with the new native RMemory tools and slash commands. Added RMemory guidelines to the base system prompt instructions.
+
 ## [1.2.399] - 2026-07-17
 
 ### Optimized

@@ -27,43 +27,19 @@ Search archived conversations using semantic similarity or exact text matching.
 - Info in current conversation
 - Question about current codebase (use Grep/Read)
 
-## In-Session Use
+## In-Session Use (for AI Agents)
 
-**Always use subagents** (50-100x context savings). See skills/using-skills for workflow.
+Use these native tools directly:
+- `rmemory_search`: Search through long-term structured memories (L1).
+- `rmemory_conversation_search`: Search past raw conversation exchanges (L0).
+- `rmemory_save`: Save a structured memory (L1) to project or global scope.
 
-**Manual/CLI use:** Direct search (below) for humans outside Claude Code sessions.
+## Direct Search & Configuration (for Humans)
 
-## Direct Search (Manual/CLI)
-
-**Tool:** `${SUPERPOWERS_SKILLS_ROOT}/skills/collaboration/remembering-conversations/tool/search-conversations`
-
-**Modes:**
-```bash
-search-conversations "query"              # Vector similarity (default)
-search-conversations --text "exact"       # Exact string match
-search-conversations --both "query"       # Both modes
-```
-
-**Flags:**
-```bash
---after YYYY-MM-DD    # Filter by date
---before YYYY-MM-DD   # Filter by date
---limit N             # Max results (default: 10)
---help                # Full usage
-```
-
-**Examples:**
-```bash
-# Semantic search
-search-conversations "React Router authentication errors"
-
-# Find git SHA
-search-conversations --text "a1b2c3d4"
-
-# Time range
-search-conversations --after 2025-09-01 "refactoring"
-```
-
-Returns: project, date, conversation summary, matched exchange, similarity %, file path.
-
-**For details:** Run `search-conversations --help`
+Use these slash commands in the CLI:
+- `/memory search <query>`: Semantic search through long-term memories.
+- `/memory status`: Check RMemory status and current session key.
+- `/memory add <key> <value>`: Save/overwrite a long-term memory.
+- `/memory delete <key>`: Delete a memory.
+- `/setting-rmemory <on|off>`: Toggle RMemory.
+- `/setting-rmemory provider <local|openai>`: Set embedding provider.
