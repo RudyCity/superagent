@@ -634,8 +634,30 @@ export const loadPinnedSessionTool: Tool = {
       const allEntries = getAllKnowledge({ limit: 500 });
       const knownPaths = new Set(allEntries.map((e) => e.sourceSessionPath));
 
-      // Also allow paths found via search_history (any valid session file)
-      const transcript = getSessionTranscript(sessionPath, maxChars);
+      let transcript: string | null = null;
+      const { getSettings } = await import("../config.js");
+      const settings = getSettings();
+      if (settings.enableRmemory) {
+        try {
+          const { getRMemoryClient } = await import("../rmemoryUtil.js");
+          const client = getRMemoryClient(3000);
+          const sessionId = path.basename(sessionPath, ".json");
+          const rmemoryMessages = await client.getConversationMessages(sessionId);
+          if (rmemoryMessages.length > 0) {
+            const lines = rmemoryMessages.map((m) => `[${m.role.toUpperCase()}]: ${m.content || ""}`);
+            transcript = lines.join("\n\n");
+            if (transcript.length > maxChars) {
+              transcript = transcript.slice(-maxChars);
+              transcript = "... [earlier content truncated] ...\n\n" + transcript;
+            }
+          }
+        } catch {}
+      }
+
+      if (!transcript) {
+        transcript = getSessionTranscript(sessionPath, maxChars);
+      }
+
       if (!transcript) {
         return `Error: Could not read session at ${sessionPath}. File may not exist or is corrupted.`;
       }
@@ -691,7 +713,7 @@ export const searchPinnedKnowledgeTool: Tool = {
 
     try {
       const { searchKnowledge } = await import("../pinnedKnowledge.js");
-      const results = searchKnowledge(query, {
+      const results = await searchKnowledge(query, {
         workingDirectory: args.working_directory as string | undefined,
         tag: args.tag as string | undefined,
         limit: (args.limit as number) || 20,

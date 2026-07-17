@@ -127,7 +127,7 @@ export class MemoryClient {
   async searchConversation(options: {
     query: string;
     limit?: number;
-  }): Promise<{ messages: { role: string; content: string; timestamp: string }[] }> {
+  }): Promise<{ messages: { role: string; content: string; timestamp: string; session_id?: string }[] }> {
     const rMemory = await getRMemory();
     const limit = options.limit ?? 5;
     
@@ -143,6 +143,7 @@ export class MemoryClient {
         role: r.memory.metadata.role,
         content: r.memory.content,
         timestamp: r.memory.metadata.timestamp || new Date(r.memory.createdAt).toISOString(),
+        session_id: r.memory.metadata.session,
       }));
 
     return { messages };
@@ -195,6 +196,28 @@ export class MemoryClient {
     const rMemory = await getRMemory();
     for (const id of options.ids) {
       rMemory.delete(id);
+    }
+  }
+
+  async getConversationMessages(sessionId: string): Promise<{ role: string; content: string; timestamp: string }[]> {
+    const rMemory = await getRMemory();
+    try {
+      // @ts-ignore
+      const results = rMemory.db.getAll();
+      const filtered = results.filter((item: any) => item.metadata && item.metadata.session === sessionId);
+      filtered.sort((a: any, b: any) => {
+        const tA = new Date(a.metadata?.timestamp || a.createdAt).getTime();
+        const tB = new Date(b.metadata?.timestamp || b.createdAt).getTime();
+        return tA - tB;
+      });
+      return filtered.map((r: any) => ({
+        role: r.metadata?.role || "user",
+        content: r.content,
+        timestamp: r.metadata?.timestamp || new Date(r.createdAt).toISOString(),
+      }));
+    } catch (err) {
+      console.error("Failed to retrieve conversation messages from RMemory:", err);
+      return [];
     }
   }
 

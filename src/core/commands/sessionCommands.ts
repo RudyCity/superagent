@@ -121,7 +121,9 @@ export const knowledgeCommand: SlashCommand = {
     const trimmed = (args || "").trim();
 
     try {
-      const { getAllKnowledge, searchKnowledge, getKnowledgeProjects } = await import("../pinnedKnowledge.js");
+      const { getAllKnowledge, searchKnowledge, getKnowledgeProjects, syncAllPinnedToRMemory } = await import("../pinnedKnowledge.js");
+      // Fire-and-forget sync of existing pins to RMemory in the background
+      syncAllPinnedToRMemory().catch(() => {});
 
       // /knowledge projects — list all projects with pinned knowledge
       if (trimmed === "projects" || trimmed === "p") {
@@ -142,7 +144,7 @@ export const knowledgeCommand: SlashCommand = {
       // /knowledge <query> — search
       if (trimmed && trimmed !== "list" && trimmed !== "l") {
         ctx.setIsProcessing?.(true);
-        const results = searchKnowledge(trimmed, { limit: 15 });
+        const results = await searchKnowledge(trimmed, { limit: 15 });
         if (results.length === 0) {
           ctx.addLine({ type: "system", content: `No pinned knowledge entries found for: "${trimmed}"`, timestamp: now });
           return;

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.405] - 2026-07-17
+
+### Added
+- **RMemory History & Pinned Knowledge Search**: Integrated RMemory semantic vector search as the primary engine for `/search-history` and `/knowledge` commands.
+- **RMemory Transcript Loading**: Enabled `load_pinned_session` to retrieve session transcripts directly from RMemory using `getConversationMessages(sessionId)`.
+- **RMemory Pinned Knowledge Syncing**: Configured pinned knowledge additions, updates, and removals to automatically synchronize to the RMemory database, and added background synchronization of existing pins when `/knowledge` is run.
+
 ## [1.2.404] - 2026-07-17
 
 ### Fixed

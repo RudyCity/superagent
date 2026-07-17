@@ -23,6 +23,18 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
   };
 });
 
+vi.mock("../src/core/rmemoryUtil.js", () => {
+  const mockClient = {
+    searchConversation: vi.fn().mockResolvedValue({ messages: [] }),
+    searchAtomic: vi.fn().mockResolvedValue({ items: [] }),
+    getConversationMessages: vi.fn().mockResolvedValue([]),
+  };
+  return {
+    getRMemoryClient: vi.fn().mockReturnValue(mockClient),
+    getRMemorySessionKey: vi.fn().mockReturnValue("test-session"),
+  };
+});
+
 describe("historySearch", () => {
   const originalEnv = process.env;
   const testConfigDir = path.join(os.tmpdir(), `superagent-history-search-${process.pid}`);
@@ -282,6 +294,39 @@ describe("historySearch", () => {
       const result3 = await searchHistory("AI query term", false);
       expect(result3).toContain("Semantic Cache Session");
       expect(spyReadFile).toHaveBeenCalledTimes(2);
+    });
+
+    it("should perform semantic search via RMemory when enabled", async () => {
+      const mockSessions = [
+        {
+          id: "session123",
+          filePath: "/path/to/session123.json",
+          displayName: "RMemory Matched Session",
+          messageCount: 2,
+          lastModified: new Date(),
+          preview: "Preview",
+        },
+      ];
+
+      vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
+
+      const { getRMemoryClient } = await import("../src/core/rmemoryUtil.js");
+      const mockClient = getRMemoryClient();
+      vi.mocked(mockClient.searchConversation).mockResolvedValueOnce({
+        messages: [
+          {
+            role: "user",
+            content: "Semantic search query testing",
+            timestamp: new Date().toISOString(),
+            session_id: "session123"
+          }
+        ]
+      });
+
+      const result = await searchHistory("Semantic search query", false);
+      expect(result).toContain("[RMEMORY SEMANTIC SEARCH]");
+      expect(result).toContain("RMemory Matched Session");
+      expect(result).toContain("[USER] Semantic search query testing");
     });
   });
 

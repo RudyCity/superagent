@@ -88,6 +88,71 @@ export async function searchHistory(
   if (onDebug) {
     onDebug(`[DEBUG] Starting history search for query: "${query}" (isMulti: ${isMulti}, crossSession: ${crossSession})`);
   }
+
+  const settings = getSettings();
+  if (settings.enableRmemory) {
+    if (onDebug) {
+      onDebug("[DEBUG] RMemory is active. Performing semantic history search.");
+    }
+    try {
+      const { getRMemoryClient } = await import("./rmemoryUtil.js");
+      const client = getRMemoryClient(3000);
+      const res = await client.searchConversation({ query, limit: 30 });
+      const messages = res.messages || [];
+      if (messages.length > 0) {
+        const grouped = new Map<string, typeof messages>();
+        for (const msg of messages) {
+          if (msg.session_id) {
+            if (!grouped.has(msg.session_id)) {
+              grouped.set(msg.session_id, []);
+            }
+            grouped.get(msg.session_id)!.push(msg);
+          }
+        }
+
+        const sessions = listHistorySessions(isMulti, crossSession);
+        const sessionMap = new Map(sessions.map(s => [s.id, s]));
+
+        const lines: string[] = [
+          "----------------------------------------------------------------------",
+          `[RMEMORY SEMANTIC SEARCH] Found relevant history for "${query}"`,
+          "----------------------------------------------------------------------",
+        ];
+
+        for (const [sid, msgs] of grouped.entries()) {
+          const sessionMeta = sessionMap.get(sid);
+          if (!crossSession && !sessionMeta) {
+            continue;
+          }
+
+          const displayName = sessionMeta ? sessionMeta.displayName : `Session ${sid}`;
+          lines.push(`📁 ${displayName}`);
+
+          const shown = msgs.slice(0, 3);
+          for (const msg of shown) {
+            const roleStr = msg.role.toUpperCase();
+            const contentClean = msg.content.replace(/\r?\n/g, " ");
+            const preview = contentClean.length > 90 ? contentClean.slice(0, 87) + "..." : contentClean;
+            lines.push(`      [${roleStr}] ${preview}`);
+          }
+          lines.push("----------------------------------------------------------------------");
+        }
+
+        if (lines.length > 3) {
+          const finalResult = lines.join("\n").trim();
+          const config = getConfig();
+          const cacheKey = `${query}:${isMulti}:${crossSession}:${config.model || ""}:${config.provider || ""}`;
+          semanticSearchCache.set(cacheKey, { sig: "rmemory", result: finalResult });
+          return finalResult;
+        }
+      }
+    } catch (err: any) {
+      if (onDebug) {
+        onDebug(`[DEBUG] RMemory semantic search failed: ${err.message}. Falling back to fuzzy search.`);
+      }
+    }
+  }
+
   const sessions = listHistorySessions(isMulti, crossSession);
   if (onDebug) {
     onDebug(`[DEBUG] Found ${sessions.length} total history sessions.`);

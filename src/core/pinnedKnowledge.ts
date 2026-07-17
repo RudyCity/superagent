@@ -9,6 +9,7 @@
 import fs from "fs";
 import path from "path";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./config/paths.js";
+import { getSettings } from "./config.js";
 import type { PinnedMessage, AgentTag } from "./context/ContextManager.js";
 
 export interface KnowledgeEntry {
@@ -108,6 +109,8 @@ export function addToKnowledge(
   const existing = store.entries.find(
     (e) => e.sourceSessionPath === sourceSessionPath && e.preview === (pinned.content || "").substring(0, 200)
   );
+  
+  let entry: KnowledgeEntry;
   if (existing) {
     // Update existing entry
     existing.content = pinned.content;
@@ -120,28 +123,46 @@ export function addToKnowledge(
     existing.toolCalls = pinned.toolCalls;
     existing.toolResults = pinned.toolResults;
     writeStore(store);
-    return existing.id;
+    entry = existing;
+  } else {
+    const id = generateId();
+    entry = {
+      id,
+      content: pinned.content,
+      role: pinned.role,
+      agentTag: pinned.agentTag,
+      tag: pinned.tag,
+      sourceSessionPath,
+      workingDirectory,
+      pinnedAt: pinned.pinnedAt,
+      timestamp: pinned.timestamp,
+      preview: (pinned.content || "").substring(0, 200),
+      toolCalls: pinned.toolCalls,
+      toolResults: pinned.toolResults,
+    };
+    store.entries.push(entry);
+    writeStore(store);
   }
 
-  const id = generateId();
-  const entry: KnowledgeEntry = {
-    id,
-    content: pinned.content,
-    role: pinned.role,
-    agentTag: pinned.agentTag,
-    tag: pinned.tag,
-    sourceSessionPath,
-    workingDirectory,
-    pinnedAt: pinned.pinnedAt,
-    timestamp: pinned.timestamp,
-    preview: (pinned.content || "").substring(0, 200),
-    toolCalls: pinned.toolCalls,
-    toolResults: pinned.toolResults,
-  };
+  // Sync to RMemory
+  const settings = getSettings();
+  if (settings.enableRmemory) {
+    const entryCopy = { ...entry };
+    Promise.resolve().then(async () => {
+      try {
+        const { getRMemoryClient } = await import("./rmemoryUtil.js");
+        const client = getRMemoryClient(2000);
+        const scopeTag = entryCopy.tag ? `[tag:${entryCopy.tag}]` : "";
+        const projectTag = entryCopy.workingDirectory ? `[project:${path.basename(entryCopy.workingDirectory)}]` : "";
+        await client.updateAtomic({
+          id: `pinned-knowledge-${entryCopy.id}`,
+          content: `[pinned-knowledge] ${scopeTag} ${projectTag} ${entryCopy.content}`
+        });
+      } catch {}
+    });
+  }
 
-  store.entries.push(entry);
-  writeStore(store);
-  return id;
+  return entry.id;
 }
 
 /**
@@ -153,6 +174,19 @@ export function removeFromKnowledge(id: string): boolean {
   if (idx === -1) return false;
   store.entries.splice(idx, 1);
   writeStore(store);
+
+  // Sync to RMemory
+  const settings = getSettings();
+  if (settings.enableRmemory) {
+    Promise.resolve().then(async () => {
+      try {
+        const { getRMemoryClient } = await import("./rmemoryUtil.js");
+        const client = getRMemoryClient(2000);
+        await client.deleteAtomic({ ids: [`pinned-knowledge-${id}`] });
+      } catch {}
+    });
+  }
+
   return true;
 }
 
@@ -167,8 +201,22 @@ export function removeKnowledgeByPin(sourceSessionPath: string, contentPreview: 
     (e) => e.sourceSessionPath === sourceSessionPath && e.preview === preview
   );
   if (idx === -1) return false;
+  const entry = store.entries[idx];
   store.entries.splice(idx, 1);
   writeStore(store);
+
+  // Sync to RMemory
+  const settings = getSettings();
+  if (settings.enableRmemory) {
+    Promise.resolve().then(async () => {
+      try {
+        const { getRMemoryClient } = await import("./rmemoryUtil.js");
+        const client = getRMemoryClient(2000);
+        await client.deleteAtomic({ ids: [`pinned-knowledge-${entry.id}`] });
+      } catch {}
+    });
+  }
+
   return true;
 }
 
@@ -185,6 +233,25 @@ export function updateKnowledgeTag(sourceSessionPath: string, contentPreview: st
   if (!entry) return false;
   entry.tag = tag;
   writeStore(store);
+
+  // Sync to RMemory
+  const settings = getSettings();
+  if (settings.enableRmemory) {
+    const entryCopy = { ...entry };
+    Promise.resolve().then(async () => {
+      try {
+        const { getRMemoryClient } = await import("./rmemoryUtil.js");
+        const client = getRMemoryClient(2000);
+        const scopeTag = tag ? `[tag:${tag}]` : "";
+        const projectTag = entryCopy.workingDirectory ? `[project:${path.basename(entryCopy.workingDirectory)}]` : "";
+        await client.updateAtomic({
+          id: `pinned-knowledge-${entryCopy.id}`,
+          content: `[pinned-knowledge] ${scopeTag} ${projectTag} ${entryCopy.content}`
+        });
+      } catch {}
+    });
+  }
+
   return true;
 }
 
@@ -194,9 +261,25 @@ export function updateKnowledgeTag(sourceSessionPath: string, contentPreview: st
 export function removeSessionFromKnowledge(sourceSessionPath: string): number {
   const store = readStore();
   const before = store.entries.length;
+  const toRemove = store.entries.filter((e) => e.sourceSessionPath === sourceSessionPath);
   store.entries = store.entries.filter((e) => e.sourceSessionPath !== sourceSessionPath);
   const removed = before - store.entries.length;
-  if (removed > 0) writeStore(store);
+  if (removed > 0) {
+    writeStore(store);
+
+    // Sync to RMemory
+    const settings = getSettings();
+    if (settings.enableRmemory) {
+      Promise.resolve().then(async () => {
+        try {
+          const { getRMemoryClient } = await import("./rmemoryUtil.js");
+          const client = getRMemoryClient(2000);
+          const ids = toRemove.map((e) => `pinned-knowledge-${e.id}`);
+          await client.deleteAtomic({ ids });
+        } catch {}
+      });
+    }
+  }
   return removed;
 }
 
@@ -204,13 +287,47 @@ export function removeSessionFromKnowledge(sourceSessionPath: string): number {
  * Search knowledge entries by query (fuzzy match on content, tag, role).
  * Optionally filter by workingDirectory.
  */
-export function searchKnowledge(
+export async function searchKnowledge(
   query: string,
   options?: { workingDirectory?: string; tag?: string; limit?: number }
-): KnowledgeEntry[] {
+): Promise<KnowledgeEntry[]> {
+  const limit = options?.limit || 20;
+
+  const settings = getSettings();
+  if (settings.enableRmemory) {
+    try {
+      const { getRMemoryClient } = await import("./rmemoryUtil.js");
+      const client = getRMemoryClient(3000);
+      const searchRes = await client.searchAtomic({ query, limit: limit * 2 });
+      const items = searchRes.items || [];
+      const matchedIds = items
+        .filter((item) => item.id.startsWith("pinned-knowledge-"))
+        .map((item) => item.id.replace("pinned-knowledge-", ""));
+
+      if (matchedIds.length > 0) {
+        const store = readStore();
+        const matchedEntries = matchedIds
+          .map((id) => store.entries.find((e) => e.id === id))
+          .filter(Boolean) as KnowledgeEntry[];
+
+        let filtered = matchedEntries;
+        if (options?.workingDirectory) {
+          const wd = options.workingDirectory.toLowerCase();
+          filtered = filtered.filter((e) => e.workingDirectory.toLowerCase() === wd);
+        }
+        if (options?.tag) {
+          const tag = options.tag.toLowerCase();
+          filtered = filtered.filter((e) => e.tag?.toLowerCase() === tag);
+        }
+        return filtered.slice(0, limit);
+      }
+    } catch (err) {
+      // ignore and fallback to local search
+    }
+  }
+
   const store = readStore();
   const q = query.toLowerCase();
-  const limit = options?.limit || 20;
 
   let entries = store.entries;
 
@@ -253,6 +370,26 @@ export function searchKnowledge(
     .filter((s) => s.score > 0)
     .slice(0, limit)
     .map((s) => s.entry);
+}
+
+export async function syncAllPinnedToRMemory(): Promise<void> {
+  const settings = getSettings();
+  if (!settings.enableRmemory) return;
+  try {
+    const store = readStore();
+    const { getRMemoryClient } = await import("./rmemoryUtil.js");
+    const client = getRMemoryClient(5000);
+    for (const entry of store.entries) {
+      const scopeTag = entry.tag ? `[tag:${entry.tag}]` : "";
+      const projectTag = entry.workingDirectory ? `[project:${path.basename(entry.workingDirectory)}]` : "";
+      await client.updateAtomic({
+        id: `pinned-knowledge-${entry.id}`,
+        content: `[pinned-knowledge] ${scopeTag} ${projectTag} ${entry.content}`
+      });
+    }
+  } catch (err) {
+    console.error("Failed to sync pinned knowledge to RMemory:", err);
+  }
 }
 
 /**
