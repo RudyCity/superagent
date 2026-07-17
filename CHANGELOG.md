@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.425] - 2026-07-17
+
+### Improved
+- **System Services Status Expansion**: Added a dedicated row for the **Local Embedding Model (all-MiniLM-L6-v2)** inside the system services status panel in `Banner` to explicitly indicate its active state alongside RMemory Gateway and Local Router.
+
 ## [1.2.424] - 2026-07-17
 
 ### Added

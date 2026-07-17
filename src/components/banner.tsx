@@ -72,14 +72,21 @@ export function Banner() {
           <Text color={rmemoryActive ? "green" : "gray"}>
             {rmemoryActive ? "● ONLINE" : "○ OFFLINE"}
           </Text>
-          <Text color="gray"> (Local Embeddings)</Text>
+          <Text color="gray"> (Transcript Memory Database)</Text>
+        </Box>
+        <Box flexDirection="row">
+          <Text color="gray">Local Embedding: </Text>
+          <Text color={rmemoryActive ? "green" : "gray"}>
+            {rmemoryActive ? "● ONLINE" : "○ OFFLINE"}
+          </Text>
+          <Text color="gray"> (all-MiniLM-L6-v2 via Transformers.js)</Text>
         </Box>
         <Box flexDirection="row">
           <Text color="gray">Local Router:    </Text>
           <Text color={classifierActive ? "green" : "gray"}>
             {classifierActive ? "● ONLINE" : "○ OFFLINE"}
           </Text>
-          <Text color="gray"> (Supra-Router-51M-ONNX)</Text>
+          <Text color="gray"> (Supra-Router-51M-ONNX via Transformers.js)</Text>
         </Box>
       </Box>
 
