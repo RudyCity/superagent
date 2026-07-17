@@ -4,7 +4,7 @@ import ChatTextInput from "./components/ChatTextInput.js";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler, QuestionItem } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
-import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel, getSettings, getModelPresets, getActivePreset, getWorkspaceInputHistoryPath } from "./core/config.js";
+import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel, getSettings, getModelPresets, getActivePreset, getWorkspaceInputHistoryPath, getTrustedDirectories } from "./core/config.js";
 import { type MessageContent, contentToString } from "./core/conversation.js";
 import ImageAttachmentBar from "./components/ImageAttachmentBar.js";
 import {
@@ -955,6 +955,20 @@ export function App({
           return stopSuggestions.filter(p => p.startsWith(currentInput));
         }
         return [`${mainCommand} stop`, `${mainCommand} stop all`].filter(p => p.startsWith(currentInput));
+      }
+
+      if (mainCommand === "/workspace" || mainCommand === "/w") {
+        if (currentInput.startsWith(`${mainCommand} use`)) {
+          const dirs = getTrustedDirectories();
+          const useSuggestions = dirs.map((_, idx) => `${mainCommand} use ${idx + 1}`);
+          return useSuggestions.filter(p => p.startsWith(currentInput));
+        }
+        const workspaceSuggestions = [
+          `${mainCommand} list`,
+          `${mainCommand} add`,
+          `${mainCommand} use`
+        ];
+        return filterSuggestions(workspaceSuggestions, currentInput);
       }
 
       if (mainCommand === "/worktree" || mainCommand === "/worktrees") {
