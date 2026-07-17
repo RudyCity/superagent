@@ -597,9 +597,11 @@ If none of the options are suitable, still pick the closest one.`;
     this.onQuestion = onQuestion;
 
     // Asynchronously pre-load/warm up the local 51M classifier model in the background
-    import("./requestClassifier.js")
-      .then(({ warmUpClassifier }) => warmUpClassifier())
-      .catch(() => {});
+    if (process.env.NODE_ENV !== "test") {
+      import("./requestClassifier.js")
+        .then(({ warmUpClassifier }) => warmUpClassifier())
+        .catch(() => {});
+    }
   }
 
   private async initContextManager(): Promise<void> {

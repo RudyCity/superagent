@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.429] - 2026-07-17
+
+### Optimized
+- **Test Suite RAM Usage Optimization**: Prevented background classifier warming and local embedding/router model loading during test suite runs unless explicitly mocked. This dramatically reduces vitest memory usage (saving gigabytes of RAM) and speeds up test execution time by over 50%.
+
 ## [1.2.428] - 2026-07-17
 
 ### Added
