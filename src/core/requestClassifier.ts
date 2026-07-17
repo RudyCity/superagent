@@ -485,19 +485,19 @@ export async function warmUpClassifier(onProgress?: (event: any) => void): Promi
     }
     if (!localClassifierPipeline) {
       let downloadStarted = false;
+      if (progressCb) {
+        progressCb({
+          type: "model_download",
+          modelName: "classifier",
+          status: "downloading"
+        });
+      } else {
+        console.log(`\n[INFO] Pre-loading/downloading local classifier model (~66MB) to cache...`);
+      }
       localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
-            if (progressCb) {
-              progressCb({
-                type: "model_download",
-                modelName: "classifier",
-                status: "downloading"
-              });
-            } else {
-              console.log(`\n[INFO] Pre-loading/downloading local classifier model (~66MB) to cache...`);
-            }
           } else if (data.status === "progress") {
             const pct = typeof data.progress === "number" ? data.progress : 0;
             if (progressCb) {
@@ -514,16 +514,14 @@ export async function warmUpClassifier(onProgress?: (event: any) => void): Promi
           }
         }
       });
-      if (downloadStarted) {
-        if (progressCb) {
-          progressCb({
-            type: "model_download",
-            modelName: "classifier",
-            status: "loaded"
-          });
-        } else {
-          console.log(`\n[INFO] Classifier model loaded successfully.`);
-        }
+      if (progressCb) {
+        progressCb({
+          type: "model_download",
+          modelName: "classifier",
+          status: "loaded"
+        });
+      } else {
+        console.log(`\n[INFO] Classifier model loaded successfully.`);
       }
     }
   } catch {
@@ -564,19 +562,19 @@ export async function classifyWithLLM(
 
     if (!localClassifierPipeline) {
       let downloadStarted = false;
+      if (progressCb) {
+        progressCb({
+          type: "model_download",
+          modelName: "classifier",
+          status: "downloading"
+        });
+      } else {
+        console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
+      }
       localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
-            if (progressCb) {
-              progressCb({
-                type: "model_download",
-                modelName: "classifier",
-                status: "downloading"
-              });
-            } else {
-              console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
-            }
           } else if (data.status === "progress") {
             const pct = typeof data.progress === "number" ? data.progress : 0;
             if (progressCb) {
@@ -593,16 +591,14 @@ export async function classifyWithLLM(
           }
         }
       });
-      if (downloadStarted) {
-        if (progressCb) {
-          progressCb({
-            type: "model_download",
-            modelName: "classifier",
-            status: "loaded"
-          });
-        } else {
-          console.log(`\n[INFO] Classifier model loaded successfully.`);
-        }
+      if (progressCb) {
+        progressCb({
+          type: "model_download",
+          modelName: "classifier",
+          status: "loaded"
+        });
+      } else {
+        console.log(`\n[INFO] Classifier model loaded successfully.`);
       }
     }
 

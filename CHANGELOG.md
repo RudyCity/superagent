@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.452] - 2026-07-17
+
+### Fixed
+- **Pre-loading Status Events**: Emitted `downloading` loading status event immediately before creating/warming up local ONNX model pipelines (for both classifier and embedding models), and emitted `loaded` status immediately upon successful initialization. This ensures that the status banner updates to `⏳ LOADING` during model setup/initialization time even if the model was already fully cached on disk.
+
 ## [1.2.451] - 2026-07-17
 
 ### Fixed

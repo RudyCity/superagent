@@ -56,6 +56,15 @@ class OptimizedLocalTextEmbeddingProvider {
         if (cb) onProgress = cb;
       } catch {}
       let downloadStarted = false;
+      if (onProgress) {
+        onProgress({
+          type: "model_download",
+          modelName: "embedding",
+          status: "downloading"
+        });
+      } else {
+        console.log(`\n[INFO] Downloading local embedding model (~100MB) to cache...`);
+      }
       this.extractor = await pipeline("feature-extraction", this.modelName, {
         device: this.device as any,
         dtype: this.dtype as any,
@@ -66,15 +75,6 @@ class OptimizedLocalTextEmbeddingProvider {
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
-            if (onProgress) {
-              onProgress({
-                type: "model_download",
-                modelName: "embedding",
-                status: "downloading"
-              });
-            } else {
-              console.log(`\n[INFO] Downloading local embedding model (~100MB) to cache...`);
-            }
           } else if (data.status === "progress") {
             const pct = typeof data.progress === "number" ? data.progress : 0;
             if (onProgress) {
@@ -91,16 +91,14 @@ class OptimizedLocalTextEmbeddingProvider {
           }
         }
       });
-      if (downloadStarted) {
-        if (onProgress) {
-          onProgress({
-            type: "model_download",
-            modelName: "embedding",
-            status: "loaded"
-          });
-        } else {
-          console.log(`\n[INFO] Embedding model loaded successfully.`);
-        }
+      if (onProgress) {
+        onProgress({
+          type: "model_download",
+          modelName: "embedding",
+          status: "loaded"
+        });
+      } else {
+        console.log(`\n[INFO] Embedding model loaded successfully.`);
       }
     }
     return this.extractor;
