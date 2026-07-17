@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.448] - 2026-07-17
+
+### Fixed
+- **README Documentation**: Updated instructions for running local/target project with `bunx` to use `--bun` flag (`bunx --bun superagent`) so it runs fully under the Bun runtime instead of Node.js shebang.
+
 ## [1.2.447] - 2026-07-17
 
 ### Fixed

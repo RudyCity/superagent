@@ -300,9 +300,9 @@ If you want to use the local development version of Superagent inside another pr
    bun link superagent
    ```
 
-3. Start the assistant in your target project using `bunx`:
+3. Start the assistant in your target project using `bunx` with the `--bun` flag (to run it fully under the Bun runtime instead of Node.js):
    ```bash
-   bunx superagent
+   bunx --bun superagent
    ```
    Alternatively, you can add a script in your target project's `package.json`:
    ```json
