@@ -2386,8 +2386,11 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
             // certainly NOT a final answer — inject a nudge and keep looping
             // instead of breaking immediately.
             const isEarlyIteration = i < 2;
+            const category = this.currentClassification?.category || "complex_task";
+            const skipPlanningCategories = ["conversation", "question"];
             const isPlanningText =
               isEarlyIteration &&
+              !skipPlanningCategories.includes(category) &&
               textContent.trim().length > 0 &&
               textContent.trim().length < 500 &&
               !/\?$/.test(textContent.trim()); // Not a question to the user

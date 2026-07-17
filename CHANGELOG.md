@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.404] - 2026-07-17
+
+### Fixed
+- **Planning Narration Nudge**: Fixed a bug where the agent loop would auto-continue and nudge the LLM on conversation and question requests. This prevents system message tags (`[SYS]`) from leaking to the user during simple chat/Q&A interactions.
+
 ## [1.2.403] - 2026-07-17
 
 ### Optimized
