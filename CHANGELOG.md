@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.450] - 2026-07-17
+
+### Added
+- **Real-Time Services Status**: Connected the system services status in the startup banner to real-time download events. When a model is downloading or loading in the background, the status updates dynamically to `⏳ LOADING` instead of staying statically `● ONLINE` or `○ OFFLINE`.
+
 ## [1.2.449] - 2026-07-17
 
 ### Fixed

@@ -1318,6 +1318,8 @@ export function computeWrappedLines({
 
 export interface ChatAreaProps {
   showBanner: boolean;
+  classifierStatus?: "offline" | "loading" | "online";
+  embeddingStatus?: "offline" | "loading" | "online";
   focusMode: string;
   scrollOffset: number;
   focusedResponseIndex: number | null;
@@ -1352,6 +1354,8 @@ export interface ChatAreaProps {
 export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
   const {
     showBanner,
+    classifierStatus,
+    embeddingStatus,
     focusMode,
     scrollOffset,
     focusedResponseIndex,
@@ -1504,7 +1508,7 @@ export const ChatArea = memo(function ChatArea(props: ChatAreaProps) {
 
   return (
     <>
-      {showBanner && <Banner />}
+      {showBanner && <Banner classifierStatus={classifierStatus} embeddingStatus={embeddingStatus} />}
 
       {/* Messages Header */}
       <Box flexDirection="row" justifyContent="space-between" paddingX={1} marginBottom={0}>

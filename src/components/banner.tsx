@@ -31,18 +31,26 @@ function isGitRepo(): boolean {
   }
 }
 
-export function Banner() {
+export interface BannerProps {
+  classifierStatus?: "offline" | "loading" | "online";
+  embeddingStatus?: "offline" | "loading" | "online";
+}
+
+export function Banner({ classifierStatus, embeddingStatus }: BannerProps = {}) {
   const hasGit = isGitRepo();
 
   let rmemoryActive = false;
-  let classifierActive = false;
+  let configClassifierActive = false;
   try {
     const settings = getSettings();
     rmemoryActive = !!settings.enableRmemory;
-    classifierActive = settings.classifierEnabled !== false;
+    configClassifierActive = settings.classifierEnabled !== false;
   } catch {
     // Ignore config read failures
   }
+
+  const cStatus = classifierStatus || (configClassifierActive ? "online" : "offline");
+  const eStatus = embeddingStatus || (rmemoryActive ? "online" : "offline");
 
   return (
     <Box flexDirection="column" paddingX={1} marginY={1}>
@@ -76,15 +84,15 @@ export function Banner() {
         </Box>
         <Box flexDirection="row">
           <Text color="gray">Local Embedding: </Text>
-          <Text color={rmemoryActive ? "green" : "gray"}>
-            {rmemoryActive ? "● ONLINE" : "○ OFFLINE"}
+          <Text color={eStatus === "online" ? "green" : eStatus === "loading" ? "yellow" : "gray"}>
+            {eStatus === "online" ? "● ONLINE" : eStatus === "loading" ? "⏳ LOADING" : "○ OFFLINE"}
           </Text>
           <Text color="gray"> (nomic-embed-text-v1.5 via Transformers.js)</Text>
         </Box>
         <Box flexDirection="row">
           <Text color="gray">Local Router:    </Text>
-          <Text color={classifierActive ? "green" : "gray"}>
-            {classifierActive ? "● ONLINE" : "○ OFFLINE"}
+          <Text color={cStatus === "online" ? "green" : cStatus === "loading" ? "yellow" : "gray"}>
+            {cStatus === "online" ? "● ONLINE" : cStatus === "loading" ? "⏳ LOADING" : "○ OFFLINE"}
           </Text>
           <Text color="gray"> (Supra-Router-51M-ONNX via Transformers.js)</Text>
         </Box>

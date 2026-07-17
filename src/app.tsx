@@ -218,6 +218,20 @@ export function App({
   const [completedHistory, setCompletedHistory] = useState<{ status: string; text: string; remainingSeconds?: number }[]>([]);
   const [rawCompletedHistory, setRawCompletedHistory] = useState<{ status: string; text: string }[]>([]);
   const historyTimestampsRef = useRef<Map<string, number>>(new Map());
+  const [classifierStatus, setClassifierStatus] = useState<"offline" | "loading" | "online">(() => {
+    try {
+      return getSettings().classifierEnabled !== false ? "online" : "offline";
+    } catch {
+      return "online";
+    }
+  });
+  const [embeddingStatus, setEmbeddingStatus] = useState<"offline" | "loading" | "online">(() => {
+    try {
+      return getSettings().enableRmemory ? "online" : "offline";
+    } catch {
+      return "offline";
+    }
+  });
   const [focusMode, setFocusMode] = useState<"input" | "history" | "checklist" | "superagents" | "subagents" | "procs" | "chat">("input");
 
   // Automatically focus the input area when any wizard is active
@@ -1743,6 +1757,20 @@ export function App({
           break;
         case "model_download": {
           const { modelName, status, progress } = event;
+          if (modelName === "classifier") {
+            if (status === "downloading" || status === "progress") {
+              setClassifierStatus("loading");
+            } else if (status === "loaded") {
+              setClassifierStatus("online");
+            }
+          } else if (modelName === "embedding") {
+            if (status === "downloading" || status === "progress") {
+              setEmbeddingStatus("loading");
+            } else if (status === "loaded") {
+              setEmbeddingStatus("online");
+            }
+          }
+
           setLines((prev) => {
             const updated = [...prev];
             const searchKey = `Downloading local ${modelName} model`;
@@ -2525,6 +2553,8 @@ export function App({
           {/* Render Chat & Logs */}
           <ChatArea
             showBanner={showBanner}
+            classifierStatus={classifierStatus}
+            embeddingStatus={embeddingStatus}
             focusMode={focusMode}
             scrollOffset={scrollOffset}
             focusedResponseIndex={focusedResponseIndex}
