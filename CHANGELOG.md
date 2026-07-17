@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.432] - 2026-07-17
+
+### Added
+- **Advisor Model Configuration Options**: Integrated options to set custom models for the Real-Time Execution Advisor in `/model` CLI commands, setup wizard screens, keyboard navigation menus, and dashboard interfaces.
+
 ## [1.2.431] - 2026-07-17
 
 ### Added

@@ -145,8 +145,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `5. Feature: coder (${formatVal(models.MODEL_MULTI_SUBAGENT_CODER)})`,
           `6. Feature: reviewer (${formatVal(models.MODEL_MULTI_SUBAGENT_REVIEWER)})`,
           `7. Feature: classifier (${formatVal(models.MODEL_MULTI_SUBAGENT_CLASSIFIER)})`,
-          "8. Save Preset & Exit",
-          "9. Cancel & Exit",
+          `8. Feature: advisor (${formatVal(models.MODEL_MULTI_SUBAGENT_ADVISOR)})`,
+          "9. Save Preset & Exit",
+          "10. Cancel & Exit",
           "< Back"
         ];
       } else {
@@ -157,8 +158,9 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `4. Feature: coder (${formatVal(models.MODEL_SINGLE_SUBAGENT_CODER)})`,
           `5. Feature: reviewer (${formatVal(models.MODEL_SINGLE_SUBAGENT_REVIEWER)})`,
           `6. Feature: classifier (${formatVal(models.MODEL_SINGLE_SUBAGENT_CLASSIFIER)})`,
-          "7. Save Preset & Exit",
-          "8. Cancel & Exit",
+          `7. Feature: advisor (${formatVal(models.MODEL_SINGLE_SUBAGENT_ADVISOR)})`,
+          "8. Save Preset & Exit",
+          "9. Cancel & Exit",
           "< Back"
         ];
       }
@@ -284,6 +286,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
           const rawClassifier = getTierModel("multi", "classifier") || "";
           const classifierModelFormatted = rawClassifier ? getResolvedModelWithProvider(rawClassifier, false) : `(use default: ${subagentModelFormatted})`;
+          const rawAdvisor = getTierModel("multi", "advisor") || "";
+          const advisorModelFormatted = rawAdvisor ? getResolvedModelWithProvider(rawAdvisor, false) : `(use default: ${subagentModelFormatted})`;
 
           setActiveWizard({
             type: "model",
@@ -298,7 +302,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
             `5. Feature: coder (${coderModelFormatted})`,
             `6. Feature: reviewer (${reviewerModelFormatted})`,
             `7. Feature: classifier (${classifierModelFormatted})`,
-            `8. All Tiers (Overwrite All)`,
+            `8. Feature: advisor (${advisorModelFormatted})`,
+            `9. All Tiers (Overwrite All)`,
             `< Back`
           ]);
         } else {
@@ -335,6 +340,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
         const rawClassifier = getTierModel("single", "classifier") || "";
         const classifierModelFormatted = rawClassifier ? getResolvedModelWithProvider(rawClassifier, false) : `(use default: ${subagentModelFormatted})`;
+        const rawAdvisor = getTierModel("single", "advisor") || "";
+        const advisorModelFormatted = rawAdvisor ? getResolvedModelWithProvider(rawAdvisor, false) : `(use default: ${subagentModelFormatted})`;
 
         setActiveWizard({
           type: "model",
@@ -347,7 +354,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
           `3. Feature: coder (${coderModelFormatted})`,
           `4. Feature: reviewer (${reviewerModelFormatted})`,
           `5. Feature: classifier (${classifierModelFormatted})`,
-          `6. All Subagent Tiers`,
+          `6. Feature: advisor (${advisorModelFormatted})`,
+          `7. All Subagent Tiers`,
           `< Back`
         ]);
         setWizardSelectedIndex(0);
@@ -395,6 +403,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         tier = "reviewer";
       } else if (choice.includes("classifier")) {
         tier = "classifier";
+      } else if (choice.includes("advisor")) {
+        tier = "advisor";
       } else if (choice.includes("default model")) {
         tier = "default";
       } else if (choice.includes("all subagent tiers") || choice.includes("all_subagents")) {
@@ -403,11 +413,11 @@ export function useModelWizard(ctx: ModelWizardContext) {
         tier = "all";
       } else {
         if (isMulti) {
-          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "classifier", "all"];
+          const tiers = ["master", "superagent", "subagent", "researcher", "coder", "reviewer", "classifier", "advisor", "all"];
           const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
           tier = tiers[idx] || "master";
         } else {
-          const tiers = ["subagent", "researcher", "coder", "reviewer", "classifier", "all_subagents"];
+          const tiers = ["subagent", "researcher", "coder", "reviewer", "classifier", "advisor", "all_subagents"];
           const idx = wizardSelectedIndex >= 0 ? wizardSelectedIndex : 0;
           tier = tiers[idx] || "subagent";
         }
@@ -448,6 +458,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
         const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
         const rawClassifier = getTierModel(isMulti ? "multi" : "single", "classifier") || "";
         const classifierModelFormatted = rawClassifier ? getResolvedModelWithProvider(rawClassifier, false) : `(use default: ${subagentModelFormatted})`;
+        const rawAdvisor = getTierModel(isMulti ? "multi" : "single", "advisor") || "";
+        const advisorModelFormatted = rawAdvisor ? getResolvedModelWithProvider(rawAdvisor, false) : `(use default: ${subagentModelFormatted})`;
 
         if (isMulti || (data.tier && data.tier !== "single")) {
           setActiveWizard({
@@ -464,7 +476,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
               `5. Feature: coder (${coderModelFormatted})`,
               `6. Feature: reviewer (${reviewerModelFormatted})`,
               `7. Feature: classifier (${classifierModelFormatted})`,
-              `8. All Tiers (Overwrite All)`,
+              `8. Feature: advisor (${advisorModelFormatted})`,
+              `9. All Tiers (Overwrite All)`,
               `< Back`
             ]);
           } else {
@@ -475,7 +488,8 @@ export function useModelWizard(ctx: ModelWizardContext) {
               `4. Feature: coder (${coderModelFormatted})`,
               `5. Feature: reviewer (${reviewerModelFormatted})`,
               `6. Feature: classifier (${classifierModelFormatted})`,
-              `7. All Tiers (Overwrite All)`,
+              `7. Feature: advisor (${advisorModelFormatted})`,
+              `8. All Tiers (Overwrite All)`,
               `< Back`
             ]);
           }
@@ -689,12 +703,17 @@ export function useModelWizard(ctx: ModelWizardContext) {
           clearTierModel(presetMode, "classifier");
           targetLabel = `Subagent "classifier"`;
           didClear = true;
+        } else if (tier === "advisor") {
+          clearTierModel(presetMode, "advisor");
+          targetLabel = `Subagent "advisor"`;
+          didClear = true;
         } else if (tier === "all_subagents") {
           clearTierModel(presetMode, "subagent");
           clearTierModel(presetMode, "researcher");
           clearTierModel(presetMode, "coder");
           clearTierModel(presetMode, "reviewer");
           clearTierModel(presetMode, "classifier");
+          clearTierModel(presetMode, "advisor");
           targetLabel = "All Subagents";
           didClear = true;
         } else if (tier === "all") {
@@ -1493,6 +1512,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
       else if (value.includes("coder")) tier = "coder";
       else if (value.includes("reviewer")) tier = "reviewer";
       else if (value.includes("classifier")) tier = "classifier";
+      else if (value.includes("advisor")) tier = "advisor";
       else if (value.includes("Default Model")) tier = "default";
       else if (value.includes("Single Agent")) tier = "single";
 
@@ -1568,6 +1588,12 @@ export function useModelWizard(ctx: ModelWizardContext) {
             delete presetModels.MODEL_MULTI_SUBAGENT_CLASSIFIER;
           } else {
             delete presetModels.MODEL_SINGLE_SUBAGENT_CLASSIFIER;
+          }
+        } else if (tier === "advisor") {
+          if (isMulti) {
+            delete presetModels.MODEL_MULTI_SUBAGENT_ADVISOR;
+          } else {
+            delete presetModels.MODEL_SINGLE_SUBAGENT_ADVISOR;
           }
         } else if (tier === "rmemory") {
           if (isMulti) {
@@ -1979,6 +2005,7 @@ export function useModelWizard(ctx: ModelWizardContext) {
           setTierModel(presetMode, "reviewer", finalModelName, undefined, supportsVision);
           setTierModel(presetMode, "classifier", finalModelName, undefined, supportsVision);
           setTierModel(presetMode, "rmemory", finalModelName, undefined, supportsVision);
+          setTierModel(presetMode, "advisor", finalModelName, undefined, supportsVision);
           targetLabel = "All Subagent Models";
           switchActiveProvider(profileName);
         } else if (tier === "all") {
@@ -2234,6 +2261,14 @@ export function useModelWizard(ctx: ModelWizardContext) {
         } else {
           presetModels.MODEL_SINGLE_SUBAGENT_CLASSIFIER = finalModelName;
           presetModels.MODEL_SINGLE_SUBAGENT_CLASSIFIER_VISION = String(supportsVision);
+        }
+      } else if (tier === "advisor") {
+        if (isMulti) {
+          presetModels.MODEL_MULTI_SUBAGENT_ADVISOR = finalModelName;
+          presetModels.MODEL_MULTI_SUBAGENT_ADVISOR_VISION = String(supportsVision);
+        } else {
+          presetModels.MODEL_SINGLE_SUBAGENT_ADVISOR = finalModelName;
+          presetModels.MODEL_SINGLE_SUBAGENT_ADVISOR_VISION = String(supportsVision);
         }
       } else if (tier === "rmemory") {
         if (isMulti) {

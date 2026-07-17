@@ -186,7 +186,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
     subagentModelFormatted: string,
     researcherModelFormatted: string,
     coderModelFormatted: string,
-    reviewerModelFormatted: string
+    reviewerModelFormatted: string,
+    advisorModelFormatted: string
   ): string[] => {
     if (isMulti) {
       return [
@@ -196,7 +197,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         `4. Feature: researcher (${researcherModelFormatted})`,
         `5. Feature: coder (${coderModelFormatted})`,
         `6. Feature: reviewer (${reviewerModelFormatted})`,
-        `7. All Tiers (Overwrite All)`,
+        `7. Feature: advisor (${advisorModelFormatted})`,
+        `8. All Tiers (Overwrite All)`,
         `< Back`
       ];
     } else {
@@ -206,7 +208,8 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         `3. Feature: researcher (${researcherModelFormatted})`,
         `4. Feature: coder (${coderModelFormatted})`,
         `5. Feature: reviewer (${reviewerModelFormatted})`,
-        `6. All Tiers (Overwrite All)`,
+        `6. Feature: advisor (${advisorModelFormatted})`,
+        `7. All Tiers (Overwrite All)`,
         `< Back`
       ];
     }
@@ -222,8 +225,9 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         `4. Feature: researcher (${formatVal(models.MODEL_MULTI_SUBAGENT_RESEARCHER)})`,
         `5. Feature: coder (${formatVal(models.MODEL_MULTI_SUBAGENT_CODER)})`,
         `6. Feature: reviewer (${formatVal(models.MODEL_MULTI_SUBAGENT_REVIEWER)})`,
-        "7. Save Preset & Exit",
-        "8. Cancel & Exit",
+        `7. Feature: advisor (${formatVal(models.MODEL_MULTI_SUBAGENT_ADVISOR)})`,
+        "8. Save Preset & Exit",
+        "9. Cancel & Exit",
         "< Back"
       ];
     } else {
@@ -233,8 +237,9 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         `3. Feature: researcher (${formatVal(models.MODEL_SINGLE_SUBAGENT_RESEARCHER)})`,
         `4. Feature: coder (${formatVal(models.MODEL_SINGLE_SUBAGENT_CODER)})`,
         `5. Feature: reviewer (${formatVal(models.MODEL_SINGLE_SUBAGENT_REVIEWER)})`,
-        "6. Save Preset & Exit",
-        "7. Cancel & Exit",
+        `6. Feature: advisor (${formatVal(models.MODEL_SINGLE_SUBAGENT_ADVISOR)})`,
+        "7. Save Preset & Exit",
+        "8. Cancel & Exit",
         "< Back"
       ];
     }

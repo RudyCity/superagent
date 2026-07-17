@@ -818,6 +818,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
             const reviewerModelFormatted = rawReviewer ? getResolvedModelWithProvider(rawReviewer, false) : `(use default: ${subagentModelFormatted})`;
             const rawClassifier = getTierModel(kbMode, "classifier") || "";
             const classifierModelFormatted = rawClassifier ? getResolvedModelWithProvider(rawClassifier, false) : `(use default: ${subagentModelFormatted})`;
+            const rawAdvisor = getTierModel(kbMode, "advisor") || "";
+            const advisorModelFormatted = rawAdvisor ? getResolvedModelWithProvider(rawAdvisor, false) : `(use default: ${subagentModelFormatted})`;
 
             setActiveWizard({
               type: "model",
@@ -832,7 +834,8 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               `5. Feature: coder (${coderModelFormatted})`,
               `6. Feature: reviewer (${reviewerModelFormatted})`,
               `7. Feature: classifier (${classifierModelFormatted})`,
-              `8. All Tiers (Overwrite All)`,
+              `8. Feature: advisor (${advisorModelFormatted})`,
+              `9. All Tiers (Overwrite All)`,
               `< Back`
             ]);
             setWizardSelectedIndex(0);
@@ -858,6 +861,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
           else if (selectedOpt.includes("coder")) tier = "coder";
           else if (selectedOpt.includes("reviewer")) tier = "reviewer";
           else if (selectedOpt.includes("classifier")) tier = "classifier";
+          else if (selectedOpt.includes("advisor")) tier = "advisor";
           else if (selectedOpt.includes("subagent")) tier = "subagent";
           else if (selectedOpt.includes("all")) tier = "all";
           else if (selectedOpt.includes("back") || selectedOpt.startsWith("<")) tier = "back";
