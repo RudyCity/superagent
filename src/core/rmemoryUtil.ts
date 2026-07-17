@@ -80,11 +80,32 @@ export class MemoryClient {
     const rMemory = await getRMemory();
     const accepted_ids: string[] = [];
     
-    for (const msg of options.messages) {
+    if (options.messages.length === 0) {
+      // @ts-ignore
+      const count = rMemory.db.getAll({ session: options.session_id }).length;
+      return {
+        accepted_ids,
+        total_count: count,
+      };
+    }
+
+    const texts = options.messages.map(msg => msg.content);
+    let embeddings: number[][];
+    if (rMemory.provider && typeof rMemory.provider.embedTexts === "function") {
+      embeddings = await rMemory.provider.embedTexts(texts, "passage");
+    } else {
+      embeddings = await Promise.all(
+        texts.map(text => rMemory.provider.embedText(text, "passage"))
+      );
+    }
+
+    for (let i = 0; i < options.messages.length; i++) {
+      const msg = options.messages[i];
       const id = Math.random().toString(36).substring(7);
       await rMemory.addMemory({
         id,
         content: msg.content,
+        embedding: embeddings[i],
         metadata: {
           session: options.session_id,
           role: msg.role,

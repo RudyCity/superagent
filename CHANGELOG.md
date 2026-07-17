@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.401] - 2026-07-17
+
+### Optimized
+- **Batch Embedding Ingestion**: Modified addConversation to use the provider's embedTexts method for parallel batch embedding. This reduces sequential API calls (or local ONNX inference passes) during conversation synchronization, significantly improving performance and decreasing rate limit consumption.
+
 ## [1.2.400] - 2026-07-17
 
 ### Added
