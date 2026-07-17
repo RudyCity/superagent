@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.418] - 2026-07-17
+
+### Improved
+- **Okapi BM25 + Fuzzy Hybrid Local Search**: Upgraded both `searchHistory` and `searchKnowledge` local search fallback scoring algorithms to Okapi BM25. This introduces proper term frequency (TF) saturation limits (with standard $k_1 = 1.2$) and document length normalization (with standard $b = 0.75$), preventing long transcripts from skewing scores and prioritizing short, highly relevant matching turns.
+
 ## [1.2.417] - 2026-07-17
 
 ### Improved

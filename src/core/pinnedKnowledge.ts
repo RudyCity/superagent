@@ -296,21 +296,25 @@ const stopWords = new Set([
   "so", "than", "too", "very", "can", "will", "just", "should", "now"
 ]);
 
-function computeKnowledgeTfidfScore(
+function computeKnowledgeBm25Score(
   entry: KnowledgeEntry,
   queryTerms: string[],
   docFreqs: Record<string, number>,
-  numDocs: number
+  numDocs: number,
+  docLength: number,
+  avgDocLength: number
 ): number {
   const content = entry.content.toLowerCase();
-  const preview = entry.preview.toLowerCase();
   const tag = (entry.tag || "").toLowerCase();
   
   let score = 0;
+  const k1 = 1.2;
+  const b = 0.75;
 
   for (const term of queryTerms) {
     const df = docFreqs[term] || 0;
-    const idf = Math.log((numDocs - df + 0.5) / (df + 0.5) + 1.0) + 1.0;
+    // Standard BM25 IDF
+    const idf = Math.log((numDocs - df + 0.5) / (df + 0.5) + 1.0);
 
     let tf = 0;
     let matchPenalty = 1.0;
@@ -346,8 +350,10 @@ function computeKnowledgeTfidfScore(
     }
 
     if (tf > 0) {
-      const tfWeight = 1 + Math.log(tf);
-      score += tfWeight * idf * matchPenalty;
+      const adjustedTf = tf * matchPenalty;
+      // BM25 formula
+      const tfWeight = (adjustedTf * (k1 + 1)) / (adjustedTf + k1 * (1 - b + b * (docLength / (avgDocLength || 1))));
+      score += idf * tfWeight;
     }
   }
 
@@ -448,10 +454,17 @@ export async function searchKnowledge(
     docFreqs[term] = freq;
   }
 
+  const getWordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
+  // Calculate average document length
+  const totalLength = entries.reduce((sum, e) => sum + getWordCount(e.content), 0);
+  const avgDocLength = numDocs > 0 ? totalLength / numDocs : 1;
+
   // Score and sort
   const scored = entries
     .map((entry) => {
-      const score = computeKnowledgeTfidfScore(entry, finalQueryTerms, docFreqs, numDocs);
+      const docLength = getWordCount(entry.content);
+      const score = computeKnowledgeBm25Score(entry, finalQueryTerms, docFreqs, numDocs, docLength, avgDocLength);
       return { entry, score };
     })
     .filter((s) => s.score > 0);

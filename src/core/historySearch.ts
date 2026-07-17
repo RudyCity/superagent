@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { listHistorySessions, getModelInstance, getConfig, getSettings } from "./config.js";
+import { listHistorySessions, getConfig, getSettings } from "./config.js";
 
 const stopWords = new Set([
   "a", "an", "the", "and", "or", "but", "if", "then", "else", "of", "at", "by", "for", "with",
@@ -12,22 +12,26 @@ const stopWords = new Set([
 ]);
 
 /**
- * Calculates a local Hybrid TF-IDF + Fuzzy score for a term matching a text.
- * Gives exact matches higher weight than subsequence fuzzy matches.
+ * Calculates a local Hybrid Okapi BM25 + Fuzzy score for a term matching a text.
+ * Normalizes document length and saturates term frequency.
  */
-export function computeTfidfFuzzyScore(
+export function computeBm25FuzzyScore(
   text: string,
   queryTerms: string[],
   docFreqs: Record<string, number>,
-  numDocs: number
+  numDocs: number,
+  docLength: number,
+  avgDocLength: number
 ): number {
   const t = text.toLowerCase();
   let score = 0;
+  const k1 = 1.2;
+  const b = 0.75;
 
   for (const term of queryTerms) {
     const df = docFreqs[term] || 0;
-    // Standard IDF formula with smoothing
-    const idf = Math.log((numDocs - df + 0.5) / (df + 0.5) + 1.0) + 1.0;
+    // Standard BM25 IDF formula
+    const idf = Math.log((numDocs - df + 0.5) / (df + 0.5) + 1.0);
 
     let tf = 0;
     let matchPenalty = 1.0;
@@ -58,9 +62,10 @@ export function computeTfidfFuzzyScore(
     }
 
     if (tf > 0) {
-      // Logarithmic Term Frequency
-      const tfWeight = 1 + Math.log(tf);
-      score += tfWeight * idf * matchPenalty;
+      const adjustedTf = tf * matchPenalty;
+      // BM25 term weight
+      const tfWeight = (adjustedTf * (k1 + 1)) / (adjustedTf + k1 * (1 - b + b * (docLength / (avgDocLength || 1))));
+      score += idf * tfWeight;
     }
   }
 
@@ -294,10 +299,13 @@ export async function searchHistory(
     score: number;
   }> = [];
 
+  const getWordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
   const sessionsData: Array<{
     session: any;
     messages: any[];
     dialogueText: string;
+    wordCount: number;
   }> = [];
 
   const promises = sessions.map(async (session) => {
@@ -339,6 +347,7 @@ export async function searchHistory(
         session,
         messages,
         dialogueText,
+        wordCount: getWordCount(dialogueText),
       });
     } catch {
       // Ignore corrupted or missing files
@@ -387,9 +396,13 @@ export async function searchHistory(
     docFreqs[term] = freq;
   }
 
-  // Calculate Hybrid TF-IDF scores
+  // Calculate average document length
+  const totalLength = sessionsData.reduce((sum, d) => sum + d.wordCount, 0);
+  const avgDocLength = numDocs > 0 ? totalLength / numDocs : 1;
+
+  // Calculate Hybrid Okapi BM25 scores
   for (const data of sessionsData) {
-    const score = computeTfidfFuzzyScore(data.dialogueText, finalQueryTerms, docFreqs, numDocs);
+    const score = computeBm25FuzzyScore(data.dialogueText, finalQueryTerms, docFreqs, numDocs, data.wordCount, avgDocLength);
     if (score > 0) {
       scoredSessions.push({
         ...data,
@@ -406,7 +419,7 @@ export async function searchHistory(
   );
 
   if (onDebug) {
-    onDebug(`[DEBUG] Scored ${scoredSessions.length} session(s) using hybrid TF-IDF + Fuzzy:`);
+    onDebug(`[DEBUG] Scored ${scoredSessions.length} session(s) using hybrid BM25 + Fuzzy:`);
     for (const item of scoredSessions.slice(0, 5)) {
       const formattedScore = Math.round(item.score * 10) / 10;
       onDebug(`  - 📁 ${item.session.displayName} (Score: ${formattedScore}, last modified: ${item.session.lastModified.toISOString()})`);
@@ -418,6 +431,7 @@ export async function searchHistory(
     if (scoredSessions.length === 0) {
       return `No matches found for query: "${query}"`;
     }
+
     const lines = [
       "----------------------------------------------------------------------",
       `[HYBRID SEMANTIC SEARCH] Found ${scoredSessions.length} matching session(s) for "${query}"`,
