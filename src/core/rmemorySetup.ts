@@ -62,5 +62,12 @@ export function spawnRmemoryGateway(options: {
  * Non-blocking: runs asynchronously in the background.
  */
 export async function runRmemorySetup(): Promise<void> {
-  return;
+  const { getSettings } = await import("./config.js");
+  if (getSettings().enableRmemory) {
+    import("./historySearch.js")
+      .then(({ syncAllHistoryToRMemory }) => {
+        syncAllHistoryToRMemory().catch(() => {});
+      })
+      .catch(() => {});
+  }
 }

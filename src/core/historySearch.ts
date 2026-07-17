@@ -119,6 +119,8 @@ export async function searchHistory(
           "----------------------------------------------------------------------",
         ];
 
+        const sessionMessagesMap = new Map<string, Array<{ role: string; content: string }>>();
+
         for (const [sid, msgs] of grouped.entries()) {
           const sessionMeta = sessionMap.get(sid);
           if (!crossSession && !sessionMeta) {
@@ -128,12 +130,57 @@ export async function searchHistory(
           const displayName = sessionMeta ? sessionMeta.displayName : `Session ${sid}`;
           lines.push(`📁 ${displayName}`);
 
-          const shown = msgs.slice(0, 3);
-          for (const msg of shown) {
-            const roleStr = msg.role.toUpperCase();
-            const contentClean = msg.content.replace(/\r?\n/g, " ");
-            const preview = contentClean.length > 90 ? contentClean.slice(0, 87) + "..." : contentClean;
-            lines.push(`      [${roleStr}] ${preview}`);
+          // Fetch full conversation messages for context
+          let sessionMsgs = sessionMessagesMap.get(sid);
+          if (!sessionMsgs) {
+            if (sessionMeta) {
+              try {
+                const raw = fs.readFileSync(sessionMeta.filePath, "utf-8");
+                const parsed = JSON.parse(raw);
+                let rawMsgs: any[] = [];
+                if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+                  rawMsgs = parsed.messages;
+                } else if (Array.isArray(parsed)) {
+                  rawMsgs = parsed;
+                }
+                sessionMsgs = rawMsgs
+                  .filter(m => m.role === "user" || m.role === "assistant")
+                  .map(m => ({
+                    role: m.role,
+                    content: typeof m.content === "string" ? m.content : String(m.content || ""),
+                  }));
+              } catch {}
+            }
+            if (!sessionMsgs) {
+              sessionMsgs = await client.getConversationMessages(sid);
+            }
+            sessionMessagesMap.set(sid, sessionMsgs);
+          }
+
+          // Show context around each matched message (up to 3 matches per session)
+          const shownMatches = msgs.slice(0, 3);
+          for (const matchMsg of shownMatches) {
+            const matchIdx = sessionMsgs.findIndex(
+              m => m.content.trim() === matchMsg.content.trim() && m.role === matchMsg.role
+            );
+            if (matchIdx !== -1) {
+              const start = Math.max(0, matchIdx - 1);
+              const end = Math.min(sessionMsgs.length - 1, matchIdx + 1);
+              for (let i = start; i <= end; i++) {
+                const m = sessionMsgs[i];
+                const marker = i === matchIdx ? "→" : " ";
+                const roleStr = m.role.toUpperCase();
+                const contentClean = m.content.replace(/\r?\n/g, " ");
+                const preview = contentClean.length > 90 ? contentClean.slice(0, 87) + "..." : contentClean;
+                lines.push(`     ${marker} [${roleStr}] ${preview}`);
+              }
+            } else {
+              // Fallback to match message only
+              const roleStr = matchMsg.role.toUpperCase();
+              const contentClean = matchMsg.content.replace(/\r?\n/g, " ");
+              const preview = contentClean.length > 90 ? contentClean.slice(0, 87) + "..." : contentClean;
+              lines.push(`      → [${roleStr}] ${preview}`);
+            }
           }
           lines.push("----------------------------------------------------------------------");
         }
@@ -449,5 +496,80 @@ Please summarize what was discussed, decided, or implemented in this session reg
     const fallback = generateFuzzyFallbackText();
     const errorResult = `[AI Search Failed (${errorMsg}) - Falling back to Fuzzy Search]\n\n${fallback}`;
     return errorResult;
+  }
+}
+
+export async function syncAllHistoryToRMemory(): Promise<void> {
+  const settings = getSettings();
+  if (!settings.enableRmemory) return;
+
+  try {
+    const { getRMemoryClient } = await import("./rmemoryUtil.js");
+    const { getRootConfigDir } = await import("./config/paths.js");
+    const client = getRMemoryClient(5000);
+
+    const rmemoryDir = path.join(getRootConfigDir(), "rmemory");
+    if (!fs.existsSync(rmemoryDir)) {
+      fs.mkdirSync(rmemoryDir, { recursive: true });
+    }
+    const registryPath = path.join(rmemoryDir, "synced_sessions.json");
+    let syncedIds: string[] = [];
+    if (fs.existsSync(registryPath)) {
+      try {
+        const raw = fs.readFileSync(registryPath, "utf-8");
+        syncedIds = JSON.parse(raw);
+        if (!Array.isArray(syncedIds)) syncedIds = [];
+      } catch {
+        syncedIds = [];
+      }
+    }
+
+    const singleSessions = listHistorySessions(false, true);
+    const multiSessions = listHistorySessions(true, true);
+    const allSessions = [...singleSessions, ...multiSessions];
+
+    let changed = false;
+    for (const session of allSessions) {
+      if (syncedIds.includes(session.id)) continue;
+
+      try {
+        const raw = fs.readFileSync(session.filePath, "utf-8");
+        const parsed = JSON.parse(raw);
+        let messages: any[] = [];
+        if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+          messages = parsed.messages;
+        } else if (Array.isArray(parsed)) {
+          messages = parsed;
+        }
+
+        const filteredMsgs = messages
+          .filter((m) => (m.role === "user" || m.role === "assistant"))
+          .map((m) => {
+            const content = typeof m.content === "string" ? m.content.trim() : String(m.content || "");
+            return {
+              role: m.role as "user" | "assistant",
+              content: content.length > 0 ? content : "[empty message]",
+              timestamp: new Date(m.timestamp || Date.now()).toISOString(),
+            };
+          });
+
+        if (filteredMsgs.length > 0) {
+          await client.addConversation({
+            session_id: session.id,
+            messages: filteredMsgs,
+          });
+        }
+        syncedIds.push(session.id);
+        changed = true;
+      } catch (err) {
+        // Skip corrupted files
+      }
+    }
+
+    if (changed) {
+      fs.writeFileSync(registryPath, JSON.stringify(syncedIds, null, 2), "utf-8");
+    }
+  } catch (err) {
+    console.error("Failed to sync history sessions to RMemory:", err);
   }
 }

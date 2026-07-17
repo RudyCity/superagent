@@ -28,6 +28,7 @@ vi.mock("../src/core/rmemoryUtil.js", () => {
     searchConversation: vi.fn().mockResolvedValue({ messages: [] }),
     searchAtomic: vi.fn().mockResolvedValue({ items: [] }),
     getConversationMessages: vi.fn().mockResolvedValue([]),
+    addConversation: vi.fn().mockResolvedValue({ accepted_ids: ["ok"], total_count: 1 }),
   };
   return {
     getRMemoryClient: vi.fn().mockReturnValue(mockClient),
@@ -327,6 +328,78 @@ describe("historySearch", () => {
       expect(result).toContain("[RMEMORY SEMANTIC SEARCH]");
       expect(result).toContain("RMemory Matched Session");
       expect(result).toContain("[USER] Semantic search query testing");
+    });
+
+    it("should return contextual results (before, matching, after) when full messages are available", async () => {
+      const mockSessions = [
+        {
+          id: "session_context",
+          filePath: "/path/to/session_context.json",
+          displayName: "Context Session",
+          messageCount: 3,
+          lastModified: new Date(),
+          preview: "Preview",
+        },
+      ];
+
+      vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
+
+      const { getRMemoryClient } = await import("../src/core/rmemoryUtil.js");
+      const mockClient = getRMemoryClient();
+      vi.mocked(mockClient.searchConversation).mockResolvedValueOnce({
+        messages: [
+          {
+            role: "assistant",
+            content: "Matching search query",
+            timestamp: new Date().toISOString(),
+            session_id: "session_context"
+          }
+        ]
+      });
+
+      vi.mocked(mockClient.getConversationMessages).mockResolvedValueOnce([
+        { role: "user", content: "Before message", timestamp: new Date().toISOString() },
+        { role: "assistant", content: "Matching search query", timestamp: new Date().toISOString() },
+        { role: "user", content: "After message", timestamp: new Date().toISOString() },
+      ]);
+
+      const result = await searchHistory("Matching search query", false);
+      expect(result).toContain("Context Session");
+      expect(result).toContain("  [USER] Before message");
+      expect(result).toContain("→ [ASSISTANT] Matching search query");
+      expect(result).toContain("  [USER] After message");
+    });
+
+    it("should sync all unindexed historical files to RMemory", async () => {
+      const mockSessions = [
+        {
+          id: "session_sync1",
+          filePath: path.join(testConfigDir, "session_sync1.json"),
+          displayName: "Sync 1",
+          messageCount: 1,
+          lastModified: new Date(),
+          preview: "Preview",
+        },
+      ];
+
+      vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
+
+      fs.mkdirSync(testConfigDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(testConfigDir, "session_sync1.json"),
+        JSON.stringify([
+          { role: "user", content: "History message to index", timestamp: Date.now() }
+        ])
+      );
+
+      const { getRMemoryClient } = await import("../src/core/rmemoryUtil.js");
+      const mockClient = getRMemoryClient();
+      vi.mocked(mockClient.addConversation).mockClear();
+
+      const { syncAllHistoryToRMemory } = await import("../src/core/historySearch.js");
+      await syncAllHistoryToRMemory();
+
+      expect(mockClient.addConversation).toHaveBeenCalledTimes(1);
     });
   });
 
