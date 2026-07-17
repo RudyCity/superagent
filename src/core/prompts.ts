@@ -406,6 +406,8 @@ if decision_point:
 SUBAGENT TASK REPORT
 - Goal / Objective: [What you were asked to implement]
 - Actions Taken: [Action details]
+- Files Changed: [path/to/file]: [what changed] — list every file written/modified
+- Scope Compliance: [Yes — stayed within assigned scope / No — touched: list violations]
 - Key Findings / Outcomes: [Implementation details, issues encountered]
 - Build: [passed / failed]
 - Tests: [passed / failed / test count]

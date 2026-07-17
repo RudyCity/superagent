@@ -216,6 +216,15 @@ export const invokeSubagentTool: Tool = {
           "Reduces redundant re-research by giving the subagent a head-start on context. " +
           "Snapshot is capped at 2000 characters. Default: false.",
       },
+      fileScope: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Optional list of file paths or glob patterns this subagent is allowed to read/modify " +
+          "(e.g. ['src/auth/**', 'tests/unit/auth/**']). When provided, a FILE SCOPE section is " +
+          "automatically injected into the subagent system prompt. The subagent must not touch " +
+          "files outside this list. If it needs to, it must STOP and report to the parent.",
+      },
     },
     required: ["typeName", "role", "prompt"],
   },
@@ -360,8 +369,19 @@ export const invokeSubagentTool: Tool = {
       const withReport = baseSystemPrompt.includes("SUBAGENT TASK REPORT")
         ? baseSystemPrompt
         : `${baseSystemPrompt}\n\n${reportInstruction}`;
-      if (!contextSnippet) return withReport;
-      return `## INHERITED WORKSPACE CONTEXT (from parent agent)\n${contextSnippet}\n\n---\n\n${withReport}`;
+
+      // Inject fileScope block if provided
+      const fileScope = args.fileScope as string[] | undefined;
+      const fileScopeBlock = fileScope && fileScope.length > 0
+        ? `## FILE SCOPE (Enforced)\n` +
+          `You may ONLY read/modify files matching these paths:\n` +
+          fileScope.map(p => `  - ${p}`).join("\n") +
+          `\nIf a file outside this scope needs modification: STOP and report to parent. Do NOT edit it.\n\n---\n\n`
+        : "";
+
+      const withScope = fileScopeBlock ? `${fileScopeBlock}${withReport}` : withReport;
+      if (!contextSnippet) return withScope;
+      return `## INHERITED WORKSPACE CONTEXT (from parent agent)\n${contextSnippet}\n\n---\n\n${withScope}`;
     })();
     // Ensure report directory exists before subagent starts
     try { fs.mkdirSync(SUBAGENT_REPORTS_DIR, { recursive: true }); } catch {}

@@ -958,7 +958,13 @@ export const manageTasksTool: Tool = {
         }
 
         return tasks
-          .map((t, idx) => `${idx + 1}. [${t.status}] ${t.text}`)
+          .map((t, idx) => {
+            // Parse optional [agent: role] annotation from task text for display
+            const agentMatch = t.text.match(/^\[agent:\s*([^\]]+)\]\s*/i);
+            const agentTag = agentMatch ? ` (agent: ${agentMatch[1].trim()})` : "";
+            const displayText = agentMatch ? t.text.slice(agentMatch[0].length) : t.text;
+            return `${idx + 1}. [${t.status}] ${displayText}${agentTag}`;
+          })
           .join("\n");
       }
 
