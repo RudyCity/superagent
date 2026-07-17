@@ -49,7 +49,7 @@ export const memoryCommand: SlashCommand = {
           "RMemory Memory Status: Active",
           `Session ID: ${sessionKey}`,
           `Embedding Provider: ${settings.rmemoryEmbeddingProvider || "local"}`,
-          `Embedding Model: ${settings.rmemoryEmbeddingModel || "text-embedding-3-small"}`,
+          `Embedding Model: ${settings.rmemoryEmbeddingProvider === "local" ? "nomic-embed-text-v1.5" : (settings.rmemoryEmbeddingModel || "text-embedding-3-small")}`,
           `Last Sync Watermark: ${watermarkStr}`,
           "----------------------------------------------------------------------",
         ];

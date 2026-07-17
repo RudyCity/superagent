@@ -150,7 +150,7 @@ export const settingsCommand: SlashCommand = {
         `│ • Classifier Threshold: ${s.classifierConfidenceThreshold ?? "high"}`,
         `│ • RMemory Active     : ${s.enableRmemory ? "ENABLED" : "DISABLED"}`,
         `│ • RMemory Provider   : ${s.rmemoryEmbeddingProvider || "local"}`,
-        `│ • RMemory Model      : ${s.rmemoryEmbeddingModel || "text-embedding-3-small"} (${s.rmemoryEmbeddingDimensions || 1536} dims)`,
+        `│ • RMemory Model      : ${s.rmemoryEmbeddingProvider === "local" ? "nomic-embed-text-v1.5" : (s.rmemoryEmbeddingModel || "text-embedding-3-small")} (${s.rmemoryEmbeddingProvider === "local" ? 768 : (s.rmemoryEmbeddingDimensions || 1536)} dims)`,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",
