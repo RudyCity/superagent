@@ -8,16 +8,33 @@ import os from "os";
 const globalDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
 
 class OptimizedLocalTextEmbeddingProvider {
-  readonly dimensions = 384;
+  get dimensions(): number {
+    return this.modelName.includes("nomic") ? 768 : 384;
+  }
   private modelName: string;
   private device: string;
   private dtype: string;
   private extractor: any = null;
 
   constructor(options: { modelName?: string; device?: string; dtype?: string } = {}) {
-    this.modelName = options.modelName || "Xenova/all-MiniLM-L6-v2";
+    let name = options.modelName || "nomic-ai/nomic-embed-text-v1.5";
+    if (name === "Xenova/nomic-embed-text-v1.5") {
+      name = "nomic-ai/nomic-embed-text-v1.5";
+    }
+    this.modelName = name;
     this.device = options.device || "cpu";
     this.dtype = options.dtype || "q8";
+  }
+
+  private formatText(text: string, type?: "query" | "passage"): string {
+    if (!this.modelName.includes("nomic")) {
+      return text;
+    }
+    const prefix = type === "query" ? "search_query: " : "search_document: ";
+    if (text.startsWith("search_query:") || text.startsWith("search_document:")) {
+      return text;
+    }
+    return prefix + text;
   }
 
   private async getExtractor() {
@@ -35,19 +52,21 @@ class OptimizedLocalTextEmbeddingProvider {
     return this.extractor;
   }
 
-  async embedText(text: string): Promise<number[]> {
+  async embedText(text: string, type?: "query" | "passage"): Promise<number[]> {
+    const formattedText = this.formatText(text, type);
     const extractor = await this.getExtractor();
-    const output = await extractor(text, {
+    const output = await extractor(formattedText, {
       pooling: "mean",
       normalize: true,
     });
     return Array.from(output.data);
   }
 
-  async embedTexts(texts: string[]): Promise<number[][]> {
+  async embedTexts(texts: string[], type?: "query" | "passage"): Promise<number[][]> {
     if (texts.length === 0) return [];
+    const formattedTexts = texts.map(t => this.formatText(t, type));
     const extractor = await this.getExtractor();
-    const output = await extractor(texts, {
+    const output = await extractor(formattedTexts, {
       pooling: "mean",
       normalize: true,
     });
@@ -64,6 +83,57 @@ class OptimizedLocalTextEmbeddingProvider {
 
   async embedImage(image: string | Buffer | Uint8Array): Promise<number[]> {
     throw new Error("LocalTextEmbeddingProvider does not support image embeddings.");
+  }
+}
+
+function checkAndPerformDbMigration(currentModelName: string, currentDimensions: number) {
+  const metadataPath = path.join(globalDataDir, "metadata.json");
+  const dbPath = path.join(globalDataDir, "vectors.db");
+
+  let migrateNeeded = false;
+  if (fs.existsSync(metadataPath)) {
+    try {
+      const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8"));
+      if (metadata.modelName !== currentModelName || metadata.dimensions !== currentDimensions) {
+        migrateNeeded = true;
+      }
+    } catch {
+      migrateNeeded = true;
+    }
+  } else {
+    if (fs.existsSync(dbPath)) {
+      migrateNeeded = true;
+    }
+  }
+
+  if (migrateNeeded) {
+    try {
+      const filesToDelete = [
+        path.join(globalDataDir, "vectors.db"),
+        path.join(globalDataDir, "vectors.db-wal"),
+        path.join(globalDataDir, "vectors.db-shm"),
+        path.join(globalDataDir, "skills.db"),
+        path.join(globalDataDir, "skills.db-wal"),
+        path.join(globalDataDir, "skills.db-shm"),
+        path.join(globalDataDir, "skills.hash")
+      ];
+      for (const file of filesToDelete) {
+        if (fs.existsSync(file)) {
+          fs.unlinkSync(file);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete stale DB files during embedding model migration:", err);
+    }
+  }
+
+  try {
+    fs.writeFileSync(metadataPath, JSON.stringify({
+      modelName: currentModelName,
+      dimensions: currentDimensions
+    }), "utf-8");
+  } catch {
+    // Ignore write errors
   }
 }
 
@@ -101,12 +171,18 @@ async function getRMemory(): Promise<any> {
       });
     } else {
       provider = new OptimizedLocalTextEmbeddingProvider({
-        modelName: "Xenova/all-MiniLM-L6-v2",
+        modelName: "nomic-ai/nomic-embed-text-v1.5",
         dtype: "q8",
         device: "cpu",
       });
     }
     
+    const currentModelName = settings.rmemoryEmbeddingProvider === "openai"
+      ? (settings.rmemoryEmbeddingModel || "text-embedding-3-small")
+      : "nomic-ai/nomic-embed-text-v1.5";
+    
+    checkAndPerformDbMigration(currentModelName, provider.dimensions);
+
     rMemoryInstance = new RMemory({
       dbPath,
       collectionName: "memories",
@@ -417,10 +493,13 @@ async function getSkillsIndex(): Promise<any> {
     const dbPath = path.join(skillsDataDir, "skills.db");
     const { RMemory } = await import("r-memory");
     const provider = new OptimizedLocalTextEmbeddingProvider({
-      modelName: "Xenova/all-MiniLM-L6-v2",
+      modelName: "nomic-ai/nomic-embed-text-v1.5",
       dtype: "q8",
       device: "cpu",
     });
+
+    checkAndPerformDbMigration("nomic-ai/nomic-embed-text-v1.5", provider.dimensions);
+
     skillsIndexInstance = new RMemory({
       dbPath,
       collectionName: "skills",

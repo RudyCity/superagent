@@ -79,7 +79,7 @@ export function Banner() {
           <Text color={rmemoryActive ? "green" : "gray"}>
             {rmemoryActive ? "● ONLINE" : "○ OFFLINE"}
           </Text>
-          <Text color="gray"> (all-MiniLM-L6-v2 via Transformers.js)</Text>
+          <Text color="gray"> (nomic-embed-text-v1.5 via Transformers.js)</Text>
         </Box>
         <Box flexDirection="row">
           <Text color="gray">Local Router:    </Text>

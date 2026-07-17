@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.426] - 2026-07-17
+
+### Changed
+- **Embedding Model Upgrade to nomic-embed-text-v1.5**: Changed the default local embedding model from `all-MiniLM-L6-v2` to `nomic-embed-text-v1.5` (via `nomic-ai/nomic-embed-text-v1.5` dynamically supported by `@huggingface/transformers`).
+- **Dynamic Dimension Adjustment**: Added a dynamic getter for embedding vector dimensions (384 for MiniLM and 768 for Nomic models).
+- **Task Prefix Support**: Integrated task-specific prefixes (`search_query:` and `search_document:`) automatically prepended for instruction-aware Nomic embeddings depending on the query context.
+- **Auto-healing DB Migration**: Implemented a `metadata.json`-based database migration helper that deletes legacy SQLite databases when embedding dimensions or models change, preventing schema dimension mismatch crashes.
+- **Banner Label Update**: Updated the welcome banner component to display `nomic-embed-text-v1.5` inside the system services status panel.
+
 ## [1.2.425] - 2026-07-17
 
 ### Improved
