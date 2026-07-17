@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.442] - 2026-07-17
+
+### Fixed
+- **AGENTS.md Bun Migration**: Updated Verification Checklist in `AGENTS.md` to use `bun run build` and `bun test` instead of stale `npm run build` and `npm test` references, consistent with the full Bun migration completed in v1.2.439.
+
 ## [1.2.441] - 2026-07-17
 
 ### Optimized
