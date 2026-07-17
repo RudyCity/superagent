@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.403] - 2026-07-17
+
+### Optimized
+- **Cognitive Scale-Up Skill**: Expanded single-agent-cognitive-scaleup with five new advanced non-human, non-linear cognitive techniques: Multi-Verse Simulation, Fractal Decomposition, Evolutionary Solution Breeding, Constraint-Satisfaction Propagation (CSP), and Entropy Minimization. Also updated the Execution Workflow in SKILL.md to integrate these techniques.
+
 ## [1.2.402] - 2026-07-17
 
 ### Improved
