@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.441] - 2026-07-17
+
+### Optimized
+- **Skill Auto-Trigger on Parallel Spawn**: Added `use_skill('preventing-subagent-collisions')` directive to the `multiple_independent_subagents` branch in both `base.ts` (single-agent mode) and `SUPERAGENT_SYSTEM_PROMPT` (multi-agent mode). The agent now reads the coordination skill automatically before issuing parallel `invoke_subagent` calls, ensuring the pre-assignment and file scope workflow is always followed without requiring a manual `get_skills()` query.
+
 ## [1.2.440] - 2026-07-17
 
 ### Added
