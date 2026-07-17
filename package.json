@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "tsx src/cli.tsx",
+    "prebuild": "node -e \"const p=require('./package.json');console.log('Building ' + p.name + '@' + p.version)\"",
     "build": "tsc",
     "start": "node dist/cli.js",
     "test": "vitest run",
