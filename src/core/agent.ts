@@ -3016,28 +3016,30 @@ for (const tc of toolCalls) {
         await this.saveHistory();
 
         // ── Real-Time Advisor evaluation ────────────────────────────────────
-        const advisorResult = this.advisor.evaluateStep(toolCalls, toolResults);
-        if (advisorResult.action === "warn_agent" && advisorResult.message) {
-          this.onEvent({
-            type: "text",
-            content: `\n⚠️ [Advisor] Warning: ${advisorResult.message}\n`,
-          });
-          this.conversation.addMessage({
-            role: "user",
-            content: advisorResult.message,
-            timestamp: Date.now(),
-          });
-          await this.saveHistory();
-        } else if (advisorResult.action === "pause_execution" && advisorResult.message) {
-          this.onEvent({
-            type: "text",
-            content: `\n❌ [Advisor] Critical: ${advisorResult.message}\n`,
-          });
-          this.onEvent({
-            type: "error",
-            message: advisorResult.message,
-          });
-          break;
+        if (getSettings().enableAdvisor ?? true) {
+          const advisorResult = this.advisor.evaluateStep(toolCalls, toolResults);
+          if (advisorResult.action === "warn_agent" && advisorResult.message) {
+            this.onEvent({
+              type: "text",
+              content: `\n⚠️ [Advisor] Warning: ${advisorResult.message}\n`,
+            });
+            this.conversation.addMessage({
+              role: "user",
+              content: advisorResult.message,
+              timestamp: Date.now(),
+            });
+            await this.saveHistory();
+          } else if (advisorResult.action === "pause_execution" && advisorResult.message) {
+            this.onEvent({
+              type: "text",
+              content: `\n❌ [Advisor] Critical: ${advisorResult.message}\n`,
+            });
+            this.onEvent({
+              type: "error",
+              message: advisorResult.message,
+            });
+            break;
+          }
         }
 
         // ── Post-iteration compaction check ──────────────────────────────────

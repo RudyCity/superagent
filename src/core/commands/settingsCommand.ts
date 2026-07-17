@@ -1030,6 +1030,49 @@ export const settingClassifierThresholdCommand: SlashCommand = {
   }
 };
 
+// /setting-advisor command
+export const settingAdvisorCommand: SlashCommand = {
+  name: "setting-advisor",
+  aliases: ["advisor"],
+  description: "Enable or disable the Real-Time Execution Advisor",
+  execute(args, ctx) {
+    const now = Date.now();
+    const val = args.trim();
+    if (!val) {
+      const settings = getSettings();
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-advisor <on|off>\nCurrent value: ${settings.enableAdvisor !== false ? "on" : "off"}`,
+        timestamp: now,
+      });
+      return;
+    }
+    if (val !== "on" && val !== "off") {
+      ctx.addLine({
+        type: "error",
+        content: "Invalid value. Must be 'on' or 'off'.",
+        timestamp: now,
+      });
+      return;
+    }
+    const enable = val === "on";
+    try {
+      updateSettings({ enableAdvisor: enable });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Real-Time Execution Advisor set to: ${enable ? "ENABLED" : "DISABLED"}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
 registry.register(settingsCommand);
 registry.register(settingConcurrencyCommand);
 registry.register(settingRpmCommand);
@@ -1049,3 +1092,4 @@ registry.register(settingVisionThresholdCommand);
 registry.register(settingHideTimelineCommand);
 registry.register(settingClassifierCommand);
 registry.register(settingClassifierThresholdCommand);
+registry.register(settingAdvisorCommand);

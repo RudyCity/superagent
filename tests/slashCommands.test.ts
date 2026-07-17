@@ -722,6 +722,22 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(addedLines[addedLines.length - 1].content).toContain("Hide timeline set to: DISABLED");
   });
 
+  it("should configure enable advisor when running /setting-advisor", () => {
+    handleSlashCommand("/setting-advisor", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-advisor");
+
+    handleSlashCommand("/setting-advisor invalid", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    handleSlashCommand("/setting-advisor off", mockCtx as any);
+    expect(getSettings().enableAdvisor).toBe(false);
+    expect(addedLines[addedLines.length - 1].content).toContain("Real-Time Execution Advisor set to: DISABLED");
+
+    handleSlashCommand("/setting-advisor on", mockCtx as any);
+    expect(getSettings().enableAdvisor).toBe(true);
+    expect(addedLines[addedLines.length - 1].content).toContain("Real-Time Execution Advisor set to: ENABLED");
+  });
+
   it("should return autocomplete suggestions for setting-auto-vision, setting-vision-threshold, and setting-hide-timeline", () => {
     const s1 = getDashboardSuggestions("/setting-auto");
     expect(s1).toContain("/setting-auto-vision");

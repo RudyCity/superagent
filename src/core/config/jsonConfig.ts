@@ -70,6 +70,7 @@ export interface SystemSettings {
   autoVisionTokenSaving?: boolean;
   visionTokenSavingThreshold?: number;
   hideTimeline?: boolean;
+  enableAdvisor?: boolean;
 }
 
 export interface McpServerConfig {
@@ -806,6 +807,7 @@ export function getSettings(): SystemSettings {
     autoVisionTokenSaving: s.autoVisionTokenSaving ?? false,
     visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
     hideTimeline: s.hideTimeline ?? false,
+    enableAdvisor: s.enableAdvisor ?? true,
   };
 }
 

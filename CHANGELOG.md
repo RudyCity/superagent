@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.433] - 2026-07-17
+
+### Added
+- **Advisor Slash Command Toggle**: Added the `/setting-advisor` command to enable or disable the Real-Time Execution Advisor dynamically, with matching configuration storage and automated tests.
+
 ## [1.2.432] - 2026-07-17
 
 ### Added
