@@ -149,7 +149,7 @@ describe("historySearch", () => {
       expect(result).toContain("Bad Session");
     });
 
-    it("should perform AI Semantic Search when apiKey is configured, using correct index bounds", async () => {
+    it("should perform Hybrid TF-IDF + Fuzzy Search and return matched highlights", async () => {
       const mockSessions = [
         {
           filePath: "/path/to/ai_session.json",
@@ -161,29 +161,16 @@ describe("historySearch", () => {
       ];
 
       vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
-      vi.mocked(configModule.getConfig).mockReturnValue({ apiKey: "valid-api-key" });
       vi.spyOn(fs.promises, "readFile").mockResolvedValue(
         JSON.stringify([
           { role: "user", content: "Query about neural networks" },
         ])
       );
 
-      // 1. Success case: AI returns valid candidate index [0]
-      vi.mocked(generateText)
-        .mockResolvedValueOnce({ text: "[0]" } as any) // Filter prompt
-        .mockResolvedValueOnce({ text: "This session is about neural networks." } as any); // Summary prompt
-
       const result = await searchHistory("neural networks", false);
-      expect(result).toContain("[AI SEMANTIC SEARCH]");
-      expect(result).toContain("This session is about neural networks.");
-
-      // 2. Hallucinated out-of-bounds case: AI returns indices that are out of bounds of candidates
-      clearSemanticSearchCache();
-      vi.mocked(generateText)
-        .mockResolvedValueOnce({ text: "[5]" } as any); // Filter prompt returns out of bounds index (only 1 candidate)
-
-      const resultOob = await searchHistory("neural networks", false);
-      expect(resultOob).toContain("No semantically relevant conversation history found");
+      expect(result).toContain("[HYBRID SEMANTIC SEARCH]");
+      expect(result).toContain("AI Session");
+      expect(result).toContain("[USER] Query about neural networks");
     });
 
     it("should call onDebug callback with detailed step-by-step logs when provided", async () => {
@@ -198,16 +185,11 @@ describe("historySearch", () => {
       ];
 
       vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
-      vi.mocked(configModule.getConfig).mockReturnValue({ apiKey: "valid-api-key" });
       vi.spyOn(fs.promises, "readFile").mockResolvedValue(
         JSON.stringify([
           { role: "user", content: "Query about deep learning" },
         ])
       );
-
-      vi.mocked(generateText)
-        .mockResolvedValueOnce({ text: "[0]" } as any) // Filter prompt
-        .mockResolvedValueOnce({ text: "This session is about deep learning." } as any); // Summary prompt
 
       const debugLogs: string[] = [];
       const onDebug = (msg: string) => debugLogs.push(msg);
@@ -216,11 +198,8 @@ describe("historySearch", () => {
 
       expect(debugLogs.length).toBeGreaterThan(0);
       expect(debugLogs.some(log => log.includes("Starting history search"))).toBe(true);
-      expect(debugLogs.some(log => log.includes("Scored 1 session(s)"))).toBe(true);
-      expect(debugLogs.some(log => log.includes("Using model"))).toBe(true);
-      expect(debugLogs.some(log => log.includes("filter prompt to AI"))).toBe(true);
-      expect(debugLogs.some(log => log.includes("AI filter raw output"))).toBe(true);
-      expect(debugLogs.some(log => log.includes("Generating semantic summary"))).toBe(true);
+      expect(debugLogs.some(log => log.includes("Scored 1 session(s) using hybrid"))).toBe(true);
+      expect(debugLogs.some(log => log.includes("Tokenized query terms"))).toBe(true);
     });
 
     it("should hit the in-memory cache when file is unmodified, and re-read when modified", async () => {

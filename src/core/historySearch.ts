@@ -1,12 +1,74 @@
 import fs from "fs";
 import path from "path";
-import { generateText } from "ai";
 import { listHistorySessions, getModelInstance, getConfig, getSettings } from "./config.js";
-import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
+
+const stopWords = new Set([
+  "a", "an", "the", "and", "or", "but", "if", "then", "else", "of", "at", "by", "for", "with",
+  "about", "against", "between", "into", "through", "during", "before", "after", "above", "below",
+  "to", "from", "up", "down", "in", "out", "on", "off", "over", "under", "again", "further",
+  "then", "once", "here", "there", "when", "where", "why", "how", "all", "any", "both", "each",
+  "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same",
+  "so", "than", "too", "very", "can", "will", "just", "should", "now"
+]);
 
 /**
- * Custom subsequence fuzzy matching and token-based scoring algorithm.
- * Returns a score between 0.0 (no match) and 1.0 (exact match).
+ * Calculates a local Hybrid TF-IDF + Fuzzy score for a term matching a text.
+ * Gives exact matches higher weight than subsequence fuzzy matches.
+ */
+export function computeTfidfFuzzyScore(
+  text: string,
+  queryTerms: string[],
+  docFreqs: Record<string, number>,
+  numDocs: number
+): number {
+  const t = text.toLowerCase();
+  let score = 0;
+
+  for (const term of queryTerms) {
+    const df = docFreqs[term] || 0;
+    // Standard IDF formula with smoothing
+    const idf = Math.log((numDocs - df + 0.5) / (df + 0.5) + 1.0) + 1.0;
+
+    let tf = 0;
+    let matchPenalty = 1.0;
+
+    // 1. Exact match check
+    if (t.includes(term)) {
+      let pos = t.indexOf(term);
+      while (pos !== -1) {
+        tf++;
+        pos = t.indexOf(term, pos + term.length);
+      }
+    } else {
+      // 2. Fuzzy subsequence match check
+      let lastIdx = -1;
+      let possibleMatch = true;
+      for (let j = 0; j < term.length; j++) {
+        const idx = t.indexOf(term[j], lastIdx + 1);
+        if (idx === -1) {
+          possibleMatch = false;
+          break;
+        }
+        lastIdx = idx;
+      }
+      if (possibleMatch) {
+        tf = 1;
+        matchPenalty = 0.4; // 60% penalty for fuzzy/partial matches
+      }
+    }
+
+    if (tf > 0) {
+      // Logarithmic Term Frequency
+      const tfWeight = 1 + Math.log(tf);
+      score += tfWeight * idf * matchPenalty;
+    }
+  }
+
+  return score;
+}
+
+/**
+ * Subsequence fuzzy matching (kept for backward compatibility / tests)
  */
 export function fuzzyScore(text: string, query: string): number {
   const t = text.toLowerCase();
@@ -74,7 +136,7 @@ export function clearSemanticSearchCache(): void {
 }
 
 /**
- * Perform a hybrid AI-powered semantic search with an offline fuzzy fallback.
+ * Perform a hybrid search on local conversation history.
  * @param query - The search query
  * @param isMulti - Whether to search multi-agent sessions
  * @param crossSession - If true, search ALL sessions regardless of working directory
@@ -195,7 +257,7 @@ export async function searchHistory(
       }
     } catch (err: any) {
       if (onDebug) {
-        onDebug(`[DEBUG] RMemory semantic search failed: ${err.message}. Falling back to fuzzy search.`);
+        onDebug(`[DEBUG] RMemory semantic search failed: ${err.message}. Falling back to hybrid search.`);
       }
     }
   }
@@ -230,6 +292,12 @@ export async function searchHistory(
     messages: any[];
     dialogueText: string;
     score: number;
+  }> = [];
+
+  const sessionsData: Array<{
+    session: any;
+    messages: any[];
+    dialogueText: string;
   }> = [];
 
   const promises = sessions.map(async (session) => {
@@ -267,21 +335,68 @@ export async function searchHistory(
         });
       }
 
-      const score = fuzzyScore(dialogueText, query);
-      if (score > 0) {
-        scoredSessions.push({
-          session,
-          messages,
-          dialogueText,
-          score,
-        });
-      }
+      sessionsData.push({
+        session,
+        messages,
+        dialogueText,
+      });
     } catch {
       // Ignore corrupted or missing files
     }
   });
 
   await Promise.all(promises);
+
+  // Tokenize query
+  const queryTerms = query.toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .split(/\s+/)
+    .filter((k) => k.length > 1 && !stopWords.has(k));
+
+  const finalQueryTerms = queryTerms.length > 0 ? queryTerms : query.toLowerCase().split(/\s+/).filter(Boolean);
+
+  if (onDebug) {
+    onDebug(`[DEBUG] Tokenized query terms: ${JSON.stringify(finalQueryTerms)}`);
+  }
+
+  // Calculate Document Frequency
+  const numDocs = sessionsData.length;
+  const docFreqs: Record<string, number> = {};
+  for (const term of finalQueryTerms) {
+    let freq = 0;
+    for (const data of sessionsData) {
+      if (data.dialogueText.toLowerCase().includes(term)) {
+        freq++;
+      } else {
+        const t = data.dialogueText.toLowerCase();
+        let lastIdx = -1;
+        let possibleMatch = true;
+        for (let j = 0; j < term.length; j++) {
+          const idx = t.indexOf(term[j], lastIdx + 1);
+          if (idx === -1) {
+            possibleMatch = false;
+            break;
+          }
+          lastIdx = idx;
+        }
+        if (possibleMatch) {
+          freq++;
+        }
+      }
+    }
+    docFreqs[term] = freq;
+  }
+
+  // Calculate Hybrid TF-IDF scores
+  for (const data of sessionsData) {
+    const score = computeTfidfFuzzyScore(data.dialogueText, finalQueryTerms, docFreqs, numDocs);
+    if (score > 0) {
+      scoredSessions.push({
+        ...data,
+        score,
+      });
+    }
+  }
 
   // Sort: highest score first, then most recently modified first
   scoredSessions.sort(
@@ -291,212 +406,57 @@ export async function searchHistory(
   );
 
   if (onDebug) {
-    onDebug(`[DEBUG] Scored ${scoredSessions.length} session(s) using subsequence fuzzy matching:`);
+    onDebug(`[DEBUG] Scored ${scoredSessions.length} session(s) using hybrid TF-IDF + Fuzzy:`);
     for (const item of scoredSessions.slice(0, 5)) {
-      const pct = Math.round(item.score * 100);
-      onDebug(`  - 📁 ${item.session.displayName} (Fuzzy Match: ${pct}%, last modified: ${item.session.lastModified.toISOString()})`);
+      const formattedScore = Math.round(item.score * 10) / 10;
+      onDebug(`  - 📁 ${item.session.displayName} (Score: ${formattedScore}, last modified: ${item.session.lastModified.toISOString()})`);
     }
   }
 
-  // Generate offline fuzzy search fallback text
-  const generateFuzzyFallbackText = () => {
+  // Generate hybrid result text directly (No LLM summarizes, we show contextual matching turns)
+  const generateHybridResultText = () => {
     if (scoredSessions.length === 0) {
       return `No matches found for query: "${query}"`;
     }
     const lines = [
       "----------------------------------------------------------------------",
-      `[OFFLINE FUZZY SEARCH] Found ${scoredSessions.length} matching session(s) for "${query}"`,
+      `[HYBRID SEMANTIC SEARCH] Found ${scoredSessions.length} matching session(s) for "${query}"`,
       "----------------------------------------------------------------------",
     ];
     for (const item of scoredSessions.slice(0, 5)) {
-      const pct = Math.round(item.score * 100);
-      lines.push(`📁 ${item.session.displayName} (Match: ${pct}%)`);
-      const queryWords = query.toLowerCase().split(/\s+/).filter(Boolean);
+      const scoreFormatted = Math.round(item.score * 10) / 10;
+      lines.push(`📁 ${item.session.displayName} (Score: ${scoreFormatted})`);
       const matchedTurns: string[] = [];
       for (const msg of item.messages) {
         if ((msg.role === "user" || msg.role === "assistant") && typeof msg.content === "string") {
           const contentLower = msg.content.toLowerCase();
-          if (queryWords.some((word) => contentLower.includes(word))) {
+          if (finalQueryTerms.some((word) => contentLower.includes(word))) {
             const cleaned = msg.content.replace(/\r?\n/g, " ");
             const truncated =
-              cleaned.length > 90 ? cleaned.slice(0, 87) + "..." : cleaned;
+              cleaned.length > 120 ? cleaned.slice(0, 117) + "..." : cleaned;
             matchedTurns.push(`      [${msg.role.toUpperCase()}] ${truncated}`);
             if (matchedTurns.length >= 3) break;
           }
         }
       }
-      lines.push(matchedTurns.join("\n"));
+      if (matchedTurns.length > 0) {
+        lines.push(matchedTurns.join("\n"));
+      } else {
+        const firstUser = item.messages.find(m => m.role === "user");
+        if (firstUser) {
+          const cleaned = firstUser.content.replace(/\r?\n/g, " ");
+          const truncated = cleaned.length > 120 ? cleaned.slice(0, 117) + "..." : cleaned;
+          lines.push(`      [USER] ${truncated}`);
+        }
+      }
       lines.push("----------------------------------------------------------------------");
     }
     return lines.join("\n").trim();
   };
 
-  const hasApiKey = !!config.apiKey;
-
-  if (!hasApiKey) {
-    if (onDebug) {
-      onDebug("[DEBUG] No API key configured. Skipping AI Semantic Search.");
-    }
-    const fallback = generateFuzzyFallbackText();
-    semanticSearchCache.set(cacheKey, { sig, result: fallback });
-    return fallback;
-  }
-
-  try {
-    const model = getModelInstance();
-    if (onDebug) {
-      onDebug(`[DEBUG] API key configured. Using model: ${model?.modelId || "unknown"}`);
-    }
-
-    // AI Semantic Filtering - Slice increased to 10 for broader pool
-    const candidates = scoredSessions.slice(0, 10).map((item, idx) => ({
-      index: idx,
-      displayName: item.session.displayName,
-      preview: item.session.preview,
-      messageCount: item.session.messageCount,
-      lastModified: item.session.lastModified.toISOString(),
-    }));
-
-    if (onDebug) {
-      onDebug(`[DEBUG] Top ${candidates.length} candidates for AI semantic filtering:\n${JSON.stringify(candidates, null, 2)}`);
-    }
-
-    if (candidates.length === 0) {
-      const emptyResult = `No matches found in history for query: "${query}"`;
-      semanticSearchCache.set(cacheKey, { sig, result: emptyResult });
-      return emptyResult;
-    }
-
-    const filterPrompt = `You are a developer assistant analyzing past coding session logs.
-The developer is searching for context about: "${query}".
-
-Here is a list of top candidate past conversation sessions:
-${JSON.stringify(candidates, null, 2)}
-
-Identify the indices of the sessions (up to 3) that are semantically relevant to the developer's search query.
-Return ONLY a JSON array of numbers representing the relevant session indices. Example: [0, 2]
-If no sessions are relevant, return an empty array: []`;
-
-    if (onDebug) {
-      onDebug(`[DEBUG] Sending filter prompt to AI:\n${filterPrompt}`);
-    }
-
-    let concurrencyAcquiredFilter = false;
-    let filterResult = "";
-    try {
-      if (getSettings().concurrencyLimit === 1) {
-        await concurrencyLimiter.acquire();
-        concurrencyAcquiredFilter = true;
-      }
-      await rateLimiter.acquire(1);
-
-      const result = await generateText({
-        model,
-        prompt: filterPrompt,
-      });
-      filterResult = result.text;
-    } finally {
-      if (concurrencyAcquiredFilter) {
-        concurrencyLimiter.release();
-      }
-    }
-
-    if (onDebug) {
-      onDebug(`[DEBUG] AI filter raw output:\n${filterResult}`);
-    }
-
-    const jsonMatch = filterResult.match(/\[\s*\d*\s*(?:,\s*\d*\s*)*\]/);
-    const indices: number[] = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-
-    if (onDebug) {
-      onDebug(`[DEBUG] Parsed indices: ${JSON.stringify(indices)}`);
-    }
-
-    if (indices.length === 0) {
-      const noSemanticResult = `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
-      semanticSearchCache.set(cacheKey, { sig, result: noSemanticResult });
-      return noSemanticResult;
-    }
-
-    const reports: string[] = [];
-    const summaryPromises = indices.map(async (idx) => {
-      if (idx < 0 || idx >= candidates.length) return null;
-      const match = scoredSessions[idx];
-
-      const truncatedTranscript = match.dialogueText.slice(-15000);
-      const summaryPrompt = `You are analyzing a past coding session transcript.
-User search query: "${query}"
-Session Name: "${match.session.displayName}"
-
-Here is the dialogue transcript of the session:
-${truncatedTranscript}
-
-Please summarize what was discussed, decided, or implemented in this session regarding the query. Be specific, concise, and reference code or actions where appropriate.`;
-
-      if (onDebug) {
-        onDebug(`[DEBUG] Generating semantic summary for "${match.session.displayName}"`);
-        onDebug(`[DEBUG] Sending summary prompt to AI:\n${summaryPrompt}`);
-      }
-
-      let concurrencyAcquiredSummary = false;
-      let summary = "";
-      try {
-        if (getSettings().concurrencyLimit === 1) {
-          await concurrencyLimiter.acquire();
-          concurrencyAcquiredSummary = true;
-        }
-        await rateLimiter.acquire(1);
-
-        const result = await generateText({
-          model,
-          prompt: summaryPrompt,
-        });
-        summary = result.text;
-      } finally {
-        if (concurrencyAcquiredSummary) {
-          concurrencyLimiter.release();
-        }
-      }
-
-      if (onDebug) {
-        onDebug(`[DEBUG] Raw AI summary output for "${match.session.displayName}":\n${summary}`);
-        onDebug(`[PROGRESS] Completed semantic summary for: 📁 ${match.session.displayName}`);
-      }
-
-      return {
-        displayName: match.session.displayName,
-        summary: summary.trim(),
-      };
-    });
-
-    const summaryResults = await Promise.all(summaryPromises);
-    for (const res of summaryResults) {
-      if (res) {
-        reports.push(`📁 ${res.displayName}\n${res.summary}`);
-      }
-    }
-
-    if (reports.length === 0) {
-      const noSemanticResult = `No semantically relevant conversation history found for: "${query}".\n\n${generateFuzzyFallbackText()}`;
-      semanticSearchCache.set(cacheKey, { sig, result: noSemanticResult });
-      return noSemanticResult;
-    }
-
-    const finalResult = [
-      "----------------------------------------------------------------------",
-      `[AI SEMANTIC SEARCH] Found relevant history for "${query}"`,
-      "----------------------------------------------------------------------",
-      reports.join("\n----------------------------------------------------------------------\n"),
-      "----------------------------------------------------------------------",
-    ].join("\n");
-    semanticSearchCache.set(cacheKey, { sig, result: finalResult });
-    return finalResult;
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    const fallback = generateFuzzyFallbackText();
-    const errorResult = `[AI Search Failed (${errorMsg}) - Falling back to Fuzzy Search]\n\n${fallback}`;
-    return errorResult;
-  }
+  const finalResult = generateHybridResultText();
+  semanticSearchCache.set(cacheKey, { sig, result: finalResult });
+  return finalResult;
 }
 
 export async function syncAllHistoryToRMemory(): Promise<void> {

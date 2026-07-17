@@ -619,6 +619,12 @@
       "skillPath": "plugins/documentation-standards/skills/hads/SKILL.md",
       "computedHash": "4d6f97b7db8d3f618a4b36d9529db3d0bc52d4b38518ac6ae77da8403831443e"
     },
+    "design-skill": {
+      "source": "nutlope/hallmark",
+      "sourceType": "github",
+      "skillPath": "skills/design-skill/SKILL.md",
+      "computedHash": "d3a20aae61e43793d74932c92b63bcad5882e73ec1c8545b858910fd95b25136"
+    },
     "handoff": {
       "source": "mattpocock/skills",
       "sourceType": "github",

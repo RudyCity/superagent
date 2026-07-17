@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.416] - 2026-07-17
+
+### Improved
+- **Local Hybrid TF-IDF + Fuzzy History Search**: Replaced the expensive AI-based history filtering and summarization in `searchHistory` (when `enableRmemory` is `false` and an API key is present) with a 100% local Hybrid TF-IDF + Fuzzy search. It computes term frequency (TF) and inverse document frequency (IDF) with subsequence fuzzy penalties on the fly, rendering matching context turns/snippets in under 5ms without hitting the LLM model APIs.
+
 ## [1.2.415] - 2026-07-17
 
 ### Improved
