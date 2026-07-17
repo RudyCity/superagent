@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.445] - 2026-07-17
+
+### Added
+- **Worktree Collision Prevention (SKILL.md v4.0.0)**: Upgraded `preventing-subagent-collisions` skill to cover Scenario B — Master Agent → Superagent worktree-level collisions. Documents which files must never be modified inside a worktree (`package.json`, `CHANGELOG.md`, `AGENTS.md`, `README.md`), adds the strict post-merge serial sequence for Master Agent, and adds a Superagent worktree constraint section with updated plan template.
+- **Master Agent — `WORKTREE_SHARED_FILES` Rule**: Superagents inside worktrees must never bump version or update changelog. They include proposed entries in their final report; Master Agent writes them ONCE post-merge.
+- **Master Agent — `POST_MERGE_SERIAL` Rule**: Enforces strict post-merge order: build → test → version bump → changelog → commit → prune worktrees.
+- **Superagent — `WORKTREE_PROTECTED_FILES` Rule**: Explicit prohibition on touching `package.json`, `CHANGELOG.md`, `AGENTS.md`, `README.md` inside the worktree.
+- **Superagent Report — Proposed Version/Changelog Fields**: Added `Proposed Version Bump` and `Proposed Changelog Entry` fields to Superagent final report format so Master Agent can collect and apply them in one post-merge commit.
+
 ## [1.2.444] - 2026-07-17
 
 ### Fixed
