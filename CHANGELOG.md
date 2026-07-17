@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.399] - 2026-07-17
+
+### Optimized
+- **RMemory Lazy Loading & Setup**: Replaced static imports of the `r-memory` package with dynamic, lazy-loading imports. This reduces CLI startup lag by ~1-2 seconds and reduces baseline RAM usage by 100MB+ when memory features are inactive.
+- **Remote Embeddings Provider Support**: Added configuration settings (`rmemoryEmbeddingProvider`, `rmemoryEmbeddingModel`, and `rmemoryEmbeddingDimensions`) to allow users to use remote OpenAI-compatible embedding APIs instead of local CPU-heavy ONNX models.
+
+### Changed
+- **Slash Commands Re-enabled**: Re-implemented and re-enabled `/memory` and `/setting-rmemory` slash commands to work seamlessly with the local database client.
+- **UI Status Hook**: Updated `useRmemoryStatus` hook to dynamically report status based on the `enableRmemory` setting.
+
 ## [1.2.398] - 2026-07-17
 
 ### Changed

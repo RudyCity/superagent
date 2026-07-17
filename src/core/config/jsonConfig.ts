@@ -58,6 +58,9 @@ export interface SystemSettings {
   rmemoryServiceId?: string;
   enableRmemory?: boolean;
   rmemoryPollIntervalMs?: number;
+  rmemoryEmbeddingProvider?: "local" | "openai";
+  rmemoryEmbeddingModel?: string;
+  rmemoryEmbeddingDimensions?: number;
   maxChecklistVisible?: number;
   maxHistoryVisible?: number;
   maxProcsVisible?: number;
@@ -111,6 +114,9 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     forcePromptBasedToolCalling: false,
     autoVisionTokenSaving: false,
     visionTokenSavingThreshold: DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
+    rmemoryEmbeddingProvider: "local",
+    rmemoryEmbeddingModel: "text-embedding-3-small",
+    rmemoryEmbeddingDimensions: 1536,
   },
   trustedDirectories: [],
   providers: [
@@ -789,6 +795,9 @@ export function getSettings(): SystemSettings {
     rmemoryGatewayApiKey: s.rmemoryGatewayApiKey ?? "sk-xxxx",
     rmemoryServiceId: s.rmemoryServiceId ?? "default",
     enableRmemory: s.enableRmemory ?? true,
+    rmemoryEmbeddingProvider: s.rmemoryEmbeddingProvider ?? "local",
+    rmemoryEmbeddingModel: s.rmemoryEmbeddingModel ?? "text-embedding-3-small",
+    rmemoryEmbeddingDimensions: s.rmemoryEmbeddingDimensions ?? 1536,
     maxChecklistVisible: s.maxChecklistVisible ?? 3,
     maxHistoryVisible: s.maxHistoryVisible ?? 3,
     maxProcsVisible: s.maxProcsVisible ?? 3,

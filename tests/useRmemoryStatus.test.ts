@@ -44,18 +44,23 @@ describe("useRmemoryStatus Hook", () => {
     }
   };
 
-  it("should always return disabled", async () => {
+  it("should return online when enableRmemory is true, and disabled when false", async () => {
     let hookStatus = "";
     const TestComponent = () => {
       hookStatus = useRmemoryStatus();
       return null;
     };
 
-    const { unmount } = render(React.createElement(TestComponent));
+    mockSettings.enableRmemory = false;
+    let renderResult = render(React.createElement(TestComponent));
+    await waitForCondition(() => hookStatus === "disabled");
     expect(hookStatus).toBe("disabled");
+    renderResult.unmount();
 
     mockSettings.enableRmemory = true;
-    expect(hookStatus).toBe("disabled");
-    unmount();
+    renderResult = render(React.createElement(TestComponent));
+    await waitForCondition(() => hookStatus === "online");
+    expect(hookStatus).toBe("online");
+    renderResult.unmount();
   });
 });

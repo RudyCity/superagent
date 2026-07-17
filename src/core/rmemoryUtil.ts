@@ -1,5 +1,5 @@
-import { RMemory, LocalTextEmbeddingProvider } from "r-memory";
 import { getSettings } from "./config.js";
+import { getConfiguredProviders } from "./config/providers.js";
 import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
@@ -7,19 +7,44 @@ import os from "os";
 
 const globalDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
 
-let rMemoryInstance: RMemory | null = null;
+let rMemoryInstance: any = null;
 
-function getRMemory(): RMemory {
+async function getRMemory(): Promise<any> {
   if (!rMemoryInstance) {
     if (!fs.existsSync(globalDataDir)) {
       fs.mkdirSync(globalDataDir, { recursive: true });
     }
     const dbPath = path.join(globalDataDir, "vectors.db");
     
-    const provider = new LocalTextEmbeddingProvider({
-      dtype: "q8",
-      device: "cpu",
-    });
+    const { RMemory, LocalTextEmbeddingProvider, OpenAIEmbeddingProvider } = await import("r-memory");
+    const settings = getSettings();
+    
+    let provider;
+    if (settings.rmemoryEmbeddingProvider === "openai") {
+      const activeProvider = getConfiguredProviders().find(p => p.isActive);
+      const isOpenAICompatible = activeProvider && (
+        activeProvider.type === "openai" ||
+        activeProvider.type === "openrouter" ||
+        activeProvider.type === "custom" ||
+        activeProvider.type === "ollama" ||
+        activeProvider.type === "lmstudio"
+      );
+      
+      const apiKey = isOpenAICompatible ? activeProvider.apiKey : (process.env.OPENAI_API_KEY || "");
+      const baseURL = isOpenAICompatible ? activeProvider.baseUrl : undefined;
+      
+      provider = new OpenAIEmbeddingProvider({
+        apiKey,
+        baseURL,
+        model: settings.rmemoryEmbeddingModel || "text-embedding-3-small",
+        dimensions: settings.rmemoryEmbeddingDimensions || 1536,
+      });
+    } else {
+      provider = new LocalTextEmbeddingProvider({
+        dtype: "q8",
+        device: "cpu",
+      });
+    }
     
     rMemoryInstance = new RMemory({
       dbPath,
@@ -52,7 +77,7 @@ export class MemoryClient {
     session_id: string;
     messages: { role: "user" | "assistant" | "system"; content: string; timestamp?: string }[];
   }): Promise<{ accepted_ids: string[]; total_count: number }> {
-    const rMemory = getRMemory();
+    const rMemory = await getRMemory();
     const accepted_ids: string[] = [];
     
     for (const msg of options.messages) {
@@ -82,7 +107,7 @@ export class MemoryClient {
     query: string;
     limit?: number;
   }): Promise<{ messages: { role: string; content: string; timestamp: string }[] }> {
-    const rMemory = getRMemory();
+    const rMemory = await getRMemory();
     const limit = options.limit ?? 5;
     
     const results = await rMemory.query({
@@ -92,8 +117,8 @@ export class MemoryClient {
     });
 
     const messages = results
-      .filter(r => r.memory.metadata && r.memory.metadata.role)
-      .map(r => ({
+      .filter((r: any) => r.memory.metadata && r.memory.metadata.role)
+      .map((r: any) => ({
         role: r.memory.metadata.role,
         content: r.memory.content,
         timestamp: r.memory.metadata.timestamp || new Date(r.memory.createdAt).toISOString(),
@@ -106,7 +131,7 @@ export class MemoryClient {
     query: string;
     limit?: number;
   }): Promise<{ items: { id: string; content: string; type: string; score: number }[] }> {
-    const rMemory = getRMemory();
+    const rMemory = await getRMemory();
     const limit = options.limit ?? 5;
 
     const results = await rMemory.query({
@@ -115,7 +140,7 @@ export class MemoryClient {
       hybrid: true,
     });
 
-    const items = results.map(r => ({
+    const items = results.map((r: any) => ({
       id: r.memory.id,
       content: r.memory.content,
       type: r.memory.metadata?.type || "memory",
@@ -129,7 +154,7 @@ export class MemoryClient {
     id: string;
     content: string;
   }): Promise<{ id: string; updated_at: string }> {
-    const rMemory = getRMemory();
+    const rMemory = await getRMemory();
     
     await rMemory.addMemory({
       id: options.id,
@@ -146,7 +171,7 @@ export class MemoryClient {
   }
 
   async deleteAtomic(options: { ids: string[] }): Promise<void> {
-    const rMemory = getRMemory();
+    const rMemory = await getRMemory();
     for (const id of options.ids) {
       rMemory.delete(id);
     }
@@ -211,7 +236,7 @@ export class MemoryClient {
   }
 
   async clear(): Promise<void> {
-    const rMemory = getRMemory();
+    const rMemory = await getRMemory();
     rMemory.clear();
     
     const personaPath = path.join(globalDataDir, "persona.md");

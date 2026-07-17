@@ -148,6 +148,9 @@ export const settingsCommand: SlashCommand = {
         `│ • Hide Timeline Line : ${s.hideTimeline ? "ENABLED" : "DISABLED"}`,
         `│ • Request Classifier : ${s.classifierEnabled !== false ? "ENABLED" : "DISABLED"}`,
         `│ • Classifier Threshold: ${s.classifierConfidenceThreshold ?? "high"}`,
+        `│ • RMemory Active     : ${s.enableRmemory ? "ENABLED" : "DISABLED"}`,
+        `│ • RMemory Provider   : ${s.rmemoryEmbeddingProvider || "local"}`,
+        `│ • RMemory Model      : ${s.rmemoryEmbeddingModel || "text-embedding-3-small"} (${s.rmemoryEmbeddingDimensions || 1536} dims)`,
         "│ ",
         "└─────────────────────────────────",
         "Configure these settings using:",
@@ -167,7 +170,11 @@ export const settingsCommand: SlashCommand = {
         "  /setting-vision-threshold <number>",
         "  /setting-hide-timeline <on|off>",
         "  /setting-classifier <on|off>",
-        "  /setting-classifier-threshold <high|medium|low>"
+        "  /setting-classifier-threshold <high|medium|low>",
+        "  /setting-rmemory <on|off>",
+        "  /setting-rmemory provider <local|openai>",
+        "  /setting-rmemory model <model_name>",
+        "  /setting-rmemory dimensions <number>"
       ].join("\n"),
       timestamp: Date.now(),
     });
@@ -570,12 +577,135 @@ export const settingProcsLimitCommand: SlashCommand = {
 
 export const settingRmemoryCommand: SlashCommand = {
   name: "setting-rmemory",
-  description: "Configure RMemory memory strategy and gateway URL",
-  async execute(args, ctx) {
+  description: "Configure RMemory memory settings (enable/disable, provider, model, dimensions)",
+  execute(args, ctx) {
+    const trimmed = args.trim();
+    const parts = trimmed.split(/\s+/);
+    const action = parts[0]?.toLowerCase();
+    const value = parts[1];
+    const now = Date.now();
+
+    const current = getSettings();
+
+    if (!action) {
+      ctx.addLine({
+        type: "system",
+        content: [
+          "Usage: /setting-rmemory <subcommand> [value]",
+          "",
+          "Subcommands:",
+          `  /setting-rmemory <on|off>             Toggle RMemory (currently: ${current.enableRmemory ? "ON" : "OFF"})`,
+          `  /setting-rmemory provider <local|openai> Set embedding provider (currently: ${current.rmemoryEmbeddingProvider})`,
+          `  /setting-rmemory model <model_name>     Set remote embedding model (currently: ${current.rmemoryEmbeddingModel})`,
+          `  /setting-rmemory dimensions <number>    Set remote embedding dimensions (currently: ${current.rmemoryEmbeddingDimensions})`,
+        ].join("\n"),
+        timestamp: now,
+      });
+      return;
+    }
+
+    if (action === "on" || action === "off" || action === "true" || action === "false") {
+      const enable = action === "on" || action === "true";
+      try {
+        updateSettings({ enableRmemory: enable });
+        ctx.addLine({
+          type: "system",
+          content: `✓ RMemory memory has been ${enable ? "ENABLED" : "DISABLED"}.`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to save setting: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
+    if (action === "provider") {
+      if (!value || (value !== "local" && value !== "openai")) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /setting-rmemory provider <local|openai>",
+          timestamp: now,
+        });
+        return;
+      }
+      try {
+        updateSettings({ rmemoryEmbeddingProvider: value as any });
+        ctx.addLine({
+          type: "system",
+          content: `✓ RMemory embedding provider set to: ${value}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to save setting: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
+    if (action === "model") {
+      if (!value) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /setting-rmemory model <model_name>",
+          timestamp: now,
+        });
+        return;
+      }
+      try {
+        updateSettings({ rmemoryEmbeddingModel: value });
+        ctx.addLine({
+          type: "system",
+          content: `✓ RMemory remote embedding model set to: ${value}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to save setting: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
+    if (action === "dimensions") {
+      const num = parseInt(value, 10);
+      if (isNaN(num) || num <= 0) {
+        ctx.addLine({
+          type: "error",
+          content: "Usage: /setting-rmemory dimensions <number>",
+          timestamp: now,
+        });
+        return;
+      }
+      try {
+        updateSettings({ rmemoryEmbeddingDimensions: num });
+        ctx.addLine({
+          type: "system",
+          content: `✓ RMemory remote embedding dimensions set to: ${num}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({
+          type: "error",
+          content: `Failed to save setting: ${err.message}`,
+          timestamp: now,
+        });
+      }
+      return;
+    }
+
     ctx.addLine({
       type: "error",
-      content: "RMemory Memory is disabled in this build.",
-      timestamp: Date.now(),
+      content: `Unknown subcommand "${action}". Run '/setting-rmemory' to see options.`,
+      timestamp: now,
     });
   }
 };

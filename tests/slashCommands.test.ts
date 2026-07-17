@@ -589,15 +589,32 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(addedLines[addedLines.length - 1].content).toContain("Rate limit capacity set to: 15");
   });
 
-  it("should support /setting-rmemory command variants by printing disabled error message", async () => {
+  it("should support /setting-rmemory command variants to update settings", async () => {
+    // Show usage when empty
     await handleSlashCommand("/setting-rmemory", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("RMemory Memory is disabled in this build.");
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-rmemory");
 
-    await handleSlashCommand("/setting-rmemory invalid", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("RMemory Memory is disabled in this build.");
+    // Toggle off
+    await handleSlashCommand("/setting-rmemory off", mockCtx as any);
+    expect(getSettings().enableRmemory).toBe(false);
+    expect(addedLines[addedLines.length - 1].content).toContain("DISABLED");
 
-    await handleSlashCommand("/setting-rmemory hide-bg-procs", mockCtx as any);
-    expect(addedLines[addedLines.length - 1].content).toContain("RMemory Memory is disabled in this build.");
+    // Toggle on
+    await handleSlashCommand("/setting-rmemory on", mockCtx as any);
+    expect(getSettings().enableRmemory).toBe(true);
+    expect(addedLines[addedLines.length - 1].content).toContain("ENABLED");
+
+    // Set provider
+    await handleSlashCommand("/setting-rmemory provider openai", mockCtx as any);
+    expect(getSettings().rmemoryEmbeddingProvider).toBe("openai");
+
+    // Set model
+    await handleSlashCommand("/setting-rmemory model custom-model", mockCtx as any);
+    expect(getSettings().rmemoryEmbeddingModel).toBe("custom-model");
+
+    // Set dimensions
+    await handleSlashCommand("/setting-rmemory dimensions 512", mockCtx as any);
+    expect(getSettings().rmemoryEmbeddingDimensions).toBe(512);
   });
 
   it("should configure focus level when running /setting-focus", () => {
