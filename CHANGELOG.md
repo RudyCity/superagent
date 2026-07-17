@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.439] - 2026-07-17
+
+### Fixed
+- **Full Bun Migration**: Updated `package.json` scripts to use `bun run` and `bun x` instead of `npm.cmd` and `npx`. Fixed `detectPackageManager()` in `masterAgent.ts` to also detect `bun.lock` (Bun v1.1+ format) alongside the legacy `bun.lockb`, ensuring build/test validation uses Bun automatically.
+
 ## [1.2.438] - 2026-07-17
 
 ### Fixed

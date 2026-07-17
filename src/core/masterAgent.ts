@@ -319,7 +319,7 @@ async function diffSanityCheck(cwd: string, branchName: string): Promise<string[
  * Priority: bun > pnpm > yarn > npm
  */
 export function detectPackageManager(cwd: string): string {
-  if (fs.existsSync(path.join(cwd, "bun.lockb"))) return "bun";
+  if (fs.existsSync(path.join(cwd, "bun.lockb")) || fs.existsSync(path.join(cwd, "bun.lock"))) return "bun";
   if (fs.existsSync(path.join(cwd, "pnpm-lock.yaml"))) return "pnpm";
   if (fs.existsSync(path.join(cwd, "yarn.lock"))) return "yarn";
   return "npm";
