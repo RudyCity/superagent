@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.455] - 2026-07-17
+
+### Fixed
+- **Chrome Extension Manifest**: Removed redundant `"http://localhost/*"` from `optional_host_permissions` since it is already declared as a required permission under `host_permissions`.
+
 ## [1.2.454] - 2026-07-17
 
 ### Changed

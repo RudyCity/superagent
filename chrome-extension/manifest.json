@@ -15,7 +15,6 @@
     "topSites"
   ],
   "optional_host_permissions": [
-    "http://localhost/*",
     "https://localhost/*",
     "<all_urls>"
   ],
