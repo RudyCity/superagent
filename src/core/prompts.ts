@@ -81,13 +81,15 @@ const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR (anti-drift protocol):
   4. Can this be batched, delegated, or run in parallel safely?
   If drifting or under-batching: STOP, re-read task assignment, recalibrate.`;
 
-const CHROME_EXTENSION_CONTEXT_RULE = `- CHROME_EXTENSION_CONTEXT:
+const isServerMode = process.argv.some(arg => arg === "--server" || arg === "-s" || arg === "--server-only") || !!process.env.VITEST;
+
+const CHROME_EXTENSION_CONTEXT_RULE = isServerMode ? `- CHROME_EXTENSION_CONTEXT:
   - ACTIVE: If 'control_browser_tab' tool is present.
   - CONTEXT: Active tab URL and Title automatically prepended to user messages.
   - TAB_TRIGGER: Tab/page actions, browser history, reading list, top sites, extension management → CALL control_browser_tab.
   - MACRO_TRIGGER: Repetitive multi-step workflows → check macros first (control_browser_macro_run name:'list'), then run or research+save+run.
   - STEALTH: 'click' action guides user to click manually. Mandatory for login, CAPTCHA, anti-bot targets.
-  - INSPECT_ELEMENT: Tag-label syntax (e.g. \`<button#id>\`) from page inspector — selector in parentheses is the CSS locator.`;
+  - INSPECT_ELEMENT: Tag-label syntax (e.g. \`<button#id>\`) from page inspector — selector in parentheses is the CSS locator.` : "";
 
 // ─── Chrome Extension Agent ──────────────────────────────────────────────────
 export const CHROME_EXTENSION_SYSTEM_PROMPT = `
@@ -501,10 +503,11 @@ Verify tool availability before testing:
 # CLOAKBROWSER TIPS
 - Use source-level stealth features and "humanize mode" (realistic movements, manual click guidance) to bypass anti-bot detection.
 
+${isServerMode ? `
 # BROWSER MACRO TIPS
 - If 'control_browser_macro_run' tool is available: CALL control_browser_macro_run(name: 'list') before executing any multi-step web task.
 - If matching macro exists: run it directly instead of step-by-step automation.
-- If no macro: document the steps found during testing as a macro via control_browser_macro_save.
+- If no macro: document the steps found during testing as a macro via control_browser_macro_save.` : ""}
 
 # REQUIRED FINAL REPORT FORMAT
 SUBAGENT TASK REPORT

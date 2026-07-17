@@ -700,6 +700,11 @@ If none of the options are suitable, still pick the closest one.`;
     if (!(await isRmemoryActive())) {
       tools = tools.filter((t) => !t.name.startsWith("rmemory_"));
     }
+
+    const isServerMode = process.argv.some(arg => arg === "--server" || arg === "-s" || arg === "--server-only") || !!process.env.VITEST;
+    if (!isServerMode) {
+      tools = tools.filter((t) => !t.name.startsWith("control_browser_"));
+    }
     return tools;
   }
 

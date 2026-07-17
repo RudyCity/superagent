@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.458] - 2026-07-17
+
+### Changed
+- **Browser Control Tools Conditional Activation**: Configured Chrome extension browser control tools (`control_browser_tab`, `control_browser_macro_save`, `control_browser_macro_run`) and their system prompt optimizations to only be active when running in server mode (`--server`).
+
 ## [1.2.457] - 2026-07-17
 
 ### Fixed
