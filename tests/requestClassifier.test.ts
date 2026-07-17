@@ -23,6 +23,14 @@ vi.mock("ai", () => ({
   generateText: vi.fn(),
 }));
 
+export const mockClassifierPipeline = vi.fn();
+vi.mock("@huggingface/transformers", () => {
+  return {
+    pipeline: vi.fn().mockResolvedValue((prompt: string) => mockClassifierPipeline(prompt)),
+  };
+});
+
+
 // ─── meetsThreshold Tests ───────────────────────────────────────────────────
 
 describe("meetsThreshold", () => {
@@ -507,12 +515,11 @@ describe("classifyRequest (Optimized Pipeline)", () => {
     expect(generateText).not.toHaveBeenCalled();
   });
 
-  it("should call LLM when heuristic confidence is below threshold", async () => {
+  it("should call local classifier model when heuristic confidence is below threshold", async () => {
     const mockModel = {};
-    vi.mocked(generateText).mockResolvedValue({
-      text: "complex_task",
-      usage: { promptTokens: 15, completionTokens: 3 },
-    } as any);
+    mockClassifierPipeline.mockResolvedValue([
+      { generated_text: "Analysis: Domain: Code | Complexity: 5 | Route: big model | Justification: Complex coding task" }
+    ]);
 
     // Ambiguous input that heuristic returns low confidence for
     const result = await classifyRequest(
@@ -520,52 +527,47 @@ describe("classifyRequest (Optimized Pipeline)", () => {
       mockModel,
     );
     expect(result.heuristicOnly).toBe(false);
-    expect(result.classificationTokens).toBeGreaterThan(0);
-    expect(generateText).toHaveBeenCalled();
+    expect(result.category).toBe("complex_task");
+    expect(mockClassifierPipeline).toHaveBeenCalled();
   });
 
-  it("should call LLM when heuristic is medium and threshold is high", async () => {
+  it("should call local classifier when heuristic is medium and threshold is high", async () => {
     const mockModel = {};
-    vi.mocked(generateText).mockResolvedValue({
-      text: "debug",
-      usage: { promptTokens: 20, completionTokens: 5 },
-    } as any);
+    mockClassifierPipeline.mockResolvedValue([
+      { generated_text: "Analysis: Domain: Code | Complexity: 2 | Route: small model | Justification: Small edit" }
+    ]);
 
     // Single debug keyword => medium confidence, threshold defaults to high
     const result = await classifyRequest("there is an issue with the build", mockModel, {
       confidenceThreshold: "high",
     });
     expect(result.heuristicOnly).toBe(false);
-    expect(generateText).toHaveBeenCalled();
+    expect(result.category).toBe("simple_edit");
+    expect(mockClassifierPipeline).toHaveBeenCalled();
   });
 
-  it("should skip LLM when heuristic is medium and threshold is medium", async () => {
+  it("should skip local model when heuristic is medium and threshold is medium", async () => {
     const mockModel = {};
-    // Single debug keyword => medium confidence, threshold is medium => skip LLM
+    // Single debug keyword => medium confidence, threshold is medium => skip classifier
     const result = await classifyRequest("there is an issue with it", mockModel, {
       confidenceThreshold: "medium",
     });
     expect(result.heuristicOnly).toBe(true);
-    expect(generateText).not.toHaveBeenCalled();
+    expect(mockClassifierPipeline).not.toHaveBeenCalled();
   });
 
-  it("should use AI classification when heuristic is low confidence", async () => {
+  it("should use heuristic when heuristic has low threshold but high confidence", async () => {
     const mockModel = {};
-    vi.mocked(generateText).mockResolvedValue({
-      text: "debug",
-      usage: { promptTokens: 20, completionTokens: 5 },
-    } as any);
-
     const result = await classifyRequest("fix the compiler error", mockModel, {
       confidenceThreshold: "low",
     });
     // Heuristic returns high for "fix the compiler error" (2 debug keywords),
-    // so even with low threshold it should skip LLM
+    // so even with low threshold it should skip classifier
     expect(result.heuristicOnly).toBe(true);
-    expect(generateText).not.toHaveBeenCalled();
+    expect(mockClassifierPipeline).not.toHaveBeenCalled();
   });
 
-  it("should fallback to heuristic when no model is provided", async () => {
+  it("should fallback to heuristic when no model is provided (e.g. skipLLM is true)", async () => {
     const result = await classifyRequest("fix the compiler error", null);
     expect(result.category).toBe("debug");
     expect(result.heuristicOnly).toBe(true);
@@ -578,9 +580,9 @@ describe("classifyRequest (Optimized Pipeline)", () => {
     expect(result.heuristicOnly).toBe(true);
   });
 
-  it("should fallback to heuristic on LLM failure", async () => {
+  it("should fallback to heuristic on classifier model failure", async () => {
     const mockModel = {};
-    vi.mocked(generateText).mockRejectedValue(new Error("API timeout"));
+    mockClassifierPipeline.mockRejectedValue(new Error("Local model load failure"));
 
     const result = await classifyRequest(
       "I need you to consider many things about the overall approach for this system",
@@ -588,6 +590,7 @@ describe("classifyRequest (Optimized Pipeline)", () => {
     );
     // Should still return a result (heuristic fallback), not throw
     expect(result).toBeDefined();
-    expect(result.reason).toContain("LLM fallback");
+    expect(result.reason).toContain("Local Classifier failed");
   });
 });
+

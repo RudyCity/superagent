@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.422] - 2026-07-17
+
+### Improved
+- **Local 51M Classifier Model Integration**: Upgraded Phase 2 classification in `requestClassifier.ts` to use the local micro-LLM **Supra-Router-51M-ONNX** via `@huggingface/transformers`. When the heuristic filter is low confidence, the classifier runs locally on CPU (downloading the 66MB model to cache on first run), analyzing prompt complexity and routing requirements before mapping them to the 7 Superagent categories, eliminating classifier API costs.
+
 ## [1.2.421] - 2026-07-17
 
 ### Added

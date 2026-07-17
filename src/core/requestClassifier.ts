@@ -401,10 +401,60 @@ export function classifyHeuristic(
   };
 }
 
-// ─── LLM Classifier ─────────────────────────────────────────────────────────
+// ─── Local 51M Classifier ───────────────────────────────────────────────────
+
+let localClassifierPipeline: any = null;
 
 /**
- * Phase 2: LLM-based classification. Uses a compact prompt for accurate routing.
+ * Maps the structured output of Supra-Router-51M telemetry into Superagent's RequestCategory.
+ */
+export function mapSupraTelemetryToCategory(
+  telemetry: string,
+  heuristicCategory: RequestCategory
+): RequestCategory {
+  const lower = telemetry.toLowerCase();
+
+  const isCode = lower.includes("code: true") || lower.includes("domain: programming") || lower.includes("domain: code");
+  const isMath = lower.includes("math: true");
+  const isBigModel = lower.includes("route: big model") || lower.includes("route: cloud");
+
+  const complexityMatch = lower.match(/complexity:\s*([1-5])/);
+  const complexity = complexityMatch ? parseInt(complexityMatch[1], 10) : 1;
+
+  // 1. If it's classified as programming/code-related
+  if (isCode) {
+    if (isBigModel || complexity >= 4) {
+      if (heuristicCategory === "debug") {
+        return "debug";
+      }
+      return "complex_task";
+    } else {
+      if (heuristicCategory === "command") {
+        return "command";
+      }
+      return "simple_edit";
+    }
+  }
+
+  // 2. If high complexity or math-intensive task
+  if (isBigModel || complexity >= 3) {
+    if (heuristicCategory === "research" || lower.includes("domain: research") || lower.includes("domain: search")) {
+      return "research";
+    }
+    return "research";
+  }
+
+  // 3. Keep conversation classification if heuristic is conversation but confidence is low/medium
+  if (heuristicCategory === "conversation") {
+    return "conversation";
+  }
+
+  // 4. Default to question for low complexity read-only queries
+  return "question";
+}
+
+/**
+ * Phase 2: Local 51M Causal LM classification. Uses Supra-Router-51M-ONNX via transformers.js.
  * Only called when heuristic confidence is below threshold.
  */
 export async function classifyWithLLM(
@@ -413,45 +463,44 @@ export async function classifyWithLLM(
   heuristicResult: ClassificationResult
 ): Promise<ClassificationResult> {
   try {
-    const { generateText } = await import("ai");
+    const { pipeline } = await import("@huggingface/transformers");
 
-    // Compact prompt — optimized for minimal token usage
-    const classificationPrompt = `Classify intent. Reply ONE word: conversation|question|simple_edit|research|complex_task|debug|command.
-Rules: conversation=greetings/ack/yes/no/thanks. question=ask about code/concepts,NO edits. simple_edit=minor changes 1-3 files. research=search/find/explore. complex_task=major features/refactor/migration. debug=bug fix/error resolution. command=run/build/deploy/commit.
-Compound requests: pick category requiring tools (debug/complex_task/command) over read-only (question/research).
-Heuristic: ${heuristicResult.category}(${heuristicResult.confidence})
-Input: "${userInput.substring(0, 400)}"
-Category:`;
+    if (!localClassifierPipeline) {
+      localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
+        progress_callback: (data: any) => {
+          if (data.status === "downloading" && data.progress === 0) {
+            console.log(`[INFO] Downloading local classifier model (${data.file})...`);
+          }
+        }
+      });
+    }
 
-    const response = await generateText({
-      model,
-      prompt: classificationPrompt,
+    const prompt = `Task: ${userInput.substring(0, 400)}\nAnalysis:`;
+    const response = await localClassifierPipeline(prompt, {
+      max_new_tokens: 64,
+      temperature: 0.1,
+      do_sample: false,
     });
 
-    const totalTokens = (response.usage?.promptTokens || 0) + (response.usage?.completionTokens || 0);
-    const rawCategory = response.text.trim().toLowerCase().replace(/[^a-z_]/g, "");
+    const telemetry = response[0]?.generated_text || "";
+    // Extract only the generated telemetry part after "Analysis:"
+    const analysisIndex = telemetry.indexOf("Analysis:");
+    const generatedPart = analysisIndex !== -1 ? telemetry.substring(analysisIndex) : telemetry;
 
-    const validCategories: RequestCategory[] = [
-      "conversation", "question", "simple_edit", "research",
-      "complex_task", "debug", "command",
-    ];
-
-    const category = validCategories.includes(rawCategory as RequestCategory)
-      ? (rawCategory as RequestCategory)
-      : heuristicResult.category;
+    const category = mapSupraTelemetryToCategory(generatedPart, heuristicResult.category);
 
     return {
       category,
       confidence: "high",
-      reason: `LLM classification: ${rawCategory} (heuristic was: ${heuristicResult.category})`,
+      reason: `Local 51M Classifier: ${generatedPart.trim()} (heuristic was: ${heuristicResult.category})`,
       heuristicOnly: false,
-      classificationTokens: totalTokens,
+      classificationTokens: 0,
     };
   } catch (err: any) {
-    // Fallback to heuristic on LLM failure
+    // Fallback to heuristic on local model failure
     return {
       ...heuristicResult,
-      reason: `${heuristicResult.reason} (LLM fallback: ${err.message})`,
+      reason: `${heuristicResult.reason} (Local Classifier failed: ${err.message})`,
     };
   }
 }
