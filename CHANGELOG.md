@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.420] - 2026-07-17
+
+### Added
+- **Hallmark Design Skill Integration**: Added design-skill (cloned and configured from nutlope/hallmark) to provide anti-AI-slop design quality gates, structural layouts, and themed UI generation principles.
+
 ## [1.2.419] - 2026-07-17
 
 ### Added
