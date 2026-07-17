@@ -20,11 +20,29 @@ function lruSet<K, V>(map: Map<K, V>, key: K, value: V): void {
   map.set(key, value);
 }
 
+let sharedEncoder: any = null;
+let sharedEncoderReady: Promise<void> | null = null;
+
+async function getSharedEncoder(): Promise<any> {
+  if (sharedEncoder) return sharedEncoder;
+  if (!sharedEncoderReady) {
+    sharedEncoderReady = (async () => {
+      try {
+        const { get_encoding } = await import("tiktoken");
+        sharedEncoder = get_encoding("cl100k_base");
+      } catch {
+        sharedEncoder = null;
+      }
+    })();
+  }
+  await sharedEncoderReady;
+  return sharedEncoder;
+}
+
 export class TokenTracker {
   private model: string;
   private cache: Map<string, number> = new Map();
   private breakdownCache: Map<string, { content: number; toolCalls: number; toolResults: number }> = new Map();
-  private encoder: any = null;
   /** Resolved once tiktoken is ready (or failed). Await before first count. */
   private encoderReady: Promise<void>;
 
@@ -34,12 +52,7 @@ export class TokenTracker {
   }
 
   private async initEncoder(): Promise<void> {
-    try {
-      const { get_encoding } = await import("tiktoken");
-      this.encoder = get_encoding("cl100k_base");
-    } catch {
-      this.encoder = null;
-    }
+    await getSharedEncoder();
   }
 
   /** Await this before the first token estimate to ensure encoder is loaded. */
@@ -218,9 +231,10 @@ export class TokenTracker {
   private countText(text: string): number {
     if (!text) return 0;
 
-    if (this.encoder) {
+    const encoder = sharedEncoder;
+    if (encoder) {
       try {
-        return this.encoder.encode(text).length;
+        return encoder.encode(text).length;
       } catch {
         // Fall through to heuristic
       }

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.436] - 2026-07-17
+
+### Optimized
+- **Shared Tokenizer Encoder**: Shared a single global tiktoken encoder instance across all TokenTracker instances rather than instantiating a new WASM encoder per agent, saving significant WebAssembly heap allocations.
+- **History Search Cache Capping**: Capped the local history search cache at 100 entries with LRU-style eviction to prevent unlimited memory growth when querying or syncing thousands of conversation files.
+
 ## [1.2.435] - 2026-07-17
 
 ### Optimized

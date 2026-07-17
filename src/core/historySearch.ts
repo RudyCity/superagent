@@ -125,6 +125,15 @@ interface HistorySearchCacheEntry {
 }
 
 const historySearchCache = new Map<string, HistorySearchCacheEntry>();
+const MAX_HISTORY_CACHE_SIZE = 100;
+
+function cacheHistorySearchEntry(filePath: string, entry: HistorySearchCacheEntry) {
+  if (historySearchCache.size >= MAX_HISTORY_CACHE_SIZE) {
+    const oldest = historySearchCache.keys().next().value;
+    if (oldest) historySearchCache.delete(oldest);
+  }
+  historySearchCache.set(filePath, entry);
+}
 
 interface SemanticSearchCacheEntry {
   sig: string;
@@ -333,7 +342,7 @@ export async function searchHistory(
         dialogueText = cleanTranscriptForLLM(messages);
 
         // Cache it, saving only role and content of messages to keep memory low
-        historySearchCache.set(session.filePath, {
+        cacheHistorySearchEntry(session.filePath, {
           mtimeMs,
           messages: messages.map((m) => ({
             role: m.role,
