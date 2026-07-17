@@ -104,20 +104,43 @@ function countKeywordMatches(
 
 /** Short acknowledgment / conversation tokens (exact word match) */
 const CONVERSATION_EXACT: ReadonlySet<string> = new Set([
-  "ok", "okay", "oke", "yes", "no", "y", "n",
-  "lanjut", "lanjutkan", "coba", "proceed", "continue",
-  "go", "go ahead", "sure", "yep", "yup", "nah", "nope",
-  "thanks", "thank you", "thx", "terima kasih", "makasih",
-  "good", "great", "nice", "cool", "awesome", "perfect",
-  "done", "got it", "understood", "noted",
-  "hi", "hello", "hey", "halo",
+  // English affirmations / short replies
+  "ok", "okay", "yes", "no", "y", "n",
+  "proceed", "continue", "go", "go ahead", "sure", "yep", "yup", "nah", "nope",
+  "thanks", "thank you", "thx",
+  "good", "great", "nice", "cool", "awesome", "perfect", "excellent",
+  "done", "got it", "understood", "noted", "got",
+  "hi", "hello", "hey",
+  "next", "skip", "pass",
+  // Indonesian affirmations / acknowledgments
+  "oke", "iya", "ya", "sip", "siap",
+  "lanjut", "lanjutkan",
+  "mantap", "mantul", "keren", "bagus", "oke",
+  "gas", "gass", "gassss",
+  "ngerti", "paham", "mengerti",
+  "halo", "hai",
+  "oke deh", "oke dong", "yaudah", "ya udah", "udah", "sudah",
+  "terima kasih", "makasih", "trims",
+  "benar", "betul", "tepat",
+  "setuju", "oke setuju",
 ]);
 
 /** Phrase patterns that strongly indicate conversation (matched as substring) */
 const CONVERSATION_PHRASES: readonly string[] = [
+  // English
   "go ahead", "let's go", "do it", "sounds good", "that's fine",
   "no problem", "alright", "fine by me", "i agree", "approved",
-  "looks good", "lgtm", "thank you very much", "terima kasih banyak", "makasih banyak",
+  "looks good", "lgtm", "thank you very much",
+  "makes sense", "got it thanks", "that works", "that's correct",
+  "you're welcome", "no worries", "fair enough",
+  // Indonesian
+  "terima kasih banyak", "makasih banyak", "makasih ya",
+  "oke lanjut", "lanjut aja", "silakan lanjut", "bisa lanjut",
+  "oke siap", "siap bos", "siap boss",
+  "oke paham", "iya paham", "sudah paham", "ngerti kok",
+  "iya betul", "iya benar", "iya tepat", "oke betul",
+  "oke deh lanjut", "ya udah lanjut", "gass aja",
+  "sip lanjut", "gas bro",
 ];
 
 /** Question starter words */
@@ -171,7 +194,9 @@ const COMPLEX_KW = splitKeywords([
 const COMMAND_KW = splitKeywords([
   "run", "execute", "start", "stop", "test", "deploy", "commit", "push", "pull",
   "install", "pnpm", "npm", "yarn", "bun", "git", "docker", "cargo", "pip", "npx",
-  "jalankan", "jalanin", "coba", "running", "runnign", "tes", "uji",
+  // Note: "coba" removed from here — it lives in CONVERSATION_EXACT only.
+  // "coba jalankan" / "coba run" is caught by other command keywords in the phrase.
+  "jalankan", "jalanin", "running", "tes", "uji",
 ]);
 
 // ─── Precompiled RegExp Patterns ────────────────────────────────────────────
@@ -554,4 +579,22 @@ export function getCategoryPromptAddendum(category: RequestCategory): string {
     default:
       return "";
   }
+}
+
+/**
+ * Returns true when the classification is a high-confidence conversational
+ * message that qualifies for the fast-path response (no full agent loop).
+ *
+ * Fast-path is only activated for the top-level single/master tier
+ * (never for superagent/subagent which are task-driven, not conversational).
+ */
+export function isHighConfidenceConversation(
+  classification: ClassificationResult,
+  tier: string
+): boolean {
+  return (
+    classification.category === "conversation" &&
+    classification.confidence === "high" &&
+    (tier === "single" || tier === "master")
+  );
 }

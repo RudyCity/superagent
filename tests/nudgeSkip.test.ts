@@ -33,9 +33,23 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
 // Mock ai SDK partially
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
+
+  // Helper to create a minimal streamText result for the conversation fast-path.
+  // The fast-path iterates result.fullStream and then awaits result.usage.
+  const makeFakeStreamResult = (text: string) => {
+    const fullStream = (async function* () {
+      yield { type: "text-delta", textDelta: text };
+    })();
+    return {
+      fullStream,
+      usage: Promise.resolve({ promptTokens: 5, completionTokens: 5, totalTokens: 10 }),
+    };
+  };
+
   return {
     ...actual,
     generateText: vi.fn(),
+    streamText: vi.fn().mockReturnValue(makeFakeStreamResult("Hello! How can I help you?")),
   };
 });
 
@@ -62,8 +76,8 @@ describe("Agent - Planning Nudge Skip on Conversation and Question", () => {
     const agent = new Agent(onEvent, onPermission, onQuestion);
     agent.tier = "master";
     agent.planState = "APPROVED"; // Simple task or conversation
-    
-    // Explicitly set classification to conversation
+
+    // Explicitly set classification to conversation/high — triggers fast-path
     agent.currentClassification = {
       category: "conversation",
       confidence: "high",
@@ -72,16 +86,12 @@ describe("Agent - Planning Nudge Skip on Conversation and Question", () => {
       classificationTokens: 0,
     };
 
-    // Return a short text-only response (normally triggers nudge)
-    vi.mocked(generateText).mockResolvedValue({
-      text: "Hello! How can I help you?",
-      usage: { promptTokens: 10, completionTokens: 10 },
-    } as any);
-
     await agent.sendMessage("hai");
 
-    // generateText should be called exactly once since the nudge was skipped
-    expect(generateText).toHaveBeenCalledTimes(1);
+    // Fast-path uses streamText, NOT generateText
+    const { streamText } = await import("ai");
+    expect(streamText).toHaveBeenCalledTimes(1);
+    expect(generateText).not.toHaveBeenCalled();
 
     // Verify messages in history does not contain the system nudge
     const messages = agent.getConversationMessages();

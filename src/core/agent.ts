@@ -991,6 +991,22 @@ If none of the options are suitable, still pick the closest one.`;
       }
     }
 
+    // ── Conversation fast-path ───────────────────────────────────────────────
+    // For high-confidence conversational messages (greetings, acks, short replies),
+    // skip the full agent loop and respond directly with a lightweight streamText call.
+    // This eliminates workspace discovery, tool loading, and plan injection overhead.
+    if (this.currentClassification) {
+      try {
+        const { isHighConfidenceConversation } = await import("./requestClassifier.js");
+        if (isHighConfidenceConversation(this.currentClassification, this.tier)) {
+          this.writeToLogFile("INFO", `Conversation fast-path activated (category=conversation, confidence=high)`);
+          await this.runConversationFastPath(userInput);
+          return;
+        }
+      } catch (err: any) {
+        this.writeToLogFile("WARN", `Conversation fast-path check failed, falling through to agent loop: ${err.message}`);
+      }
+    }
 
     this.isRunning = true;
     this.abortController = new AbortController();
@@ -3050,6 +3066,159 @@ for (const tc of toolCalls) {
           goal: this.goalMode,
           summary: finalSummary,
         });
+      }
+    }
+  }
+
+  /**
+   * Lightweight response path for high-confidence conversational messages.
+   *
+   * Bypasses the full agent loop (workspace discovery, tool loading, plan injection,
+   * rate limiter acquire, concurrency limiter acquire) and calls streamText directly
+   * with a minimal system prompt and current conversation history.
+   *
+   * Activated only when: category=conversation AND confidence=high AND tier=single|master.
+   */
+  private async runConversationFastPath(
+    userInput: string | import("./conversation.js").MessageContent
+  ): Promise<void> {
+    this.isRunning = true;
+    this.abortController = new AbortController();
+    const signal = this.abortController.signal;
+    let onAbort: (() => void) | undefined;
+    const abortPromise = new Promise<never>((_, reject) => {
+      onAbort = () => {
+        const err = new Error("AbortError");
+        err.name = "AbortError";
+        reject(err);
+      };
+      if (signal?.aborted) {
+        onAbort();
+      } else {
+        signal?.addEventListener("abort", onAbort);
+      }
+    });
+
+    this.writeToLogFile("INFO", `Agent execution started (fast-path, tier: ${this.tier})`);
+    this.writeToLogFile("USER", typeof userInput === "string" ? userInput : "[multimodal message]");
+
+    this.conversation.addUserMessage(userInput);
+    await this.compactHistoryIfNeeded();
+    await this.saveHistory();
+    this.autoCheckpoint("User message");
+
+    try {
+      await Promise.race([
+        (async () => {
+          const modelInstance = this.getModel();
+          if (!modelInstance) {
+            throw new Error("No model instance available for conversation fast-path");
+          }
+
+          // Build minimal conversation history (user/assistant pairs only, skip tool results)
+          const coreMessages: CoreMessage[] = [];
+          for (const m of this.conversation.getMessages()) {
+            if (m.role === "system" || m.role === "tool") continue;
+            if (m.role === "user") {
+              const content = typeof m.content === "string" ? m.content : contentToString(m.content);
+              coreMessages.push({ role: "user", content });
+            } else if (m.role === "assistant") {
+              const content = typeof m.content === "string" ? m.content : contentToString(m.content);
+              if (content.trim()) {
+                coreMessages.push({ role: "assistant", content });
+              }
+            }
+          }
+
+          // Minimal system prompt for conversational replies
+          const baseSystemPrompt = this.customSystemPrompt || this.config.systemPrompt || "";
+          const convSystemPrompt = baseSystemPrompt
+            ? `${baseSystemPrompt}\n\nCLASSIFICATION: Conversational message detected. Respond directly and concisely. No tools needed.`
+            : "You are a helpful AI coding assistant. The user sent a short conversational message. Respond naturally and concisely.";
+
+          const startTime = Date.now();
+          const result = streamText({
+            model: modelInstance,
+            system: convSystemPrompt,
+            messages: coreMessages,
+            abortSignal: signal,
+          });
+
+          let textContent = "";
+          for await (const delta of result.fullStream) {
+            if (signal?.aborted) {
+              const err = new Error("AbortError");
+              err.name = "AbortError";
+              throw err;
+            }
+            if (delta.type === "text-delta") {
+              textContent += delta.textDelta;
+              this.onEvent({ type: "text", content: delta.textDelta });
+            }
+          }
+
+          // Emit token usage
+          try {
+            const usage = await result.usage;
+            if (usage) {
+              const durationMs = Date.now() - startTime;
+              if (durationMs > 0 && usage.completionTokens > 0) {
+                this.lastSpeed = usage.completionTokens / (durationMs / 1000);
+              }
+              this.onEvent({
+                type: "token_usage",
+                promptTokens: usage.promptTokens || 0,
+                completionTokens: usage.completionTokens || 0,
+                durationMs,
+              });
+              try {
+                const { addMasterTokens } = await import("./tools/state.js");
+                addMasterTokens(usage.promptTokens || 0, usage.completionTokens || 0);
+              } catch { /* non-critical */ }
+            }
+          } catch { /* non-critical */ }
+
+          // Persist assistant reply
+          if (textContent.trim()) {
+            this.conversation.addAssistantMessage(textContent);
+          }
+          await this.saveHistory();
+          this.writeToLogFile("ASSISTANT", textContent);
+        })(),
+        abortPromise,
+      ]);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") {
+        this.onEvent({ type: "text", content: "\n\n[Interrupted]" });
+        await this.saveHistory();
+      } else {
+        const message = formatError(err);
+        this.writeToLogFile("AGENT_ERROR", message);
+        this.onEvent({ type: "error", message });
+        this.conversation.addMessage({
+          role: "system",
+          content: `[ERROR] ${message}`,
+          timestamp: Date.now(),
+        });
+        await this.saveHistory();
+      }
+    } finally {
+      if (signal && onAbort) {
+        signal.removeEventListener("abort", onAbort);
+      }
+      this.flushTextLogBuffer();
+      this.isRunning = false;
+      this.abortController = null;
+      this.currentClassification = null;
+
+      if (this.pendingMessagesQueue.length > 0) {
+        const queued = this.pendingMessagesQueue.shift()!;
+        const logText = typeof queued === "string" ? queued : "[multimodal message]";
+        this.writeToLogFile("INFO", `Auto-sending queued message: "${logText.substring(0, 80)}..."`);
+        this.onEvent({ type: "text", content: "\n[SYS] Resuming with queued approval message...\n" });
+        await this.sendMessage(queued);
+      } else {
+        this.onEvent({ type: "done" });
       }
     }
   }

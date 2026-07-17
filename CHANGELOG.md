@@ -1,6 +1,15 @@
 # Changelog
 
-## [1.2.409] - 2026-07-17
+## [1.2.411] - 2026-07-17
+
+### Fixed
+- **Classifier Double-Register Bug**: Removed `"coba"` from `COMMAND_KW` where it was incorrectly duplicated — it already exists in `CONVERSATION_EXACT` for exact-word matching. Previously inputs like `"coba jalankan"` could produce inconsistent classification when individual words were checked against both sets.
+
+### Improved
+- **Expanded Indonesian Conversation Vocabulary**: Extended `CONVERSATION_EXACT` with widely-used Indonesian short replies and affirmations: `"iya"`, `"ya"`, `"sip"`, `"siap"`, `"mantap"`, `"mantul"`, `"keren"`, `"bagus"`, `"gas"`, `"gass"`, `"ngerti"`, `"paham"`, `"mengerti"`, `"hai"`, `"yaudah"`, `"ya udah"`, `"udah"`, `"sudah"`, `"betul"`, `"tepat"`, `"setuju"`, `"trims"`, `"benar"`, plus English additions: `"next"`, `"skip"`, `"pass"`, `"excellent"`, `"got"`.
+- **Expanded Conversation Phrase Patterns**: Added Indonesian multi-word conversational phrases to `CONVERSATION_PHRASES`: `"oke lanjut"`, `"lanjut aja"`, `"silakan lanjut"`, `"bisa lanjut"`, `"oke siap"`, `"siap bos"`, `"oke paham"`, `"iya paham"`, `"sudah paham"`, `"iya betul"`, `"iya benar"`, `"gass aja"`, `"sip lanjut"`, `"gas bro"`, plus English additions: `"makes sense"`, `"got it thanks"`, `"that works"`, `"you're welcome"`, `"no worries"`, `"fair enough"`.
+- **Conversation Fast-Path**: Added `runConversationFastPath` — when the classifier identifies a high-confidence conversational message (greetings, acknowledgments, short replies) on the `single` or `master` tier, the agent now bypasses the full `runAgentLoop` entirely. It calls a lightweight `streamText` directly with a minimal system prompt and conversation history, skipping workspace discovery, tool loading, plan state injection, concurrency and rate limiter acquisition. This significantly reduces latency and token overhead for simple chat interactions.
+
 
 ### Optimized
 - **Low-Spec Local Embedding Optimization**: Implemented `OptimizedLocalTextEmbeddingProvider` utilizing `Xenova/all-MiniLM-L6-v2` as the default local embedding model (reducing layer count from 12 to 6, cutting CPU overhead in half). Integrated thread limiting for ONNX Runtime (`intraOpNumThreads: 2`, `interOpNumThreads: 1`) to ensure local embedding generation never consumes 100% CPU on multi-core systems, keeping the terminal CLI highly responsive during background indexing.
