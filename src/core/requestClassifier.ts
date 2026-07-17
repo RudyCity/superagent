@@ -495,6 +495,7 @@ export async function warmUpClassifier(onProgress?: (event: any) => void): Promi
         console.log(`\n[INFO] Pre-loading/downloading local classifier model (~66MB) to cache...`);
       }
       localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
+        model_file_name: "model_int8",
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
@@ -572,6 +573,7 @@ export async function classifyWithLLM(
         console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
       }
       localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
+        model_file_name: "model_int8",
         progress_callback: (data: any) => {
           if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;

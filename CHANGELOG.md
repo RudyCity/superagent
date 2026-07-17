@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.453] - 2026-07-17
+
+### Fixed
+- **Local Router ONNX Filename**: Passed `model_file_name: "model_int8"` to Transformers.js pipeline options for the classifier model. This resolves an issue where the pipeline was failing to load the model because it looked for the non-existent default `model.onnx`/`model_quantized.onnx` filenames in the repository, which left the system services status banner stuck on `⏳ LOADING`.
+
 ## [1.2.452] - 2026-07-17
 
 ### Fixed
