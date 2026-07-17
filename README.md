@@ -245,8 +245,8 @@ Superagent features a built-in REST API and Server-Sent Events (SSE) server (`se
 ## 🚀 Getting Started & Configuration
 
 ### Prerequisites
-- **Node.js** v18+
-- **npm** (or your preferred package manager)
+- **Node.js** v18+ or **Bun** v1.0+
+- **npm** or **Bun** package manager
 
 ### Installation
 
@@ -257,15 +257,28 @@ Superagent features a built-in REST API and Server-Sent Events (SSE) server (`se
    ```
 
 2. Install dependencies:
+   Using npm:
    ```bash
    npm install
    ```
+   Or using Bun:
+   ```bash
+   bun install
+   ```
 
 3. Make Superagent Executable Globally:
-   To install the `superagent` command globally on your system so you can invoke it from any directory, build the project and run `npm link`:
+   To install the `superagent` command globally on your system so you can invoke it from any directory, build the project and register it:
+   
+   Using npm:
    ```bash
    npm run build
    npm link
+   ```
+   
+   Or using Bun:
+   ```bash
+   bun run build
+   bun link
    ```
    This compiles the TypeScript files to JavaScript and registers a global symlink pointing to your local repository build. Now, you can start the assistant from any directory simply by typing:
    ```bash
@@ -327,45 +340,80 @@ Superagent includes a developer Chrome Extension that provides a cyberpunk-theme
 6. Click **LAUNCHING SESSION** to initialize and connect.
 7. You can now chat, view task checklists, monitor the agent tree, and let the agent automate tab actions.
 
----
-
 ## ⚙️ Development Scripts
 
-Run the following NPM scripts during development:
+Run the following scripts during development:
 
 - **Start Development Mode**:
+  Using npm:
   ```bash
   npm run dev
   ```
+  Or using Bun:
+  ```bash
+  bun run dev
+  ```
+
 - **Start Multi-Agent Mode (3-tier orchestration)**:
+  Using npm:
   ```bash
   npm run dev -- --multi
-  # or globally:
-  superagent --multi
   ```
+  Or using Bun:
+  ```bash
+  bun run dev --multi
+  ```
+  *(Or globally: `superagent --multi`)*
+
 - **Start Chrome Extension API Server**:
+  Using npm:
   ```bash
   npm run dev -- --server [port]
-  # or globally:
-  superagent --server [port]
   ```
+  Or using Bun:
+  ```bash
+  bun run dev --server [port]
+  ```
+  *(Or globally: `superagent --server [port]`)*
+
 - **Resume Last Session**:
+  Using npm:
   ```bash
   npm run dev -- --resume
-  # or
-  npm run dev -- -r
   ```
+  Or using Bun:
+  ```bash
+  bun run dev --resume
+  ```
+
 - **Compile TypeScript**:
+  Using npm:
   ```bash
   npm run build
   ```
+  Or using Bun:
+  ```bash
+  bun run build
+  ```
+
 - **Run Production Build**:
+  Using npm:
   ```bash
   npm start
   ```
+  Or using Bun:
+  ```bash
+  bun start
+  ```
+
 - **Run Unit Tests**:
+  Using npm:
   ```bash
   npm test
+  ```
+  Or using Bun:
+  ```bash
+  bun test
   ```
 
 ---

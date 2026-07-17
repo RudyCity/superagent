@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.437] - 2026-07-17
+
+### Added
+- **Bun Support Documentation**: Updated README.md with detailed installation, global executable linking, and script execution instructions for utilizing the Bun runtime and package manager.
+
 ## [1.2.436] - 2026-07-17
 
 ### Optimized
