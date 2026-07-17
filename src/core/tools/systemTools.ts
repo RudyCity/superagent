@@ -4,6 +4,47 @@ function fuzzyMatch(text: string, pattern: string): boolean {
   const cleanPattern = pattern.replace(/\s+/g, ' ');
   return cleanText.includes(cleanPattern);
 }
+
+/**
+ * Build an actionable error when targetContent/oldString is not found in a line range.
+ * Shows the actual content in that range and hints if the target exists elsewhere.
+ */
+function buildNotFoundError(
+  label: string,
+  targetContent: string,
+  startLine: number,
+  endLine: number,
+  lines: string[],
+  normFullContent: string,
+  normTargetContent: string,
+): string {
+  const actualSlice = lines.slice(startLine - 1, endLine).join("\n");
+  const preview = actualSlice.length > 400 ? actualSlice.slice(0, 400) + "\n... (truncated)" : actualSlice;
+  let hint = "";
+  if (normFullContent.includes(normTargetContent)) {
+    // Find approximate line where it does exist
+    const normLines = normFullContent.split("\n");
+    for (let i = 0; i < normLines.length; i++) {
+      if (normLines.slice(i, i + normTargetContent.split("\n").length).join("\n").includes(normTargetContent)) {
+        hint = `\nHint: The target was found near line ${i + 1}. Update startLine/endLine to cover that range.`;
+        break;
+      }
+    }
+  } else {
+    hint = "\nHint: The target was not found anywhere in the file. Re-read the file to get the current content.";
+  }
+  return `Error: ${label} not found in line range [${startLine}, ${endLine}].\nActual content in that range:\n${preview}${hint}`;
+}
+
+/**
+ * Build an actionable error when targetContent/oldString is not found anywhere in the file.
+ */
+function buildNotFoundErrorFull(
+  label: string,
+  filePath: string,
+): string {
+  return `Error: ${label} not found in ${filePath}.\nFix: Re-read the file to get the current content, then update the target string to match exactly (including indentation).`;
+}
 import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
@@ -538,8 +579,7 @@ export const editTool: Tool = {
 
         const targetSubNormContent = normLines.slice(startIdx, endIdx).join("\n");
         if (!targetSubNormContent.includes(normOldStr) && !fuzzyMatch(targetSubNormContent, normOldStr)) {
-          return `Error: oldString not found within lines ${startLine || 1} to ${endLine || lines.length} of ${filePath} (matching normalized content).
-Fix: Re-read the target file range to find the updated text. The lines may have shifted.`;
+          return buildNotFoundError("oldString", oldStr, startLine || 1, endLine || lines.length, lines, normContent, normOldStr);
         }
         const count = targetSubNormContent.split(normOldStr).length - 1;
         if (count > 1) {
@@ -560,8 +600,7 @@ Fix: Re-read the target file range to find the updated text. The lines may have 
         }
       } else {
         if (!normContent.includes(normOldStr)) {
-          return `Error: oldString not found in ${filePath} (matching normalized content).
-Fix: The target content may have been modified or lines have shifted. Re-read the target file range to find the updated text, or specify a startLine/endLine for precise range replacement.`;
+          return buildNotFoundErrorFull("oldString", filePath);
         }
 
         const count = normContent.split(normOldStr).length - 1;
@@ -1231,7 +1270,8 @@ export const replaceFileContentTool: Tool = {
       const normTargetContent = normalizeForMatching(targetContent);
 
       if (!normSliceText.includes(normTargetContent) && !fuzzyMatch(normSliceText, normTargetContent)) {
-        return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] (matching normalized content).`;
+        const normFullContent = normalizeForMatching(content);
+        return buildNotFoundError("targetContent", targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
       }
 
       const occurrences = countOccurrences(normSliceText, normTargetContent);
@@ -1285,6 +1325,16 @@ export const replaceFileContentTool: Tool = {
         return summary;
       }
       await fs.writeFile(filePath, nextContent, "utf-8");
+
+      // Post-write verification: confirm the replacement landed correctly.
+      const writtenContent = await fs.readFile(filePath, "utf-8");
+      const normWritten = normalizeForMatching(writtenContent);
+      const normReplacement = normalizeForMatching(replacementContent);
+      if (replacementContent && !normWritten.includes(normReplacement)) {
+        // Silent corruption detected — rollback.
+        await fs.writeFile(filePath, content, "utf-8");
+        return `Error: Post-write verification failed (replacement not found after write). Changes rolled back to original. Please retry.`;
+      }
 
       const syntaxError = await verifySyntax(filePath);
       if (syntaxError) {
@@ -1712,8 +1762,10 @@ export const multiReplaceFileContentTool: Tool = {
     const release = await fileLockManager.acquire(filePath);
     try {
       let content = await fs.readFile(filePath, "utf-8");
+      const originalContent = content; // snapshot for atomic rollback
       const originalEnding = content.includes("\r\n") ? "\r\n" : "\n";
       let lines = content.split(/\r?\n/);
+      const normFullContent = normalizeForMatching(content);
 
       const resolvedChunks: ResolvedChunk[] = [];
 
@@ -1729,7 +1781,7 @@ export const multiReplaceFileContentTool: Tool = {
         const normTargetContent = normalizeForMatching(targetContent);
 
         if (!normSliceText.includes(normTargetContent)) {
-          return `Error: targetContent not found in specified line range [${startLine}, ${endLine}] for a chunk (matching normalized content).`;
+          return buildNotFoundError("targetContent", targetContent, startLine, endLine, lines, normFullContent, normTargetContent);
         }
 
         const occurrences = countOccurrences(normSliceText, normTargetContent);
@@ -1865,6 +1917,19 @@ export const multiReplaceFileContentTool: Tool = {
         return summary;
       }
       await fs.writeFile(filePath, nextContent, "utf-8");
+
+      // Post-write verification: confirm all replacements landed correctly.
+      const writtenContent = await fs.readFile(filePath, "utf-8");
+      const normWritten = normalizeForMatching(writtenContent);
+      for (const chunk of chunks) {
+        const normReplacement = normalizeForMatching(chunk.replacementContent);
+        if (chunk.replacementContent && !normWritten.includes(normReplacement)) {
+          // Silent corruption detected — atomic rollback.
+          await fs.writeFile(filePath, originalContent, "utf-8");
+          return `Error: Post-write verification failed (replacement for a chunk not found after write). All changes atomically rolled back. Please retry.`;
+        }
+      }
+
       const syntaxError = await verifySyntax(filePath);
       if (syntaxError) {
         return `Warning: ${syntaxError}. File updated successfully with ${chunks.length} changes: ${filePath}\n${summary}`;

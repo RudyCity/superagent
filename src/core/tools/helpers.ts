@@ -131,10 +131,12 @@ export function normalizeForMatching(str: string): string {
   if (typeof str !== "string") {
     return "";
   }
+  // trimEnd only: preserve indentation (semantically significant in code),
+  // strip only trailing whitespace which is never meaningful.
   return str
     .replace(/\r\n/g, "\n")
     .split("\n")
-    .map(line => line.trim())
+    .map(line => line.trimEnd())
     .join("\n");
 }
 
@@ -245,19 +247,26 @@ export function mapNormToOrigIndices(sliceText: string, normSliceText: string): 
     const origLine = origLines[i];
     const normLine = normLines[i] ?? "";
 
+    // Since normalizeForMatching uses trimEnd(), leading whitespace is preserved
+    // in normLine but trailing whitespace is stripped.
+    // The origLine and normLine share the same leading characters, so
+    // normalized col 0 maps directly to orig col 0 (no leading-space offset needed).
+    // We only need to ensure the end sentinel accounts for any stripped trailing chars.
     for (let col = 0; col < normLine.length; col++) {
       normToOrigMap.push(origCharOffset + col);
     }
 
+    // End sentinel: points to right after the last normalized char in orig.
+    // normLine.length == trimEnd length, so this is correct even if origLine
+    // has extra trailing spaces (they are beyond the sentinel).
+    const sentinelOrigPos = origCharOffset + normLine.length;
+    normToOrigMap.push(sentinelOrigPos);
+
     if (i < origLines.length - 1) {
-      normToOrigMap.push(origCharOffset + normLine.length);
-      let newlineOffset = origLine.length;
-      if (sliceText[origCharOffset + newlineOffset] === "\r") {
-        newlineOffset++;
-      }
-      origCharOffset += newlineOffset + 1;
-    } else {
-      normToOrigMap.push(origCharOffset + normLine.length);
+      // Advance past the original line (full length including trailing spaces)
+      // plus the newline character(s).
+      const newlineLen = sliceText[origCharOffset + origLine.length] === "\r" ? 2 : 1;
+      origCharOffset += origLine.length + newlineLen;
     }
   }
   return normToOrigMap;

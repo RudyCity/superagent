@@ -27,8 +27,12 @@ export const killVisionServerProcess = () => {
   if (visionServerProcess) {
     try {
       if (process.platform === "win32") {
-        const { execSync } = require("child_process");
-        execSync(`taskkill /F /T /PID ${visionServerProcess.pid}`, { stdio: "ignore" });
+        // execSync is loaded dynamically using a helper to avoid require/import issues in ES Module context
+        import("child_process").then(({ execSync }) => {
+          try {
+            execSync(`taskkill /F /T /PID ${visionServerProcess.pid}`, { stdio: "ignore" });
+          } catch {}
+        });
       } else {
         visionServerProcess.kill();
       }

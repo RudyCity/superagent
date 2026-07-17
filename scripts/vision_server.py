@@ -11,25 +11,33 @@ import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
 
-# Import ML stack
+# Configure PyTorch CPU optimizations BEFORE importing/loading models
 import torch
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+torch.set_grad_enabled(False)
+
 from huggingface_hub import hf_hub_download
 from rfdetr.detr import RFDETRMedium
 
-print("Downloading UI-DETR-1 model weights...")
-try:
-    weights_path = hf_hub_download(repo_id="racineai/UI-DETR-1", filename="model.pth")
-    print(f"Model weights downloaded to: {weights_path}")
-    
-    print("Loading RF-DETR model...")
-    detector = RFDETRMedium(pretrain_weights=weights_path, resolution=1600)
-    print("Model loaded successfully!")
-except Exception as e:
-    print(f"Error loading model: {e}")
-    sys.exit(1)
-
-# UI Element class labels
+# Global model container (lazy-loaded)
+detector = None
 CLASSES = ['button', 'field', 'heading', 'iframe', 'image', 'label', 'link', 'text']
+
+def get_detector():
+    global detector
+    if detector is None:
+        print("Lazy loading RF-DETR model...")
+        try:
+            weights_path = hf_hub_download(repo_id="racineai/UI-DETR-1", filename="model.pth")
+            detector = RFDETRMedium(pretrain_weights=weights_path, resolution=1600)
+            import gc
+            gc.collect()
+            print("Model loaded successfully!")
+        except Exception as e:
+            print(f"Error lazy loading model: {e}")
+            raise e
+    return detector
 
 class VisionRequestHandler(BaseHTTPRequestHandler):
     @torch.inference_mode()
@@ -59,8 +67,9 @@ class VisionRequestHandler(BaseHTTPRequestHandler):
                 # Convert PIL Image to RGB numpy array
                 img_rgb = np.array(img.convert("RGB"))
                 
-                # Perform inference
-                detections = detector.predict(img_rgb, threshold=threshold)
+                # Get detector instance (instantiates on-demand)
+                model = get_detector()
+                detections = model.predict(img_rgb, threshold=threshold)
                 
                 # Format output
                 elements = []

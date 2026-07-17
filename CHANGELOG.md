@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.412] - 2026-07-17
+
+### Fixed
+- **`mapNormToOrigIndices` Offset Bug**: Fixed a critical bug where column offsets in the normalized-to-original character map were computed from position 0 of the normalized (trimEnd-ed) line instead of from the actual character position in the original line. With `trim()`, leading whitespace was stripped from both ends, making `col` in normalized space != character offset in original space, which could cause wrong splice boundaries and silent file corruption on indented code. The fix correctly tracks that with `trimEnd()`, normalized col 0 maps directly to original col 0 (leading chars are preserved), while the end sentinel now correctly points past the last normalized character — not past trailing whitespace.
+- **`normalizeForMatching` Trim Direction**: Changed from `line.trim()` (strips both leading and trailing whitespace) to `line.trimEnd()` (strips trailing whitespace only). Indentation is semantically significant in TypeScript, Python, YAML and similar languages — `"  foo"` and `"foo"` are different code constructs. Preserving leading whitespace makes matching more precise and prevents accidental cross-indentation matches.
+
+### Improved
+- **Actionable Not-Found Errors**: When `targetContent` or `oldString` is not found in a specified line range, all three edit tools (`edit`, `replace_file_content`, `multi_replace_file_content`) now return the actual content of the searched range (up to 400 chars) in the error message, enabling AI agents to self-correct without a separate read step.
+- **Line Drift Detection**: Not-found errors now also check if the target exists elsewhere in the file. If found, the error includes a hint with the approximate line number where the target actually is (`Hint: The target was found near line N. Update startLine/endLine to cover that range.`), directly surfacing line-drift as the likely cause and providing the fix.
+- **Atomic Rollback for `multi_replace_file_content`**: The single-file multi-chunk path now captures an `originalContent` snapshot before processing any chunk. If post-write verification fails (replacement not found after write), all changes are atomically rolled back to the original, preventing partial/corrupt state.
+- **Post-Write Verification**: Both `replace_file_content` and `multi_replace_file_content` now read back the file immediately after writing and verify the replacement content is present. If verification fails (silent corruption), the file is rolled back to its original content and an error is returned.
+
 ## [1.2.411] - 2026-07-17
 
 ### Fixed

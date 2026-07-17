@@ -22,17 +22,27 @@ describe("Python Vision Inference Server daemon", () => {
   const testPort = 8096;
   const { available, cmd: pythonCmd } = hasPythonVisionDependencies();
 
-  afterAll(async () => {
+  const cleanup = () => {
     if (serverProcess) {
       try {
         if (process.platform === "win32") {
-          await execa("taskkill", ["/F", "/T", "/PID", String(serverProcess.pid)]);
+          execSync(`taskkill /F /T /PID ${serverProcess.pid}`, { stdio: "ignore" });
         } else {
           serverProcess.kill();
         }
       } catch {}
+      serverProcess = null;
     }
+  };
+
+  afterAll(async () => {
+    cleanup();
   });
+
+  // Handle unexpected test runner exits (e.g. watch mode interrupts, SIGINT)
+  process.on("exit", cleanup);
+  process.on("SIGINT", () => { cleanup(); process.exit(130); });
+  process.on("SIGTERM", () => { cleanup(); process.exit(143); });
 
   const runOrSkip = available ? it : it.skip;
 
@@ -58,7 +68,19 @@ describe("Python Vision Inference Server daemon", () => {
         }
       } catch {}
     }
-
+    
     expect(isHealthy).toBe(true);
-  }, 60000); // 60s timeout to allow PyTorch to load
+    
+    // Test detection endpoint
+    const base64Pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const res = await fetch(`http://127.0.0.1:${testPort}/detect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_base64: base64Pixel })
+    });
+    expect(res.ok).toBe(true);
+    const detectResult = await res.json() as any;
+    expect(detectResult.success).toBe(true);
+    expect(Array.isArray(detectResult.elements)).toBe(true);
+  }, 50000);
 });
