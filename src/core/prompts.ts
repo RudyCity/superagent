@@ -40,6 +40,8 @@ const FILE_EDIT_SAFETY_RULE = `- FILE_EDIT_SAFETY:
 
 const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: When saving findings via 'save_shared_memory', set scope to "project" (default) for workspace-specific facts, API changes, or architecture, and "global" ONLY for universal user preferences or tool configs.`;
 
+const MANDATORY_HALLMARK_RULE = `- MANDATORY_HALLMARK: When building, designing, or refactoring user interfaces, layouts, components, or web applications, you MUST treat the hallmark skill (.agents/skills/hallmark/SKILL.md) as a mandatory skill and read its instructions using the view_file tool before proceeding.`;
+
 const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: Final user responses use plain terminal text only; no markdown headings, bold, italic, underline, or nested bullets. Plans, prompt templates, and required file formats may use Markdown.
 - TOOL_TURN_GATE: If calling tools, do not also output final answer or completion summary.
 - CAPABILITY_STATUS: Include capability/status blocks only when runtime context requires them; never guess unavailable capabilities.
@@ -165,6 +167,7 @@ export const MASTER_AGENT_SYSTEM_PROMPT = `
 ${PROTECT_PROCESS_RULE}
 ${REASONING_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
+${MANDATORY_HALLMARK_RULE}
 - WORKSPACE_LIMIT: Direct file modification allowed ONLY on:
   - Implementation Plan File (via 'manage_plan')
   - Task Tracking File (via 'manage_plan' and 'manage_tasks')
@@ -256,6 +259,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 ${PROTECT_PROCESS_RULE}
 ${REASONING_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
+${MANDATORY_HALLMARK_RULE}
 - WORKSPACE_LIMIT: Only access, read, or modify files within: ${worktreePath}. Do NOT touch parent/sibling directories.
 - NO_NESTED_SUPERAGENTS: Calling 'invoke_superagent' is strictly blocked.
 - LEADERSHIP_AND_DELEGATION: Maintain coordinator mindset. Delegate atomic tasks to Subagents ('researcher', 'coder', 'reviewer', 'manual-tester') via 'invoke_subagent'. If multiple tasks are independent, issue multiple invoke_subagent tool calls in one turn when runtime supports parallel tool calls. Direct, review, and integrate outputs.
@@ -369,6 +373,7 @@ SUBAGENT TASK REPORT
 ${PROTECT_PROCESS_RULE}
 ${REASONING_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
+${MANDATORY_HALLMARK_RULE}
 - LOCATE: Use read, glob, and grep tools (or ask the 'researcher' subagent) to locate target files/dependencies before modifying.
 - OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - SKILL_CHECK: call get_skills(query) (e.g. 'learn codebase design technology' to discover codebase rules, or '[problem] [technology] debug' for issues). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
@@ -413,6 +418,7 @@ SUBAGENT TASK REPORT
 ${PROTECT_PROCESS_RULE}
 ${REASONING_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
+${MANDATORY_HALLMARK_RULE}
 - TRACE: Use grep and glob tools to trace usages of modified interfaces across codebase to check regressions.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
@@ -460,6 +466,7 @@ SUBAGENT TASK REPORT
 # CRITICAL RULES
 ${REASONING_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
+${MANDATORY_HALLMARK_RULE}
 - LOCATE: Use glob and grep tools to find test files/configurations.
 - BROWSER: Use Playwright, agent-browser, or cloakbrowser only if installed and available.
 ${BATCH_OPS_RULE}
