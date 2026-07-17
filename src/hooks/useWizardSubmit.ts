@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import fs from "fs";
+import path from "path";
 import type { ChatLine } from "../core/slash-commands.js";
 import type { ToolCall } from "../core/conversation.js";
 import { checkPlanStructure, type Agent, type QuestionItem } from "../core/agent.js";
@@ -12,7 +13,7 @@ import { useGoalWizard } from "./wizard/useGoalWizard.js";
 
 export interface WizardSubmitContext {
   activeWizard: {
-    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm";
+    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm" | "workspace";
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;
@@ -54,6 +55,7 @@ export interface WizardSubmitContext {
   streamBufferRef: React.MutableRefObject<string>;
   setStreamDisplay: React.Dispatch<React.SetStateAction<string>>;
   exit?: () => void;
+  setWorkingDirectory?: (path: string) => void;
 }
 
 export function useWizardSubmit(ctx: WizardSubmitContext) {
@@ -76,6 +78,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     streamBufferRef,
     setStreamDisplay,
     exit,
+    setWorkingDirectory,
   } = ctx;
 
   const handleLoginWizard = useLoginWizard(ctx);
@@ -213,6 +216,95 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
       return;
     }
 
+    if (activeWizard.type === "workspace") {
+      if (activeWizard.step === 1) {
+        if (value === "➕ Add a new workspace...") {
+          setActiveWizard({
+            type: "workspace",
+            step: 2,
+            data: {},
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setInput("");
+          return;
+        }
+
+        const cleanVal = value.replace(/^\*\s*\[active\]\s*/i, "").replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
+        const resolvedPath = path.resolve(cleanVal);
+
+        if (fs.existsSync(resolvedPath)) {
+          import("../core/config/jsonConfig.js").then(({ addTrustedDirectory }) => {
+            addTrustedDirectory(resolvedPath);
+          }).catch(() => {});
+
+          if (setWorkingDirectory) {
+            setWorkingDirectory(resolvedPath);
+          } else {
+            process.chdir(resolvedPath);
+            if (agentRef.current) agentRef.current.workingDirectory = resolvedPath;
+          }
+          addLine({
+            type: "system",
+            content: `Switched workspace to: ${resolvedPath}`,
+            timestamp: now,
+          });
+        } else {
+          addLine({
+            type: "error",
+            content: `Error: Workspace path does not exist: ${resolvedPath}`,
+            timestamp: now,
+          });
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        return;
+      }
+
+      if (activeWizard.step === 2) {
+        const pathInput = value.trim();
+        if (!pathInput) {
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
+
+        const currentCwd = agentRef.current?.workingDirectory || process.cwd();
+        const resolvedPath = path.resolve(currentCwd, pathInput);
+
+        if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
+          import("../core/config/jsonConfig.js").then(({ addTrustedDirectory }) => {
+            addTrustedDirectory(resolvedPath);
+          }).catch(() => {});
+
+          if (setWorkingDirectory) {
+            setWorkingDirectory(resolvedPath);
+          } else {
+            process.chdir(resolvedPath);
+            if (agentRef.current) agentRef.current.workingDirectory = resolvedPath;
+          }
+          addLine({
+            type: "system",
+            content: `Added and switched to workspace: ${resolvedPath}`,
+            timestamp: now,
+          });
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+        } else {
+          addLine({
+            type: "error",
+            content: `Error: Path does not exist or is not a directory: ${resolvedPath}`,
+            timestamp: now,
+          });
+          setInput("");
+        }
+        return;
+      }
+    }
+
     if (activeWizard.type === "question") {
       const qList = activeWizard.questions;
       const currIdx = activeWizard.currentQuestionIndex;
@@ -333,6 +425,7 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     pendingQuestion,
     setPendingQuestion,
     exit,
+    setWorkingDirectory,
   ]);
 
   return handleWizardSubmit;

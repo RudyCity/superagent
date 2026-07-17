@@ -1,8 +1,9 @@
 import { getInstalledSkills } from "./config.js";
-import { registry, SlashCommandContext, ChatLine } from "./commands/index.js";
+import { registry } from "./commands/index.js";
+import type { SlashCommandContext, ChatLine } from "./commands/index.js";
 import { runEventHooks } from "./tools/dynamicHooks.js";
 
-export { ChatLine };
+export type { ChatLine };
 export { 
   formatPresetValue, 
   getPresetLabel, 

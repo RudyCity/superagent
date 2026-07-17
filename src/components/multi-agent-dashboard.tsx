@@ -183,7 +183,7 @@ export function MultiAgentDashboard({
   const [isHistoryTruncated, setIsHistoryTruncated] = useState(true);
   const [cachedSessions, setCachedSessions] = useState<any[]>([]);
   const [activeWizard, setActiveWizard] = useState<{
-    type: "login" | "model" | "resume" | "checkpoint" | "skills" | "permission" | "question" | "plan_approve" | "goal";
+    type: "login" | "model" | "resume" | "checkpoint" | "skills" | "permission" | "question" | "plan_approve" | "goal" | "workspace";
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;
@@ -507,7 +507,7 @@ export function MultiAgentDashboard({
     fetchGitData();
     const timer = setInterval(fetchGitData, 5000);
     return () => clearInterval(timer);
-  }, [agent]);
+  }, [agent, agent?.workingDirectory]);
 
   useEffect(() => {
     if (agent) {
@@ -788,6 +788,13 @@ export function MultiAgentDashboard({
     setAttachments,
     setSelectedIndex,
     setLogScrollOffset,
+    setWorkingDirectory: (newPath: string) => {
+      if (agent) {
+        agent.workingDirectory = newPath;
+      }
+      process.chdir(newPath);
+      setTick((t) => t + 1);
+    },
   });
 
   // Collapsible log groups state (for multi-agent tool/think groups)

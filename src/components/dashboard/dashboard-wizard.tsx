@@ -183,6 +183,8 @@ export function DashboardWizard({
               activeWizard.type === "model" && activeWizard.step === 16 ? `⚙️ CONFIGURE PROVIDER — PROFILE NAME (Type & Enter):` :
               activeWizard.type === "model" && activeWizard.step === 17 ? `⚙️ CONFIGURE PROVIDER — BASE URL (Type & Enter):` :
               activeWizard.type === "model" && activeWizard.step === 18 ? `⚙️ CONFIGURE PROVIDER — API KEY (Type & Enter):` :
+              activeWizard.type === "workspace" && activeWizard.step === 1 ? "📁 SELECT WORKSPACE DIRECTORY:" :
+              activeWizard.type === "workspace" && activeWizard.step === 2 ? "📁 ADD NEW WORKSPACE — ENTER DIRECTORY PATH:" :
               activeWizard.type === "resume" ? `📁 SELECT SESSION TO RESUME:` :
               activeWizard.type === "skills" ? `🛠️ SKILLS MANAGER (Step ${activeWizard.step}):` :
               activeWizard.type === "checkpoint" ? `📋 CHECKPOINT MANAGER (Step ${activeWizard.step}):` :
@@ -214,6 +216,8 @@ export function DashboardWizard({
             description={
               activeWizard.type === "plan_approve" ? `AI model has designed a plan in file: file:///${path.resolve(agent.getPlanFilePath()).replace(/\\/g, "/")}` :
               activeWizard.type === "question" ? (pendingQuestion?.question || "") :
+              activeWizard.type === "workspace" && activeWizard.step === 1 ? "Select a registered workspace directory to switch to, or choose to add a new one:" :
+              activeWizard.type === "workspace" && activeWizard.step === 2 ? "Type the directory path (absolute or relative to current workspace) and press Enter:" :
               activeWizard.type === "model" && activeWizard.step === 20 ? "Give a unique name for your custom model configuration preset (type name and press Enter, or type 'back' to go back):" :
               activeWizard.type === "model" && activeWizard.step === 21 ? "Enter a helpful description for what this preset is designed for (type description and press Enter, or type 'back' to go back):" :
               activeWizard.type === "model" && activeWizard.step === 31 ? "Update the description for this custom preset (type description and press Enter, or type 'back' to go back):" :

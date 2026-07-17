@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { filterSuggestions } from "./text.js";
-import { getCachedModelIds, getInstalledSkills, listHistorySessions, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD } from "../core/config.js";
+import { getCachedModelIds, getInstalledSkills, listHistorySessions, DEFAULT_VISION_TOKEN_SAVING_THRESHOLD, getTrustedDirectories } from "../core/config.js";
 import { registry } from "../core/commands/registry.js";
 import { backgroundTasks } from "../core/tools.js";
 
@@ -24,6 +24,8 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/agents": "List active subagents and configured types",
   "/worktree": "Manage git worktrees",
   "/worktrees": "Manage git worktrees",
+  "/workspace": "Manage project workspaces (list, add, use)",
+  "/w": "Manage project workspaces (list, add, use)",
   "/search-history": "Search through previous session histories",
   "/compact": "Summarize conversation to free up context window",
   "/init": "Run project system audit and setup",
@@ -172,6 +174,20 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
       }
       const possibilities = [`${mainCommand} stop`, `${mainCommand} stop all`];
       return possibilities.filter(p => p.startsWith(query));
+    }
+
+    if (mainCommand === "/workspace" || mainCommand === "/w") {
+      if (parts.length >= 2 && parts[1].toLowerCase() === "use") {
+        const dirs = getTrustedDirectories();
+        const possibilities = dirs.map((_dir: string, idx: number) => `${parts[0]} use ${idx + 1}`);
+        return filterSuggestions(possibilities, query);
+      }
+      const possibilities = [
+        `${parts[0]} list`,
+        `${parts[0]} add`,
+        `${parts[0]} use`
+      ];
+      return filterSuggestions(possibilities, query);
     }
 
     if (mainCommand === "/worktree" || mainCommand === "/worktrees") {

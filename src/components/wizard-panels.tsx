@@ -10,7 +10,7 @@ import type { QuestionItem } from "../core/agent.js";
 
 export interface WizardPanelsProps {
   activeWizard: {
-    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm";
+    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm" | "workspace";
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;
@@ -824,6 +824,27 @@ export const WizardPanels = memo(function WizardPanels(props: WizardPanelsProps)
             title="🎯 GOAL MODE — Describe the goal to achieve (Type & Enter):"
             description="Agent will work continuously until the goal is reached. Use Ctrl+C to cancel."
             borderColor="yellow"
+            options={[]}
+            selectedIndex={0}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 1 && wizardOptions.length > 0 && (
+          <WizardDialog
+            title="📁 WORKSPACE MANAGER — Select workspace (↑/↓ Navigate, Enter: Select, Esc: Cancel):"
+            description="Select a workspace directory to switch to:"
+            borderColor="cyan"
+            options={wizardOptions}
+            selectedIndex={wizardSelectedIndex}
+            maxVisible={10}
+          />
+        )}
+
+        {activeWizard && activeWizard.type === "workspace" && activeWizard.step === 2 && (
+          <WizardDialog
+            title="📁 ADD WORKSPACE — Enter workspace path (Type & Enter, Esc: Back):"
+            description="Enter the directory path for the workspace (relative or absolute):"
+            borderColor="cyan"
             options={[]}
             selectedIndex={0}
           />

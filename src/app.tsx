@@ -194,7 +194,7 @@ export function App({
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   const [activeWizard, setActiveWizard] = useState<{
-    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm";
+    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm" | "workspace";
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;
@@ -202,6 +202,8 @@ export function App({
     currentQuestionIndex?: number;
     answers?: string[];
   } | null>(null);
+
+  const [workspacePath, setWorkspacePath] = useState<string>(process.cwd());
 
   const [wizardSelectedSet, setWizardSelectedSet] = useState<Set<number>>(new Set());
   const [checkpointsList, setCheckpointsList] = useState<any[]>([]);
@@ -748,6 +750,14 @@ export function App({
               }
             }
           },
+          setWorkingDirectory: (newPath: string) => {
+            setWorkspacePath(newPath);
+            originalWorkingDirectoryRef.current = newPath;
+            if (agentRef.current) {
+              agentRef.current.workingDirectory = newPath;
+            }
+            process.chdir(newPath);
+          },
         } as any);
         return;
       }
@@ -787,6 +797,14 @@ export function App({
                 agentRef.current.workingDirectory = originalWorkingDirectoryRef.current;
               }
             }
+          },
+          setWorkingDirectory: (newPath: string) => {
+            setWorkspacePath(newPath);
+            originalWorkingDirectoryRef.current = newPath;
+            if (agentRef.current) {
+              agentRef.current.workingDirectory = newPath;
+            }
+            process.chdir(newPath);
           },
         } as any);
         return;
@@ -929,7 +947,6 @@ export function App({
       if (mainCommand === "/processes" || mainCommand === "/procs") {
         if (currentInput.startsWith(`${mainCommand} stop`)) {
           const stopSuggestions = [`${mainCommand} stop all`];
-          const workspacePath = agentRef.current?.workingDirectory || process.cwd();
           for (const [id, task] of backgroundTasks.entries()) {
             if (isTaskInWorkspace(task.cwd, workspacePath)) {
               stopSuggestions.push(`${mainCommand} stop ${id}`);
@@ -971,7 +988,6 @@ export function App({
       if (mainCommand === "/terminal") {
         if (currentInput.startsWith(`${mainCommand} stop`)) {
           const stopSuggestions = [`${mainCommand} stop all`];
-          const workspacePath = agentRef.current?.workingDirectory || process.cwd();
           for (const [id, task] of backgroundTasks.entries()) {
             if (id.startsWith("term-") && isTaskInWorkspace(task.cwd, workspacePath)) {
               stopSuggestions.push(`${mainCommand} stop ${id}`);
@@ -1204,6 +1220,10 @@ export function App({
     if (activeWizard.type === "question") {
       return pendingQuestion?.question || "Select an option or type a custom answer.";
     }
+    if (activeWizard.type === "workspace") {
+      if (activeWizard.step === 1) return "Select a workspace directory to switch to.";
+      if (activeWizard.step === 2) return "Enter the directory path of the new workspace:";
+    }
     if (activeWizard.type === "permission") {
       return pendingPermission?.description || "Allow or deny this action.";
     }
@@ -1253,6 +1273,10 @@ export function App({
       return wizardOptions.length > 0
         ? "🔍 Search models (type to filter, arrows to navigate, Enter to select)..."
         : "Enter model name (e.g. google/gemini-2.5-flash)...";
+    }
+    if (activeWizard.type === "workspace") {
+      if (activeWizard.step === 1) return "Select workspace directory using arrows and Enter (Esc: Cancel)...";
+      if (activeWizard.step === 2) return "Enter new workspace directory path and press Enter...";
     }
     if (activeWizard.type === "question") {
       if (activeWizard.step === 2) return "Type custom answer and press Enter...";
@@ -2050,7 +2074,7 @@ export function App({
     fetchGitData();
     const interval = setInterval(fetchGitData, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [workspacePath]);
 
   // Sync scroll offsets on list length change
   useEffect(() => {
@@ -2074,18 +2098,16 @@ export function App({
   }, [lines, subagentsScrollOffset]);
 
   useEffect(() => {
-    const workspacePath = agentRef.current?.workingDirectory || process.cwd();
     const count = [...backgroundTasks.values()].filter((t) => !t.hasExited && !t.isHidden && isTaskInWorkspace(t.cwd, workspacePath)).length;
     if (procsScrollOffset >= count && count > 0) {
       setProcsScrollOffset(Math.max(0, count - maxProcsVisible));
     }
-  }, [lines, procsScrollOffset]);
+  }, [lines, procsScrollOffset, workspacePath]);
 
   // Sync background triggers/notifications
   useEffect(() => {
     const unsubTasks = subscribeToTasks(() => {
       const allTasks = Array.from(backgroundTasks.values());
-      const workspacePath = agentRef.current?.workingDirectory || process.cwd();
       setRunningTasksCount(
         allTasks.filter((t) => !t.hasExited && !t.isHidden && isTaskInWorkspace(t.cwd, workspacePath)).length
       );
@@ -2214,7 +2236,7 @@ export function App({
       unsubSuperagents();
       unsubSchedules();
     };
-  }, [addLine]);
+  }, [addLine, workspacePath]);
 
   // Setup layouts & heights calculation
   const messageCount = lines.filter((l) => l.type === "user" || l.type === "assistant").length;
@@ -2600,7 +2622,7 @@ export function App({
               maxSubagentsVisible={maxSubagentsVisible}
               maxProcsVisible={maxProcsVisible}
               collapsedSections={collapsedSections}
-              workspace={agentRef.current?.workingDirectory || process.cwd()}
+              workspace={workspacePath}
               procsSelectedIndex={procsSelectedIndex}
             />
 
@@ -2719,7 +2741,7 @@ export function App({
         formatCompactNumber={formatCompactNumber}
         rmemoryStatus={rmemoryStatus}
         activeDevHook={activeDevHook}
-        workspace={agentRef.current?.workingDirectory || process.cwd()}
+        workspace={workspacePath}
         focus={activeFocus}
         isProcessing={isProcessing}
       />

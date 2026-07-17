@@ -26,7 +26,7 @@ export interface SlashCommandContext {
   clearLines?: () => void;
   setContextLimit?: (limit: number) => void;
   setActiveModel?: (model: string) => void;
-  setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills"; step: number; data: Record<string, string> } | null) => void;
+  setActiveWizard?: (val: { type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "workspace"; step: number; data: Record<string, string> } | null) => void;
   setWizardOptions?: (options: string[]) => void;
   setWizardSelectedIndex?: (index: number) => void;
   setCheckpointsList?: (list: any[]) => void;
@@ -42,6 +42,7 @@ export interface SlashCommandContext {
   pasteImage?: () => Promise<void>;
   setActiveDevHook?: (name: string | null) => void;
   setFocusLevel?: (level: string) => void;
+  setWorkingDirectory?: (path: string) => void;
 }
 
 export interface SlashCommand {

@@ -1,6 +1,7 @@
 import React, { useCallback } from "react";
 import { execSync } from "child_process";
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 import { 
   switchActiveProvider, 
@@ -51,7 +52,7 @@ export interface DashboardWizardContext {
   query: string;
   setQuery: React.Dispatch<React.SetStateAction<string>>;
   activeWizard: {
-    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm";
+    type: "login" | "model" | "plan_approve" | "permission" | "question" | "resume" | "goal" | "checkpoint" | "skills" | "exit_confirm" | "workspace";
     step: number;
     data: Record<string, string>;
     isMultiSelect?: boolean;
@@ -103,6 +104,7 @@ export interface DashboardWizardContext {
   setAttachments: React.Dispatch<React.SetStateAction<ImageAttachment[]>>;
   setSelectedIndex?: React.Dispatch<React.SetStateAction<number>>;
   setLogScrollOffset?: React.Dispatch<React.SetStateAction<number>>;
+  setWorkingDirectory?: (path: string) => void;
 }
 
 export function useDashboardWizard(ctx: DashboardWizardContext) {
@@ -147,6 +149,7 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
     setAttachments,
     setSelectedIndex,
     setLogScrollOffset,
+    setWorkingDirectory,
   } = ctx;
 
   const isMulti = agent.isMultiAgent;
@@ -259,6 +262,77 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
         setMasterLogs((prev) => [...prev, "[SYSTEM] Exit cancelled. Retaining session."].slice(-500));
       }
       return;
+    }
+
+    if (activeWizard.type === "workspace") {
+      if (activeWizard.step === 1) {
+        if (value === "➕ Add a new workspace...") {
+          setActiveWizard({
+            type: "workspace",
+            step: 2,
+            data: {},
+          });
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          setQuery("");
+          return;
+        }
+
+        const cleanVal = value.replace(/^\*\s*\[active\]\s*/i, "").replace(/^📁\s*/, "").replace(/\s*\(active\)$/i, "").trim();
+        const resolvedPath = path.resolve(cleanVal);
+
+        if (fsSync.existsSync(resolvedPath)) {
+          const { addTrustedDirectory } = await import("../core/config/jsonConfig.js");
+          addTrustedDirectory(resolvedPath);
+
+          if (setWorkingDirectory) {
+            setWorkingDirectory(resolvedPath);
+          } else {
+            process.chdir(resolvedPath);
+            if (agent) agent.workingDirectory = resolvedPath;
+          }
+          setMasterLogs((prev) => [...prev, `[SYSTEM] Switched workspace to: ${resolvedPath}`].slice(-500));
+        } else {
+          setMasterLogs((prev) => [...prev, `[ERROR] Workspace path does not exist: ${resolvedPath}`].slice(-500));
+        }
+        setActiveWizard(null);
+        setWizardOptions([]);
+        setWizardSelectedIndex(0);
+        return;
+      }
+
+      if (activeWizard.step === 2) {
+        const pathInput = value.trim();
+        if (!pathInput) {
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+          return;
+        }
+
+        const currentCwd = agent?.workingDirectory || process.cwd();
+        const resolvedPath = path.resolve(currentCwd, pathInput);
+
+        if (fsSync.existsSync(resolvedPath) && (await fs.stat(resolvedPath)).isDirectory()) {
+          const { addTrustedDirectory } = await import("../core/config/jsonConfig.js");
+          addTrustedDirectory(resolvedPath);
+
+          if (setWorkingDirectory) {
+            setWorkingDirectory(resolvedPath);
+          } else {
+            process.chdir(resolvedPath);
+            if (agent) agent.workingDirectory = resolvedPath;
+          }
+          setMasterLogs((prev) => [...prev, `[SYSTEM] Added and switched to workspace: ${resolvedPath}`].slice(-500));
+          setActiveWizard(null);
+          setWizardOptions([]);
+          setWizardSelectedIndex(0);
+        } else {
+          setMasterLogs((prev) => [...prev, `[ERROR] Path does not exist or is not a directory: ${resolvedPath}`].slice(-500));
+          setQuery("");
+        }
+        return;
+      }
     }
 
     if (activeWizard.type === "login") {
@@ -1318,6 +1392,7 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
     cachedSessions,
     setIsProcessing,
     exit,
+    setWorkingDirectory,
   ]);
 
   const handleQuerySubmit = useCallback((val: string) => {

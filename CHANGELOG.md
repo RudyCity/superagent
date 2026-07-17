@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.459] - 2026-07-17
+
+### Added
+- **Workspace Management Command**: Added a workspace management feature via `/workspace` and `/w` command that supports `list`, `add`, and `use` subcommands.
+- **Workspace Management Wizard**: Integrated a step-by-step interactive wizard dialog for managing and switching project workspaces in both CLI mode and Multi-Agent Dashboard mode.
+- **Reactive Git Status**: Configured git-branch and worktree counts to reactively re-fetch and update whenever the active workspace path changes.
+
 ## [1.2.458] - 2026-07-17
 
 ### Changed
