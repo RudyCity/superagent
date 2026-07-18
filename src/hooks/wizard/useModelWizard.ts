@@ -471,7 +471,6 @@ export function useModelWizard(ctx: ModelWizardContext) {
         cleanFetchUrl,
       });
     }
-
   }, [
     setActiveWizard,
     setWizardOptions,

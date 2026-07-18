@@ -3,8 +3,8 @@
 ## [1.2.470] - 2026-07-18
 
 ### Changed
-- **Model Wizard Modularization (Phase 5)**: Extracted provider/model wizard step handling (steps 2, 3, 6, 7, 8, 15, 16, 60, and fallback) from `useModelWizard.ts` into a dedicated `useModelProviders.ts` module.
-- **Refactoring**: Reduced `useModelWizard.ts` from ~1730 lines to ~488 lines, maintaining full wizard functionality while improving modularity and compliance with the 1000-line limit.
+- **Model Wizard Hook Modularization (Phase 5)**: Extracted provider configuration, profile setup, credentials saving, and model selection wizard steps from `useModelWizard.ts` into `useModelProviders.ts`.
+- **Refactoring**: Reduced `useModelWizard.ts` length to 488 lines (well below the 1000-line limit) and kept the extracted `useModelProviders.ts` helper at 705 lines.
 
 ## [1.2.469] - 2026-07-18
 
