@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.471] - 2026-07-18
+
+### Changed
+- **Agent Codebase Modularization (Phase 6)**: Extracted git diff utilities to `GitUtils.ts`, conversation fast-path execution to `FastPath.ts`, and the entire tool execution loop (interactive questions, permissions, out-of-bounds, shell validations) to `ToolExecutor.ts`.
+- **Refactoring**: Reduced `agent.ts` file length from 3,430 lines to 2,654 lines.
+
 ## [1.2.470] - 2026-07-18
 
 ### Changed
