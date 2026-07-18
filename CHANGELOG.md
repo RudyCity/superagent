@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.481] - 2026-07-18
+
+### Optimized
+- **Agent Request Hot Paths**:
+  - `MessageBuilder`: single `getMessages()` pass for both vision Mode 2 and plaintext Mode 1; removed duplicate `contentToString` per-message serialization.
+  - `ContextBuilder`: replaced full `.filter(role==="user").slice(-3)` with reverse-scan for last 3 user messages; reused `allMessages` ref for `getBreakdown` (no second `getMessages()` call).
+  - `FastPath`: single `contentToString` call per message instead of duplicate user/assistant branches.
+  - `HistoryCompactor`: confirmed single `getMessages()` per entry point; no redundant intra-method calls.
+  - `advisor`: no change needed (small N).
+
 ## [1.2.480] - 2026-07-18
 
 ### Optimized

@@ -79,13 +79,13 @@ export class MessageBuilder {
     if (useVisionTokenSaving) {
       // MODE 2: Compile all messages into a single text block, clean up, render to images, and append.
       let compiledText = "";
-      for (const m of agent.conversation.getMessages()) {
+      const messages = agent.conversation.getMessages();
+      for (const m of messages) {
         if (m.role === "system") continue;
+        const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
         if (m.role === "user") {
-          const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
           compiledText += `\n=== USER MESSAGE ===\n${rawContent}\n`;
         } else if (m.role === "assistant") {
-          const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
           compiledText += `\n=== ASSISTANT MESSAGE ===\n${rawContent}\n`;
           if (m.toolCalls && m.toolCalls.length > 0) {
             compiledText += `\n[Tool Calls]:\n` + m.toolCalls.map(tc => `- Call ID: ${tc.id}, Tool: ${tc.name}, Args: ${JSON.stringify(tc.args)}`).join("\n") + "\n";
@@ -197,7 +197,8 @@ export class MessageBuilder {
     supportsNativeTools: boolean,
     modelName: string
   ): void {
-    for (const m of agent.conversation.getMessages()) {
+    const messages = agent.conversation.getMessages();
+    for (const m of messages) {
       if (m.role === "system") continue;
 
       if (m.role === "user") {

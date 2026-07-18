@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { type CoreMessage } from "ai";
 import { getSettings, getContextWindowLimit, getModelConnectionDetailsForTier, getDynamicVisionThreshold, loadAgentSkills, getConfig } from "../config.js";
-import { contentToString } from "../conversation.js";
+import { contentToString, type Message } from "../conversation.js";
 import { getToolDefinitions, backgroundTasks, isTaskInWorkspace } from "../tools.js";
 import { isRmemoryActive } from "../rmemoryUtil.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
@@ -23,8 +23,11 @@ export class ContextBuilder {
     const isGoalMode = !!agent.goalMode;
     let baseSystemPrompt = (agent as any).customSystemPrompt || (agent as any).config.systemPrompt || "";
 
-    const userMessages = agent.conversation.getMessages().filter(m => m.role === "user");
-    const recentUserMessages = userMessages.slice(-3);
+    const allMessages = agent.conversation.getMessages();
+    const recentUserMessages: Message[] = [];
+    for (let i = allMessages.length - 1; i >= 0 && recentUserMessages.length < 3; i--) {
+      if (allMessages[i].role === "user") recentUserMessages.unshift(allMessages[i]);
+    }
     const queryStr = recentUserMessages.map(m => contentToString(m.content)).join(" ");
 
     const guidelinesText = (agent as any).buildGuidelinesText(queryStr);
@@ -441,7 +444,7 @@ export class ContextBuilder {
       const ctxMgr = agent.conversation.getContextManager();
       if (ctxMgr) {
         const tracker = ctxMgr.getTokenTracker();
-        const breakdown = tracker.getBreakdown(agent.conversation.getMessages(), systemPrompt);
+        const breakdown = tracker.getBreakdown(allMessages, systemPrompt);
         const dynamicContextTokens = tracker.estimateTokens({
           role: "user",
           content: dynamicContext,

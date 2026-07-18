@@ -52,13 +52,13 @@ export class FastPath {
 
           // Build minimal conversation history (user/assistant pairs only, skip tool results)
           const coreMessages: CoreMessage[] = [];
-          for (const m of agent.conversation.getMessages()) {
+          const messages = agent.conversation.getMessages();
+          for (const m of messages) {
             if (m.role === "system" || m.role === "tool") continue;
+            const content = typeof m.content === "string" ? m.content : contentToString(m.content);
             if (m.role === "user") {
-              const content = typeof m.content === "string" ? m.content : contentToString(m.content);
               coreMessages.push({ role: "user", content });
             } else if (m.role === "assistant") {
-              const content = typeof m.content === "string" ? m.content : contentToString(m.content);
               if (content.trim()) {
                 coreMessages.push({ role: "assistant", content });
               }
