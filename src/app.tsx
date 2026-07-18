@@ -563,6 +563,15 @@ export function App({
     streamBufferRef,
     setStreamDisplay,
     exit,
+    clearLines: () => setLines([]),
+    setWorkingDirectory: (newPath: string) => {
+      setWorkspacePath(newPath);
+      originalWorkingDirectoryRef.current = newPath;
+      if (agentRef.current) {
+        agentRef.current.workingDirectory = newPath;
+      }
+      process.chdir(newPath);
+    },
   });
 
   const handleSubmit = useCallback(

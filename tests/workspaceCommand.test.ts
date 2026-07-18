@@ -108,6 +108,7 @@ describe("Slash Command: /workspace and /w", () => {
 
     await handleSlashCommand(`/workspace use ${switchDir}`, mockCtx as any);
     expect(addedLines.some(l => l.content.includes("Switched workspace to"))).toBe(true);
+    expect(addedLines.some(l => l.content.includes("Started a new chat session"))).toBe(true);
     expect(workingDir).toBe(path.resolve(switchDir));
     expect(testAgent?.workingDirectory).toBe(path.resolve(switchDir));
   });

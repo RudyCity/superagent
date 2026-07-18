@@ -291,7 +291,15 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             process.chdir(resolvedPath);
             if (agent) agent.workingDirectory = resolvedPath;
           }
-          setMasterLogs((prev) => [...prev, `[SYSTEM] Switched workspace to: ${resolvedPath}`].slice(-500));
+
+          if (agent) {
+            agent.resetInternalState();
+            await agent.clearHistory();
+            agent.planState = "IDLE";
+            agent.goalMode = null;
+          }
+
+          setMasterLogs([`[SYSTEM] 📁 Switched workspace to: ${resolvedPath} (started new chat session)`]);
         } else {
           setMasterLogs((prev) => [...prev, `[ERROR] Workspace path does not exist: ${resolvedPath}`].slice(-500));
         }
@@ -323,7 +331,15 @@ export function useDashboardWizard(ctx: DashboardWizardContext) {
             process.chdir(resolvedPath);
             if (agent) agent.workingDirectory = resolvedPath;
           }
-          setMasterLogs((prev) => [...prev, `[SYSTEM] Added and switched to workspace: ${resolvedPath}`].slice(-500));
+
+          if (agent) {
+            agent.resetInternalState();
+            await agent.clearHistory();
+            agent.planState = "IDLE";
+            agent.goalMode = null;
+          }
+
+          setMasterLogs([`[SYSTEM] 📁 Added and switched to workspace: ${resolvedPath} (started new chat session)`]);
           setActiveWizard(null);
           setWizardOptions([]);
           setWizardSelectedIndex(0);

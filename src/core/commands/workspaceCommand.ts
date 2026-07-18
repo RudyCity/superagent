@@ -182,9 +182,18 @@ export const workspaceCommand: SlashCommand = {
         }
       }
 
+      if (ctx.agent) {
+        ctx.agent.resetInternalState();
+        await ctx.agent.clearHistory();
+        ctx.agent.planState = "IDLE";
+        ctx.agent.goalMode = null;
+      }
+      if (ctx.setPlanState) ctx.setPlanState("IDLE");
+      if (ctx.clearLines) ctx.clearLines();
+
       ctx.addLine({
         type: "system",
-        content: `Switched workspace to: ${targetPath}`,
+        content: `Switched workspace to: ${targetPath}\nStarted a new chat session for this workspace.`,
         timestamp: now
       });
       return;

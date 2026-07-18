@@ -56,6 +56,7 @@ export interface WizardSubmitContext {
   setStreamDisplay: React.Dispatch<React.SetStateAction<string>>;
   exit?: () => void;
   setWorkingDirectory?: (path: string) => void;
+  clearLines?: () => void;
 }
 
 export function useWizardSubmit(ctx: WizardSubmitContext) {
@@ -79,13 +80,14 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
     setStreamDisplay,
     exit,
     setWorkingDirectory,
+    clearLines,
   } = ctx;
 
   const handleLoginWizard = useLoginWizard(ctx);
   const handleModelWizard = useModelWizard(ctx);
   const handleGoalWizard = useGoalWizard(ctx);
 
-  const handleWizardSubmit = useCallback((value: string) => {
+  const handleWizardSubmit = useCallback(async (value: string) => {
     if (!activeWizard) return;
     const now = Date.now();
 
@@ -244,9 +246,19 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             process.chdir(resolvedPath);
             if (agentRef.current) agentRef.current.workingDirectory = resolvedPath;
           }
+
+          if (agentRef.current) {
+            agentRef.current.resetInternalState();
+            await agentRef.current.clearHistory();
+            agentRef.current.planState = "IDLE";
+            agentRef.current.goalMode = null;
+          }
+          if (setPlanState) setPlanState("IDLE");
+          if (clearLines) clearLines();
+
           addLine({
             type: "system",
-            content: `Switched workspace to: ${resolvedPath}`,
+            content: `Switched workspace to: ${resolvedPath}\nStarted a new chat session.`,
             timestamp: now,
           });
         } else {
@@ -285,9 +297,19 @@ export function useWizardSubmit(ctx: WizardSubmitContext) {
             process.chdir(resolvedPath);
             if (agentRef.current) agentRef.current.workingDirectory = resolvedPath;
           }
+
+          if (agentRef.current) {
+            agentRef.current.resetInternalState();
+            await agentRef.current.clearHistory();
+            agentRef.current.planState = "IDLE";
+            agentRef.current.goalMode = null;
+          }
+          if (setPlanState) setPlanState("IDLE");
+          if (clearLines) clearLines();
+
           addLine({
             type: "system",
-            content: `Added and switched to workspace: ${resolvedPath}`,
+            content: `Added and switched to workspace: ${resolvedPath}\nStarted a new chat session.`,
             timestamp: now,
           });
           setActiveWizard(null);
