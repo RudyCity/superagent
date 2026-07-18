@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.468] - 2026-07-18
+
+### Changed
+- **Codebase Modularization**: Refactored large modules to improve maintainability and keep code files under 1000 lines.
+- **System Tools Refactoring**: Split file editing, reading, and browser macro utilities out of systemTools.ts and otherTools.ts.
+- **Agent Logic Modularization**: Extracted PlanValidator and AgentEvents out of agent.ts.
+- **Model Wizard Hooks**: Extracted preset wizard handling logic from useModelWizard.ts into useModelPresets.ts.
+
 ## [1.2.467] - 2026-07-18
 
 ### Fixed
