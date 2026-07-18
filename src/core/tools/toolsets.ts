@@ -233,6 +233,9 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemoryConversationAddTool,
     saveSharedMemoryTool,
     readSharedMemoryTool,
+    controlBrowserTabTool,
+    controlBrowserMacroSaveTool,
+    controlBrowserMacroRunTool,
   ],
 
   coder: [
@@ -291,6 +294,9 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemorySearchTool,
     rmemoryConversationSearchTool,
     rmemoryReadCosTool,
+    controlBrowserTabTool,
+    controlBrowserMacroSaveTool,
+    controlBrowserMacroRunTool,
   ],
 };
 

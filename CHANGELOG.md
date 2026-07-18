@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.476] - 2026-07-18
+
+### Changed
+- **Chrome Extension Tool Access**: Enabled browser control tools (control_browser_tab, control_browser_macro_save, control_browser_macro_run) for both the researcher and manual-tester subagent toolsets.
+- **System Prompt Updates**: Updated system prompts (master, superagent, researcher, manual-tester) to always contain instructions on how to use Chrome extension tools and macros, removing the server-mode conditional checks.
+
 ## [1.2.475] - 2026-07-18
 
 ### Added
