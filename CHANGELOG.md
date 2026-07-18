@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.462] - 2026-07-18
+
+### Changed
+- **System Services Status Relocation**: Moved the System Services Status display from the startup banner into the `/settings` command output.
+
 ## [1.2.461] - 2026-07-18
 
 ### Changed
