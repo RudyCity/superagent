@@ -2536,6 +2536,13 @@ export function App({
     }
   }, [wrappedLines.length]);
 
+  // Automatically return focus mode to input when user scrolls back to the bottom
+  useEffect(() => {
+    if (scrollOffset === 0 && focusMode === "chat") {
+      setFocusMode("input");
+    }
+  }, [scrollOffset, focusMode]);
+
   const handleWizardHeaderRowsChange = useCallback((internalRows: number) => {
     let containerOffset = 1;
     if (activeWizard && activeWizard.type !== "permission") {

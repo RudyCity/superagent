@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.479] - 2026-07-18
+
+### Fixed
+- **CLI Conversation Log Scrolling**:
+  - Automatically transition focus mode to `"chat"` when scroll keys (PageUp, PageDown, Ctrl+Arrows, Shift+Arrows) are pressed while in `"input"` mode, enabling easy line-by-line keyboard scrolling using simple Up/Down arrow keys.
+  - Automatically revert focus mode back to `"input"` typing mode once the user scrolls all the way back down to the bottom (`scrollOffset === 0`), eliminating the need to manually press Escape.
+  - Reset scroll offset to `0` when loading history, restoring checkpoints, or resuming sessions to prevent conversation misalignment.
+
 ## [1.2.478] - 2026-07-18
 
 ### Changed

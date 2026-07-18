@@ -1349,6 +1349,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
                 setLines(loadedLines);
                 setHistory(userInputs);
+                setScrollOffset(0);
                 if (agentRef.current) setPlanState(agentRef.current.planState);
                 addLine({ type: "system", content: `✓ Session resumed: ${chosen.displayName} (${msgs.length} messages)`, timestamp: now });
               })
@@ -1410,6 +1411,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                     const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
                     setLines(loadedLines);
                     setHistory(userInputs);
+                    setScrollOffset(0);
                     setPlanState(agentRef.current.planState);
                   }
                   addLine({ type: "system", content: `✓ Checkpoint "${targetChk.name}" restored successfully! (${targetChk.messages.length} messages)`, timestamp: now });
@@ -1467,6 +1469,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                   const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
                   setLines(loadedLines);
                   setHistory(userInputs);
+                  setScrollOffset(0);
                   setPlanState(agentRef.current.planState);
                 }
                 addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" restored successfully! (${chosen.messages.length} messages)`, timestamp: now });
@@ -1551,13 +1554,14 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               }
 
               await restoreCheckpoint(chkPath, sessionPath);
-              if (agentRef.current) {
+               if (agentRef.current) {
                 await agentRef.current.loadHistoryFromPath(sessionPath);
                 const msgs = agentRef.current.getHistory().getMessages();
                 const loadedLines = reconstructChatLines(msgs);
                 const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
                 setLines(loadedLines);
                 setHistory(userInputs);
+                setScrollOffset(0);
                 setPlanState(agentRef.current.planState);
               }
               addLine({ type: "system", content: `✓ Checkpoint "${chosen.name}" restored successfully! (${chosen.messages.length} messages)`, timestamp: now });
@@ -1720,17 +1724,21 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     if (!activeWizard || activeWizard.type !== "plan_approve") {
       if (key.pageUp) {
         scrollChat("up", 10);
+        if (focusMode === "input") setFocusMode("chat");
         return;
       } else if ((key.ctrl && key.upArrow) || (key.shift && key.upArrow)) {
         scrollChat("up", 1);
+        if (focusMode === "input") setFocusMode("chat");
         return;
       }
 
       if (key.pageDown) {
         scrollChat("down", 10);
+        if (focusMode === "input") setFocusMode("chat");
         return;
       } else if ((key.ctrl && key.downArrow) || (key.shift && key.downArrow)) {
         scrollChat("down", 1);
+        if (focusMode === "input") setFocusMode("chat");
         return;
       }
     }
