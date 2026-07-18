@@ -31,6 +31,8 @@ import { createCheckpoint } from "./checkpoints.js";
 import { RealtimeAdvisor } from "./advisor.js";
 
 import { checkPlanStructure } from "./agent/PlanValidator.js";
+import { MessageBuilder } from "./agent/MessageBuilder.js";
+import { HistoryCompactor } from "./agent/HistoryCompactor.js";
 import {
   AgentEvent,
   PermissionHandler,
@@ -141,23 +143,7 @@ export function parsePayloadLimitBytes(msg: string): number | null {
 
 
 export class Agent {
-  private static imageCache: Map<string, string[]> = new Map();
-
-  private getCachedImages(text: string): string[] | null {
-    const hash = crypto.createHash("sha256").update(text).digest("hex");
-    return Agent.imageCache.get(hash) || null;
-  }
-
-  private setCachedImages(text: string, images: string[]): void {
-    const hash = crypto.createHash("sha256").update(text).digest("hex");
-    if (Agent.imageCache.size >= 500) {
-      const oldest = Agent.imageCache.keys().next().value;
-      if (oldest) Agent.imageCache.delete(oldest);
-    }
-    Agent.imageCache.set(hash, images);
-  }
-
-  private detectedPayloadLimitBytes?: number;
+  public detectedPayloadLimitBytes?: number;
   public delegationDepth = 0;
   /** Agent tier in the 3-tier hierarchy: master | superagent | subagent */
   public tier: AgentTier = "master";
@@ -185,7 +171,7 @@ export class Agent {
   public workspaceCache: any = null;
   private workspaceCacheNeedsUpdate: boolean = true;
   public disableWorkspaceDiscovery: boolean = !!process.env.VITEST;
-  private conversation: Conversation;
+  public conversation: Conversation;
   private customSystemPrompt?: string;
   /** Custom tool list for this agent (tier-specific). Undefined = use allTools. */
   private customTools?: Tool[];
@@ -225,84 +211,7 @@ export class Agent {
     this.preloadedSkillKeys.clear();
   }
 
-  /**
-   * Build and cache the guidelines text (agents.md + mandatory preloaded skills).
-   * Called once per Agent instance lifetime — subsequent calls return the cache.
-   * Each SKILL.md is trimmed to MAX_SKILL_LINES lines to reduce token cost while
-   * preserving the most important instructions at the top of each file.
-   */
-  private static readonly MAX_SKILL_LINES = 300;
-  private static readonly MANDATORY_SKILLS: Array<{ key: string; label: string }> = [
-    { key: "karpathy-guidelines",           label: "BEHAVIORAL CODING GUIDELINES (karpathy-guidelines)" },
-    { key: "pragmatic-minimalism",          label: "PRAGMATIC MINIMALISM GUIDELINES (pragmatic-minimalism)" },
-    { key: "superagent-planning",            label: "PLANNING AND TASK GUIDELINES (superagent-planning)" },
-    { key: "writing-plans",                  label: "PLAN WRITING GUIDELINES (writing-plans)" },
-    { key: "executing-plans",                label: "PLAN EXECUTION GUIDELINES (executing-plans)" },
-    { key: "track-management",               label: "TRACK MANAGEMENT GUIDELINES (track-management)" },
-    { key: "systematic-debugging",           label: "DEBUGGING GUIDELINES (systematic-debugging)" },
-    { key: "verification-before-completion", label: "VERIFICATION GUIDELINES (verification-before-completion)" },
-    { key: "subagent-driven-development",    label: "SUBAGENT DELEGATION GUIDELINES (subagent-driven-development)" },
-  ];
-  private static readonly MASTER_ONLY_SKILLS: Array<{ key: string; label: string }> = [
-    { key: "master-agent-orchestration",     label: "MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration)" },
-  ];
 
-  private static compressTelegraphic(text: string): string {
-    // 1. Remove Markdown comments
-    let cleaned = text.replace(/<!--[\s\S]*?-->/g, "");
-
-    // 2. Remove verbose helper/filler phrasing commonly found in guidelines
-    cleaned = cleaned.replace(/please\s+make\s+sure\s+to\s+/gi, "");
-    cleaned = cleaned.replace(/please\s+ensure\s+that\s+you\s+/gi, "");
-    cleaned = cleaned.replace(/you\s+should\s+always\s+/gi, "Always ");
-    cleaned = cleaned.replace(/in\s+order\s+to\s+/gi, "To ");
-    cleaned = cleaned.replace(/it\s+is\s+recommended\s+that\s+you\s+/gi, "Recommend: ");
-    cleaned = cleaned.replace(/remember\s+to\s+/gi, "");
-    cleaned = cleaned.replace(/it\s+is\s+mandatory\s+to\s+/gi, "Mandatory: ");
-    cleaned = cleaned.replace(/note\s+that\s+/gi, "");
-    cleaned = cleaned.replace(/do\s+not\s+forget\s+to\s+/gi, "Must ");
-
-    // 3. Collapse multiple consecutive empty lines
-    cleaned = cleaned.replace(/\n\s*\n\s*\n+/g, "\n\n");
-
-    return cleaned;
-  }
-
-  /**
-   * Trim a SKILL.md file's content to MAX_SKILL_LINES lines while always
-   * preserving the YAML frontmatter (--- delimited block at the top, if any).
-   * The line cap applies only to the body — critical metadata is never cut off.
-   */
-  private static trimSkillContent(raw: string, absolutePath: string): string {
-    const minified = Agent.compressTelegraphic(raw);
-    const lines = minified.split("\n");
-
-    // Detect YAML frontmatter: file starts with "---" and has a closing "---"
-    let frontmatterEnd = 0;
-    if (lines[0]?.trim() === "---") {
-      for (let i = 1; i < lines.length; i++) {
-        if (lines[i]?.trim() === "---") {
-          frontmatterEnd = i + 1; // include the closing ---
-          break;
-        }
-      }
-    }
-
-    const frontmatter = lines.slice(0, frontmatterEnd);
-    const body = lines.slice(frontmatterEnd);
-
-    if (body.length <= Agent.MAX_SKILL_LINES) {
-      return minified; // no trimming needed
-    }
-
-    const trimmedBody = body.slice(0, Agent.MAX_SKILL_LINES);
-    return [
-      ...frontmatter,
-      ...trimmedBody,
-      "",
-      `... [truncated — full content at: ${absolutePath}]`,
-    ].join("\n");
-  }
 
   private buildGuidelinesText(userQuery?: string): string {
     return GuidelineLoader.buildGuidelines({
@@ -765,7 +674,7 @@ If none of the options are suitable, still pick the closest one.`;
     clearHistoryCache();
   }
 
-  private getModel() {
+  public getModel() {
     return getModelInstanceForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
   }
 
@@ -3012,7 +2921,7 @@ for (const tc of toolCalls) {
             const lastUserIdx = messages.map(m => m.role).lastIndexOf("user");
             const sessionMsgs = lastUserIdx >= 0 ? messages.slice(lastUserIdx) : messages;
             this.writeToLogFile("INFO", "Generating execution summary for log...");
-            finalSummary = await this.summarizeMessages(sessionMsgs, signal);
+            finalSummary = await HistoryCompactor.summarizeMessages(this, sessionMsgs, signal);
             this.writeToLogFile("SUMMARY", finalSummary);
           }
         } catch (sumErr: any) {
@@ -3219,410 +3128,25 @@ for (const tc of toolCalls) {
   }
 
   private modelSupportsVision(modelName: string): boolean {
-    if (!modelName) return false;
-
-    // Check configuration first
-    try {
-      const mode = (this.isMultiAgent && !process.env.SINGLE_AGENT_MODE) ? "multi" : "single";
-      const tierConfig = getTierModelConfig(mode, this.subagentType || this.tier);
-      if (tierConfig && tierConfig.supportsVision !== undefined) {
-        return tierConfig.supportsVision;
-      }
-    } catch (e) {
-      // Fallback to name check
-    }
-
-    const name = modelName.toLowerCase();
-    
-    // Known vision-supporting models
-    if (name.includes("claude-3")) return true;
-    if (name.includes("gpt-4o")) return true;
-    if (name.includes("gpt-4-vision")) return true;
-    if (name.includes("gemini")) return true;
-    if (name.includes("gemma-3")) return true;
-    if (name.includes("vision")) return true;
-    
-    return false;
+    return new MessageBuilder().modelSupportsVision(modelName, this);
   }
 
   private buildMessages(supportsNativeTools = true, dynamicContext?: string): CoreMessage[] {
-    const coreMessages: CoreMessage[] = [];
-
-    let modelName = "";
-    let supportsVision = true;
-    try {
-      const mode = (this.isMultiAgent && !process.env.SINGLE_AGENT_MODE) ? "multi" : "single";
-      modelName = getTierModel(mode, this.subagentType || this.tier);
-      supportsVision = this.modelSupportsVision(modelName);
-    } catch (e) {
-      // Default to true to keep original behavior if model config loading/resolution fails
-    }
-
-    const settings = getSettings();
-    const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? false) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
-    const threshold = getDynamicVisionThreshold(modelName);
-    
-
-    if (useVisionTokenSaving) {
-      // MODE 2: Compile all messages into a single text block, clean up, render to images, and append.
-      let compiledText = "";
-      for (const m of this.conversation.getMessages()) {
-        if (m.role === "system") continue;
-        if (m.role === "user") {
-          const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
-          compiledText += `\n=== USER MESSAGE ===\n${rawContent}\n`;
-        } else if (m.role === "assistant") {
-          const rawContent = typeof m.content === "string" ? m.content : contentToString(m.content);
-          compiledText += `\n=== ASSISTANT MESSAGE ===\n${rawContent}\n`;
-          if (m.toolCalls && m.toolCalls.length > 0) {
-            compiledText += `\n[Tool Calls]:\n` + m.toolCalls.map(tc => `- Call ID: ${tc.id}, Tool: ${tc.name}, Args: ${JSON.stringify(tc.args)}`).join("\n") + "\n";
-          }
-        } else if (m.role === "tool") {
-          const results = m.toolResults || [];
-          for (const tr of results) {
-            const resStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
-            compiledText += `\n=== TOOL RESULT: ${tr.name} (ID: ${tr.toolCallId}) ===\n${resStr}\n`;
-          }
-        }
-      }
-
-
-      // Append dynamic execution context at the end of compiled text in Mode 2
-      if (dynamicContext) {
-        compiledText += `\n=== DYNAMIC EXECUTION CONTEXT ===\n${dynamicContext}\n`;
-      }
-
-      const cleanText = minifyTextForImage(compiledText);
-      try {
-        let base64List = this.getCachedImages(cleanText);
-        if (!base64List) {
-          const pages = sliceTextIntoPages(cleanText);
-          base64List = [];
-          for (const page of pages) {
-            const base64 = renderTextToImageBase64(page);
-            base64List.push(base64);
-          }
-          this.setCachedImages(cleanText, base64List);
-        }
-
-        const isAnthropic = modelName.toLowerCase().includes("anthropic");
-        const maxModelImages = isAnthropic ? 20 : 100;
-        const limitedBase64List = base64List.slice(0, maxModelImages);
-        const limitedPages = limitedBase64List.length;
-
-        const contentParts: Array<{ type: "image"; image: string; mimeType?: string }> = [];
-        limitedBase64List.forEach((base64) => {
-          contentParts.push({ type: "image", image: base64, mimeType: "image/webp" });
-        });
-
-        coreMessages.push({
-          role: "user",
-          content: contentParts as any,
-        });
-      } catch (err: any) {
-        this.writeToLogFile("WARN", `Failed to compile prompt to image: ${err.message}. Falling back to text.`);
-        this.buildPlaintextMessages(coreMessages, supportsVision, supportsNativeTools, modelName);
-      }
-    } else {
-      this.buildPlaintextMessages(coreMessages, supportsVision, supportsNativeTools, modelName);
-    }
-
-    // Cleanup / post-process to add cache annotations
-    this.addCacheControlToMessages(coreMessages);
-
-    return coreMessages;
+    return new MessageBuilder().buildMessages(this, supportsNativeTools, dynamicContext);
   }
 
-  private addCacheControlToMessages(coreMessages: CoreMessage[]): void {
-    try {
-      const modelInstance = this.getModel();
-      const isTest = !!process.env.VITEST;
-      const isAnthropic = (!isTest || process.env.TEST_PROMPT_CACHING === "true") && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
-      if (isAnthropic && coreMessages.length > 0) {
-        let markedCount = 0;
-        for (let i = coreMessages.length - 1; i >= 0; i--) {
-          if (coreMessages[i].role === "user") {
-            const msg = coreMessages[i];
-            if (typeof msg.content === "string") {
-              msg.content = [
-                {
-                  type: "text",
-                  text: msg.content,
-                  experimental_providerMetadata: {
-                    anthropic: { cacheControl: { type: "ephemeral" } },
-                  },
-                },
-              ];
-              markedCount++;
-            } else if (Array.isArray(msg.content)) {
-              for (let j = msg.content.length - 1; j >= 0; j--) {
-                if (msg.content[j].type === "text") {
-                  msg.content[j] = {
-                    ...msg.content[j],
-                    experimental_providerMetadata: {
-                      anthropic: { cacheControl: { type: "ephemeral" } },
-                    },
-                  };
-                  markedCount++;
-                  break;
-                }
-              }
-            }
-            if (markedCount >= 3) {
-              break;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore errors in injecting cache metadata to ensure robust fallback
-    }
-  }
 
-    private buildPlaintextMessages(
-    coreMessages: CoreMessage[],
-    supportsVision: boolean,
-    supportsNativeTools: boolean,
-    modelName: string
-  ): void {
-    for (const m of this.conversation.getMessages()) {
-      if (m.role === "system") continue;
 
-      if (m.role === "user") {
-        let sdkContent: string | Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = "";
-
-        sdkContent = typeof m.content === "string"
-          ? m.content
-          : (m.content as any[]).map((p: any) => {
-              if (p.type === "image") {
-                if (supportsVision) {
-                  return { type: "image" as const, image: p.image, mimeType: p.mimeType };
-                }
-                return {
-                  type: "text" as const,
-                  text: `[Image: (${p.mimeType || "unknown type"}) - not sent because the active model (${modelName || "unknown"}) does not support vision/images. Base64 Data: data:${p.mimeType || "image/webp"};base64,${p.image}]`
-                };
-              }
-              return { type: "text" as const, text: p.text };
-            });
-
-        coreMessages.push({
-          role: "user",
-          content: sdkContent as any,
-        });
-      } else if (m.role === "assistant") {
-        const hasToolCalls = m.toolCalls && m.toolCalls.length > 0;
-        if (hasToolCalls && supportsNativeTools) {
-          const contentParts: Array<
-            | { type: "text"; text: string }
-            | { type: "tool-call"; toolCallId: string; toolName: string; args: unknown }
-          > = [];
-
-          if (m.content) {
-            contentParts.push({ type: "text", text: contentToString(m.content) });
-          }
-
-          for (const tc of m.toolCalls!) {
-            contentParts.push({
-              type: "tool-call",
-              toolCallId: tc.id,
-              toolName: tc.name,
-              args: tc.args,
-            });
-          }
-
-          coreMessages.push({
-            role: "assistant",
-            content: contentParts,
-          });
-        } else if (hasToolCalls) {
-          // Reconstruct XML tool calls for prompt-based tool calling
-          let text = contentToString(m.content);
-          text += "\n<tool_calls>\n" + m.toolCalls!.map(tc => `<tool_call>\n${JSON.stringify({ name: tc.name, arguments: tc.args })}\n</tool_call>`).join("\n") + "\n</tool_calls>";
-          coreMessages.push({
-            role: "assistant",
-            content: text,
-          });
-        } else {
-          coreMessages.push({
-            role: "assistant",
-            content: contentToString(m.content),
-          });
-        }
-      } else if (m.role === "tool") {
-        if (!supportsNativeTools) {
-          // Reconstruct XML responses for prompt-based tool calling
-          const results = m.toolResults || [];
-          const resultText = results.map(tr => `<tool_response name="${tr.name}">\n${tr.result}\n</tool_response>`).join("\n");
-          coreMessages.push({
-            role: "user",
-            content: resultText,
-          });
-          continue;
-        }
-
-        // Safe check to avoid orphaned tool messages (required by DeepSeek)
-        let lastAssistantWithToolCalls = false;
-        for (let i = coreMessages.length - 1; i >= 0; i--) {
-          const prev = coreMessages[i];
-          if (prev.role === "assistant") {
-            if (Array.isArray(prev.content)) {
-              lastAssistantWithToolCalls = prev.content.some(
-                (part) => part.type === "tool-call"
-              );
-            }
-            break;
-          } else if (prev.role === "user") {
-            break;
-          }
-        }
-
-        if (!lastAssistantWithToolCalls) {
-          continue;
-        }
-
-        const contentParts: Array<{
-          type: "tool-result";
-          toolCallId: string;
-          toolName: string;
-          result: string;
-        }> = [];
-
-        const results = m.toolResults || [];
-        if (results.length === 0) {
-          continue;
-        }
-
-        let pendingImagesToAppend: Array<{ toolName: string; base64List: string[]; mimeType?: string }> = [];
-
-        for (const tr of results) {
-          // Skip results with missing toolCallId — Anthropic requires tool_use_id on every tool_result block
-          if (!tr.toolCallId) {
-            this.writeToLogFile("WARN", `Skipping tool result for "${tr.name}": missing toolCallId`);
-            continue;
-          }
-          const resultStr = typeof tr.result === "string" ? tr.result : JSON.stringify(tr.result);
-          
-          // Check for data:image/xxx;base64,... pattern in the result
-          const dataUriRegex = /data:(image\/[a-zA-Z+.-]+);base64,([a-zA-Z0-9+/=]+(?:\r?\n)?[a-zA-Z0-9+/=]*)/g;
-          let match;
-          let cleanedResult = resultStr;
-          let hasImages = false;
-          
-          dataUriRegex.lastIndex = 0;
-          while ((match = dataUriRegex.exec(resultStr)) !== null) {
-            const mimeType = match[1];
-            const base64Data = match[2].replace(/\s/g, ""); // strip whitespace/newlines
-            
-            pendingImagesToAppend.push({
-              toolName: tr.name,
-              base64List: [base64Data],
-              mimeType,
-            });
-            hasImages = true;
-          }
-
-          if (hasImages) {
-            cleanedResult = resultStr.replace(dataUriRegex, (fullMatch, mimeType) => {
-              return `[Image (${mimeType}) attached as a vision image part]`;
-            });
-          }
-
-          contentParts.push({
-            type: "tool-result",
-            toolCallId: tr.toolCallId,
-            toolName: tr.name,
-            result: cleanedResult,
-          });
-        }
-
-        // Do not push an empty tool message — would cause Anthropic 400
-        if (contentParts.length === 0) {
-          continue;
-        }
-
-        coreMessages.push({
-          role: "tool",
-          content: contentParts,
-        });
-
-        if (pendingImagesToAppend.length > 0) {
-          const appendParts: Array<{ type: "text"; text: string } | { type: "image"; image: string; mimeType?: string }> = [];
-          for (const item of pendingImagesToAppend) {
-            if (item.mimeType) {
-              // Direct image from tool execution
-              appendParts.push({
-                type: "text",
-                text: `Direct image output from tool "${item.toolName}":`
-              });
-              item.base64List.forEach((base64) => {
-                appendParts.push({ type: "image", image: base64, mimeType: item.mimeType });
-              });
-            }
-          }
-          coreMessages.push({
-            role: "user",
-            content: appendParts as any,
-          });
-        }
-      }
-    }
-
-    try {
-      const modelInstance = this.getModel();
-      const isTest = !!process.env.VITEST;
-      const isAnthropic = (!isTest || process.env.TEST_PROMPT_CACHING === "true") && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
-      if (isAnthropic && coreMessages.length > 0) {
-        let markedCount = 0;
-        for (let i = coreMessages.length - 1; i >= 0; i--) {
-          if (coreMessages[i].role === "user") {
-            const msg = coreMessages[i];
-            if (typeof msg.content === "string") {
-              msg.content = [
-                {
-                  type: "text",
-                  text: msg.content,
-                  experimental_providerMetadata: {
-                    anthropic: { cacheControl: { type: "ephemeral" } },
-                  },
-                },
-              ];
-              markedCount++;
-            } else if (Array.isArray(msg.content)) {
-              for (let j = msg.content.length - 1; j >= 0; j--) {
-                if (msg.content[j].type === "text") {
-                  msg.content[j] = {
-                    ...msg.content[j],
-                    experimental_providerMetadata: {
-                      anthropic: { cacheControl: { type: "ephemeral" } },
-                    },
-                  };
-                  markedCount++;
-                  break;
-                }
-              }
-            }
-            if (markedCount >= 3) {
-              break;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore errors in injecting cache metadata to ensure robust fallback
-    }
-  }
-
-async compactHistoryIfNeeded(signal?: AbortSignal, force: boolean = false, tokenBudget?: number, byteBudget?: number): Promise<void> {
+  async compactHistoryIfNeeded(signal?: AbortSignal, force: boolean = false, tokenBudget?: number, byteBudget?: number): Promise<void> {
     await this.ensureContextManager();
     const contextManager = this.conversation.getContextManager();
 
     if (contextManager) {
-      await this.contextManagerCompact(signal, force, tokenBudget, byteBudget);
+      await HistoryCompactor.contextManagerCompact(this, signal, force, tokenBudget, byteBudget);
       return;
     }
 
-    await this.legacyCompactHistory(signal, force, tokenBudget, byteBudget);
+    await HistoryCompactor.legacyCompactHistory(this, signal, force, tokenBudget, byteBudget);
   }
 
   private async ensureContextManager(): Promise<void> {
@@ -3635,170 +3159,6 @@ async compactHistoryIfNeeded(signal?: AbortSignal, force: boolean = false, token
       this.contextManagerInitFailed = true;
       this.writeToLogFile("WARN", `ContextManager init failed permanently: ${(err as Error).message}`);
     }
-  }
-
-  private async contextManagerCompact(signal?: AbortSignal, force: boolean = false, tokenBudget?: number, byteBudget?: number): Promise<void> {
-    const contextManager = this.conversation.getContextManager()!;
-    if (signal) {
-      await this.conversation.updateContextManagerLLM(this.getModel(), signal);
-    }
-    const messages = this.conversation.getMessages();
-    const decision = contextManager.shouldCompact(messages);
-
-    if (!decision.shouldCompact && !force && !tokenBudget) {
-      return;
-    }
-
-    try {
-      this.writeToLogFile(
-        "INFO",
-        `Context compaction triggered: ${force ? "forced-413" : (tokenBudget ? "forced-token-limit" : decision.reason)} (strategy: ${force ? "pruning" : (decision.recommendedStrategy?.name || "auto")})`
-      );
-
-      let strategy;
-      let compactionOptions: Partial<import("./context/CompactionStrategy.js").CompactionOptions> = {
-        modelName: this.config.model,
-      };
-      if (force && !tokenBudget) {
-        const { PruningStrategy } = await import("./context/strategies/PruningStrategy.js");
-        strategy = new PruningStrategy();
-        compactionOptions = {
-          ...compactionOptions,
-          byteBudget: byteBudget ?? 3 * 1024 * 1024, // 3.0 MB safety threshold
-        };
-      } else if (tokenBudget) {
-        compactionOptions = {
-          ...compactionOptions,
-          tokenBudget,
-        };
-      }
-
-      const result = await contextManager.compact(messages, strategy, signal, compactionOptions);
-
-      this.conversation.replaceMessages(result.messages);
-      await this.saveHistory();
-
-      this.writeToLogFile(
-        "INFO",
-        `Compaction completed: ${result.metadata.strategy} strategy, ${result.metadata.messagesBefore || 0} -> ${result.metadata.messagesAfter || 0} messages`
-      );
-    } catch (error) {
-      console.error("ContextManager compaction failed:", error);
-      this.writeToLogFile("ERROR", `ContextManager compaction failed: ${(error as Error).message}`);
-      await this.legacyCompactHistory(signal, force, tokenBudget, byteBudget);
-    }
-  }
-
-  private async legacyCompactHistory(signal?: AbortSignal, force: boolean = false, tokenBudget?: number, byteBudget?: number): Promise<void> {
-    const modelLimit = getContextWindowLimit(this.config.model);
-    const maxHistoryTokens = tokenBudget ?? Math.floor(modelLimit * (force ? 0.3 : 0.5));
-
-    if (force || tokenBudget || this.conversation.getTokenEstimate() > maxHistoryTokens) {
-      const allMsgs = this.conversation.getMessages();
-      if (allMsgs.length > 20) {
-        const toSummarize = allMsgs.slice(0, 20);
-        try {
-          if (force) {
-            this.conversation.pruneToTokenLimit(maxHistoryTokens);
-            await this.saveHistory();
-          } else {
-            const summary = await this.summarizeMessages(toSummarize, signal);
-            this.conversation.replaceOldMessagesWithSummary(20, summary);
-            await this.saveHistory();
-          }
-        } catch (err) {
-          console.error("Failed to summarize and compact conversation history:", err);
-          this.conversation.pruneToTokenLimit(maxHistoryTokens);
-          await this.saveHistory();
-        }
-      } else {
-        this.conversation.pruneToTokenLimit(maxHistoryTokens);
-        await this.saveHistory();
-      }
-    }
-  }
-
-  private async summarizeMessages(messages: any[], signal?: AbortSignal): Promise<string> {
-    const formatted = messages.map(m => {
-      const role = m.role.toUpperCase();
-      let details = m.content || "";
-      if (m.toolCalls && m.toolCalls.length > 0) {
-        details += `\n[Tool Calls]: ${m.toolCalls.map((tc: any) => tc.name).join(", ")}`;
-      }
-      return `[${role}]: ${details}`;
-    }).join("\n\n");
-
-    const prompt = `You are a helper system node. Summarize the following past coding assistant chat history turns extremely briefly.
-Identify:
-1. What the user's goals or requirements were.
-2. What actions the assistant took (e.g. edited files, ran commands).
-3. The resulting workspace state or any unresolved issues.
-
-Keep the summary concise, clear, and direct.
-
----
-PAST CHAT HISTORY:
-${formatted}`;
-
-    let attempt = 0;
-    const maxRetries = 10;
-    const baseDelay = 5000;
-    let result;
-
-    while (true) {
-      let concurrencyAcquired = false;
-      try {
-        if (getSettings().concurrencyLimit === 1) {
-          await concurrencyLimiter.acquire();
-          concurrencyAcquired = true;
-        }
-        await rateLimiter.acquire(1);
-
-        result = await generateText({
-          model: this.getModel(),
-          system: "You are a helpful system agent that summarizes conversation history logs to save token context window space.",
-          prompt,
-          abortSignal: signal,
-        });
-        break;
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === "AbortError") {
-          throw err;
-        }
-        attempt++;
-        if (attempt > maxRetries) {
-          throw err;
-        }
-        const summarySignal = signal;
-        await new Promise<void>((resolve, reject) => {
-          if (summarySignal?.aborted) {
-            const err = new Error("The operation was aborted.");
-            err.name = "AbortError";
-            reject(err);
-            return;
-          }
-          const timeout = setTimeout(() => {
-            if (summarySignal) summarySignal.removeEventListener("abort", onAbort);
-            resolve();
-          }, baseDelay * Math.pow(2, attempt - 1));
-          const onAbort = () => {
-            clearTimeout(timeout);
-            const err = new Error("The operation was aborted.");
-            err.name = "AbortError";
-            reject(err);
-          };
-          if (summarySignal) {
-            summarySignal.addEventListener("abort", onAbort);
-          }
-        });
-      } finally {
-        if (concurrencyAcquired) {
-          concurrencyLimiter.release();
-        }
-      }
-    }
-
-    return result.text || "(empty summary)";
   }
 
   private async delayWithCountdown(attempt: number, delayMs: number, signal?: AbortSignal): Promise<void> {
@@ -3911,74 +3271,7 @@ ${formatted}`;
   }
 
   private async prepopulateRmemoryContext(): Promise<void> {
-    const messages = this.conversation.getMessages();
-    // Check if we already have a memory context message in the conversation
-    const hasMemoryContext = messages.some(
-      (m) => m.role === "user" && contentToString(m.content).startsWith("[RMemory Agent Memory Context]:")
-    );
-    if (hasMemoryContext) return;
-
-    // Fetch the memories
-    const settings = getSettings();
-    if (!settings.enableRmemory) return;
-
-    const client = getRMemoryClient(2000); // 2s timeout for fast startup check
-
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-    const query = lastUserMsg ? contentToString(lastUserMsg.content) : "latest coding context";
-
-    this.writeToLogFile("INFO", `Pre-populating RMemory memory context for query: "${query.slice(0, 50)}"...`);
-
-    // Fetch in parallel
-    const [searchResult, persona, scenarios] = await Promise.allSettled([
-      client.searchAtomic({ query, limit: 5 }),
-      client.readCore(),
-      client.listScenarios({}),
-    ]);
-
-    const l1Items = searchResult.status === "fulfilled" ? (searchResult.value?.items ?? []) : [];
-    const personaContent = persona.status === "fulfilled" && persona.value ? persona.value.content : null;
-    const sceneEntries = scenarios.status === "fulfilled" && scenarios.value ? (scenarios.value.entries ?? []) : [];
-
-    if (!personaContent && l1Items.length === 0 && sceneEntries.length === 0) {
-      return; // No memories to inject
-    }
-
-    const formattedMemories: string[] = [];
-
-    if (personaContent) {
-      formattedMemories.push("<user-persona>");
-      formattedMemories.push(personaContent);
-      formattedMemories.push("</user-persona>");
-    }
-
-    if (sceneEntries.length > 0) {
-      formattedMemories.push("\n## 🗺️ Scene Navigation");
-      for (const scene of sceneEntries) {
-        formattedMemories.push(`- \`${scene.path}\``);
-      }
-    }
-
-    if (l1Items.length > 0) {
-      formattedMemories.push("\n<relevant-memories>");
-      for (const item of l1Items) {
-        const typeTag = item.type ? `[${item.type}]` : "";
-        formattedMemories.push(`- ${typeTag} ${item.content}`);
-      }
-      formattedMemories.push("</relevant-memories>");
-    }
-
-    const summaryText = formattedMemories.join("\n").trim();
-    if (!summaryText) return;
-
-    const memoryMessage: Message = {
-      role: "user",
-      content: `[RMemory Agent Memory Context]:\n${summaryText}`,
-      timestamp: Date.now(),
-    };
-
-    this.conversation.replaceMessages([memoryMessage, ...messages]);
-    this.writeToLogFile("INFO", "RMemory memory context successfully pre-populated and injected.");
+    await HistoryCompactor.prepopulateRmemoryContext(this);
   }
 
   private async syncConversationToRmemory(): Promise<void> {

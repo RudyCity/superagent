@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.469] - 2026-07-18
+
+### Changed
+- **Agent Codebase Modularization (Phase 4)**: Extracted message building logic to `MessageBuilder.ts` and history compaction/RMemory prepopulation to `HistoryCompactor.ts`.
+- **Refactoring & Cleanups**: Reduced `agent.ts` file length by 704 lines, ensuring modularity, cleaner code organization, and strict compliance with the codebase length limit guidelines.
+
 ## [1.2.468] - 2026-07-18
 
 ### Changed
