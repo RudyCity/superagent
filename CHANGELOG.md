@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.475] - 2026-07-18
+
+### Added
+- **Multi-Instance Browser Registration**: Enabled registering and tracking multiple Chrome instances running the Chrome extension. We can now uniquely identify and selectively target individual Chrome windows/profiles using clientId and windowId.
+- **Custom Profile Naming**: Added a Profile Name text input field in the extension settings to allow custom friendly labels (e.g. Work, Personal) stored locally and synchronized with the backend.
+- **Targeted Browser Control**: Updated control_browser_tab and control_browser_macro_run tools to support listing instances (list_instances) and selectively routing commands to specific target instances via instanceId.
+
 ## [1.2.474] - 2026-07-18
 
 ### Changed

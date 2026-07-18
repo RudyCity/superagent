@@ -20,6 +20,10 @@ let currentMode = "single";
 let workspaceDropdownOpen = false;
 window.isWaitingForAgentStart = false;
 
+let extensionClientId = "";
+let extensionWindowId = "";
+window.extensionProfileName = "";
+
 // Config state
 let serverPresets = null;
 let serverActivePresetId = null;
@@ -166,7 +170,7 @@ document.addEventListener("DOMContentLoaded", () => {
       apiToken = sessionResult.apiToken;
       apiTokenInput.value = apiToken;
     }
-    chrome.storage.local.get(["rememberToken", "savedApiToken", "lastMode", "chatAutoScroll", "chatMessageLimit", "maxExplorerFiles"], (result) => {
+    chrome.storage.local.get(["rememberToken", "savedApiToken", "lastMode", "chatAutoScroll", "chatMessageLimit", "maxExplorerFiles", "extensionProfileName"], (result) => {
       if (rememberTokenInput) rememberTokenInput.checked = result.rememberToken === true;
       if (!apiToken && result.rememberToken && result.savedApiToken) {
         apiToken = result.savedApiToken;
@@ -183,6 +187,7 @@ document.addEventListener("DOMContentLoaded", () => {
       window.chatAutoScroll = result.chatAutoScroll !== false;
       window.chatMessageLimit = result.chatMessageLimit || 100;
       window.maxExplorerFiles = result.maxExplorerFiles || 500;
+      window.extensionProfileName = result.extensionProfileName || "";
 
       const autoScrollCheckbox = document.getElementById("chat-auto-scroll");
       if (autoScrollCheckbox) {
@@ -198,6 +203,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const filesLimitInput = document.getElementById("setting-files-limit");
       if (filesLimitInput) filesLimitInput.value = window.maxExplorerFiles;
+
+      const profileNameInput = document.getElementById("setting-profile-name");
+      if (profileNameInput) profileNameInput.value = window.extensionProfileName;
     });
   });
 
@@ -434,20 +442,39 @@ document.addEventListener("DOMContentLoaded", () => {
           const chatMsgLimitInput = document.getElementById("setting-msg-limit");
           const filesLimitInput = document.getElementById("setting-files-limit");
           const autoScrollCheckbox = document.getElementById("chat-auto-scroll");
+          const profileNameInput = document.getElementById("setting-profile-name");
 
           const chatMessageLimit = chatMsgLimitInput ? (parseInt(chatMsgLimitInput.value, 10) || 100) : 100;
           const maxExplorerFiles = filesLimitInput ? (parseInt(filesLimitInput.value, 10) || 500) : 500;
           const chatAutoScroll = autoScrollCheckbox ? autoScrollCheckbox.checked : true;
+          const extensionProfileName = profileNameInput ? profileNameInput.value.trim() : "";
 
           window.chatMessageLimit = chatMessageLimit;
           window.maxExplorerFiles = maxExplorerFiles;
           window.chatAutoScroll = chatAutoScroll;
+          window.extensionProfileName = extensionProfileName;
 
           chrome.storage.local.set({
             chatMessageLimit,
             maxExplorerFiles,
-            chatAutoScroll
+            chatAutoScroll,
+            extensionProfileName
           });
+
+          // Notify server immediately of name change
+          if (extensionClientId && extensionWindowId) {
+            fetch(`${BASE_URL}/api/browser/update-instance`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                clientId: extensionClientId,
+                windowId: extensionWindowId,
+                profileName: extensionProfileName,
+                tabTitle: currentActiveTab ? currentActiveTab.title : "",
+                tabUrl: currentActiveTab ? currentActiveTab.url : ""
+              })
+            }).catch(() => {});
+          }
 
           // Refresh configuration and sync any newly trusted directories
           fetchServerConfig(true);
@@ -757,27 +784,64 @@ function setupSSE() {
     eventSource.close();
   }
 
-  const sseUrl = apiToken 
-    ? `${BASE_URL}/api/events?token=${encodeURIComponent(apiToken)}` 
-    : `${BASE_URL}/api/events`;
+  const proceedConnect = () => {
+    const params = new URLSearchParams();
+    if (apiToken) params.set("token", apiToken);
+    if (extensionClientId) params.set("clientId", extensionClientId);
+    if (extensionWindowId) params.set("windowId", extensionWindowId);
+    if (window.extensionProfileName) params.set("profileName", window.extensionProfileName);
+    
+    if (currentActiveTab) {
+      params.set("tabTitle", currentActiveTab.title || "");
+      params.set("tabUrl", currentActiveTab.url || "");
+    }
 
-  eventSource = new EventSource(sseUrl);
+    const sseUrl = `${BASE_URL}/api/events?${params.toString()}`;
+    eventSource = new EventSource(sseUrl);
 
-  eventSource.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      handleSSEEvent(data);
-    } catch (err) {
-      console.error("[SSE Error]", err);
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        handleSSEEvent(data);
+      } catch (err) {
+        console.error("[SSE Error]", err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error("[SSE Connection Error]", err);
+      statusBadge.textContent = "Offline";
+      statusBadge.className = "status-badge status-offline";
+      if (typeof window.unlockTab === "function") window.unlockTab();
+    };
+  };
+
+  const getClientIdAndConnect = () => {
+    if (typeof chrome !== "undefined" && chrome.storage && !extensionClientId) {
+      chrome.storage.local.get(["extensionClientId"], (result) => {
+        if (result.extensionClientId) {
+          extensionClientId = result.extensionClientId;
+        } else {
+          extensionClientId = typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+          chrome.storage.local.set({ extensionClientId });
+        }
+        proceedConnect();
+      });
+    } else {
+      proceedConnect();
     }
   };
 
-  eventSource.onerror = (err) => {
-    console.error("[SSE Connection Error]", err);
-    statusBadge.textContent = "Offline";
-    statusBadge.className = "status-badge status-offline";
-    if (typeof window.unlockTab === "function") window.unlockTab();
-  };
+  if (typeof chrome !== "undefined" && chrome.windows && !extensionWindowId) {
+    chrome.windows.getCurrent((win) => {
+      extensionWindowId = win ? String(win.id) : "";
+      getClientIdAndConnect();
+    });
+  } else {
+    getClientIdAndConnect();
+  }
 }
 
 // [Tool label/detail helpers moved to sidepanel-ui.js]
@@ -1617,10 +1681,38 @@ function updateCurrentTabInfo() {
         const url = currentActiveTab.url || "";
         titleSpan.textContent = `${title} (${url})`;
         titleSpan.title = `${title}\n${url}`;
+
+        if (extensionClientId && extensionWindowId) {
+          fetch(`${BASE_URL}/api/browser/update-instance`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              clientId: extensionClientId,
+              windowId: extensionWindowId,
+              profileName: window.extensionProfileName || "",
+              tabTitle: title,
+              tabUrl: url
+            })
+          }).catch(() => {});
+        }
       } else {
         currentActiveTab = null;
         titleSpan.textContent = "None (No active tab)";
         titleSpan.title = "";
+
+        if (extensionClientId && extensionWindowId) {
+          fetch(`${BASE_URL}/api/browser/update-instance`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              clientId: extensionClientId,
+              windowId: extensionWindowId,
+              profileName: window.extensionProfileName || "",
+              tabTitle: "",
+              tabUrl: ""
+            })
+          }).catch(() => {});
+        }
       }
     });
   }

@@ -496,6 +496,12 @@
           <input type="number" id="setting-files-limit" min="50" max="5000" placeholder="500" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
           <span class="input-hint text-[11px] text-vscode-muted leading-tight">Maximum workspace files rendered in file tree to prevent lag.</span>
         </div>
+
+        <div class="form-group flex flex-col gap-1.5">
+          <label for="setting-profile-name" class="text-[11px] font-semibold text-vscode-primary">Profile Name</label>
+          <input type="text" id="setting-profile-name" placeholder="Default" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+          <span class="input-hint text-[11px] text-vscode-muted leading-tight">A friendly label for this Chrome instance (e.g. Work, Personal).</span>
+        </div>
       </div>
       <div class="modal-footer p-2.5 border-t border-vscode-dim flex justify-end gap-2">
         <button id="btn-save-settings" class="btn btn-primary font-sans font-medium text-xs px-3.5 py-1.5 border border-transparent rounded-sm cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors duration-150 bg-vscode-blue text-white hover:bg-vscode-blue-hover h-[30px]">Save & Apply</button>

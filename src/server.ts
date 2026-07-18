@@ -88,27 +88,83 @@ export function registerCliAgent(agent: Agent, workspace: string, mode: "single"
   lastActiveWorkspace = targetWorkspace;
 }
 
+interface BrowserInstance {
+  res: http.ServerResponse;
+  clientId: string;
+  windowId: string;
+  tabTitle: string;
+  tabUrl: string;
+  profileName: string;
+  lastActive: number;
+}
 const sseClients = new Set<http.ServerResponse>();
+const browserInstances = new Map<string, BrowserInstance>();
+
 const pendingPermissions = new Map<string, (approval: boolean | "session") => void>();
 const pendingQuestions = new Map<string, (answer: any) => void>();
 const pendingBrowserControls = new Map<string, { resolve: (val: string) => void, reject: (err: any) => void }>();
 
-function executeBrowserControlOnClient(action: string, target: string, value?: string): Promise<string> {
+function executeBrowserControlOnClient(action: string, target: string, value?: string, instanceId?: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const controlId = Math.random().toString(36).substring(2, 9);
     pendingBrowserControls.set(controlId, { resolve, reject });
-    broadcastEvent({
+    
+    const event = {
       type: "browser_control_required",
       controlId,
       action,
       target,
       value: value ?? ""
-    });
+    };
+
+    if (instanceId && browserInstances.has(instanceId)) {
+      const inst = browserInstances.get(instanceId)!;
+      try {
+        inst.res.write(`data: ${JSON.stringify(event)}\n\n`);
+        inst.lastActive = Date.now();
+      } catch (err) {
+        browserInstances.delete(instanceId);
+        reject(new Error(`Failed to send event to instance ${instanceId}: ${err}`));
+      }
+    } else {
+      if (browserInstances.size > 0) {
+        let bestInst: BrowserInstance | null = null;
+        let bestKey = "";
+        for (const [key, inst] of browserInstances.entries()) {
+          if (!bestInst || inst.lastActive > bestInst.lastActive) {
+            bestInst = inst;
+            bestKey = key;
+          }
+        }
+        if (bestInst) {
+          try {
+            bestInst.res.write(`data: ${JSON.stringify(event)}\n\n`);
+            bestInst.lastActive = Date.now();
+            return;
+          } catch (err) {
+            browserInstances.delete(bestKey);
+          }
+        }
+      }
+      broadcastEvent(event);
+    }
   });
 }
 
-setBrowserControlHandler((action, target, value) => {
-  return executeBrowserControlOnClient(action, target, value);
+setBrowserControlHandler((action, target, value, instanceId) => {
+  if (action === "list_instances") {
+    const list = Array.from(browserInstances.entries()).map(([key, inst]) => ({
+      instanceId: key,
+      clientId: inst.clientId,
+      windowId: inst.windowId,
+      profileName: inst.profileName,
+      tabTitle: inst.tabTitle,
+      tabUrl: inst.tabUrl,
+      lastActive: new Date(inst.lastActive).toISOString()
+    }));
+    return Promise.resolve(JSON.stringify(list, null, 2));
+  }
+  return executeBrowserControlOnClient(action, target, value, instanceId);
 });
 
 function broadcastEvent(event: any) {
@@ -307,14 +363,40 @@ export async function runServer(port: number, silent = false) {
         });
         sseClients.add(res);
 
+        const clientId = parsedUrl.searchParams.get("clientId") || "";
+        const windowId = parsedUrl.searchParams.get("windowId") || "";
+        const tabTitle = parsedUrl.searchParams.get("tabTitle") || "";
+        const tabUrl = parsedUrl.searchParams.get("tabUrl") || "";
+        const profileName = parsedUrl.searchParams.get("profileName") || "";
+
+        const instanceKey = clientId && windowId ? `${clientId}:${windowId}` : "";
+        if (instanceKey) {
+          browserInstances.set(instanceKey, {
+            res,
+            clientId,
+            windowId,
+            tabTitle,
+            tabUrl,
+            profileName,
+            lastActive: Date.now()
+          });
+        }
+
         // Keep SSE connection alive
         const keepAliveInterval = setInterval(() => {
-          res.write(": keepalive\n\n");
+          try {
+            res.write(": keepalive\n\n");
+          } catch {
+            clearInterval(keepAliveInterval);
+          }
         }, 15000);
 
         req.on("close", () => {
           clearInterval(keepAliveInterval);
           sseClients.delete(res);
+          if (instanceKey) {
+            browserInstances.delete(instanceKey);
+          }
         });
         return;
       }
@@ -601,6 +683,28 @@ export async function runServer(port: number, silent = false) {
           sendJSON(res, 200, { success: true });
         } else {
           sendJSON(res, 404, { error: "Question request not found" });
+        }
+        return;
+      }
+
+      // Update browser instance tab info and profile name
+      if (pathname === "/api/browser/update-instance" && req.method === "POST") {
+        try {
+          const bodyStr = await readBody(req);
+          const { clientId, windowId, tabTitle, tabUrl, profileName } = JSON.parse(bodyStr || "{}");
+          const instanceKey = clientId && windowId ? `${clientId}:${windowId}` : "";
+          if (instanceKey && browserInstances.has(instanceKey)) {
+            const inst = browserInstances.get(instanceKey)!;
+            if (tabTitle !== undefined) inst.tabTitle = tabTitle;
+            if (tabUrl !== undefined) inst.tabUrl = tabUrl;
+            if (profileName !== undefined) inst.profileName = profileName;
+            inst.lastActive = Date.now();
+            sendJSON(res, 200, { success: true });
+          } else {
+            sendJSON(res, 404, { error: "Instance not registered" });
+          }
+        } catch (err: any) {
+          sendJSON(res, 400, { error: err.message });
         }
         return;
       }

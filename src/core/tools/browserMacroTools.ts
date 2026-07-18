@@ -12,7 +12,7 @@ import {
   type StepRunResult,
 } from "../config/browserMacros.js";
 
-export let browserControlHandler: ((action: string, target: string, value?: string) => Promise<string>) | null = null;
+export let browserControlHandler: ((action: string, target: string, value?: string, instanceId?: string) => Promise<string>) | null = null;
 
 export function setBrowserControlHandler(handler: typeof browserControlHandler) {
   browserControlHandler = handler;
@@ -20,7 +20,7 @@ export function setBrowserControlHandler(handler: typeof browserControlHandler) 
 
 export const controlBrowserTabTool: Tool = {
   name: "control_browser_tab",
-  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (guides the user to click manually for stealth), type (human-like typing), paste (instant typing), navigate, scroll, screenshot, detect_ui (runs UI-DETR-1 to detect UI elements and coordinates), errors, text, hover, keypress, wait, html, reload, back, forward, open, close, list, switch, duplicate, pin, unpin, mute, unmute, move, group, ungroup, discard, new_window, close_window, top_sites (get top visited sites), reading_list_add (add reading list), reading_list_remove (remove reading list), reading_list_get (get reading list), group_update (update group title/color), group_get (get group info), history_search (search history), history_delete (delete URL from history), history_clear (clear all history), management_list (list extensions), management_get (get extension details), show_detections (shows visual bounding boxes), hide_detections (hides bounding boxes), dom_info (gets DOM info for coordinates), execute_chain (executes a JSON sequence of actions), highlight_element (highlights coordinates on webpage).",
+  description: "Automate browser actions on the user's active Chrome tab (requires the extension to be open). Actions: click (guides the user to click manually for stealth), type (human-like typing), paste (instant typing), navigate, scroll, screenshot, detect_ui (runs UI-DETR-1 to detect UI elements and coordinates), errors, text, hover, keypress, wait, html, reload, back, forward, open, close, list, switch, duplicate, pin, unpin, mute, unmute, move, group, ungroup, discard, new_window, close_window, top_sites (get top visited sites), reading_list_add (add reading list), reading_list_remove (remove reading list), reading_list_get (get reading list), group_update (update group title/color), group_get (get group info), history_search (search history), history_delete (delete URL from history), history_clear (clear all history), management_list (list extensions), management_get (get extension details), show_detections (shows visual bounding boxes), hide_detections (hides bounding boxes), dom_info (gets DOM info for coordinates), execute_chain (executes a JSON sequence of actions), highlight_element (highlights coordinates on webpage), list_instances (lists all connected Chrome extension instances).",
   parameters: {
     type: "object",
     properties: {
@@ -30,7 +30,7 @@ export const controlBrowserTabTool: Tool = {
           "click", "type", "paste", "navigate", "scroll", "screenshot", "detect_ui", "errors", "text", "hover", "keypress", "wait", "html", "reload", "back", "forward",
           "open", "close", "list", "switch", "duplicate", "pin", "unpin", "mute", "unmute", "move", "group", "ungroup", "discard", "new_window", "close_window",
           "top_sites", "reading_list_add", "reading_list_remove", "reading_list_get", "group_update", "group_get", "history_search", "history_delete", "history_clear", "management_list", "management_get",
-          "show_detections", "hide_detections", "dom_info", "execute_chain", "highlight_element"
+          "show_detections", "hide_detections", "dom_info", "execute_chain", "highlight_element", "list_instances"
         ],
         description: "The browser action to execute."
       },
@@ -41,6 +41,10 @@ export const controlBrowserTabTool: Tool = {
       value: {
         type: "string",
         description: "Text to type/paste (type, paste), key to press (keypress), scroll offset, timeout in ms (wait), destination index (move), group ID (group), group metadata JSON or title (group_update), reading list title (reading_list_add), history maxResults (history_search), confidence threshold (detect_ui), or execute_chain values."
+      },
+      instanceId: {
+        type: "string",
+        description: "Optional. Target Chrome instance ID (clientId:windowId) to route this action to. If omitted, routes to the most recently active Chrome instance."
       }
     },
     required: ["action"]
@@ -51,6 +55,23 @@ export const controlBrowserTabTool: Tool = {
     }
     const handler = browserControlHandler!;
     const action = args.action as string;
+    const instanceId = args.instanceId as string | undefined;
+
+    const callHandler = (act: string, tgt: string, val: string) => {
+      return instanceId !== undefined
+        ? handler(act, tgt, val, instanceId)
+        : handler(act, tgt, val);
+    };
+
+    if (action === "list_instances") {
+      try {
+        const result = await callHandler("list_instances", "", "");
+        return result;
+      } catch (err: any) {
+        return `Failed to list instances: ${err.message || String(err)}`;
+      }
+    }
+
     if (["click", "type", "paste", "navigate", "scroll", "hover", "keypress", "switch", "move", "group", "ungroup", "reading_list_add", "reading_list_remove", "group_update", "history_delete", "management_get", "show_detections", "dom_info", "execute_chain", "highlight_element"].includes(action) && !args.target) {
       return `Error: Target parameter is required for action "${action}".`;
     }
@@ -59,7 +80,7 @@ export const controlBrowserTabTool: Tool = {
     }
     if (action === "detect_ui") {
       try {
-        const screenshotResult = await handler("screenshot", "", "");
+        const screenshotResult = await callHandler("screenshot", "", "");
         if (screenshotResult.includes("Error") || screenshotResult.includes("failed")) {
           return `Failed to capture screenshot for detection: ${screenshotResult}`;
         }
@@ -92,14 +113,14 @@ export const controlBrowserTabTool: Tool = {
             return "UI Detection finished: No elements detected on the page.";
           }
           try {
-            await handler("show_detections", JSON.stringify(data.elements), "");
+            await callHandler("show_detections", JSON.stringify(data.elements), "");
           } catch (_) {}
 
           const enriched = await Promise.all(
             data.elements.map(async (el: any) => {
               try {
                 const [cx, cy] = el.center;
-                const domRaw = await handler("dom_info", `${cx},${cy}`, "");
+                const domRaw = await callHandler("dom_info", `${cx},${cy}`, "");
                 const dom = JSON.parse(domRaw);
                 return { ...el, dom };
               } catch {
@@ -125,7 +146,7 @@ export const controlBrowserTabTool: Tool = {
       }
     }
     try {
-      const result = await handler(action, (args.target as string) || "", (args.value as string) || "");
+      const result = await callHandler(action, (args.target as string) || "", (args.value as string) || "");
       return result;
     } catch (err: any) {
       return `Browser control failed: ${err.message || String(err)}`;
@@ -212,6 +233,10 @@ export const controlBrowserMacroRunTool: Tool = {
       dryRun: {
         type: "boolean",
         description: "If true, preview resolved steps without executing them. Useful for verifying args and step order before a real run."
+      },
+      instanceId: {
+        type: "string",
+        description: "Optional. Target Chrome instance ID (clientId:windowId) to route this macro to. If omitted, routes to the most recently active Chrome instance."
       }
     },
     required: ["name"]
@@ -271,7 +296,7 @@ export const controlBrowserMacroRunTool: Tool = {
       do {
         attempts++;
         try {
-          output = await browserControlHandler(step.action, step.target || "", step.value || "");
+          output = await browserControlHandler(step.action, step.target || "", step.value || "", args.instanceId as string);
           succeeded = true;
         } catch (err: any) {
           lastError = err.message || String(err);
