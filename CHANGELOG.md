@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.474] - 2026-07-18
+
+### Changed
+- **Subagent Tool Optimization**: Updated the researcher subagent system prompt to explicitly restrict terminal/bash execution tools, preventing invalid tool call generation.
+- **Self-Healing Error Recovery**: Modified the agent iteration loop to intercept "tried to call unavailable tool" errors from the LLM, inject a correction into the conversation history, and continue instead of crashing.
+- **Test Suite Mock Fix**: Extended the mocked `fs` in `skillsTool.test.ts` to preserve other native filesystem methods, resolving lock file contention and test suite failures across worker threads.
+
 ## [1.2.473] - 2026-07-18
 
 ### Changed

@@ -17,9 +17,12 @@ vi.mock("../src/core/rmemoryUtil.js", () => {
 });
 
 // Mock fs module for skill content reading
-vi.mock("fs", () => {
+vi.mock("fs", async () => {
+  const actual = await vi.importActual<typeof import("fs")>("fs");
   return {
+    ...actual,
     default: {
+      ...actual,
       existsSync: vi.fn().mockReturnValue(true),
       readFileSync: vi.fn().mockImplementation((filePath) => {
         return `Mock content of ${filePath}`;

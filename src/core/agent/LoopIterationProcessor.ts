@@ -189,6 +189,37 @@ export class LoopIterationProcessor {
               break; // Success
             } catch (err: any) {
               const rawMsg = err.message || String(err);
+              const isUnavailableTool = rawMsg.toLowerCase().includes("tried to call unavailable tool") || rawMsg.toLowerCase().includes("tried to call tool that is not available");
+              if (isUnavailableTool) {
+                const match = rawMsg.match(/(?:tried to call unavailable tool|tool that is not available|tool) ['"]([^'"]+)['"]/i);
+                const toolName = match ? match[1] : "bash";
+                const toolCallId = "call_unavail_" + Math.random().toString(36).substring(2, 11);
+                const mockToolCall = {
+                  id: toolCallId,
+                  name: toolName,
+                  args: {},
+                };
+                const mockToolResult = {
+                  toolCallId,
+                  name: toolName,
+                  result: `Error: Tool "${toolName}" is not available. Available tools: ${activeTools.map((t: any) => t.name).join(", ")}. Please use only the available tools.`,
+                  isError: true,
+                };
+                agent.conversation.addAssistantMessage(
+                  textContent || `Attempted to call tool "${toolName}"`,
+                  [mockToolCall],
+                  [mockToolResult],
+                  reasoningContent
+                );
+                agent.conversation.addMessage({
+                  role: "tool",
+                  content: "",
+                  toolResults: [mockToolResult],
+                  timestamp: Date.now(),
+                });
+                await agent.saveHistory();
+                return { shouldBreak: false };
+              }
               const isRetryable = isRetryableError(err) || rawMsg.toLowerCase().includes("empty response");
               const isPayloadTooLarge = err.status === 413 || /payload too large/i.test(err.message) || /request entity too large/i.test(err.message);
               const isOverloaded = err.status === 429 || err.status === 503 || /overloaded/i.test(err.message) || /rate limit/i.test(err.message);
@@ -328,6 +359,37 @@ export class LoopIterationProcessor {
               break;
             } catch (err: any) {
               const rawMsg = err.message || String(err);
+              const isUnavailableTool = rawMsg.toLowerCase().includes("tried to call unavailable tool") || rawMsg.toLowerCase().includes("tried to call tool that is not available");
+              if (isUnavailableTool) {
+                const match = rawMsg.match(/(?:tried to call unavailable tool|tool that is not available|tool) ['"]([^'"]+)['"]/i);
+                const toolName = match ? match[1] : "bash";
+                const toolCallId = "call_unavail_" + Math.random().toString(36).substring(2, 11);
+                const mockToolCall = {
+                  id: toolCallId,
+                  name: toolName,
+                  args: {},
+                };
+                const mockToolResult = {
+                  toolCallId,
+                  name: toolName,
+                  result: `Error: Tool "${toolName}" is not available. Available tools: ${activeTools.map((t: any) => t.name).join(", ")}. Please use only the available tools.`,
+                  isError: true,
+                };
+                agent.conversation.addAssistantMessage(
+                  textContent || `Attempted to call tool "${toolName}"`,
+                  [mockToolCall],
+                  [mockToolResult],
+                  reasoningContent
+                );
+                agent.conversation.addMessage({
+                  role: "tool",
+                  content: "",
+                  toolResults: [mockToolResult],
+                  timestamp: Date.now(),
+                });
+                await agent.saveHistory();
+                return { shouldBreak: false };
+              }
               const isRetryable = isRetryableError(err) || rawMsg.toLowerCase().includes("empty response");
               const isPayloadTooLarge = err.status === 413 || /payload too large/i.test(err.message) || /request entity too large/i.test(err.message);
               const isOverloaded = err.status === 429 || err.status === 503 || /overloaded/i.test(err.message) || /rate limit/i.test(err.message);
@@ -456,6 +518,37 @@ export class LoopIterationProcessor {
             break;
           } catch (err: any) {
             const rawMsg = err.message || String(err);
+            const isUnavailableTool = rawMsg.toLowerCase().includes("tried to call unavailable tool") || rawMsg.toLowerCase().includes("tried to call tool that is not available");
+            if (isUnavailableTool) {
+              const match = rawMsg.match(/(?:tried to call unavailable tool|tool that is not available|tool) ['"]([^'"]+)['"]/i);
+              const toolName = match ? match[1] : "bash";
+              const toolCallId = "call_unavail_" + Math.random().toString(36).substring(2, 11);
+              const mockToolCall = {
+                id: toolCallId,
+                name: toolName,
+                args: {},
+              };
+              const mockToolResult = {
+                toolCallId,
+                name: toolName,
+                result: `Error: Tool "${toolName}" is not available. Available tools: ${activeTools.map((t: any) => t.name).join(", ")}. Please use only the available tools.`,
+                isError: true,
+              };
+              agent.conversation.addAssistantMessage(
+                textContent || `Attempted to call tool "${toolName}"`,
+                [mockToolCall],
+                [mockToolResult],
+                reasoningContent
+              );
+              agent.conversation.addMessage({
+                role: "tool",
+                content: "",
+                toolResults: [mockToolResult],
+                timestamp: Date.now(),
+              });
+              await agent.saveHistory();
+              return { shouldBreak: false };
+            }
             const isRetryable = isRetryableError(err) || rawMsg.toLowerCase().includes("empty response");
             const isPayloadTooLarge = err.status === 413 || /payload too large/i.test(err.message) || /request entity too large/i.test(err.message);
             const isOverloaded = err.status === 429 || err.status === 503 || /overloaded/i.test(err.message) || /rate limit/i.test(err.message);

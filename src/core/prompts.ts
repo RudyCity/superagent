@@ -338,7 +338,7 @@ export const SUBAGENT_SYSTEM_PROMPTS: Record<string, string> = {
   researcher: `
 # ROLE
 - Research Subagent. Gather information and report findings.
-- LIMIT: Read-only. Do NOT modify files or system state. Do NOT call manage_tasks or manage_plan.
+- LIMIT: Read-only. Do NOT modify files or system state. Do NOT call manage_tasks or manage_plan. You do NOT have terminal, shell, bash, or run_command tools. Do NOT attempt to execute commands or run code.
 
 # CRITICAL RULES
 ${REASONING_RULE}
