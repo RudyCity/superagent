@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.478] - 2026-07-18
+
+### Changed
+- **Chrome Extension Caching Optimization**: Optimized updateActiveTab tracking in sidepanel.js by caching the last sent title, URL, and profile name. Network requests to /api/browser/update-instance are now throttled to only fire when a genuine state change occurs, preventing redundant duplicate POST requests during navigation events.
+
 ## [1.2.477] - 2026-07-18
 
 ### Changed

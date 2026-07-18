@@ -1669,6 +1669,9 @@ window.updateWorkspaceRequiredUI = function() {
 
 // Active Browser Tab Tracker
 let currentActiveTab = null;
+let lastSentTitle = null;
+let lastSentUrl = null;
+let lastSentProfileName = null;
 
 function updateCurrentTabInfo() {
   if (typeof chrome !== "undefined" && chrome.tabs) {
@@ -1682,36 +1685,50 @@ function updateCurrentTabInfo() {
         titleSpan.textContent = `${title} (${url})`;
         titleSpan.title = `${title}\n${url}`;
 
-        if (extensionClientId && extensionWindowId) {
-          fetch(`${BASE_URL}/api/browser/update-instance`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              clientId: extensionClientId,
-              windowId: extensionWindowId,
-              profileName: window.extensionProfileName || "",
-              tabTitle: title,
-              tabUrl: url
-            })
-          }).catch(() => {});
+        const profileName = window.extensionProfileName || "";
+        if (title !== lastSentTitle || url !== lastSentUrl || profileName !== lastSentProfileName) {
+          lastSentTitle = title;
+          lastSentUrl = url;
+          lastSentProfileName = profileName;
+
+          if (extensionClientId && extensionWindowId) {
+            fetch(`${BASE_URL}/api/browser/update-instance`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                clientId: extensionClientId,
+                windowId: extensionWindowId,
+                profileName: profileName,
+                tabTitle: title,
+                tabUrl: url
+              })
+            }).catch(() => {});
+          }
         }
       } else {
         currentActiveTab = null;
         titleSpan.textContent = "None (No active tab)";
         titleSpan.title = "";
 
-        if (extensionClientId && extensionWindowId) {
-          fetch(`${BASE_URL}/api/browser/update-instance`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              clientId: extensionClientId,
-              windowId: extensionWindowId,
-              profileName: window.extensionProfileName || "",
-              tabTitle: "",
-              tabUrl: ""
-            })
-          }).catch(() => {});
+        const profileName = window.extensionProfileName || "";
+        if ("" !== lastSentTitle || "" !== lastSentUrl || profileName !== lastSentProfileName) {
+          lastSentTitle = "";
+          lastSentUrl = "";
+          lastSentProfileName = profileName;
+
+          if (extensionClientId && extensionWindowId) {
+            fetch(`${BASE_URL}/api/browser/update-instance`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                clientId: extensionClientId,
+                windowId: extensionWindowId,
+                profileName: profileName,
+                tabTitle: "",
+                tabUrl: ""
+              })
+            }).catch(() => {});
+          }
         }
       }
     });
