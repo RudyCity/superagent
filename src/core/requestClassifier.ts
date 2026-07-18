@@ -186,6 +186,7 @@ const RESEARCH_KW = splitKeywords([
   "show me all", "list all", "find all",
   "grep", "cari", "cek", "check if",
   "investigate", "scan", "audit", "temukan", "telusuri",
+  "optimasi", "tingkatkan", "optimize", "review",
 ]);
 
 /** Complex task indicator keywords — split into words + phrases */
@@ -702,14 +703,16 @@ export async function classifyRequest(
 const CATEGORY_TOOLS: Record<RequestCategory, string[] | null> = {
   conversation: [],
   question: [
-    "read", "glob", "grep", "ripgrep_search", "web_search", "get_skills",
+    "read", "glob", "grep", "ripgrep_search", "web_search", "get_skills", "use_skill",
     "fetch_url", "search_history", "load_pinned_session", "search_pinned_knowledge",
-    "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos",
+    "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos", "ask_question",
+    "read_shared_memory",
   ],
   research: [
     "read", "glob", "grep", "ripgrep_search", "web_search", "fetch_url",
-    "get_skills", "search_history", "load_pinned_session", "search_pinned_knowledge",
-    "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos",
+    "get_skills", "use_skill", "search_history", "load_pinned_session", "search_pinned_knowledge",
+    "rmemory_search", "rmemory_conversation_search", "rmemory_read_cos", "ask_question",
+    "read_shared_memory",
   ],
   simple_edit: null,
   complex_task: null,

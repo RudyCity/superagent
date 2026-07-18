@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.467] - 2026-07-18
+
+### Fixed
+- **Request Classifier Keywords & Toolsets**: Expanded research keywords with optimization and review terms, and registered missing tools (`use_skill`, `ask_question`, `read_shared_memory`) in category toolsets.
+
 ## [1.2.466] - 2026-07-18
 
 ### Fixed
