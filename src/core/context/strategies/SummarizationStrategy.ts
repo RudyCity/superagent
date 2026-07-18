@@ -4,11 +4,12 @@ import {
   CompactionResult,
   CompactionOptions,
   CompactionCost,
-  tokensForMessages,
+  estimateTokensCached,
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
 import { generateText } from "ai";
 import { SemanticAnalyzer } from "../SemanticAnalyzer.js";
+import { TokenTracker } from "../TokenTracker.js";
 
 export interface SummarizationConfig {
   model?: any;
@@ -50,12 +51,15 @@ export class SummarizationStrategy implements CompactionStrategy {
     if (tokenBudget > 0) {
       const summaryOverhead = 500; // estimated token budget for the summary message
       const keepBudget = Math.floor(tokenBudget * 0.6) - summaryOverhead;
-      let keepTokens = tokensForMessages(toKeep);
+      const modelName = options.modelName || "";
+      const tracker = new TokenTracker(modelName);
+      let keepTokens = 0;
+      for (const m of toKeep) keepTokens += tracker.estimateTokens(m);
       while (keepTokens > keepBudget && toKeep.length > 0) {
-        // Move oldest kept message back to summarize pile
+        // Move oldest kept message back to summarize pile (incremental delta)
         const moved = toKeep.shift()!;
         toSummarize.push(moved);
-        keepTokens = tokensForMessages(toKeep);
+        keepTokens -= tracker.estimateTokens(moved);
       }
     }
 

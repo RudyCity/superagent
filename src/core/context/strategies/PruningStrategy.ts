@@ -4,10 +4,11 @@ import {
   CompactionResult,
   CompactionOptions,
   CompactionCost,
-  tokensForMessages,
+  estimateTokensCached,
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
 import { SemanticAnalyzer } from "../SemanticAnalyzer.js";
+import { TokenTracker } from "../TokenTracker.js";
 
 export class PruningStrategy implements CompactionStrategy {
   name = "pruning";
@@ -38,15 +39,30 @@ export class PruningStrategy implements CompactionStrategy {
     let toPrune = messages.slice(0, keepIndex);
     let toKeep = messages.slice(keepIndex);
 
+    // Importance-based pre-sort: when budget forces pruning, drop lowest-importance
+    // older messages first instead of pure FIFO. Preserve recent + tool-result pairs.
+    if (tokenBudget > 0 || byteBudget > 0) {
+      const analyzer = new SemanticAnalyzer();
+      const scored = toKeep.map((m, i) => ({ m, i, score: analyzer.scoreImportance(m) }));
+      // Keep highest-score messages; only re-order the prunable tail (older half).
+      const tailStart = Math.floor(scored.length / 2);
+      const head = scored.slice(0, tailStart);
+      const tail = scored.slice(tailStart).sort((a, b) => b.score - a.score);
+      toKeep = [...head, ...tail].map((s) => s.m);
+    }
+
     // Enforce token budget: reduce preserved messages if they exceed budget
     if (tokenBudget > 0) {
       const summaryOverhead = 500;
       const keepBudget = Math.floor(tokenBudget * 0.6) - summaryOverhead;
-      let keepTokens = tokensForMessages(toKeep);
+      const modelName = options.modelName || "";
+      const tracker = new TokenTracker(modelName);
+      let keepTokens = 0;
+      for (const m of toKeep) keepTokens += tracker.estimateTokens(m);
       while (keepTokens > keepBudget && toKeep.length > 0) {
         const moved = toKeep.shift()!;
         toPrune.push(moved);
-        keepTokens = tokensForMessages(toKeep);
+        keepTokens -= tracker.estimateTokens(moved);
       }
       // Ensure token-budget pruning does not leave an orphaned "tool" message at the start
       while (toKeep.length > 0 && toKeep[0].role === "tool") {
@@ -62,14 +78,11 @@ export class PruningStrategy implements CompactionStrategy {
 
       if (useVisionTokenSaving === undefined) {
         try {
-          const { getSettings, getDynamicVisionThreshold } = await import("../../config.js");
           const modelName = options.modelName || "";
           if (modelName && (byteBudget === 0 || byteBudget >= 500 * 1024)) {
-            const settings = getSettings();
-            const name = modelName.toLowerCase();
-            const supportsVision = name.includes("claude-3") || name.includes("gpt-4o") || name.includes("gpt-4-vision") || name.includes("gemini") || name.includes("gemma-3") || name.includes("vision");
-            useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? false);
-            visionThreshold = getDynamicVisionThreshold(modelName);
+            const resolved = TokenTracker.resolveVisionSaving(modelName);
+            useVisionTokenSaving = resolved.useVision;
+            visionThreshold = resolved.threshold;
           } else {
             useVisionTokenSaving = false;
           }

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.480] - 2026-07-18
+
+### Optimized
+- **Token Compression Subsystem**:
+  - Replaced O(n) heuristic `tokensForMessages()` with cached `TokenTracker` LRU estimator (`estimateTokensCached`) in Summarization, Pruning, and Pinning budget loops.
+  - Made budget loops incremental (subtract-on-shift) instead of full recompute per iteration — O(1) per shift for 1000+ message conversations.
+  - Extracted duplicated vision-support detection into single `TokenTracker.resolveVisionSaving()` static helper; removed inline duplication in PruningStrategy.
+  - Wired `SemanticAnalyzer.scoreImportance` into PruningStrategy to drop lowest-importance older messages first instead of pure FIFO.
+  - Added 60s memoized recall cache to RMemoryStrategy to avoid repeated gateway calls per compaction cycle.
+
 ## [1.2.479] - 2026-07-18
 
 ### Fixed

@@ -72,7 +72,7 @@ export class TokenTracker {
     return this.model;
   }
 
-  private modelSupportsVision(modelName: string): boolean {
+  static modelSupportsVision(modelName: string): boolean {
     if (!modelName) return false;
     const name = modelName.toLowerCase();
     if (name.includes("claude-3")) return true;
@@ -84,6 +84,20 @@ export class TokenTracker {
     return false;
   }
 
+  /**
+   * Shared vision-token-saving resolver. Single source of truth for
+   * whether vision token saving applies + the active threshold.
+   */
+  static resolveVisionSaving(
+    modelName: string,
+    settings?: { autoVisionTokenSaving?: boolean }
+  ): { useVision: boolean; threshold: number } {
+    const s = settings ?? getSettings();
+    const supportsVision = TokenTracker.modelSupportsVision(modelName);
+    const useVision = supportsVision && (s.autoVisionTokenSaving ?? false);
+    return { useVision, threshold: getDynamicVisionThreshold(modelName) };
+  }
+
   estimateTokens(message: Message): number {
     const hash = this.hashMessage(message);
 
@@ -91,10 +105,7 @@ export class TokenTracker {
       return this.cache.get(hash)!;
     }
 
-    const settings = getSettings();
-    const supportsVision = this.modelSupportsVision(this.model);
-    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? false);
-    const threshold = getDynamicVisionThreshold(this.model);
+    const { useVision, threshold } = TokenTracker.resolveVisionSaving(this.model);
 
     let tokens = this.countContent(message.content, useVision, threshold);
 
@@ -127,10 +138,7 @@ export class TokenTracker {
     let toolCalls = 0;
     let toolResults = 0;
 
-    const settings = getSettings();
-    const supportsVision = this.modelSupportsVision(this.model);
-    const useVision = supportsVision && (settings.autoVisionTokenSaving ?? false);
-    const threshold = getDynamicVisionThreshold(this.model);
+    const { useVision, threshold } = TokenTracker.resolveVisionSaving(this.model);
 
     for (const msg of messages) {
       const hash = this.hashMessage(msg);
@@ -183,10 +191,7 @@ export class TokenTracker {
     const breakdown = this.estimateTokensForAll(messages);
 
     if (systemPrompt) {
-      const settings = getSettings();
-      const supportsVision = this.modelSupportsVision(this.model);
-      const useVision = supportsVision && (settings.autoVisionTokenSaving ?? false);
-      const threshold = getDynamicVisionThreshold(this.model);
+      const { useVision, threshold } = TokenTracker.resolveVisionSaving(this.model);
 
       let sysTokens = 0;
       if (useVision && systemPrompt.length > threshold) {

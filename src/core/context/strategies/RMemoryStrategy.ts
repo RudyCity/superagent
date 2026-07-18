@@ -16,6 +16,8 @@ export class RMemoryStrategy implements CompactionStrategy {
   private lastCapturedTimestamp = 0;
   private lastConnectAttempt = 0;
   private gatewayOffline = false;
+  private recallCache: { key: string; ts: number; value: any } | null = null;
+  private static RECALL_TTL = 60 * 1000;
 
   constructor(config?: { historyFilePath?: string }) {
     this.historyFilePath = config?.historyFilePath;
@@ -104,11 +106,26 @@ export class RMemoryStrategy implements CompactionStrategy {
       const query = lastUserMsg ? contentToString(lastUserMsg.content) : "latest coding context";
 
       // Parallel requests for L1 memories, L3 persona, and L2 scenarios
-      const [searchResult, persona, scenarios] = await Promise.allSettled([
-        client.searchAtomic({ query, limit: Math.min(10, Math.ceil((options.tokenBudget || 8000) / 2000)) }),
-        client.readCore(),
-        client.listScenarios({}),
-      ]);
+      // Memoize for 60s to avoid repeated gateway calls per compaction cycle.
+      const recallKey = `${sessionKey}::${query}`;
+      const nowTs = Date.now();
+      let searchResult: PromiseSettledResult<any>;
+      let persona: PromiseSettledResult<any>;
+      let scenarios: PromiseSettledResult<any>;
+      if (
+        this.recallCache &&
+        this.recallCache.key === recallKey &&
+        nowTs - this.recallCache.ts < RMemoryStrategy.RECALL_TTL
+      ) {
+        ({ searchResult, persona, scenarios } = this.recallCache.value);
+      } else {
+        [searchResult, persona, scenarios] = await Promise.allSettled([
+          client.searchAtomic({ query, limit: Math.min(10, Math.ceil((options.tokenBudget || 8000) / 2000)) }),
+          client.readCore(),
+          client.listScenarios({}),
+        ]);
+        this.recallCache = { key: recallKey, ts: nowTs, value: { searchResult, persona, scenarios } };
+      }
 
       const l1Items = searchResult.status === "fulfilled" ? (searchResult.value?.items ?? []) : [];
       const personaContent = persona.status === "fulfilled" && persona.value ? persona.value.content : null;

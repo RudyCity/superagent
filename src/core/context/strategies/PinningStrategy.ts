@@ -4,10 +4,11 @@ import {
   CompactionResult,
   CompactionOptions,
   CompactionCost,
-  tokensForMessages,
+  estimateTokensCached,
 } from "../CompactionStrategy.js";
 import { Message, contentToString } from "../../conversation.js";
 import { SemanticAnalyzer } from "../SemanticAnalyzer.js";
+import { TokenTracker } from "../TokenTracker.js";
 
 export class PinningStrategy implements CompactionStrategy {
   name = "pinning";
@@ -52,13 +53,16 @@ export class PinningStrategy implements CompactionStrategy {
     // Enforce token budget: reduce preserved unpinned messages if they exceed budget
     if (tokenBudget > 0) {
       const summaryOverhead = 500;
-      const pinnedTokens = tokensForMessages(pinned.map(p => p.msg));
+      const modelName = options.modelName || "";
+      const tracker = new TokenTracker(modelName);
+      const pinnedTokens = pinned.reduce((s, p) => s + tracker.estimateTokens(p.msg), 0);
       const keepBudget = Math.floor(tokenBudget * 0.6) - summaryOverhead - pinnedTokens;
-      let keepTokens = tokensForMessages(toKeep);
+      let keepTokens = 0;
+      for (const m of toKeep) keepTokens += tracker.estimateTokens(m);
       while (keepTokens > keepBudget && toKeep.length > 0) {
         const moved = toKeep.shift()!;
         toSummarize.push(moved);
-        keepTokens = tokensForMessages(toKeep);
+        keepTokens -= tracker.estimateTokens(moved);
       }
     }
 

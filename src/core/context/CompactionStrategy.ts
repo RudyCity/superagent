@@ -1,4 +1,5 @@
 import { Message } from "../conversation.js";
+import { TokenTracker } from "./TokenTracker.js";
 
 export interface CompactionContext {
   messages: Message[];
@@ -67,6 +68,22 @@ export function tokensForMessages(messages: Message[]): number {
         total += Math.ceil(tr.result.length / 4);
       }
     }
+  }
+  return total;
+}
+
+/**
+ * Cached token estimator backed by TokenTracker LRU cache.
+ * Use in budget loops instead of the O(n) heuristic `tokensForMessages`.
+ */
+export function estimateTokensCached(
+  messages: Message[],
+  modelName: string
+): number {
+  const tracker = new TokenTracker(modelName);
+  let total = 0;
+  for (const m of messages) {
+    total += tracker.estimateTokens(m);
   }
   return total;
 }
