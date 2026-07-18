@@ -64,7 +64,7 @@ class OptimizedLocalTextEmbeddingProvider {
           interOpNumThreads: 1,
         },
         progress_callback: (data: any) => {
-          if ((data.status === "downloading" || data.status === "progress") && !downloadStarted) {
+          if (data.status === "downloading" && !downloadStarted) {
             downloadStarted = true;
             if (onProgress) {
               onProgress({
@@ -76,7 +76,7 @@ class OptimizedLocalTextEmbeddingProvider {
               console.log(`\n[INFO] Downloading local embedding model (~100MB) to cache...`);
             }
           }
-          if (data.status === "progress") {
+          if (data.status === "progress" && downloadStarted) {
             const pct = typeof data.progress === "number" ? data.progress : 0;
             if (onProgress) {
               onProgress({

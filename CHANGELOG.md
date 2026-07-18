@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.464] - 2026-07-18
+
+### Fixed
+- **Cached Model Notification Suppression**: Fixed progress callback checks in request classifier and RMemory embedding utilities so that model load completion messages are completely suppressed when models are loaded from disk cache without network downloads.
+
 ## [1.2.463] - 2026-07-18
 
 ### Fixed
