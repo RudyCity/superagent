@@ -205,12 +205,19 @@
 
           <!-- Active Chat Container -->
           <div id="chat-content-container" class="flex-1 flex flex-col overflow-hidden">
-            <!-- Chat actions: New Chat -->
+            <!-- Chat actions: New Chat & Auto Scroll -->
             <div class="chat-actions flex items-center justify-between px-3.5 py-1.5 border-b border-vscode-dim bg-vscode-sidebar shrink-0 relative">
               <button id="btn-new-chat" class="btn btn-secondary text-[10px] px-2 py-0.5 h-6 font-sans font-medium border border-vscode-dim rounded-sm cursor-pointer inline-flex items-center justify-center gap-1 bg-vscode-inner text-vscode-primary hover:bg-vscode-hover hover:text-white" title="Clear history and start a new chat">
                 <svg class="w-3 h-3 fill-current" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
                 <span>New Chat</span>
               </button>
+              <div class="flex items-center gap-2.5">
+                <label class="checkbox-container flex items-center gap-1.5 text-[10.5px] text-vscode-muted hover:text-vscode-light cursor-pointer select-none" title="Automatically scroll to bottom on new messages">
+                  <input type="checkbox" id="chat-auto-scroll" class="hidden" checked>
+                  <span class="checkmark w-3.5 h-3.5 border border-vscode-dim rounded-sm inline-block relative bg-vscode-inner"></span>
+                  <span>Auto Scroll</span>
+                </label>
+              </div>
             </div>
 
             <div class="chat-container flex-1 flex flex-col bg-vscode-editor relative overflow-hidden">
@@ -476,6 +483,18 @@
           <label for="setting-rpm" class="text-[11px] font-semibold text-vscode-primary">Rate Limit (RPM)</label>
           <input type="number" id="setting-rpm" min="1" max="10000" placeholder="60" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
           <span class="input-hint text-[11px] text-vscode-muted leading-tight">Maximum API requests allowed per minute.</span>
+        </div>
+
+        <div class="form-group flex flex-col gap-1.5">
+          <label for="setting-msg-limit" class="text-[11px] font-semibold text-vscode-primary">Chat Message Limit (DOM)</label>
+          <input type="number" id="setting-msg-limit" min="10" max="1000" placeholder="100" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+          <span class="input-hint text-[11px] text-vscode-muted leading-tight">Limit visible chat messages in DOM for rendering optimization.</span>
+        </div>
+
+        <div class="form-group flex flex-col gap-1.5">
+          <label for="setting-files-limit" class="text-[11px] font-semibold text-vscode-primary">Max Explorer Files</label>
+          <input type="number" id="setting-files-limit" min="50" max="5000" placeholder="500" class="bg-vscode-inner border border-vscode-dim rounded-sm text-vscode-primary px-2.5 py-1.5 font-mono text-[12px] transition-all duration-200 outline-none h-[30px] focus:border-vscode-bright">
+          <span class="input-hint text-[11px] text-vscode-muted leading-tight">Maximum workspace files rendered in file tree to prevent lag.</span>
         </div>
       </div>
       <div class="modal-footer p-2.5 border-t border-vscode-dim flex justify-end gap-2">

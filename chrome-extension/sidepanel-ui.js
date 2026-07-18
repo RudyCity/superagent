@@ -137,6 +137,14 @@ function hideSpinner() {
 
 function scrollToBottom(force = false) {
   if (!chatMessages) return;
+
+  // Check auto-scroll toggle status
+  const autoScrollCheckbox = document.getElementById("chat-auto-scroll");
+  const autoScrollEnabled = autoScrollCheckbox ? autoScrollCheckbox.checked : (window.chatAutoScroll !== false);
+  if (!autoScrollEnabled && !force) {
+    return;
+  }
+
   const spinnerEl = document.getElementById("processing-indicator");
   const isProcessing = spinnerEl && spinnerEl.classList.contains("active");
   const threshold = isProcessing ? 200 : 60;
@@ -144,6 +152,29 @@ function scrollToBottom(force = false) {
   const isNearBottom = chatMessages.scrollHeight - chatMessages.clientHeight - chatMessages.scrollTop < threshold;
   if (force || isNearBottom) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+}
+
+function enforceChatMessageLimit() {
+  if (!chatMessages) return;
+  const limit = window.chatMessageLimit || 100;
+  const msgs = Array.from(chatMessages.querySelectorAll(".msg"));
+  if (msgs.length > limit) {
+    const toRemoveCount = msgs.length - limit;
+    for (let i = 0; i < toRemoveCount; i++) {
+      msgs[i].remove();
+    }
+    let notice = document.getElementById("chat-truncation-notice");
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.id = "chat-truncation-notice";
+      notice.className = "p-2 mb-2 text-center text-vscode-muted text-[10px] italic border-b border-vscode-dim bg-vscode-inner/30 rounded-sm select-none";
+      notice.textContent = `Older messages trimmed to optimize performance (limit: ${limit}).`;
+      chatMessages.insertBefore(notice, chatMessages.firstChild);
+    } else {
+      notice.textContent = `Older messages trimmed to optimize performance (limit: ${limit}).`;
+      chatMessages.insertBefore(notice, chatMessages.firstChild);
+    }
   }
 }
 
@@ -582,6 +613,7 @@ function appendMessage(role, text) {
     chatMessages.appendChild(msgDiv);
   }
   
+  enforceChatMessageLimit();
   scrollToBottom();
   return msgDiv;
 }

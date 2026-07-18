@@ -38,9 +38,18 @@ async function updateWorkspaceFiles() {
         return;
       }
 
+      // Limit file tree rendering to prevent lag on huge projects
+      const limit = window.maxExplorerFiles || 500;
+      let filesToRender = files;
+      let limitReached = false;
+      if (files.length > limit) {
+        filesToRender = files.slice(0, limit);
+        limitReached = true;
+      }
+
       // Build nested directory tree
       const tree = {};
-      files.forEach(f => {
+      filesToRender.forEach(f => {
         const parts = f.split(/[/\\]/);
         let curr = tree;
         parts.forEach((part, index) => {
@@ -58,6 +67,13 @@ async function updateWorkspaceFiles() {
 
       container.innerHTML = "";
       renderTreeNodes(tree, container);
+
+      if (limitReached) {
+        const warning = document.createElement("div");
+        warning.className = "p-2 mt-2 text-center text-vscode-muted text-[9.5px] italic border-t border-vscode-dim bg-vscode-inner/30 rounded-sm select-none";
+        warning.textContent = `Showing first ${limit} files (${files.length} total). Adjust limit in settings.`;
+        container.appendChild(warning);
+      }
     }
   } catch (err) {
     console.error("Failed to update workspace files:", err);

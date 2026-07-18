@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.460] - 2026-07-18
+
+### Added
+- **Chrome Extension Auto Scroll & Limits**: Added client-side Auto Scroll toggle, Chat Message DOM Limit, and Max Explorer Files limit to the Superagent Chrome Extension.
+- **Chrome Extension Performance Optimization**: Optimized chat panel rendering and file tree builder to slice large DOM node lists and render clear truncation warnings.
+
 ## [1.2.459] - 2026-07-17
 
 ### Added

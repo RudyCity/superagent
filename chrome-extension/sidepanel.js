@@ -166,7 +166,7 @@ document.addEventListener("DOMContentLoaded", () => {
       apiToken = sessionResult.apiToken;
       apiTokenInput.value = apiToken;
     }
-    chrome.storage.local.get(["rememberToken", "savedApiToken", "lastMode"], (result) => {
+    chrome.storage.local.get(["rememberToken", "savedApiToken", "lastMode", "chatAutoScroll", "chatMessageLimit", "maxExplorerFiles"], (result) => {
       if (rememberTokenInput) rememberTokenInput.checked = result.rememberToken === true;
       if (!apiToken && result.rememberToken && result.savedApiToken) {
         apiToken = result.savedApiToken;
@@ -178,6 +178,26 @@ document.addEventListener("DOMContentLoaded", () => {
         const radio = document.querySelector(`input[name="agent-mode"][value="${result.lastMode}"]`);
         if (radio) radio.checked = true;
       }
+
+      // Initialize auto scroll & limit settings
+      window.chatAutoScroll = result.chatAutoScroll !== false;
+      window.chatMessageLimit = result.chatMessageLimit || 100;
+      window.maxExplorerFiles = result.maxExplorerFiles || 500;
+
+      const autoScrollCheckbox = document.getElementById("chat-auto-scroll");
+      if (autoScrollCheckbox) {
+        autoScrollCheckbox.checked = window.chatAutoScroll;
+        autoScrollCheckbox.addEventListener("change", (e) => {
+          window.chatAutoScroll = e.target.checked;
+          chrome.storage.local.set({ chatAutoScroll: e.target.checked });
+        });
+      }
+
+      const msgLimitInput = document.getElementById("setting-msg-limit");
+      if (msgLimitInput) msgLimitInput.value = window.chatMessageLimit;
+
+      const filesLimitInput = document.getElementById("setting-files-limit");
+      if (filesLimitInput) filesLimitInput.value = window.maxExplorerFiles;
     });
   });
 
@@ -409,8 +429,31 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         if (res.ok) {
           settingsOverlay.classList.remove("active");
+          
+          // Save local client-side limits and auto-scroll settings
+          const chatMsgLimitInput = document.getElementById("setting-msg-limit");
+          const filesLimitInput = document.getElementById("setting-files-limit");
+          const autoScrollCheckbox = document.getElementById("chat-auto-scroll");
+
+          const chatMessageLimit = chatMsgLimitInput ? (parseInt(chatMsgLimitInput.value, 10) || 100) : 100;
+          const maxExplorerFiles = filesLimitInput ? (parseInt(filesLimitInput.value, 10) || 500) : 500;
+          const chatAutoScroll = autoScrollCheckbox ? autoScrollCheckbox.checked : true;
+
+          window.chatMessageLimit = chatMessageLimit;
+          window.maxExplorerFiles = maxExplorerFiles;
+          window.chatAutoScroll = chatAutoScroll;
+
+          chrome.storage.local.set({
+            chatMessageLimit,
+            maxExplorerFiles,
+            chatAutoScroll
+          });
+
           // Refresh configuration and sync any newly trusted directories
           fetchServerConfig(true);
+          if (typeof pollWorkspaceFiles === "function") {
+            pollWorkspaceFiles();
+          }
         } else {
           alert("Failed to save settings to server.");
         }

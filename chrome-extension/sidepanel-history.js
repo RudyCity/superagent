@@ -20,9 +20,25 @@ function renderChatHistory(messages) {
     return;
   }
 
+  const limit = window.chatMessageLimit || 100;
+  let messagesToRender = messages;
+  let wasTruncated = false;
+  if (messages.length > limit) {
+    messagesToRender = messages.slice(-limit);
+    wasTruncated = true;
+  }
+
+  if (wasTruncated && typeof chatMessages !== "undefined" && chatMessages) {
+    let notice = document.createElement("div");
+    notice.id = "chat-truncation-notice";
+    notice.className = "p-2 mb-2 text-center text-vscode-muted text-[10px] italic border-b border-vscode-dim bg-vscode-inner/30 rounded-sm select-none";
+    notice.textContent = `Showing last ${limit} messages. Older history truncated to optimize performance.`;
+    chatMessages.appendChild(notice);
+  }
+
   const renderedToolCallIds = new Set();
 
-  messages.forEach((msg, msgIdx) => {
+  messagesToRender.forEach((msg, msgIdx) => {
     if (msg.role === "system") {
       if (msg.content) {
         appendMessage("system", typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content));
