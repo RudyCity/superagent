@@ -31,6 +31,11 @@ import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./
 import { createCheckpoint } from "./checkpoints.js";
 import { RealtimeAdvisor } from "./advisor.js";
 
+import { PathResolver } from "./agent/PathResolver.js";
+import { HistoryManager } from "./agent/HistoryManager.js";
+import { RequestProcessor } from "./agent/RequestProcessor.js";
+import { ContextBuilder } from "./agent/ContextBuilder.js";
+import { isRetryableError as isRetryableErrorHelper, parsePayloadLimitBytes as parsePayloadLimitBytesHelper, answerQuestionAsMaster as answerQuestionAsMasterHelper } from "./agent/AgentUtils.js";
 import { checkPlanStructure } from "./agent/PlanValidator.js";
 import { MessageBuilder } from "./agent/MessageBuilder.js";
 import { HistoryCompactor } from "./agent/HistoryCompactor.js";
@@ -55,93 +60,12 @@ export {
 export const agentLocalStorage = new AsyncLocalStorage<Agent>();
 
 function isRetryableError(err: unknown): boolean {
-  if (!err) return false;
-  
-  let msg = "";
-  let statusCode: number | undefined;
-
-  if (err instanceof Error) {
-    if (err.name === "AbortError" || err.message.toLowerCase().includes("aborted") || err.message.toLowerCase().includes("abort")) return false;
-    msg = err.message;
-    statusCode = (err as any).statusCode || (err as any).status;
-  } else if (typeof err === "object") {
-    const obj = err as any;
-    statusCode = obj.statusCode || obj.status || (obj.error && (obj.error.statusCode || obj.error.status));
-    if (obj.message && typeof obj.message === "string") {
-      msg = obj.message;
-    } else if (obj.error && typeof obj.error === "object" && obj.error.message && typeof obj.error.message === "string") {
-      msg = obj.error.message;
-    } else {
-      try {
-        msg = JSON.stringify(obj);
-      } catch {
-        msg = String(err);
-      }
-    }
-  } else {
-    msg = String(err);
-  }
-
-  msg = msg.toLowerCase();
-  
-  if (statusCode === 401 || statusCode === 403 || statusCode === 400 || statusCode === 402) {
-    return false;
-  }
-
-  if (
-    msg.includes("api key") ||
-    msg.includes("apikey") ||
-    msg.includes("unauthorized") ||
-    msg.includes("forbidden") ||
-    msg.includes("authentication") ||
-    msg.includes("authorization") ||
-    msg.includes("credentials") ||
-    msg.includes("missing authentication header") ||
-    msg.includes("credit required") ||
-    msg.includes("no_credit") ||
-    msg.includes("payment required") ||
-    msg.includes("status 400") ||
-    msg.includes("status: 400") ||
-    msg.includes("invalid_request_error") ||
-    msg.includes("empty response from model") ||
-    msg.includes("tried to call unavailable tool") ||
-    msg.includes("tried to call tool that is not available")
-  ) {
-    return false;
-  }
-  
-  return true;
+  return isRetryableErrorHelper(err);
 }
 
 export function parsePayloadLimitBytes(msg: string): number | null {
-  const normalized = msg.toLowerCase();
-  // Try pattern: max/limit/exceeded 100kb / 100 kb / 1mb / 1048576 bytes
-  const regex = /(?:max|limit|exceeded|exceeds|snippet:)\s*(?:is|to|of|:|=)?\s*["']?\s*(\d+(?:\.\d+)?)\s*(kb|mb|b|bytes|o)/i;
-  const match = normalized.match(regex);
-  if (match) {
-    const value = parseFloat(match[1]);
-    const unit = match[2];
-    if (unit.startsWith("kb")) {
-      return value * 1024;
-    }
-    if (unit.startsWith("mb")) {
-      return value * 1024 * 1024;
-    }
-    if (unit === "b" || unit.startsWith("byte")) {
-      return value;
-    }
-  }
-
-  // Try matching just a number in parenthesis/detail if it looks like bytes, e.g. "max: 1048576"
-  const regexNum = /(?:max|limit|exceeded|exceeds|size|body)\s*[:=]?\s*["']?\s*(\d{5,12})\b/i;
-  const matchNum = normalized.match(regexNum);
-  if (matchNum) {
-    return parseInt(matchNum[1], 10);
-  }
-
-  return null;
+  return parsePayloadLimitBytesHelper(msg);
 }
-
 
 
 export class Agent {
@@ -242,88 +166,11 @@ export class Agent {
   public async answerQuestionAsMaster(
     question: string,
     options: string[],
-    context: { source: string; role?: string; task?: string; branch?: string; typeName?: string }
+    context: any
   ): Promise<string> {
-    if (options.length === 0) return "";
-
-    // Gather context from Master's plan + recent conversation
-    let planContext = "";
-    try {
-      const planPath = this.getPlanFilePath();
-      if (fs.existsSync(planPath)) {
-        planContext = fs.readFileSync(planPath, "utf-8");
-      }
-    } catch {}
-
-    let recentHistory = "";
-    try {
-      const msgs = this.conversation.getMessages();
-      const recent = msgs.slice(-12);
-      recentHistory = recent
-        .map((m: any) => `${m.role}: ${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`)
-        .join("\n");
-    } catch {}
-
-    const sourceLabel = context.source === "superagent"
-      ? `Superagent (role: ${context.role || "?"}, branch: ${context.branch || "?"}, task: "${context.task || "?"}")`
-      : `Subagent (role: ${context.role || "?"}, type: ${context.typeName || "?"})`;
-
-    const optionsList = options.map((o, i) => `${i + 1}. ${o}`).join("\n");
-
-    const prompt = `You are the Master Agent orchestrating a multi-agent development session.
-A ${sourceLabel} has hit a decision point and is asking a question during task execution.
-You must answer on behalf of the user based on your knowledge of the project, the implementation plan, and the overall task context.
-
-QUESTION FROM THE AGENT:
-${question}
-
-AVAILABLE OPTIONS:
-${optionsList}
-${planContext ? `\n--- CURRENT IMPLEMENTATION PLAN ---\n${planContext.slice(0, 4000)}\n` : ""}${recentHistory ? `\n--- RECENT MASTER CONVERSATION CONTEXT ---\n${recentHistory.slice(0, 3000)}\n` : ""}
-Pick the BEST option that aligns with the project goals, the implementation plan, and good engineering judgment.
-Reply with ONLY the exact text of the chosen option — no numbering, no explanation, no markdown.
-If none of the options are suitable, still pick the closest one.`;
-
-    // Use rate limiter only — bypass concurrency limiter to avoid deadlock
-    // when SUPERAGENT_MAX_CONCURRENCY=1 and Master's main loop is in flight.
-    try {
-      await rateLimiter.acquire(1);
-
-      const result = await generateText({
-        model: this.getModel(),
-        prompt,
-      });
-
-      // Track token usage so Master's token counter stays accurate
-      try {
-        const { addMasterTokens } = await import("./tools/state.js");
-        addMasterTokens(result.usage?.promptTokens || 0, result.usage?.completionTokens || 0);
-      } catch {}
-
-      const cleaned = result.text.trim().replace(/^["']|["']$/g, "");
-
-      // Exact match
-      const exact = options.find((o) => o === cleaned);
-      if (exact) return exact;
-
-      // Loose match: option text appears in response (case-insensitive)
-      const lower = cleaned.toLowerCase();
-      const loose = options.find((o) => lower.includes(o.toLowerCase()));
-      if (loose) return loose;
-
-      // Number prefix match (e.g. "1. Option A" or just "1")
-      const numMatch = cleaned.match(/^(\d+)/);
-      if (numMatch) {
-        const idx = parseInt(numMatch[1], 10) - 1;
-        if (idx >= 0 && idx < options.length) return options[idx];
-      }
-
-      // Fallback: first option
-      return options[0];
-    } catch {
-      return options[0];
-    }
+    return answerQuestionAsMasterHelper(this, question, options, context);
   }
+
 
   private flushTextLogBuffer(): void {
     if (this.textLogBuffer) {
@@ -466,9 +313,9 @@ If none of the options are suitable, still pick the closest one.`;
   private contextManagerInitFailed = false;
 
   public getPlanFilePath(): string {
-    const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
-    return historyPath.replace(/\.json$/, "_implementation_plan.md");
+    return PathResolver.getPlanFilePath(this);
   }
+
 
   public async getActiveTools(): Promise<Tool[]> {
     let tools: Tool[] = [];
@@ -497,184 +344,47 @@ If none of the options are suitable, still pick the closest one.`;
   }
 
   public getTaskFilePath(): string {
-    const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
-    return historyPath.replace(/\.json$/, "_task.md");
+    return PathResolver.getTaskFilePath(this);
   }
 
   public getWalkthroughFilePath(): string {
-    const historyPath = this.currentHistoryFilePath || this.resolveHistoryFilePath(false);
-    return historyPath.replace(/\.json$/, "_walkthrough.md");
+    return PathResolver.getWalkthroughFilePath(this);
   }
 
   public getTaskHistoryFilePath(): string {
-    return getTaskHistoryPath(this.getTaskFilePath());
+    return PathResolver.getTaskHistoryFilePath(this);
   }
 
-  private resolveHistoryFilePath(autoResume: boolean | string): string {
-    ensureGlobalConfigDir();
-    const sanitizedPath = this.workingDirectory.replace(/[^a-zA-Z0-9]/g, "_");
-    const mode = this.isMultiAgent ? "multi" : "single";
-    let historyDir = path.join(getGlobalConfigDir(), "history", mode);
 
-    if (this.tier === "subagent" || this.tier === "superagent") {
-      const parentSessionPath = process.env.SUPERAGENT_SESSION_PATH;
-      if (parentSessionPath) {
-        const parentSessionDir = path.dirname(parentSessionPath);
-        const resolvedParent = path.resolve(parentSessionDir);
-        const resolvedGlobal = path.resolve(getGlobalConfigDir());
-        if (resolvedParent.startsWith(resolvedGlobal)) {
-          historyDir = path.join(parentSessionDir, this.tier === "subagent" ? "subagents" : "superagents");
-        } else {
-          historyDir = path.join(historyDir, this.tier === "subagent" ? "subagents" : "superagents");
-        }
-      } else {
-        historyDir = path.join(historyDir, this.tier === "subagent" ? "subagents" : "superagents");
-      }
-    }
-
-    if (typeof autoResume === "string" && autoResume.trim() !== "") {
-      const val = autoResume.trim();
-      // 1. Check if it's a direct path to a json file
-      if (fs.existsSync(val) && val.endsWith(".json")) {
-        return val;
-      }
-      // 2. Check if it's a folder in historyDir
-      const possibleDir = path.join(historyDir, val);
-      const possibleFile = path.join(possibleDir, `${val}.json`);
-      if (fs.existsSync(possibleFile)) {
-        return possibleFile;
-      }
-      // 3. Check if it's a folder name matching any suffix (e.g. timestamp or part of name)
-      if (fs.existsSync(historyDir)) {
-        const dirs = fs.readdirSync(historyDir);
-        const match = dirs.find(d => d.toLowerCase() === val.toLowerCase() || d.toLowerCase().endsWith("_" + val.toLowerCase()));
-        if (match) {
-          const matchFile = path.join(historyDir, match, `${match}.json`);
-          if (fs.existsSync(matchFile)) {
-            return matchFile;
-          }
-        }
-      }
-    }
-
-    if (autoResume) {
-      try {
-        if (fs.existsSync(historyDir)) {
-          const dirs = fs.readdirSync(historyDir);
-          const matchedDirs = dirs.filter(d => {
-            const nameLower = d.toLowerCase();
-            const cleanNameLower = nameLower.replace(/_\d+$/, "");
-            return cleanNameLower === sanitizedPath.toLowerCase() || cleanNameLower.startsWith(sanitizedPath.toLowerCase() + "_");
-          });
-
-          if (matchedDirs.length > 0) {
-            const sorted = matchedDirs.map(d => {
-              const dirPath = path.join(historyDir, d);
-              const filePath = path.join(dirPath, `${d}.json`);
-              const match = d.match(/_(\d+)$/);
-              let mtime = match ? parseInt(match[1], 10) : 0;
-              if (mtime === 0) {
-                try {
-                  mtime = fs.statSync(filePath).mtime.getTime();
-                } catch {
-                  try {
-                    mtime = fs.statSync(dirPath).mtime.getTime();
-                  } catch {}
-                }
-              }
-              return { filePath, mtime };
-            }).sort((a, b) => b.mtime - a.mtime);
-
-            // Iterate over candidates to find the most recent valid session
-            for (const item of sorted) {
-              try {
-                const content = fs.readFileSync(item.filePath, "utf-8");
-                const parsed = JSON.parse(content);
-                if (parsed && parsed.workingDirectory) {
-                  if (normalizeAndCheckSubpath(parsed.workingDirectory, this.workingDirectory)) {
-                    return item.filePath;
-                  }
-                } else {
-                  // Legacy fallback: check if cleanName is exactly the sanitized path of current workingDirectory
-                  const cleanNameLower = path.basename(item.filePath, ".json").toLowerCase().replace(/_\d+$/, "");
-                  if (cleanNameLower === sanitizedPath.toLowerCase()) {
-                    return item.filePath;
-                  }
-                }
-              } catch {
-                // Ignore and try next candidate
-              }
-            }
-          }
-        }
-      } catch {
-        // Ignore and generate a new one
-      }
-    }
-
-    const timestamp = Date.now();
-    const sessionId = `${sanitizedPath}_${timestamp}`;
-    const sessionDir = path.join(historyDir, sessionId);
-    return path.join(sessionDir, `${sessionId}.json`);
+  public resolveHistoryFilePath(autoResume: boolean | string): string {
+    return PathResolver.resolveHistoryFilePath(this, autoResume);
   }
 
   public getCurrentHistoryFilePath(): string {
-    if (!this.currentHistoryFilePath) {
-      this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
-    }
-    process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
-    return this.currentHistoryFilePath;
+    return PathResolver.getCurrentHistoryFilePath(this);
   }
+
 
   getConversationMessages(): Message[] {
     return this.conversation.getMessages();
   }
 
   async loadHistory(autoResume: boolean | string = false): Promise<void> {
-    this.currentHistoryFilePath = this.resolveHistoryFilePath(autoResume);
-    process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
-    await this.conversation.loadFromFile(this.currentHistoryFilePath);
-    if (this.conversation.loadedPlanState) {
-      this.planState = this.conversation.loadedPlanState;
-    }
+    await HistoryManager.loadHistory(this, autoResume);
   }
 
   async loadHistoryFromPath(filePath: string): Promise<void> {
-    this.currentHistoryFilePath = filePath;
-    process.env.SUPERAGENT_SESSION_PATH = filePath;
-    await this.conversation.loadFromFile(filePath);
-    if (this.conversation.loadedPlanState) {
-      this.planState = this.conversation.loadedPlanState;
-    }
+    await HistoryManager.loadHistoryFromPath(this, filePath);
   }
 
   async saveHistory(): Promise<void> {
-    if (!this.currentHistoryFilePath) {
-      this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
-    }
-    process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
-
-    // Incrementally sync new messages to RMemory if enabled before saving to file,
-    // so we can persist the updated lastCapturedTimestamp in a single write.
-    try {
-      await this.syncConversationToRmemory();
-    } catch (err: any) {
-      this.writeToLogFile("WARN", `Failed to incrementally sync conversation to RMemory: ${err.message}`);
-    }
-
-    await this.conversation.saveToFile(this.currentHistoryFilePath, this.planState, this.workingDirectory);
-    clearHistoryCache();
+    await HistoryManager.saveHistory(this);
   }
 
   saveHistorySync(): void {
-    if (!this.currentHistoryFilePath) {
-      this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
-    }
-    process.env.SUPERAGENT_SESSION_PATH = this.currentHistoryFilePath;
-
-    this.conversation.saveToFileSync(this.currentHistoryFilePath, this.planState, this.workingDirectory);
-    clearHistoryCache();
+    HistoryManager.saveHistorySync(this);
   }
+
 
   public getModel() {
     return getModelInstanceForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
@@ -682,206 +392,16 @@ If none of the options are suitable, still pick the closest one.`;
 
   async sendMessage(userInput: string | import("./conversation.js").MessageContent): Promise<void> {
     if (this.isRunning) {
-      // Queue the message instead of dropping it silently.
-      // This handles the race condition where the user approves a plan
-      // while the agent loop is still finishing its current iteration.
       const msgText = typeof userInput === "string" ? userInput : "[multimodal message]";
       this.pendingMessagesQueue.push(userInput);
       this.writeToLogFile("INFO", `Message queued (agent is running): "${msgText.substring(0, 80)}..."`);
       return;
     }
-
-    const currentCwd = (this.tier === "superagent" && this.worktreePath)
-      ? this.worktreePath
-      : this.workingDirectory;
-    this.gitStartSnapshot = await captureGitSnapshot(currentCwd);
-
-    const isTestEnv = process.env.VITEST && process.env.SUPERAGENT_TEST_SIMPLE_TASK !== "true";
-    if (!isTestEnv) {
-      try {
-        const settings = getSettings();
-        // Phase 1: Always check heuristic classifier first to detect conversation/fast-path
-        const { classifyHeuristic } = await import("./requestClassifier.js");
-        const textInput = typeof userInput === "string"
-          ? userInput
-          : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
-        const heuristicResult = classifyHeuristic(textInput, settings.classifierKeywords as any);
-        
-        if (settings.classifierEnabled !== false) {
-          // Multi-category request classification for token optimization
-          const { classifyRequest } = await import("./requestClassifier.js");
-          const classifierModel = getModelInstanceForTier("subagent", 2, "classifier", !this.isMultiAgent);
-          const classification = await classifyRequest(userInput, classifierModel, {
-            confidenceThreshold: settings.classifierConfidenceThreshold ?? "high",
-            customKeywords: settings.classifierKeywords as any,
-            skipLLM: this.planState !== "IDLE",
-          });
-          this.currentClassification = classification;
-          this.writeToLogFile("INFO", `Request classified: category=${classification.category}, confidence=${classification.confidence}, heuristicOnly=${classification.heuristicOnly}, tokens=${classification.classificationTokens}, reason=${classification.reason}`);
-
-          // Track tokens for the classification call if LLM was used
-          if (!classification.heuristicOnly && classification.classificationTokens > 0) {
-            try {
-              const { addMasterTokens } = await import("./tools/state.js");
-              addMasterTokens(classification.classificationTokens, 0);
-            } catch {}
-          }
-
-          // Map classification to planState and isSimpleTask using original categories
-          if (this.planState === "IDLE") {
-            const skipPlanningCategories = ["conversation", "question", "research"];
-            if (skipPlanningCategories.includes(classification.category)) {
-              this.isSimpleTask = true;
-              this.planState = "APPROVED";
-              this.simpleTaskApproved = true;
-            } else if (classification.category === "complex_task") {
-              // Check for complex task indicators or plan requests
-              const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
-              const lowerInput = userInputText.toLowerCase();
-              const isPlanRequest = /plan|design|architecture/i.test(lowerInput);
-              if (isPlanRequest) {
-                this.isSimpleTask = false;
-              } else {
-                const isComplex = /refactor|rewrite|architecture|design|feature|migration|oauth|database|schema|multi-file/i.test(lowerInput) || lowerInput.split(/\s+/).length > 25;
-                if (isComplex) {
-                  this.isSimpleTask = false;
-                } else {
-                  this.isSimpleTask = true;
-                  this.planState = "APPROVED";
-                  this.simpleTaskApproved = true;
-                }
-              }
-            } else if (classification.category === "simple_edit" || classification.category === "command" || classification.category === "debug") {
-              this.isSimpleTask = true;
-              this.planState = "APPROVED";
-              this.simpleTaskApproved = true;
-            }
-          }
-        } else {
-          // Fallback to legacy classification when classifier is disabled
-          // Populate currentClassification with heuristic if it detected conversation
-          if (heuristicResult.category === "conversation") {
-            this.currentClassification = heuristicResult;
-            this.writeToLogFile("INFO", `Heuristic fallback detected conversation: ${heuristicResult.reason}`);
-          }
-
-          if (this.planState === "IDLE") {
-            if (this.currentClassification?.category === "conversation") {
-              this.isSimpleTask = true;
-              this.planState = "APPROVED";
-              this.simpleTaskApproved = true;
-            } else {
-              const model = this.getModel();
-              const threshold = settings.simpleTaskFileThreshold ?? 3;
-              const classificationPrompt = `You are a helper that classifies if a user request is a "simple task" or a general chat/conversation.
-  Reply with "chat" if the request is a general greeting, discussion/conversation, or simple question/acknowledgment that does not require executing tools or making code changes.
-  Reply with "yes" if it is a simple task that expects modification or creation of fewer than ${threshold} files and does NOT introduce any new architecture, major system changes, or complex orchestration (e.g. simple refactoring, adding a simple helper, fixing a simple bug).
-  Reply with "no" if it is a complex task requiring extensive work, multiple files, or planning.
-
-  User request: "${userInput}"
-
-  Reply with EXACTLY "chat", "yes", or "no". Reply with nothing else.`;
-
-              const response = await generateText({
-                model,
-                prompt: classificationPrompt,
-              });
-
-              try {
-                const { addMasterTokens } = await import("./tools/state.js");
-                addMasterTokens(response.usage?.promptTokens || 0, response.usage?.completionTokens || 0);
-              } catch {}
-
-              const classification = response.text.trim().toLowerCase();
-              if (classification === "chat" || classification.includes("chat")) {
-                this.currentClassification = {
-                  category: "conversation",
-                  confidence: "medium",
-                  reason: "Legacy fallback classified as chat/conversation",
-                  heuristicOnly: false,
-                  classificationTokens: (response.usage?.promptTokens || 0) + (response.usage?.completionTokens || 0),
-                };
-                this.isSimpleTask = true;
-                this.planState = "APPROVED";
-                this.simpleTaskApproved = true;
-              } else if (classification === "yes" || classification.includes("yes")) {
-                this.isSimpleTask = true;
-                this.planState = "APPROVED";
-
-                const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
-                const lowerInput = userInputText.toLowerCase();
-                const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
-                const preApprovalWords = settings.simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
-                const hasPreApproval = preApprovalWords.some(word => {
-                  if (word.includes(' ')) {
-                    return lowerInput.includes(word);
-                  }
-                  return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
-                });
-                if (hasPreApproval) {
-                  this.simpleTaskApproved = true;
-                }
-              }
-            }
-          }
-        }
-      } catch (err: any) {
-        this.writeToLogFile("WARN", `Failed to classify user request: ${err.message}`);
-      }
-    }
-
-    // ── Conversation fast-path ───────────────────────────────────────────────
-    // For high-confidence conversational messages (greetings, acks, short replies),
-    // skip the full agent loop and respond directly with a lightweight streamText call.
-    // This eliminates workspace discovery, tool loading, and plan injection overhead.
-    if (this.currentClassification) {
-      try {
-        const { isHighConfidenceConversation } = await import("./requestClassifier.js");
-        if (isHighConfidenceConversation(this.currentClassification, this.tier)) {
-          this.writeToLogFile("INFO", `Conversation fast-path activated (category=conversation, confidence=high)`);
-          await this.runConversationFastPath(userInput);
-          return;
-        }
-      } catch (err: any) {
-        this.writeToLogFile("WARN", `Conversation fast-path check failed, falling through to agent loop: ${err.message}`);
-      }
-    }
+    const proceed = await RequestProcessor.processRequest(this, userInput);
+    if (!proceed) return;
 
     this.isRunning = true;
     this.abortController = new AbortController();
-
-    this.writeToLogFile("INFO", `Agent execution started (tier: ${this.tier}, depth: ${this.delegationDepth}, isMultiAgent: ${this.isMultiAgent}, workingDirectory: ${this.workingDirectory}, worktreePath: ${this.worktreePath})`);
-    this.writeToLogFile("USER", typeof userInput === "string" ? userInput : "[multimodal message]");
-
-    this.conversation.addUserMessage(userInput);
-    await this.compactHistoryIfNeeded();
-    await this.saveHistory();
-
-    // Auto-checkpoint on every user message (with cooldown)
-    this.autoCheckpoint("User message");
-
-    // ── Auto-archive completed tasks on follow-up messages ──────────────
-    // When all tasks are done and the user sends a new message, archive
-    // the completed tasks to _task_history.md and reset _task.md so new
-    // tasks can be created for the follow-up request.
-    this.tasksJustArchived = false;
-    this.archivedTaskCount = 0;
-    if (this.planState === "APPROVED") {
-      try {
-        const taskPath = this.getTaskFilePath();
-        const allDone = await allTasksCompleted(taskPath);
-        if (allDone) {
-          const archived = await archiveCompletedTasks(taskPath);
-          if (archived.length > 0) {
-            this.tasksJustArchived = true;
-            this.archivedTaskCount = archived.length;
-            this.writeToLogFile("INFO", `Auto-archived ${archived.length} completed tasks to history. Ready for new task creation.`);
-          }
-        }
-      } catch (err: any) {
-        this.writeToLogFile("WARN", `Failed to auto-archive completed tasks: ${err.message}`);
-      }
-    }
 
     const signal = this.abortController?.signal;
     let onAbort: (() => void) | undefined;
@@ -926,21 +446,18 @@ If none of the options are suitable, still pick the closest one.`;
       this.isRunning = false;
       this.abortController = null;
 
-      // If messages were queued while this run was in progress (e.g. plan approval),
-      // auto-send the next one now instead of firing "done" and stopping.
       if (this.pendingMessagesQueue.length > 0) {
         const queued = this.pendingMessagesQueue.shift()!;
         const logText = typeof queued === "string" ? queued : "[multimodal message]";
         this.writeToLogFile("INFO", `Auto-sending queued message: "${logText.substring(0, 80)}..."`);
-        // Fire a "text" event so the UI knows the agent is continuing
         this.onEvent({ type: "text", content: "\n[SYS] Resuming with queued approval message...\n" });
-        // Recursively send — this sets isRunning=true and starts a new loop
         await this.sendMessage(queued);
       } else {
         this.onEvent({ type: "done" });
       }
     }
   }
+
 
   private async runAgentLoop(): Promise<void> {
     this.advisor.reset();
@@ -1015,520 +532,21 @@ CRITICAL GOAL MODE RULES:
           throw err;
         }
 
-        // Run workspace discovery and load/update cache if workspace files changed
-        const classifierSkipWsDiscovery = this.currentClassification
-          ? (await import("./requestClassifier.js")).shouldSkipWorkspaceDiscovery(this.currentClassification.category)
-          : false;
-        if (!this.disableWorkspaceDiscovery && this.tier !== "subagent" && !classifierSkipWsDiscovery) {
-          const shouldScan = !this.workspaceCache || this.workspaceCacheNeedsUpdate;
-          if (shouldScan) {
-            try {
-              const { discoverWorkspace } = await import("./workspaceDiscovery.js");
-              const { isIdentical, cache } = await discoverWorkspace(this.workingDirectory);
-              const wasFirstRun = !this.workspaceCache;
-              this.workspaceCache = cache;
-              this.workspaceCacheNeedsUpdate = false;
-              if (wasFirstRun) {
-                if (isIdentical) {
-                  this.onEvent({
-                    type: "text",
-                    content: `\n[SYS] Workspace identical to previous session. Using cached context.\n`,
-                  });
-                } else {
-                  this.onEvent({
-                    type: "text",
-                    content: `\n[SYS] Workspace scanned and cached.\n`,
-                  });
-                }
-              } else if (!isIdentical) {
-                this.onEvent({
-                  type: "text",
-                  content: `\n[SYS] Workspace changes detected. Updated cache.\n`,
-                });
-              }
-            } catch (err: any) {
-              this.writeToLogFile("WARN", `Workspace discovery failed: ${err.message}`);
-            }
-          }
-        }
+        const {
+          finalSystemPrompt: builderSystemPrompt,
+          messages: builderMessages,
+          toolDefs: builderToolDefs,
+          filteredToolDefs: builderFilteredToolDefs,
+          supportsNativeTools: builderSupportsNativeTools,
+          dynamicContext: builderDynamicContext,
+        } = await ContextBuilder.buildContext(this, signal);
 
-        // On first iteration, prepopulate the RMemory Memory context if enabled
-        if (i === 0) {
-          try {
-            await this.prepopulateRmemoryContext();
-          } catch (err: any) {
-            this.writeToLogFile("WARN", `Failed to prepopulate RMemory Memory context: ${err.message}`);
-          }
-        }
-
-        await this.compactHistoryIfNeeded(signal);
-        // Check if the endpoint/model supports native tool calling
-        let supportsNativeTools = true;
-        const details = getModelConnectionDetailsForTier(this.tier, this.delegationDepth, this.subagentType, !this.isMultiAgent);
-        if (getSettings().forcePromptBasedToolCalling) {
-          supportsNativeTools = false;
-        } else {
-          const isTest = !!process.env.VITEST;
-          if (!isTest && details.provider === "custom" && details.baseUrl) {
-            try {
-              const { probeToolCallSupport } = await import("../utils/promptBasedToolCalling.js");
-              supportsNativeTools = await probeToolCallSupport(details.baseUrl, details.apiKey, details.modelName);
-            } catch (err: any) {
-              this.writeToLogFile("WARN", `Failed to probe tool call support: ${err.message}. Defaulting to native tools.`);
-            }
-          }
-        }
-        let messages = this.buildMessages(supportsNativeTools);
-        // Use tier-specific toolset if provided, otherwise use the appropriate tier-default toolset dynamically
-        let toolsToUse = await this.getActiveTools();
-
-        const toolDefs = toolsToUse
-          ? toolsToUse.map((t) => ({
-              name: t.name,
-              description: t.description,
-              input_schema: t.parameters,
-            }))
-          : getToolDefinitions();
-
-        // ── Classifier-based toolset filtering ──────────────────────────────
-        // Reduce tool definitions based on the request category to save tokens.
-        let filteredToolDefs = toolDefs;
-        if (this.currentClassification) {
-          try {
-            const { getToolsetForCategory } = await import("./requestClassifier.js");
-            const filteredTools = getToolsetForCategory(this.currentClassification.category, toolsToUse || []);
-            if (filteredTools.length !== (toolsToUse?.length ?? toolDefs.length)) {
-              filteredToolDefs = filteredTools.map((t) => ({
-                name: t.name,
-                description: t.description,
-                input_schema: t.parameters,
-              }));
-              if (i === 0) {
-                this.writeToLogFile("INFO", `Classifier reduced toolset: ${toolDefs.length} -> ${filteredToolDefs.length} tools for category '${this.currentClassification.category}'`);
-              }
-            }
-          } catch {
-            // Non-critical: fall back to full toolset
-          }
-        }
-
-        // Helper to get file existence status label
-        const fileStatus = (filePath: string): string =>
-          fs.existsSync(filePath) ? "[EXISTS]" : "[NOT YET CREATED]";
-
-        let planStateNotice = "";
-        if (this.tier === "master" || this.tier === "single") {
-          const planPath = this.getPlanFilePath();
-          const taskPath = this.getTaskFilePath();
-          const taskHistoryPath = this.getTaskHistoryFilePath();
-          const walkthroughPath = this.getWalkthroughFilePath();
-          planStateNotice = `
-
-PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
-- Implementation Plan File: ${planPath} ${fileStatus(planPath)}
-- Task Tracking File: ${taskPath} ${fileStatus(taskPath)}
-- Task History File: ${taskHistoryPath} ${fileStatus(taskHistoryPath)}
-- Verification/Walkthrough File: ${walkthroughPath} ${fileStatus(walkthroughPath)}
-
-CRITICAL RULES FOR PLANNING:
-1. You MUST use the 'manage_plan' tool (action: 'create', 'edit', or 'sync') to create, edit, update, or synchronize the Implementation Plan and tasks.
-2. You MUST use the 'manage_tasks' tool to manage checklist tasks:
-   - 'add' (single task) or 'add_bulk' with 'texts' array (multiple tasks at once).
-   - 'update' (single) or 'update_bulk' with 'indices' array (multiple tasks at once) to change task status.
-   - 'remove' (single) or 'remove_bulk' with 'indices' array to delete tasks.
-   - 'list' to inspect current tasks.
-3. DO NOT use 'write_to_file', 'replace_file_content', 'multi_replace_file_content', or 'edit' to create, modify, or update the Implementation Plan File or the Task Tracking File directly. Doing so is strictly forbidden.
-4. For the Verification/Walkthrough File, you may use 'write_to_file' directly.
-5. Do NOT write or create plan or task files in the local workspace directory.
-6. Whenever you reference these files, always use their absolute paths or format them as absolute file:/// links.`;
-        } else if (this.tier === "superagent") {
-          const planPath = this.getPlanFilePath();
-          const taskPath = this.getTaskFilePath();
-          const taskHistoryPath = this.getTaskHistoryFilePath();
-          const walkthroughPath = this.getWalkthroughFilePath();
-          planStateNotice = `
-
-PLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:
-- Implementation Plan File: ${planPath} ${fileStatus(planPath)}
-- Task Tracking File: ${taskPath} ${fileStatus(taskPath)}
-- Task History File: ${taskHistoryPath} ${fileStatus(taskHistoryPath)}
-- Verification/Walkthrough File: ${walkthroughPath} ${fileStatus(walkthroughPath)}
-
-CRITICAL RULES FOR PLANNING:
-1. You MUST use the 'manage_tasks' tool to manage checklist tasks:
-   - 'add' (single task) or 'add_bulk' with 'texts' array (multiple tasks at once).
-   - 'update' (single) or 'update_bulk' with 'indices' array (multiple tasks at once) to change task status.
-   - 'remove' (single) or 'remove_bulk' with 'indices' array to delete tasks.
-   - 'list' to inspect current tasks.
-2. DO NOT attempt to directly modify the Implementation Plan File or Task Tracking File using 'write_to_file', 'replace_file_content', or other file writing tools. Direct modification of these files is strictly blocked by the system's security boundaries.
-3. For the Verification/Walkthrough File, you may use 'write_to_file' directly.
-4. Do NOT write or create plan or task files in the local workspace directory.
-5. Whenever you reference these files, always use their absolute paths or format them as absolute file:/// links.`;
-        }
-
-        let planStateAddendum = "";
-        if (this.planState === "PLANNING_PENDING") {
-          planStateAddendum = `\n\n⚠️ IMPORTANT PLAN STATE NOTICE:
-An implementation plan has been written to '${this.getPlanFilePath()}' and is currently pending user approval.
-You are temporarily in a READ-ONLY mode.
-- DO NOT attempt to write/edit/modify any codebase files.
-- DO NOT run terminal commands that modify files, add packages, or check out git branches.
-- Focus on explaining your proposed plan to the user, answering any questions, or waiting for them to approve via the interactive approval wizard.`;
-        } else if (this.planState === "APPROVED") {
-          planStateAddendum = `\n\n✓ PLAN STATE NOTICE:
-The user has APPROVED your implementation plan. You are now fully authorized to modify codebase files and run commands to execute the plan.`;
-        }
-
-        // ── Follow-up task creation hint ──────────────────────────────────
-        // When tasks were just archived (all were completed, user sent new message),
-        // tell the AI to create new tasks for the follow-up request.
-        let followUpTaskAddendum = "";
-        if (this.tasksJustArchived && i === 0) {
-          followUpTaskAddendum = `\n\n🔄 TASK CHECKLIST RESET NOTICE:
-All ${this.archivedTaskCount} previous tasks were completed and have been archived to the task history file.
-The active task list has been cleared and is ready for new tasks.
-You SHOULD use the 'manage_tasks' tool (action: 'add' or 'add_bulk') or 'manage_plan' tool (action: 'create') to create fresh tasks for the user's new request.
-Use 'add_bulk' with a 'texts' array to add multiple tasks in a single call (more efficient than repeated 'add' calls).
-This ensures the ACTIVE TASK CHECKLIST stays up-to-date with the current work.`;
-          // Reset the flag after injecting on first iteration only
-          this.tasksJustArchived = false;
-        }
-
-        const currentStep = i + 1;
-        const workspacePath = this.workingDirectory || process.cwd();
-        const runningProcesses = Array.from(backgroundTasks.entries())
-          .filter(([_, t]) => !t.hasExited && isTaskInWorkspace(t.cwd, workspacePath))
-          .map(([id, t]) => `- Process ID: ${id}, Command: "${t.command}"`)
-          .join("\n");
-        const processNotice = runningProcesses
-          ? `\n\n⚙️ RUNNING BACKGROUND/TERMINAL PROCESSES:\nYou are aware that the following background/terminal processes are currently running in the environment:\n${runningProcesses}`
-          : "";
-
-        // ── Inject pinned knowledge from global store (persistently to keep prompt cache hot) ──
-        let pinnedKnowledgeNotice = "";
-        try {
-          const { getAllKnowledge, formatKnowledgeForPrompt } = await import("./pinnedKnowledge.js");
-          const knowledgeEntries = getAllKnowledge({ limit: 10 });
-          if (knowledgeEntries.length > 0) {
-            pinnedKnowledgeNotice = "\n\n" + formatKnowledgeForPrompt(knowledgeEntries, 8, 1500);
-          }
-        } catch { /* non-critical */ }
-
-        // ── Single-mode subagent directive ──────────────────────────────────
-        const singleModeSubagentDirective = this.tier === "single" ? `
-
-SUBAGENT WORKFLOW — GUIDELINES FOR SINGLE MODE:
-You operate in single-agent mode. You should leverage subagents when tasks are complex, independent, or can be run in parallel.
-For small, simple, or direct operations (e.g. reading a single file, running a quick build or test command, or editing a specific code block), you should perform them directly rather than spawning subagents. This minimizes process spawning and context-swapping overhead.
-
-SUBAGENT RULES:
-1. RESEARCH tasks (exploring codebase, reading docs, searching web) → Spawn a 'researcher' subagent for broad context gathering or when reading multiple files. You may perform quick direct lookups.
-2. IMPLEMENTATION tasks (writing code, editing files) → Spawn a 'coder' subagent for multi-file changes or larger features. You may perform small or simple inline modifications.
-3. REVIEW tasks (checking correctness, testing, validating) → Spawn a 'reviewer' subagent for verifying large features. For simple verification, run commands directly.
-4. COMPLEX requests → Break into parallel subtasks and spawn multiple subagents concurrently.
-
-SUBAGENT DISPATCH PATTERN (follow this when delegating):
-  Step 1 — Analyze: understand what the user wants.
-  Step 2 — Plan: identify independent subtasks (and which skills are relevant).
-  Step 3 — Spawn: invoke subagents for each subtask (parallel if independent).
-  Step 4 — Integrate: collect results, synthesize, respond to user.
-
-WHEN YOU SHOULD DELEGATE TO A SUBAGENT (non-exhaustive):
-- Any codebase investigation spanning multiple folders or components
-- Multi-file editing or complex feature implementation
-- Large-scale refactoring or major architectural changes
-- Web search or documentation lookup that requires extensive research
-
-SKILL USAGE — MANDATORY:
-You have access to INSTALLED AGENT SKILLS listed above. You MUST use them.
-BEFORE starting any task, identify which skill(s) are relevant and load them using the use_skill tool.
-Skill categories to always check:
-- Debugging/investigation → 'systematic-debugging', 'root-cause-tracing', 'diagnosing-bugs'
-- New feature/development → 'writing-plans', 'subagent-driven-development', 'test-driven-development-tdd'
-- Code review → 'requesting-code-review', 'code-review-reception'
-- Finishing work → 'finishing-a-development-branch', 'verification-before-completion'
-- Research/exploration → 'dispatching-parallel-agents'
-DO NOT skip skill reading. Instruct your subagents to also read and follow the relevant SKILL.md.
-
-BULK READ — MANDATORY:
-When you need to read or analyze multiple files, ALWAYS batch them into a single tool call using the 'filePaths' array — NEVER read files one at a time in sequential calls.
-- Identify ALL files needed upfront, then read them all in one call before processing.
-- If reading related files (e.g. types, imports, tests, configs), include them all in the same batch.
-- This applies to you and all subagents you spawn.
-
-FAST ANALYSIS — MANDATORY:
-To reduce latency, prevent timeout issues, and save tokens:
-1. PINPOINT FIRST: ALWAYS use 'grep' or 'ripgrep' search tools to locate exact files/lines containing target symbols (e.g. methods, classes, variables) before reading files. Do NOT use recursive directory listings or read large files blindly.
-2. TARGETED READING: If a file is large (>200 lines), only view/read the specific line range (using StartLine/EndLine parameters) containing the code you actually need to examine.
-3. EXCLUDE GENERIC DIRECTORIES: Filter out dependency/build folders ('node_modules', 'dist', 'build', '.git', etc.) in glob/search path arguments.
-
-
-CONTEXT_ANCHOR — ANTI-DRIFT PROTOCOL:
-Before each action, verify:
-1. Am I still working toward the PRIMARY OBJECTIVE?
-2. Am I within declared boundaries / workspace limits?
-3. Will this action move closer to success/acceptance criteria?
-
-POST-CHANGE VERIFICATION — MANDATORY AFTER ANY CODE MODIFICATION:
-Whenever you (or any subagent) modify source files, you MUST run verification before responding to the user:
-1. BUILD: Run the project's build command (e.g. 'npm run build', 'cargo build', 'go build', 'mvn compile'). If it fails, fix all compile errors before proceeding.
-2. TEST: Run the project's test suite (e.g. 'npm test', 'cargo test', 'pytest', 'go test ./...'). If tests fail, diagnose and fix them. Do NOT skip this step.
-3. CONCERN_TRACKS: Evaluate changes against all 5 tracks: Correctness (logic/tests), Resilience (failure modes), Consistency (patterns/naming), Impact-Radius (trace consumers), Reversibility.
-4. if verification_failed: fix errors → re-run build + test → repeat until both pass.
-5. ONLY respond to the user AFTER build and test both pass.
-
-SELF-VERIFICATION & CRITIC — MANDATORY BEFORE RESPONDING TO USER:
-After all subagents finish, you MUST perform this verification loop before considering the task done:
-1. VALIDATE OUTPUTS: Review each subagent's report. Check that build passed, tests passed, and all task requirements are met.
-2. CRITIC: Actively challenge the results. Ask yourself:
-   - Did the coder subagent actually run the build and tests? If not, spawn a reviewer to verify.
-   - Are there edge cases that were not addressed?
-   - Does the implementation actually solve the user's original request (not just a surface interpretation)?
-   - Are there any TODOs, placeholders, or incomplete parts?
-3. SELF-INTERROGATION: Ask yourself: "What am I assuming that might be wrong?", "What is the simplest thing that could break this?", "If reviewing this from someone else, what would I flag?", "What did I NOT check?", and "Is there a simpler approach?".
-4. IF GAPS FOUND → spawn a fix subagent (coder or reviewer) to address them. Do NOT report completion with known gaps.
-5. ONLY report completion when you have concrete evidence (build pass, test pass, acceptance criteria met).` : "";
-
-        let activeSystemPrompt = baseSystemPrompt;
-        if (this.workspaceCache) {
-          try {
-            const { injectWorkspaceOverview } = await import("./workspaceDiscovery.js");
-            activeSystemPrompt = injectWorkspaceOverview(baseSystemPrompt, this.workspaceCache);
-          } catch {}
-        }
-
-        if (!(await isRmemoryActive())) {
-          activeSystemPrompt = activeSystemPrompt
-            .replace(/'save_shared_memory' or 'rmemory_memory_save'/g, "'save_shared_memory'")
-            .replace(/or 'rmemory_memory_save'/g, "")
-            .replace(/, 'rmemory_memory_save'/g, "")
-            .replace(/rmemory_[a-zA-Z0-9_]+/g, "");
-        }
-
-        let devHookNotice = "";
-        try {
-          const { getActiveDevHookGlobal } = await import("./tools/state.js");
-          const activeDevHook = getActiveDevHookGlobal();
-          if (activeDevHook) {
-            devHookNotice = `\n\n🛠️ ACTIVE INTERNAL HOOK DEVELOPMENT FOCUS:
-- You are currently focusing on developing the "${activeDevHook}" internal hook.
-- CRITICAL: Your active working directory (CWD) is ALREADY set to the hook's folder: "internal-hooks/${activeDevHook}/".
-- All files in the WORKSPACE FILES LIST (like hook.json, index.js, package.json, README.md, CHANGELOG.md) are located directly inside this hook folder.
-- You MUST access, read, and modify these files using their direct relative names (e.g., "index.js", "hook.json", "package.json") WITHOUT any "internal-hooks/${activeDevHook}/" prefix.
-- DO NOT prefix paths with "internal-hooks/${activeDevHook}/" because doing so will resolve to incorrect nested paths.
-- Your primary objective is to implement, refine, or test this specific hook.
-- If you need to access files in the parent project, prefix them with "../../" to reference them relative to the project root.
-- You can test this hook's execution and verify its behavior locally by calling appropriate terminal commands or using "/ih dev ${activeDevHook}" as reference.`;
-          }
-        } catch {}
-
-        let sharedMemoryNotice = "";
-        try {
-          const { getRootConfigDir } = await import("./config/paths.js");
-          const sharedMemPath = path.join(getRootConfigDir(), "shared-memory.json");
-          if (fs.existsSync(sharedMemPath)) {
-            const raw = fs.readFileSync(sharedMemPath, "utf-8");
-            const memories = JSON.parse(raw);
-            if (Array.isArray(memories) && memories.length > 0) {
-              const currentWorkspace = path.resolve(process.cwd());
-              
-              const globalMemories = memories
-                .filter((m: any) => m.scope === "global")
-                .slice(-10);
-
-              const projectMemories = memories
-                .filter((m: any) => {
-                  if (m.scope === "global") return false;
-                  if (!m.projectPath) return true; // fallback for un-scoped legacy items
-                  return path.resolve(m.projectPath) === currentWorkspace;
-                })
-                .slice(-15);
-
-              const sections: string[] = [];
-              if (globalMemories.length > 0) {
-                const lines = globalMemories.map((m: any) => `- [${m.source}] ${m.key}: ${m.value}`).join("\n");
-                sections.push(`### GLOBAL AGENT MEMORIES:\n${lines}`);
-              }
-              if (projectMemories.length > 0) {
-                const lines = projectMemories.map((m: any) => `- [${m.source}] ${m.key}: ${m.value}`).join("\n");
-                sections.push(`### PROJECT AGENT MEMORIES (this workspace):\n${lines}`);
-              }
-
-              if (sections.length > 0) {
-                sharedMemoryNotice = `\n\n${sections.join("\n\n")}`;
-              }
-            }
-          }
-        } catch {}
-
-        // Build static system prompt (cacheable)
-        // Workspace boundary constraint injected into every system prompt iteration
-        const workspaceDir = this.worktreePath || this.workingDirectory;
-        const workspaceBoundaryNotice = workspaceDir
-          ? `
-
-# CURRENT ENVIRONMENT & ACTIVE WORKSPACE
-- Active Workspace Directory: "${workspaceDir}"
-- Shell Execution CWD: "${workspaceDir}"
-
-# WORKSPACE BOUNDARY — CRITICAL
-- Workspace root: "${workspaceDir}"
-- ALL file read/write operations MUST target paths inside this directory.
-- NEVER write files to any path outside the workspace root.
-- Do NOT use absolute paths discovered from bash command output (e.g., ls, find, pwd) as file write targets — always derive paths relative to the workspace root.
-- If a shell command reveals a path on a different drive or directory than the workspace, DO NOT write files there.`
-          : "";
-
-        const hasShell = filteredToolDefs.some(t => t.name === "run_command" || t.name === "bash" || t.name === "run_background_process");
-        const hasWrite = filteredToolDefs.some(t => t.name === "write_to_file" || t.name === "edit" || t.name === "replace_file_content" || t.name === "multi_replace_file_content" || t.name === "write" || t.name === "apply_patch");
-        const hasNetwork = filteredToolDefs.some(t => t.name === "web_search" || t.name === "fetch_url");
-        const hasSubagents = filteredToolDefs.some(t => t.name === "invoke_subagent" || t.name === "invoke_superagent");
-
-        let verificationStatus = "blocked";
-        if (hasShell) {
-          verificationStatus = "runtime";
-        } else if (hasWrite) {
-          verificationStatus = "static-only";
-        }
-
-        let activeShellType = "unix-default";
-        let shellSep = "&&";
-        if (process.platform === "win32") {
-          try {
-            const { resolveWindowsShell } = await import("./tools/helpers.js");
-            const shellInfo = resolveWindowsShell();
-            activeShellType = shellInfo.isBash ? "git-bash" : "powershell";
-            shellSep = shellInfo.isBash ? "&&" : ";";
-          } catch {
-            activeShellType = "powershell";
-            shellSep = ";";
-          }
-        }
-
-        const runtimeCapabilitiesText = `
-# RUNTIME CAPABILITIES (do NOT assume or hardcode, reference these exactly)
-- Shell: ${hasShell ? "enabled" : "disabled"}
-- Write: ${hasWrite ? "enabled" : "disabled"}
-- Network: ${hasNetwork ? "enabled" : "disabled"}
-- Subagents: ${hasSubagents ? "enabled" : "disabled"}
-- Verification: ${verificationStatus}
-- Windows Shell Platform: ${activeShellType}
-- Command Separator Syntax: ${shellSep}
-`;
-
-        const category = this.currentClassification?.category || "complex_task";
-        const lastUserMessage = messages.slice().reverse().find(m => m.role === "user");
-        const userInputText = lastUserMessage ? (typeof lastUserMessage.content === "string" ? lastUserMessage.content : "") : "";
-        const lowerInput = userInputText.toLowerCase();
-
-        let activeMode = "implement"; // default
-        if (category === "conversation" || category === "question") {
-          activeMode = "ask";
-        } else if (category === "research") {
-          activeMode = "research";
-        } else if (category === "debug") {
-          activeMode = "debug";
-        } else if (category === "complex_task") {
-          if (/plan|design|architecture/i.test(lowerInput)) {
-            activeMode = "plan";
-          } else {
-            activeMode = "implement";
-          }
-        } else if (category === "simple_edit" || category === "command") {
-          activeMode = "implement";
-        }
-
-        // Check for review intent explicitly
-        if (/review|audit|diff\b/i.test(lowerInput)) {
-          activeMode = "review";
-        }
-
-        const activeModeNotice = `
-# CURRENT ACTIVE INTENT MODE: '${activeMode}'
-Follow these instructions for '${activeMode}' mode:
-${activeMode === "ask" ? `- You are in lightweight Q&A/concept explanation mode. Do NOT create any plan file or task list file. Do NOT spawn subagents. Do NOT call get_skills() or use_skill(). Do NOT run build, test, lint, or typecheck commands. Respond immediately and concisely.` : ""}
-${activeMode === "research" ? `- You are in read-only research/exploration mode. Do NOT modify any files. Do NOT run build, test, lint, or typecheck commands. Set final status to static-only.` : ""}
-${activeMode === "plan" ? `- Propose an implementation plan using 'manage_plan'. Do NOT edit source files before user approval. Minta approval secara eksplisit.` : ""}
-${activeMode === "implement" ? `- Implement code changes. Proposing a plan is mandatory only for multi-file/complex/risky changes. Small direct edits are allowed. Run build and tests if shell is available; if shell is disabled, report Build/Test as 'not-run' with reason 'shell disabled', and set status to 'static-only'.` : ""}
-${activeMode === "debug" ? `- Investigate and fix bugs. Trace root cause first before editing. Run build and tests if shell is available; if shell is disabled, report Build/Test as 'not-run' with reason 'shell disabled', and set status to 'static-only'.` : ""}
-${activeMode === "review" ? `- Perform code quality or security review. Do NOT make file edits unless requested. Output issues with severity ([CRITICAL], [IMPORTANT], [MINOR]), file/line references, and proposed fixes.` : ""}
-`;
-
-        let toolRestrictionNotice = "";
-        if (!hasShell) {
-          toolRestrictionNotice = `\n\n⚠️ CRITICAL RESTRICTION: Terminal/shell command execution is currently DISABLED for this request. Do NOT attempt to use 'run_command', 'run_background_process', 'bash', or any terminal/shell execution tools, as they are not available in your tool schema.`;
-        }
-
-        const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}
-
-CRITICAL TASK EXECUTION CONTEXT:
-- Do NOT repeat, echo, or quote any content wrapped in <system_context_do_not_echo_or_repeat> tags. Treat them as background instruction states only.
-- You are running with a strict step limit of ${maxIterationsStr} agent iterations per request.
-- Be highly efficient. DO NOT try to do everything in a single sequential thread.
-- Spawn subagents in parallel ONLY when the task meets subagent threshold rules (spans >3 files, >2 domains, major refactor/architecture, broad audit/research, or independent parallel work).
-- Spawn subagents in parallel whenever tasks are independent.
-- After spawning, wait for results, integrate them, and report back to the user.
-${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}`;
-
-        // Build dynamic context to inject into messages array
-        const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - currentStep);
-        const stepNotice = stepsRemaining <= 5
-          ? `\n- Current Step: ${currentStep} of ${maxIterationsStr} (WARNING: Only ${stepsRemaining} steps remaining!)`
-          : "";
-        const modelInstance = this.getModel();
-        const modelName = modelInstance ? modelInstance.modelId : "";
-        const supportsVision = this.modelSupportsVision(modelName);
-        const settings = getSettings();
-        const useVisionTokenSaving = supportsVision && (settings.autoVisionTokenSaving ?? false) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
-        // Inform the conversation so stripOldToolResults retains more cycles
-        // when vision is active — buildMessages() will image-convert large results.
-        this.conversation.setVisionMode(useVisionTokenSaving);
-        const threshold = getDynamicVisionThreshold(modelName);
-        
-        // ── Live Workspace State block ─────────────────────────────────────────
-        let workspaceStateText = "";
-        if (this.tier !== "subagent") {
-          try {
-            const { buildWorkspaceStateBlock } = await import("./context/WorkspaceStateTracker.js");
-            const { subagentInstances: saInstances } = await import("./tools/state.js");
-            const subagentSummary = Array.from(saInstances.entries()).map(([id, inst]) => ({
-              id,
-              role: inst.role,
-              typeName: inst.typeName,
-              status: inst.status,
-            }));
-            const wsBlock = buildWorkspaceStateBlock({
-              taskFilePath: this.getTaskFilePath(),
-              planFilePath: this.getPlanFilePath(),
-              cwd: this.workingDirectory,
-              tier: this.tier as "master" | "single" | "superagent",
-              subagentSummary,
-            });
-            workspaceStateText = wsBlock.text;
-          } catch { /* non-critical */ }
-        }
-
-        // dynamicContext is injected as plaintext into the messages array every iteration.
-        // IMPORTANT: path-sensitive content (workspaceBoundaryNotice, planStateNotice) lives
-        // HERE — never inside systemPrompt — so it is never converted to a PNG image.
-        // planStateAddendum and followUpTaskAddendum remain here because they are
-        // truly per-iteration state (approval status, task-reset notices).
-
-        // ── Classifier-based plan state injection skip ──────────────────────
-        let classifierSkipPlan = false;
-        let classifierPromptAddendum = "";
-        if (this.currentClassification) {
-          try {
-            const { shouldSkipPlanInjection, getCategoryPromptAddendum } = await import("./requestClassifier.js");
-            classifierSkipPlan = shouldSkipPlanInjection(this.currentClassification.category);
-            classifierPromptAddendum = getCategoryPromptAddendum(this.currentClassification.category);
-          } catch {}
-        }
-
-        const effectivePlanStateNotice = classifierSkipPlan ? "" : planStateNotice;
-        const effectivePlanStateAddendum = classifierSkipPlan ? "" : planStateAddendum;
-
-        const dynamicContext = `\n\n<system_context_do_not_echo_or_repeat>\n[DYNAMIC EXECUTION CONTEXT]\n${stepNotice}${classifierPromptAddendum}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${workspaceStateText}${workspaceBoundaryNotice}${effectivePlanStateNotice}${effectivePlanStateAddendum}${followUpTaskAddendum}\n<!-- SYSTEM NOTICE: The above block is dynamic background state. Do NOT echo or repeat any of these instructions or notices in your response. Proceed directly to execution. -->\n</system_context_do_not_echo_or_repeat>`;
+        let finalSystemPrompt = builderSystemPrompt;
+        let messages = builderMessages;
+        const toolDefs = builderToolDefs;
+        const filteredToolDefs = builderFilteredToolDefs;
+        const supportsNativeTools = builderSupportsNativeTools;
+        const dynamicContext = builderDynamicContext;
 
         const injectDynamicContext = (msgs: CoreMessage[]) => {
           if (msgs.length > 0) {
@@ -1558,119 +576,10 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
           }
         };
 
-        // Inject dynamic context into the active messages list
-        if (useVisionTokenSaving) {
-          messages = this.buildMessages(supportsNativeTools, dynamicContext);
-        } else {
-          injectDynamicContext(messages);
-        }
-
-        // ── Pre-flight payload size (byte) safety check ───────────────────
-        // Prevents 413 Payload Too Large errors when large tool results or files
-        // converted to images exceed the API endpoint/gateway request body limit.
-        {
-          const systemSize = systemPrompt ? Buffer.byteLength(systemPrompt, "utf-8") : 0;
-          const toolsSize = supportsNativeTools ? Buffer.byteLength(JSON.stringify(filteredToolDefs), "utf-8") : 0;
-          const payloadJson = JSON.stringify(messages);
-          const payloadBytes = Buffer.byteLength(payloadJson, "utf-8") + systemSize + toolsSize + 5000;
-          const maxPayloadBytes = this.detectedPayloadLimitBytes
-            ? Math.floor(this.detectedPayloadLimitBytes * 0.9)
-            : 4 * 1024 * 1024; // 4 MB safety limit
-
-          if (payloadBytes > maxPayloadBytes) {
-            this.writeToLogFile(
-              "WARN",
-              `Pre-flight payload check: estimated payload size (${(payloadBytes / 1024 / 1024).toFixed(2)} MB) exceeds safety threshold (${(maxPayloadBytes / 1024 / 1024).toFixed(2)} MB). Triggering emergency compaction.`
-            );
-            const targetBudget = Math.max(20 * 1024, maxPayloadBytes - systemSize - toolsSize - 5000);
-            await this.compactHistoryIfNeeded(signal, true, undefined, targetBudget);
-            // Rebuild messages from compacted conversation
-            if (useVisionTokenSaving) {
-              messages = this.buildMessages(supportsNativeTools, dynamicContext);
-            } else {
-              messages = this.buildMessages(supportsNativeTools);
-              injectDynamicContext(messages);
-            }
-          }
-        }
-
-        // ── Pre-flight context window safety check ──────────────────────────
-        // Prevents 400 errors when total request (system + messages + tool schemas)
-        // exceeds the model's context window limit. This catches edge cases where
-        // token estimation differs from the provider's actual counting.
-        {
-          const modelLimit = getContextWindowLimit(this.config.model);
-          const isAnthropic = this.config.provider === "anthropic" || (typeof this.config.provider === "string" && this.config.provider.includes("anthropic"));
-          // Conservative safety margin: 85% of model limit for Anthropic/Claude (which matches cl100k_base tokenizer),
-          // 70% for other providers to leave headroom for tokenizer differences (e.g. DeepSeek).
-          const safetyMax = Math.floor(modelLimit * (isAnthropic ? 0.85 : 0.70));
-          
-          let estSysTokens = 0;
-          let estMsgTokens = 0;
-          let estTotal = 0;
-
-          const ctxMgr = this.conversation.getContextManager();
-          if (ctxMgr) {
-            const tracker = ctxMgr.getTokenTracker();
-            const breakdown = tracker.getBreakdown(this.conversation.getMessages(), systemPrompt);
-            const dynamicContextTokens = tracker.estimateTokens({
-              role: "user",
-              content: dynamicContext,
-              timestamp: Date.now(),
-            });
-            estTotal = breakdown.total + dynamicContextTokens;
-            estSysTokens = breakdown.systemPrompt;
-            estMsgTokens = estTotal - estSysTokens;
-          } else {
-            // Fallback: estimate system prompt tokens (conservative ~3 chars/token for code-heavy text)
-            estSysTokens = Math.ceil(systemPrompt.length / 3);
-            estMsgTokens = this.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
-            estTotal = estMsgTokens + estSysTokens;
-          }
-
-          if (estTotal > safetyMax) {
-            const overshootPct = Math.round((estTotal / modelLimit) * 100);
-            this.writeToLogFile("WARN", `Pre-flight context check: estimated ~${estTotal.toLocaleString()} total tokens (${overshootPct}% of ${modelLimit.toLocaleString()} limit). Compact threshold: ${safetyMax.toLocaleString()}. Triggering emergency compaction.`);
-            const dynamicContextTokens = ctxMgr ? ctxMgr.getTokenTracker().estimateTokens({
-              role: "user",
-              content: dynamicContext,
-              timestamp: Date.now(),
-            }) : Math.ceil(dynamicContext.length / 3);
-            const targetHistoryBudget = Math.max(1000, safetyMax - estSysTokens - dynamicContextTokens);
-            await this.compactHistoryIfNeeded(signal, false, targetHistoryBudget);
-            // Rebuild messages from compacted conversation
-            if (useVisionTokenSaving) {
-              messages = this.buildMessages(supportsNativeTools, dynamicContext);
-            } else {
-              messages = this.buildMessages(supportsNativeTools);
-              injectDynamicContext(messages);
-            }
-            const afterEstMsgTokens = this.conversation.getTokenEstimate() + Math.ceil(dynamicContext.length / 3);
-            const afterEstTotal = afterEstMsgTokens + estSysTokens;
-            this.writeToLogFile("INFO", `Post-compaction estimated total: ~${afterEstTotal.toLocaleString()} tokens.`);
-            // If still over safety limit after compaction, log a critical warning
-            if (afterEstTotal > safetyMax) {
-              this.writeToLogFile("ERROR", `Post-compaction total ${afterEstTotal.toLocaleString()} still exceeds safety limit ${safetyMax.toLocaleString()}. Proceeding with risk of provider rejection.`);
-            }
-          }
-        }
-
-        let finalSystemPrompt = systemPrompt;
-        if (!supportsNativeTools) {
-          try {
-            const { buildToolsSystemPromptBlock } = await import("../utils/promptBasedToolCalling.js");
-            const toolDefsForPrompt = filteredToolDefs.map((t) => ({
-              name: t.name,
-              description: t.description,
-              input_schema: t.input_schema as any,
-            }));
-            finalSystemPrompt += buildToolsSystemPromptBlock(toolDefsForPrompt);
-            this.writeToLogFile("INFO", `Prompt-based tool calling fallback activated for ${details.modelName} on ${details.baseUrl}`);
-          } catch (err: any) {
-            this.writeToLogFile("WARN", `Failed to build prompt-based tool block: ${err.message}`);
-          }
-        }
-
+        const modelInstance = this.getModel();
+        const modelName = modelInstance ? modelInstance.modelId : "";
+        const supportsVision = this.modelSupportsVision(modelName);
+        const useVisionTokenSaving = supportsVision && (getSettings().autoVisionTokenSaving ?? false) && (this.detectedPayloadLimitBytes === undefined || this.detectedPayloadLimitBytes >= 500 * 1024);
         let prependSystemMessage: any = null;
         let prependSystemAssistantMessage: any = null;
 
@@ -1841,7 +750,7 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
                 }
                 const limitToUse = this.detectedPayloadLimitBytes || parsedLimit || 4 * 1024 * 1024;
                 const maxPayloadBytes = Math.floor(limitToUse * 0.9);
-                const systemSize = systemPrompt ? Buffer.byteLength(systemPrompt, "utf-8") : 0;
+                const systemSize = finalSystemPrompt ? Buffer.byteLength(finalSystemPrompt, "utf-8") : 0;
                 const toolsSize = supportsNativeTools ? Buffer.byteLength(JSON.stringify(filteredToolDefs), "utf-8") : 0;
 
                 if (payload413Count > 3) {
@@ -2546,26 +1455,11 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
   }
 
   async clearHistory(): Promise<void> {
-    this.conversation.clear();
-    this.textLogBuffer = "";
-    this.pendingMessagesQueue = [];
-    this.lastSpeed = null;
-    this.wasRunningBeforeAbort = false;
-    this.currentHistoryFilePath = this.resolveHistoryFilePath(false);
-    await this.saveHistory();
+    await HistoryManager.clearHistory(this);
   }
 
-  /**
-   * Reset all internal transient state (buffers, flags) without touching
-   * conversation history or file paths. Called by /new to guarantee a
-   * completely clean slate in both single-agent and multi-agent modes.
-   */
-  /**
-   * Creates an automatic checkpoint if cooldown has elapsed.
-   * Called on every user message and before destructive tool operations.
-   * Non-blocking — runs in background and swallows errors.
-   */
-  private autoCheckpoint(label: string): void {
+
+  public autoCheckpoint(label: string): void {
     const now = Date.now();
     if (now - this.lastAutoCheckpointAt < Agent.AUTO_CHECKPOINT_COOLDOWN_MS) return;
     this.lastAutoCheckpointAt = now;
@@ -2600,45 +1494,6 @@ ${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotic
     await HistoryCompactor.prepopulateRmemoryContext(this);
   }
 
-  private async syncConversationToRmemory(): Promise<void> {
-    const settings = getSettings();
-    if (!settings.enableRmemory) return;
-
-    const client = getRMemoryClient(3000); // 3s timeout to prevent CLI hang
-    const historyPath = this.getCurrentHistoryFilePath();
-    const sessionKey = getRMemorySessionKey(historyPath);
-
-    const messages = this.conversation.getMessages();
-    const lastCaptured = this.conversation.lastCapturedTimestamp || 0;
-
-    const newMessages = messages
-      .filter((m) => (m.role === "user" || m.role === "assistant") && m.timestamp > lastCaptured)
-      .map((m) => {
-        const rawContent = contentToString(m.content).trim();
-        const content = rawContent.length > 0
-          ? rawContent
-          : (m.toolCalls && m.toolCalls.length > 0
-            ? `[Tool invocation: ${m.toolCalls.map((t) => t.name).join(", ")}]`
-            : "[empty message]");
-        return {
-          role: m.role as "user" | "assistant",
-          content,
-          timestamp: new Date(m.timestamp || Date.now()).toISOString(),
-        };
-      });
-
-    if (newMessages.length > 0) {
-      this.writeToLogFile("INFO", `Incrementally syncing ${newMessages.length} new messages to RMemory (session: ${sessionKey})...`);
-      await client.addConversation({
-        session_id: sessionKey,
-        messages: newMessages,
-      });
-      const maxTs = Math.max(...messages.map((m) => m.timestamp || 0));
-      if (maxTs > lastCaptured) {
-        this.conversation.lastCapturedTimestamp = maxTs;
-      }
-    }
-  }
 
   getHistory(): Conversation {
     return this.conversation;

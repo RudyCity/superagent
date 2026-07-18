@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.472] - 2026-07-18
+
+### Changed
+- **Agent Codebase Modularization (Phase 7)**: Extracted directory/path resolver helper getters to `PathResolver.ts`, conversation history saving/loading and session clear routines to `HistoryManager.ts`, request preprocessing/concurrency checks to `RequestProcessor.ts`, and base prompt building, workspace cache loading, and pre-flight compaction checks to `ContextBuilder.ts`.
+- **Refactoring**: Reduced `agent.ts` file length from 2,654 lines to 1,509 lines (approaching the 1000-line limit), while keeping retry loops, delay countdowns, and planning nudges fully functional.
+
 ## [1.2.471] - 2026-07-18
 
 ### Changed
