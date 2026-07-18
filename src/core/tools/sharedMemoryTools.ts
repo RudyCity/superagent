@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { Tool } from "./types.js";
 import { getRootConfigDir } from "../config/paths.js";
-import { agentLocalStorage } from "../agent.js";
+import { getNormalizedProjectPath } from "./helpers.js";
 
 export interface SharedMemoryEntry {
   key: string;
@@ -39,12 +39,13 @@ export const saveSharedMemoryTool: Tool = {
     const key = (args.key as string).trim();
     const value = (args.value as string).trim();
     const scope: "global" | "project" = args.scope === "global" ? "global" : "project";
-    const projectPath = path.resolve(cwd || process.cwd());
+    const projectPath = getNormalizedProjectPath(cwd || process.cwd());
 
     if (!key || !value) {
       return "Error: key and value cannot be empty.";
     }
 
+    const { agentLocalStorage } = await import("../agent.js");
     const currentAgent = agentLocalStorage.getStore();
     let source = "system";
     if (currentAgent) {
@@ -81,9 +82,16 @@ export const saveSharedMemoryTool: Tool = {
         lockAcquired = true;
         break;
       } catch (err) {
+        try {
+          if (fs.existsSync(lockFile)) {
+            const stat = fs.statSync(lockFile);
+            if (Date.now() - stat.mtimeMs > 3000) {
+              fs.unlinkSync(lockFile);
+            }
+          }
+        } catch {}
         attempts++;
-        // Wait a random duration between 50 and 100 ms to resolve collision
-        await new Promise(r => setTimeout(r, 50 + Math.random() * 50));
+        await new Promise(r => setTimeout(r, 10 + Math.random() * 20));
       }
     }
 
@@ -151,7 +159,7 @@ export const saveSharedMemoryTool: Tool = {
         const settings = getSettings();
         if (settings.enableRmemory) {
           const { getRMemoryClient } = await import("../rmemoryUtil.js");
-          const client = getRMemoryClient(2000);
+          const client = getRMemoryClient(500);
           
           const scopeTag = scope === "global" ? "[global]" : `[project:${path.basename(projectPath)}]`;
           
@@ -184,3 +192,80 @@ export const saveSharedMemoryTool: Tool = {
     }
   }
 };
+
+export const readSharedMemoryTool: Tool = {
+  name: "read_shared_memory",
+  description: "Read shared memory entries. Returns entries matching the current project scope or global scope.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "Optional search query to filter memory keys or values.",
+      },
+      scope: {
+        type: "string",
+        enum: ["all", "project", "global"],
+        description: "Scope filter: 'project' (current workspace only), 'global' (global memories only), or 'all' (default).",
+      },
+    },
+  },
+  async execute(args, cwd) {
+    const filterScope = args.scope === "project" ? "project" : args.scope === "global" ? "global" : "all";
+    const query = args.query ? String(args.query).trim().toLowerCase() : "";
+    const activeProjectPath = getNormalizedProjectPath(cwd || process.cwd());
+
+    const configDir = getRootConfigDir();
+    const sharedMemPath = path.join(configDir, "shared-memory.json");
+
+    if (!fs.existsSync(sharedMemPath)) {
+      return "No shared memories found.";
+    }
+
+    try {
+      const raw = fs.readFileSync(sharedMemPath, "utf-8");
+      const memories = JSON.parse(raw) as SharedMemoryEntry[];
+      if (!Array.isArray(memories) || memories.length === 0) {
+        return "No shared memories stored.";
+      }
+
+      const filtered = memories.filter(m => {
+        // Scope check
+        if (filterScope === "global" && m.scope !== "global") return false;
+        if (filterScope === "project") {
+          if (m.scope === "global") return false;
+          if (m.projectPath && getNormalizedProjectPath(m.projectPath) !== activeProjectPath) return false;
+        }
+
+        // Workspace isolation for "all": keep global OR matching workspace projectPath
+        if (filterScope === "all" && m.scope !== "global") {
+          if (m.projectPath && getNormalizedProjectPath(m.projectPath) !== activeProjectPath) return false;
+        }
+
+        // Query check
+        if (query) {
+          const matchKey = m.key.toLowerCase().includes(query);
+          const matchVal = m.value.toLowerCase().includes(query);
+          if (!matchKey && !matchVal) return false;
+        }
+
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        return "No shared memory entries matched your criteria.";
+      }
+
+      return filtered
+        .map(m => {
+          const scopeLabel = m.scope === "global" ? "[global]" : `[project:${m.projectPath ? path.basename(m.projectPath) : "local"}]`;
+          const timeLabel = new Date(m.timestamp).toISOString();
+          return `- ${scopeLabel} [${m.source}] ${m.key}: ${m.value} (${timeLabel})`;
+        })
+        .join("\n");
+    } catch (err: any) {
+      return `Error reading shared memory: ${err.message}`;
+    }
+  },
+};
+

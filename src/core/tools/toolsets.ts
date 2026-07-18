@@ -69,7 +69,7 @@ import {
   rmemoryConversationAddTool,
 } from "./rmemoryTools.js";
 import { manageMcpTool } from "./mcpTools.js";
-import { saveSharedMemoryTool } from "./sharedMemoryTools.js";
+import { saveSharedMemoryTool, readSharedMemoryTool } from "./sharedMemoryTools.js";
 
 // ─── Master Agent Toolset (depth 0) ─────────────────────────────────────────
 // Focused on orchestration. Does NOT write code itself.
@@ -109,6 +109,8 @@ export const masterToolset: Tool[] = [
   rmemoryReadCosTool,
   rmemorySaveTool,
   rmemoryConversationAddTool,
+  saveSharedMemoryTool,
+  readSharedMemoryTool,
 ];
 
 // ─── Superagent Toolset (depth 1) ────────────────────────────────────────────
@@ -158,6 +160,7 @@ export const superagentToolset: Tool[] = [
   rmemorySaveTool,
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
+  readSharedMemoryTool,
 ];
 
 // ─── Chrome Extension Toolset (depth 1) ──────────────────────────────────────
@@ -204,6 +207,7 @@ export const chromeExtensionToolset: Tool[] = [
   rmemorySaveTool,
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
+  readSharedMemoryTool,
 ];
 
 
@@ -228,6 +232,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemorySaveTool,
     rmemoryConversationAddTool,
     saveSharedMemoryTool,
+    readSharedMemoryTool,
   ],
 
   coder: [
@@ -252,6 +257,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemorySaveTool,
     rmemoryConversationAddTool,
     saveSharedMemoryTool,
+    readSharedMemoryTool,
   ],
 
   reviewer: [

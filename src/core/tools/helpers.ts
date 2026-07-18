@@ -309,4 +309,47 @@ export class FileLockManager {
 
 export const fileLockManager = new FileLockManager();
 
+/**
+ * Normalizes project directory path by resolving git worktree paths back
+ * to the main root repository directory.
+ */
+export function getNormalizedProjectPath(cwd?: string): string {
+  const targetDir = path.resolve(cwd || process.cwd());
+  try {
+    let currentDir = targetDir;
+    while (currentDir) {
+      const gitPath = path.join(currentDir, ".git");
+      if (fsSync.existsSync(gitPath)) {
+        const stat = fsSync.statSync(gitPath);
+        if (stat.isFile()) {
+          const content = fsSync.readFileSync(gitPath, "utf-8");
+          const match = content.match(/gitdir:\s*(.+)/i);
+          if (match && match[1]) {
+            const rawGitDir = match[1].trim();
+            const gitDir = path.isAbsolute(rawGitDir) ? rawGitDir : path.resolve(currentDir, rawGitDir);
+            const normalizedGitDir = gitDir.replace(/\\/g, "/");
+            const worktreeIdx = normalizedGitDir.lastIndexOf(".git/worktrees");
+            if (worktreeIdx !== -1) {
+              const mainRepoGit = gitDir.substring(0, worktreeIdx + 5);
+              return path.dirname(mainRepoGit);
+            }
+          }
+        } else if (stat.isDirectory()) {
+          if (path.basename(path.dirname(currentDir)) === ".worktrees") {
+            return path.dirname(path.dirname(currentDir));
+          }
+          return currentDir;
+        }
+      }
+      const parent = path.dirname(currentDir);
+      if (parent === currentDir) break;
+      currentDir = parent;
+    }
+  } catch {
+    // Fallback if filesystem read encounters errors
+  }
+  return targetDir;
+}
+
+
 

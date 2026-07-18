@@ -1,5 +1,7 @@
+import path from "path";
 import { Tool } from "./types.js";
 import { getRMemoryClient } from "../rmemoryUtil.js";
+import { getNormalizedProjectPath } from "./helpers.js";
 
 // Helper to get MemoryClient using the active global settings
 function getClient() {
@@ -24,20 +26,47 @@ export const rmemorySearchTool: Tool = {
         type: "number",
         description: "Maximum number of results to return (default: 5).",
       },
+      projectOnly: {
+        type: "boolean",
+        description: "If true, restricts search results to the active workspace project.",
+      },
     },
     required: ["query"],
   },
-  async execute(args) {
+  async execute(args, cwd) {
     const query = String(args.query || "");
     const limit = Number(args.limit) || 5;
+    const projectOnly = Boolean(args.projectOnly);
+    const activeProjectPath = getNormalizedProjectPath(cwd || process.cwd());
+    const projectName = path.basename(activeProjectPath);
     const client = getClient();
 
     try {
-      const res = await client.searchAtomic({ query, limit });
+      const searchQuery = projectOnly ? `[project:${projectName}] ${query}` : query;
+      const res = await client.searchAtomic({ query: searchQuery, limit: limit * 2 });
       if (!res.items || res.items.length === 0) {
         return "No memories found matching the query.";
       }
-      return res.items
+
+      let items = res.items;
+      if (projectOnly) {
+        items = items.filter((item) => item.content.includes(`[project:${projectName}]`) || item.content.includes("[global]"));
+      } else {
+        items.sort((a, b) => {
+          const aIsProject = a.content.includes(`[project:${projectName}]`) || a.content.includes("[global]");
+          const bIsProject = b.content.includes(`[project:${projectName}]`) || b.content.includes("[global]");
+          if (aIsProject && !bIsProject) return -1;
+          if (!aIsProject && bIsProject) return 1;
+          return 0;
+        });
+      }
+
+      items = items.slice(0, limit);
+      if (items.length === 0) {
+        return "No workspace memories found matching the query.";
+      }
+
+      return items
         .map((item) => `- [${item.type || "memory"}] ${item.content}`)
         .join("\n");
     } catch (err) {
@@ -60,20 +89,47 @@ export const rmemoryConversationSearchTool: Tool = {
         type: "number",
         description: "Maximum number of messages to return (default: 5).",
       },
+      projectOnly: {
+        type: "boolean",
+        description: "If true, restricts conversation search results to the active workspace project.",
+      },
     },
     required: ["query"],
   },
-  async execute(args) {
+  async execute(args, cwd) {
     const query = String(args.query || "");
     const limit = Number(args.limit) || 5;
+    const projectOnly = Boolean(args.projectOnly);
+    const activeProjectPath = getNormalizedProjectPath(cwd || process.cwd());
+    const projectName = path.basename(activeProjectPath);
     const client = getClient();
 
     try {
-      const res = await client.searchConversation({ query, limit });
+      const searchQuery = projectOnly ? `${projectName} ${query}` : query;
+      const res = await client.searchConversation({ query: searchQuery, limit: limit * 2 });
       if (!res.messages || res.messages.length === 0) {
         return "No matching conversation history found.";
       }
-      return res.messages
+
+      let messages = res.messages;
+      if (projectOnly) {
+        messages = messages.filter((m) => m.content.toLowerCase().includes(projectName.toLowerCase()));
+      } else {
+        messages.sort((a, b) => {
+          const aMatch = a.content.toLowerCase().includes(projectName.toLowerCase());
+          const bMatch = b.content.toLowerCase().includes(projectName.toLowerCase());
+          if (aMatch && !bMatch) return -1;
+          if (!aMatch && bMatch) return 1;
+          return 0;
+        });
+      }
+
+      messages = messages.slice(0, limit);
+      if (messages.length === 0) {
+        return "No matching workspace conversation history found.";
+      }
+
+      return messages
         .map((m) => {
           const dateStr = m.timestamp ? new Date(m.timestamp).toLocaleString() : "unknown";
           return `[${dateStr}] ${m.role}: ${m.content}`;

@@ -211,6 +211,14 @@ export class ContextManager {
       this.setState("IDLE");
       this.emit("compaction:complete", result);
 
+      if (result.metadata.summary) {
+        import("../workspaceSummary.js")
+          .then(({ saveWorkspaceSummary }) => {
+            saveWorkspaceSummary({ summary: result.metadata.summary });
+          })
+          .catch(() => {});
+      }
+
       return result;
     } catch (error) {
       this.setState("FAILED");

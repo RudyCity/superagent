@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.465] - 2026-07-18
+
+### Added
+- **Git Worktree Path Normalization**: Added git repository root resolution to ensure isolated multi-agent worktrees share the same project memory namespace.
+- **Dedicated Shared Memory Reader Tool**: Created `read_shared_memory` tool to allow AI agents to inspect project and global shared memory entries.
+- **RMemory Vector Workspace Filtering**: Enhanced vector memory search tools with active project filtering and relevance boosting.
+- **Workspace Summary Auto-Indexing**: Added `workspaceSummary` module to persist workspace cold-start summaries in `~/.superagent-r/projects/<hash>/summary.json`.
+
 ## [1.2.464] - 2026-07-18
 
 ### Fixed
