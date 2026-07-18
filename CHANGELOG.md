@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.466] - 2026-07-18
+
+### Fixed
+- **Tool Registry Consistency**: Registered `read_shared_memory` tool in central `allTools` array.
+- **RMemory Tool Unit Tests**: Updated limit assertions in `rmemoryTools.test.ts` to match search query multiplier logic.
+
 ## [1.2.465] - 2026-07-18
 
 ### Added

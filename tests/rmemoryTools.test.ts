@@ -46,7 +46,7 @@ describe("RMemory Tools", () => {
 
       const result = await rmemorySearchTool.execute({ query: "preferences" }, ".");
       expect(result).toContain("- [persona] User likes dark mode");
-      expect(mockSearchAtomic).toHaveBeenCalledWith({ query: "preferences", limit: 5 });
+      expect(mockSearchAtomic).toHaveBeenCalledWith({ query: "preferences", limit: 10 });
     });
 
     it("should return fallback message if no memories found", async () => {
@@ -72,7 +72,7 @@ describe("RMemory Tools", () => {
 
       const result = await rmemoryConversationSearchTool.execute({ query: "hello" }, ".");
       expect(result).toContain("user: hello world");
-      expect(mockSearchConversation).toHaveBeenCalledWith({ query: "hello", limit: 5 });
+      expect(mockSearchConversation).toHaveBeenCalledWith({ query: "hello", limit: 10 });
     });
 
     it("should handle error when gateway fails", async () => {

@@ -62,7 +62,7 @@ import {
 } from "./rmemoryTools.js";
 
 import { manageMcpTool } from "./mcpTools.js";
-import { saveSharedMemoryTool } from "./sharedMemoryTools.js";
+import { saveSharedMemoryTool, readSharedMemoryTool } from "./sharedMemoryTools.js";
 
 import { 
   askQuestionTool, 
@@ -134,6 +134,7 @@ export const allTools: Tool[] = [
   rmemorySaveTool,
   rmemoryConversationAddTool,
   saveSharedMemoryTool,
+  readSharedMemoryTool,
   readPeerSuperagentFileTool,
 ];
 
