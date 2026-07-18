@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.463] - 2026-07-18
+
+### Fixed
+- **Conditional Model Download Indicator**: Configured both local Request Classifier and RMemory embedding model loaders to only emit downloading and loading progress indicators when the model is actually being downloaded, hiding unnecessary loading messages when loading from local cache.
+
 ## [1.2.462] - 2026-07-18
 
 ### Changed

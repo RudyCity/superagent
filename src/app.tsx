@@ -1833,8 +1833,8 @@ export function App({
               initialContent = `⏳ Downloading local ${modelName} model (~${modelName === "embedding" ? "100MB" : "66MB"}) to cache...`;
             } else if (status === "progress" && typeof progress === "number") {
               initialContent = `⏳ Downloading local ${modelName} model: ${progress.toFixed(1)}%`;
-            } else if (status === "loaded") {
-              initialContent = `✅ Local ${modelName} model loaded successfully.`;
+            } else {
+              return prev;
             }
             updated.push({
               type: "system",

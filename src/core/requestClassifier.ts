@@ -485,21 +485,22 @@ export async function warmUpClassifier(onProgress?: (event: any) => void): Promi
     }
     if (!localClassifierPipeline) {
       let downloadStarted = false;
-      if (progressCb) {
-        progressCb({
-          type: "model_download",
-          modelName: "classifier",
-          status: "downloading"
-        });
-      } else {
-        console.log(`\n[INFO] Pre-loading/downloading local classifier model (~66MB) to cache...`);
-      }
       localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
         model_file_name: "model_int8",
         progress_callback: (data: any) => {
-          if (data.status === "downloading" && !downloadStarted) {
+          if ((data.status === "downloading" || data.status === "progress") && !downloadStarted) {
             downloadStarted = true;
-          } else if (data.status === "progress") {
+            if (progressCb) {
+              progressCb({
+                type: "model_download",
+                modelName: "classifier",
+                status: "downloading"
+              });
+            } else {
+              console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
+            }
+          }
+          if (data.status === "progress") {
             const pct = typeof data.progress === "number" ? data.progress : 0;
             if (progressCb) {
               progressCb({
@@ -515,14 +516,16 @@ export async function warmUpClassifier(onProgress?: (event: any) => void): Promi
           }
         }
       });
-      if (progressCb) {
-        progressCb({
-          type: "model_download",
-          modelName: "classifier",
-          status: "loaded"
-        });
-      } else {
-        console.log(`\n[INFO] Classifier model loaded successfully.`);
+      if (downloadStarted) {
+        if (progressCb) {
+          progressCb({
+            type: "model_download",
+            modelName: "classifier",
+            status: "loaded"
+          });
+        } else {
+          console.log(`\n[INFO] Classifier model loaded successfully.`);
+        }
       }
     }
   } catch {
@@ -563,21 +566,22 @@ export async function classifyWithLLM(
 
     if (!localClassifierPipeline) {
       let downloadStarted = false;
-      if (progressCb) {
-        progressCb({
-          type: "model_download",
-          modelName: "classifier",
-          status: "downloading"
-        });
-      } else {
-        console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
-      }
       localClassifierPipeline = await pipeline("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", {
         model_file_name: "model_int8",
         progress_callback: (data: any) => {
-          if (data.status === "downloading" && !downloadStarted) {
+          if ((data.status === "downloading" || data.status === "progress") && !downloadStarted) {
             downloadStarted = true;
-          } else if (data.status === "progress") {
+            if (progressCb) {
+              progressCb({
+                type: "model_download",
+                modelName: "classifier",
+                status: "downloading"
+              });
+            } else {
+              console.log(`\n[INFO] Downloading local classifier model (~66MB) to cache...`);
+            }
+          }
+          if (data.status === "progress") {
             const pct = typeof data.progress === "number" ? data.progress : 0;
             if (progressCb) {
               progressCb({
@@ -593,14 +597,16 @@ export async function classifyWithLLM(
           }
         }
       });
-      if (progressCb) {
-        progressCb({
-          type: "model_download",
-          modelName: "classifier",
-          status: "loaded"
-        });
-      } else {
-        console.log(`\n[INFO] Classifier model loaded successfully.`);
+      if (downloadStarted) {
+        if (progressCb) {
+          progressCb({
+            type: "model_download",
+            modelName: "classifier",
+            status: "loaded"
+          });
+        } else {
+          console.log(`\n[INFO] Classifier model loaded successfully.`);
+        }
       }
     }
 

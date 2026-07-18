@@ -56,15 +56,6 @@ class OptimizedLocalTextEmbeddingProvider {
         if (cb) onProgress = cb;
       } catch {}
       let downloadStarted = false;
-      if (onProgress) {
-        onProgress({
-          type: "model_download",
-          modelName: "embedding",
-          status: "downloading"
-        });
-      } else {
-        console.log(`\n[INFO] Downloading local embedding model (~100MB) to cache...`);
-      }
       this.extractor = await pipeline("feature-extraction", this.modelName, {
         device: this.device as any,
         dtype: this.dtype as any,
@@ -73,9 +64,19 @@ class OptimizedLocalTextEmbeddingProvider {
           interOpNumThreads: 1,
         },
         progress_callback: (data: any) => {
-          if (data.status === "downloading" && !downloadStarted) {
+          if ((data.status === "downloading" || data.status === "progress") && !downloadStarted) {
             downloadStarted = true;
-          } else if (data.status === "progress") {
+            if (onProgress) {
+              onProgress({
+                type: "model_download",
+                modelName: "embedding",
+                status: "downloading"
+              });
+            } else {
+              console.log(`\n[INFO] Downloading local embedding model (~100MB) to cache...`);
+            }
+          }
+          if (data.status === "progress") {
             const pct = typeof data.progress === "number" ? data.progress : 0;
             if (onProgress) {
               onProgress({
@@ -91,14 +92,16 @@ class OptimizedLocalTextEmbeddingProvider {
           }
         }
       });
-      if (onProgress) {
-        onProgress({
-          type: "model_download",
-          modelName: "embedding",
-          status: "loaded"
-        });
-      } else {
-        console.log(`\n[INFO] Embedding model loaded successfully.`);
+      if (downloadStarted) {
+        if (onProgress) {
+          onProgress({
+            type: "model_download",
+            modelName: "embedding",
+            status: "loaded"
+          });
+        } else {
+          console.log(`\n[INFO] Embedding model loaded successfully.`);
+        }
       }
     }
     return this.extractor;
