@@ -71,28 +71,28 @@ export function Banner({ classifierStatus, embeddingStatus }: BannerProps = {}) 
         </Box>
       </Box>
 
-      <Box flexDirection="column" marginTop={1} paddingX={1} borderStyle="single" borderColor="gray">
+      <Box flexDirection="column" marginTop={1} paddingX={1}>
         <Box marginBottom={0.5}>
-          <Text bold color="cyan">⚙ SYSTEM SERVICES STATUS</Text>
+          <Text bold color="cyan">SYSTEM SERVICES STATUS</Text>
         </Box>
         <Box flexDirection="row">
           <Text color="gray">RMemory Gateway: </Text>
           <Text color={rmemoryActive ? "green" : "gray"}>
-            {rmemoryActive ? "● ONLINE" : "○ OFFLINE"}
+            {rmemoryActive ? "ONLINE" : "OFFLINE"}
           </Text>
           <Text color="gray"> (Transcript Memory Database)</Text>
         </Box>
         <Box flexDirection="row">
           <Text color="gray">Local Embedding: </Text>
           <Text color={eStatus === "online" ? "green" : eStatus === "loading" ? "yellow" : "gray"}>
-            {eStatus === "online" ? "● ONLINE" : eStatus === "loading" ? "⏳ LOADING" : "○ OFFLINE"}
+            {eStatus === "online" ? "ONLINE" : eStatus === "loading" ? "LOADING" : "OFFLINE"}
           </Text>
           <Text color="gray"> (nomic-embed-text-v1.5 via Transformers.js)</Text>
         </Box>
         <Box flexDirection="row">
           <Text color="gray">Local Router:    </Text>
           <Text color={cStatus === "online" ? "green" : cStatus === "loading" ? "yellow" : "gray"}>
-            {cStatus === "online" ? "● ONLINE" : cStatus === "loading" ? "⏳ LOADING" : "○ OFFLINE"}
+            {cStatus === "online" ? "ONLINE" : cStatus === "loading" ? "LOADING" : "OFFLINE"}
           </Text>
           <Text color="gray"> (Supra-Router-51M-ONNX via Transformers.js)</Text>
         </Box>

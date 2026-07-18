@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.461] - 2026-07-18
+
+### Changed
+- **System Services Status UI**: Removed icons and borders from the system services status display in the terminal banner.
+
 ## [1.2.460] - 2026-07-18
 
 ### Added
