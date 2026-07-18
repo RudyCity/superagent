@@ -279,7 +279,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemoryReadCosTool,
   ],
 
-  "manual-tester": [
+  "software-tester": [
     readTool,
     globTool,
     grepTool,
@@ -297,6 +297,22 @@ export const subagentToolsets: Record<string, Tool[]> = {
     controlBrowserTabTool,
     controlBrowserMacroSaveTool,
     controlBrowserMacroRunTool,
+  ],
+
+  "security-engineer": [
+    readTool,
+    globTool,
+    grepTool,
+    ripgrepSearchTool,
+    runCommandTool,
+    bashTool,
+    webSearchTool,
+    askQuestionTool,
+    getSkillsTool,
+    useSkillTool,
+    rmemorySearchTool,
+    rmemoryConversationSearchTool,
+    rmemoryReadCosTool,
   ],
 };
 

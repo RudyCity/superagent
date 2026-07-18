@@ -181,9 +181,15 @@ registerSubagentType(
 );
 
 registerSubagentType(
-  "manual-tester",
+  "software-tester",
   "Specialized in browser testing (Playwright), analyzing console logs/errors, and visual UI/UX design taste checks.",
-  SUBAGENT_SYSTEM_PROMPTS["manual-tester"]
+  SUBAGENT_SYSTEM_PROMPTS["software-tester"]
+);
+
+registerSubagentType(
+  "security-engineer",
+  "Specialized in identifying vulnerabilities, performing threat modeling, auditing code, and security architecture review.",
+  SUBAGENT_SYSTEM_PROMPTS["security-engineer"]
 );
 
 let loadedDynamicTools: Tool[] = [];

@@ -126,7 +126,8 @@ superagent --multi
 - **Researcher**: Explores the codebase and retrieves context (Read-Only).
 - **Coder**: Implements code modifications and refactoring.
 - **Reviewer**: Audits changes, runs tests, and validates implementations.
-- **manual-tester**: Automated browser testing (Playwright), browser log/error analysis, and visual UI/UX design taste checks.
+- **software-tester**: Automated browser testing (Playwright), browser log/error analysis, and visual UI/UX design taste checks.
+- **security-engineer**: Security auditing, threat modeling, vulnerability scanning, and secure remediation.
 
 ### 4. Visible Terminal Windows (`/terminal`)
 Runs development servers, local builds, or test watchers in popped-up, visible OS terminal windows (Windows cmd, macOS Terminal, Linux x-terminal). It includes an AI-assisted preset initializer (`/terminal init`) to auto-configure workspace command presets.

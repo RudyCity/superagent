@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.477] - 2026-07-18
+
+### Changed
+- **Subagent Rename**: Renamed the manual-tester subagent to software-tester throughout the codebase, prompts, and registry configuration.
+- **New Subagent Addition**: Added a security-engineer subagent, complete with its own specialized system prompt, registered subagent definition, and a robust toolset including ripgrep search, web search, execution, and security-focused skill resolution.
+
 ## [1.2.476] - 2026-07-18
 
 ### Changed

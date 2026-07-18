@@ -38,7 +38,7 @@ describe("tool registry consistency", () => {
   it("keeps fallback and reviewer-like subagent toolsets side-effect constrained", () => {
     const fallbackNames = defaultSubagentToolset.map((tool) => tool.name);
     const reviewerNames = subagentToolsets.reviewer.map((tool) => tool.name);
-    const manualTesterNames = subagentToolsets["manual-tester"].map((tool) => tool.name);
+    const softwareTesterNames = subagentToolsets["software-tester"].map((tool) => tool.name);
 
     expect(fallbackNames).not.toEqual(expect.arrayContaining([
       "write_to_file",
@@ -50,6 +50,6 @@ describe("tool registry consistency", () => {
       "rmemory_conversation_add",
     ]));
     expect(reviewerNames).not.toEqual(expect.arrayContaining(["rmemory_save", "rmemory_conversation_add"]));
-    expect(manualTesterNames).not.toEqual(expect.arrayContaining(["rmemory_save", "rmemory_conversation_add"]));
+    expect(softwareTesterNames).not.toEqual(expect.arrayContaining(["rmemory_save", "rmemory_conversation_add"]));
   });
 });
