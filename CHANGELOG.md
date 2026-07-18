@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.473] - 2026-07-18
+
+### Changed
+- **Agent Codebase Modularization (Phase 8)**: Successfully completed modularization of `agent.ts`. Extracted the primary agent iteration/loop execution logic (AI SDK streamText/generateText calls, retry behaviors, 413 compaction fallbacks, empty response retries) to `LoopIterationProcessor.ts`.
+- **Refactoring**: Reduced `agent.ts` file length from 1,509 lines to exactly 705 lines, and kept `LoopIterationProcessor.ts` at exactly 653 lines, keeping both files comfortably below the 1,000-line limit. Verified complete test suite passing.
+
 ## [1.2.472] - 2026-07-18
 
 ### Changed
