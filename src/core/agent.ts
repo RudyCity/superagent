@@ -1579,6 +1579,10 @@ After all subagents finish, you MUST perform this verification loop before consi
         const workspaceBoundaryNotice = workspaceDir
           ? `
 
+# CURRENT ENVIRONMENT & ACTIVE WORKSPACE
+- Active Workspace Directory: "${workspaceDir}"
+- Shell Execution CWD: "${workspaceDir}"
+
 # WORKSPACE BOUNDARY — CRITICAL
 - Workspace root: "${workspaceDir}"
 - ALL file read/write operations MUST target paths inside this directory.

@@ -60,7 +60,7 @@ export const workspaceCommand: SlashCommand = {
 
       ctx.addLine({
         type: "system",
-        content: "Registered Workspaces:",
+        content: `Current Active Workspace: ${currentWorkspace}\nRegistered Workspaces:`,
         timestamp: now
       });
 
