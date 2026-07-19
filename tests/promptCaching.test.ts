@@ -99,6 +99,7 @@ describe("Anthropic Prompt Caching", () => {
     conv.messages = [];
 
     conv.addUserMessage("User Message 1");
+    conv.addAssistantMessage("Response 1");
     conv.addUserMessage("User Message 2");
 
     const coreMessages = (agent as any).buildMessages();

@@ -72,6 +72,9 @@ export function tokensForMessages(messages: Message[]): number {
   return total;
 }
 
+// Keep static cache map to reuse TokenTracker instances across calls and avoid hot-path re-instantiation overhead.
+const trackerCache = new Map<string, TokenTracker>();
+
 /**
  * Cached token estimator backed by TokenTracker LRU cache.
  * Use in budget loops instead of the O(n) heuristic `tokensForMessages`.
@@ -80,7 +83,11 @@ export function estimateTokensCached(
   messages: Message[],
   modelName: string
 ): number {
-  const tracker = new TokenTracker(modelName);
+  let tracker = trackerCache.get(modelName);
+  if (!tracker) {
+    tracker = new TokenTracker(modelName);
+    trackerCache.set(modelName, tracker);
+  }
   let total = 0;
   for (const m of messages) {
     total += tracker.estimateTokens(m);

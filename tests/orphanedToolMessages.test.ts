@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { Conversation, Message } from "../src/core/conversation.js";
+import { Conversation, Message, contentToString } from "../src/core/conversation.js";
 import { PruningStrategy } from "../src/core/context/strategies/PruningStrategy.js";
 import { SummarizationStrategy } from "../src/core/context/strategies/SummarizationStrategy.js";
 import { PinningStrategy } from "../src/core/context/strategies/PinningStrategy.js";
@@ -111,16 +111,16 @@ describe("Orphaned Tool Messages & Error Handling", () => {
       const coreMessages = (agent as any).buildMessages();
 
       // Expected coreMessages should only contain:
-      // 1. user: "Conversation summary"
-      // 2. user: "Hello"
-      // 3. assistant: with tool-call
-      // 4. tool: with tool-result
+      // 1. user: "Conversation summary" and "Hello" merged
+      // 2. assistant: with tool-call
+      // 3. tool: with tool-result
       // The first tool message (call-1) should have been filtered out!
-      expect(coreMessages.length).toBe(4);
+      expect(coreMessages.length).toBe(3);
       expect(coreMessages[0].role).toBe("user");
-      expect(coreMessages[1].role).toBe("user");
-      expect(coreMessages[2].role).toBe("assistant");
-      expect(coreMessages[3].role).toBe("tool");
+      expect(contentToString(coreMessages[0].content)).toContain("Conversation summary");
+      expect(contentToString(coreMessages[0].content)).toContain("Hello");
+      expect(coreMessages[1].role).toBe("assistant");
+      expect(coreMessages[2].role).toBe("tool");
     });
   });
 
@@ -199,6 +199,81 @@ describe("Orphaned Tool Messages & Error Handling", () => {
       expect(kept[0].role).not.toBe("tool");
       expect(kept.length).toBe(1);
       expect(kept[0].content).toBe("User 3");
+    });
+  });
+
+  describe("MessageBuilder cleanMessageSequence", () => {
+    it("should merge consecutive user messages", () => {
+      const agent = new Agent(() => {}, () => Promise.resolve(true), () => {});
+      const conv = (agent as any).conversation;
+      conv.messages = [];
+      conv.addUserMessage("Hello");
+      conv.addUserMessage("World");
+
+      const coreMessages = (agent as any).buildMessages();
+      expect(coreMessages.length).toBe(1);
+      expect(coreMessages[0].role).toBe("user");
+      expect(contentToString(coreMessages[0].content)).toContain("Hello\n\nWorld");
+    });
+
+    it("should merge consecutive assistant messages", () => {
+      const agent = new Agent(() => {}, () => Promise.resolve(true), () => {});
+      const conv = (agent as any).conversation;
+      conv.messages = [];
+      conv.addUserMessage("Trigger user turn"); // first must be user
+      conv.addAssistantMessage("Thinking...");
+      conv.addAssistantMessage("Done.");
+
+      const coreMessages = (agent as any).buildMessages();
+      // user + merged assistant
+      expect(coreMessages.length).toBe(2);
+      expect(coreMessages[0].role).toBe("user");
+      expect(coreMessages[1].role).toBe("assistant");
+      expect(contentToString(coreMessages[1].content)).toContain("Thinking...\n\nDone.");
+    });
+
+    it("should strip unanswered tool calls from assistant message", () => {
+      const agent = new Agent(() => {}, () => Promise.resolve(true), () => {});
+      const conv = (agent as any).conversation;
+      conv.messages = [];
+      conv.addUserMessage("Trigger user turn");
+      conv.addAssistantMessage("Running tool", [
+        { id: "call-unanswered", name: "some-tool", args: {} }
+      ]);
+      // No tool result follows it. A user message follows instead.
+      conv.addUserMessage("Next user message");
+
+      const coreMessages = (agent as any).buildMessages();
+      // Expect the assistant message to be converted to plain text (tool calls stripped)
+      expect(coreMessages.length).toBe(3);
+      expect(coreMessages[0].role).toBe("user");
+      expect(coreMessages[1].role).toBe("assistant");
+      // Check that content does not contain tool-call part type
+      if (Array.isArray(coreMessages[1].content)) {
+        const hasToolCallPart = coreMessages[1].content.some((p: any) => p.type === "tool-call");
+        expect(hasToolCallPart).toBe(false);
+      }
+      expect(coreMessages[2].role).toBe("user");
+    });
+
+    it("should filter out/skip orphaned tool messages", () => {
+      const agent = new Agent(() => {}, () => Promise.resolve(true), () => {});
+      const conv = (agent as any).conversation;
+      conv.messages = [];
+      conv.addUserMessage("Hello");
+      // Add tool message directly without preceding assistant message
+      conv.addMessage({
+        role: "tool",
+        content: "",
+        toolResults: [{ toolCallId: "call-orphaned", name: "some-tool", result: "orphaned result" }],
+        timestamp: Date.now(),
+      });
+
+      const coreMessages = (agent as any).buildMessages();
+      // Should be dropped entirely. So length is 1 (just Hello).
+      expect(coreMessages.length).toBe(1);
+      expect(coreMessages[0].role).toBe("user");
+      expect(contentToString(coreMessages[0].content)).not.toContain("orphaned result");
     });
   });
 });

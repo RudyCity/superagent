@@ -138,10 +138,154 @@ export class MessageBuilder {
       this.buildPlaintextMessages(agent, coreMessages, supportsVision, supportsNativeTools, modelName);
     }
 
-    // Cleanup / post-process to add cache annotations
-    this.addCacheControlToMessages(agent, coreMessages);
+    const cleanedMessages = this.cleanMessageSequence(coreMessages, agent);
 
-    return coreMessages;
+    // Cleanup / post-process to add cache annotations
+    this.addCacheControlToMessages(agent, cleanedMessages);
+
+    return cleanedMessages;
+  }
+
+  private cleanMessageSequence(messages: CoreMessage[], agent: Agent): CoreMessage[] {
+    if (messages.length === 0) return [];
+
+    const hasToolCalls = (msg: CoreMessage): boolean => {
+      if (msg.role !== "assistant") return false;
+      if (Array.isArray(msg.content)) {
+        return msg.content.some((part: any) => part.type === "tool-call");
+      }
+      return false;
+    };
+
+    const stripToolCalls = (msg: CoreMessage): CoreMessage => {
+      if (msg.role !== "assistant") return msg;
+      if (Array.isArray(msg.content)) {
+        const textParts = msg.content.filter((part: any) => part.type === "text");
+        if (textParts.length === 0) {
+          return {
+            role: "assistant",
+            content: "Continuing execution...",
+          };
+        }
+        return {
+          role: "assistant",
+          content: textParts as any,
+        };
+      }
+      return msg;
+    };
+
+    const mergeMessages = (m1: CoreMessage, m2: CoreMessage): CoreMessage => {
+      if (m1.role !== m2.role) return m2;
+
+      if (m1.role === "user" || m1.role === "assistant") {
+        const parts1 = Array.isArray(m1.content)
+          ? m1.content
+          : [{ type: "text" as const, text: m1.content }];
+        const parts2 = Array.isArray(m2.content)
+          ? m2.content
+          : [{ type: "text" as const, text: m2.content }];
+        
+        const mergedParts = [...parts1, ...parts2];
+        const finalParts: any[] = [];
+        for (const part of mergedParts) {
+          if (part.type === "text") {
+            const last = finalParts[finalParts.length - 1];
+            if (last && last.type === "text") {
+              last.text += "\n\n" + part.text;
+            } else {
+              finalParts.push({ ...part });
+            }
+          } else {
+            finalParts.push(part);
+          }
+        }
+
+        if (m1.role === "user") {
+          return {
+            role: "user",
+            content: finalParts as any,
+          };
+        } else {
+          return {
+            role: "assistant",
+            content: finalParts as any,
+          };
+        }
+      }
+
+      if (m1.role === "tool") {
+        const results1 = Array.isArray(m1.content) ? m1.content : [];
+        const results2 = Array.isArray(m2.content) ? m2.content : [];
+        return {
+          role: "tool",
+          content: [...results1, ...results2] as any,
+        };
+      }
+
+      return m2;
+    };
+
+    const result: CoreMessage[] = [];
+
+    for (let i = 0; i < messages.length; i++) {
+      let msg = { ...messages[i] };
+
+      const isEmpty = (m: CoreMessage) => {
+        if (!m.content) return true;
+        if (typeof m.content === "string" && m.content.trim() === "") {
+          if (m.role === "assistant" && hasToolCalls(m)) return false;
+          return true;
+        }
+        if (Array.isArray(m.content) && m.content.length === 0) return true;
+        return false;
+      };
+
+      if (isEmpty(msg)) {
+        continue;
+      }
+
+      if (msg.role === "tool") {
+        const last = result[result.length - 1];
+        if (!last || last.role !== "assistant" || !hasToolCalls(last)) {
+          continue;
+        }
+      }
+
+      if (result.length > 0) {
+        const last = result[result.length - 1];
+        if (last.role === "assistant" && hasToolCalls(last) && msg.role !== "tool") {
+          result[result.length - 1] = stripToolCalls(last);
+        }
+      }
+
+      if (result.length > 0 && result[result.length - 1].role === msg.role) {
+        result[result.length - 1] = mergeMessages(result[result.length - 1], msg);
+      } else {
+        result.push(msg);
+      }
+    }
+
+    if (result.length > 0) {
+      const last = result[result.length - 1];
+      if (last.role === "assistant" && hasToolCalls(last)) {
+        result[result.length - 1] = stripToolCalls(last);
+      }
+    }
+
+    while (result.length > 0 && result[0].role !== "user") {
+      const first = result[0];
+      if (first.role === "assistant") {
+        result[0] = {
+          role: "user",
+          content: `[Previous Assistant Message]:\n${typeof first.content === "string" ? first.content : contentToString(first.content as any)}`,
+        };
+      } else {
+        result.shift();
+      }
+    }
+
+    return result;
   }
 
   private addCacheControlToMessages(agent: Agent, coreMessages: CoreMessage[]): void {

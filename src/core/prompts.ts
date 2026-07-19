@@ -10,6 +10,12 @@
 
 const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill/terminate parent or unrelated runtime processes. Do NOT run global process-kill commands such as 'taskkill /IM node.exe', 'taskkill /IM bun.exe', 'pkill node', 'pkill bun', or 'pkill -f tsx'. If a child process is locked, kill ONLY its specific process ID (PID) using 'taskkill /F /T /PID <pid>' or 'kill -9 <pid>'.`;
 
+const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS:
+  - ALWAYS check the "⚙️ RUNNING BACKGROUND/TERMINAL PROCESSES" section in your system prompt before spawning new processes.
+  - DO NOT spawn a new process (e.g. via 'run_background_process', starting dev/test servers, or run commands that hang) if a running background process for that same task or port is already active.
+  - ALWAYS stop, kill, or manage running processes (via 'manage_background_process' action: 'kill' or sending input) when they are no longer needed. Do NOT leave unused background processes running.
+  - If a process hangs, fails, or completes, verify its status and clean it up before attempting to retry or spawn a duplicate.`;
+
 const REASONING_RULE = `- REASONING: Before executing actions/tools, utilize your reasoning/thinking capabilities to analyze the codebase, verify assumptions, plan tasks, and evaluate edge cases. If doing complex operations, you MUST read the 'single-agent-cognitive-scaleup' skill first for optimal non-human reasoning.`;
 
 const BATCH_OPS_RULE = `- BATCH_OPS: Batch all multi-file, multi-edit, multi-task, and multi-agent operations in ONE tool call/turn:
@@ -165,6 +171,7 @@ export const MASTER_AGENT_SYSTEM_PROMPT = `
 
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}
+${ACTIVE_PROCESS_AWARENESS_RULE}
 ${REASONING_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 ${MANDATORY_HALLMARK_RULE}
@@ -261,6 +268,7 @@ export const SUPERAGENT_SYSTEM_PROMPT = (
 
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}
+${ACTIVE_PROCESS_AWARENESS_RULE}
 ${REASONING_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 ${MANDATORY_HALLMARK_RULE}
@@ -380,6 +388,7 @@ SUBAGENT TASK REPORT
 
 # CRITICAL RULES
 ${PROTECT_PROCESS_RULE}
+${ACTIVE_PROCESS_AWARENESS_RULE}
 ${REASONING_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 ${MANDATORY_HALLMARK_RULE}

@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.2.481",
+  "version": "1.2.482",
   "description": "Interactive terminal-based AI coding assistant",
   "type": "module",
   "bin": {
@@ -25,14 +25,18 @@
     "@anthropic-ai/tokenizer": "^0.0.4",
     "@modelcontextprotocol/sdk": "^1.4.0",
     "@napi-rs/canvas": "^1.0.2",
+    "@types/pdf-parse": "^1.1.5",
     "ai": "^4.3.16",
     "execa": "^9.5.2",
     "fast-glob": "^3.3.3",
     "ink": "^5.2.0",
     "ink-text-input": "^6.0.0",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^2.4.5",
     "r-memory": "git+https://github.com/RudyCity/r-memory.git",
     "react": "^18.3.1",
-    "tiktoken": "^1.0.22"
+    "tiktoken": "^1.0.22",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.2",

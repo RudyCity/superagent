@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.482] - 2026-07-19
+
+### Fixed
+- **Gemini API Message Sequence Validation**:
+  - Implemented `cleanMessageSequence()` in `MessageBuilder.ts` to enforce strict alternating message roles (user/assistant) and correct pairing of tool calls and results.
+  - Automatically merges consecutive user messages and consecutive assistant messages.
+  - Automatically strips unanswered tool calls from assistant messages to keep the API compliant.
+  - Automatically filters/skips orphaned tool messages and ensures the first message is always a user message.
+
 ## [1.2.481] - 2026-07-18
 
 ### Optimized
