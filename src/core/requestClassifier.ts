@@ -78,6 +78,155 @@ function splitKeywords(keywords: readonly string[]): {
   return { words, phrases };
 }
 
+/** Calculates Jaro-Winkler similarity between two strings. */
+function getJaroWinklerSimilarity(s1: string, s2: string): number {
+  if (s1 === s2) return 1.0;
+
+  const len1 = s1.length;
+  const len2 = s2.length;
+  if (len1 === 0 || len2 === 0) return 0.0;
+
+  const matchWindow = Math.floor(Math.max(len1, len2) / 2) - 1;
+  const matches1 = new Array(len1).fill(false);
+  const matches2 = new Array(len2).fill(false);
+
+  let matches = 0;
+  let transpositions = 0;
+
+  for (let i = 0; i < len1; i++) {
+    const start = Math.max(0, i - matchWindow);
+    const end = Math.min(len2 - 1, i + matchWindow);
+
+    for (let j = start; j <= end; j++) {
+      if (matches2[j]) continue;
+      if (s1[i] === s2[j]) {
+        matches1[i] = true;
+        matches2[j] = true;
+        matches++;
+        break;
+      }
+    }
+  }
+
+  if (matches === 0) return 0.0;
+
+  let k = 0;
+  for (let i = 0; i < len1; i++) {
+    if (!matches1[i]) continue;
+    while (!matches2[k]) k++;
+    if (s1[i] !== s2[k]) transpositions++;
+    k++;
+  }
+
+  const jaro = (matches / len1 + matches / len2 + (matches - transpositions / 2) / matches) / 3.0;
+
+  // Winkler modification for common prefix (up to 4 chars)
+  const prefixScale = 0.1;
+  let prefixLen = 0;
+  const maxPrefix = Math.min(4, Math.min(len1, len2));
+  for (let i = 0; i < maxPrefix; i++) {
+    if (s1[i] === s2[i]) {
+      prefixLen++;
+    } else {
+      break;
+    }
+  }
+
+  return jaro + prefixLen * prefixScale * (1.0 - jaro);
+}
+
+/** Calculates Levenshtein distance between two strings. */
+function getLevenshteinDistance(a: string, b: string): number {
+  const tmp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) {
+    tmp[i][0] = i;
+  }
+  for (let j = 0; j <= b.length; j++) {
+    tmp[0][j] = j;
+  }
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      tmp[i][j] = Math.min(
+        tmp[i - 1][j] + 1,
+        tmp[i][j - 1] + 1,
+        tmp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return tmp[a.length][b.length];
+}
+
+/**
+ * Checks if a word matches any target keywords using fuzzy Jaro-Winkler/Levenshtein similarity
+ * and duplicate letter collapsing.
+ */
+function fuzzyMatch(word: string, targets: ReadonlySet<string>): boolean {
+  if (targets.has(word)) return true;
+  if (word.length < 4) return false;
+
+  const collapsedWord = word.replace(/(.)\1+/g, "$1");
+
+  for (const target of targets) {
+    if (target.length < 4) continue;
+
+    const collapsedTarget = target.replace(/(.)\1+/g, "$1");
+    if (collapsedWord === collapsedTarget) return true;
+
+    // Use Jaro-Winkler for quick similarity scoring on words of similar length
+    if (Math.abs(collapsedWord.length - collapsedTarget.length) <= 3) {
+      if (collapsedTarget === "referenceerror" && collapsedWord !== "referenceerror") {
+        continue;
+      }
+      const jwSim = getJaroWinklerSimilarity(collapsedWord, collapsedTarget);
+      if (jwSim >= 0.94) {
+        return true;
+      }
+    }
+
+    // Fallback to Levenshtein distance on collapsed versions if both are sufficiently long
+    if (collapsedWord.length >= 5 && collapsedTarget.length >= 5) {
+      const dist = getLevenshteinDistance(collapsedWord, collapsedTarget);
+      const maxDist = collapsedTarget.length >= 7 ? 2 : 1;
+      if (dist <= maxDist) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Calculates Soundex phonetic representation of a word. */
+function getSoundex(word: string): string {
+  if (!word) return "";
+  const upper = word.toUpperCase();
+  const first = upper[0];
+  const mappings = new Map([
+    ["B", "1"], ["F", "1"], ["P", "1"], ["V", "1"],
+    ["C", "2"], ["G", "2"], ["J", "2"], ["K", "2"], ["Q", "2"], ["S", "2"], ["X", "2"], ["Z", "2"],
+    ["D", "3"], ["T", "3"],
+    ["L", "4"],
+    ["M", "5"], ["N", "5"],
+    ["R", "6"]
+  ]);
+
+  let code = first;
+  let prevCode = mappings.get(first) || "";
+
+  for (let i = 1; i < upper.length; i++) {
+    const char = upper[i];
+    if (char === "H" || char === "W") continue;
+    const currentCode = mappings.get(char) || "";
+    if (currentCode && currentCode !== prevCode) {
+      code += currentCode;
+      prevCode = currentCode;
+    } else if (!currentCode) {
+      prevCode = "";
+    }
+  }
+
+  return (code + "000").substring(0, 4);
+}
+
 /**
  * Count matches using word-boundary matching for single words (O(1) per word)
  * and substring matching for multi-word phrases.
@@ -87,12 +236,17 @@ function countKeywordMatches(
   inputWords: readonly string[],
   lowerInput: string,
   kwWords: ReadonlySet<string>,
-  kwPhrases: readonly string[]
+  kwPhrases: readonly string[],
+  useFuzzy = false
 ): number {
   let count = 0;
   // O(1) per input word via Set lookup — word boundary by design
   for (const w of inputWords) {
-    if (kwWords.has(w)) count++;
+    if (kwWords.has(w)) {
+      count++;
+    } else if (useFuzzy && fuzzyMatch(w, kwWords)) {
+      count++;
+    }
   }
   // Phrase matching via substring (phrases inherently have word boundaries)
   for (const phrase of kwPhrases) {
@@ -113,6 +267,8 @@ const CONVERSATION_EXACT: ReadonlySet<string> = new Set([
   "done", "got it", "understood", "noted", "got",
   "hi", "hello", "hey",
   "next", "skip", "pass",
+  // English status / flow indicators
+  "ongoing", "onging",
   // Indonesian affirmations / acknowledgments
   // Note: "ya" intentionally omitted — too ambiguous (variable name, Python keyword,
   // yes-answer to agent confirmation that should still route through the main loop).
@@ -138,6 +294,7 @@ const CONVERSATION_PHRASES: readonly string[] = [
   "looks good", "lgtm", "thank you very much",
   "makes sense", "got it thanks", "that works", "that's correct",
   "you're welcome", "no worries", "fair enough",
+  "on going",
   // Indonesian
   "terima kasih banyak", "makasih banyak", "makasih ya",
   "oke lanjut", "lanjut aja", "silakan lanjut", "bisa lanjut",
@@ -176,6 +333,7 @@ const DEBUG_KW = splitKeywords([
   "throw", "thrown", "stacktrace", "stack trace",
   "debug", "diagnose", "troubleshoot",
   "typeerror", "referenceerror", "syntaxerror",
+  "compiler", "compile",
   "gagal", "rusak", "salah", "bermasalah",
 ]);
 
@@ -244,11 +402,21 @@ export function classifyHeuristic(
   // ── Ultra-short messages (1-3 words) ──────────────────────────────────
   if (wordCount <= 3) {
     // Check exact match against conversation tokens
-    if (CONVERSATION_EXACT.has(cleanLower) || words.every(w => CONVERSATION_EXACT.has(w))) {
+    if (
+      CONVERSATION_EXACT.has(cleanLower) || 
+      words.every(w => CONVERSATION_EXACT.has(w)) ||
+      // Apply Soundex phonetic matching for short single-word affirmations
+      (words.length === 1 && (
+        getSoundex(cleanLower) === getSoundex("oke") ||
+        getSoundex(cleanLower) === getSoundex("iya") ||
+        getSoundex(cleanLower) === getSoundex("yes") ||
+        getSoundex(cleanLower) === getSoundex("gas")
+      ))
+    ) {
       return {
         category: "conversation",
         confidence: "high",
-        reason: `Short acknowledgment: "${trimmed}"`,
+        reason: `Short acknowledgment/phonetic match: "${trimmed}"`,
         heuristicOnly: true,
         classificationTokens: 0,
       };
@@ -299,10 +467,10 @@ export function classifyHeuristic(
   }
 
   // ── Debug detection (word-boundary safe) ───────────────────────────────
-  const debugScore = countKeywordMatches(words, cleanLower, DEBUG_KW.words, DEBUG_KW.phrases);
+  const debugScore = countKeywordMatches(words, cleanLower, DEBUG_KW.words, DEBUG_KW.phrases, true);
   const customDebugKw = customKeywords?.debug ? splitKeywords(customKeywords.debug) : null;
   const customDebug = customDebugKw
-    ? countKeywordMatches(words, cleanLower, customDebugKw.words, customDebugKw.phrases)
+    ? countKeywordMatches(words, cleanLower, customDebugKw.words, customDebugKw.phrases, true)
     : 0;
   if (debugScore + customDebug >= 2) {
     return {
@@ -324,10 +492,10 @@ export function classifyHeuristic(
   }
 
   // ── Research detection (word-boundary safe) ────────────────────────────
-  const researchScore = countKeywordMatches(words, cleanLower, RESEARCH_KW.words, RESEARCH_KW.phrases);
+  const researchScore = countKeywordMatches(words, cleanLower, RESEARCH_KW.words, RESEARCH_KW.phrases, true);
   const customResearchKw = customKeywords?.research ? splitKeywords(customKeywords.research) : null;
   const customResearch = customResearchKw
-    ? countKeywordMatches(words, cleanLower, customResearchKw.words, customResearchKw.phrases)
+    ? countKeywordMatches(words, cleanLower, customResearchKw.words, customResearchKw.phrases, true)
     : 0;
   if (researchScore + customResearch >= 1 && wordCount <= 15) {
     return {
@@ -340,10 +508,10 @@ export function classifyHeuristic(
   }
 
   // ── Complex task detection (word-boundary safe) ────────────────────────
-  const complexScore = countKeywordMatches(words, cleanLower, COMPLEX_KW.words, COMPLEX_KW.phrases);
+  const complexScore = countKeywordMatches(words, cleanLower, COMPLEX_KW.words, COMPLEX_KW.phrases, true);
   const customComplexKw = customKeywords?.complex_task ? splitKeywords(customKeywords.complex_task) : null;
   const customComplex = customComplexKw
-    ? countKeywordMatches(words, cleanLower, customComplexKw.words, customComplexKw.phrases)
+    ? countKeywordMatches(words, cleanLower, customComplexKw.words, customComplexKw.phrases, true)
     : 0;
   if (complexScore + customComplex >= 2 || (complexScore + customComplex >= 1 && wordCount > 15)) {
     return {
@@ -356,10 +524,10 @@ export function classifyHeuristic(
   }
 
   // ── Command detection (word-boundary safe) ─────────────────────────────
-  const commandScore = countKeywordMatches(words, cleanLower, COMMAND_KW.words, COMMAND_KW.phrases);
+  const commandScore = countKeywordMatches(words, cleanLower, COMMAND_KW.words, COMMAND_KW.phrases, true);
   const customCommandKw = customKeywords?.command ? splitKeywords(customKeywords.command) : null;
   const customCommand = customCommandKw
-    ? countKeywordMatches(words, cleanLower, customCommandKw.words, customCommandKw.phrases)
+    ? countKeywordMatches(words, cleanLower, customCommandKw.words, customCommandKw.phrases, true)
     : 0;
   if (commandScore + customCommand >= 1) {
     return {
@@ -393,6 +561,12 @@ export function classifyHeuristic(
     };
   }
 
+  // Phase 1.5: Try statistical classifier before low-confidence fallback
+  const statResult = classifyStatistical(words, cleanLower, customKeywords);
+  if (statResult) {
+    return statResult;
+  }
+
   // ── Fallback: low confidence, needs LLM ───────────────────────────────
   return {
     category: "complex_task",
@@ -401,6 +575,77 @@ export function classifyHeuristic(
     heuristicOnly: true,
     classificationTokens: 0,
   };
+}
+
+/**
+ * Phase 1.5: Lightweight statistical classifier.
+ * Evaluates category probabilities using normalized TF-IDF keyword scores.
+ * Prevents unnecessary local LLM model execution for medium-length texts.
+ */
+function classifyStatistical(
+  words: string[],
+  cleanLower: string,
+  customKeywords?: Partial<Record<RequestCategory, string[]>>
+): ClassificationResult | null {
+  const categories: RequestCategory[] = ["debug", "research", "command", "complex_task"];
+  const scores: Record<RequestCategory, number> = {
+    conversation: 0,
+    question: 0,
+    simple_edit: 0,
+    debug: 0,
+    research: 0,
+    command: 0,
+    complex_task: 0
+  };
+
+  const kwMapping: Record<RequestCategory, { words: ReadonlySet<string>; phrases: readonly string[] }> = {
+    debug: DEBUG_KW,
+    research: RESEARCH_KW,
+    command: COMMAND_KW,
+    complex_task: COMPLEX_KW,
+    conversation: { words: CONVERSATION_EXACT, phrases: CONVERSATION_PHRASES },
+    question: { words: new Set(QUESTION_STARTERS), phrases: QUESTION_PHRASES },
+    simple_edit: { words: new Set(), phrases: [] }
+  };
+
+  let totalScore = 0;
+  for (const cat of categories) {
+    const kw = kwMapping[cat];
+    let score = countKeywordMatches(words, cleanLower, kw.words, kw.phrases, true);
+    
+    // Custom keywords boost
+    if (customKeywords?.[cat]) {
+      const customKw = splitKeywords(customKeywords[cat]!);
+      score += countKeywordMatches(words, cleanLower, customKw.words, customKw.phrases, true);
+    }
+    
+    scores[cat] = score;
+    totalScore += score;
+  }
+
+  if (totalScore >= 3) {
+    let bestCategory: RequestCategory = "complex_task";
+    let maxScore = 0;
+    for (const cat of categories) {
+      if (scores[cat] > maxScore) {
+        maxScore = scores[cat];
+        bestCategory = cat;
+      }
+    }
+
+    const confidenceRatio = maxScore / totalScore;
+    if (confidenceRatio >= 0.7) {
+      return {
+        category: bestCategory,
+        confidence: "high",
+        reason: `Statistical TF-IDF routing confidence ratio=${confidenceRatio.toFixed(2)}`,
+        heuristicOnly: true,
+        classificationTokens: 0
+      };
+    }
+  }
+
+  return null;
 }
 
 // ─── Local 51M Classifier ───────────────────────────────────────────────────

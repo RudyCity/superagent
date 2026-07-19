@@ -78,6 +78,7 @@ describe("classifyHeuristic", () => {
       "ok", "okay", "oke", "yes", "no", "y", "n",
       "lanjut", "lanjutkan", "proceed", "continue",
       "go ahead", "sure", "yep", "yup",
+      "ongoing", "onging", "on going",
       "thanks", "thank you", "thx", "terima kasih",
       "good", "great", "nice", "cool", "awesome",
       "done", "got it", "understood", "noted",
@@ -642,6 +643,35 @@ describe("warmUpClassifier", () => {
     expect(pipeline).toHaveBeenCalledWith("text-generation", "Sharjeelbaig/Supra-Router-51M-ONNX", expect.any(Object));
   });
 });
+
+describe("optimizations (Jaro-Winkler, Trie, Soundex, TF-IDF)", () => {
+  it("should classify phonetic variations using Soundex", () => {
+    // Words phonetically close to "oke", "iya", "yes", "gas"
+    const okeRes = classifyHeuristic("okayy");
+    expect(okeRes.category).toBe("conversation");
+
+    const iyaRes = classifyHeuristic("iyya");
+    expect(iyaRes.category).toBe("conversation");
+  });
+
+  it("should classify typos using Jaro-Winkler similarity", () => {
+    const debugRes = classifyHeuristic("compailer"); // Typo of compiler -> debug keyword
+    expect(debugRes.category).toBe("debug");
+  });
+
+  it("should match conversation phrases using Trie", () => {
+    const res = classifyHeuristic("oke deh lanjut");
+    expect(res.category).toBe("conversation");
+  });
+
+  it("should route medium text using statistical TF-IDF classifier", () => {
+    const res = classifyHeuristic("please find search locate explore check if optimize investigate audit along with other files in the workspace to see if there is any clean code");
+    expect(res.category).toBe("research");
+    expect(res.confidence).toBe("high");
+    expect(res.reason).toContain("Statistical TF-IDF routing");
+  });
+});
+
 
 
 

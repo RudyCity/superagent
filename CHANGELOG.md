@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.483] - 2026-07-19
+
+### Fixed
+- **Heuristic Classifier Optimization**:
+  - Implemented missing request classification algorithms: Soundex phonetic variations, Jaro-Winkler/Levenshtein fuzzy matching, and statistical TF-IDF classification fallback.
+  - Added support for fuzzy word matching in `countKeywordMatches` using duplicate letter collapsing, Jaro-Winkler, and Levenshtein distance checks.
+  - Added exact and phrase matches for `ongoing`, `onging`, and `on going` to conversational keyword definitions.
+
 ## [1.2.482] - 2026-07-19
 
 ### Fixed
