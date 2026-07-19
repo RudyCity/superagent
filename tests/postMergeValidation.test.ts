@@ -264,7 +264,8 @@ const c = 3;
         return "clean code";
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
+      const mockExeca = execa as unknown as { mockImplementation: Function; mockResolvedValue: Function };
+      mockExeca.mockResolvedValue({ stdout: "" } as any);
 
       const result = await validatePostMerge(process.cwd(), "feat/test", ["src/index.ts"]);
 
@@ -286,7 +287,8 @@ const c = 3;
         return "clean code";
       });
 
-      vi.mocked(execa).mockImplementation((cmd, args) => {
+      const mockExeca = execa as unknown as { mockImplementation: Function; mockResolvedValue: Function };
+      mockExeca.mockImplementation((cmd, args) => {
         if (cmd === "npm" && args && args[0] === "run" && args[1] === "build") {
           throw new Error("TypeScript compilation failed: src/bad.ts(5,10): error TS2345");
         }
@@ -313,7 +315,8 @@ const c = 3;
         return "clean code";
       });
 
-      vi.mocked(execa).mockImplementation((cmd, args) => {
+      const mockExeca = execa as unknown as { mockImplementation: Function; mockResolvedValue: Function };
+      mockExeca.mockImplementation((cmd, args) => {
         if (cmd === "npm" && args && args[0] === "run" && args[1] === "lint") {
           throw new Error("eslint: 3 warnings found");
         }

@@ -251,8 +251,9 @@ describe("superagentTools", () => {
 
       mockExistsSyncFalse();
       mockMkdirSync();
-      vi.mocked(execa).mockClear();
-      vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
+      const mockExeca = execa as unknown as { mockClear: Function; mockResolvedValue: Function; mock: { calls: any[][] } };
+      mockExeca.mockClear();
+      mockExeca.mockResolvedValue({ stdout: "" } as any);
 
       const cwd = process.cwd();
 
@@ -264,7 +265,7 @@ describe("superagentTools", () => {
       });
 
       // In patch mode, git worktree add should NOT be called
-      const worktreeAddCalls = vi.mocked(execa).mock.calls.filter(
+      const worktreeAddCalls = mockExeca.mock.calls.filter(
         call => call[0] === "git" && call[1] && call[1][0] === "worktree" && call[1][1] === "add"
       );
       expect(worktreeAddCalls).toHaveLength(0);
@@ -849,7 +850,8 @@ describe("superagentTools", () => {
       });
 
       let testCalls = 0;
-      vi.mocked(execa).mockImplementation((cmd, args) => {
+      const mockExeca = execa as unknown as { mockImplementation: Function };
+      mockExeca.mockImplementation((cmd: any, args: any) => {
         if (cmd === "npm" && args && args[0] === "test") {
           testCalls++;
           if (testCalls === 1) {

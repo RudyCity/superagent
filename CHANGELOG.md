@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.487] - 2026-07-19
+
+### Fixed
+- **Test Harness Configuration**:
+  - Configured `globals: true` in `vitest.config.ts`, fixing the `vi.mocked is not a function` error across the entire test suite.
+  - Updated mock type assertions in `postMergeValidation.test.ts` and `superagentTools.test.ts` to be fully compatible with Bun/Vitest test runner.
+
 ## [1.2.486] - 2026-07-19
 
 ### Added
@@ -8,11 +15,6 @@
   - Implemented Upper Confidence Bound (UCB) dynamic Monte Carlo Tree Search (MCTS) prompt guidance for agent reasoning in `base.ts`.
   - Implemented Budgeted DAG Pruning Strategy (GraphSentry 2026) in `ContextManager` to proactively manage token budgets before compaction.
   - Implemented early termination controls and reasoning aggregation inside `masterAgent` merge flows.
-
-### Fixed
-- **Test Harness Configuration**:
-  - Configured `globals: true` in `vitest.config.ts`, fixing the `vi.mocked is not a function` error across the entire test suite.
-  - Updated mock type assertions in `postMergeValidation.test.ts` to be fully compatible with Bun.
 
 ## [1.2.485] - 2026-07-19
 
