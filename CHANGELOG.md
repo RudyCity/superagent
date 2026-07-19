@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.489] - 2026-07-19
+
+### Fixed
+- **Task Checklist Synchronization**:
+  - Implemented `syncChildTasksToMaster` in `otherTools.ts` to automatically propagate active/completed task status changes from child agents (Superagents) to the Master Agent's checklist file.
+  - Dynamically updates checkboxes, appends newly added tasks with the correct agent prefix, and removes child-specific tasks when they are removed.
+  - Corrected capture group index references in regex match arrays.
+  - Added comprehensive integration tests in `tests/taskSync.test.ts` to verify the synchronization logic for update, add, and remove actions.
+
 ## [1.2.488] - 2026-07-19
 
 ### Fixed

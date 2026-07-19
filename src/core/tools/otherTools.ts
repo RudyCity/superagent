@@ -10,6 +10,147 @@ import { formatUnknownActionError, detectInteractivePrompt } from "./helpers.js"
 export { askQuestionTool, scheduleTool } from "./interactionTools.js";
 
 
+async function syncChildTasksToMaster(childTaskPath: string, currentAgent: any) {
+  try {
+    const { getMasterAgent, notifyTasksChanged } = await import("./state.js");
+    const master = getMasterAgent();
+    if (!master || master === currentAgent) {
+      return;
+    }
+    const masterTaskPath = master.getTaskFilePath ? master.getTaskFilePath() : null;
+    if (!masterTaskPath || masterTaskPath === childTaskPath) {
+      return;
+    }
+
+    // Read child tasks
+    let childContent = "";
+    try {
+      childContent = await fs.readFile(childTaskPath, "utf-8");
+    } catch (err: any) {
+      if (err.code === "ENOENT") return;
+      throw err;
+    }
+
+    const { parseChecklistTasks } = await import("../taskChecklist.js");
+    const childTasks = parseChecklistTasks(childContent);
+
+    // Read master tasks
+    let masterContent = "";
+    try {
+      masterContent = await fs.readFile(masterTaskPath, "utf-8");
+    } catch (err: any) {
+      if (err.code === "ENOENT") return;
+      throw err;
+    }
+
+    const masterLines = masterContent.split(/\r?\n/);
+    let masterModified = false;
+
+    // Normalization helper
+    const normalize = (text: string) => {
+      return text
+        .replace(/^\[agent:\s*[^\]]+\]\s*/i, "")
+        .toLowerCase()
+        .replace(/[`'"]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    // Map of normalized child task text -> status
+    const childMap = new Map<string, string>();
+    for (const t of childTasks) {
+      childMap.set(normalize(t.text), t.status);
+    }
+
+    // Update master tasks in place (preserving lines formatting)
+    for (let i = 0; i < masterLines.length; i++) {
+      const line = masterLines[i];
+      const match =
+        line.match(/^(\s*-\s*`?\[)([xX/ ])(\]`?\s*)(.*)$/) ||
+        line.match(/^(\s*-\s*\[)([xX/ ])(\]\s*)(.*)$/);
+      if (match) {
+        const prefix = match[1];
+        const oldStatus = match[2];
+        const suffix = match[3] + match[4];
+        const taskText = match[4].trim();
+
+        const normalizedText = normalize(taskText);
+        const newStatus = childMap.get(normalizedText);
+
+        if (newStatus !== undefined && newStatus !== oldStatus.toLowerCase()) {
+          masterLines[i] = `${prefix}${newStatus}${suffix}`;
+          masterModified = true;
+        }
+      }
+    }
+
+    // Append child tasks that don't exist in master
+    const masterNormalizedSet = new Set(
+      masterLines
+        .map((line) => {
+          const match =
+            line.match(/^\s*-\s*`?\[([xX/ ])\]`?\s*(.*)$/) ||
+            line.match(/^\s*-\s*\[([xX/ ])\]\s*(.*)$/);
+          return match ? normalize(match[2].trim()) : "";
+        })
+        .filter(Boolean)
+    );
+
+    const toAppend: string[] = [];
+    for (const t of childTasks) {
+      if (!masterNormalizedSet.has(normalize(t.text))) {
+        const role = currentAgent.role ? `[agent: ${currentAgent.role}] ` : "";
+        toAppend.push(`- [${t.status}] ${role}${t.text}`);
+        masterModified = true;
+      }
+    }
+
+    if (toAppend.length > 0) {
+      let lastItemIdx = -1;
+      for (let i = masterLines.length - 1; i >= 0; i--) {
+        if (/^\s*-\s*\[.?\]/.test(masterLines[i])) {
+          lastItemIdx = i;
+          break;
+        }
+      }
+      if (lastItemIdx >= 0) {
+        masterLines.splice(lastItemIdx + 1, 0, ...toAppend);
+      } else {
+        masterLines.push(...toAppend);
+      }
+    }
+
+    // If a task with currentAgent's role prefix exists in master task list,
+    // but is NOT present in the child's checklist anymore, remove it!
+    const rolePrefix = currentAgent.role ? `[agent: ${currentAgent.role}]` : "";
+    const activeChildNormalizedSet = new Set(childTasks.map((t) => normalize(t.text)));
+
+    for (let i = masterLines.length - 1; i >= 0; i--) {
+      const line = masterLines[i];
+      const match =
+        line.match(/^\s*-\s*`?\[([xX/ ])\]`?\s*(.*)$/) ||
+        line.match(/^\s*-\s*\[([xX/ ])\]\s*(.*)$/);
+      if (match) {
+        const taskText = match[2].trim();
+        if (rolePrefix && taskText.startsWith(rolePrefix)) {
+          const contentWithoutPrefix = taskText.slice(rolePrefix.length).trim();
+          if (!activeChildNormalizedSet.has(normalize(contentWithoutPrefix))) {
+            masterLines.splice(i, 1);
+            masterModified = true;
+          }
+        }
+      }
+    }
+
+    if (masterModified) {
+      await fs.writeFile(masterTaskPath, masterLines.join("\n"), "utf-8");
+      notifyTasksChanged();
+    }
+  } catch (err) {
+    console.error(`[SYNC] Failed to synchronize tasks to master:`, err);
+  }
+}
+
 export const gitActionTool: Tool = {
   name: "git_action",
   description: "Execute a structured Git action (status, log, diff, commit, add, restore, clean).",
@@ -672,6 +813,7 @@ export const manageTasksTool: Tool = {
         updatedContent += newTaskLine + "\n";
 
         await fs.writeFile(taskPath, updatedContent, "utf-8");
+        await syncChildTasksToMaster(taskPath, currentAgent);
         return `Successfully added task: "${text.trim()}"`;
       }
 
@@ -705,6 +847,7 @@ export const manageTasksTool: Tool = {
         }
 
         await fs.writeFile(taskPath, updatedContent, "utf-8");
+        await syncChildTasksToMaster(taskPath, currentAgent);
         const joinedTexts = trimmedTexts.map(t => `"${t}"`).join(", ");
         return `Successfully added tasks: ${joinedTexts}`;
       }
@@ -768,6 +911,7 @@ export const manageTasksTool: Tool = {
         }
 
         await fs.writeFile(taskPath, lines.join("\n"), "utf-8");
+        await syncChildTasksToMaster(taskPath, currentAgent);
         const joinedIndices = uniqueIndices.join(", ");
         const joinedTexts = updatedTaskTexts.join(", ");
         return `Successfully updated task${uniqueIndices.length > 1 ? "s" : ""} ${joinedIndices} to [${status}]: ${joinedTexts}`;
@@ -816,6 +960,7 @@ export const manageTasksTool: Tool = {
         }
         
         await fs.writeFile(taskPath, lines.join("\n"), "utf-8");
+        await syncChildTasksToMaster(taskPath, currentAgent);
         const joinedIndices = uniqueIndices.join(", ");
         const joinedTexts = uniqueIndices.map(idx => `"${tasks[idx - 1].text}"`).join(", ");
         return `Successfully removed task${uniqueIndices.length > 1 ? "s" : ""} ${joinedIndices}: ${joinedTexts}`;
