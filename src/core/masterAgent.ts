@@ -388,7 +388,8 @@ async function runProjectValidation(cwd: string): Promise<{ errors: string[]; wa
 export async function validatePostMerge(
   cwd: string,
   branchName: string,
-  changedFiles: string[]
+  changedFiles: string[],
+  model?: any
 ): Promise<ValidationResult> {
   const allErrors: string[] = [];
   const allWarnings: string[] = [];
@@ -429,6 +430,41 @@ export async function validatePostMerge(
   const projectResult = await runProjectValidation(cwd);
   allErrors.push(...projectResult.errors);
   allWarnings.push(...projectResult.warnings);
+
+  // 4. Autonomous LLM Critique loop
+  if (model) {
+    try {
+      const { CriticAgent } = await import("./agent/criticAgent.js");
+      const critic = new CriticAgent(model);
+
+      let diffText = "";
+      try {
+        const { stdout } = await execa("git", ["diff", `HEAD...${branchName}`], { cwd });
+        diffText = stdout;
+      } catch {}
+
+      let planText = "";
+      try {
+        const planPath = path.join(cwd, "implementation_plan.md");
+        if (fs.existsSync(planPath)) {
+          planText = fs.readFileSync(planPath, "utf-8");
+        }
+      } catch {}
+
+      const buildOutput = allErrors.filter(e => e.toLowerCase().includes("build")).join("\n");
+      const testOutput = allErrors.filter(e => e.toLowerCase().includes("test")).join("\n");
+
+      const criticResult = await critic.reviewChanges(cwd, diffText, testOutput, buildOutput, planText);
+      if (!criticResult.valid) {
+        allErrors.push(...criticResult.errors);
+      }
+      if (criticResult.warnings) {
+        allWarnings.push(...criticResult.warnings);
+      }
+    } catch (criticErr: any) {
+      allWarnings.push(`Critic review failed to run: ${criticErr.message}`);
+    }
+  }
 
   return {
     valid: allErrors.length === 0,
@@ -516,6 +552,16 @@ export function tryLineBasedResolution(filePath: string): boolean {
  *   4. If validation fails: ABORT and report
  *   5. If validation passes: commit
  */
+/**
+ * Minimal shape of a Superagent instance needed for report aggregation.
+ * Avoids a hard import of tools/types to prevent circular dependencies.
+ */
+interface MergeInstanceInput {
+  role?: string;
+  branch?: string;
+  result?: string;
+}
+
 export class MasterAgent {
   private model: any;
 
@@ -537,7 +583,60 @@ export class MasterAgent {
    *   - "already-merged"   if the branch is already an ancestor of HEAD (nothing to do)
    *   - false              if the merge failed (conflicts or validation failure)
    */
-  public async mergeBranch(branchName: string, targetFiles: string[]): Promise<"merged" | "already-merged" | false> {
+  /**
+   * Aggregates insights from a Superagent's stored report into a unified
+   * walkthrough file (AGGREGATED_REPORT.md) after a successful merge.
+   * Implements the "Aggregation" optimization from M1-Parallel (Zhang 2025).
+   */
+  public async aggregateSuperagentReport(inst: MergeInstanceInput): Promise<void> {
+    const cwd = process.cwd();
+    const reportPath = path.resolve(cwd, "AGGREGATED_REPORT.md");
+
+    const role = inst.role || "unknown";
+    const branch = inst.branch || "unknown";
+    const result = inst.result || "";
+
+    // Extract the SUPERAGENT TASK REPORT section from the stored result.
+    const reportMatch = result.match(
+      /SUPERAGENT TASK REPORT([\s\S]*?)(?=\nSUBAGENT TASK REPORT|\n[A-Z][A-Z ]+ REPORT|$)/i
+    );
+    const reportBody = reportMatch ? reportMatch[1].trim() : result.trim();
+
+    // Pull structured fields from the report body.
+    const filesChanged = this.extractReportField(reportBody, "Files Changed");
+    const tests = this.extractReportField(reportBody, "Tests");
+    const keyNotes = this.extractReportField(reportBody, "Key Findings");
+
+    const block = [
+      `## Superagent: ${role}`,
+      `- **Branch**: \`${branch}\``,
+      `- **Files Changed**: ${filesChanged || "n/a"}`,
+      `- **Tests**: ${tests || "n/a"}`,
+      `- **Key Notes**: ${keyNotes || "n/a"}`,
+      "",
+    ].join("\n");
+
+    let existing = "";
+    try {
+      existing = fs.readFileSync(reportPath, "utf-8");
+    } catch {
+      existing = "# Aggregated Superagent Reports\n\n";
+    }
+
+    const separator = existing.trimEnd() + "\n\n";
+    fs.writeFileSync(reportPath, separator + block, "utf-8");
+    console.log(`[AGGREGATE] Appended report for Superagent '${role}' to AGGREGATED_REPORT.md`);
+  }
+
+  /**
+   * Extracts a labeled field value from a Superagent report body.
+   */
+  private extractReportField(body: string, label: string): string {
+    const match = body.match(new RegExp(`\\*?\*?${label}\\*?\*?:?\s*([^\n]+)`, "i"));
+    return match ? match[1].trim() : "";
+  }
+
+  public async mergeBranch(branchName: string, targetFiles: string[], instance?: MergeInstanceInput): Promise<"merged" | "already-merged" | false> {
     const cwd = process.cwd();
     this.lastMergeErrors = [];
     this.lastMergeWarnings = [];
@@ -557,7 +656,7 @@ export class MasterAgent {
       await execa("git", ["merge", "--no-commit", branchName], { cwd });
 
       // ── Post-merge validation BEFORE commit ────────────────────────────
-      const validation = await validatePostMerge(cwd, branchName, targetFiles);
+      const validation = await validatePostMerge(cwd, branchName, targetFiles, this.model);
 
       if (!validation.valid) {
         // Validation failed — abort the merge
@@ -592,6 +691,7 @@ export class MasterAgent {
 
       // Validation passed — commit the merge
       await execa("git", ["commit", "-m", `Merge branch '${branchName}' via Master Agent`], { cwd });
+      if (instance) await this.aggregateSuperagentReport(instance);
       return "merged";
 
     } catch (err: any) {
@@ -630,7 +730,7 @@ export class MasterAgent {
           try {
             await execa("git", ["add", "-A"], { cwd });
 
-            const validation = await validatePostMerge(cwd, branchName, targetFiles);
+            const validation = await validatePostMerge(cwd, branchName, targetFiles, this.model);
             if (validation.valid) {
               await execa("git", ["commit", "-m", `Merge branch '${branchName}' (line-based resolution) via Master Agent`], { cwd });
               this.lastMergeWarnings = [
@@ -642,6 +742,7 @@ export class MasterAgent {
                 `Resolved: ${resolvedFiles.join(", ")}\n` +
                 validation.warnings.map(w => `  ⚠️ ${w}`).join("\n")
               );
+              if (instance) await this.aggregateSuperagentReport(instance);
               return "merged";
             } else {
               // Validation failed after line-based resolution — abort
@@ -763,6 +864,7 @@ Instructions:
                   ...validation.warnings,
                   `Resolved conflicts via subagent for: ${conflictedFiles.join(", ")}`,
                 ];
+                if (instance) await this.aggregateSuperagentReport(instance);
                 return "merged";
               } else {
                 console.error("[ERROR] Post-merge validation failed after conflict-resolver subagent run.");

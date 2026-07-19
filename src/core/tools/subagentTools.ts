@@ -329,7 +329,15 @@ export const invokeSubagentTool: Tool = {
     // Pick the restricted toolset and prompt (dynamic import to avoid circular dep with toolsets.ts)
     const { subagentToolsets, defaultSubagentToolset } = await import("./toolsets.js");
     const { getSubagentSystemPrompt } = await import("../prompts.js");
-    const baseSystemPrompt = await getSubagentSystemPrompt(typeName, subType.systemPrompt);
+    const originalBasePrompt = await getSubagentSystemPrompt(typeName, subType.systemPrompt);
+    let optimizedGuidelines = "";
+    try {
+      const { PromptOptimizer } = await import("../agent/promptOptimizer.js");
+      optimizedGuidelines = PromptOptimizer.loadOptimizedGuidelines(typeName);
+    } catch {}
+    const baseSystemPrompt = optimizedGuidelines
+      ? `${originalBasePrompt}\n\n## TRACE-OPTIMIZED GUIDELINES (Learned from past runs)\n${optimizedGuidelines}`
+      : originalBasePrompt;
     const reportInstruction = SUBAGENT_REPORT_INSTRUCTION(subagentId);
 
     // ── Fix 2: Optional context inheritance — inject parent workspace snapshot ─
@@ -356,6 +364,26 @@ export const invokeSubagentTool: Tool = {
         }
       } catch {
         // Non-critical — skip context injection if it fails
+      }
+
+      // ── Context Graph Integration ──
+      try {
+        const { ContextGraph } = await import("../context/ContextGraph.js");
+        const graph = new ContextGraph(cwd);
+        let changedFiles: string[] = [];
+        try {
+          const { execa } = await import("execa");
+          const { stdout } = await execa("git", ["diff", "--name-only", "HEAD"], { cwd });
+          changedFiles = stdout.split("\n").filter(Boolean);
+        } catch {}
+
+        await graph.buildGraph(changedFiles, snippetParts);
+        const graphSummary = graph.compileSummary();
+        if (graphSummary) {
+          snippetParts.push(graphSummary);
+        }
+      } catch (graphErr) {
+        // Non-critical
       }
 
       const rawSnippet = snippetParts.join("\n");
@@ -555,6 +583,7 @@ export const invokeSubagentTool: Tool = {
         instance.status = "completed";
         instance.completedAt = Date.now();
         instance.result = extractSubagentReport(agentInstance, subagentId);
+        runSubagentPromptOptimization(typeName, baseSystemPrompt, prompt, agentInstance).catch(() => {});
         instance.agent = undefined;
         notifySubagentsChanged();
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
@@ -565,6 +594,7 @@ export const invokeSubagentTool: Tool = {
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "error";
         instance.completedAt = Date.now();
+        runSubagentPromptOptimization(typeName, baseSystemPrompt, prompt, agentInstance).catch(() => {});
         notifySubagentsChanged();
         appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${err.message}`);
         if (instance.agent) {
@@ -580,6 +610,7 @@ export const invokeSubagentTool: Tool = {
         instance.status = "completed";
         instance.completedAt = Date.now();
         instance.result = extractSubagentReport(agentInstance, subagentId);
+        runSubagentPromptOptimization(typeName, baseSystemPrompt, prompt, agentInstance).catch(() => {});
         instance.agent = undefined;
         notifySubagentsChanged();
         appendMasterLog(`[INFO] Subagent "${typeName}" [ID: ${subagentId}] finished.`);
@@ -589,6 +620,7 @@ export const invokeSubagentTool: Tool = {
         logs.push(`└──────────────────────────────────────────────\n`);
         instance.status = "error";
         instance.completedAt = Date.now();
+        runSubagentPromptOptimization(typeName, baseSystemPrompt, prompt, agentInstance).catch(() => {});
         notifySubagentsChanged();
         appendMasterLog(`[ERROR] Subagent "${typeName}" [ID: ${subagentId}] failed: ${err.message || err}`);
         if (instance.agent) {
@@ -1011,3 +1043,53 @@ export const manageSubagentsTool: Tool = {
     return formatUnknownActionError(action, ["list", "logs", "report", "violations", "kill", "kill_all"], "Use \"report\" (singular), not \"reports\".");
   },
 };
+
+async function collectAgentTraces(agentInstance: any): Promise<any[]> {
+  try {
+    const messages = await agentInstance.getMessages();
+    const traces: any[] = [];
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (msg.role === "assistant" && msg.toolCalls) {
+        for (const tc of msg.toolCalls) {
+          let resultText = "No result";
+          let isError = false;
+          const toolMsg = messages.find((m: any) => m.role === "tool" && m.toolCallId === tc.id);
+          if (toolMsg) {
+            resultText = typeof toolMsg.content === "string" ? toolMsg.content : JSON.stringify(toolMsg.content);
+            isError = toolMsg.isError === true;
+          }
+          traces.push({
+            name: tc.name,
+            args: tc.args,
+            result: resultText,
+            isError,
+          });
+        }
+      }
+    }
+    return traces;
+  } catch {
+    return [];
+  }
+}
+
+async function runSubagentPromptOptimization(
+  typeName: string,
+  baseSystemPrompt: string,
+  goal: string,
+  agentInstance: any
+) {
+  try {
+    const traces = await collectAgentTraces(agentInstance);
+    if (traces.length > 0) {
+      const { getModelInstanceForTier } = await import("../config.js");
+      const model = getModelInstanceForTier("master", 0);
+      const { PromptOptimizer } = await import("../agent/promptOptimizer.js");
+      const optimizer = new PromptOptimizer(model);
+      await optimizer.optimizePrompt(typeName, baseSystemPrompt, goal, traces);
+    }
+  } catch {
+    // Non-critical
+  }
+}

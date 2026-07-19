@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.484] - 2026-07-19
+
+### Added
+- **Advanced Multi-Agent Optimizations**:
+  - Implemented recursive subagent delegation up to depth of 3.
+  - Implemented `CriticAgent` for automated post-merge code reviews.
+  - Integrated `ContextGraph` to construct component summaries and inject them into system prompts.
+  - Implemented `PromptOptimizer` to analyze execution traces and optimize prompt guidelines over sessions.
+
 ## [1.2.483] - 2026-07-19
 
 ### Fixed
