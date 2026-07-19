@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.485] - 2026-07-19
+
+### Added
+- **Advanced Agentic Reasoning Principles**:
+  - Implemented `SEMI_FORMAL_REASONING` and `LOGIC_OF_AWARENESS` rules in coder and researcher system prompts.
+  - Extended `ContextGraph` to track semantic premises and generate logical mind-map context blocks.
+
 ## [1.2.484] - 2026-07-19
 
 ### Added

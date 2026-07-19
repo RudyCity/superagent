@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { CriticAgent } from "../src/core/agent/criticAgent.js";
 import { ContextGraph } from "../src/core/context/ContextGraph.js";
 import { PromptOptimizer } from "../src/core/agent/promptOptimizer.js";
+import { SUBAGENT_SYSTEM_PROMPTS } from "../src/core/prompts.js";
 
 describe("agentOptimizations", () => {
   describe("CriticAgent", () => {
@@ -49,6 +50,8 @@ describe("agentOptimizations", () => {
       const summary = graph.compileSummary();
       expect(summary).toContain("ACTIVE WORKSPACE CONTEXT GRAPH");
       expect(summary).toContain("package.json");
+      expect(summary).toContain("Logical Premises (Mind-Map)");
+      expect(summary).toContain("Premise: Modifying package.json might affect consumers importing it.");
     });
   });
 
@@ -56,6 +59,19 @@ describe("agentOptimizations", () => {
     it("should load optimized guidelines as empty if file not exists", () => {
       const guidelines = PromptOptimizer.loadOptimizedGuidelines("unregistered-type");
       expect(guidelines).toBe("");
+    });
+  });
+
+  describe("System Prompts Extensions", () => {
+    it("should include semi-formal reasoning and logic of awareness in subagent prompts", () => {
+      const researcherPrompt = SUBAGENT_SYSTEM_PROMPTS.researcher;
+      const coderPrompt = SUBAGENT_SYSTEM_PROMPTS.coder;
+
+      expect(researcherPrompt).toContain("SEMI_FORMAL_REASONING");
+      expect(researcherPrompt).toContain("LOGIC_OF_AWARENESS");
+
+      expect(coderPrompt).toContain("SEMI_FORMAL_REASONING");
+      expect(coderPrompt).toContain("LOGIC_OF_AWARENESS");
     });
   });
 });

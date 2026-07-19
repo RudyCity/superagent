@@ -7,6 +7,7 @@ export interface ContextNode {
   dependencies: string[];
   tasks: string[];
   status: "unchanged" | "modified" | "created" | "deleted";
+  logicalPremises: string[];
 }
 
 export class ContextGraph {
@@ -31,12 +32,22 @@ export class ContextGraph {
       const fullPath = path.resolve(this.rootDir, file);
       const isDir = fs.existsSync(fullPath) && fs.statSync(fullPath).isDirectory();
       
+      const deps = this.detectImports(fullPath);
+      const filename = path.basename(file);
+      const premises = [
+        `Premise: Modifying ${filename} might affect consumers importing it.`,
+      ];
+      if (deps.length > 0) {
+        premises.push(`Premise: ${filename} depends on ${deps.join(", ")}; changes in these dependencies require re-verification.`);
+      }
+
       const node: ContextNode = {
         path: file,
         type: isDir ? "directory" : "file",
-        dependencies: this.detectImports(fullPath),
-        tasks: tasks.filter(t => t.includes(path.basename(file))),
+        dependencies: deps,
+        tasks: tasks.filter(t => t.includes(filename)),
         status: "modified",
+        logicalPremises: premises,
       };
       this.nodes.set(file, node);
     }
@@ -77,6 +88,12 @@ export class ContextGraph {
       lines.push(`- Component: [${node.path}] (${node.type}) [Status: ${node.status}]`);
       if (node.dependencies.length > 0) {
         lines.push(`  - Dependencies: ${node.dependencies.join(", ")}`);
+      }
+      if (node.logicalPremises.length > 0) {
+        lines.push(`  - Logical Premises (Mind-Map):`);
+        for (const p of node.logicalPremises) {
+          lines.push(`    - ${p}`);
+        }
       }
       if (node.tasks.length > 0) {
         lines.push(`  - Associated Tasks:`);
