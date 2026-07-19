@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.488] - 2026-07-19
+
+### Fixed
+- **superagentTools Test Mocking**:
+  - Captured original `fs.readFileSync` and updated mock implementation in `superagentTools.test.ts` to fallback to it, preventing real configuration file corruption during test runs.
+
 ## [1.2.487] - 2026-07-19
 
 ### Fixed

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 const originalExistsSync = fs.existsSync;
 const originalMkdirSync = fs.mkdirSync;
+const originalReadFileSync = fs.readFileSync;
 import { execa } from "execa";
 
 function mockExistsSyncFalse() {
@@ -842,11 +843,11 @@ describe("superagentTools", () => {
         if (pStr.includes("worktrees") || pStr.includes("node_modules")) return false;
         return originalExistsSync(filePath);
       });
-      vi.spyOn(fs, "readFileSync").mockImplementation((filePath) => {
+      vi.spyOn(fs, "readFileSync").mockImplementation((filePath, options) => {
         if (filePath.toString().endsWith("package.json")) {
           return JSON.stringify({ scripts: { test: "vitest" } });
         }
-        return "";
+        return originalReadFileSync(filePath, options);
       });
 
       let testCalls = 0;
