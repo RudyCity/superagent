@@ -254,8 +254,8 @@ export const invokeSubagentTool: Tool = {
     }
 
     const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;
-    if (parentDepth >= 2) {
-      return `Error: Maximum subagent delegation depth (2) reached. Spawning subagents from this subagent is blocked.`;
+    if (parentDepth >= 3) {
+      return `Error: Maximum subagent delegation depth (3) reached. Spawning subagents from this subagent is blocked.`;
     }
 
     const subType = subagentTypes.get(typeName);

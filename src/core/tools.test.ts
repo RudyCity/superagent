@@ -555,13 +555,13 @@ describe("Scheduler and Subagent tools", () => {
     expect(sendMsgErrRes).toContain('Subagent instance "nonexistent_subagent" not found');
 
     // Verify subagent delegation depth blocking
-    const parentAgent: any = { delegationDepth: 2 };
+    const parentAgent: any = { delegationDepth: 3 };
     await agentLocalStorage.run(parentAgent, async () => {
       const result = await invSub?.execute(
         { typeName: "test_subagent", role: "reviewer", prompt: "nested subagent call" },
         process.cwd()
       );
-      expect(result).toContain("Maximum subagent delegation depth (2) reached");
+      expect(result).toContain("Maximum subagent delegation depth (3) reached");
     });
   });
 });
