@@ -275,5 +275,38 @@ describe("Orphaned Tool Messages & Error Handling", () => {
       expect(coreMessages[0].role).toBe("user");
       expect(contentToString(coreMessages[0].content)).not.toContain("orphaned result");
     });
+
+    it("should insert a dummy assistant message when a tool message is followed by a user message", () => {
+      const agent = new Agent(() => {}, () => Promise.resolve(true), () => {});
+      const conv = (agent as any).conversation;
+      conv.messages = [];
+      conv.addUserMessage("Initial prompt");
+      conv.addAssistantMessage("Running tool", [
+        { id: "call-1", name: "some-tool", args: {} }
+      ]);
+      conv.addMessage({
+        role: "tool",
+        content: "",
+        toolResults: [{ toolCallId: "call-1", name: "some-tool", result: "tool output" }],
+        timestamp: Date.now(),
+      });
+      conv.addUserMessage("New user instruction");
+
+      const coreMessages = (agent as any).buildMessages();
+      // Expect 5 messages:
+      // 1. user: "Initial prompt"
+      // 2. assistant: "Running tool" with toolCalls
+      // 3. tool: with toolResults
+      // 4. assistant: "Continuing..." (dummy)
+      // 5. user: "New user instruction"
+      expect(coreMessages.length).toBe(5);
+      expect(coreMessages[0].role).toBe("user");
+      expect(coreMessages[1].role).toBe("assistant");
+      expect(coreMessages[2].role).toBe("tool");
+      expect(coreMessages[3].role).toBe("assistant");
+      expect(contentToString(coreMessages[3].content)).toBe("Continuing...");
+      expect(coreMessages[4].role).toBe("user");
+      expect(contentToString(coreMessages[4].content)).toBe("New user instruction");
+    });
   });
 });

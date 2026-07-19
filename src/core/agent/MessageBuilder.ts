@@ -262,6 +262,12 @@ export class MessageBuilder {
       if (result.length > 0 && result[result.length - 1].role === msg.role) {
         result[result.length - 1] = mergeMessages(result[result.length - 1], msg);
       } else {
+        if (result.length > 0 && result[result.length - 1].role === "tool" && msg.role === "user") {
+          result.push({
+            role: "assistant",
+            content: "Continuing...",
+          });
+        }
         result.push(msg);
       }
     }
