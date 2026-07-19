@@ -36,20 +36,30 @@ export async function captureGitSnapshot(cwd: string): Promise<GitSnapshot | nul
     // Get untracked files
     const { stdout: untracked } = await execa("git", ["ls-files", "--others", "--exclude-standard"], { cwd, reject: false });
     const untrackedFiles = untracked.split("\n");
-    for (const file of untrackedFiles) {
-      const filepath = file.trim();
-      if (!filepath) continue;
-      const fullPath = path.resolve(cwd, filepath);
-      if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+    
+    // Read files concurrently to avoid serial disk I/O bottlenecks
+    await Promise.all(
+      untrackedFiles.map(async (file) => {
+        const filepath = file.trim();
+        if (!filepath) return;
+        const fullPath = path.resolve(cwd, filepath);
         try {
-          const content = fs.readFileSync(fullPath, "utf-8");
-          const linesCount = content.split(/\r?\n/).length;
-          snapshot[filepath] = { added: linesCount, deleted: 0 };
+          const stat = await fs.promises.stat(fullPath);
+          if (stat.isFile()) {
+            // Only read contents if file is under 1MB to avoid memory blowup on large artifacts
+            if (stat.size < 1024 * 1024) {
+              const content = await fs.promises.readFile(fullPath, "utf-8");
+              const linesCount = content.split(/\r?\n/).length;
+              snapshot[filepath] = { added: linesCount, deleted: 0 };
+            } else {
+              snapshot[filepath] = { added: 0, deleted: 0 };
+            }
+          }
         } catch {
           snapshot[filepath] = { added: 0, deleted: 0 };
         }
-      }
-    }
+      })
+    );
 
     return snapshot;
   } catch {

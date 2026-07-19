@@ -202,7 +202,8 @@ const c = 3;
 
       // Create a spy that tracks calls AND returns values
       const execaSpy = vi.spyOn(execa, "bind" as any); // just to track
-      vi.mocked(execa).mockImplementation((async (...callArgs: any[]) => {
+      const mockExeca = execa as unknown as { mockImplementation: Function };
+      mockExeca.mockImplementation((async (...callArgs: any[]) => {
         const [cmd, args] = callArgs;
         const a = Array.isArray(args) ? args : [];
         if (cmd === "git" && a[0] === "diff" && a[1] === "--stat") {
@@ -228,7 +229,8 @@ const c = 3;
       });
       vi.spyOn(fs, "readFileSync").mockReturnValue("clean code");
 
-      vi.mocked(execa).mockImplementation((cmd, args) => {
+      const mockExeca = execa as unknown as { mockImplementation: Function };
+      mockExeca.mockImplementation((cmd: any, args: any) => {
         if (args && args[0] === "diff" && args[1] === "--stat" && args[2] === "HEAD...feat/ok") {
           return Promise.resolve({ stdout: " 50 insertions(+)" } as any);
         }

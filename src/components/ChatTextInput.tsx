@@ -17,12 +17,16 @@
  *  9. Ctrl+V (paste) triggers clipboard image check via onPasteImage callback.
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { Text, useInput, useStdin } from "ink";
 import chalk from "chalk";
 import type { ImageAttachment } from "../utils/imageUtils.js";
 import { isImageFilePath } from "../utils/imageUtils.js";
 import { getPasteSplit } from "../utils/text.js";
+
+export interface ChatTextInputRef {
+  setCursorOffset: (offset: number) => void;
+}
 
 type Props = {
   value: string;
@@ -53,7 +57,7 @@ function blinkInverse(text: string): string {
   return `${BLINK_ON}\x1b[7m${text}\x1b[27m${BLINK_OFF}`;
 }
 
-export default function ChatTextInput({
+export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTextInput({
   value: originalValue,
   placeholder = "",
   focus = true,
@@ -69,11 +73,17 @@ export default function ChatTextInput({
   isPasted = false,
   pastePrefixLength = 0,
   pasteSuffixLength = 0,
-}: Props) {
+}: Props, ref) {
   const [localValue, setLocalValue] = useState(originalValue || "");
   const [cursorOffset, setCursorOffset] = useState(
     (originalValue || "").length
   );
+
+  useImperativeHandle(ref, () => ({
+    setCursorOffset: (offset: number) => {
+      setCursorOffset(offset);
+    }
+  }));
 
   const lastSentValueRef = useRef(originalValue || "");
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -435,4 +445,6 @@ export default function ChatTextInput({
         : renderedValue}
     </Text>
   );
-}
+});
+
+export default ChatTextInput;

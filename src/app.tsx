@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Box, Text, useApp } from "ink";
-import ChatTextInput from "./components/ChatTextInput.js";
+import ChatTextInput, { ChatTextInputRef } from "./components/ChatTextInput.js";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler, QuestionItem } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
@@ -235,6 +235,8 @@ export function App({
     }
   });
   const [focusMode, setFocusMode] = useState<"input" | "history" | "checklist" | "superagents" | "subagents" | "procs" | "chat">("input");
+
+  const chatTextInputRef = useRef<ChatTextInputRef>(null);
 
   // Automatically focus the input area when any wizard is active
   useEffect(() => {
@@ -2069,34 +2071,40 @@ export function App({
   }, []);
 
   useEffect(() => {
+    let active = true;
     const fetchGitData = async () => {
       const targetCwd = agentRef.current?.workingDirectory || process.cwd();
       try {
-        const { stdout } = await execa("git", ["branch", "--show-current"], { cwd: targetCwd, reject: false });
-        let branch = stdout?.trim() || "";
+        const [branchRes, worktreeRes] = await Promise.all([
+          execa("git", ["branch", "--show-current"], { cwd: targetCwd, reject: false }).catch(() => ({ stdout: "" })),
+          execa("git", ["worktree", "list"], { cwd: targetCwd, reject: false }).catch(() => ({ stdout: "" }))
+        ]);
+
+        if (!active) return;
+
+        let branch = branchRes.stdout?.trim() || "";
         if (!branch) {
-          const { stdout: shaStdout } = await execa("git", ["rev-parse", "--short", "HEAD"], { cwd: targetCwd, reject: false });
-          branch = shaStdout?.trim() || "";
+          const shaRes = await execa("git", ["rev-parse", "--short", "HEAD"], { cwd: targetCwd, reject: false }).catch(() => ({ stdout: "" }));
+          branch = shaRes.stdout?.trim() || "";
         }
         setGitBranch(branch);
-      } catch {
-        // ignore
-      }
-      try {
-        const { stdout } = await execa("git", ["worktree", "list"], { cwd: targetCwd, reject: false });
-        if (stdout) {
-          const lines = stdout.split("\n").filter(Boolean);
+
+        if (worktreeRes.stdout) {
+          const lines = worktreeRes.stdout.split("\n").filter(Boolean);
           setWorktreeCount(lines.length);
         } else {
           setWorktreeCount(0);
         }
       } catch {
-        setWorktreeCount(0);
+        if (active) setWorktreeCount(0);
       }
     };
     fetchGitData();
-    const interval = setInterval(fetchGitData, 5000);
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchGitData, 10000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [workspacePath]);
 
   // Sync scroll offsets on list length change
@@ -2595,6 +2603,17 @@ export function App({
     historySelectedIndex,
     setHistorySelectedIndex,
     wizardHeaderRows,
+    onInputClick: (x: number, y: number) => {
+      if (isSelectionOnlyStep) return;
+      const clickedSection = sectionBounds.find((s) => s.name === "input");
+      if (!clickedSection) return;
+
+      const rowOffset = y - (clickedSection.endRow - inputLinesCount + 1);
+      const colOffset = Math.max(0, x - 5);
+      const clickedIndex = rowOffset * (terminalWidth - 4) + colOffset;
+      const clampedIndex = Math.max(0, Math.min(clickedIndex, input.length));
+      chatTextInputRef.current?.setCursorOffset(clampedIndex);
+    },
   };
 
   return (
@@ -2729,6 +2748,7 @@ export function App({
                     />
                   )}
                   <ChatTextInput
+                    ref={chatTextInputRef}
                     focus={focusMode === "input"}
                     value={input}
                     onChange={handleInputChange}

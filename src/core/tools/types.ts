@@ -72,7 +72,7 @@ export interface SuperagentInstance {
   branch: string;
   worktreePath: string;
   agent: any;
-  status: "running" | "completed" | "error" | "paused" | "waiting";
+  status: "running" | "completed" | "error" | "paused" | "waiting" | "terminated";
   logs: string[];
   result?: string;
   completedAt?: number;
@@ -84,6 +84,8 @@ export interface SuperagentInstance {
   acceptanceCriteria?: string[];
   violations?: ViolationRecord[];
   dependsOn?: string[];
+  allowEarlyTermination?: boolean;
+  earlyTermination?: boolean;
 }
 
 /**

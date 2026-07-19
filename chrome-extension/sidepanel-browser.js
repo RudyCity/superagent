@@ -1464,7 +1464,7 @@ async function executeBrowserControl(controlId, action, target, value) {
               // Trigger click event: use native el.click() for native interactive elements, and dispatch event for custom/generic elements
               const isNativeInteractive = el.closest("input, textarea, button, select, a");
               if (isNativeInteractive) {
-                el.click();
+                isNativeInteractive.click();
               } else {
                 el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX, clientY }));
               }

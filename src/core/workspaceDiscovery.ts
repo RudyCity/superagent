@@ -17,7 +17,6 @@ export interface WorkspaceCache {
   lastScanTime: number;
 }
 
-// Ignore directories and files to speed up scanning and avoid clutter
 const IGNORED_DIRS = new Set([
   "node_modules",
   ".git",
@@ -26,6 +25,13 @@ const IGNORED_DIRS = new Set([
   "vendor",
   ".agents",
   ".superagent-r",
+  ".next",
+  ".svelte-kit",
+  ".tauri",
+  "build",
+  ".docusaurus",
+  "coverage",
+  ".nyc_output",
 ]);
 
 /**

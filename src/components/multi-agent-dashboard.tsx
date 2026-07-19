@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { execSync } from "child_process";
 import { Box, Text, useInput, useApp } from "ink";
-import ChatTextInput from "./ChatTextInput.js";
+import ChatTextInput, { ChatTextInputRef } from "./ChatTextInput.js";
 import fs from "fs/promises";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
@@ -130,6 +130,7 @@ export function MultiAgentDashboard({
   const [isProcessing, setIsProcessing] = useState(false);
   const [tick, setTick] = useState(0);
   const [query, setQuery] = useState("");
+  const chatTextInputRef = useRef<ChatTextInputRef>(null);
   const [lastTabPrefix, setLastTabPrefix] = useState<string | null>(null);
   const [masterLogs, setMasterLogs] = useState<string[]>(["[MASTER] System initialised. Ready for tasks."]);
   const logQueueRef = useRef<string[]>([]);
@@ -1160,6 +1161,49 @@ export function MultiAgentDashboard({
     expandCursorRef,
   });
 
+  const getPromptPrefixLength = () => {
+    if (!activeWizard) {
+      return isProcessing ? 25 : 21; // "└───[ ⚡ PROCESSING ] ❯ " has length 25, "└───[ ⚡ PROMPT ] ❯ " has length 21
+    }
+    const type = activeWizard.type as any;
+    switch (type) {
+      case "preset":
+        return 16; // "└──[ PRESET ] ❯ "
+      case "model": {
+        const step = activeWizard.step;
+        if (step === 1 || step === 22 || step === 32) return 14; // "└──[ TIER ] ❯ "
+        if (step === 4 || step === 30 || step === 40) return 16; // "└──[ PRESET ] ❯ "
+        if (step === 20) return 21; // "└──[ PRESET_NAME ] ❯ "
+        if (step === 21 || step === 31) return 21; // "└──[ PRESET_DESC ] ❯ "
+        if (step === 15 || step === 24 || step === 34) return 15; // "└──[ MODEL ] ❯ "
+        if (step === 16) return 22; // "└──[ PROFILE_NAME ] ❯ "
+        if (step === 17) return 18; // "└──[ BASE_URL ] ❯ "
+        if (step === 18) return 17; // "└──[ API_KEY ] ❯ "
+        if (step === 19 || step === 26 || step === 36) return 18; // "└──[ PROVIDER ] ❯ "
+        if (step === 2 || step === 23 || step === 33) return 18; // "└──[ PROVIDER ] ❯ "
+        if (step === 3 || step === 25 || step === 35) return 17; // "└──[ PROFILE ] ❯ "
+        if (step === 41) return 17; // "└──[ CONFIRM ] ❯ "
+        if (step === 50) return 19; // "└──[ CONFIGURE ] ❯ "
+        if ([60, 61, 62].includes(step)) return 15; // "└──[ VISION ] ❯ "
+        return 21;
+      }
+      case "provider":
+        return 18; // "└──[ PROVIDER ] ❯ "
+      case "login":
+        return 12 + String(activeWizard.step).length; // `└──[ LOGIN:${activeWizard.step} ] ❯ `
+      case "resume":
+        return 16; // "└──[ RESUME ] ❯ "
+      case "question":
+        return 16; // "└──[ ANSWER ] ❯ "
+      case "skills":
+        return 12 + String(activeWizard.step).length; // `└──[ SKILLS:${activeWizard.step} ] ❯ `
+      case "checkpoint":
+        return 20; // "└──[ CHECKPOINT ] ❯ "
+      default:
+        return 21;
+    }
+  };
+
   useDashboardMouse({
     wrappedLines,
     logsCount,
@@ -1197,6 +1241,23 @@ export function MultiAgentDashboard({
     groupBoundaries,
     toggleGroupCollapse,
     logBoxStartRow: 6 + titleBoxHeight + (renderedTaskLinesCount || 0),
+    onInputClick: (x: number, y: number) => {
+      if (isSelectionOnlyStep) return;
+      const prefixLength = getPromptPrefixLength();
+      
+      const statusBarHeight = 5 + ([...superagentInstances.values()].filter((i) => i.status === "running").map((i) => i.branch).length > 0 ? 1 : 0);
+      const suggestions_click = getDashboardSuggestions(query);
+      const isSuggestionsVisible = focusArea === "input" && (query.startsWith("/") || query.startsWith("!")) && suggestions_click.length > 0;
+      const bottomPromptHeight = 1 + (isSuggestionsVisible ? 2 : 0);
+      const promptStartRow = terminalSize.height - statusBarHeight - bottomPromptHeight + 1;
+      const promptInputRow = promptStartRow + (isSuggestionsVisible ? 2 : 0);
+
+      const rowOffset = y - promptInputRow;
+      const colOffset = Math.max(0, x - (prefixLength + 2));
+      const clickedIndex = rowOffset * (terminalSize.width - prefixLength - 2) + colOffset;
+      const clampedIndex = Math.max(0, Math.min(clickedIndex, query.length));
+      chatTextInputRef.current?.setCursorOffset(clampedIndex);
+    },
   });
 
   const maxVisibleSessions = Math.max(3, leftTopHeight - 2);
@@ -1413,6 +1474,7 @@ export function MultiAgentDashboard({
                       />
                     )}
                     <ChatTextInput
+                      ref={chatTextInputRef}
                       value={query}
                       onChange={handleQueryChange}
                       onSubmit={handleQuerySubmit}

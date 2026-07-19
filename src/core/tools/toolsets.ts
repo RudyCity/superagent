@@ -25,6 +25,9 @@ import {
   manageBackgroundProcessTool,
 } from "./shellTools.js";
 import { webSearchTool, fetchUrlTool } from "./networkTools.js";
+import { searchJournalTool } from "./academicSearchTools.js";
+import { readDocumentTool } from "./documentReadTools.js";
+import { officeCliTool } from "./officeCliTools.js";
 import {
   defineSubagentTool,
   invokeSubagentTool,
@@ -87,6 +90,9 @@ export const masterToolset: Tool[] = [
   loadPinnedSessionTool,
   searchPinnedKnowledgeTool,
   webSearchTool,
+  searchJournalTool,
+  readDocumentTool,
+  officeCliTool,
   manageMcpTool,
   readTool,              // read-only: inspect results
   globTool,
@@ -117,6 +123,8 @@ export const masterToolset: Tool[] = [
 // Full development toolset. Scoped to own worktree at runtime via permission layer.
 export const superagentToolset: Tool[] = [
   readTool,
+  readDocumentTool,
+  officeCliTool,
   writeToFileTool,
   replaceFileContentTool,
   multiReplaceFileContentTool,
@@ -131,6 +139,7 @@ export const superagentToolset: Tool[] = [
   manageBackgroundProcessTool,
   webSearchTool,
   fetchUrlTool,
+  searchJournalTool,
   gitActionTool,         // commit to own branch
   gitWorktreeTool,
   manageTasksTool,
@@ -215,11 +224,14 @@ export const chromeExtensionToolset: Tool[] = [
 export const subagentToolsets: Record<string, Tool[]> = {
   researcher: [
     readTool,
+    readDocumentTool,
+    officeCliTool,
     globTool,
     grepTool,
     ripgrepSearchTool,
     webSearchTool,
     fetchUrlTool,
+    searchJournalTool,
     searchHistoryTool,
     loadPinnedSessionTool,
     searchPinnedKnowledgeTool,
@@ -236,10 +248,16 @@ export const subagentToolsets: Record<string, Tool[]> = {
     controlBrowserTabTool,
     controlBrowserMacroSaveTool,
     controlBrowserMacroRunTool,
+    defineSubagentTool,
+    invokeSubagentTool,
+    sendMessageTool,
+    manageSubagentsTool,
   ],
 
   coder: [
     readTool,
+    readDocumentTool,
+    officeCliTool,
     writeToFileTool,
     replaceFileContentTool,
     multiReplaceFileContentTool,
@@ -251,6 +269,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     runCommandTool,
     bashTool,
     webSearchTool,
+    searchJournalTool,
     askQuestionTool,
     getSkillsTool,
     useSkillTool,
@@ -261,16 +280,23 @@ export const subagentToolsets: Record<string, Tool[]> = {
     rmemoryConversationAddTool,
     saveSharedMemoryTool,
     readSharedMemoryTool,
+    defineSubagentTool,
+    invokeSubagentTool,
+    sendMessageTool,
+    manageSubagentsTool,
   ],
 
   reviewer: [
     readTool,
+    readDocumentTool,
+    officeCliTool,
     globTool,
     grepTool,
     ripgrepSearchTool,
     runCommandTool,
     bashTool,
     webSearchTool,
+    searchJournalTool,
     askQuestionTool,
     getSkillsTool,
     useSkillTool,
@@ -326,4 +352,8 @@ export const defaultSubagentToolset: Tool[] = [
   askQuestionTool,
   getSkillsTool,
   useSkillTool,
+  defineSubagentTool,
+  invokeSubagentTool,
+  sendMessageTool,
+  manageSubagentsTool,
 ];

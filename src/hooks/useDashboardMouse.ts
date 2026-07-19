@@ -47,6 +47,7 @@ export interface DashboardMouseContext {
   toggleGroupCollapse?: (groupIndex: number) => void;
   /** Actual dynamic start row of log window on terminal screen */
   logBoxStartRow?: number;
+  onInputClick?: (x: number, y: number) => void;
 }
 
 export function useDashboardMouse(ctx: DashboardMouseContext) {
@@ -392,6 +393,7 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
               }
             }
             setFocusArea("input");
+            ctx.onInputClick?.(x, y);
           } else if (y >= workspaceStartRow && y < workspaceStartRow + workspaceHeight) {
             if (x <= leftLimit) {
               if (y < workspaceStartRow + leftTopHeight) {

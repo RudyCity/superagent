@@ -280,6 +280,10 @@ export const invokeSuperagentTool: Tool = {
         items: { type: "string" },
         description: "List of peer Superagent roles, branch names, or IDs that this Superagent depends on. The agent will wait until they finish and merge their branches before starting execution.",
       },
+      allowEarlyTermination: {
+        type: "boolean",
+        description: "If true, the Master Agent may terminate this Superagent early once another Superagent completes the same independent task with passing tests.",
+      },
     },
     required: ["role", "task", "branch"],
   },
@@ -301,6 +305,8 @@ export const invokeSuperagentTool: Tool = {
     const mode = (args.mode as string | undefined) || "full";
     const isPatchMode = mode === "patch";
     const dependsOn = Array.isArray(args.dependsOn) ? args.dependsOn.map(String) : undefined;
+    const allowEarlyTermination = args.allowEarlyTermination === true;
+    const earlyTermination = args.earlyTermination === true;
 
     // Only depth-0 (Master Agent) may invoke Superagents
     const parentAgent = agentLocalStorage.getStore();
@@ -459,6 +465,13 @@ export const invokeSuperagentTool: Tool = {
         activePeers;
     }
 
+    if (earlyTermination) {
+      basePrompt += "\n\n### EARLY TERMINATION DIRECTIVE:\n" +
+        "You are permitted to short-circuit and return your final report as soon as your primary objective is met. " +
+        "Once the core task is complete and verified, stop further iterations immediately and provide the SUPERAGENT TASK REPORT. " +
+        "Do NOT continue polishing, refactoring, or expanding scope beyond the stated task.";
+    }
+
     const systemPrompt = basePrompt + "\n\n" + SUPERAGENT_REPORT_INSTRUCTION;
 
     // Dynamic import to avoid circular dependency at module load time
@@ -594,6 +607,8 @@ export const invokeSuperagentTool: Tool = {
       constraints,
       acceptanceCriteria,
       dependsOn,
+      allowEarlyTermination,
+      earlyTermination,
     };
     superagentInstances.set(superagentId, instance);
     notifySuperagentsChanged();
@@ -775,11 +790,16 @@ export const awaitSuperagentsTool: Tool = {
         type: "number",
         description: "Maximum seconds to wait before giving up. Defaults to 600 (10 minutes).",
       },
+      earlyTermination: {
+        type: "boolean",
+        description: "If true, return early once a quorum (strict majority) of Superagents have reported success, instead of waiting for all to finish.",
+      },
     },
     required: [],
   },
   async execute(args, _cwd, signal) {
     const timeoutMs = ((args.timeoutSeconds as number) || 600) * 1000;
+    const earlyTermination = args.earlyTermination === true;
     const start = Date.now();
 
     const running = [...superagentInstances.values()].filter(
@@ -799,9 +819,41 @@ export const awaitSuperagentsTool: Tool = {
       return "No running Superagents found. All may have already completed.";
     }
 
+    // ── M1: Parallel early termination ───────────────────────────────────
+    // If any running instance allows early termination, terminate redundant
+    // peers once a sibling with the same role prefix completes with passing tests.
+    const terminateRedundantSuperagents = (): void => {
+      const all = [...superagentInstances.values()];
+      const finishers = all.filter(
+        (i) =>
+          i.status === "completed" &&
+          i.result &&
+          (i.result.includes("Tests: passed") || i.result.includes("Status: Completed"))
+      );
+      if (finishers.length === 0) return;
+      for (const inst of all) {
+        if (inst.status !== "running" || !inst.allowEarlyTermination) continue;
+        const redundant = finishers.some(
+          (f) => f.id !== inst.id && f.role.split("-")[0] === inst.role.split("-")[0]
+        );
+        if (!redundant) continue;
+        inst.status = "terminated";
+        inst.completedAt = Date.now();
+        try {
+          inst.agent?.abort?.();
+        } catch (_e) { /* abort best-effort */ }
+        appendMasterLog(
+          `[EARLY-TERM] Terminated redundant Superagent "${inst.role}" (${inst.id}) — peer completed with passing tests.`
+        );
+        notifySuperagentsChanged();
+      }
+    };
+    terminateRedundantSuperagents();
+
     // Poll loop
     while (true) {
       if (signal?.aborted) return "Aborted while waiting for Superagents.";
+      terminateRedundantSuperagents();
       if (Date.now() - start > timeoutMs) {
         const stillRunning = [...superagentInstances.values()]
           .filter((i) => i.status === "running")
@@ -817,6 +869,22 @@ export const awaitSuperagentsTool: Tool = {
       );
 
       if (!hasRunning) {
+        // Quorum early-exit: if a strict majority of the originally-tracked
+        // running Superagents have completed successfully, return early.
+        if (earlyTermination) {
+          const tracked = running;
+          const succeeded = tracked.filter(
+            (i) => i.status === "completed" &&
+              i.result &&
+              (i.result.includes("Tests: passed") || i.result.includes("Status: Completed"))
+          );
+          if (tracked.length > 0 && succeeded.length * 2 > tracked.length) {
+            appendMasterLog(
+              `[EARLY-TERM] Quorum reached (${succeeded.length}/${tracked.length} succeeded). Returning early from await_superagents.`
+            );
+            break;
+          }
+        }
         if (hasPaused) {
           const pausedList = [...superagentInstances.values()]
             .filter((i) => i.status === "paused")

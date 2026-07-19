@@ -84,7 +84,14 @@ import {
   controlBrowserMacroRunTool
 } from "./otherTools.js";
 
+import { searchJournalTool } from "./academicSearchTools.js";
+import { readDocumentTool } from "./documentReadTools.js";
+import { officeCliTool } from "./officeCliTools.js";
+
 export const allTools: Tool[] = [
+  searchJournalTool,
+  readDocumentTool,
+  officeCliTool,
   readTool,
   editTool,
   askQuestionTool,

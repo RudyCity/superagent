@@ -11,6 +11,7 @@ import { SummarizationStrategy } from "./strategies/SummarizationStrategy.js";
 import { PruningStrategy } from "./strategies/PruningStrategy.js";
 import { PinningStrategy } from "./strategies/PinningStrategy.js";
 import { RMemoryStrategy } from "./strategies/RMemoryStrategy.js";
+import { BudgetedPruningStrategy } from "./strategies/BudgetedPruningStrategy.js";
 import { SemanticAnalyzer } from "./SemanticAnalyzer.js";
 import { CompactionHistory } from "./CompactionHistory.js";
 
@@ -67,6 +68,7 @@ export class ContextManager {
   private semanticAnalyzer: SemanticAnalyzer;
   private history: CompactionHistory;
   private eventEmitter: EventEmitter;
+  private budgetedPruningStrategy: BudgetedPruningStrategy;
   private config: ContextManagerConfig;
   private pinnedMessages: Map<string, PinnedMessage> = new Map();
 
@@ -88,6 +90,12 @@ export class ContextManager {
       summarizationStrategy,
       new PruningStrategy(),
     ];
+
+    // Pre-emptive budgeted pruning (GraphSentry): prunes lowest-importance
+    // messages within a token budget before the compaction threshold is hit.
+    this.budgetedPruningStrategy = new BudgetedPruningStrategy({
+      contextWindowLimit: config.contextWindowLimit,
+    });
   }
 
   setLLMModel(model: any, abortSignal?: AbortSignal): void {
@@ -364,6 +372,15 @@ export class ContextManager {
 
   private selectStrategy(messages: Message[]): CompactionStrategy {
     const context = this.buildCompactionContext(messages);
+
+    // Pre-emptive band: estimated tokens exceed 0.75 * limit but are still
+    // below the emergency threshold. Use budgeted pruning to proactively
+    // shrink the thought-DAG rather than waiting for reactive compaction.
+    const totalTokens = this.tokenTracker.estimateTokensForAll(messages).total;
+    const threshold = this.calculateThreshold();
+    if (totalTokens > threshold * 0.75 && totalTokens < threshold) {
+      return this.budgetedPruningStrategy;
+    }
 
     for (const strategy of this.strategies) {
       if (strategy.canHandle(context)) {

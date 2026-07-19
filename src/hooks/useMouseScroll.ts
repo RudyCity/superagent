@@ -96,6 +96,9 @@ export interface SingleAgentMouseContext {
   history?: string[];
   historySelectedIndex?: number;
   setHistorySelectedIndex?: (val: number | ((prev: number) => number)) => void;
+
+  // On input prompt click
+  onInputClick?: (x: number, y: number) => void;
 }
 
 /**
@@ -343,6 +346,7 @@ export function useMouseScroll(
             case "statusbar":
             case "input":
               ctx.setFocusMode("input");
+              ctx.onInputClick?.(x, y);
               break;
             case "wizard":
               if (ctx.activeWizard?.type === "plan_approve") {

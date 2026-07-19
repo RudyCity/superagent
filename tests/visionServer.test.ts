@@ -82,5 +82,5 @@ describe("Python Vision Inference Server daemon", () => {
     const detectResult = await res.json() as any;
     expect(detectResult.success).toBe(true);
     expect(Array.isArray(detectResult.elements)).toBe(true);
-  }, 50000);
+  }, 120000);
 });

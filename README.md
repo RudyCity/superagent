@@ -70,6 +70,7 @@ superagent/
 │   │       ├── subagentTools.ts   # Subagent instantiation (superagent tier)
 │   │       ├── superagentTools.ts # Superagent orchestration tools (master tier)
 │   │       ├── dynamicHooks.ts    # Internal hook discovery, loading, and active state
+│   │       ├── academicSearchTools.ts # Academic journal search engine API integrations
 │   │       └── networkTools.ts    # Web content fetch and browser integration
 │   └── components/                # React Ink components (visual stats, wizards)
 ├── bin/                           # Portable Python and setup scripts

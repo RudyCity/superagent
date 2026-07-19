@@ -28,9 +28,11 @@ export type MessageContent = string | Array<TextPart | ImagePart>;
  * Image parts are represented as "[image]" placeholders.
  */
 export function contentToString(content: MessageContent): string {
+  if (!content) return "";
   if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
   return content
-    .map((p) => (p.type === "text" ? p.text : "[image]"))
+    .map((p) => (p && p.type === "text" ? p.text : "[image]"))
     .join(" ");
 }
 

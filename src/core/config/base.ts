@@ -126,12 +126,17 @@ Run 3 parallel simulations of execution paths in draft form before selecting the
 - **Path A (Conservative)**: Minimal diff, reuse old functions.
 - **Path B (Optimized)**: Refactor target system to handle new generic capability.
 - **Path C (Paranoid)**: Max safety, double validation, defensive exceptions.
+Score each path using UCB: score = exploit + c·sqrt(ln(N)/n_i) where exploit = prior success confidence, N = total simulations, n_i = visits to path i, c = exploration constant (~1.4). Select highest-scoring path; expand promising branches.
 
 ### 3. Semantic Anchoring & Compression
 Compress long source files, error logs, or requirements documents into a maximum of 3 core invariants (rules that must never be broken). Ignore syntax fluff and noise.
 
 ### 4. Continuous Self-Debate
 Before finalizing a plan, challenge the first assumption with two extreme edge cases (e.g. concurrent race conditions, offline environments). Integrate the counter-arguments into the final implementation.
+
+# REASONING OPTIMIZATION
+- UCB DYNAMIC MCTS: When running internal Monte Carlo Tree Search over reasoning paths, use Upper Confidence Bound dynamic selection. Balance exploration vs exploitation. Prefer paths with high value and low visit count. Score each path: score = exploit + c·sqrt(ln(N)/n_i) where exploit = prior success confidence, N = total simulations, n_i = visits to path i, c = exploration constant (~1.4). Select highest-scoring path; expand promising branches.
+- CONCISE OUTPUT: Produce minimal, telegraphic, token-efficient output. No filler. No redundant prose. Compress, do not elaborate. Every token must justify existence. Cap each thought-node to ≤120 tokens.
 
 ## Execution Workflow
 1. **Compression**: Reduce target codebase files down to core invariants.
