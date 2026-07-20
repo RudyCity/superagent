@@ -200,7 +200,7 @@ function sendJSON(res: http.ServerResponse, status: number, data: any) {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-workspace-path",
   });
   res.end(JSON.stringify(data));
 }
@@ -371,7 +371,7 @@ export async function runServer(port: number, silent = false) {
       res.writeHead(204, {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-workspace-path",
       });
       res.end();
       return;
@@ -481,6 +481,20 @@ export async function runServer(port: number, silent = false) {
         try {
           const { deleteSessionFromDb } = await import("./core/config.js");
           deleteSessionFromDb(sessionId);
+
+          // Remove from activeSessions map and abort if running
+          for (const [key, session] of activeSessions.entries()) {
+            if (session.sessionId === sessionId) {
+              if (session.agent.isAgentRunning()) {
+                session.agent.abort();
+              }
+              activeSessions.delete(key);
+            }
+          }
+
+          // Broadcast real-time sessions updated event to connected clients
+          broadcastEvent({ type: "superagent-sessions-changed" });
+
           sendJSON(res, 200, { success: true });
         } catch (err: any) {
           sendJSON(res, 500, { error: err.message });

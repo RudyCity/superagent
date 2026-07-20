@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.510] - 2026-07-20
+
+### Enhanced
+- **SuperAgent HTTP Server CORS & Active Session Purge (`src/server.ts`)**:
+  - Updated CORS preflight and `sendJSON` headers to allow `x-workspace-path` and `Authorization` headers across all origins.
+  - Enhanced `DELETE /api/history/session/:id` to purge deleted sessions from memory (`activeSessions`), aborting active runs if still executing, and broadcasting `superagent-sessions-changed` via SSE for real-time sidebar synchronization.
+
 ## [1.2.509] - 2026-07-20
 
 ### Fixed
