@@ -431,24 +431,26 @@ export const historyCommand: SlashCommand = {
       }
     } else if (action === "migrate") {
       try {
-        const { migrateLegacyJsonToDb } = await import("../storage/historyDb.js");
+        const { migrateLegacyJsonToDb, migrateLegacyCheckpointsToDb } = await import("../storage/historyDb.js");
         const count = migrateLegacyJsonToDb();
-        ctx.addLine({ type: "system", content: `✓ Migrated ${count} legacy JSON sessions into SQLite database.`, timestamp: now });
+        const cpCount = migrateLegacyCheckpointsToDb();
+        ctx.addLine({ type: "system", content: `✓ Migrated ${count} sessions and ${cpCount} checkpoints into SQLite database.`, timestamp: now });
       } catch (err: any) {
         ctx.addLine({ type: "error", content: `Migration failed: ${err.message}`, timestamp: now });
       }
     } else if (action === "clean" || action === "cleanup") {
       try {
-        const { cleanLegacyJsonFiles } = await import("../storage/historyDb.js");
+        const { cleanLegacyJsonFiles, cleanLegacyCheckpointsFiles } = await import("../storage/historyDb.js");
         const count = cleanLegacyJsonFiles();
-        ctx.addLine({ type: "system", content: `✓ Cleaned up ${count} legacy JSON session files. All session data is safely stored in SQLite.`, timestamp: now });
+        const cpCount = cleanLegacyCheckpointsFiles();
+        ctx.addLine({ type: "system", content: `✓ Cleaned up ${count} session JSON files and ${cpCount} checkpoint files. All data is safely stored in SQLite.`, timestamp: now });
       } catch (err: any) {
         ctx.addLine({ type: "error", content: `Cleanup failed: ${err.message}`, timestamp: now });
       }
     } else {
       ctx.addLine({
         type: "system",
-        content: "Usage:\n  /history export [session_id] - Export session to JSON string\n  /history backup [path]       - Create a timestamped backup of history.db\n  /history migrate            - Auto-import legacy JSON sessions into SQLite\n  /history clean              - Clean up bulky legacy JSON session files",
+        content: "Usage:\n  /history export [session_id] - Export session to JSON string\n  /history backup [path]       - Create a timestamped backup of history.db\n  /history migrate            - Auto-import legacy sessions & checkpoints into SQLite\n  /history clean              - Clean up bulky legacy JSON session and checkpoint files",
         timestamp: now,
       });
     }
@@ -460,6 +462,8 @@ try {
   import("../storage/historyDb.js").then((mod) => {
     mod.migrateLegacyJsonToDb();
     mod.cleanLegacyJsonFiles();
+    mod.migrateLegacyCheckpointsToDb();
+    mod.cleanLegacyCheckpointsFiles();
   }).catch(() => {});
 } catch {}
 

@@ -224,4 +224,53 @@ describe("SQLite History Database (historyDb)", () => {
     expect(cleanedCount).toBeGreaterThanOrEqual(1);
     expect(fs.readFileSync(legacyFile, "utf-8")).toBe("");
   });
+
+  it("should save, list, and migrate checkpoints in SQLite database", () => {
+    const cp = {
+      id: "chk_100",
+      name: "Checkpoint 100",
+      sessionId: "session-chk",
+      sessionFilePath: "/path/session-chk.json",
+      timestamp: Date.now(),
+      messagesJson: JSON.stringify([{ role: "user", content: "Checkpoint test" }]),
+      planState: "IDLE",
+    };
+
+    historyDbModule.saveCheckpointToDb(cp);
+
+    const loadedCp = historyDbModule.loadCheckpointFromDb("chk_100");
+    expect(loadedCp).not.toBeNull();
+    expect(loadedCp?.name).toBe("Checkpoint 100");
+
+    const list = historyDbModule.listCheckpointsFromDb("session-chk");
+    expect(list.length).toBe(1);
+
+    // Test legacy checkpoint migration and cleanup
+    const checkpointsDir = path.join(tempDir, "history", "single", "legacy-chk-sess", "checkpoints");
+    fs.mkdirSync(checkpointsDir, { recursive: true });
+    const legacyChkFile = path.join(checkpointsDir, "checkpoint_1001.json");
+    fs.writeFileSync(
+      legacyChkFile,
+      JSON.stringify({
+        id: "chk_1001",
+        name: "Legacy Checkpoint",
+        sessionFilePath: "/path/legacy.json",
+        timestamp: Date.now(),
+        messages: [{ role: "user", content: "Legacy checkpoint message" }],
+        planState: "IDLE",
+      }),
+      "utf-8"
+    );
+
+    const migratedCpCount = historyDbModule.migrateLegacyCheckpointsToDb();
+    expect(migratedCpCount).toBeGreaterThanOrEqual(1);
+
+    const loadedMigrated = historyDbModule.loadCheckpointFromDb("chk_1001");
+    expect(loadedMigrated).not.toBeNull();
+    expect(loadedMigrated?.name).toBe("Legacy Checkpoint");
+
+    const cleanedCpCount = historyDbModule.cleanLegacyCheckpointsFiles();
+    expect(cleanedCpCount).toBeGreaterThanOrEqual(1);
+    expect(fs.existsSync(legacyChkFile)).toBe(false);
+  });
 });

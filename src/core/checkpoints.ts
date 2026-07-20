@@ -2,10 +2,19 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
 import { execSync } from "child_process";
-import { getGlobalConfigDir, ensureGlobalConfigDir, clearHistoryCache } from "./config.js";
+import { clearHistoryCache } from "./config.js";
 import { Message } from "./conversation.js";
 import { backgroundTasks, subagentInstances, notifyTasksChanged, notifySubagentsChanged, isTaskInWorkspace } from "./tools/state.js";
 import { killProcessTree } from "./tools/shellTools.js";
+import {
+  saveCheckpointToDb,
+  loadCheckpointFromDb,
+  listCheckpointsFromDb,
+  deleteCheckpointFromDb,
+  deleteAllCheckpointsFromDb,
+  saveSessionToDb,
+  loadSessionFromDb,
+} from "./storage/historyDb.js";
 
 export interface Checkpoint {
   id: string;
@@ -37,7 +46,7 @@ export function getGitSha(cwd?: string): string | undefined {
 }
 
 /**
- * Saves a new checkpoint to disk.
+ * Saves a new checkpoint to SQLite database.
  */
 export async function createCheckpoint(
   sessionFilePath: string,
@@ -46,6 +55,7 @@ export async function createCheckpoint(
   planState: "IDLE" | "PLANNING_PENDING" | "APPROVED",
   workingDirectory?: string
 ): Promise<Checkpoint> {
+  const sessionId = path.basename(sessionFilePath, ".json");
   const planPath = sessionFilePath.replace(/\.json$/, "_implementation_plan.md");
   const taskPath = sessionFilePath.replace(/\.json$/, "_task.md");
   const taskHistoryPath = sessionFilePath.replace(/\.json$/, "_task_history.md");
@@ -56,18 +66,10 @@ export async function createCheckpoint(
   let taskHistoryFileContent: string | undefined;
   let walkthroughFileContent: string | undefined;
 
-  try {
-    planFileContent = await fs.readFile(planPath, "utf-8");
-  } catch {}
-  try {
-    taskFileContent = await fs.readFile(taskPath, "utf-8");
-  } catch {}
-  try {
-    taskHistoryFileContent = await fs.readFile(taskHistoryPath, "utf-8");
-  } catch {}
-  try {
-    walkthroughFileContent = await fs.readFile(walkthroughPath, "utf-8");
-  } catch {}
+  try { planFileContent = await fs.readFile(planPath, "utf-8"); } catch {}
+  try { taskFileContent = await fs.readFile(taskPath, "utf-8"); } catch {}
+  try { taskHistoryFileContent = await fs.readFile(taskHistoryPath, "utf-8"); } catch {}
+  try { walkthroughFileContent = await fs.readFile(walkthroughPath, "utf-8"); } catch {}
 
   const gitSha = getGitSha(workingDirectory);
   const timestamp = Date.now();
@@ -87,84 +89,72 @@ export async function createCheckpoint(
     gitSha,
   };
 
-  const checkpointsDir = path.join(path.dirname(sessionFilePath), "checkpoints");
-  await fs.mkdir(checkpointsDir, { recursive: true });
-
-  const checkpointPath = path.join(checkpointsDir, `checkpoint_${timestamp}.json`);
-
-  await fs.writeFile(checkpointPath, JSON.stringify(checkpoint, null, 2), "utf-8");
-
-  // Pruning logic - keep max 20 checkpoints for the current session
-  try {
-    const files = await fs.readdir(checkpointsDir);
-    const prefix = "checkpoint_";
-    const matched = files.filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
-
-    if (matched.length > 20) {
-      const sorted = matched
-        .map((f) => {
-          const parts = f.replace(prefix, "").replace(".json", "");
-          const timeVal = parseInt(parts, 10) || 0;
-          return { filename: f, timeVal };
-        })
-        .sort((a, b) => a.timeVal - b.timeVal); // oldest first
-
-      const toDeleteCount = sorted.length - 20;
-      for (let i = 0; i < toDeleteCount; i++) {
-        await fs.unlink(path.join(checkpointsDir, sorted[i].filename));
-      }
-    }
-  } catch {}
+  saveCheckpointToDb({
+    id,
+    name,
+    sessionId,
+    sessionFilePath,
+    timestamp,
+    messagesJson: JSON.stringify(messages),
+    planState,
+    planFileContent,
+    taskFileContent,
+    taskHistoryFileContent,
+    walkthroughFileContent,
+    gitSha,
+  });
 
   return checkpoint;
 }
 
 /**
- * Lists all checkpoints for the active session, sorted by newest first.
+ * Lists all checkpoints for the active session from SQLite, sorted by newest first.
  */
 export async function listCheckpointsForSession(
   sessionFilePath: string
 ): Promise<Checkpoint[]> {
-  const checkpointsDir = path.join(path.dirname(sessionFilePath), "checkpoints");
-  if (!fsSync.existsSync(checkpointsDir)) return [];
+  const sessionId = path.basename(sessionFilePath, ".json");
+  const records = listCheckpointsFromDb(sessionId);
 
-  const prefix = "checkpoint_";
-
-  try {
-    const files = await fs.readdir(checkpointsDir);
-    const matched = files.filter((f) => f.startsWith(prefix) && f.endsWith(".json"));
-
-    const checkpoints: Checkpoint[] = [];
-    for (const file of matched) {
-      try {
-        const content = await fs.readFile(path.join(checkpointsDir, file), "utf-8");
-        const parsed = JSON.parse(content) as Checkpoint;
-        checkpoints.push(parsed);
-      } catch {}
-    }
-
-    return checkpoints.sort((a, b) => b.timestamp - a.timestamp);
-  } catch {
-    return [];
-  }
+  return records.map((r) => {
+    let msgs: Message[] = [];
+    try { msgs = JSON.parse(r.messagesJson); } catch {}
+    return {
+      id: r.id,
+      name: r.name,
+      timestamp: r.timestamp,
+      sessionFilePath: r.sessionFilePath,
+      messages: msgs,
+      planState: (r.planState as any) || "IDLE",
+      planFileContent: r.planFileContent,
+      taskFileContent: r.taskFileContent,
+      taskHistoryFileContent: r.taskHistoryFileContent,
+      walkthroughFileContent: r.walkthroughFileContent,
+      gitSha: r.gitSha,
+    };
+  });
 }
 
 /**
  * Restores a checkpoint to the main session and updates planning/task files.
  */
 export async function restoreCheckpoint(
-  checkpointFilePath: string,
+  checkpointId: string,
   sessionFilePath: string
 ): Promise<Checkpoint> {
-  const content = await fs.readFile(checkpointFilePath, "utf-8");
-  const checkpoint = JSON.parse(content) as Checkpoint;
-
-  // Restore the session history into SQLite database
   const sessionId = path.basename(sessionFilePath, ".json");
-  const { loadSessionFromDb, saveSessionToDb } = await import("./storage/historyDb.js");
+  const cpRecord = loadCheckpointFromDb(checkpointId);
+
+  if (!cpRecord) {
+    throw new Error(`Checkpoint "${checkpointId}" not found in database.`);
+  }
+
+  let checkpointMessages: Message[] = [];
+  try { checkpointMessages = JSON.parse(cpRecord.messagesJson); } catch {}
+
   const current = loadSessionFromDb(sessionId);
 
-  const msgs = checkpoint.messages.map((m: any, idx: number) => ({
+  const msgs = checkpointMessages.map((m: any, idx: number) => ({
     sessionId,
     role: m.role || "user",
     content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
@@ -190,7 +180,7 @@ export async function restoreCheckpoint(
       lastModified: Date.now(),
       preview,
       workingDirectory: current.session?.workingDirectory,
-      planState: checkpoint.planState,
+      planState: cpRecord.planState,
       activePreset: current.session?.activePreset,
       extraData: current.session?.extraData,
     },
@@ -211,39 +201,43 @@ export async function restoreCheckpoint(
   const taskHistoryPath = sessionFilePath.replace(/\.json$/, "_task_history.md");
   const walkthroughPath = sessionFilePath.replace(/\.json$/, "_walkthrough.md");
 
-  if (checkpoint.planFileContent !== undefined) {
-    await fs.writeFile(planPath, checkpoint.planFileContent, "utf-8");
+  if (cpRecord.planFileContent !== undefined && cpRecord.planFileContent !== null) {
+    await fs.writeFile(planPath, cpRecord.planFileContent, "utf-8");
   } else {
-    try {
-      await fs.unlink(planPath);
-    } catch {}
+    try { await fs.unlink(planPath); } catch {}
   }
 
-  if (checkpoint.taskFileContent !== undefined) {
-    await fs.writeFile(taskPath, checkpoint.taskFileContent, "utf-8");
+  if (cpRecord.taskFileContent !== undefined && cpRecord.taskFileContent !== null) {
+    await fs.writeFile(taskPath, cpRecord.taskFileContent, "utf-8");
   } else {
-    try {
-      await fs.unlink(taskPath);
-    } catch {}
+    try { await fs.unlink(taskPath); } catch {}
   }
 
-  if (checkpoint.taskHistoryFileContent !== undefined) {
-    await fs.writeFile(taskHistoryPath, checkpoint.taskHistoryFileContent, "utf-8");
+  if (cpRecord.taskHistoryFileContent !== undefined && cpRecord.taskHistoryFileContent !== null) {
+    await fs.writeFile(taskHistoryPath, cpRecord.taskHistoryFileContent, "utf-8");
   } else {
-    try {
-      await fs.unlink(taskHistoryPath);
-    } catch {}
+    try { await fs.unlink(taskHistoryPath); } catch {}
   }
 
-  if (checkpoint.walkthroughFileContent !== undefined) {
-    await fs.writeFile(walkthroughPath, checkpoint.walkthroughFileContent, "utf-8");
+  if (cpRecord.walkthroughFileContent !== undefined && cpRecord.walkthroughFileContent !== null) {
+    await fs.writeFile(walkthroughPath, cpRecord.walkthroughFileContent, "utf-8");
   } else {
-    try {
-      await fs.unlink(walkthroughPath);
-    } catch {}
+    try { await fs.unlink(walkthroughPath); } catch {}
   }
 
-  return checkpoint;
+  return {
+    id: cpRecord.id,
+    name: cpRecord.name,
+    timestamp: cpRecord.timestamp,
+    sessionFilePath: cpRecord.sessionFilePath,
+    messages: checkpointMessages,
+    planState: (cpRecord.planState as any) || "IDLE",
+    planFileContent: cpRecord.planFileContent,
+    taskFileContent: cpRecord.taskFileContent,
+    taskHistoryFileContent: cpRecord.taskHistoryFileContent,
+    walkthroughFileContent: cpRecord.walkthroughFileContent,
+    gitSha: cpRecord.gitSha,
+  };
 }
 
 /**
@@ -252,20 +246,19 @@ export async function restoreCheckpoint(
 export async function deleteCheckpointsForSession(
   sessionFilePath: string
 ): Promise<void> {
+  const sessionId = path.basename(sessionFilePath, ".json");
+  deleteAllCheckpointsFromDb(sessionId);
+
   const sessionDir = path.dirname(sessionFilePath);
 
   const checkpointsDir = path.join(sessionDir, "checkpoints");
   if (fsSync.existsSync(checkpointsDir)) {
-    try {
-      await fs.rm(checkpointsDir, { recursive: true, force: true });
-    } catch {}
+    try { await fs.rm(checkpointsDir, { recursive: true, force: true }); } catch {}
   }
 
   const tasksLogDir = path.join(sessionDir, "tasks");
   if (fsSync.existsSync(tasksLogDir)) {
-    try {
-      await fs.rm(tasksLogDir, { recursive: true, force: true });
-    } catch {}
+    try { await fs.rm(tasksLogDir, { recursive: true, force: true }); } catch {}
   }
 }
 
@@ -276,9 +269,7 @@ export function terminateActiveTasksAndSubagents(workspacePath: string = process
   // 1. Kill background tasks
   for (const [id, task] of backgroundTasks.entries()) {
     if (isTaskInWorkspace(task.cwd, workspacePath)) {
-      try {
-        killProcessTree(task.process.pid);
-      } catch {}
+      try { killProcessTree(task.process.pid); } catch {}
       backgroundTasks.delete(id);
     }
   }
@@ -287,9 +278,7 @@ export function terminateActiveTasksAndSubagents(workspacePath: string = process
   // 2. Terminate running subagents
   for (const [id, inst] of subagentInstances.entries()) {
     if (inst.status === "running") {
-      try {
-        inst.agent.abort();
-      } catch {}
+      try { inst.agent.abort(); } catch {}
       inst.status = "completed";
       inst.result = "[Cancelled due to checkpoint restore]";
     }
@@ -304,14 +293,7 @@ export async function restoreCheckpointById(
   id: string,
   sessionFilePath: string
 ): Promise<Checkpoint | undefined> {
-  const checkpoints = await listCheckpointsForSession(sessionFilePath);
-  const found = checkpoints.find((c) => c.id === id);
-  if (!found) return undefined;
-
-  const checkpointsDir = path.join(path.dirname(sessionFilePath), "checkpoints");
-  const checkpointPath = path.join(checkpointsDir, `checkpoint_${found.timestamp}.json`);
-
-  return await restoreCheckpoint(checkpointPath, sessionFilePath);
+  return await restoreCheckpoint(id, sessionFilePath);
 }
 
 /**
@@ -322,17 +304,5 @@ export async function deleteCheckpointById(
   id: string,
   sessionFilePath: string
 ): Promise<boolean> {
-  const checkpoints = await listCheckpointsForSession(sessionFilePath);
-  const found = checkpoints.find((c) => c.id === id);
-  if (!found) return false;
-
-  const checkpointsDir = path.join(path.dirname(sessionFilePath), "checkpoints");
-  const checkpointPath = path.join(checkpointsDir, `checkpoint_${found.timestamp}.json`);
-
-  try {
-    await fs.unlink(checkpointPath);
-    return true;
-  } catch {
-    return false;
-  }
+  return deleteCheckpointFromDb(id);
 }

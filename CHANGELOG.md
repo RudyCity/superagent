@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.496] - 2026-07-20
+
+### Added
+- **Full SQLite Checkpoint Persistence, Migration, & Cleanup**:
+  - Created `checkpoints` table schema with indices in SQLite `history.db`.
+  - Refactored `checkpoints.ts` functions (`createCheckpoint`, `listCheckpointsForSession`, `restoreCheckpoint`, `deleteCheckpointById`, `deleteCheckpointsForSession`) to operate directly against SQLite.
+  - Implemented `migrateLegacyCheckpointsToDb()` and `cleanLegacyCheckpointsFiles()` functions in `historyDb.ts`.
+  - Added automated startup migration and cleanup for legacy checkpoint JSON files.
+  - Added unit test suite covering SQLite checkpoint CRUD operations, legacy migration, and cleanup in `tests/historyDb.test.ts`.
+
 ## [1.2.495] - 2026-07-20
 
 ### Fixed

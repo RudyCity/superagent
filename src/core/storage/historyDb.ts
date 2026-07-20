@@ -149,6 +149,25 @@ function initDatabaseSchema(db: any): void {
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS checkpoints (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      session_file_path TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      messages_json TEXT NOT NULL,
+      plan_state TEXT NOT NULL DEFAULT 'IDLE',
+      plan_file_content TEXT,
+      task_file_content TEXT,
+      task_history_file_content TEXT,
+      walkthrough_file_content TEXT,
+      git_sha TEXT,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_checkpoints_session ON checkpoints(session_id, timestamp DESC);
   `);
 
   try {
@@ -583,6 +602,208 @@ export function backupDatabase(targetPath?: string): string {
   const backupPath = targetPath || path.join(path.dirname(dbPath), `history_backup_${Date.now()}.db`);
   fs.copyFileSync(dbPath, backupPath);
   return backupPath;
+}
+
+export interface DbCheckpointRecord {
+  id: string;
+  name: string;
+  sessionId: string;
+  sessionFilePath: string;
+  timestamp: number;
+  messagesJson: string;
+  planState: string;
+  planFileContent?: string;
+  taskFileContent?: string;
+  taskHistoryFileContent?: string;
+  walkthroughFileContent?: string;
+  gitSha?: string;
+}
+
+export function saveCheckpointToDb(cp: DbCheckpointRecord): void {
+  const db = getHistoryDb();
+
+  try {
+    const sessionStmt = db.prepare(`
+      INSERT INTO sessions (id, file_path, display_name, message_count, last_modified)
+      VALUES (?, ?, ?, 0, ?)
+      ON CONFLICT(id) DO NOTHING
+    `);
+    sessionStmt.run(cp.sessionId, cp.sessionFilePath, cp.sessionId, cp.timestamp);
+  } catch {}
+
+  const stmt = db.prepare(`
+    INSERT INTO checkpoints (
+      id, name, session_id, session_file_path, timestamp, messages_json, plan_state,
+      plan_file_content, task_file_content, task_history_file_content, walkthrough_file_content, git_sha
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      session_id = excluded.session_id,
+      session_file_path = excluded.session_file_path,
+      timestamp = excluded.timestamp,
+      messages_json = excluded.messages_json,
+      plan_state = excluded.plan_state,
+      plan_file_content = excluded.plan_file_content,
+      task_file_content = excluded.task_file_content,
+      task_history_file_content = excluded.task_history_file_content,
+      walkthrough_file_content = excluded.walkthrough_file_content,
+      git_sha = excluded.git_sha
+  `);
+  stmt.run(
+    cp.id,
+    cp.name,
+    cp.sessionId,
+    cp.sessionFilePath,
+    cp.timestamp,
+    cp.messagesJson,
+    cp.planState || "IDLE",
+    cp.planFileContent || null,
+    cp.taskFileContent || null,
+    cp.taskHistoryFileContent || null,
+    cp.walkthroughFileContent || null,
+    cp.gitSha || null
+  );
+
+  // Keep max 20 checkpoints per session in SQLite
+  try {
+    const pruneStmt = db.prepare(`
+      DELETE FROM checkpoints WHERE id IN (
+        SELECT id FROM checkpoints WHERE session_id = ? ORDER BY timestamp DESC LIMIT -1 OFFSET 20
+      )
+    `);
+    pruneStmt.run(cp.sessionId);
+  } catch {}
+}
+
+export function loadCheckpointFromDb(id: string): DbCheckpointRecord | null {
+  const db = getHistoryDb();
+  const stmt = db.prepare(`
+    SELECT id, name, session_id as sessionId, session_file_path as sessionFilePath,
+           timestamp, messages_json as messagesJson, plan_state as planState,
+           plan_file_content as planFileContent, task_file_content as taskFileContent,
+           task_history_file_content as taskHistoryFileContent, walkthrough_file_content as walkthroughFileContent,
+           git_sha as gitSha
+    FROM checkpoints WHERE id = ?
+  `);
+  const row = stmt.get(id) as DbCheckpointRecord | undefined;
+  return row || null;
+}
+
+export function listCheckpointsFromDb(sessionId: string, limit: number = 50): DbCheckpointRecord[] {
+  const db = getHistoryDb();
+  const stmt = db.prepare(`
+    SELECT id, name, session_id as sessionId, session_file_path as sessionFilePath,
+           timestamp, messages_json as messagesJson, plan_state as planState,
+           plan_file_content as planFileContent, task_file_content as taskFileContent,
+           task_history_file_content as taskHistoryFileContent, walkthrough_file_content as walkthroughFileContent,
+           git_sha as gitSha
+    FROM checkpoints WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?
+  `);
+  return (stmt.all(sessionId, limit) || []) as DbCheckpointRecord[];
+}
+
+export function deleteCheckpointFromDb(id: string): boolean {
+  const db = getHistoryDb();
+  const res = db.prepare("DELETE FROM checkpoints WHERE id = ?").run(id);
+  return res && res.changes > 0;
+}
+
+export function deleteAllCheckpointsFromDb(sessionId: string): void {
+  const db = getHistoryDb();
+  db.prepare("DELETE FROM checkpoints WHERE session_id = ?").run(sessionId);
+}
+
+export function migrateLegacyCheckpointsToDb(): number {
+  const configDir = getGlobalConfigDir();
+  const historyBase = path.join(configDir, "history");
+  if (!fs.existsSync(historyBase)) return 0;
+
+  let importedCount = 0;
+  const modes = ["single", "multi"];
+
+  for (const mode of modes) {
+    const modeDir = path.join(historyBase, mode);
+    if (!fs.existsSync(modeDir)) continue;
+
+    try {
+      const dirs = fs.readdirSync(modeDir);
+      for (const d of dirs) {
+        const checkpointsDir = path.join(modeDir, d, "checkpoints");
+        if (!fs.existsSync(checkpointsDir)) continue;
+
+        try {
+          const files = fs.readdirSync(checkpointsDir).filter(f => f.startsWith("checkpoint_") && f.endsWith(".json"));
+          for (const f of files) {
+            const filePath = path.join(checkpointsDir, f);
+            try {
+              const raw = fs.readFileSync(filePath, "utf-8");
+              const parsed = JSON.parse(raw);
+              if (!parsed || !parsed.id) continue;
+
+              const existing = loadCheckpointFromDb(parsed.id);
+              if (existing) continue;
+
+              saveCheckpointToDb({
+                id: parsed.id,
+                name: parsed.name || parsed.id,
+                sessionId: d,
+                sessionFilePath: parsed.sessionFilePath || path.join(modeDir, d, `${d}.json`),
+                timestamp: parsed.timestamp || Date.now(),
+                messagesJson: JSON.stringify(parsed.messages || []),
+                planState: parsed.planState || "IDLE",
+                planFileContent: parsed.planFileContent,
+                taskFileContent: parsed.taskFileContent,
+                taskHistoryFileContent: parsed.taskHistoryFileContent,
+                walkthroughFileContent: parsed.walkthroughFileContent,
+                gitSha: parsed.gitSha,
+              });
+              importedCount++;
+            } catch {}
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  return importedCount;
+}
+
+export function cleanLegacyCheckpointsFiles(): number {
+  const configDir = getGlobalConfigDir();
+  const historyBase = path.join(configDir, "history");
+  if (!fs.existsSync(historyBase)) return 0;
+
+  migrateLegacyCheckpointsToDb();
+
+  let cleanedCount = 0;
+  const modes = ["single", "multi"];
+
+  for (const mode of modes) {
+    const modeDir = path.join(historyBase, mode);
+    if (!fs.existsSync(modeDir)) continue;
+
+    try {
+      const dirs = fs.readdirSync(modeDir);
+      for (const d of dirs) {
+        const checkpointsDir = path.join(modeDir, d, "checkpoints");
+        if (!fs.existsSync(checkpointsDir)) continue;
+
+        try {
+          const files = fs.readdirSync(checkpointsDir);
+          for (const f of files) {
+            const filePath = path.join(checkpointsDir, f);
+            try {
+              fs.unlinkSync(filePath);
+              cleanedCount++;
+            } catch {}
+          }
+          try { fs.rmdirSync(checkpointsDir); } catch {}
+        } catch {}
+      }
+    } catch {}
+  }
+
+  return cleanedCount;
 }
 
 export function closeHistoryDb(): void {
