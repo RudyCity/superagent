@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.505] - 2026-07-20
+
+### Changed
+- **Relational Key Integrity for Scoped Data**:
+  - Linked `input_history` and `workspace_tasks` SQLite tables to `workspaces` with cascading deletions (`ON DELETE CASCADE`).
+  - Added a `workspace_id` column to the `pinned_knowledge` SQLite table with a foreign key constraint.
+  - Implemented dynamic database migrations to auto-add the `workspace_id` column to `pinned_knowledge` table.
+  - Updated `savePinnedKnowledgeToDb` to resolve and record workspace IDs when saving pinned entries.
+
 ## [1.2.504] - 2026-07-20
 
 ### Changed

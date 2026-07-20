@@ -192,7 +192,8 @@ function initDatabaseSchema(db: any): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       workspace_id TEXT NOT NULL,
       command TEXT NOT NULL,
-      timestamp INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
+      timestamp INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_input_history_ws ON input_history(workspace_id, id ASC);
@@ -227,7 +228,9 @@ function initDatabaseSchema(db: any): void {
       timestamp INTEGER NOT NULL,
       preview TEXT NOT NULL,
       tool_calls TEXT,
-      tool_results TEXT
+      tool_results TEXT,
+      workspace_id TEXT,
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_pinned_knowledge_wd ON pinned_knowledge(working_directory);
@@ -248,7 +251,8 @@ function initDatabaseSchema(db: any): void {
       completed_at INTEGER,
       is_hidden INTEGER NOT NULL DEFAULT 0,
       cwd TEXT,
-      PRIMARY KEY (workspace_id, task_id)
+      PRIMARY KEY (workspace_id, task_id),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
     );
   `);
 
@@ -281,6 +285,17 @@ function initDatabaseSchema(db: any): void {
     for (const col of checkpointCols) {
       try {
         db.exec(`ALTER TABLE checkpoints ADD COLUMN ${col.name} ${col.type};`);
+      } catch {}
+    }
+  } catch {}
+
+  try {
+    const pinnedCols = [
+      { name: "workspace_id", type: "TEXT" },
+    ];
+    for (const col of pinnedCols) {
+      try {
+        db.exec(`ALTER TABLE pinned_knowledge ADD COLUMN ${col.name} ${col.type};`);
       } catch {}
     }
   } catch {}
@@ -1279,11 +1294,22 @@ export function saveRateLimitStateToDb(key: string, tokensRemaining: number, las
 export function savePinnedKnowledgeToDb(entry: any): void {
   try {
     const db = getHistoryDb();
+    const workspaceId = entry.workingDirectory ? getWorkspaceId(entry.workingDirectory) : null;
+    if (workspaceId && entry.workingDirectory) {
+      try {
+        db.prepare(`
+          INSERT INTO workspaces (id, path, is_trusted)
+          VALUES (?, ?, 0)
+          ON CONFLICT(id) DO NOTHING
+        `).run(workspaceId, path.resolve(entry.workingDirectory));
+      } catch {}
+    }
+
     db.prepare(`
       INSERT INTO pinned_knowledge (
         id, content, role, agent_tag, tag, source_session_path, working_directory,
-        pinned_at, timestamp, preview, tool_calls, tool_results
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        pinned_at, timestamp, preview, tool_calls, tool_results, workspace_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         content = excluded.content,
         role = excluded.role,
@@ -1295,7 +1321,8 @@ export function savePinnedKnowledgeToDb(entry: any): void {
         timestamp = excluded.timestamp,
         preview = excluded.preview,
         tool_calls = excluded.tool_calls,
-        tool_results = excluded.tool_results
+        tool_results = excluded.tool_results,
+        workspace_id = excluded.workspace_id
     `).run(
       entry.id,
       entry.content,
@@ -1308,7 +1335,8 @@ export function savePinnedKnowledgeToDb(entry: any): void {
       entry.timestamp,
       entry.preview,
       entry.toolCalls ? JSON.stringify(entry.toolCalls) : null,
-      entry.toolResults ? JSON.stringify(entry.toolResults) : null
+      entry.toolResults ? JSON.stringify(entry.toolResults) : null,
+      workspaceId
     );
   } catch {}
 }
