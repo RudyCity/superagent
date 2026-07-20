@@ -374,6 +374,54 @@ export class Conversation {
             if (Array.isArray(pinned)) this.pendingPinnedMessages = pinned;
           } catch {}
         }
+
+        try {
+          const data = await fs.readFile(filePath, "utf-8");
+          const parsed = JSON.parse(data);
+          if (parsed && typeof parsed === "object") {
+            this.lastCapturedTimestamp = parsed.lastCapturedTimestamp || 0;
+            if (parsed.activePreset) {
+              try {
+                const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+                const mode = isMulti ? "multi" : "single";
+                saveSessionPreset(mode, parsed.activePreset);
+              } catch {}
+            }
+            setHistoricalSuperagentTokens(parsed.historicalSuperagentTokens || 0);
+            setMasterTokens(parsed.masterPromptTokens || 0, parsed.masterCompletionTokens || 0);
+            setLastMasterPromptTokens(parsed.lastMasterPromptTokens || 0);
+            if (Array.isArray(parsed.superagents)) {
+              superagentInstances.clear();
+              for (const s of parsed.superagents) {
+                let status = s.status === "running" ? "paused" : s.status;
+                superagentInstances.set(s.id, {
+                  ...s,
+                  status,
+                  agent: {
+                    abort: () => {},
+                    getCurrentHistoryFilePath: () => s.historyFilePath || "",
+                  }
+                });
+              }
+              notifySuperagentsChanged();
+            }
+            if (Array.isArray(parsed.subagents)) {
+              subagentInstances.clear();
+              for (const s of parsed.subagents) {
+                let status = (s.status === "running" || s.status === "idle") ? "paused" : s.status;
+                subagentInstances.set(s.id, {
+                  ...s,
+                  status,
+                  agent: {
+                    abort: () => {},
+                    getCurrentHistoryFilePath: () => s.historyFilePath || "",
+                  }
+                });
+              }
+              notifySubagentsChanged();
+            }
+          }
+        } catch {}
         return;
       }
     } catch {}
