@@ -31,7 +31,8 @@ Options:
   -r, --resume            Resume the last active session
   -w, --workspace <path>  Target workspace directory path
   --multi                 Start in Multi Superagent master orchestrator mode
-  -s, --server [P]        Start API server for Chrome Extension (default port: 7888)
+  -s, --server [P]        Start API server (default port: 7888)
+  -m, --client-mode <M>   Client mode for server: 'chrome-extension' or 'tline' (default: tline)
   -h, --help              Show this help message and exit
 
 Examples:
@@ -41,7 +42,8 @@ Examples:
   superagent session clear --empty
   superagent --resume
   superagent --multi
-  superagent --server 7888
+  superagent --server 7888 --client-mode tline
+  superagent --server 7888 --client-mode chrome-extension
   superagent "explain quantum computing in simple terms"
 `);
   process.exit(0);
@@ -59,8 +61,26 @@ if (serverIndex !== -1) {
       port = parsed;
     }
   }
+
+  let clientMode: "chrome-extension" | "tline" = "tline";
+  if (process.argv.includes("--chrome-extension")) {
+    clientMode = "chrome-extension";
+  } else if (process.argv.includes("--tline")) {
+    clientMode = "tline";
+  } else {
+    const clientModeIndex = process.argv.findIndex(arg => arg === "--client-mode" || arg === "--clientMode" || arg === "-m");
+    if (clientModeIndex !== -1 && clientModeIndex + 1 < process.argv.length) {
+      const modeVal = process.argv[clientModeIndex + 1].toLowerCase();
+      if (modeVal.includes("chrome") || modeVal.includes("extension") || modeVal === "ext") {
+        clientMode = "chrome-extension";
+      } else if (modeVal.includes("tline") || modeVal.includes("cli")) {
+        clientMode = "tline";
+      }
+    }
+  }
+
   const { runServer } = await import("./server.js");
-  await runServer(port);
+  await runServer(port, false, clientMode);
 } else {
   // Boot the main CLI logic
   const { runCli } = await import("./cliMain.js");

@@ -36,6 +36,7 @@ let wasOffline = true;
 const originalFetch = window.fetch;
 window.fetch = async (url, options = {}) => {
   options.headers = options.headers || {};
+  options.headers["X-Client-Mode"] = "chrome-extension";
   if (apiToken) {
     options.headers["Authorization"] = `Bearer ${apiToken}`;
   }
@@ -720,7 +721,7 @@ async function connectToWorkspace(workspacePath) {
     const res = await fetch(`${BASE_URL}/api/init`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, workspace: workspacePath, resume })
+      body: JSON.stringify({ mode, workspace: workspacePath, resume, clientMode: "chrome-extension" })
     });
     const data = await res.json();
 

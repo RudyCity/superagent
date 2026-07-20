@@ -10,13 +10,85 @@ import { subagentInstances, superagentInstances, registerMasterAgent, subscribeT
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
 
+export type ClientMode = "chrome-extension" | "tline";
+
 interface AgentSession {
   agent: Agent;
   workspace: string;
   mode: "single" | "multi";
+  clientMode: ClientMode;
   sessionId: string;
   isCliSession: boolean;
   lastActiveTime?: number;
+}
+
+let serverDefaultClientMode: ClientMode = "tline";
+
+export function resolveClientMode(
+  req: http.IncomingMessage,
+  body?: any,
+  defaultMode: ClientMode = serverDefaultClientMode
+): ClientMode {
+  const headerMode = req.headers["x-client-mode"] as string;
+  const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
+  const queryMode = parsedUrl.searchParams.get("clientMode") || parsedUrl.searchParams.get("client_mode");
+  const bodyMode = body?.clientMode || body?.client_mode;
+
+  const raw = (bodyMode || headerMode || queryMode || "").toLowerCase();
+  if (raw.includes("chrome") || raw.includes("extension") || raw === "ext") {
+    return "chrome-extension";
+  }
+  if (raw.includes("tline") || raw.includes("cli")) {
+    return "tline";
+  }
+  return defaultMode;
+}
+
+async function createAgentForMode(
+  targetWorkspace: string,
+  targetMode: "single" | "multi",
+  targetClientMode: ClientMode
+): Promise<Agent> {
+  let customSystemPrompt: string | undefined = undefined;
+  let customTools: any[] | undefined = undefined;
+
+  if (targetClientMode === "chrome-extension") {
+    const { CHROME_EXTENSION_SYSTEM_PROMPT } = await import("./core/prompts.js");
+    const { chromeExtensionToolset } = await import("./core/tools/toolsets.js");
+    customSystemPrompt = CHROME_EXTENSION_SYSTEM_PROMPT;
+    customTools = chromeExtensionToolset;
+  } else {
+    // tline mode (SuperAgent CLI / Desktop equivalent)
+    if (targetMode === "multi") {
+      const { MASTER_AGENT_SYSTEM_PROMPT } = await import("./core/prompts.js");
+      const { masterToolset } = await import("./core/tools/toolsets.js");
+      customSystemPrompt = MASTER_AGENT_SYSTEM_PROMPT;
+      customTools = masterToolset;
+    } else {
+      const { superagentToolset } = await import("./core/tools/toolsets.js");
+      customSystemPrompt = undefined;
+      customTools = superagentToolset;
+    }
+  }
+
+  const agent = new Agent(
+    (event: AgentEvent) => onEvent(event, agent),
+    onPermission,
+    onQuestion,
+    customSystemPrompt,
+    customTools,
+    targetWorkspace
+  );
+
+  if (targetMode === "multi") {
+    agent.tier = "master";
+    agent.isMultiAgent = true;
+    registerMasterAgent(agent);
+  } else {
+    agent.tier = "single";
+  }
+
+  return agent;
 }
 
 export const activeSessions = new Map<string, AgentSession>();
@@ -101,12 +173,13 @@ function resolveWorkspacePath(req: http.IncomingMessage): string {
   return session ? session.workspace : lastActiveWorkspace;
 }
 
-export function registerCliAgent(agent: Agent, workspace: string, mode: "single" | "multi") {
+export function registerCliAgent(agent: Agent, workspace: string, mode: "single" | "multi", clientMode: ClientMode = "tline") {
   const targetWorkspace = path.resolve(workspace);
   activeSessions.set(targetWorkspace, {
     agent,
     workspace: targetWorkspace,
     mode,
+    clientMode,
     sessionId: generateSessionId(),
     isCliSession: true
   });
@@ -347,7 +420,8 @@ const onQuestion = (question: any, options?: string[], isMultiSelect?: boolean) 
   });
 };
 
-export async function runServer(port: number, silent = false) {
+export async function runServer(port: number, silent = false, defaultClientMode: ClientMode = "tline") {
+  serverDefaultClientMode = defaultClientMode;
   registerQuestionHandler(onQuestion);
 
   try {
@@ -470,6 +544,7 @@ export async function runServer(port: number, silent = false) {
           status: "online",
           workspace: resolveWorkspacePath(req),
           mode: session ? session.mode : "single",
+          clientMode: session ? session.clientMode : serverDefaultClientMode,
           sessionId: session ? session.sessionId : null,
           agentActive: !!session,
           agentRunning: session ? session.agent.isAgentRunning() : false,
@@ -485,6 +560,7 @@ export async function runServer(port: number, silent = false) {
           sessionId: s.sessionId,
           workspace: s.workspace,
           mode: s.mode,
+          clientMode: s.clientMode,
           isCliSession: s.isCliSession,
           agentRunning: s.agent.isAgentRunning(),
           planState: s.agent.planState,
@@ -613,11 +689,23 @@ export async function runServer(port: number, silent = false) {
         await ensureDirectoryTrusted(targetWorkspace);
 
         const targetMode = mode === "multi" ? "multi" : "single";
+        const targetClientMode = resolveClientMode(req, body, serverDefaultClientMode);
         const sessionId = customSessionId || resume || generateSessionId();
 
         const existingSession = activeSessions.get(targetWorkspace);
-        if (existingSession && existingSession.sessionId === sessionId && existingSession.mode === targetMode) {
-          sendJSON(res, 200, { success: true, sessionId: existingSession.sessionId });
+        if (
+          existingSession &&
+          existingSession.sessionId === sessionId &&
+          existingSession.mode === targetMode &&
+          existingSession.clientMode === targetClientMode
+        ) {
+          sendJSON(res, 200, {
+            success: true,
+            sessionId: existingSession.sessionId,
+            workspace: targetWorkspace,
+            mode: existingSession.mode,
+            clientMode: existingSession.clientMode
+          });
           return;
         }
 
@@ -625,37 +713,7 @@ export async function runServer(port: number, silent = false) {
           existingSession.agent.abort();
         }
 
-        let customSystemPrompt: string | undefined = undefined;
-        let customTools: any[] | undefined = undefined;
-
-        if (targetMode === "multi") {
-          const { MASTER_AGENT_SYSTEM_PROMPT } = await import("./core/prompts.js");
-          const { masterToolset } = await import("./core/tools/toolsets.js");
-          customSystemPrompt = MASTER_AGENT_SYSTEM_PROMPT;
-          customTools = masterToolset;
-        } else {
-          const { CHROME_EXTENSION_SYSTEM_PROMPT } = await import("./core/prompts.js");
-          const { chromeExtensionToolset } = await import("./core/tools/toolsets.js");
-          customSystemPrompt = CHROME_EXTENSION_SYSTEM_PROMPT;
-          customTools = chromeExtensionToolset;
-        }
-
-        const agent = new Agent(
-          (event: AgentEvent) => onEvent(event, agent),
-          onPermission,
-          onQuestion,
-          customSystemPrompt,
-          customTools,
-          targetWorkspace
-        );
-
-        if (targetMode === "multi") {
-          agent.tier = "master";
-          agent.isMultiAgent = true;
-          registerMasterAgent(agent);
-        } else {
-          agent.tier = "single";
-        }
+        const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
 
         pendingPermissions.clear();
         pendingQuestions.clear();
@@ -670,12 +728,19 @@ export async function runServer(port: number, silent = false) {
           agent,
           workspace: targetWorkspace,
           mode: targetMode,
+          clientMode: targetClientMode,
           sessionId,
           isCliSession: false
         });
         lastActiveWorkspace = targetWorkspace;
 
-        sendJSON(res, 200, { success: true, sessionId });
+        sendJSON(res, 200, {
+          success: true,
+          sessionId,
+          workspace: targetWorkspace,
+          mode: targetMode,
+          clientMode: targetClientMode
+        });
 
         if (initialPrompt && initialPrompt.trim()) {
           // Process initial prompt in the background
@@ -1418,42 +1483,17 @@ export async function runServer(port: number, silent = false) {
         addTrustedDirectory(targetWorkspace);
         await ensureDirectoryTrusted(targetWorkspace);
 
+        const targetMode = mode === "multi" ? "multi" : "single";
+        const targetClientMode = resolveClientMode(req, body, serverDefaultClientMode);
+
         let session = activeSessions.get(targetWorkspace);
-        if (!session) {
-          const targetMode = mode === "multi" ? "multi" : "single";
+        if (!session || session.mode !== targetMode || session.clientMode !== targetClientMode) {
+          if (session && session.agent.isAgentRunning()) {
+            session.agent.abort();
+          }
+
           const sessionId = Date.now().toString();
-
-          let customSystemPrompt: string | undefined = undefined;
-          let customTools: any[] | undefined = undefined;
-
-          if (targetMode === "multi") {
-            const { MASTER_AGENT_SYSTEM_PROMPT } = await import("./core/prompts.js");
-            const { masterToolset } = await import("./core/tools/toolsets.js");
-            customSystemPrompt = MASTER_AGENT_SYSTEM_PROMPT;
-            customTools = masterToolset;
-          } else {
-            const { CHROME_EXTENSION_SYSTEM_PROMPT } = await import("./core/prompts.js");
-            const { chromeExtensionToolset } = await import("./core/tools/toolsets.js");
-            customSystemPrompt = CHROME_EXTENSION_SYSTEM_PROMPT;
-            customTools = chromeExtensionToolset;
-          }
-
-          const agent = new Agent(
-            (event: AgentEvent) => onEvent(event, agent),
-            onPermission,
-            onQuestion,
-            customSystemPrompt,
-            customTools,
-            targetWorkspace
-          );
-
-          if (targetMode === "multi") {
-            agent.tier = "master";
-            agent.isMultiAgent = true;
-            registerMasterAgent(agent);
-          } else {
-            agent.tier = "single";
-          }
+          const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
 
           // Automatically load/resume last active session history for this workspace
           try {
@@ -1464,6 +1504,7 @@ export async function runServer(port: number, silent = false) {
             agent,
             workspace: targetWorkspace,
             mode: targetMode,
+            clientMode: targetClientMode,
             sessionId,
             isCliSession: false
           };
@@ -1480,7 +1521,8 @@ export async function runServer(port: number, silent = false) {
           success: true,
           sessionId: session.sessionId,
           workspace: targetWorkspace,
-          mode: session.mode
+          mode: session.mode,
+          clientMode: session.clientMode
         });
         return;
       }
@@ -1539,14 +1581,15 @@ export async function runServer(port: number, silent = false) {
 
   server.on("error", (err: any) => {
     if (!silent) {
-      console.error("[Extension Server Error]", err);
+      console.error("[Server Error]", err);
     }
   });
 
   server.listen(port, '127.0.0.1', () => {
     if (!silent) {
-      console.log(`\n🚀 Superagent Extension Server is running at http://localhost:${port}`);
+      console.log(`\n🚀 Superagent Server is running at http://localhost:${port}`);
       console.log(`💡 Mode: REST API & Server-Sent Events (SSE)`);
+      console.log(`🎯 Default Client Mode: ${serverDefaultClientMode}`);
       console.log(`📂 Current Workspace: ${lastActiveWorkspace}\n`);
     }
   });
