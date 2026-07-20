@@ -15,6 +15,7 @@ export interface SessionRecord {
   workingDirectory?: string;
   planState?: string;
   activePreset?: string;
+  extraData?: string;
 }
 
 export interface MessageRecord {
@@ -97,6 +98,7 @@ function initDatabaseSchema(db: any): void {
       working_directory TEXT,
       plan_state TEXT,
       active_preset TEXT,
+      extra_data TEXT,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
       updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
     );
@@ -151,8 +153,8 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
   try {
     const upsertSessionStmt = db.prepare(`
       INSERT INTO sessions (
-        id, file_path, display_name, message_count, last_modified, preview, working_directory, plan_state, active_preset, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, file_path, display_name, message_count, last_modified, preview, working_directory, plan_state, active_preset, extra_data, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         file_path = excluded.file_path,
         display_name = excluded.display_name,
@@ -162,6 +164,7 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
         working_directory = excluded.working_directory,
         plan_state = excluded.plan_state,
         active_preset = excluded.active_preset,
+        extra_data = excluded.extra_data,
         updated_at = excluded.updated_at
     `);
 
@@ -176,6 +179,7 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
       session.workingDirectory || null,
       session.planState || null,
       session.activePreset || null,
+      session.extraData || null,
       now
     );
 
@@ -229,7 +233,7 @@ export function loadSessionFromDb(sessionId: string): {
   const getSessionStmt = db.prepare(`
     SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
            last_modified as lastModified, preview, working_directory as workingDirectory,
-           plan_state as planState, active_preset as activePreset
+           plan_state as planState, active_preset as activePreset, extra_data as extraData
     FROM sessions WHERE id = ?
   `);
   const sessionRow = getSessionStmt.get(sessionId) as SessionRecord | undefined;

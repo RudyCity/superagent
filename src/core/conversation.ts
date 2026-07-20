@@ -112,7 +112,27 @@ export class Conversation {
 
   async saveToFile(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED", workingDirectory?: string): Promise<void> {
     try {
-      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      try {
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, "", "utf-8");
+      } catch {}
+      const sid = path.basename(filePath, ".json");
+      const userMessages = this.messages.filter((m) => m.role === "user");
+      const lastUser = userMessages[userMessages.length - 1];
+      const lastUserText = lastUser ? contentToString(lastUser.content) : "";
+      const preview = lastUser
+        ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
+        : "(no user messages)";
+
+      const cleanName = sid.replace(/_\d+$/, "");
+      const folderPathName = cleanName
+        .replace(/^([a-zA-Z])__/, "$1:\\")
+        .replace(/^_+/, "/")
+        .replace(/_/g, "/");
+
+      const displayName = lastUser && lastUserText && lastUserText.trim()
+        ? lastUserText.trim().slice(0, 60).replace(/\n/g, " ") + (lastUserText.trim().length > 60 ? "…" : "")
+        : folderPathName;
 
       const serializedSuperagents = Array.from(superagentInstances.values()).map(inst => {
         const { agent, ...rest } = inst;
@@ -130,7 +150,6 @@ export class Conversation {
         };
       });
 
-      // Serialize pinned messages from ContextManager (if available)
       const pinnedMessages = this.contextManager
         ? this.contextManager.serializePinnedMessages()
         : (this.pendingPinnedMessages || []);
@@ -140,106 +159,71 @@ export class Conversation {
         const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
         const mode = isMulti ? "multi" : "single";
         activePreset = getActivePreset(mode);
-      } catch {
-        // Ignore configuration loading issues during serialization
-      }
+      } catch {}
 
-      const data = {
-        messages: this.messages,
-        planState,
-        workingDirectory,
+      const extraData = {
         superagents: serializedSuperagents,
         subagents: serializedSubagents,
         historicalSuperagentTokens,
         masterPromptTokens,
         masterCompletionTokens,
         lastMasterPromptTokens,
-        pinnedMessages,
         lastCapturedTimestamp: this.lastCapturedTimestamp,
-        activePreset,
       };
-      await fs.writeFile(filePath, JSON.stringify(data), "utf-8");
 
-      try {
-        const userMessages = this.messages.filter((m) => m.role === "user");
-        const lastUser = userMessages[userMessages.length - 1];
-        const lastUserText = lastUser ? contentToString(lastUser.content) : "";
-        const preview = lastUser
-          ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
-          : "(no user messages)";
-
-        const cleanName = path.basename(filePath, ".json").replace(/_\d+$/, "");
-        const folderPathName = cleanName
-          .replace(/^([a-zA-Z])__/, "$1:\\")
-          .replace(/^_+/, "/")
-          .replace(/_/g, "/");
-
-        const displayName = lastUser && lastUserText && lastUserText.trim()
-          ? lastUserText.trim().slice(0, 60).replace(/\n/g, " ") + (lastUserText.trim().length > 60 ? "…" : "")
-          : folderPathName;
-
-        const stat = await fs.stat(filePath);
-        const mtimeMs = stat.mtimeMs !== undefined ? stat.mtimeMs : stat.mtime.getTime();
-
-        const metadata = {
-          mtimeMs,
+      saveSessionToDb(
+        {
+          id: sid,
+          filePath,
           displayName,
           messageCount: this.messages.length,
+          lastModified: Date.now(),
           preview,
           workingDirectory,
-        };
-
-        const metadataPath = path.join(path.dirname(filePath), "metadata.json");
-        await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
-
-        if (!process.env.VITEST) {
-          try {
-            const historyDir = path.dirname(path.dirname(filePath));
-            const masterPath = path.join(historyDir, "history-metadata.json");
-            let masterData: Record<string, any> = {};
-            try {
-              const raw = await fs.readFile(masterPath, "utf-8");
-              masterData = JSON.parse(raw) || {};
-            } catch {}
-            masterData[path.basename(filePath, ".json")] = metadata;
-            await fs.writeFile(masterPath, JSON.stringify(masterData), "utf-8");
-          } catch {}
-        }
-
-        try {
-          const sid = path.basename(filePath, ".json");
-          saveSessionToDb({
-            id: sid,
-            filePath,
-            displayName,
-            messageCount: this.messages.length,
-            lastModified: mtimeMs,
-            preview,
-            workingDirectory,
-            planState,
-            activePreset: activePreset ? JSON.stringify(activePreset) : undefined,
-          }, this.messages.map((m, idx) => ({
-            sessionId: sid,
-            role: m.role,
-            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-            toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
-            toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
-            reasoning: m.reasoning,
-            timestamp: m.timestamp || Date.now(),
-            sequenceOrder: idx,
-          })), pinnedMessages ? JSON.stringify(pinnedMessages) : undefined);
-        } catch {}
-      } catch (metaErr) {
-        // Fail silently or log
-      }
+          planState,
+          activePreset: activePreset ? JSON.stringify(activePreset) : undefined,
+          extraData: JSON.stringify(extraData),
+        },
+        this.messages.map((m, idx) => ({
+          sessionId: sid,
+          role: m.role,
+          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+          toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
+          toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
+          reasoning: m.reasoning,
+          timestamp: m.timestamp || Date.now(),
+          sequenceOrder: idx,
+        })),
+        pinnedMessages ? JSON.stringify(pinnedMessages) : undefined
+      );
     } catch (err) {
-      console.error("Failed to save history:", err);
+      console.error("Failed to save history to SQLite:", err);
     }
   }
 
   saveToFileSync(filePath: string, planState?: "IDLE" | "PLANNING_PENDING" | "APPROVED", workingDirectory?: string): void {
     try {
-      fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
+      try {
+        fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
+        fsSync.writeFileSync(filePath, "");
+      } catch {}
+      const sid = path.basename(filePath, ".json");
+      const userMessages = this.messages.filter((m) => m.role === "user");
+      const lastUser = userMessages[userMessages.length - 1];
+      const lastUserText = lastUser ? contentToString(lastUser.content) : "";
+      const preview = lastUser
+        ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
+        : "(no user messages)";
+
+      const cleanName = sid.replace(/_\d+$/, "");
+      const folderPathName = cleanName
+        .replace(/^([a-zA-Z])__/, "$1:\\")
+        .replace(/^_+/, "/")
+        .replace(/_/g, "/");
+
+      const displayName = lastUser && lastUserText && lastUserText.trim()
+        ? lastUserText.trim().slice(0, 60).replace(/\n/g, " ") + (lastUserText.trim().length > 60 ? "…" : "")
+        : folderPathName;
 
       const serializedSuperagents = Array.from(superagentInstances.values()).map(inst => {
         const { agent, ...rest } = inst;
@@ -257,7 +241,6 @@ export class Conversation {
         };
       });
 
-      // Serialize pinned messages from ContextManager (if available)
       const pinnedMessages = this.contextManager
         ? this.contextManager.serializePinnedMessages()
         : (this.pendingPinnedMessages || []);
@@ -267,76 +250,45 @@ export class Conversation {
         const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
         const mode = isMulti ? "multi" : "single";
         activePreset = getActivePreset(mode);
-      } catch {
-        // Ignore configuration loading issues during serialization
-      }
+      } catch {}
 
-      const data = {
-        messages: this.messages,
-        planState,
-        workingDirectory,
+      const extraData = {
         superagents: serializedSuperagents,
         subagents: serializedSubagents,
         historicalSuperagentTokens,
         masterPromptTokens,
         masterCompletionTokens,
         lastMasterPromptTokens,
-        pinnedMessages,
         lastCapturedTimestamp: this.lastCapturedTimestamp,
-        activePreset,
       };
-      fsSync.writeFileSync(filePath, JSON.stringify(data), "utf-8");
 
-      try {
-        const userMessages = this.messages.filter((m) => m.role === "user");
-        const lastUser = userMessages[userMessages.length - 1];
-        const lastUserText = lastUser ? contentToString(lastUser.content) : "";
-        const preview = lastUser
-          ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
-          : "(no user messages)";
-
-        const cleanName = path.basename(filePath, ".json").replace(/_\d+$/, "");
-        const folderPathName = cleanName
-          .replace(/^([a-zA-Z])__/, "$1:\\")
-          .replace(/^_+/, "/")
-          .replace(/_/g, "/");
-
-        const displayName = lastUser && lastUserText && lastUserText.trim()
-          ? lastUserText.trim().slice(0, 60).replace(/\n/g, " ") + (lastUserText.trim().length > 60 ? "…" : "")
-          : folderPathName;
-
-        const stat = fsSync.statSync(filePath);
-        const mtimeMs = stat.mtimeMs !== undefined ? stat.mtimeMs : stat.mtime.getTime();
-
-        const metadata = {
-          mtimeMs,
+      saveSessionToDb(
+        {
+          id: sid,
+          filePath,
           displayName,
           messageCount: this.messages.length,
+          lastModified: Date.now(),
           preview,
           workingDirectory,
-        };
-
-        const metadataPath = path.join(path.dirname(filePath), "metadata.json");
-        fsSync.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), "utf-8");
-
-        if (!process.env.VITEST) {
-          try {
-            const historyDir = path.dirname(path.dirname(filePath));
-            const masterPath = path.join(historyDir, "history-metadata.json");
-            let masterData: Record<string, any> = {};
-            try {
-              const raw = fsSync.readFileSync(masterPath, "utf-8");
-              masterData = JSON.parse(raw) || {};
-            } catch {}
-            masterData[path.basename(filePath, ".json")] = metadata;
-            fsSync.writeFileSync(masterPath, JSON.stringify(masterData), "utf-8");
-          } catch {}
-        }
-      } catch (metaErr) {
-        // Fail silently
-      }
+          planState,
+          activePreset: activePreset ? JSON.stringify(activePreset) : undefined,
+          extraData: JSON.stringify(extraData),
+        },
+        this.messages.map((m, idx) => ({
+          sessionId: sid,
+          role: m.role,
+          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+          toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
+          toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
+          reasoning: m.reasoning,
+          timestamp: m.timestamp || Date.now(),
+          sequenceOrder: idx,
+        })),
+        pinnedMessages ? JSON.stringify(pinnedMessages) : undefined
+      );
     } catch (err) {
-      console.error("Failed to save history synchronously:", err);
+      console.error("Failed to save history synchronously to SQLite:", err);
     }
   }
 
@@ -344,7 +296,7 @@ export class Conversation {
     try {
       const sid = path.basename(filePath, ".json");
       const dbResult = loadSessionFromDb(sid);
-      if (dbResult.session && dbResult.messages.length > 0) {
+      if (dbResult.session) {
         this.messages = dbResult.messages.map((m) => {
           let content: MessageContent = m.content;
           if (m.content.startsWith("[") || m.content.startsWith("{")) {
@@ -374,25 +326,24 @@ export class Conversation {
             if (Array.isArray(pinned)) this.pendingPinnedMessages = pinned;
           } catch {}
         }
-
-        try {
-          const data = await fs.readFile(filePath, "utf-8");
-          const parsed = JSON.parse(data);
-          if (parsed && typeof parsed === "object") {
-            this.lastCapturedTimestamp = parsed.lastCapturedTimestamp || 0;
-            if (parsed.activePreset) {
-              try {
-                const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
-                const mode = isMulti ? "multi" : "single";
-                saveSessionPreset(mode, parsed.activePreset);
-              } catch {}
-            }
-            setHistoricalSuperagentTokens(parsed.historicalSuperagentTokens || 0);
-            setMasterTokens(parsed.masterPromptTokens || 0, parsed.masterCompletionTokens || 0);
-            setLastMasterPromptTokens(parsed.lastMasterPromptTokens || 0);
-            if (Array.isArray(parsed.superagents)) {
+        if (dbResult.session.activePreset) {
+          try {
+            const preset = JSON.parse(dbResult.session.activePreset);
+            const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+            const mode = isMulti ? "multi" : "single";
+            saveSessionPreset(mode, preset);
+          } catch {}
+        }
+        if (dbResult.session.extraData) {
+          try {
+            const extra = JSON.parse(dbResult.session.extraData);
+            this.lastCapturedTimestamp = extra.lastCapturedTimestamp || 0;
+            setHistoricalSuperagentTokens(extra.historicalSuperagentTokens || 0);
+            setMasterTokens(extra.masterPromptTokens || 0, extra.masterCompletionTokens || 0);
+            setLastMasterPromptTokens(extra.lastMasterPromptTokens || 0);
+            if (Array.isArray(extra.superagents)) {
               superagentInstances.clear();
-              for (const s of parsed.superagents) {
+              for (const s of extra.superagents) {
                 let status = s.status === "running" ? "paused" : s.status;
                 superagentInstances.set(s.id, {
                   ...s,
@@ -405,9 +356,9 @@ export class Conversation {
               }
               notifySuperagentsChanged();
             }
-            if (Array.isArray(parsed.subagents)) {
+            if (Array.isArray(extra.subagents)) {
               subagentInstances.clear();
-              for (const s of parsed.subagents) {
+              for (const s of extra.subagents) {
                 let status = (s.status === "running" || s.status === "idle") ? "paused" : s.status;
                 subagentInstances.set(s.id, {
                   ...s,
@@ -420,132 +371,12 @@ export class Conversation {
               }
               notifySubagentsChanged();
             }
-          }
-        } catch {}
-        return;
-      }
-    } catch {}
-
-    try {
-      const data = await fs.readFile(filePath, "utf-8");
-      const parsed = JSON.parse(data);
-      if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
-        this.messages = parsed.messages;
-        this.loadedPlanState = parsed.planState;
-        this.lastCapturedTimestamp = parsed.lastCapturedTimestamp || 0;
-
-        if (parsed.activePreset) {
-          try {
-            const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
-            const mode = isMulti ? "multi" : "single";
-            saveSessionPreset(mode, parsed.activePreset);
-          } catch {
-            // Ignore preset load/restore errors
-          }
-        }
-
-        // Restore historical superagent tokens
-        setHistoricalSuperagentTokens(parsed.historicalSuperagentTokens || 0);
-        setMasterTokens(parsed.masterPromptTokens || 0, parsed.masterCompletionTokens || 0);
-        setLastMasterPromptTokens(parsed.lastMasterPromptTokens || 0);
-
-        // Restore superagents
-        if (Array.isArray(parsed.superagents)) {
-          for (const inst of superagentInstances.values()) {
-            if (inst.status === "running" && inst.agent && typeof inst.agent.abort === "function") {
-              try {
-                inst.agent.abort();
-              } catch {}
-            }
-          }
-          superagentInstances.clear();
-          for (const s of parsed.superagents) {
-            let status = s.status;
-            let result = s.result;
-            const logs = [...(s.logs || [])];
-            let completedAt = s.completedAt;
-
-            if (status === "running") {
-              status = "paused";
-              result = "[Paused by session exit]";
-              logs.push("\n[SYSTEM: Resumed session, marked as paused]\n");
-            }
-
-            superagentInstances.set(s.id, {
-              ...s,
-              status,
-              result,
-              logs,
-              completedAt,
-              agent: {
-                abort: () => {},
-                getCurrentHistoryFilePath: () => s.historyFilePath || "",
-              }
-            });
-          }
-          notifySuperagentsChanged();
-        }
-
-        // Restore subagents
-        if (Array.isArray(parsed.subagents)) {
-          for (const inst of subagentInstances.values()) {
-            if (inst.status === "running" && inst.agent && typeof inst.agent.abort === "function") {
-              try {
-                inst.agent.abort();
-              } catch {}
-            }
-          }
-          subagentInstances.clear();
-          for (const s of parsed.subagents) {
-            let status = s.status;
-            let result = s.result;
-            const logs = [...(s.logs || [])];
-            let completedAt = s.completedAt;
-
-            if (status === "running" || status === "idle") {
-              status = "paused";
-              result = "[Paused by session exit]";
-              logs.push("\n[SYSTEM: Resumed session, marked as paused]\n");
-            }
-
-            subagentInstances.set(s.id, {
-              ...s,
-              status,
-              result,
-              logs,
-              completedAt,
-              agent: {
-                abort: () => {},
-                getCurrentHistoryFilePath: () => s.historyFilePath || "",
-              }
-            });
-          }
-          notifySubagentsChanged();
-        }
-
-        // Restore pinned messages
-        if (Array.isArray(parsed.pinnedMessages) && parsed.pinnedMessages.length > 0) {
-          if (this.contextManager) {
-            // ContextManager already initialized — restore directly
-            this.contextManager.restorePinnedMessages(parsed.pinnedMessages);
-          } else {
-            // ContextManager not yet initialized — store for later restoration
-            this.pendingPinnedMessages = parsed.pinnedMessages;
-          }
+          } catch {}
         }
         this.stripOldToolResults(2);
-      } else if (Array.isArray(parsed)) {
-        this.messages = parsed;
-        this.loadedPlanState = undefined;
-        setHistoricalSuperagentTokens(0);
-        setMasterTokens(0, 0);
-        setLastMasterPromptTokens(0);
-        this.stripOldToolResults(2);
       }
-    } catch (err: any) {
-      if (err.code !== "ENOENT") {
-        console.error("Failed to load history:", err);
-      }
+    } catch (err) {
+      console.error("Failed to load history from SQLite:", err);
     }
   }
 

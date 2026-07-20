@@ -518,14 +518,9 @@ export async function syncAllHistoryToRMemory(): Promise<void> {
       if (syncedIds.includes(session.id)) continue;
 
       try {
-        const raw = fs.readFileSync(session.filePath, "utf-8");
-        const parsed = JSON.parse(raw);
-        let messages: any[] = [];
-        if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
-          messages = parsed.messages;
-        } else if (Array.isArray(parsed)) {
-          messages = parsed;
-        }
+        const { loadSessionFromDb } = await import("./storage/historyDb.js");
+        const dbRes = loadSessionFromDb(session.id);
+        const messages = dbRes.messages || [];
 
         const filteredMsgs = messages
           .filter((m) => (m.role === "user" || m.role === "assistant"))
@@ -547,7 +542,7 @@ export async function syncAllHistoryToRMemory(): Promise<void> {
         syncedIds.push(session.id);
         changed = true;
       } catch (err) {
-        // Skip corrupted files
+        // Skip
       }
     }
 

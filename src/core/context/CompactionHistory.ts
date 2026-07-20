@@ -1,5 +1,3 @@
-import fs from "fs/promises";
-import path from "path";
 import { recordCompactionToDb, getCompactionHistoryFromDb, clearCompactionHistoryInDb } from "../storage/historyDb.js";
 
 export interface CompactionEvent {
@@ -19,31 +17,12 @@ export interface CompactionEvent {
 export class CompactionHistory {
   private events: CompactionEvent[] = [];
   private maxHistory = 50;
-  private filePath?: string;
-  private isLoaded = false;
-  private loadingPromise: Promise<void>;
 
-  constructor(filePath?: string) {
-    this.filePath = filePath;
-    if (filePath) {
-      this.loadingPromise = this.load()
-        .then(() => {
-          this.isLoaded = true;
-        })
-        .catch(() => {
-          this.isLoaded = true;
-        });
-    } else {
-      this.isLoaded = true;
-      this.loadingPromise = Promise.resolve();
-    }
+  constructor(_filePath?: string) {
+    this.load();
   }
 
   async record(event: CompactionEvent): Promise<void> {
-    if (!this.isLoaded) {
-      await this.loadingPromise;
-    }
-
     this.events.push(event);
 
     if (this.events.length > this.maxHistory) {
@@ -65,12 +44,6 @@ export class CompactionHistory {
         reason: event.reason,
       });
     } catch {}
-
-    if (this.filePath) {
-      this.save().catch((err) => {
-        console.error("Failed to save compaction history:", err);
-      });
-    }
   }
 
   getHistory(): CompactionEvent[] {
@@ -102,27 +75,9 @@ export class CompactionHistory {
     try {
       clearCompactionHistoryInDb();
     } catch {}
-    if (this.filePath) {
-      this.save().catch(() => {});
-    }
   }
 
-  private async save(): Promise<void> {
-    if (!this.filePath) return;
-
-    try {
-      await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-      await fs.writeFile(
-        this.filePath,
-        JSON.stringify(this.events, null, 2),
-        "utf-8"
-      );
-    } catch (err) {
-      console.error("Failed to save compaction history:", err);
-    }
-  }
-
-  private async load(): Promise<void> {
+  private load(): void {
     try {
       const dbRecords = getCompactionHistoryFromDb(this.maxHistory);
       if (dbRecords.length > 0) {
@@ -139,20 +94,7 @@ export class CompactionHistory {
           pinnedMessages: r.pinnedMessages ? JSON.parse(r.pinnedMessages) : undefined,
           reason: r.reason as any,
         }));
-        return;
       }
     } catch {}
-
-    if (!this.filePath) return;
-
-    try {
-      const data = await fs.readFile(this.filePath, "utf-8");
-      this.events = JSON.parse(data);
-    } catch (err: any) {
-      if (err.code !== "ENOENT") {
-        console.error("Failed to load compaction history:", err);
-      }
-    }
   }
 }
-
