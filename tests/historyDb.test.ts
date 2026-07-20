@@ -330,4 +330,64 @@ describe("SQLite History Database (historyDb)", () => {
     expect(cleanedCount).toBeGreaterThanOrEqual(1);
     expect(fs.readFileSync(legacyInputFile, "utf-8")).toBe("[]");
   });
+
+  it("should save and load model caches in SQLite", () => {
+    const models = {
+      "test-model-1": 100000,
+      "test-model-2": 200000
+    };
+    historyDbModule.saveModelCachesToDb(models);
+
+    const loaded = historyDbModule.getModelCachesFromDb();
+    expect(loaded["test-model-1"]).toBe(100000);
+    expect(loaded["test-model-2"]).toBe(200000);
+
+    // Verify updates (conflict resolution)
+    historyDbModule.saveModelCachesToDb({ "test-model-1": 120000 });
+    const updated = historyDbModule.getModelCachesFromDb();
+    expect(updated["test-model-1"]).toBe(120000);
+  });
+
+  it("should save, retrieve, and bulk-load tool support cache in SQLite with TTL", async () => {
+    historyDbModule.saveToolSupportCacheToDb("model-a", true);
+    historyDbModule.saveToolSupportCacheToDb("model-b", false);
+
+    // Retrieve active cache entry within TTL
+    const supportA = historyDbModule.getToolSupportCacheFromDb("model-a", 60000);
+    expect(supportA).toBe(true);
+
+    const supportB = historyDbModule.getToolSupportCacheFromDb("model-b", 60000);
+    expect(supportB).toBe(false);
+
+    // Retrieve expired cache entry
+    const expired = historyDbModule.getToolSupportCacheFromDb("model-a", -100);
+    expect(expired).toBeNull();
+
+    // Bulk loading
+    const all = historyDbModule.loadAllToolSupportCacheFromDb(60000);
+    expect(all["model-a"]).toBe(true);
+    expect(all["model-b"]).toBe(false);
+
+    const allExpired = historyDbModule.loadAllToolSupportCacheFromDb(-100);
+    expect(allExpired["model-a"]).toBeUndefined();
+  });
+
+  it("should save and retrieve rate limit state in SQLite", () => {
+    historyDbModule.saveRateLimitStateToDb("test-key", 45, 12345678);
+
+    const state = historyDbModule.getRateLimitStateFromDb("test-key");
+    expect(state).not.toBeNull();
+    expect(state?.tokensRemaining).toBe(45);
+    expect(state?.lastUpdated).toBe(12345678);
+
+    // Conflict update
+    historyDbModule.saveRateLimitStateToDb("test-key", 10, 87654321);
+    const updated = historyDbModule.getRateLimitStateFromDb("test-key");
+    expect(updated?.tokensRemaining).toBe(10);
+    expect(updated?.lastUpdated).toBe(87654321);
+
+    // Non-existent key
+    const nonExistent = historyDbModule.getRateLimitStateFromDb("unknown-key");
+    expect(nonExistent).toBeNull();
+  });
 });

@@ -55,7 +55,15 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
   const sessions: HistorySession[] = [];
   try {
     const dbSessions = listSessionsFromDb(limit || 200);
+    const modeIndicator = isMulti ? "/multi/" : "/single/";
     for (const s of dbSessions) {
+      const normalizedPath = s.filePath.replace(/\\/g, "/");
+      if (!normalizedPath.includes(modeIndicator)) {
+        continue;
+      }
+      if (normalizedPath.includes("/superagents/") || normalizedPath.includes("/subagents/")) {
+        continue;
+      }
       if (!crossSession && s.workingDirectory) {
         if (!normalizeAndCheckSubpath(s.workingDirectory, currentDir)) {
           continue;

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.501] - 2026-07-20
+
+### Changed
+- **SQLite History Listing & Test Robustness**:
+  - Bound the SQLite `dbInstance` to `globalThis.__superagent_db_instance` to share the connection across duplicate imports, resolving database lock (`EBUSY`) issues under Vitest.
+  - Implemented `isMulti` (single vs. multi-agent) session filtering and superagent/subagent subdirectory exclusion inside `listHistorySessions()` to preserve correct folder isolation.
+  - Refactored `config.test.ts` to write session data directly to SQLite instead of mocking legacy file paths, making the entire configuration test suite pass.
+  - Cached the legacy cache migration state in `models.ts` with a `legacyCacheMigrated` flag to avoid file check overhead.
+
 ## [1.2.500] - 2026-07-20
 
 ### Changed

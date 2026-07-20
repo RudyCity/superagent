@@ -7,10 +7,11 @@ import os from "os";
 const tempHome = path.join(process.cwd(), "tests", "temp-home-config");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, clearHistoryCache, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset, getModelConnectionDetailsForTier } from "./config.js";
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, clearHistoryCache, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset, getModelConnectionDetailsForTier, closeHistoryDb } from "./config.js";
 import { getModelConfigPath } from "./config/paths.js";
 import { clearModelConfigCache, loadModelConfig, addProvider, saveModelConfig, getProviders, removeProvider, clearSessionActivePreset } from "./config/jsonConfig.js";
-import { saveModelCachesToDb, getModelCachesFromDb } from "./storage/historyDb.js";
+import { saveModelCachesToDb, getModelCachesFromDb, saveSessionToDb, deleteSessionFromDb } from "./storage/historyDb.js";
+
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -20,9 +21,20 @@ describe("config", () => {
     // Back up process.env to avoid side effects
     originalEnv = { ...process.env };
     
-    // Bersihkan folder temp
+    // Close history database to release file lock on Windows
+    closeHistoryDb();
+
+    // Bersihkan folder config dir aktif (misal workerConfigDir atau tempHome)
+    const activeDir = getGlobalConfigDir();
+    if (fs.existsSync(activeDir)) {
+      try {
+        fs.rmSync(activeDir, { recursive: true, force: true });
+      } catch {}
+    }
     if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempHome, { recursive: true, force: true });
+      } catch {}
     }
     ensureGlobalConfigDir();
     clearModelConfigCache();
@@ -33,13 +45,25 @@ describe("config", () => {
     // Restore process.env
     process.env = originalEnv;
     
-    // Bersihkan folder temp
+    // Close history database to release file lock on Windows
+    closeHistoryDb();
+
+    // Bersihkan folder config dir aktif
+    const activeDir = getGlobalConfigDir();
+    if (fs.existsSync(activeDir)) {
+      try {
+        fs.rmSync(activeDir, { recursive: true, force: true });
+      } catch {}
+    }
     if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempHome, { recursive: true, force: true });
+      } catch {}
     }
     clearModelConfigCache();
     clearSessionActivePreset();
   });
+
 
   it("should get global config directory containing expected name", () => {
     const dir = getGlobalConfigDir();
@@ -303,71 +327,71 @@ describe("config", () => {
   });
 
   describe("listHistorySessions", () => {
-    it("should only return history sessions matching the current active project path or its subdirectories", () => {
-      const historyDirSingle = path.join(getGlobalConfigDir(), "history", "single");
+    beforeEach(() => {
+      // Clear sessions before each test
+      try {
+        deleteSessionFromDb("sess-1");
+        deleteSessionFromDb("sess-2");
+        deleteSessionFromDb("sess-3");
+      } catch {}
+    });
 
+    it("should only return history sessions matching the current active project path or its subdirectories", () => {
       const mockCwd = "D:\\projects\\my-awesome-project";
       const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
 
-      const spyExistsSync = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
-        const pathStr = typeof p === "string" ? p : p.toString();
-        if (pathStr.includes("history")) return true;
-        return false;
-      });
+      // Seed database
+      // 1. Matches active project path exactly
+      saveSessionToDb(
+        {
+          id: "sess-1",
+          filePath: path.join(getGlobalConfigDir(), "history", "single", "sess-1.json"),
+          displayName: "Exact Match",
+          messageCount: 2,
+          lastModified: Date.now(),
+          preview: "hello exact",
+          workingDirectory: "D:\\projects\\my-awesome-project"
+        },
+        []
+      );
 
-      const mockDirs = [
-        "D__projects_my_awesome_project_123",
-        "d__projects_my_awesome_project_src_456",
-        "D__projects_another_project_789",
-      ];
-      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(mockDirs as any);
+      // 2. Matches subdirectory of active project path
+      saveSessionToDb(
+        {
+          id: "sess-2",
+          filePath: path.join(getGlobalConfigDir(), "history", "single", "sess-2.json"),
+          displayName: "Subdir Match",
+          messageCount: 2,
+          lastModified: Date.now() + 100,
+          preview: "hello sub",
+          workingDirectory: "D:\\projects\\my-awesome-project\\src"
+        },
+        []
+      );
 
-      const spyStatSync = vi.spyOn(fs, "statSync").mockReturnValue({
-        mtime: new Date(),
-      } as any);
-
-      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation((p) => {
-        const filePath = typeof p === "string" ? p : p.toString();
-        if (filePath.includes("my_awesome_project_src")) {
-          // Object format
-          return JSON.stringify({
-            messages: [
-              { role: "user", content: "hello from object" },
-              { role: "assistant", content: "hi from object" }
-            ],
-            planState: "IDLE",
-            workingDirectory: "D:\\projects\\my-awesome-project\\src"
-          });
-        }
-        // Legacy array format
-        return JSON.stringify([
-          { role: "user", content: "hello" },
-          { role: "assistant", content: "hi" }
-        ]);
-      });
+      // 3. Different project directory
+      saveSessionToDb(
+        {
+          id: "sess-3",
+          filePath: path.join(getGlobalConfigDir(), "history", "single", "sess-3.json"),
+          displayName: "No Match",
+          messageCount: 2,
+          lastModified: Date.now() + 200,
+          preview: "hello other",
+          workingDirectory: "D:\\projects\\another-project"
+        },
+        []
+      );
 
       try {
-        const sessions = listHistorySessions();
-        // Should only match:
-        // - "D__projects_my_awesome_project_123"
-        // - "d__projects_my_awesome_project_src_456"
+        const sessions = listHistorySessions(false, false);
         expect(sessions.length).toBe(2);
-        expect(sessions[0].filePath).toContain("my_awesome_project");
-        expect(sessions[0].messageCount).toBe(2);
-        expect(sessions[0].preview).toBe("hello");
-
-        expect(sessions[0].displayName).toBe("hello");
-
-        expect(sessions[1].filePath).toContain("my_awesome_project_src");
-        expect(sessions[1].messageCount).toBe(2);
-        expect(sessions[1].preview).toBe("hello from object");
-        expect(sessions[1].displayName).toBe("hello from object");
+        const displays = sessions.map(s => s.displayName);
+        expect(displays).toContain("Exact Match");
+        expect(displays).toContain("Subdir Match");
+        expect(displays).not.toContain("No Match");
       } finally {
         spyCwd.mockRestore();
-        spyExistsSync.mockRestore();
-        spyReaddirSync.mockRestore();
-        spyStatSync.mockRestore();
-        spyReadFileSync.mockRestore();
       }
     });
 
@@ -375,52 +399,38 @@ describe("config", () => {
       const mockCwd = "D:\\projects\\my-awesome-project";
       const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
 
-      const spyExistsSync = vi.spyOn(fs, "existsSync").mockReturnValue(true);
-
-      const mockDirs = [
-        "D__projects_my_awesome_project_123",
-        "D__projects_my_awesome_project_app_456",
-        "D__projects_my_awesome_project_src_789",
-      ];
-      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(mockDirs as any);
-
-      const spyStatSync = vi.spyOn(fs, "statSync").mockReturnValue({
-        mtime: new Date(),
-      } as any);
-
-      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation((p) => {
-        const filePath = typeof p === "string" ? p : p.toString();
-        if (filePath.includes("my_awesome_project_app")) {
-          return JSON.stringify({
-            messages: [{ role: "user", content: "hello sibling" }],
-            workingDirectory: "D:\\projects\\my-awesome-project-app"
-          });
-        }
-        if (filePath.includes("my_awesome_project_src")) {
-          return JSON.stringify({
-            messages: [{ role: "user", content: "hello sub" }],
-            workingDirectory: "D:\\projects\\my-awesome-project\\src"
-          });
-        }
-        return JSON.stringify({
-          messages: [{ role: "user", content: "hello exact" }],
+      saveSessionToDb(
+        {
+          id: "sess-1",
+          filePath: path.join(getGlobalConfigDir(), "history", "single", "sess-1.json"),
+          displayName: "Exact Match",
+          messageCount: 1,
+          lastModified: Date.now(),
+          preview: "hello exact",
           workingDirectory: "D:\\projects\\my-awesome-project"
-        });
-      });
+        },
+        []
+      );
+
+      saveSessionToDb(
+        {
+          id: "sess-2",
+          filePath: path.join(getGlobalConfigDir(), "history", "single", "sess-2.json"),
+          displayName: "Sibling Match",
+          messageCount: 1,
+          lastModified: Date.now() + 100,
+          preview: "hello sibling",
+          workingDirectory: "D:\\projects\\my-awesome-project-app"
+        },
+        []
+      );
 
       try {
         const sessions = listHistorySessions(false, false);
-        expect(sessions.length).toBe(2);
-        const previews = sessions.map(s => s.preview);
-        expect(previews).toContain("hello exact");
-        expect(previews).toContain("hello sub");
-        expect(previews).not.toContain("hello sibling");
+        expect(sessions.length).toBe(1);
+        expect(sessions[0].displayName).toBe("Exact Match");
       } finally {
         spyCwd.mockRestore();
-        spyExistsSync.mockRestore();
-        spyReaddirSync.mockRestore();
-        spyStatSync.mockRestore();
-        spyReadFileSync.mockRestore();
       }
     });
 
@@ -428,47 +438,42 @@ describe("config", () => {
       const mockCwd = "D:\\projects\\my-awesome-project";
       const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
 
-      const spyExistsSync = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
-        const pathStr = typeof p === "string" ? p : p.toString();
-        if (pathStr.includes("history")) return true;
-        return false;
-      });
+      saveSessionToDb(
+        {
+          id: "sess-1",
+          filePath: path.join(getGlobalConfigDir(), "history", "single", "sess-1.json"),
+          displayName: "Single Match",
+          messageCount: 1,
+          lastModified: Date.now(),
+          preview: "hello single",
+          workingDirectory: "D:\\projects\\my-awesome-project"
+        },
+        []
+      );
 
-      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockImplementation((p) => {
-        const pathStr = typeof p === "string" ? p : p.toString();
-        if (pathStr.includes("single")) {
-          return ["D__projects_my_awesome_project_123"] as any;
-        }
-        if (pathStr.includes("multi")) {
-          return ["D__projects_my_awesome_project_456"] as any;
-        }
-        return [] as any;
-      });
-
-      const spyStatSync = vi.spyOn(fs, "statSync").mockReturnValue({
-        mtime: new Date(),
-      } as any);
-
-      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockReturnValue(
-        JSON.stringify({
-          messages: [{ role: "user", content: "hello" }],
-        })
+      saveSessionToDb(
+        {
+          id: "sess-2",
+          filePath: path.join(getGlobalConfigDir(), "history", "multi", "sess-2.json"),
+          displayName: "Multi Match",
+          messageCount: 1,
+          lastModified: Date.now() + 100,
+          preview: "hello multi",
+          workingDirectory: "D:\\projects\\my-awesome-project"
+        },
+        []
       );
 
       try {
         const singleSessions = listHistorySessions(false);
         expect(singleSessions.length).toBe(1);
-        expect(singleSessions[0].filePath).toContain("my_awesome_project_123");
+        expect(singleSessions[0].displayName).toBe("Single Match");
 
         const multiSessions = listHistorySessions(true);
         expect(multiSessions.length).toBe(1);
-        expect(multiSessions[0].filePath).toContain("my_awesome_project_456");
+        expect(multiSessions[0].displayName).toBe("Multi Match");
       } finally {
         spyCwd.mockRestore();
-        spyExistsSync.mockRestore();
-        spyReaddirSync.mockRestore();
-        spyStatSync.mockRestore();
-        spyReadFileSync.mockRestore();
       }
     });
 
@@ -476,149 +481,52 @@ describe("config", () => {
       const mockCwd = "D:\\projects\\my-awesome-project";
       const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
 
-      const spyExistsSync = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
-        const pathStr = typeof p === "string" ? p : p.toString();
-        if (pathStr.includes("history")) return true;
-        return false;
-      });
+      // Superagents and subagents sessions are stored inside specific subdirectories of history/multi
+      saveSessionToDb(
+        {
+          id: "sess-1",
+          filePath: path.join(getGlobalConfigDir(), "history", "multi", "sess-1.json"),
+          displayName: "Normal Multi",
+          messageCount: 1,
+          lastModified: Date.now(),
+          preview: "hello multi",
+          workingDirectory: "D:\\projects\\my-awesome-project"
+        },
+        []
+      );
 
-      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockImplementation((p) => {
-        const pathStr = typeof p === "string" ? p : p.toString();
-        if (pathStr.includes("multi")) {
-          return ["D__projects_my_awesome_project_456", "superagents", "subagents"] as any;
-        }
-        return [] as any;
-      });
+      saveSessionToDb(
+        {
+          id: "sess-2",
+          filePath: path.join(getGlobalConfigDir(), "history", "multi", "superagents", "sess-2.json"),
+          displayName: "Superagent Session",
+          messageCount: 1,
+          lastModified: Date.now() + 100,
+          preview: "hello superagent",
+          workingDirectory: "D:\\projects\\my-awesome-project"
+        },
+        []
+      );
 
-      const spyStatSync = vi.spyOn(fs, "statSync").mockReturnValue({
-        mtime: new Date(),
-      } as any);
-
-      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockReturnValue(
-        JSON.stringify({
-          messages: [{ role: "user", content: "hello" }],
-        })
+      saveSessionToDb(
+        {
+          id: "sess-3",
+          filePath: path.join(getGlobalConfigDir(), "history", "multi", "subagents", "sess-3.json"),
+          displayName: "Subagent Session",
+          messageCount: 1,
+          lastModified: Date.now() + 200,
+          preview: "hello subagent",
+          workingDirectory: "D:\\projects\\my-awesome-project"
+        },
+        []
       );
 
       try {
         const multiSessions = listHistorySessions(true);
         expect(multiSessions.length).toBe(1);
-        expect(multiSessions[0].filePath).toContain("my_awesome_project_456");
+        expect(multiSessions[0].displayName).toBe("Normal Multi");
       } finally {
         spyCwd.mockRestore();
-        spyExistsSync.mockRestore();
-        spyReaddirSync.mockRestore();
-        spyStatSync.mockRestore();
-        spyReadFileSync.mockRestore();
-      }
-    });
-
-    it("should cache metadata based on mtime and allow clearing history list cache", () => {
-      const mockCwd = "D:\\projects\\my-awesome-project";
-      const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
-      const spyExistsSync = vi.spyOn(fs, "existsSync").mockReturnValue(true);
-      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(["D__projects_my_awesome_project_123"] as any);
-      const spyWriteFileSync = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
-
-      let mtimeValue = new Date(1000);
-      const spyStatSync = vi.spyOn(fs, "statSync").mockImplementation(() => ({
-        mtime: mtimeValue,
-      } as any));
-
-      let readCount = 0;
-      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation((filePath: any) => {
-        const fileStr = String(filePath);
-        if (fileStr.endsWith("metadata.json")) {
-          throw new Error("Metadata file not found");
-        }
-        readCount++;
-        return JSON.stringify({
-          messages: [{ role: "user", content: `msg_${readCount}` }],
-        });
-      });
-
-      try {
-        clearHistoryCache();
-
-        // First call: readCount should increment (cache miss)
-        const sessions1 = listHistorySessions();
-        expect(sessions1.length).toBe(1);
-        expect(sessions1[0].preview).toBe("msg_1");
-        expect(readCount).toBe(1);
-
-        // Clear list cache so listHistorySessions runs again, but since mtime is same, it should use metadata cache
-        clearHistoryCache();
-        const sessions2 = listHistorySessions();
-        expect(sessions2.length).toBe(1);
-        expect(sessions2[0].preview).toBe("msg_1"); // still msg_1 from cache
-        expect(readCount).toBe(1); // readFileSync was not called again!
-
-        // Update mtime to simulate file change
-        mtimeValue = new Date(2000);
-        clearHistoryCache();
-        const sessions3 = listHistorySessions();
-        expect(sessions3.length).toBe(1);
-        expect(sessions3[0].preview).toBe("msg_2"); // fresh file read
-        expect(readCount).toBe(2); // readFileSync was called again!
-      } finally {
-        spyCwd.mockRestore();
-        spyExistsSync.mockRestore();
-        spyReaddirSync.mockRestore();
-        spyStatSync.mockRestore();
-        spyReadFileSync.mockRestore();
-        spyWriteFileSync.mockRestore();
-      }
-    });
-
-    it("should load metadata from metadata.json when it exists and is up-to-date", () => {
-      const mockCwd = "D:\\projects\\my-awesome-project";
-      const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
-      const spyExistsSync = vi.spyOn(fs, "existsSync").mockReturnValue(true);
-      const spyReaddirSync = vi.spyOn(fs, "readdirSync").mockReturnValue(["D__projects_my_awesome_project_123"] as any);
-      const spyWriteFileSync = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
-
-      let mtimeValue = new Date(1000);
-      const spyStatSync = vi.spyOn(fs, "statSync").mockImplementation(() => ({
-        mtime: mtimeValue,
-        mtimeMs: 1000,
-      } as any));
-
-      let readCountFull = 0;
-      let readCountMeta = 0;
-      const spyReadFileSync = vi.spyOn(fs, "readFileSync").mockImplementation((filePath: any) => {
-        const fileStr = String(filePath);
-        if (fileStr.endsWith("metadata.json")) {
-          readCountMeta++;
-          return JSON.stringify({
-            mtimeMs: 1000,
-            displayName: "Cached Display Name",
-            messageCount: 5,
-            preview: "Cached Preview",
-            workingDirectory: mockCwd,
-          });
-        }
-        readCountFull++;
-        return JSON.stringify({
-          messages: [{ role: "user", content: `full_msg` }],
-        });
-      });
-
-      try {
-        clearHistoryCache();
-
-        const sessions = listHistorySessions();
-        expect(sessions.length).toBe(1);
-        expect(sessions[0].displayName).toBe("Cached Display Name");
-        expect(sessions[0].preview).toBe("Cached Preview");
-        expect(readCountMeta).toBe(1);
-        expect(readCountFull).toBe(0); // Should not have read the full file!
-      } finally {
-        spyCwd.mockRestore();
-        spyExistsSync.mockRestore();
-        spyReaddirSync.mockRestore();
-        spyStatSync.mockRestore();
-        spyReadFileSync.mockRestore();
-        spyWriteFileSync.mockRestore();
       }
     });
   });

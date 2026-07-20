@@ -4,11 +4,13 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { getStaticModelLimit } from "../model_limits.js";
-import { getRootConfigDir, ensureGlobalConfigDir, ensureProtocol } from "./paths.js";
+import { getRootConfigDir, ensureProtocol } from "./paths.js";
 import { getConfig } from "./base.js";
 import { getConfiguredProviders, getEffectiveMasterModel } from "./providers.js";
 import { loadModelConfig, getActivePreset, TierModelConfig, getSettings } from "./jsonConfig.js";
 import { saveModelCachesToDb, getModelCachesFromDb } from "../storage/historyDb.js";
+
+let legacyCacheMigrated = false;
 
 export async function fetchAndCacheModels(): Promise<void> {
   const providers = getConfiguredProviders();
@@ -82,6 +84,10 @@ export async function fetchAndCacheModels(): Promise<void> {
 
 function loadModelsCacheWithMigration(): Record<string, number> {
   const dbCache = getModelCachesFromDb();
+  if (legacyCacheMigrated) {
+    return dbCache;
+  }
+  legacyCacheMigrated = true;
   try {
     const cachePath = path.join(getRootConfigDir(), "models_cache.json");
     if (fs.existsSync(cachePath)) {

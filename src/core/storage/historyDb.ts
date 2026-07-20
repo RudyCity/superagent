@@ -46,7 +46,7 @@ export interface CompactionRecord {
   reason: string;
 }
 
-let dbInstance: any = null;
+let dbInstance: any = (globalThis as any).__superagent_db_instance || null;
 
 export function getHistoryDbPath(): string {
   const configDir = getGlobalConfigDir();
@@ -75,6 +75,10 @@ function createSqliteDb(dbPath: string): any {
 }
 
 export function getHistoryDb(): any {
+  // Check global again in case another module instance initialized it
+  if (!dbInstance && (globalThis as any).__superagent_db_instance) {
+    dbInstance = (globalThis as any).__superagent_db_instance;
+  }
   if (!dbInstance) {
     const dbPath = getHistoryDbPath();
     const dir = path.dirname(dbPath);
@@ -82,6 +86,7 @@ export function getHistoryDb(): any {
       fs.mkdirSync(dir, { recursive: true });
     }
     dbInstance = createSqliteDb(dbPath);
+    (globalThis as any).__superagent_db_instance = dbInstance;
     initDatabaseSchema(dbInstance);
   }
   return dbInstance;
@@ -1057,11 +1062,15 @@ export function cleanLegacyInputHistoryFiles(): number {
 }
 
 export function closeHistoryDb(): void {
-  if (dbInstance) {
-    if (typeof dbInstance.close === "function") {
-      dbInstance.close();
+  const activeDb = dbInstance || (globalThis as any).__superagent_db_instance;
+  if (activeDb) {
+    if (typeof activeDb.close === "function") {
+      try {
+        activeDb.close();
+      } catch (err) {}
     }
     dbInstance = null;
+    delete (globalThis as any).__superagent_db_instance;
   }
 }
 
@@ -1069,15 +1078,24 @@ export function saveModelCachesToDb(models: Record<string, number>): void {
   try {
     const db = getHistoryDb();
     const now = Date.now();
-    for (const [id, limit] of Object.entries(models)) {
-      db.prepare(`
+    db.exec("BEGIN;");
+    try {
+      const stmt = db.prepare(`
         INSERT INTO model_caches (id, context_limit, updated_at)
         VALUES (?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET context_limit = excluded.context_limit, updated_at = excluded.updated_at
-      `).run(id, limit, now);
+      `);
+      for (const [id, limit] of Object.entries(models)) {
+        stmt.run(id, limit, now);
+      }
+      db.exec("COMMIT;");
+    } catch (err) {
+      db.exec("ROLLBACK;");
+      throw err;
     }
   } catch {}
 }
+
 
 export function getModelCachesFromDb(): Record<string, number> {
   const result: Record<string, number> = {};

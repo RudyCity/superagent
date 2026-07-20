@@ -6,4 +6,5 @@ export * from "./config/providers.js";
 export * from "./config/presets.js";
 export * from "./config/models.js";
 export * from "./config/jsonConfig.js";
+export { closeHistoryDb } from "./storage/historyDb.js";
 
