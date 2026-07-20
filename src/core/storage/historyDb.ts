@@ -1,7 +1,7 @@
 import { createRequire } from "module";
 import fs from "fs";
 import path from "path";
-import { getGlobalConfigDir, getWorkspaceId, getModelConfigPath } from "../config/paths.js";
+import { getGlobalConfigDir, getWorkspaceId, getModelConfigPath, getRootConfigDir } from "../config/paths.js";
 
 const require = createRequire(import.meta.url);
 
@@ -1478,6 +1478,13 @@ export function deleteWorkspaceDataFromDb(workspaceId: string): void {
     db.prepare("DELETE FROM workspace_tasks WHERE workspace_id = ?").run(workspaceId);
     db.prepare("DELETE FROM input_history WHERE workspace_id = ?").run(workspaceId);
     db.prepare("DELETE FROM workspaces WHERE id = ?").run(workspaceId);
+
+    try {
+      const cachePath = path.join(getRootConfigDir(), "workspace-caches", `${workspaceId}.json`);
+      if (fs.existsSync(cachePath)) {
+        fs.rmSync(cachePath, { force: true });
+      }
+    } catch {}
   } catch {}
 }
 

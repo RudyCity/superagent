@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.507] - 2026-07-20
+
+### Changed
+- **Workspace Cache File Cleanup on Pruning**:
+  - Updated `deleteWorkspaceDataFromDb` to clean up the JSON cache file under `workspace-caches/` whenever a workspace is deleted or pruned as stale, preventing directory and cache file leaks on disk.
+
 ## [1.2.506] - 2026-07-20
 
 ### Changed
