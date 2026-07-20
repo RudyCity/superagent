@@ -299,6 +299,11 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         setFocusMode("input");
         return;
       }
+      // Auto-return to input when user types a printable character
+      if (inputChar && !key.ctrl && !key.meta && inputChar.length === 1 && inputChar >= ' ') {
+        setFocusMode("input");
+        return;
+      }
       return;
     }
 
@@ -319,6 +324,10 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         setFocusMode("input");
         return;
       }
+      if (inputChar && !key.ctrl && !key.meta && inputChar.length === 1 && inputChar >= ' ') {
+        setFocusMode("input");
+        return;
+      }
       return;
     }
 
@@ -336,6 +345,10 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         return;
       }
       if (isEscape) {
+        setFocusMode("input");
+        return;
+      }
+      if (inputChar && !key.ctrl && !key.meta && inputChar.length === 1 && inputChar >= ' ') {
         setFocusMode("input");
         return;
       }
@@ -402,6 +415,10 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         setFocusMode("input");
         return;
       }
+      if (inputChar && !key.ctrl && !key.meta && inputChar.length === 1 && inputChar >= ' ') {
+        setFocusMode("input");
+        return;
+      }
       return;
     }
 
@@ -431,6 +448,12 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         return;
       }
       if (isEscape) {
+        setScrollOffset(0);
+        setFocusMode("input");
+        return;
+      }
+      // Auto-return to input when user types a printable character
+      if (inputChar && !key.ctrl && !key.meta && inputChar.length === 1 && inputChar >= ' ') {
         setScrollOffset(0);
         setFocusMode("input");
         return;

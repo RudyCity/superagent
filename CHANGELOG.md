@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.508] - 2026-07-20
+
+### Fixed
+- **Input Focus Recovery**: Fixed bug where keystrokes were silently discarded when `focusMode` was stuck on a non-input mode (chat, checklist, superagents, subagents, procs). Typing a printable character now auto-returns focus to the input field, preventing the "typing does nothing" issue.
+- **Mouse Click Focus Steal**: Clicking on chat items to expand/collapse tool outputs no longer changes `focusMode` to "chat", which previously stole keyboard focus from the input field.
+
 ## [1.2.507] - 2026-07-20
 
 ### Changed

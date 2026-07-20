@@ -296,7 +296,9 @@ export function useMouseScroll(
                   break;
                 }
               }
-              ctx.setFocusMode("chat");
+              if (!handledClick) {
+                ctx.setFocusMode("chat");
+              }
               break;
             }
             case "superagents":
