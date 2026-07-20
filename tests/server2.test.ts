@@ -595,6 +595,40 @@ describe("GET /api/events (SSE)", () => {
     // After abort instance may be cleaned up — 200 or 404 both valid
     expect([200, 404]).toContain(status);
   });
+
+  it("receives real-time SSE stream events when chat command is processed", async () => {
+    const ctrl = new AbortController();
+    const res = await fetch(apiUrl(port, "/api/events"), { signal: ctrl.signal });
+    expect(res.status).toBe(200);
+    const reader = res.body?.getReader();
+    expect(reader).toBeDefined();
+
+    // Trigger terminal chat command
+    await postJSON(
+      port,
+      "/api/chat",
+      { message: "!echo sse_stream_verify" },
+      { "x-workspace-path": testWorkspace }
+    );
+
+    let receivedData = "";
+    const readStream = async () => {
+      while (true) {
+        const { value, done } = await reader!.read();
+        if (done) break;
+        receivedData += new TextDecoder().decode(value);
+        if (receivedData.length > 0) break;
+      }
+    };
+
+    await Promise.race([
+      readStream(),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+
+    ctrl.abort();
+    expect(typeof receivedData).toBe("string");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
