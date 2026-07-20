@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.494] - 2026-07-20
+
+### Added
+- **Automated Startup Migration & Legacy JSON Cleanup**:
+  - Configured automatic startup execution of both `migrateLegacyJsonToDb()` and `cleanLegacyJsonFiles()` so all legacy JSON session files are imported into SQLite and purged automatically on launch.
+
 ## [1.2.493] - 2026-07-20
 
 ### Added

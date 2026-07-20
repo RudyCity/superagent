@@ -455,10 +455,11 @@ export const historyCommand: SlashCommand = {
   }
 };
 
-// Auto-run legacy migration on load if available
+// Auto-run legacy migration and cleanup on startup
 try {
   import("../storage/historyDb.js").then((mod) => {
     mod.migrateLegacyJsonToDb();
+    mod.cleanLegacyJsonFiles();
   }).catch(() => {});
 } catch {}
 
