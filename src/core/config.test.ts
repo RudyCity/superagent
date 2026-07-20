@@ -10,6 +10,7 @@ vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, clearHistoryCache, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset, getModelConnectionDetailsForTier } from "./config.js";
 import { getModelConfigPath } from "./config/paths.js";
 import { clearModelConfigCache, loadModelConfig, addProvider, saveModelConfig, getProviders, removeProvider, clearSessionActivePreset } from "./config/jsonConfig.js";
+import { saveModelCachesToDb, getModelCachesFromDb } from "./storage/historyDb.js";
 
 describe("config", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -153,63 +154,35 @@ describe("config", () => {
     expect(getContextWindowLimit("unknown-model")).toBe(256000);
   });
 
-  it("should read context window limits from models_cache.json if present", () => {
-    const cachePath = path.join(getGlobalConfigDir(), "models_cache.json");
-    
-    // Save existing cache file if it exists
-    let existingContent: string | null = null;
-    if (fs.existsSync(cachePath)) {
-      existingContent = fs.readFileSync(cachePath, "utf-8");
-    }
+  it("should read context window limits from SQLite model_caches if present", () => {
+    // Save existing cache
+    const existingCache = getModelCachesFromDb();
 
     try {
-      // Ensure dir exists
-      fs.mkdirSync(getGlobalConfigDir(), { recursive: true });
-      fs.writeFileSync(cachePath, JSON.stringify({ "my-special-cached-model": 999999 }), "utf-8");
+      saveModelCachesToDb({ "my-special-cached-model": 999999 });
       
       expect(getContextWindowLimit("my-special-cached-model")).toBe(999999);
     } finally {
-      // Clean up
-      if (existingContent !== null) {
-        fs.writeFileSync(cachePath, existingContent, "utf-8");
-      } else {
-        try {
-          fs.unlinkSync(cachePath);
-        } catch {}
-      }
+      // Clean up: restore original cache state
+      saveModelCachesToDb(existingCache);
     }
   });
 
   it("should prioritize static limits over cache for known models", () => {
-    const cachePath = path.join(getGlobalConfigDir(), "models_cache.json");
-    
-    // Save existing cache file if it exists
-    let existingContent: string | null = null;
-    if (fs.existsSync(cachePath)) {
-      existingContent = fs.readFileSync(cachePath, "utf-8");
-    }
+    const existingCache = getModelCachesFromDb();
 
     try {
-      // Ensure dir exists
-      fs.mkdirSync(getGlobalConfigDir(), { recursive: true });
-      fs.writeFileSync(cachePath, JSON.stringify({ 
+      saveModelCachesToDb({ 
         "server_zenmuxglmn_preset_zenmux/x-ai/grok-4.5-free": 128000,
         "zenmux-anthropic/claude-fable-5-free": 200000,
         "claude-sonnet-5": 5000 
-      }), "utf-8");
+      });
       
       expect(getContextWindowLimit("server_zenmuxglmn_preset_zenmux/x-ai/grok-4.5-free")).toBe(500000);
       expect(getContextWindowLimit("zenmux-anthropic/claude-fable-5-free")).toBe(1000000);
       expect(getContextWindowLimit("claude-sonnet-5")).toBe(5000);
     } finally {
-      // Clean up
-      if (existingContent !== null) {
-        fs.writeFileSync(cachePath, existingContent, "utf-8");
-      } else {
-        try {
-          fs.unlinkSync(cachePath);
-        } catch {}
-      }
+      saveModelCachesToDb(existingCache);
     }
   });
 
@@ -272,11 +245,7 @@ describe("config", () => {
     process.env.CUSTOM_BASE_URL = "http://localhost:8080/v1";
     process.env.CUSTOM_API_KEY = "test-key";
 
-    const cachePath = path.join(getGlobalConfigDir(), "models_cache.json");
-    let existingContent: string | null = null;
-    if (fs.existsSync(cachePath)) {
-      existingContent = fs.readFileSync(cachePath, "utf-8");
-    }
+    const existingCache = getModelCachesFromDb();
 
     try {
       await fetchAndCacheModels();
@@ -286,13 +255,7 @@ describe("config", () => {
     } finally {
       // Restore
       globalThis.fetch = originalFetch;
-      if (existingContent !== null) {
-        fs.writeFileSync(cachePath, existingContent, "utf-8");
-      } else {
-        try {
-          fs.unlinkSync(cachePath);
-        } catch {}
-      }
+      saveModelCachesToDb(existingCache);
     }
   });
 

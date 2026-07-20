@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.500] - 2026-07-20
+
+### Changed
+- **SQLite Storage Optimization**: Migrated `models_cache.json`, `tool_support_cache.json`, and `rate_limit_state.json` from JSON file storage to SQLite tables in `history.db`.
+  - Added `model_caches`, `tool_support_cache`, and `rate_limit_state` tables to `historyDb.ts` with 7 new helper functions.
+  - Refactored `models.ts` to read/write model context limits via SQLite instead of `models_cache.json`.
+  - Refactored `promptBasedToolCalling.ts` to store tool support probe results in SQLite with TTL-based expiration.
+  - Refactored `rateLimiter.ts` to use SQLite for token bucket state, removing file-based locking (`rate_limit.lock` and `rate_limit_state.json`).
+  - All three modules include transparent one-time migration from legacy JSON files to SQLite on first access.
+  - Updated `config.test.ts` to use SQLite helpers for model cache tests.
+
 ## [1.2.499] - 2026-07-20
 
 ### Added

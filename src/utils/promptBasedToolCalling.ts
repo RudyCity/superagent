@@ -1,18 +1,11 @@
-/**
- * promptBasedToolCalling.ts
- *
- * Provides a fallback mechanism for providers that don't support native
- * OpenAI-format tool calling (e.g. local OpenAI-compatible proxies wrapping
- * Claude models without forwarding the `tools` parameter).
- *
- * When detected, tool definitions are injected directly into the system prompt
- * as XML, and Claude's native XML-format tool call responses are parsed back
- * into structured ToolCall objects.
- */
-
 import fs from "fs";
 import path from "path";
 import { getRootConfigDir, ensureProtocol } from "../core/config/paths.js";
+import {
+  saveToolSupportCacheToDb,
+  getToolSupportCacheFromDb,
+  loadAllToolSupportCacheFromDb,
+} from "../core/storage/historyDb.js";
 
 export interface ToolDefinition {
   name: string;
@@ -31,7 +24,7 @@ export interface ToolDefinition {
  * Returns true if the endpoint's response has `finish_reason: "tool_calls"`
  * or contains a structured `tool_calls` object. Returns false otherwise.
  *
- * Results are cached to disk to avoid repeated probes across CLI invocations.
+ * Results are cached to SQLite to avoid repeated probes across CLI invocations.
  */
 /** TTL for probe cache entries: 24 hours in milliseconds. */
 const PROBE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -44,56 +37,43 @@ interface CacheEntry {
 const toolCallSupportCache = new Map<string, CacheEntry>();
 let diskCacheLoaded = false;
 
-function getCacheFilePath(): string {
-  try {
-    return path.join(getRootConfigDir(), "tool_support_cache.json");
-  } catch {
-    return "";
-  }
-}
-
 function loadDiskCache(): void {
   if (diskCacheLoaded) return;
   diskCacheLoaded = true;
+
+  // Migrate legacy JSON file if it exists
   try {
-    const cacheFile = getCacheFilePath();
-    if (cacheFile && fs.existsSync(cacheFile)) {
-      const data = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
+    const legacyPath = path.join(getRootConfigDir(), "tool_support_cache.json");
+    if (fs.existsSync(legacyPath)) {
+      const data = JSON.parse(fs.readFileSync(legacyPath, "utf-8"));
       for (const [key, value] of Object.entries(data)) {
         if (typeof value === "boolean") {
-          // Legacy entry without timestamp — treat as expired so it gets re-probed
-          toolCallSupportCache.set(key, { value, timestamp: 0 });
+          saveToolSupportCacheToDb(key, value);
         } else if (
           value !== null &&
           typeof value === "object" &&
-          typeof (value as any).value === "boolean" &&
-          typeof (value as any).timestamp === "number"
+          typeof (value as any).value === "boolean"
         ) {
-          toolCallSupportCache.set(key, value as CacheEntry);
+          saveToolSupportCacheToDb(key, (value as any).value);
         }
       }
+      fs.unlinkSync(legacyPath);
     }
-  } catch {
-    // Ignore cache load errors
-  }
+  } catch {}
+
+  // Load from SQLite into in-memory map
+  try {
+    const dbEntries = loadAllToolSupportCacheFromDb(PROBE_CACHE_TTL_MS);
+    for (const [key, supported] of Object.entries(dbEntries)) {
+      toolCallSupportCache.set(key, { value: supported, timestamp: Date.now() });
+    }
+  } catch {}
 }
 
-function saveDiskCache(): void {
+function saveDiskCache(key: string, supported: boolean): void {
   try {
-    const cacheFile = getCacheFilePath();
-    if (!cacheFile) return;
-    const data: Record<string, CacheEntry> = {};
-    for (const [key, entry] of toolCallSupportCache.entries()) {
-      data[key] = entry;
-    }
-    const dir = path.dirname(cacheFile);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(cacheFile, JSON.stringify(data, null, 2), "utf-8");
-  } catch {
-    // Ignore cache save errors
-  }
+    saveToolSupportCacheToDb(key, supported);
+  } catch {}
 }
 
 export async function probeToolCallSupport(
@@ -148,7 +128,7 @@ export async function probeToolCallSupport(
 
     if (!res.ok) {
       toolCallSupportCache.set(cacheKey, { value: false, timestamp: Date.now() });
-      saveDiskCache();
+      saveDiskCache(cacheKey, false);
       return false;
     }
 
@@ -160,11 +140,11 @@ export async function probeToolCallSupport(
     );
 
     toolCallSupportCache.set(cacheKey, { value: hasToolCalls, timestamp: Date.now() });
-    saveDiskCache();
+    saveDiskCache(cacheKey, hasToolCalls);
     return hasToolCalls;
   } catch {
     toolCallSupportCache.set(cacheKey, { value: false, timestamp: Date.now() });
-    saveDiskCache();
+    saveDiskCache(cacheKey, false);
     return false;
   }
 }
@@ -173,12 +153,6 @@ export async function probeToolCallSupport(
 export function clearToolCallSupportCache(): void {
   toolCallSupportCache.clear();
   diskCacheLoaded = false;
-  try {
-    const cacheFile = getCacheFilePath();
-    if (cacheFile && fs.existsSync(cacheFile)) {
-      fs.unlinkSync(cacheFile);
-    }
-  } catch {}
 }
 
 /**

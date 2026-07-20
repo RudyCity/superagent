@@ -8,6 +8,7 @@ import { getRootConfigDir, ensureGlobalConfigDir, ensureProtocol } from "./paths
 import { getConfig } from "./base.js";
 import { getConfiguredProviders, getEffectiveMasterModel } from "./providers.js";
 import { loadModelConfig, getActivePreset, TierModelConfig, getSettings } from "./jsonConfig.js";
+import { saveModelCachesToDb, getModelCachesFromDb } from "../storage/historyDb.js";
 
 export async function fetchAndCacheModels(): Promise<void> {
   const providers = getConfiguredProviders();
@@ -70,30 +71,39 @@ export async function fetchAndCacheModels(): Promise<void> {
 
   if (Object.keys(cache).length > 0) {
     try {
-      ensureGlobalConfigDir();
-      const cachePath = path.join(getRootConfigDir(), "models_cache.json");
-      let existingCache: Record<string, number> = {};
-      if (fs.existsSync(cachePath)) {
-        try {
-          existingCache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
-        } catch {}
-      }
+      const existingCache = getModelCachesFromDb();
       const updatedCache = { ...existingCache, ...cache };
-      fs.writeFileSync(cachePath, JSON.stringify(updatedCache, null, 2), "utf-8");
+      saveModelCachesToDb(updatedCache);
     } catch (err) {
       // Ignore write errors
     }
   }
 }
 
-/** Returns the list of model IDs cached from the last successful API fetch. */
-export function getCachedModelIds(): string[] {
+function loadModelsCacheWithMigration(): Record<string, number> {
+  const dbCache = getModelCachesFromDb();
   try {
     const cachePath = path.join(getRootConfigDir(), "models_cache.json");
     if (fs.existsSync(cachePath)) {
-      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as Record<string, number>;
-      return Object.keys(cache);
+      try {
+        const legacyCache = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as Record<string, number>;
+        if (legacyCache && typeof legacyCache === "object") {
+          const merged = { ...legacyCache, ...dbCache };
+          saveModelCachesToDb(merged);
+          fs.unlinkSync(cachePath);
+          return merged;
+        }
+      } catch {}
     }
+  } catch {}
+  return dbCache;
+}
+
+/** Returns the list of model IDs cached from the last successful API fetch. */
+export function getCachedModelIds(): string[] {
+  try {
+    const cache = loadModelsCacheWithMigration();
+    return Object.keys(cache);
   } catch {
     // Ignore
   }
@@ -108,21 +118,16 @@ export function getContextWindowLimit(model: string): number {
   // Clean provider prefix (e.g. "dddd@claude-sonnet" -> "claude-sonnet")
   const cleanModel = model.includes("@") ? model.substring(model.indexOf("@") + 1) : model;
 
-  // 2. Read from models_cache.json
+  // 2. Read from SQLite model_caches
   try {
-    const cachePath = path.join(getRootConfigDir(), "models_cache.json");
-    if (fs.existsSync(cachePath)) {
-      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
-      if (cache && typeof cache[cleanModel] === "number") {
-        const cachedVal = cache[cleanModel];
-        // If cached value is a generic fallback (128000 or 200000) and we have a specific static limit,
-        // use the static limit since it's more specific.
-        const staticLimit = getStaticModelLimit(cleanModel);
-        if ((cachedVal === 128000 || cachedVal === 200000) && staticLimit !== null) {
-          return staticLimit;
-        }
-        return cachedVal;
+    const cache = loadModelsCacheWithMigration();
+    if (cache && typeof cache[cleanModel] === "number") {
+      const cachedVal = cache[cleanModel];
+      const staticLimit = getStaticModelLimit(cleanModel);
+      if ((cachedVal === 128000 || cachedVal === 200000) && staticLimit !== null) {
+        return staticLimit;
       }
+      return cachedVal;
     }
   } catch (err) {
     // Ignore cache read errors

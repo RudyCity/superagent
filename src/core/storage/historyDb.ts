@@ -180,6 +180,24 @@ function initDatabaseSchema(db: any): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_input_history_ws ON input_history(workspace_id, id ASC);
+
+    CREATE TABLE IF NOT EXISTS model_caches (
+      id TEXT PRIMARY KEY,
+      context_limit INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
+    );
+
+    CREATE TABLE IF NOT EXISTS tool_support_cache (
+      model_id TEXT PRIMARY KEY,
+      supported INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
+    );
+
+    CREATE TABLE IF NOT EXISTS rate_limit_state (
+      key TEXT PRIMARY KEY,
+      tokens_remaining INTEGER NOT NULL,
+      last_updated INTEGER NOT NULL
+    );
   `);
 
   try {
@@ -1046,3 +1064,101 @@ export function closeHistoryDb(): void {
     dbInstance = null;
   }
 }
+
+export function saveModelCachesToDb(models: Record<string, number>): void {
+  try {
+    const db = getHistoryDb();
+    const now = Date.now();
+    for (const [id, limit] of Object.entries(models)) {
+      db.prepare(`
+        INSERT INTO model_caches (id, context_limit, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET context_limit = excluded.context_limit, updated_at = excluded.updated_at
+      `).run(id, limit, now);
+    }
+  } catch {}
+}
+
+export function getModelCachesFromDb(): Record<string, number> {
+  const result: Record<string, number> = {};
+  try {
+    const db = getHistoryDb();
+    const rows = db.prepare("SELECT id, context_limit FROM model_caches").all();
+    if (Array.isArray(rows)) {
+      for (const row of rows) {
+        if (row && typeof row.id === "string" && typeof row.context_limit === "number") {
+          result[row.id] = row.context_limit;
+        }
+      }
+    }
+  } catch {}
+  return result;
+}
+
+export function saveToolSupportCacheToDb(modelId: string, supported: boolean): void {
+  try {
+    const db = getHistoryDb();
+    const now = Date.now();
+    const val = supported ? 1 : 0;
+    db.prepare(`
+      INSERT INTO tool_support_cache (model_id, supported, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(model_id) DO UPDATE SET supported = excluded.supported, updated_at = excluded.updated_at
+    `).run(modelId, val, now);
+  } catch {}
+}
+
+export function getToolSupportCacheFromDb(modelId: string, ttlMs: number): boolean | null {
+  try {
+    const db = getHistoryDb();
+    const row = db.prepare("SELECT supported, updated_at FROM tool_support_cache WHERE model_id = ?").get(modelId);
+    if (row && typeof row.updated_at === "number") {
+      if (Date.now() - row.updated_at < ttlMs) {
+        return row.supported === 1;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+export function loadAllToolSupportCacheFromDb(ttlMs: number): Record<string, boolean> {
+  const result: Record<string, boolean> = {};
+  try {
+    const db = getHistoryDb();
+    const rows = db.prepare("SELECT model_id, supported, updated_at FROM tool_support_cache").all();
+    const now = Date.now();
+    if (Array.isArray(rows)) {
+      for (const row of rows) {
+        if (row && typeof row.model_id === "string" && typeof row.updated_at === "number") {
+          if (now - row.updated_at < ttlMs) {
+            result[row.model_id] = row.supported === 1;
+          }
+        }
+      }
+    }
+  } catch {}
+  return result;
+}
+
+export function getRateLimitStateFromDb(key: string): { tokensRemaining: number; lastUpdated: number } | null {
+  try {
+    const db = getHistoryDb();
+    const row = db.prepare("SELECT tokens_remaining, last_updated FROM rate_limit_state WHERE key = ?").get(key);
+    if (row && typeof row.tokens_remaining === "number" && typeof row.last_updated === "number") {
+      return { tokensRemaining: row.tokens_remaining, lastUpdated: row.last_updated };
+    }
+  } catch {}
+  return null;
+}
+
+export function saveRateLimitStateToDb(key: string, tokensRemaining: number, lastUpdated: number): void {
+  try {
+    const db = getHistoryDb();
+    db.prepare(`
+      INSERT INTO rate_limit_state (key, tokens_remaining, last_updated)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET tokens_remaining = excluded.tokens_remaining, last_updated = excluded.last_updated
+    `).run(key, tokensRemaining, lastUpdated);
+  } catch {}
+}
+

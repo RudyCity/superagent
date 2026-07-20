@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { getRootConfigDir, getSettings } from "./config.js";
+import { getRateLimitStateFromDb, saveRateLimitStateToDb } from "./storage/historyDb.js";
 
 interface RateLimitState {
   lastTimestamp: number;
@@ -11,86 +12,28 @@ const CAPACITY = 60; // Max 60 requests in the bucket
 const REFILL_RATE_PER_MS = 1 / 1000; // Refill 1 token per second (1000ms)
 
 /**
- * A file-lock-based shared token bucket rate limiter to prevent concurrent
+ * SQLite-backed shared token bucket rate limiter to prevent concurrent
  * Superagent instances from hitting LLM API rate limits.
+ * Uses SQLite WAL mode for safe atomic cross-process state updates.
  */
 export class SharedRateLimiter {
-  private statePath: string;
-  private lockPath: string;
+  private stateKey = "default";
   private processQueue: (() => void)[] = [];
   private processLocked = false;
+  private legacyMigrated = false;
 
-  constructor() {
-    const root = getRootConfigDir();
-    this.statePath = path.join(root, "rate_limit_state.json");
-    this.lockPath = path.join(root, "rate_limit.lock");
-  }
+  constructor() {}
 
-  private async acquireLock(): Promise<void> {
+  private async acquireProcessLock(): Promise<void> {
     if (this.processLocked) {
       await new Promise<void>((resolve) => {
         this.processQueue.push(resolve);
       });
     }
     this.processLocked = true;
-
-    const start = Date.now();
-    while (true) {
-      try {
-        // wx: Open file for writing, fail if it exists
-        const fd = fs.openSync(this.lockPath, "wx");
-        fs.writeSync(fd, String(process.pid));
-        fs.closeSync(fd);
-        return;
-      } catch (err: any) {
-        // Self-heal if parent directory does not exist
-        if (err.code === "ENOENT") {
-          try {
-            fs.mkdirSync(path.dirname(this.lockPath), { recursive: true });
-            continue;
-          } catch {}
-        }
-        // If file exists, check if it's stale (older than 10 seconds or process is dead)
-        if (err.code === "EEXIST") {
-          try {
-            const content = fs.readFileSync(this.lockPath, "utf-8").trim();
-            const pid = parseInt(content, 10);
-            let isAlive = false;
-            if (!isNaN(pid) && pid > 0) {
-              try {
-                process.kill(pid, 0);
-                isAlive = true;
-              } catch (e: any) {
-                isAlive = e.code === "EPERM";
-              }
-            }
-            const stat = fs.statSync(this.lockPath);
-            if (!isAlive || Date.now() - stat.mtimeMs > 10000) {
-              this.releaseFileLock(); // Remove stale lock
-              continue;
-            }
-          } catch {}
-        }
-        // Wait and retry
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        // Timeout check to prevent infinite loop (safety backup)
-        if (Date.now() - start > 15000) {
-          this.releaseFileLock();
-        }
-      }
-    }
   }
 
-  private releaseFileLock(): void {
-    try {
-      if (fs.existsSync(this.lockPath)) {
-        fs.unlinkSync(this.lockPath);
-      }
-    } catch {}
-  }
-
-  private releaseLock(): void {
-    this.releaseFileLock();
+  private releaseProcessLock(): void {
     this.processLocked = false;
     const next = this.processQueue.shift();
     if (next) {
@@ -98,25 +41,39 @@ export class SharedRateLimiter {
     }
   }
 
-  private readState(capacity: number): RateLimitState {
-    const defaultState = { lastTimestamp: Date.now(), tokensRemaining: capacity };
-    if (!fs.existsSync(this.statePath)) {
-      return defaultState;
-    }
+  private migrateLegacyState(): void {
+    if (this.legacyMigrated) return;
+    this.legacyMigrated = true;
     try {
-      const data = fs.readFileSync(this.statePath, "utf-8");
-      const parsed = JSON.parse(data);
-      if (typeof parsed.lastTimestamp !== "number" || typeof parsed.tokensRemaining !== "number") {
-        return defaultState;
+      const root = getRootConfigDir();
+      const legacyStatePath = path.join(root, "rate_limit_state.json");
+      if (fs.existsSync(legacyStatePath)) {
+        const data = JSON.parse(fs.readFileSync(legacyStatePath, "utf-8"));
+        if (typeof data.lastTimestamp === "number" && typeof data.tokensRemaining === "number") {
+          saveRateLimitStateToDb(this.stateKey, data.tokensRemaining, data.lastTimestamp);
+        }
+        fs.unlinkSync(legacyStatePath);
       }
-      return parsed;
-    } catch {
-      return defaultState;
+      // Clean up legacy lock file
+      const legacyLockPath = path.join(root, "rate_limit.lock");
+      if (fs.existsSync(legacyLockPath)) {
+        fs.unlinkSync(legacyLockPath);
+      }
+    } catch {}
+  }
+
+  private readState(capacity: number): RateLimitState {
+    this.migrateLegacyState();
+    const defaultState = { lastTimestamp: Date.now(), tokensRemaining: capacity };
+    const dbState = getRateLimitStateFromDb(this.stateKey);
+    if (dbState) {
+      return { lastTimestamp: dbState.lastUpdated, tokensRemaining: dbState.tokensRemaining };
     }
+    return defaultState;
   }
 
   private writeState(state: RateLimitState): void {
-    fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2), "utf-8");
+    saveRateLimitStateToDb(this.stateKey, state.tokensRemaining, state.lastTimestamp);
   }
 
   private getCapacity(): number {
@@ -155,7 +112,7 @@ export class SharedRateLimiter {
     const refillRate = this.getRefillRatePerMs();
 
     while (true) {
-      await this.acquireLock();
+      await this.acquireProcessLock();
       try {
         const state = this.readState(capacity);
         const now = Date.now();
@@ -169,16 +126,16 @@ export class SharedRateLimiter {
           state.tokensRemaining = newTokens - cost;
           state.lastTimestamp = now;
           this.writeState(state);
-          this.releaseLock();
+          this.releaseProcessLock();
           return;
         }
 
         // Not enough tokens: Release lock, wait, and retry
-        this.releaseLock();
+        this.releaseProcessLock();
         const waitTime = Math.max(500, Math.ceil((cost - newTokens) / refillRate));
         await new Promise((resolve) => setTimeout(resolve, waitTime));
       } catch (err) {
-        this.releaseLock();
+        this.releaseProcessLock();
         throw err;
       }
     }
