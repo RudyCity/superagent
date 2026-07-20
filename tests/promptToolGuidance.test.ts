@@ -59,18 +59,13 @@ describe("prompt and command guidance", () => {
 
     expect(prompts).toContain("Batch all multi-file, multi-edit, multi-task, and multi-agent operations");
     expect(prompts).toContain("Sequential single-item calls are allowed only when one item exists");
-    expect(prompts).toContain("Can this be batched, delegated, or run in parallel safely?");
-    expect(prompts).toContain("if multiple_independent_subagents");
     expect(base).toContain("Plan batches upfront");
     expect(base).toContain("conversationIds");
   });
 
-  it("requires single-agent cognitive scale-up guidelines in prompts", () => {
-    const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
+  it("requires single-agent cognitive scale-up guidelines in skills config", () => {
     const skillsConfig = fs.readFileSync(path.resolve(process.cwd(), "src/core/config/skills.ts"), "utf-8");
 
-    expect(prompts).toContain("single-agent-cognitive-scaleup");
-    expect(prompts).toContain("optimal non-human reasoning");
     expect(skillsConfig).toContain("single-agent-cognitive-scaleup");
   });
 });

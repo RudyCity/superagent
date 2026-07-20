@@ -368,10 +368,19 @@ export class Conversation {
             if (Array.isArray(extra.superagents)) {
               superagentInstances.clear();
               for (const s of extra.superagents) {
-                let status = s.status === "running" ? "paused" : s.status;
+                let status = s.status;
+                let result = s.result;
+                const logs = [...(s.logs || [])];
+                if (status === "running") {
+                  status = "paused";
+                  result = "[Paused by session exit]";
+                  logs.push("\n[SYSTEM: Resumed session, marked as paused]\n");
+                }
                 superagentInstances.set(s.id, {
                   ...s,
                   status,
+                  result,
+                  logs,
                   agent: {
                     abort: () => {},
                     getCurrentHistoryFilePath: () => s.historyFilePath || "",
@@ -383,10 +392,19 @@ export class Conversation {
             if (Array.isArray(extra.subagents)) {
               subagentInstances.clear();
               for (const s of extra.subagents) {
-                let status = (s.status === "running" || s.status === "idle") ? "paused" : s.status;
+                let status = s.status;
+                let result = s.result;
+                const logs = [...(s.logs || [])];
+                if (status === "running" || status === "idle") {
+                  status = "paused";
+                  result = "[Paused by session exit]";
+                  logs.push("\n[SYSTEM: Resumed session, marked as paused]\n");
+                }
                 subagentInstances.set(s.id, {
                   ...s,
                   status,
+                  result,
+                  logs,
                   agent: {
                     abort: () => {},
                     getCurrentHistoryFilePath: () => s.historyFilePath || "",

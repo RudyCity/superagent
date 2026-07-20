@@ -72,8 +72,8 @@ describe("Workspace Memory Enhancements", () => {
 
   describe("Workspace Summary Auto-Indexing", () => {
     it("should compute stable project hash and save/read summary", () => {
-      const hash1 = getProjectHash(mainRepoDir);
-      const hash2 = getProjectHash(worktreeDir);
+      const hash1 = getProjectHash(getNormalizedProjectPath(mainRepoDir));
+      const hash2 = getProjectHash(getNormalizedProjectPath(worktreeDir));
       expect(hash1).toBe(hash2); // normalized worktree shares project hash
 
       const saved = saveWorkspaceSummary(

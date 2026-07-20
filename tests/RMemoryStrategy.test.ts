@@ -21,8 +21,10 @@ vi.mock("../src/core/rmemoryUtil.js", () => {
   };
 });
 
-vi.mock("../src/core/config.js", () => {
+vi.mock("../src/core/config.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/core/config.js")>("../src/core/config.js");
   return {
+    ...actual,
     getSettings: () => ({
       rmemoryGatewayUrl: "http://127.0.0.1:8420",
       rmemoryGatewayApiKey: "sk-xxxx",

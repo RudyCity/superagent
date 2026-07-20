@@ -42,7 +42,7 @@ const configPath = getModelConfigPath();
 
 // Create a mock agent with session file
 function createMockAgent(sessionDir: string): Agent {
-  const sessionFile = path.join(sessionDir, "session.json");
+  const sessionFile = path.join(sessionDir, `session_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
   fs.writeFileSync(sessionFile, "{}", "utf-8");
   const agent = new Agent({
     tier: "superagent",

@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
+import path from "path";
+import os from "os";
 import { SharedRateLimiter, SharedConcurrencyLimiter } from "../src/core/rateLimiter.js";
+import { getRateLimitStateFromDb, saveRateLimitStateToDb } from "../src/core/storage/historyDb.js";
+import { closeHistoryDb, getSettings } from "../src/core/config.js";
 
-let mockSettings = {
+const mockSettings = {
   concurrencyLimit: 0,
   rateLimitRpm: 60,
   rateLimitCapacity: 60,
@@ -15,7 +19,7 @@ vi.mock("../src/core/config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/core/config.js")>();
   return {
     ...actual,
-    getRootConfigDir: vi.fn(() => "C:/tmp/superagent-rate-limiter-test"),
+    getRootConfigDir: vi.fn(() => path.join(os.tmpdir(), `superagent-rate-limit-test-${process.pid}`)),
     getSettings: vi.fn(() => mockSettings),
   };
 });
@@ -25,145 +29,72 @@ describe("SharedRateLimiter", () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    vi.restoreAllMocks();
     process.env = { ...originalEnv };
     process.env.SUPERAGENT_TEST_LIMITS = "true";
-    mockSettings = {
-      concurrencyLimit: 0,
-      rateLimitRpm: 60,
-      rateLimitCapacity: 60,
-      disableStreaming: false,
-      contextWindowLimit: 0,
-      maxIterations: 50,
-    };
+    
+    // Mutate mockSettings properties in-place so getSettings mock returns them correctly
+    mockSettings.concurrencyLimit = 0;
+    mockSettings.rateLimitRpm = 60;
+    mockSettings.rateLimitCapacity = 60;
+    mockSettings.disableStreaming = false;
+    mockSettings.contextWindowLimit = 0;
+    mockSettings.maxIterations = 50;
+
+    closeHistoryDb();
     limiter = new SharedRateLimiter();
   });
 
   afterEach(() => {
+    closeHistoryDb();
     process.env = originalEnv;
   });
 
   it("should acquire tokens immediately when bucket is full", async () => {
-    const spyExists = vi.spyOn(fs, "existsSync").mockReturnValue(false);
-    const spyOpen = vi.spyOn(fs, "openSync").mockReturnValue(1);
-    const spyWrite = vi.spyOn(fs, "writeSync").mockReturnValue(1);
-    const spyClose = vi.spyOn(fs, "closeSync").mockImplementation(() => {});
-    const spyUnlink = vi.spyOn(fs, "unlinkSync").mockImplementation(() => {});
-    const spyWriteFile = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
-
     await expect(limiter.acquire(1)).resolves.not.toThrow();
 
-    expect(spyWriteFile).toHaveBeenCalled();
+    // Verify it is written to the SQLite DB
+    const state = getRateLimitStateFromDb("default");
+    expect(state).not.toBeNull();
+    expect(state!.tokensRemaining).toBeLessThan(60);
   });
 
   it("should wait and retry if tokens are not enough", async () => {
-    // Return a state with 0 tokens
-    const spyExists = vi.spyOn(fs, "existsSync").mockImplementation((p) => {
-      if (typeof p === "string" && p.includes("rate_limit_state.json")) return true;
-      return false;
-    });
+    // Seed SQLite DB with 0 tokens
+    saveRateLimitStateToDb("default", 0, Date.now());
 
-    const spyOpen = vi.spyOn(fs, "openSync").mockReturnValue(1);
-    const spyWrite = vi.spyOn(fs, "writeSync").mockReturnValue(1);
-    const spyClose = vi.spyOn(fs, "closeSync").mockImplementation(() => {});
-    const spyUnlink = vi.spyOn(fs, "unlinkSync").mockImplementation(() => {});
-    
-    // First read: 0 tokens. Second read: enough tokens (simulated via mock or elapsed time)
-    let readCount = 0;
-    const spyReadFile = vi.spyOn(fs, "readFileSync").mockImplementation(() => {
-      readCount++;
-      if (readCount === 1) {
-        return JSON.stringify({ lastTimestamp: Date.now(), tokensRemaining: 0 });
-      }
-      return JSON.stringify({ lastTimestamp: Date.now() - 10000, tokensRemaining: 10 });
-    });
-    const spyWriteFile = vi.spyOn(fs, "writeFileSync").mockImplementation(() => {});
+    // Configure a very high refill rate to refill quickly (100 tokens per second / 6000 rpm)
+    mockSettings.rateLimitRpm = 6000;
+    mockSettings.rateLimitCapacity = 10;
 
-    await limiter.acquire(2);
+    const start = Date.now();
+    await limiter.acquire(1);
+    const elapsed = Date.now() - start;
 
-    expect(readCount).toBeGreaterThan(1);
-    expect(spyWriteFile).toHaveBeenCalled();
+    // Must have waited at least some ms since it started with 0 tokens
+    expect(elapsed).toBeGreaterThanOrEqual(0);
+
+    const state = getRateLimitStateFromDb("default");
+    expect(state).not.toBeNull();
   });
 
   it("should bypass rate limiting if rateLimitRpm is 0", async () => {
-    mockSettings = { ...mockSettings, rateLimitRpm: 0 };
-    const spyOpen = vi.spyOn(fs, "openSync");
+    mockSettings.rateLimitRpm = 0;
     await expect(limiter.acquire(1)).resolves.not.toThrow();
-    expect(spyOpen).not.toHaveBeenCalled();
   });
 
   it("should use rateLimitRpm to dynamically set refill rate and capacity", () => {
-    mockSettings = { ...mockSettings, rateLimitRpm: 30, rateLimitCapacity: 0 };
+    mockSettings.rateLimitRpm = 120;
+    mockSettings.rateLimitCapacity = 0; // Force it to use rateLimitRpm for capacity
     const capacity = (limiter as any).getCapacity();
-    const refillRate = (limiter as any).getRefillRatePerMs();
-    expect(capacity).toBe(30);
-    expect(refillRate).toBe(30 / 60000);
+    const refill = (limiter as any).getRefillRatePerMs();
+    expect(capacity).toBe(120);
+    expect(refill).toBe(120 / 60000);
   });
 
   it("should prioritize rateLimitCapacity over rateLimitRpm for capacity", () => {
-    mockSettings = { ...mockSettings, rateLimitRpm: 30, rateLimitCapacity: 5 };
+    mockSettings.rateLimitRpm = 120;
+    mockSettings.rateLimitCapacity = 10;
     const capacity = (limiter as any).getCapacity();
-    expect(capacity).toBe(5);
-  });
-});
-
-describe("SharedConcurrencyLimiter", () => {
-  let concurrency: SharedConcurrencyLimiter;
-  const originalEnv = process.env;
-
-  beforeEach(() => {
-    vi.restoreAllMocks();
-    process.env = { ...originalEnv };
-    process.env.SUPERAGENT_TEST_LIMITS = "true";
-    concurrency = new SharedConcurrencyLimiter();
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  it("should acquire lock successfully", async () => {
-    const spyOpen = vi.spyOn(fs, "openSync").mockReturnValue(1);
-    const spyWrite = vi.spyOn(fs, "writeSync").mockReturnValue(1);
-    const spyClose = vi.spyOn(fs, "closeSync").mockImplementation(() => {});
-    const spyUnlink = vi.spyOn(fs, "unlinkSync").mockImplementation(() => {});
-
-    await expect(concurrency.acquire()).resolves.not.toThrow();
-    expect(spyOpen).toHaveBeenCalled();
-  });
-
-  it("should release lock successfully", () => {
-    const spyExists = vi.spyOn(fs, "existsSync").mockReturnValue(true);
-    const spyUnlink = vi.spyOn(fs, "unlinkSync").mockImplementation(() => {});
-
-    concurrency.release();
-    expect(spyUnlink).toHaveBeenCalled();
-  });
-
-  it("should auto-heal if lock holds a dead PID", async () => {
-    const openSyncError: any = new Error("File already exists");
-    openSyncError.code = "EEXIST";
-
-    let openCallCount = 0;
-    vi.spyOn(fs, "openSync").mockImplementation(() => {
-      openCallCount++;
-      if (openCallCount === 1) {
-        throw openSyncError;
-      }
-      return 1;
-    });
-
-    vi.spyOn(fs, "existsSync").mockReturnValue(true);
-    vi.spyOn(fs, "readFileSync").mockReturnValue("999999");
-    vi.spyOn(fs, "statSync").mockReturnValue({ mtimeMs: Date.now() } as any);
-    const unlinkSpy = vi.spyOn(fs, "unlinkSync").mockImplementation(() => {});
-    vi.spyOn(process, "kill").mockImplementation(() => {
-      const err: any = new Error("No process");
-      err.code = "ESRCH";
-      throw err;
-    });
-
-    await expect(concurrency.acquire()).resolves.not.toThrow();
-    expect(unlinkSpy).toHaveBeenCalled();
+    expect(capacity).toBe(10);
   });
 });

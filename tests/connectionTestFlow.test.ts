@@ -309,7 +309,7 @@ describe("Wizard flow — step 7 bypassed (connection test via step 9)", () => {
 
   it("should return models for custom provider without filtering", () => {
     // This is the key function used when transitioning to step 8
-    const cached = ["freemodel/gpt-5.4-mini", "openrouter/owl-alpha", "custom-model"];
+    const cached = ["custom/gpt-5.4-mini", "custom/owl-alpha", "custom-model"];
     const result = getModelOptions("custom", cached);
     expect(result).toEqual(cached);
   });

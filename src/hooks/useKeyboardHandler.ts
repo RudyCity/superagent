@@ -1369,7 +1369,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
               .then(() => {
                 const msgs = agentRef.current!.getHistory().getMessages();
                 const loadedLines = reconstructChatLines(msgs);
-                const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
+                const userInputs = msgs.filter(m => m.role === "user" && m.content && !contentToString(m.content).startsWith("[RMemory Agent Memory Context]:")).map(m => contentToString(m.content));
                 setLines(loadedLines);
                 setHistory(userInputs);
                 setScrollOffset(0);
@@ -1431,7 +1431,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                     await agentRef.current.loadHistoryFromPath(sessionPath);
                     const msgs = agentRef.current.getHistory().getMessages();
                     const loadedLines = reconstructChatLines(msgs);
-                    const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
+                    const userInputs = msgs.filter(m => m.role === "user" && m.content && !contentToString(m.content).startsWith("[RMemory Agent Memory Context]:")).map(m => contentToString(m.content));
                     setLines(loadedLines);
                     setHistory(userInputs);
                     setScrollOffset(0);
@@ -1489,7 +1489,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                   await agentRef.current.loadHistoryFromPath(sessionPath);
                   const msgs = agentRef.current.getHistory().getMessages();
                   const loadedLines = reconstructChatLines(msgs);
-                  const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
+                  const userInputs = msgs.filter(m => m.role === "user" && m.content && !contentToString(m.content).startsWith("[RMemory Agent Memory Context]:")).map(m => contentToString(m.content));
                   setLines(loadedLines);
                   setHistory(userInputs);
                   setScrollOffset(0);
@@ -1581,7 +1581,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
                 await agentRef.current.loadHistoryFromPath(sessionPath);
                 const msgs = agentRef.current.getHistory().getMessages();
                 const loadedLines = reconstructChatLines(msgs);
-                const userInputs = msgs.filter(m => m.role === "user" && m.content).map(m => contentToString(m.content));
+                const userInputs = msgs.filter(m => m.role === "user" && m.content && !contentToString(m.content).startsWith("[RMemory Agent Memory Context]:")).map(m => contentToString(m.content));
                 setLines(loadedLines);
                 setHistory(userInputs);
                 setScrollOffset(0);

@@ -306,6 +306,18 @@ describe("SQLite History Database (historyDb)", () => {
 
   it("should save, retrieve, migrate, and clean CLI prompt input history in SQLite", () => {
     const wsId = "ws-test-123";
+    // Seed workspaces to satisfy foreign key constraints
+    historyDbModule.saveWorkspaceToDb({
+      id: wsId,
+      path: "/workspace/ws-test-123",
+      isTrusted: true
+    });
+    historyDbModule.saveWorkspaceToDb({
+      id: "ws-legacy-456",
+      path: "/workspace/ws-legacy-456",
+      isTrusted: true
+    });
+
     historyDbModule.saveInputHistoryToDb(wsId, "npm run dev");
     historyDbModule.saveInputHistoryToDb(wsId, "git status");
 
@@ -438,6 +450,12 @@ describe("SQLite History Database (historyDb)", () => {
   });
 
   it("should perform CRUD on workspace tasks in SQLite", () => {
+    // Seed workspace to satisfy foreign key constraints
+    historyDbModule.saveWorkspaceToDb({
+      id: "ws-1",
+      path: "/workspace/ws-1",
+      isTrusted: true
+    });
     const task = {
       id: "task-1",
       command: "sleep 1",

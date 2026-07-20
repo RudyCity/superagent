@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { isDangerousCommand, isPathInWorktree, isSuperagentOutOfBounds, isToolCallOutOfBounds, getToolDescription } from "./permissions.js";
+import { isDangerousCommand, isPathInWorktree, isSuperagentOutOfBounds, isToolCallOutOfBounds, getToolDescription } from "../src/core/permissions.js";
 import path from "path";
 
-vi.mock("./config.js", async (importOriginal) => {
-  const actual = await importOriginal<any>();
+vi.mock("../src/core/config.js", async () => {
+  const vitest = await import("vitest");
+  const actual = await vitest.vi.importActual<any>("../src/core/config.js");
   return {
     ...actual,
     getRootConfigDir: () => process.platform === "win32" ? "C:\\superagent-config-test" : "/tmp/superagent-config-test",
@@ -127,7 +128,7 @@ describe("isSuperagentOutOfBounds", () => {
   });
 
   it("should allow read-only tools to target files under global config directory", async () => {
-    const { getRootConfigDir } = await import("./config.js");
+    const { getRootConfigDir } = await import("../src/core/config.js");
     const configPath = path.resolve(getRootConfigDir(), "history/multi/sess123/sess123_task.md");
     const toolCall = {
       name: "read",
@@ -137,7 +138,7 @@ describe("isSuperagentOutOfBounds", () => {
   });
 
   it("should block modifying tools targeting files under global config directory", async () => {
-    const { getRootConfigDir } = await import("./config.js");
+    const { getRootConfigDir } = await import("../src/core/config.js");
     const configPath = path.resolve(getRootConfigDir(), "history/multi/sess123/sess123_task.md");
     const toolCall = {
       name: "write_to_file",
@@ -174,7 +175,7 @@ describe("isToolCallOutOfBounds", () => {
   });
 
   it("should allow read and write tools to target files under global config directory", async () => {
-    const { getRootConfigDir } = await import("./config.js");
+    const { getRootConfigDir } = await import("../src/core/config.js");
     const configPath = path.resolve(getRootConfigDir(), "settings.json");
     const toolCall = {
       name: "write_to_file",
@@ -217,7 +218,7 @@ describe("isToolCallOutOfBounds", () => {
   });
 
   it("should allow absolute paths inside workspace/config in commands", async () => {
-    const { getRootConfigDir } = await import("./config.js");
+    const { getRootConfigDir } = await import("../src/core/config.js");
     const configPath = path.resolve(getRootConfigDir(), "settings.json");
     const toolCall1 = {
       name: "run_command",
@@ -234,7 +235,7 @@ describe("isToolCallOutOfBounds", () => {
   });
 
   it("should block access to model-config.json specifically, even though it is inside global config directory", async () => {
-    const { getRootConfigDir } = await import("./config.js");
+    const { getRootConfigDir } = await import("../src/core/config.js");
     const modelConfigPath = path.resolve(getRootConfigDir(), "model-config.json");
     
     // File read tool targeting model-config.json

@@ -2023,7 +2023,10 @@ export function App({
       const userInputs: string[] = [];
       for (const m of msgs) {
         if (m.role === "user") {
-          userInputs.push(contentToString(m.content));
+          const str = contentToString(m.content);
+          if (!str.startsWith("[RMemory Agent Memory Context]:")) {
+            userInputs.push(str);
+          }
         }
       }
       if (autoResume) {

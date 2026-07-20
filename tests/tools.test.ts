@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { normalizeForMatching, getToolByName, formatCommandForPowerShell, verifySyntax } from "./tools.js";
+import { normalizeForMatching, getToolByName, formatCommandForPowerShell, verifySyntax } from "../src/core/tools.js";
 import fs from "fs/promises";
 import path from "path";
-import { agentLocalStorage } from "./agent.js";
-import { getGlobalConfigDir } from "./config.js";
-import * as configModule from "./config.js";
+import { agentLocalStorage } from "../src/core/agent.js";
+import { getGlobalConfigDir, saveSessionToDb, deleteSessionFromDb } from "../src/core/config.js";
+import * as configModule from "../src/core/config.js";
 
 // Mock getConfig to return empty apiKey so searchHistory uses offline fuzzy search
 // instead of hitting the AI API from model-config.json (causes timeouts).
@@ -434,7 +434,7 @@ describe("Command execution and Task management tools", () => {
     expect(waitTimeoutResult).toContain("Timeout of 50ms exceeded");
 
     // Manually mark the task as exited to test successful completion wait path
-    const { backgroundTasks } = await import("./tools/state.js");
+    const { backgroundTasks } = await import("../src/core/tools/state.js");
     const task = backgroundTasks.get(processId);
     if (task) {
       task.hasExited = true;
@@ -512,7 +512,7 @@ describe("Scheduler and Subagent tools", () => {
   });
 
   it("should support subscribeToSchedules and notify when a schedule triggers", async () => {
-    const { subscribeToSchedules, notifyScheduleTriggered } = await import("./tools/state.js");
+    const { subscribeToSchedules, notifyScheduleTriggered } = await import("../src/core/tools/state.js");
     const triggered: Array<{ jobId: string; prompt: string }> = [];
     const unsub = subscribeToSchedules((jobId, prompt) => {
       triggered.push({ jobId, prompt });
@@ -640,7 +640,7 @@ patched line
   });
 
   it("should run fuzzyScore calculations correctly", async () => {
-    const { fuzzyScore } = await import("./historySearch.js");
+    const { fuzzyScore } = await import("../src/core/historySearch.js");
     expect(fuzzyScore("Hello World", "Hello")).toBe(1.0);
     expect(fuzzyScore("Database Migration", "data mig")).toBeGreaterThan(0);
     expect(fuzzyScore("Database Migration", "something unrelated")).toBe(0);
@@ -666,12 +666,30 @@ patched line
 
     await fs.writeFile(mockFilePath, JSON.stringify(mockContent), "utf-8");
 
+    // Seed the database so the search tool can load it
+    saveSessionToDb(
+      {
+        id: sessionId,
+        filePath: mockFilePath,
+        displayName: "Search Test",
+        messageCount: 2,
+        lastModified: Date.now(),
+        preview: "Use Postgres with Knex migrations.",
+        workingDirectory: process.cwd()
+      },
+      [
+        { sessionId, role: "user", content: "How do we write a database schema?", timestamp: Date.now(), sequenceOrder: 0 },
+        { sessionId, role: "assistant", content: "Use Postgres with Knex migrations.", timestamp: Date.now() + 10, sequenceOrder: 1 }
+      ]
+    );
+
     try {
-      const result = await tool?.execute({ query: "Knex Postgres" }, process.cwd());
+      const result = await tool?.execute({ query: "schema Postgres" }, process.cwd());
       expect(result).toContain("Postgres with Knex migrations");
       expect(result).toContain("How do we write a database schema?");
     } finally {
       try {
+        deleteSessionFromDb(sessionId);
         await fs.unlink(mockFilePath);
         await fs.rmdir(sessionDir);
       } catch {}

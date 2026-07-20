@@ -405,6 +405,22 @@ describe("historySearch", () => {
 
       vi.mocked(configModule.listHistorySessions).mockReturnValue(mockSessions);
 
+      // Seed SQLite database so syncAllHistoryToRMemory can read the messages
+      configModule.saveSessionToDb(
+        {
+          id: "session_sync1",
+          filePath: path.join(testConfigDir, "session_sync1.json"),
+          displayName: "Sync 1",
+          messageCount: 1,
+          lastModified: Date.now(),
+          preview: "History message to index",
+          workingDirectory: process.cwd(),
+        },
+        [
+          { sessionId: "session_sync1", role: "user", content: "History message to index", timestamp: Date.now(), sequenceOrder: 0 }
+        ]
+      );
+
       fs.mkdirSync(testConfigDir, { recursive: true });
       fs.writeFileSync(
         path.join(testConfigDir, "session_sync1.json"),

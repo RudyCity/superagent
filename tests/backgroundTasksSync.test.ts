@@ -17,7 +17,7 @@ import {
 } from "../src/core/tools/state";
 import { getRootConfigDir, getWorkspaceTasksFilePath, getWorkspaceId } from "../src/core/config/paths";
 import { closeHistoryDb } from "../src/core/config";
-import { saveWorkspaceTaskToDb, getWorkspaceTasksFromDb } from "../src/core/storage/historyDb.js";
+import { saveWorkspaceTaskToDb, getWorkspaceTasksFromDb, saveWorkspaceToDb } from "../src/core/storage/historyDb.js";
 
 describe("Background Tasks Persistence & Sync Tests", () => {
   beforeEach(() => {
@@ -31,6 +31,14 @@ describe("Background Tasks Persistence & Sync Tests", () => {
     }
     fs.mkdirSync(tempHome, { recursive: true });
     backgroundTasks.clear();
+
+    // Seed active workspace in SQLite to satisfy foreign key constraint
+    const workspaceId = getWorkspaceId();
+    saveWorkspaceToDb({
+      id: workspaceId,
+      path: process.cwd(),
+      isTrusted: true
+    });
   });
 
   afterEach(() => {

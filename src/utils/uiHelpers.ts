@@ -123,6 +123,9 @@ export function reconstructChatLines(msgs: Message[]): ChatLine[] {
   for (const m of msgs) {
     const stringContent = m.content ? contentToString(m.content) : "";
     if (m.role === "user") {
+      if (stringContent.startsWith("[RMemory Agent Memory Context]:")) {
+        continue;
+      }
       loadedLines.push({
         type: "user",
         content: `❯ ${stringContent}`,

@@ -484,6 +484,9 @@ export function listSessionsFromDb(limit: number = 100): SessionRecord[] {
 
 export function deleteSessionFromDb(sessionId: string): void {
   const db = getHistoryDb();
+  const stmt = db.prepare("SELECT file_path as filePath FROM sessions WHERE id = ?");
+  const rec = stmt.get(sessionId) as { filePath?: string } | undefined;
+
   db.exec("BEGIN TRANSACTION;");
   try {
     db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
@@ -495,6 +498,18 @@ export function deleteSessionFromDb(sessionId: string): void {
   } catch (err) {
     db.exec("ROLLBACK;");
     throw err;
+  }
+
+  if (rec && rec.filePath) {
+    try {
+      if (fs.existsSync(rec.filePath)) {
+        fs.unlinkSync(rec.filePath);
+      }
+      const dir = path.dirname(rec.filePath);
+      if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
+        fs.rmdirSync(dir);
+      }
+    } catch {}
   }
 }
 

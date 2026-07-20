@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.513] - 2026-07-20
+
+### Fixed
+- **Test Suite — Full 1178/1178 Pass (`tests/`)**:
+  - `conversation.ts` `loadFromFile`: Restored `result = "[Paused by session exit]"` and log message injection for `superagent`/`subagent` instances whose status was `"running"` or `"idle"` at session exit. The SQLite migration had inadvertently dropped this behavior.
+  - `tests/skillsInjection.test.ts`: Updated assertions to match simplified `GuidelineLoader` (removed stale `PLAN WRITING/EXECUTION GUIDELINES` expectations) and updated dev-hook notice assertion from `"ACTIVE INTERNAL HOOK DEVELOPMENT FOCUS"` → `"HOOK FOCUS"` to match current `ContextBuilder.ts` copy.
+  - `tests/requestClassifier.test.ts`: Updated `getCategoryPromptAddendum` assertions to expect lowercase classification tags (`"conversation"`, `"question"`, `"research"`). Replaced `"audit"` with `"scan"` in TF-IDF test string to avoid COMPLEX_KW early-exit that prevented the statistical router from running.
+  - `tests/connectionTestFlow.test.ts`: Changed custom provider cached model names to use `custom/` prefix so they pass the `getModelOptions("custom", …)` filter correctly.
+  - `tests/agentOptimizations.test.ts`: Updated subagent prompt test to assert `"Research Subagent"` + `"CRITICAL RULES"` instead of deleted `SEMI_FORMAL_REASONING` / `LOGIC_OF_AWARENESS` variables.
+  - `tests/promptToolGuidance.test.ts`: Removed stale assertions for `"Can this be batched, delegated, or run in parallel safely?"`, `"if multiple_independent_subagents"`, `"single-agent-cognitive-scaleup"`, and `"optimal non-human reasoning"` from `prompts.ts` (removed during SQLite migration prompt cleanup). Retained `skillsConfig` assertion for `"single-agent-cognitive-scaleup"`.
+
 ## [1.2.512] - 2026-07-20
 
 ### Fixed

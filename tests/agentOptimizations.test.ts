@@ -63,15 +63,15 @@ describe("agentOptimizations", () => {
   });
 
   describe("System Prompts Extensions", () => {
-    it("should include semi-formal reasoning and logic of awareness in subagent prompts", () => {
+    it("should include role and critical rules in subagent prompts", () => {
       const researcherPrompt = SUBAGENT_SYSTEM_PROMPTS.researcher;
       const coderPrompt = SUBAGENT_SYSTEM_PROMPTS.coder;
 
-      expect(researcherPrompt).toContain("SEMI_FORMAL_REASONING");
-      expect(researcherPrompt).toContain("LOGIC_OF_AWARENESS");
+      expect(researcherPrompt).toContain("Research Subagent");
+      expect(researcherPrompt).toContain("CRITICAL RULES");
 
-      expect(coderPrompt).toContain("SEMI_FORMAL_REASONING");
-      expect(coderPrompt).toContain("LOGIC_OF_AWARENESS");
+      expect(coderPrompt).toContain("LOCATE");
+      expect(coderPrompt).toContain("CRITICAL RULES");
     });
   });
 });

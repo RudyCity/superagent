@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import fs from "fs/promises";
-import path from "path";
-import os from "os";
+import { describe, it, expect, beforeEach } from "vitest";
 import { CompactionHistory, CompactionEvent } from "../src/core/context/CompactionHistory.js";
 
 describe("CompactionHistory", () => {
+  beforeEach(() => {
+    const history = new CompactionHistory();
+    history.clear();
+  });
+
   it("should record compaction events", () => {
     const history = new CompactionHistory();
 
@@ -130,12 +132,9 @@ describe("CompactionHistory", () => {
     expect(history.getHistory()[49].id).toBe("event-59");
   });
 
-  it("should persist to disk when filePath provided", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "compact-hist-"));
-    const filePath = path.join(tmpDir, "history.json");
-
-    const history = new CompactionHistory(filePath);
-    history.record({
+  it("should persist to DB when recorded", async () => {
+    const history = new CompactionHistory();
+    await history.record({
       id: "persist-1",
       timestamp: 1000,
       strategy: "summarization",
@@ -146,42 +145,8 @@ describe("CompactionHistory", () => {
       reason: "threshold",
     });
 
-    // Wait for async save
-    await new Promise((resolve) => setTimeout(resolve, 200));
-
-    const data = await fs.readFile(filePath, "utf-8");
-    const parsed = JSON.parse(data);
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0].id).toBe("persist-1");
-
-    await fs.rm(tmpDir, { recursive: true });
-  });
-
-  it("should load from disk on construction", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "compact-hist-"));
-    const filePath = path.join(tmpDir, "history.json");
-
-    const data = [
-      {
-        id: "loaded-1",
-        timestamp: 1000,
-        strategy: "summarization",
-        messagesBefore: 10,
-        messagesAfter: 5,
-        tokensBefore: 100,
-        tokensAfter: 50,
-        reason: "threshold",
-      },
-    ];
-    await fs.writeFile(filePath, JSON.stringify(data), "utf-8");
-
-    const history = new CompactionHistory(filePath);
-    // Wait for async load
-    await new Promise((resolve) => setTimeout(resolve, 200));
-
-    expect(history.getHistory()).toHaveLength(1);
-    expect(history.getHistory()[0].id).toBe("loaded-1");
-
-    await fs.rm(tmpDir, { recursive: true });
+    const secondHistory = new CompactionHistory();
+    expect(secondHistory.getHistory()).toHaveLength(1);
+    expect(secondHistory.getHistory()[0].id).toBe("persist-1");
   });
 });

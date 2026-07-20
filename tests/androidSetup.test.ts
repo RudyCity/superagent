@@ -9,7 +9,7 @@ import {
   isCurlInstalledGlobally,
   isCurlInstalledLocally,
   getLocalCurlPath
-} from "./androidSetup.js";
+} from "../src/core/androidSetup.js";
 
 // Mock execa
 vi.mock("execa", () => {

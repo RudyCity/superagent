@@ -639,9 +639,7 @@ export class Agent {
         this.wasRunningBeforeAbort = false;
       }, 200);
     }
-    // Clear any queued message so the agent does NOT auto-restart
-    // after the abort (e.g. a pending plan approval that was queued
-    // while the agent loop was still running).
+    this.isRunning = false;
     this.pendingMessagesQueue = [];
     this.abortController?.abort();
   }

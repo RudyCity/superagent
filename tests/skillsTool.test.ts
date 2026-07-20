@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getSkillsTool, useSkillTool } from "../src/core/tools/otherTools.js";
 
 // Mock the config module
-vi.mock("../src/core/config.js", () => {
+vi.mock("../src/core/config.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/core/config.js")>("../src/core/config.js");
   return {
+    ...actual,
     getInstalledSkills: vi.fn(),
     getModelInstance: vi.fn(),
   };

@@ -108,36 +108,13 @@ describe("Auto-checkpoint: max rotation (20)", () => {
   });
 
   it("should prune checkpoints beyond 20", async () => {
-    const checkpointsDir = path.join(TEST_SESSION_DIR, "checkpoints");
-    await fs.mkdir(checkpointsDir, { recursive: true });
-
-    // Manually create 22 fake checkpoint files with sequential timestamps
-    const baseTime = Date.now() - 100000;
     for (let i = 0; i < 22; i++) {
-      const ts = baseTime + i;
-      const cp = {
-        id: `chk_${ts}`,
-        name: `Checkpoint ${i}`,
-        timestamp: ts,
-        sessionFilePath: TEST_SESSION_FILE,
-        messages: sampleMessages,
-        planState: "IDLE" as const,
-      };
-      await fs.writeFile(
-        path.join(checkpointsDir, `checkpoint_${ts}.json`),
-        JSON.stringify(cp),
-        "utf-8"
-      );
+      await createCheckpoint(TEST_SESSION_FILE, `Checkpoint ${i}`, sampleMessages, "IDLE");
+      await new Promise((r) => setTimeout(r, 2));
     }
 
-    const beforeCount = (await fs.readdir(checkpointsDir)).filter(f => f.startsWith("checkpoint_")).length;
-    expect(beforeCount).toBe(22);
-
-    // Creating a new checkpoint should trigger pruning to 20
-    await createCheckpoint(TEST_SESSION_FILE, "trigger-prune", sampleMessages, "IDLE");
-
-    const afterFiles = (await fs.readdir(checkpointsDir)).filter(f => f.startsWith("checkpoint_"));
-    expect(afterFiles.length).toBe(20);
+    const checkpoints = await listCheckpointsForSession(TEST_SESSION_FILE);
+    expect(checkpoints.length).toBe(20);
   });
 });
 

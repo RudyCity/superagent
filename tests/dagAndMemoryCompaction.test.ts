@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";
+import { agentLocalStorage } from "../src/core/agent.js";
 import { superagentInstances } from "../src/core/tools/state.js";
 import { invokeSuperagentTool } from "../src/core/tools/superagentTools.js";
 import { saveSharedMemoryTool } from "../src/core/tools/sharedMemoryTools.js";
-import { agentLocalStorage } from "../src/core/agent.js";
 
 // Mock execa
 vi.mock("execa", () => ({
@@ -12,9 +12,11 @@ vi.mock("execa", () => ({
 }));
 
 // Mock config
-vi.mock("../src/core/config.js", () => {
+vi.mock("../src/core/config.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/core/config.js")>("../src/core/config.js");
   let settings = { enableRmemory: false };
   return {
+    ...actual,
     getSettings: () => settings,
     setSettings: (s: any) => { settings = s; },
     getRootConfigDir: () => "/dummy/config/dir",

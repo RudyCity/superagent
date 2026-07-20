@@ -401,19 +401,19 @@ describe("getCategoryPromptAddendum", () => {
   it("should return addendum for conversation", () => {
     const addendum = getCategoryPromptAddendum("conversation");
     expect(addendum).toContain("CLASSIFICATION");
-    expect(addendum).toContain("Conversational");
+    expect(addendum).toContain("conversation");
   });
 
   it("should return addendum for question", () => {
     const addendum = getCategoryPromptAddendum("question");
     expect(addendum).toContain("CLASSIFICATION");
-    expect(addendum).toContain("Question");
+    expect(addendum).toContain("question");
   });
 
   it("should return addendum for research", () => {
     const addendum = getCategoryPromptAddendum("research");
     expect(addendum).toContain("CLASSIFICATION");
-    expect(addendum).toContain("Research");
+    expect(addendum).toContain("research");
   });
 
   it("should return empty string for complex_task", () => {
@@ -665,7 +665,7 @@ describe("optimizations (Jaro-Winkler, Trie, Soundex, TF-IDF)", () => {
   });
 
   it("should route medium text using statistical TF-IDF classifier", () => {
-    const res = classifyHeuristic("please find search locate explore check if optimize investigate audit along with other files in the workspace to see if there is any clean code");
+    const res = classifyHeuristic("please find search locate explore check if optimize investigate scan along with other files in the workspace to see if there is any clean code");
     expect(res.category).toBe("research");
     expect(res.confidence).toBe("high");
     expect(res.reason).toContain("Statistical TF-IDF routing");

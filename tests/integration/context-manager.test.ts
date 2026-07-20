@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { ContextManager } from "../../src/core/context/ContextManager.js";
 import { Conversation, Message } from "../../src/core/conversation.js";
+import { CompactionHistory } from "../../src/core/context/CompactionHistory.js";
 import {
   SummarizationStrategy,
   PruningStrategy,
@@ -8,6 +9,10 @@ import {
 } from "../../src/core/context/index.js";
 
 describe("ContextManager Integration", () => {
+  beforeEach(() => {
+    const history = new CompactionHistory();
+    history.clear();
+  });
   it("should handle long conversation (1000+ messages)", async () => {
     const manager = new ContextManager({
       model: "claude-3-5-sonnet-20241022",

@@ -57,10 +57,12 @@ describe("Error Logs Persistence and Restoration", () => {
     expect(errorMsg).toBeDefined();
     expect(errorMsg?.content).toContain("Mocked stream failure");
 
-    // Verify history file was saved with the error
-    const raw = await fs.readFile(tempFilePath, "utf-8");
-    const parsed = JSON.parse(raw);
-    expect(parsed.messages.some((m: any) => m.role === "system" && m.content.includes("Mocked stream failure"))).toBe(true);
+    // Verify history was saved with the error in SQLite
+    const { loadSessionFromDb } = await import("../src/core/storage/historyDb.js");
+    const sid = path.basename(tempFilePath, ".json");
+    const dbRes = loadSessionFromDb(sid);
+    const dbMessages = dbRes.messages || [];
+    expect(dbMessages.some((m: any) => m.role === "system" && m.content.includes("Mocked stream failure"))).toBe(true);
   });
 
   it("should parse [ERROR] system messages from history correctly", async () => {

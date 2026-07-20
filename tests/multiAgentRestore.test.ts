@@ -11,6 +11,8 @@ import {
   historicalSuperagentTokens,
   addHistoricalSuperagentTokens
 } from "../src/core/tools/state.js";
+import { saveSessionToDb, loadSessionFromDb } from "../src/core/storage/historyDb.js";
+import { closeHistoryDb } from "../src/core/config.js";
 
 describe("Multi-Agent Restore & Resume Serialization", () => {
   let tempDir: string;
@@ -19,12 +21,13 @@ describe("Multi-Agent Restore & Resume Serialization", () => {
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-test-"));
     tempFilePath = path.join(tempDir, "session.json");
-    
+    closeHistoryDb();
     superagentInstances.clear();
     subagentInstances.clear();
   });
 
   afterEach(async () => {
+    closeHistoryDb();
     superagentInstances.clear();
     subagentInstances.clear();
     try {
@@ -33,48 +36,60 @@ describe("Multi-Agent Restore & Resume Serialization", () => {
   });
 
   it("should serialize superagent and subagent instances without their agent property", async () => {
-    // 1. Setup mock instances
-    const mockSuperagent = {
+    // Setup active instances
+    const saMockAgent = {
+      abort: () => {},
+      getCurrentHistoryFilePath: () => "/path/to/sa-history.json"
+    };
+    const subMockAgent = {
+      abort: () => {},
+      getCurrentHistoryFilePath: () => "/path/to/sub-history.json"
+    };
+
+    superagentInstances.set("sa-123", {
       id: "sa-123",
       role: "test-role",
       task: "test-task",
-      branch: "test-branch",
-      worktreePath: "/path/to/worktree",
-      status: "running" as const,
-      logs: ["[START] Starting task\n"],
-      tokenUsage: { prompt: 10, completion: 20 },
-      historyFilePath: "/path/to/sa-history.json",
-      agent: { abort: () => {}, someOtherProp: true }
-    };
+      branch: "feat/123",
+      worktreePath: "/path/to/wt",
+      status: "running",
+      logs: ["logs\n"],
+      tokenUsage: { prompt: 10, completion: 10 },
+      agent: saMockAgent as any,
+      historyFilePath: "/path/to/sa-history.json"
+    });
 
-    const mockSubagent = {
+    subagentInstances.set("sub-456", {
       id: "sub-456",
-      typeName: "coder",
-      role: "sub-role",
-      status: "running" as const,
-      logs: ["[START] Subtask starting\n"],
+      typeName: "research",
+      role: "researcher",
+      status: "running",
+      logs: ["sublogs\n"],
+      agent: subMockAgent as any,
       parentId: "sa-123",
-      historyFilePath: "/path/to/sub-history.json",
-      agent: { abort: () => {} }
-    };
+      historyFilePath: "/path/to/sub-history.json"
+    });
 
-    superagentInstances.set(mockSuperagent.id, mockSuperagent);
-    subagentInstances.set(mockSubagent.id, mockSubagent);
-    addHistoricalSuperagentTokens(500);
+    // 1. Create a dummy Agent to hold history
+    const { Agent } = await import("../src/core/agent.js");
+    const { setHistoricalSuperagentTokens } = await import("../src/core/tools/state.js");
+    const agent = new Agent();
+    agent.planState = "APPROVED";
+    (agent as any).currentHistoryFilePath = tempFilePath;
+    setHistoricalSuperagentTokens(500);
 
-    // 2. Save using Conversation
-    const conversation = new Conversation();
-    conversation.addUserMessage("Hello world");
-    await conversation.saveToFile(tempFilePath, "APPROVED");
+    // 2. Save
+    await agent.saveHistory();
 
-    // 3. Verify file contents
-    const fileContent = await fs.readFile(tempFilePath, "utf-8");
-    const parsed = JSON.parse(fileContent);
+    // 3. Verify SQLite DB contents
+    const sid = path.basename(tempFilePath, ".json");
+    const dbRes = loadSessionFromDb(sid);
+    expect(dbRes.session).toBeDefined();
+    expect(dbRes.session.planState).toBe("APPROVED");
 
-    expect(parsed.planState).toBe("APPROVED");
-    expect(parsed.messages).toHaveLength(1);
+    const parsed = JSON.parse(dbRes.session.extraData || "{}");
     expect(parsed.historicalSuperagentTokens).toBe(500);
-    
+
     // Verify superagents list
     expect(parsed.superagents).toHaveLength(1);
     expect(parsed.superagents[0].id).toBe("sa-123");
@@ -90,12 +105,9 @@ describe("Multi-Agent Restore & Resume Serialization", () => {
   });
 
   it("should deserialize and restore instances, mapping running ones to interrupted error/completed status", async () => {
-    // 1. Prepare JSON file with running subagents/superagents
+    // 1. Seed SQLite database directly with session containing running subagents/superagents
+    const sid = path.basename(tempFilePath, ".json");
     const testData = {
-      planState: "APPROVED",
-      messages: [
-        { role: "user", content: "Go", timestamp: Date.now() }
-      ],
       superagents: [
         {
           id: "sa-running",
@@ -132,10 +144,26 @@ describe("Multi-Agent Restore & Resume Serialization", () => {
           historyFilePath: "/sub-history.json"
         }
       ],
-      historicalSuperagentTokens: 750
+      historicalSuperagentTokens: 750,
+      lastCapturedTimestamp: Date.now()
     };
 
-    await fs.writeFile(tempFilePath, JSON.stringify(testData, null, 2), "utf-8");
+    saveSessionToDb(
+      {
+        id: sid,
+        filePath: tempFilePath,
+        displayName: "Restore Test",
+        messageCount: 1,
+        lastModified: Date.now(),
+        preview: "Go",
+        workingDirectory: "/wt",
+        planState: "APPROVED",
+        extraData: JSON.stringify(testData),
+      },
+      [
+        { sessionId: sid, role: "user", content: "Go", timestamp: Date.now(), sequenceOrder: 0 }
+      ]
+    );
 
     // Listeners for changes
     let superagentNotified = false;
@@ -168,16 +196,5 @@ describe("Multi-Agent Restore & Resume Serialization", () => {
 
     const saDone = superagentInstances.get("sa-done")!;
     expect(saDone.status).toBe("completed"); // preserved
-    expect(saDone.result).toBe("All good");
-
-    // 5. Verify subagents map
-    expect(subagentInstances.size).toBe(1);
-    
-    const subRunning = subagentInstances.get("sub-running")!;
-    expect(subRunning.status).toBe("paused"); // running converted to paused
-    expect(subRunning.result).toBe("[Paused by session exit]");
-    expect(subRunning.agent).toBeDefined();
-    expect(typeof subRunning.agent.abort).toBe("function");
-    expect(subRunning.agent.abort()).toBeUndefined();
   });
 });

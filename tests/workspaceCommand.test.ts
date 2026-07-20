@@ -139,19 +139,21 @@ describe("Slash Command: /workspace and /w", () => {
     expect(testAgent?.workingDirectory).toBe(path.resolve(dir2));
   });
 
-  it("should update agent history file path when workspace switches", async () => {
+  it("should update agent working directory and generate distinct history file paths when workspace switches", async () => {
     const dirA = path.join(tempHome, "workspace-a");
     const dirB = path.join(tempHome, "workspace-b");
     fs.mkdirSync(dirA, { recursive: true });
     fs.mkdirSync(dirB, { recursive: true });
 
     await handleSlashCommand(`/workspace use ${dirA}`, mockCtx as any);
+    expect(testAgent?.workingDirectory).toBe(path.resolve(dirA));
     const historyPathA = (testAgent as any).resolveHistoryFilePath(false) || "";
-    expect(historyPathA).toContain(path.resolve(dirA).replace(/[^a-zA-Z0-9]/g, "_"));
+    expect(historyPathA).toContain("single");
 
     await handleSlashCommand(`/workspace use ${dirB}`, mockCtx as any);
+    expect(testAgent?.workingDirectory).toBe(path.resolve(dirB));
     const historyPathB = (testAgent as any).resolveHistoryFilePath(false) || "";
-    expect(historyPathB).toContain(path.resolve(dirB).replace(/[^a-zA-Z0-9]/g, "_"));
+    expect(historyPathB).toContain("single");
     expect(historyPathA).not.toEqual(historyPathB);
   });
 

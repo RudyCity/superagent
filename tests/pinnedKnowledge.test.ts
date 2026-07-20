@@ -14,13 +14,17 @@ import * as configModule from "../src/core/config.js";
 import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 import { closeHistoryDb, getAllPinnedKnowledgeFromDb } from "../src/core/storage/historyDb.js";
 
-vi.mock("../src/core/config.js", () => ({
-  getSettings: vi.fn().mockReturnValue({ enableRmemory: false }),
-  getRootConfigDir: vi.fn(),
-  getGlobalConfigDir: vi.fn(),
-  ensureGlobalConfigDir: vi.fn(),
-  closeHistoryDb: vi.fn(),
-}));
+vi.mock("../src/core/config.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/core/config.js")>("../src/core/config.js");
+  return {
+    ...actual,
+    getSettings: vi.fn().mockReturnValue({ enableRmemory: false }),
+    getRootConfigDir: vi.fn(),
+    getGlobalConfigDir: vi.fn(),
+    ensureGlobalConfigDir: vi.fn(),
+    closeHistoryDb: vi.fn(),
+  };
+});
 
 vi.mock("../src/core/rmemoryUtil.js", () => {
   const mockClient = {

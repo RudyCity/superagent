@@ -854,6 +854,13 @@ function setupSSE() {
 
 // Handle Incoming SSE Events
 function handleSSEEvent(data) {
+  if (data.sessionId && window.currentSessionId && data.sessionId !== window.currentSessionId) {
+    return;
+  }
+  const currentWsPath = activeWorkspaceText ? activeWorkspaceText.textContent : "";
+  if (data.workspace && currentWsPath && currentWsPath !== "Not Selected" && data.workspace.toLowerCase() !== currentWsPath.toLowerCase()) {
+    return;
+  }
   window.isWaitingForAgentStart = false;
   if (data.type === "agent_event") {
     if (typeof window.lockCurrentTab === "function") window.lockCurrentTab();

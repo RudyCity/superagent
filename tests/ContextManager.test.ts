@@ -1,8 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { ContextManager } from "../src/core/context/ContextManager.js";
 import { Message } from "../src/core/conversation.js";
+import { CompactionHistory } from "../src/core/context/CompactionHistory.js";
 
 describe("ContextManager", () => {
+  beforeEach(() => {
+    const history = new CompactionHistory();
+    history.clear();
+  });
   it("should return false when below threshold", () => {
     const manager = new ContextManager({
       model: "claude-3-5-sonnet-20241022",

@@ -7,10 +7,10 @@ import os from "os";
 const tempHome = path.join(process.cwd(), "tests", "temp-home-config");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, clearHistoryCache, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset, getModelConnectionDetailsForTier, closeHistoryDb } from "./config.js";
-import { getModelConfigPath } from "./config/paths.js";
-import { clearModelConfigCache, loadModelConfig, addProvider, saveModelConfig, getProviders, removeProvider, clearSessionActivePreset } from "./config/jsonConfig.js";
-import { saveModelCachesToDb, getModelCachesFromDb, saveSessionToDb, deleteSessionFromDb } from "./storage/historyDb.js";
+import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, clearHistoryCache, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset, getModelConnectionDetailsForTier, closeHistoryDb } from "../src/core/config.js";
+import { getModelConfigPath } from "../src/core/config/paths.js";
+import { clearModelConfigCache, loadModelConfig, addProvider, saveModelConfig, getProviders, removeProvider, clearSessionActivePreset } from "../src/core/config/jsonConfig.js";
+import { saveModelCachesToDb, getModelCachesFromDb, saveSessionToDb, deleteSessionFromDb } from "../src/core/storage/historyDb.js";
 
 
 describe("config", () => {

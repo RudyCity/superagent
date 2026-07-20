@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { Conversation } from "./conversation.js";
+import { Conversation } from "../src/core/conversation.js";
 import fs from "fs/promises";
 import path from "path";
 

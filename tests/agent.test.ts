@@ -7,10 +7,10 @@ import os from "os";
 const tempHome = path.join(process.cwd(), "tests", "temp-home-agent");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-import { Agent } from "./agent.js";
-import type { AgentEvent } from "./agent.js";
-import { savePreset, setActivePresetId, clearModelConfigCache, getConfig, getGlobalConfigDir, clearSessionActivePreset } from "./config.js";
-import { getModelConfigPath, ensureGlobalConfigDir } from "./config/paths.js";
+import { Agent } from "../src/core/agent.js";
+import type { AgentEvent } from "../src/core/agent.js";
+import { savePreset, setActivePresetId, clearModelConfigCache, getConfig, getGlobalConfigDir, clearSessionActivePreset } from "../src/core/config.js";
+import { getModelConfigPath, ensureGlobalConfigDir } from "../src/core/config/paths.js";
 
 const configPath = getModelConfigPath();
 
@@ -208,7 +208,7 @@ describe("Agent – history sessions", () => {
     const agent = new Agent(onEvent, onPermission, onQuestion);
     const resolvedPath = (agent as any).resolveHistoryFilePath(false);
     expect(resolvedPath).toContain("single");
-    expect(resolvedPath).toMatch(/_\d+[\\/]\w+_\d+\.json$/);
+    expect(resolvedPath).toMatch(/sess_\d+_\w+[\\/].*\.json$/);
   });
 
   it("places history in multi subdirectory when isMultiAgent is true", () => {
@@ -217,7 +217,7 @@ describe("Agent – history sessions", () => {
     agent.isMultiAgent = true;
     const resolvedPath = (agent as any).resolveHistoryFilePath(false);
     expect(resolvedPath).toContain("multi");
-    expect(resolvedPath).toMatch(/_\d+[\\/]\w+_\d+\.json$/);
+    expect(resolvedPath).toMatch(/sess_\d+_\w+[\\/].*\.json$/);
   });
 
   it("places superagent history nested under parent session path when process.env.SUPERAGENT_SESSION_PATH is set", () => {
@@ -467,7 +467,7 @@ describe("Agent – tier-specific model resolution", () => {
     process.cwd = originalCwd;
   });
 
-  it("should save history synchronously using saveHistorySync", () => {
+  it("should save history synchronously using saveHistorySync", async () => {
     const { onEvent, onPermission, onQuestion } = makeHandlers();
     const agent = new Agent(onEvent, onPermission, onQuestion);
     
@@ -481,8 +481,10 @@ describe("Agent – tier-specific model resolution", () => {
     expect(filePath).toBeTruthy();
     expect(fs.existsSync(filePath)).toBe(true);
     
-    // Load it back and verify
-    const loadedData = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    // Load it back via SQLite session loader and verify
+    const { loadSessionFromDb } = await import("../src/core/storage/historyDb.js");
+    const sessionId = path.basename(filePath, ".json");
+    const loadedData = loadSessionFromDb(sessionId);
     expect(loadedData.messages).toHaveLength(1);
     expect(loadedData.messages[0].content).toBe("Hello synchronous world");
   });
