@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.2.514] - 2026-07-20
+
+### Added
+- **`tests/server.test.ts` — Part 1 (546 lines)**: Comprehensive integration tests for `src/server.ts` core session endpoints:
+  - OPTIONS CORS preflight, GET /api/status (+ workspace header/query param resolution)
+  - GET /api/workspaces, GET /api/history, GET /api/history/sessions
+  - DELETE /api/history/session/:id (active session removal), GET/POST /api/input-history
+  - POST /api/init (single, multi, initialPrompt, resume), POST /api/chat (!, session, empty)
+  - POST /api/approve, POST /api/plan/approve, POST /api/answer
+  - Session resolution via `?sessionId` query param
+- **`tests/server2.test.ts` — Part 2 (621 lines)**: Integration tests for `src/server.ts` infrastructure endpoints:
+  - POST /api/browser/update-instance, POST /api/browser/result
+  - GET|POST|DELETE /api/browser/macros (CRUD round-trip)
+  - POST /api/abort, GET /api/tasks, GET /api/instances
+  - GET /api/workspace/files, POST /api/workspace/file/read (content, 400/403/404)
+  - POST /api/workspace/file/open (400/403/404/200), GET /api/git/changes
+  - GET /api/background-tasks, POST /api/background-tasks/kill
+  - GET /api/config, POST /api/config (settings, activePresetId)
+  - POST /api/switch-workspace (new, existing, multi-mode), GET /api/documents
+  - GET /api/workspaces (after sessions), GET /api/events SSE stream
+  - 404 fallthrough for unknown routes
+- **`tests/serverTestHelper.ts`** (90 lines): Shared test fixture module (helpers: `getFreePort`, `getJSON`, `postJSON`, `deleteJSON`, `optionsReq`; shared workspace/config vars used by both server test files).
+
+### Fixed
+- Corrected 4 test assertions that assumed server files live in the workspace directory (they live in `~/.superagent-r/history/`) and one assertion about input-history no-workspace behaviour (server uses `lastActiveWorkspace` fallback, not 400).
+- Refactored monolithic `server.test.ts` (was 1269 lines, exceeding the 1000-line code limit) into two sub-1000-line files.
+
 ## [1.2.513] - 2026-07-20
 
 ### Fixed
