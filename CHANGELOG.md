@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.509] - 2026-07-20
+
+### Fixed
+- **SuperAgent HTTP Server `/api/abort` & Session ID Alignment (`src/server.ts`)**:
+  - Enhanced `/api/abort` endpoint in `src/server.ts` to abort all active workspace agents, mark running subagent & superagent instances as `cancelled`, clear pending permissions and questions, and broadcast SSE status & done events.
+  - Updated `resolveSession` in `src/server.ts` to update `session.sessionId = targetSessionId` whenever a session is resolved via workspace path, ensuring 100% session ID alignment for incoming chat requests.
+
 ## [1.2.508] - 2026-07-20
 
 ### Fixed

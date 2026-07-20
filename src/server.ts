@@ -55,12 +55,20 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
   if (wsPath) {
     wsPath = path.resolve(wsPath);
     const session = activeSessions.get(wsPath);
-    if (session) return session;
+    if (session) {
+      if (targetSessionId) {
+        session.sessionId = targetSessionId;
+      }
+      return session;
+    }
   }
   
   if (wsPath) {
     for (const [key, session] of activeSessions.entries()) {
       if (key.toLowerCase() === wsPath.toLowerCase()) {
+        if (targetSessionId) {
+          session.sessionId = targetSessionId;
+        }
         return session;
       }
     }
@@ -926,10 +934,37 @@ export async function runServer(port: number, silent = false) {
         const session = resolveSession(req);
         if (session) {
           session.agent.abort();
-          sendJSON(res, 200, { success: true });
         } else {
-          sendJSON(res, 400, { error: "No active agent to abort" });
+          for (const s of activeSessions.values()) {
+            s.agent.abort();
+          }
         }
+
+        for (const sub of subagentInstances.values()) {
+          if (sub.status === "running") {
+            sub.status = "error";
+          }
+        }
+        for (const superInst of superagentInstances.values()) {
+          if (superInst.status === "running") {
+            superInst.status = "terminated";
+          }
+        }
+
+        pendingPermissions.clear();
+        pendingQuestions.clear();
+
+        broadcastEvent({
+          type: "status",
+          text: "Agent execution aborted by user."
+        });
+
+        broadcastEvent({
+          type: "agent_event",
+          event: { type: "done", stats: { totalTimeMs: 0 } }
+        });
+
+        sendJSON(res, 200, { success: true });
         return;
       }
 
