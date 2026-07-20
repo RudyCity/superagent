@@ -307,7 +307,9 @@ function getSessionForAgent(agentRef?: Agent): AgentSession | undefined {
 // Global Agent Event Handlers
 const onEvent = (event: AgentEvent, agentRef?: Agent) => {
   const session = getSessionForAgent(agentRef);
-  const metadata = session ? { sessionId: session.sessionId, workspace: session.workspace } : {};
+  const sessionId = agentRef?.sessionId || session?.sessionId;
+  const workspace = session?.workspace || agentRef?.workingDirectory;
+  const metadata = { ...(sessionId ? { sessionId } : {}), ...(workspace ? { workspace } : {}) };
   if (session) {
     session.lastActiveTime = Date.now();
   }
@@ -714,6 +716,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
         }
 
         const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
+        agent.sessionId = sessionId;
 
         pendingPermissions.clear();
         pendingQuestions.clear();

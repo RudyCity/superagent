@@ -70,6 +70,7 @@ export function parsePayloadLimitBytes(msg: string): number | null {
 
 
 export class Agent {
+  public sessionId: string = "";
   public detectedPayloadLimitBytes?: number;
   public delegationDepth = 0;
   /** Agent tier in the 3-tier hierarchy: master | superagent | subagent */
