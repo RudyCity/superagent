@@ -3,6 +3,8 @@ import { execa } from "execa";
 import { execSync } from "child_process";
 import path from "path";
 
+import { getPackageRootDir } from "../src/core/config.js";
+
 // Check if Python and all required vision dependencies are available synchronously
 function hasPythonVisionDependencies(): { available: boolean; cmd: string } {
   const commands = ["python", "py", "python3"];
@@ -47,7 +49,7 @@ describe("Python Vision Inference Server daemon", () => {
   const runOrSkip = available ? it : it.skip;
 
   runOrSkip("spawns local Python HTTP server and responds on /health", async () => {
-    const scriptPath = path.join(process.cwd(), "scripts", "vision_server.py");
+    const scriptPath = path.join(getPackageRootDir(), "scripts", "vision_server.py");
     
     // Spawn the daemon
     serverProcess = execa(pythonCmd, [scriptPath, String(testPort)]);

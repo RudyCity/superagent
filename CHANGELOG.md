@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.512] - 2026-07-20
+
+### Fixed
+- **Vision Server Path Resolution (`src/server.ts` & `tests/visionServer.test.ts`)**:
+  - Replaced `process.cwd()` with `getPackageRootDir()` when resolving `scripts/vision_server.py`.
+  - Fixes `[Errno 2] No such file or directory` error when launching `superagent --server` from workspace directories outside the Superagent package root.
+
 ## [1.2.511] - 2026-07-20
 
 ### Added & Enhanced

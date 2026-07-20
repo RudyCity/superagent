@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
-import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions } from "./core/config.js";
+import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions, getPackageRootDir } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
@@ -372,7 +372,7 @@ export async function runServer(port: number, silent = false) {
 
   try {
     const { execa } = await import("execa");
-    const scriptPath = path.join(process.cwd(), "scripts", "vision_server.py");
+    const scriptPath = path.join(getPackageRootDir(), "scripts", "vision_server.py");
     visionServerProcess = execa("python", [scriptPath, "8095"]);
     if (!silent) {
       console.log("🚀 Starting Python UI-DETR-1 Vision Server on port 8095...");
@@ -531,8 +531,9 @@ export async function runServer(port: number, silent = false) {
           return;
         }
         try {
-          const { deleteSessionFromDb } = await import("./core/config.js");
+          const { deleteSessionFromDb, clearHistoryCache } = await import("./core/config.js");
           deleteSessionFromDb(sessionId);
+          clearHistoryCache();
 
           // Remove from activeSessions map and abort if running
           for (const [key, session] of activeSessions.entries()) {
@@ -1020,14 +1021,18 @@ export async function runServer(port: number, silent = false) {
         pendingPermissions.clear();
         pendingQuestions.clear();
 
+        const metadata = session ? { sessionId: session.sessionId, workspace: session.workspace } : {};
+
         broadcastEvent({
           type: "status",
-          text: "Agent execution aborted by user."
+          text: "Agent execution aborted by user.",
+          ...metadata
         });
 
         broadcastEvent({
           type: "agent_event",
-          event: { type: "done", stats: { totalTimeMs: 0 } }
+          event: { type: "done", stats: { totalTimeMs: 0 } },
+          ...metadata
         });
 
         sendJSON(res, 200, { success: true });
