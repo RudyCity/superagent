@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.506] - 2026-07-20
+
+### Changed
+- **Workspace ID retrieval in Read Queries**:
+  - Updated `SessionRecord` interface to define the optional `workspaceId` property.
+  - Updated `getSessionFromDb`, `listSessionsFromDb`, and `getSessionsByTagFromDb` queries to select the `workspace_id` column as `workspaceId`.
+  - Updated `getAllPinnedKnowledgeFromDb` to return the `workspaceId` value for mapped entries.
+
 ## [1.2.505] - 2026-07-20
 
 ### Changed

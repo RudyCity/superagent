@@ -17,6 +17,7 @@ export interface SessionRecord {
   activePreset?: string;
   extraData?: string;
   tags?: string;
+  workspaceId?: string;
 }
 
 export interface MessageRecord {
@@ -434,7 +435,8 @@ export function loadSessionFromDb(sessionId: string): {
   const getSessionStmt = db.prepare(`
     SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
            last_modified as lastModified, preview, working_directory as workingDirectory,
-           plan_state as planState, active_preset as activePreset, extra_data as extraData
+           plan_state as planState, active_preset as activePreset, extra_data as extraData,
+           workspace_id as workspaceId
     FROM sessions WHERE id = ?
   `);
   const sessionRow = getSessionStmt.get(sessionId) as SessionRecord | undefined;
@@ -465,7 +467,7 @@ export function listSessionsFromDb(limit: number = 100): SessionRecord[] {
   const stmt = db.prepare(`
     SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
            last_modified as lastModified, preview, working_directory as workingDirectory,
-           plan_state as planState, active_preset as activePreset
+           plan_state as planState, active_preset as activePreset, workspace_id as workspaceId
     FROM sessions ORDER BY last_modified DESC LIMIT ?
   `);
   return (stmt.all(limit) || []) as SessionRecord[];
@@ -1069,7 +1071,7 @@ export function getSessionsByTagFromDb(tag: string): SessionRecord[] {
     const stmt = db.prepare(`
       SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
              last_modified as lastModified, preview, working_directory as workingDirectory,
-             plan_state as planState, active_preset as activePreset, tags
+             plan_state as planState, active_preset as activePreset, tags, workspace_id as workspaceId
       FROM sessions WHERE tags LIKE ? ORDER BY last_modified DESC
     `);
     return (stmt.all(`%${tag}%`) || []) as SessionRecord[];
@@ -1392,6 +1394,7 @@ export function getAllPinnedKnowledgeFromDb(): any[] {
       preview: row.preview,
       toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
       toolResults: row.tool_results ? JSON.parse(row.tool_results) : undefined,
+      workspaceId: row.workspace_id || undefined,
     }));
   } catch {
     return [];
