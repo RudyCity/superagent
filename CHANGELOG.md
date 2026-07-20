@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.497] - 2026-07-20
+
+### Fixed
+- **Cascade Checkpoint Deletion**:
+  - Added explicit SQLite deletion of associated checkpoints in `deleteSessionFromDb()` transaction when deleting a session.
+
 ## [1.2.496] - 2026-07-20
 
 ### Added

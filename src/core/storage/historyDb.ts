@@ -331,6 +331,7 @@ export function deleteSessionFromDb(sessionId: string): void {
   try {
     db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
     db.prepare("DELETE FROM pinned_messages WHERE session_id = ?").run(sessionId);
+    db.prepare("DELETE FROM checkpoints WHERE session_id = ?").run(sessionId);
     db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
     db.exec("COMMIT;");
   } catch (err) {
