@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.495] - 2026-07-20
+
+### Fixed
+- **Checkpoint Restoration SQLite Integration**:
+  - Updated `restoreCheckpoint()` in `checkpoints.ts` to write restored messages, plan state, and metadata directly to SQLite `history.db` instead of legacy JSON files.
+
 ## [1.2.494] - 2026-07-20
 
 ### Added

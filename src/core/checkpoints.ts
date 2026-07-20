@@ -159,12 +159,50 @@ export async function restoreCheckpoint(
   const content = await fs.readFile(checkpointFilePath, "utf-8");
   const checkpoint = JSON.parse(content) as Checkpoint;
 
-  // Restore the session history JSON file
-  const sessionData = {
-    messages: checkpoint.messages,
-    planState: checkpoint.planState,
-  };
-  await fs.writeFile(sessionFilePath, JSON.stringify(sessionData, null, 2), "utf-8");
+  // Restore the session history into SQLite database
+  const sessionId = path.basename(sessionFilePath, ".json");
+  const { loadSessionFromDb, saveSessionToDb } = await import("./storage/historyDb.js");
+  const current = loadSessionFromDb(sessionId);
+
+  const msgs = checkpoint.messages.map((m: any, idx: number) => ({
+    sessionId,
+    role: m.role || "user",
+    content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+    toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
+    toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
+    reasoning: m.reasoning,
+    timestamp: m.timestamp || Date.now(),
+    sequenceOrder: idx,
+  }));
+
+  const userMsgs = msgs.filter((m) => m.role === "user");
+  const lastUser = userMsgs[userMsgs.length - 1];
+  const preview = lastUser
+    ? lastUser.content.slice(0, 60).replace(/\n/g, " ") + (lastUser.content.length > 60 ? "…" : "")
+    : current.session?.preview || "";
+
+  saveSessionToDb(
+    {
+      id: sessionId,
+      filePath: sessionFilePath,
+      displayName: current.session?.displayName || sessionId,
+      messageCount: msgs.length,
+      lastModified: Date.now(),
+      preview,
+      workingDirectory: current.session?.workingDirectory,
+      planState: checkpoint.planState,
+      activePreset: current.session?.activePreset,
+      extraData: current.session?.extraData,
+    },
+    msgs
+  );
+
+  // Touch session directory anchor file
+  try {
+    await fs.mkdir(path.dirname(sessionFilePath), { recursive: true });
+    await fs.writeFile(sessionFilePath, "", "utf-8");
+  } catch {}
+
   clearHistoryCache();
 
   // Re-sync plan, task, task history, and walkthrough markdown files
