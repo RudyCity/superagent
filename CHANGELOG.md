@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.511] - 2026-07-20
+
+### Added & Enhanced
+- **Idle Session Harvesting, SSE Metadata & `/api/workspaces` Endpoint (`src/server.ts`)**:
+  - Added `lastActiveTime` tracking to `AgentSession` interface, updated automatically on every request resolution and event broadcast.
+  - Added background idle session harvester (30-minute inactivity timeout) to automatically prune inactive non-CLI sessions from memory without interrupting running tasks.
+  - Attached `sessionId` and `workspace` metadata directly to `agent_event` and `plan_approval_required` SSE broadcasts for precise client session event routing.
+  - Added `GET /api/workspaces` endpoint to query all active workspace sessions, modes, running status, and last active timestamps.
+
 ## [1.2.510] - 2026-07-20
 
 ### Enhanced

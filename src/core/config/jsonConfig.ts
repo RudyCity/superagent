@@ -72,6 +72,7 @@ export interface SystemSettings {
   visionTokenSavingThreshold?: number;
   hideTimeline?: boolean;
   enableAdvisor?: boolean;
+  maxConcurrentWorkspaceTasks?: number;
 }
 
 export interface McpServerConfig {
@@ -809,6 +810,7 @@ export function getSettings(): SystemSettings {
     visionTokenSavingThreshold: s.visionTokenSavingThreshold ?? DEFAULT_VISION_TOKEN_SAVING_THRESHOLD,
     hideTimeline: s.hideTimeline ?? false,
     enableAdvisor: s.enableAdvisor ?? true,
+    maxConcurrentWorkspaceTasks: s.maxConcurrentWorkspaceTasks ?? 5,
   };
 }
 

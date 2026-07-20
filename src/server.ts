@@ -16,6 +16,7 @@ interface AgentSession {
   mode: "single" | "multi";
   sessionId: string;
   isCliSession: boolean;
+  lastActiveTime?: number;
 }
 
 export const activeSessions = new Map<string, AgentSession>();
@@ -48,7 +49,10 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
 
   if (targetSessionId) {
     for (const session of activeSessions.values()) {
-      if (session.sessionId === targetSessionId) return session;
+      if (session.sessionId === targetSessionId) {
+        session.lastActiveTime = Date.now();
+        return session;
+      }
     }
   }
 
@@ -59,6 +63,7 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
       if (targetSessionId) {
         session.sessionId = targetSessionId;
       }
+      session.lastActiveTime = Date.now();
       return session;
     }
   }
@@ -69,13 +74,17 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
         if (targetSessionId) {
           session.sessionId = targetSessionId;
         }
+        session.lastActiveTime = Date.now();
         return session;
       }
     }
   }
 
   for (const session of activeSessions.values()) {
-    if (session.isCliSession) return session;
+    if (session.isCliSession) {
+      session.lastActiveTime = Date.now();
+      return session;
+    }
   }
   
   return null;
@@ -214,12 +223,25 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
+function getSessionForAgent(agentRef?: Agent): AgentSession | undefined {
+  if (!agentRef) return undefined;
+  for (const session of activeSessions.values()) {
+    if (session.agent === agentRef) return session;
+  }
+  return undefined;
+}
+
 // Global Agent Event Handlers
 const onEvent = (event: AgentEvent, agentRef?: Agent) => {
-  broadcastEvent({ type: "agent_event", event });
+  const session = getSessionForAgent(agentRef);
+  const metadata = session ? { sessionId: session.sessionId, workspace: session.workspace } : {};
+  if (session) {
+    session.lastActiveTime = Date.now();
+  }
+  broadcastEvent({ type: "agent_event", event, ...metadata });
   // When agent finishes a turn and is waiting for plan approval, notify extension clients
   if (event.type === "done" && agentRef && agentRef.planState === "PLANNING_PENDING") {
-    broadcastEvent({ type: "plan_approval_required", planState: "PLANNING_PENDING" });
+    broadcastEvent({ type: "plan_approval_required", planState: "PLANNING_PENDING", ...metadata });
   }
 };
 
@@ -332,6 +354,20 @@ export async function runServer(port: number, silent = false) {
     purgeEmptySessions(24);
   } catch {}
 
+  // Idle workspace session harvesting (30 min inactivity timeout)
+  const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+  const harvestTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, session] of activeSessions.entries()) {
+      if (!session.isCliSession && !session.agent.isAgentRunning()) {
+        const lastActive = session.lastActiveTime || now;
+        if (now - lastActive > IDLE_TIMEOUT_MS) {
+          activeSessions.delete(key);
+        }
+      }
+    }
+  }, 5 * 60 * 1000);
+
   // Start the Python Vision Server in the background
 
   try {
@@ -349,6 +385,7 @@ export async function runServer(port: number, silent = false) {
     });
 
     const cleanup = () => {
+      clearInterval(harvestTimer);
       killVisionServerProcess();
       try {
         closeHistoryDb();
@@ -439,6 +476,21 @@ export async function runServer(port: number, silent = false) {
           isCliSession: session ? session.isCliSession : false,
           planState: session ? session.agent.planState : "IDLE",
         });
+        return;
+      }
+
+      // Workspaces List
+      if (pathname === "/api/workspaces" && req.method === "GET") {
+        const workspaces = Array.from(activeSessions.values()).map(s => ({
+          sessionId: s.sessionId,
+          workspace: s.workspace,
+          mode: s.mode,
+          isCliSession: s.isCliSession,
+          agentRunning: s.agent.isAgentRunning(),
+          planState: s.agent.planState,
+          lastActiveTime: s.lastActiveTime || Date.now()
+        }));
+        sendJSON(res, 200, { success: true, workspaces });
         return;
       }
 
