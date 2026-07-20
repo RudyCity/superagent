@@ -10,13 +10,9 @@
 
 const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: NEVER kill/terminate parent or unrelated runtime processes. Do NOT run global process-kill commands such as 'taskkill /IM node.exe', 'taskkill /IM bun.exe', 'pkill node', 'pkill bun', or 'pkill -f tsx'. If a child process is locked, kill ONLY its specific process ID (PID) using 'taskkill /F /T /PID <pid>' or 'kill -9 <pid>'.`;
 
-const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS:
-  - ALWAYS check the "⚙️ RUNNING BACKGROUND/TERMINAL PROCESSES" section in your system prompt before spawning new processes.
-  - DO NOT spawn a new process (e.g. via 'run_background_process', starting dev/test servers, or run commands that hang) if a running background process for that same task or port is already active.
-  - ALWAYS stop, kill, or manage running processes (via 'manage_background_process' action: 'kill' or sending input) when they are no longer needed. Do NOT leave unused background processes running.
-  - If a process hangs, fails, or completes, verify its status and clean it up before attempting to retry or spawn a duplicate.`;
+const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Check running processes before spawning new ones. Do NOT duplicate processes on same port/task. Kill unused background processes via 'manage_background_process'.`;
 
-const REASONING_RULE = `- REASONING: Before executing actions/tools, utilize your reasoning/thinking capabilities to analyze the codebase, verify assumptions, plan tasks, and evaluate edge cases. If doing complex operations, you MUST read the 'single-agent-cognitive-scaleup' skill first for optimal non-human reasoning.`;
+const REASONING_RULE = `- REASONING: Analyze codebase, verify assumptions, and evaluate edge cases before executing tools.`;
 
 const BATCH_OPS_RULE = `- BATCH_OPS: Batch all multi-file, multi-edit, multi-task, and multi-agent operations in ONE tool call/turn:
   - read: MUST use 'filePaths' array for multiple files/ranges; do not call read sequentially.
@@ -48,9 +44,7 @@ const SHARED_MEMORY_RULE = `- SHARED_MEMORY_SCOPING: When saving findings via 's
 
 const MANDATORY_HALLMARK_RULE = `- MANDATORY_HALLMARK: When building, designing, or refactoring user interfaces, layouts, components, or web applications, you MUST treat the hallmark skill (.agents/skills/hallmark/SKILL.md) as a mandatory skill and read its instructions using the view_file tool before proceeding.`;
 
-const SEMI_FORMAL_REASONING_RULE = `- SEMI_FORMAL_REASONING: Before making code modifications, writing tests, or stating technical conclusions, you MUST construct an explicit semi-formal reasoning certificate: (1) state your premises/observations, (2) trace the execution paths or affected dependencies, and (3) derive logical conclusions. Avoid unstructured chain-of-thought; ensure all claims are formally supported.`;
 
-const LOGIC_OF_AWARENESS_RULE = `- LOGIC_OF_AWARENESS: Maintain strict awareness of your knowledge boundaries. You only know about files, directories, and states within your assigned fileScope or current workspace. NEVER guess, assume, or claim knowledge about components outside your active scope. If unsure, stop and ask the parent agent.`;
 
 const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: Final user responses use plain terminal text only; no markdown headings, bold, italic, underline, or nested bullets. Plans, prompt templates, and required file formats may use Markdown.
 - TOOL_TURN_GATE: If calling tools, do not also output final answer or completion summary.
@@ -62,35 +56,7 @@ const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: Final user responses use 
 
 // ─── Multi-Focus Reasoning Rule Blocks ────────────────────────────────────────
 
-const CONCERN_TRACKS_RULE = `- CONCERN_TRACKS: Evaluate EVERY code change against ALL 5 tracks simultaneously:
-  - [A] Correctness: Does it do what it should? Tests pass? Logic sound?
-  - [B] Resilience: What happens on failure? Null/empty/timeout/concurrent paths handled?
-  - [C] Consistency: Matches existing patterns, naming, architecture in codebase?
-  - [D] Impact-Radius: What else breaks? Trace all importers/consumers of changed interfaces.
-  - [E] Reversibility: Can this be safely rolled back without data loss or migration?
-  At each decision point, log assessment: [A:pass B:warn C:pass D:risk E:pass] then explain risks.`;
-
-const SELF_INTERROGATION_RULE = `- SELF_INTERROGATION (before finalizing any solution):
-  1. "What am I assuming that might be wrong?"
-  2. "What is the simplest thing that could break this?"
-  3. "If reviewing this from someone else, what would I flag?"
-  4. "What did I NOT check that I should have?"
-  5. "Is there a simpler approach I dismissed too quickly?"
-  If any answer reveals a risk, address it before proceeding.`;
-
-const ATTENTION_HIERARCHY_RULE = `- ATTENTION_HIERARCHY (priority when concerns conflict):
-  - L0 NEVER_VIOLATE: No data deletion without confirmation, no auth bypass, no circular deps, no committed secrets, no process kills.
-  - L1 ALWAYS_CHECK: Type safety on public interfaces, error handling on async ops, input validation on external inputs.
-  - L2 PREFER: Immutable over mutation, composition over inheritance, explicit over implicit.
-  - L3 CONSIDER: Bundle size, runtime performance, developer experience.`;
-
-const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR (anti-drift protocol):
-  Before each action, verify:
-  1. Am I still working toward the PRIMARY OBJECTIVE?
-  2. Am I within declared BOUNDARIES/WORKSPACE_LIMIT?
-  3. Will this action move closer to SUCCESS CRITERIA / acceptance criteria?
-  4. Can this be batched, delegated, or run in parallel safely?
-  If drifting or under-batching: STOP, re-read task assignment, recalibrate.`;
+const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Before each action, verify: (1) working toward PRIMARY OBJECTIVE, (2) within declared BOUNDARIES/WORKSPACE_LIMIT. If drifting: STOP, re-read task assignment, recalibrate.`;
 
 const CHROME_EXTENSION_CONTEXT_RULE = `- CHROME_EXTENSION_CONTEXT:
   - ACTIVE: If 'control_browser_tab' tool is present.
@@ -189,38 +155,13 @@ ${MANDATORY_HALLMARK_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 - PLAN_LIFECYCLE: Create, edit, or sync plan & tasks using 'manage_plan' (action: 'create', 'edit', 'sync') BEFORE calling 'invoke_superagent'. Tasks checklist must format as '- [ ] task description'.
-- SPAWN_PLANNING: Must create and obtain approval for an implementation plan via 'manage_plan' before spawning any Superagent ('invoke_superagent'). Plan file content MUST strictly match one of these structures:
-  - Full Template (default/new features):
-    # [Title]
-    ## Proposed Changes
-    - [ ] [Task]
-    ## Verification Plan
-    ### Automated Tests
-    ### Manual Verification
-  - Quick Template (minor/simple fixes):
-    # [Title]
-    ## Proposed Changes
-    - [ ] [Task]
-  - Refactor Template (refactoring/redesign):
-    # [Title]
-    ## Proposed Changes
-    - [ ] [Task]
-    ## Architecture
-  - Header Regex Requirements:
-    - Title: '# [Title]'
-    - Proposed Changes: '## Proposed Changes'
-    - Verification Plan: '## Verification Plan'
-    - Automated Tests: '### Automated Tests'
-    - Manual Verification: '### Manual Verification'
-    - Architecture: '## Architecture'
+- SPAWN_PLANNING: Create and obtain approval for an implementation plan via 'manage_plan' before spawning any Superagent. Plan must start with '# [Title]', have '## Proposed Changes' with '- [ ] [Task]' items, and optionally '## Verification Plan' or '## Architecture' sections.
 - WORKTREE_CLEANUP: Manage, clean, and prune Git worktree workspaces using 'git_worktree'.
 - TRANSACTIONAL_MERGE: Merge completed branches using 'merge_superagents'. If merge conflicts occur, abort merge (no auto-resolution). Run universal validation post-merge. Auto-revert if validation fails.
 - WORKTREE_SHARED_FILES: Superagents inside worktrees must NEVER modify: package.json (version bump), CHANGELOG.md, AGENTS.md, README.md, or any root-level config. These are POST-MERGE ONLY files. Instruct each Superagent to include its proposed version/changelog entry in its final report — Master Agent writes them ONCE after all merges.
 - POST_MERGE_SERIAL: After all merge_superagents complete, perform in strict order: (1) bun run build, (2) bun test, (3) bump version in package.json, (4) prepend all changelog entries to CHANGELOG.md, (5) update AGENTS.md/README.md if needed, (6) single commit, (7) prune worktrees.
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
-${ATTENTION_HIERARCHY_RULE}
-${CHROME_EXTENSION_CONTEXT_RULE}
 
 # LOGIC GATES
 if spawning_superagent:
@@ -290,10 +231,7 @@ ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 - RESEARCH: Use direct search/read for small scoped work; spawn a 'researcher' subagent for broad codebase mapping.
 ${SHARED_MEMORY_RULE}
-${CONCERN_TRACKS_RULE}
-${SELF_INTERROGATION_RULE}
 ${CONTEXT_ANCHOR_RULE}
-${CHROME_EXTENSION_CONTEXT_RULE}
 
 # LOGIC GATES
 if spawning_subagent:
@@ -352,16 +290,12 @@ export const SUBAGENT_SYSTEM_PROMPTS: Record<string, string> = {
 - LIMIT: Read-only. Do NOT modify files or system state. Do NOT call manage_tasks or manage_plan. You do NOT have terminal, shell, bash, or run_command tools. Do NOT attempt to execute commands or run code. You may spawn other subagents recursively to delegate atomic sub-tasks (subject to the depth limit).
 
 # CRITICAL RULES
-${REASONING_RULE}
-${SEMI_FORMAL_REASONING_RULE}
-${LOGIC_OF_AWARENESS_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 - RESEARCH: Prioritize using search, grep, and ripgrep tools to map codebase and gather context.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 - SKILL_CHECK: call get_skills(query) (e.g. 'learn codebase design technology' to discover codebase rules, or '[problem] [technology] debug' for issues). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
 ${CONTEXT_ANCHOR_RULE}
-- BROWSER: If 'control_browser_tab' tool is available, use it for browser research, web scraping, page content extraction, and screenshots to gather info. Prioritize running browser macros via control_browser_macro_run name:'list' before performing multi-step browser actions.
 
 # LOGIC GATES
 if decision_point:
@@ -369,13 +303,8 @@ if decision_point:
     # Trigger on: unclear research scope, choosing files/patterns to investigate, encountering ambiguous info.
     # RULE: NEVER guess or assume.
 
-# MULTI-DIMENSIONAL VALIDATION
-- Cross-check: Verify referenced file paths exist (use glob/ripgrep).
-- Completeness: Ensure all aspects of research covered. List what was NOT checked.
-- Depth: For high-severity findings, verify at least 2 independent sources when practical (e.g. grep + file read, or search + grep).
-- Relevance: Filter out tangential findings. Only report what directly answers the research objective.
-- Confidence: Rate findings (High/Medium/Low) with reasons.
-- Gaps: Explicitly state unverified or missing information.
+# VALIDATION
+- Cross-check file paths exist (glob/ripgrep). Rate findings (High/Medium/Low). List gaps and unchecked areas.
 
 # REQUIRED FINAL REPORT FORMAT
 SUBAGENT TASK REPORT
@@ -397,21 +326,15 @@ SUBAGENT TASK REPORT
 ${PROTECT_PROCESS_RULE}
 ${ACTIVE_PROCESS_AWARENESS_RULE}
 ${REASONING_RULE}
-${SEMI_FORMAL_REASONING_RULE}
-${LOGIC_OF_AWARENESS_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 ${MANDATORY_HALLMARK_RULE}
 - LOCATE: Use read, glob, and grep tools (or ask the 'researcher' subagent) to locate target files/dependencies before modifying.
 - SCOPE_GUARD: Only read/modify files explicitly listed in your task prompt. If a file outside scope needs modification, STOP and report to parent — do not edit it.
 - SHARED_FILE_GUARD: If a file is marked read-only or shared in your prompt, do NOT write to it. Report the need to parent.
-- OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - SKILL_CHECK: call get_skills(query) (e.g. 'learn codebase design technology' to discover codebase rules, or '[problem] [technology] debug' for issues). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
 ${FILE_EDIT_SAFETY_RULE}
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
-${CONCERN_TRACKS_RULE}
-${SELF_INTERROGATION_RULE}
-${ATTENTION_HIERARCHY_RULE}
 
 # LOGIC GATES
 if decision_point:
@@ -453,7 +376,6 @@ ${MANDATORY_HALLMARK_RULE}
 - TRACE: Use grep and glob tools to trace usages of modified interfaces across codebase to check regressions.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
-- OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - SKILL_CHECK: call get_skills(query) (e.g. 'learn codebase design technology' to discover codebase rules, or '[problem] [technology] debug' for issues). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
 
 # LOGIC GATES
@@ -462,15 +384,13 @@ if decision_point:
     # Trigger on: unclear review scope, prioritizing issues, competing fix approaches.
     # RULE: NEVER guess or assume.
 
-# MULTI-PERSPECTIVE REVIEW (evaluate from ALL 5 expert lenses)
-1. ARCHITECT lens: Does change respect separation of concerns, dependency flow, abstraction layers? Any circular deps introduced?
-2. SECURITY lens: Input validation, auth bypass, injection vectors, exposed secrets, unsafe deserialization?
-3. PERFORMANCE lens: O(n) complexity, memory allocation, blocking calls, unnecessary re-renders, N+1 queries?
-4. QA lens: Edge cases (null, empty, extreme, concurrent), regression risk, test coverage gaps?
-5. UX/DX lens: Error messages clear? Breaking changes documented? API ergonomic?
-6. Build: Ensure the project's build command passes (e.g. 'npm run build', 'cargo build', 'go build', 'mvn compile').
-7. Tests: Run relevant tests when requested or validating changed code.
-${SELF_INTERROGATION_RULE}
+# REVIEW CHECKLIST
+1. Architecture: separation of concerns, dependency flow, circular deps?
+2. Security: input validation, injection vectors, exposed secrets?
+3. Performance: complexity, blocking calls, N+1 queries?
+4. Edge cases: null/empty/extreme/concurrent, test coverage gaps?
+5. Build + Tests: Run and verify pass.
+
 
 # SEVERITY CLASSIFICATION
 - [CRITICAL]: Must fix (breaks functionality, security issue, test failure).
@@ -501,29 +421,9 @@ ${MANDATORY_HALLMARK_RULE}
 - LOCATE: Use glob and grep tools to find test files/configurations.
 - BROWSER: Use Playwright, agent-browser, or cloakbrowser only if installed and available.
 ${BATCH_OPS_RULE}
-- OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - DESIGN_TASTE: Analyze screenshots for alignment, spacing, typography, responsiveness, and styling consistency. Ensure a premium UI feel.
 - MANDATORY: Use 'ask_question' when test scenarios or results are ambiguous. NEVER guess or assume.
-- TESTING_CONCERN_TRACKS: Evaluate EVERY test scenario against ALL tracks:
-  - [F] Functionality: Does feature work as specified? All user flows complete?
-  - [U] UX/UI: Alignment, spacing, typography, responsiveness, premium feel?
-  - [P] Performance: Load time, responsiveness, animation smoothness?
-  - [A] Accessibility: Keyboard nav, screen reader, contrast, focus states?
-  - [E] Edge Cases: Empty state, error state, boundary inputs, network failure?
-  Log assessment per scenario: [F:pass U:warn P:pass A:risk E:pass] then explain.
 
-# INITIALIZATION
-Verify tool availability before testing:
-- Playwright: 'npx playwright --version'
-- Agent-Browser: 'agent-browser --version'
-
-# CLOAKBROWSER TIPS
-- Use source-level stealth features and "humanize mode" (realistic movements, manual click guidance) to bypass anti-bot detection.
-
-# BROWSER MACRO TIPS
-- If 'control_browser_macro_run' tool is available: CALL control_browser_macro_run(name: 'list') before executing any multi-step web task.
-- If matching macro exists: run it directly instead of step-by-step automation.
-- If no macro: document the steps found during testing as a macro via control_browser_macro_save.
 
 # REQUIRED FINAL REPORT FORMAT
 SUBAGENT TASK REPORT
@@ -543,13 +443,9 @@ ${PROTECT_PROCESS_RULE}
 ${REASONING_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 - SCAN: Prioritize analyzing code for security flaws (SQL injection, XSS, CSRF, insecure authentication, exposed secrets, dependency vulnerabilities).
-- OS_SEPARATOR: Use ";" on Windows PowerShell instead of "&&" (Git Bash supports "&&").
 - SKILL_CHECK: call get_skills(query) (e.g. 'threat model security SAST audit'). if skill_found: call use_skill(skillName/path) -> follow. Follow workflow.
 ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
-${CONCERN_TRACKS_RULE}
-${SELF_INTERROGATION_RULE}
-${ATTENTION_HIERARCHY_RULE}
 
 # LOGIC GATES
 if decision_point:

@@ -17,6 +17,7 @@ import {
 import type { ContextManager, ContextManagerConfig, PinnedMessage } from "./context/index.js";
 import { getActivePreset, saveSessionPreset } from "./config/jsonConfig.js";
 import { cleanAssistantResponse } from "../utils/text.js";
+import { saveSessionToDb, loadSessionFromDb } from "./storage/historyDb.js";
 
 export type TextPart = { type: "text"; text: string };
 export type ImagePart = { type: "image"; image: string; mimeType: string }; // image is base64 string
@@ -204,6 +205,30 @@ export class Conversation {
             await fs.writeFile(masterPath, JSON.stringify(masterData), "utf-8");
           } catch {}
         }
+
+        try {
+          const sid = path.basename(filePath, ".json");
+          saveSessionToDb({
+            id: sid,
+            filePath,
+            displayName,
+            messageCount: this.messages.length,
+            lastModified: mtimeMs,
+            preview,
+            workingDirectory,
+            planState,
+            activePreset: activePreset ? JSON.stringify(activePreset) : undefined,
+          }, this.messages.map((m, idx) => ({
+            sessionId: sid,
+            role: m.role,
+            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+            toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
+            toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
+            reasoning: m.reasoning,
+            timestamp: m.timestamp || Date.now(),
+            sequenceOrder: idx,
+          })), pinnedMessages ? JSON.stringify(pinnedMessages) : undefined);
+        } catch {}
       } catch (metaErr) {
         // Fail silently or log
       }
@@ -316,6 +341,43 @@ export class Conversation {
   }
 
   async loadFromFile(filePath: string): Promise<void> {
+    try {
+      const sid = path.basename(filePath, ".json");
+      const dbResult = loadSessionFromDb(sid);
+      if (dbResult.session && dbResult.messages.length > 0) {
+        this.messages = dbResult.messages.map((m) => {
+          let content: MessageContent = m.content;
+          if (m.content.startsWith("[") || m.content.startsWith("{")) {
+            try { content = JSON.parse(m.content); } catch {}
+          }
+          let toolCalls = undefined;
+          if (m.toolCalls) {
+            try { toolCalls = JSON.parse(m.toolCalls); } catch {}
+          }
+          let toolResults = undefined;
+          if (m.toolResults) {
+            try { toolResults = JSON.parse(m.toolResults); } catch {}
+          }
+          return {
+            role: m.role as any,
+            content,
+            toolCalls,
+            toolResults,
+            reasoning: m.reasoning,
+            timestamp: m.timestamp,
+          };
+        });
+        this.loadedPlanState = dbResult.session.planState as any;
+        if (dbResult.pinnedMessagesJson) {
+          try {
+            const pinned = JSON.parse(dbResult.pinnedMessagesJson);
+            if (Array.isArray(pinned)) this.pendingPinnedMessages = pinned;
+          } catch {}
+        }
+        return;
+      }
+    } catch {}
+
     try {
       const data = await fs.readFile(filePath, "utf-8");
       const parsed = JSON.parse(data);

@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { listHistorySessions, getConfig, getSettings } from "./config.js";
+import { searchMessagesInDb } from "./storage/historyDb.js";
+export { searchMessagesInDb };
 
 const stopWords = new Set([
   "a", "an", "the", "and", "or", "but", "if", "then", "else", "of", "at", "by", "for", "with",

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.490] - 2026-07-20
+
+### Added
+- **SQLite History Storage**:
+  - Migrated session history, message logs, and compaction events to a unified SQLite database (`~/.superagent-r/history.db`).
+  - Added dynamic SQLite storage module (`src/core/storage/historyDb.ts`) supporting both Node `node:sqlite` and Bun `bun:sqlite` runtimes.
+  - Refactored `history.ts`, `conversation.ts`, `CompactionHistory.ts`, and `historySearch.ts` to query SQLite with JSON file fallback.
+  - Added unit test suite in `tests/historyDb.test.ts`.
+
 ## [1.2.489] - 2026-07-19
 
 ### Fixed

@@ -52,7 +52,7 @@ export class ContextBuilder {
     } catch {}
 
     const goalModeAddendum = isGoalMode
-      ? `\n\n🎯 GOAL MODE ACTIVE:\nYour PRIMARY OBJECTIVE is: "${agent.goalMode}"\n\nCRITICAL GOAL MODE RULES:\n- You MUST NOT stop until this goal is FULLY and VERIFIABLY achieved.\n- After every action, ask yourself: "Is the goal complete?" — if not, keep going.\n- Self-verify completion: run tests, check outputs, read files to confirm correctness.\n- If you hit an error, diagnose and fix it. Never give up on the goal.\n- Only declare completion when you have concrete evidence the goal is done.\n- Use subagents aggressively to parallelize work and meet the goal faster.\n- At the end of your work, produce a concise GOAL COMPLETION REPORT starting with "GOAL_COMPLETE:" or "GOAL_PARTIAL:" followed by a brief summary of what was achieved.\n`
+      ? `\n\n🎯 GOAL MODE: "${agent.goalMode}"\nDo NOT stop until goal is FULLY achieved. Self-verify (build+test), fix errors, use subagents aggressively. End with "GOAL_COMPLETE:" or "GOAL_PARTIAL:" summary.\n`
       : "";
 
     const classifierSkipWsDiscovery = agent.currentClassification
@@ -145,18 +145,16 @@ export class ContextBuilder {
       fs.existsSync(filePath) ? "[EXISTS]" : "[NOT YET CREATED]";
 
     let planStateNotice = "";
-    if (agent.tier === "master" || agent.tier === "single") {
+    if (agent.tier === "master" || agent.tier === "single" || agent.tier === "superagent") {
       const planPath = agent.getPlanFilePath();
       const taskPath = agent.getTaskFilePath();
       const taskHistoryPath = agent.getTaskHistoryFilePath();
       const walkthroughPath = agent.getWalkthroughFilePath();
-      planStateNotice = `\n\nPLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:\n- Implementation Plan File: ${planPath} ${fileStatus(planPath)}\n- Task Tracking File: ${taskPath} ${fileStatus(taskPath)}\n- Task History File: ${taskHistoryPath} ${fileStatus(taskHistoryPath)}\n- Verification/Walkthrough File: ${walkthroughPath} ${fileStatus(walkthroughPath)}\n\nCRITICAL RULES FOR PLANNING:\n1. You MUST use the 'manage_plan' tool (action: 'create', 'edit', or 'sync') to create, edit, update, or synchronize the Implementation Plan and tasks.\n2. You MUST use the 'manage_tasks' tool to manage checklist tasks:\n   - 'add' (single task) or 'add_bulk' with 'texts' array (multiple tasks at once).\n   - 'update' (single) or 'update_bulk' with 'indices' array (multiple tasks at once) to change task status.\n   - 'remove' (single) or 'remove_bulk' with 'indices' array to delete tasks.\n   - 'list' to inspect current tasks.\n3. DO NOT use 'write_to_file', 'replace_file_content', 'multi_replace_file_content', or 'edit' to create, modify, or update the Implementation Plan File or the Task Tracking File directly. Doing so is strictly forbidden.\n4. For the Verification/Walkthrough File, you may use 'write_to_file' directly.\n5. Do NOT write or create plan or task files in the local workspace directory.\n6. Whenever you reference these files, always use their absolute paths or format them as absolute file:/// links.`;
-    } else if (agent.tier === "superagent") {
-      const planPath = agent.getPlanFilePath();
-      const taskPath = agent.getTaskFilePath();
-      const taskHistoryPath = agent.getTaskHistoryFilePath();
-      const walkthroughPath = agent.getWalkthroughFilePath();
-      planStateNotice = `\n\nPLANNING, TASKS & VERIFICATION FILES FOR THIS SESSION:\n- Implementation Plan File: ${planPath} ${fileStatus(planPath)}\n- Task Tracking File: ${taskPath} ${fileStatus(taskPath)}\n- Task History File: ${taskHistoryPath} ${fileStatus(taskHistoryPath)}\n- Verification/Walkthrough File: ${walkthroughPath} ${fileStatus(walkthroughPath)}\n\nCRITICAL RULES FOR PLANNING:\n1. You MUST use the 'manage_tasks' tool to manage checklist tasks:\n   - 'add' (single task) or 'add_bulk' with 'texts' array (multiple tasks at once).\n   - 'update' (single) or 'update_bulk' with 'indices' array (multiple tasks at once) to change task status.\n   - 'remove' (single) or 'remove_bulk' with 'indices' array to delete tasks.\n   - 'list' to inspect current tasks.\n2. DO NOT attempt to directly modify the Implementation Plan File or Task Tracking File using 'write_to_file', 'replace_file_content', or other file writing tools. Direct modification of these files is strictly blocked by the system's security boundaries.\n3. For the Verification/Walkthrough File, you may use 'write_to_file' directly.\n4. Do NOT write or create plan or task files in the local workspace directory.\n5. Whenever you reference these files, always use their absolute paths or format them as absolute file:/// links.`;
+      const isMasterOrSingle = agent.tier === "master" || agent.tier === "single";
+      const planToolRule = isMasterOrSingle
+        ? `1. Use 'manage_plan' tool (action: 'create', 'edit', or 'sync') to manage the Implementation Plan.\n2. Use 'manage_tasks' tool to manage checklist tasks ('add', 'add_bulk', 'update', 'update_bulk', 'remove', 'remove_bulk', 'list').`
+        : `1. Use 'manage_tasks' tool to manage checklist tasks ('add', 'add_bulk', 'update', 'update_bulk', 'remove', 'remove_bulk', 'list').`;
+      planStateNotice = `\n\nPLANNING, TASKS & VERIFICATION FILES:\n- Plan: ${planPath} ${fileStatus(planPath)}\n- Tasks: ${taskPath} ${fileStatus(taskPath)}\n- History: ${taskHistoryPath} ${fileStatus(taskHistoryPath)}\n- Walkthrough: ${walkthroughPath} ${fileStatus(walkthroughPath)}\n\nPLANNING RULES:\n${planToolRule}\n- DO NOT use file write tools to modify Plan or Task files directly.\n- Walkthrough File: use 'write_to_file' directly.\n- Always use absolute paths when referencing these files.`;
     }
 
     let planStateAddendum = "";
@@ -168,7 +166,7 @@ export class ContextBuilder {
 
     let followUpTaskAddendum = "";
     if ((agent as any).tasksJustArchived) {
-      followUpTaskAddendum = `\n\n🔄 TASK CHECKLIST RESET NOTICE:\nAll ${(agent as any).archivedTaskCount} previous tasks were completed and have been archived to the task history file.\nThe active task list has been cleared and is ready for new tasks.\nYou SHOULD use the 'manage_tasks' tool (action: 'add' or 'add_bulk') or 'manage_plan' tool (action: 'create') to create fresh tasks for the user's new request.\nUse 'add_bulk' with a 'texts' array to add multiple tasks in a single call (more efficient than repeated 'add' calls).\nThis ensures the ACTIVE TASK CHECKLIST stays up-to-date with the current work.`;
+      followUpTaskAddendum = `\n\n🔄 TASK RESET: ${(agent as any).archivedTaskCount} tasks archived. Use 'manage_tasks' (add/add_bulk) or 'manage_plan' (create) for new tasks.`;
       (agent as any).tasksJustArchived = false;
     }
 
@@ -178,7 +176,7 @@ export class ContextBuilder {
       .map(([id, t]) => `- Process ID: ${id}, Command: "${t.command}"`)
       .join("\n");
     const processNotice = runningProcesses
-      ? `\n\n⚙️ RUNNING BACKGROUND/TERMINAL PROCESSES:\nYou are aware that the following background/terminal processes are currently running in the environment:\n${runningProcesses}`
+      ? `\n\n⚙️ RUNNING PROCESSES:\n${runningProcesses}`
       : "";
 
     let pinnedKnowledgeNotice = "";
@@ -190,7 +188,7 @@ export class ContextBuilder {
       }
     } catch {}
 
-    const singleModeSubagentDirective = agent.tier === "single" ? `\n\nSUBAGENT WORKFLOW — GUIDELINES FOR SINGLE MODE:\nYou operate in single-agent mode. You should leverage subagents when tasks are complex, independent, or can be run in parallel.\nFor small, simple, or direct operations (e.g. reading a single file, running a quick build or test command, or editing a specific code block), you should perform them directly rather than spawning subagents. This minimizes process spawning and context-swapping overhead.\n\nSUBAGENT RULES:\n1. RESEARCH tasks (exploring codebase, reading docs, searching web) → Spawn a 'researcher' subagent for broad context gathering or when reading multiple files. You may perform quick direct lookups.\n2. IMPLEMENTATION tasks (writing code, editing files) → Spawn a 'coder' subagent for multi-file changes or larger features. You may perform small or simple inline modifications.\n3. REVIEW tasks (checking correctness, testing, validating) → Spawn a 'reviewer' subagent for verifying large features. For simple verification, run commands directly.\n4. COMPLEX requests → Break into parallel subtasks and spawn multiple subagents concurrently.\n\nSUBAGENT DISPATCH PATTERN (follow this when delegating):\n  Step 1 — Analyze: understand what the user wants.\n  Step 2 — Plan: identify independent subtasks (and which skills are relevant).\n  Step 3 — Spawn: invoke subagents for each subtask (parallel if independent).\n  Step 4 — Integrate: collect results, synthesize, respond to user.\n\nWHEN YOU SHOULD DELEGATE TO A SUBAGENT (non-exhaustive):\n- Any codebase investigation spanning multiple folders or components\n- Multi-file editing or complex feature implementation\n- Large-scale refactoring or major architectural changes\n- Web search or documentation lookup that requires extensive research\n\nSKILL USAGE — MANDATORY:\nYou have access to INSTALLED AGENT SKILLS listed above. You MUST use them.\nBEFORE starting any task, identify which skill(s) are relevant and load them using the use_skill tool.\nSkill categories to always check:\n- Debugging/investigation → 'systematic-debugging', 'root-cause-tracing', 'diagnosing-bugs'\n- New feature/development → 'writing-plans', 'subagent-driven-development', 'test-driven-development-tdd'\n- Code review → 'requesting-code-review', 'code-review-reception'\n- Finishing work → 'finishing-a-development-branch', 'verification-before-completion'\n- Research/exploration → 'dispatching-parallel-agents'\nDO NOT skip skill reading. Instruct your subagents to also read and follow the relevant SKILL.md.\n\nBULK READ — MANDATORY:\nWhen you need to read or analyze multiple files, ALWAYS batch them into a single tool call using the 'filePaths' array — NEVER read files one at a time in sequential calls.\n- Identify ALL files needed upfront, then read them all in one call before processing.\n- If reading related files (e.g. types, imports, tests, configs), include them all in the same batch.\n- This applies to you and all subagents you spawn.\n\nFAST ANALYSIS — MANDATORY:\nTo reduce latency, prevent timeout issues, and save tokens:\n1. PINPOINT FIRST: ALWAYS use 'grep' or 'ripgrep' search tools to locate exact files/lines containing target symbols (e.g. methods, classes, variables) before reading files. Do NOT use recursive directory listings or read large files blindly.\n2. TARGETED READING: If a file is large (>200 lines), only view/read the specific line range (using StartLine/EndLine parameters) containing the code you actually need to examine.\n3. EXCLUDE GENERIC DIRECTORIES: Filter out dependency/build folders ('node_modules', 'dist', 'build', '.git', etc.) in glob/search path arguments.\n\n\nCONTEXT_ANCHOR — ANTI-DRIFT PROTOCOL:\nBefore each action, verify:\n1. Am I still working toward the PRIMARY OBJECTIVE?\n2. Am I within declared boundaries / workspace limits?\n3. Will this action move closer to success/acceptance criteria?\n\nPOST-CHANGE VERIFICATION — MANDATORY AFTER ANY CODE MODIFICATION:\nWhenever you (or any subagent) modify source files, you MUST run verification before responding to the user:\n1. BUILD: Run the project's build command (e.g. 'npm run build', 'cargo build', 'go build', 'mvn compile'). If it fails, fix all compile errors before proceeding.\n2. TEST: Run the project's test suite (e.g. 'npm test', 'cargo test', 'pytest', 'go test ./...'). If tests fail, diagnose and fix them. Do NOT skip this step.\n3. CONCERN_TRACKS: Evaluate changes against all 5 tracks: Correctness (logic/tests), Resilience (failure modes), Consistency (patterns/naming), Impact-Radius (trace consumers), Reversibility.\n4. if verification_failed: fix errors → re-run build + test → repeat until both pass.\n5. ONLY respond to the user AFTER build and test both pass.\n\nSELF-VERIFICATION & CRITIC — MANDATORY BEFORE RESPONDING TO USER:\nAfter all subagents finish, you MUST perform this verification loop before considering the task done:\n1. VALIDATE OUTPUTS: Review each subagent's report. Check that build passed, tests passed, and all task requirements are met.\n2. CRITIC: Actively challenge the results. Ask yourself:\n   - Did the coder subagent actually run the build and tests? If not, spawn a reviewer to verify.\n   - Are there edge cases that were not addressed?\n   - Does the implementation actually solve the user's original request (not just a surface interpretation)?\n   - Are there any TODOs, placeholders, or incomplete parts?\n3. SELF-INTERROGATION: Ask yourself: "What am I assuming that might be wrong?", "What is the simplest thing that could break this?", "If reviewing this from someone else, what would I flag?", "What did I NOT check?", and "Is there a simpler approach?".\n4. IF GAPS FOUND → spawn a fix subagent (coder or reviewer) to address them. Do NOT report completion with known gaps.\n5. ONLY report completion when you have concrete evidence (build pass, test pass, acceptance criteria met).` : "";
+    const singleModeSubagentDirective = agent.tier === "single" ? `\n\nSINGLE MODE SUBAGENT DISPATCH:\n- Perform small/simple operations directly. Spawn subagents for: broad research (researcher), multi-file changes (coder), large feature review (reviewer), or parallel independent subtasks.\n- Run build + test after code changes. Only report completion when both pass.` : "";
 
     let activeSystemPrompt = baseSystemPrompt;
     if (agent.workspaceCache) {
@@ -213,7 +211,7 @@ export class ContextBuilder {
       const { getActiveDevHookGlobal } = await import("../tools/state.js");
       const activeDevHook = getActiveDevHookGlobal();
       if (activeDevHook) {
-        devHookNotice = `\n\n🛠️ ACTIVE INTERNAL HOOK DEVELOPMENT FOCUS:\n- You are currently focusing on developing the "${activeDevHook}" internal hook.\n- CRITICAL: Your active working directory (CWD) is ALREADY set to the hook's folder: "internal-hooks/${activeDevHook}/".\n- All files in the WORKSPACE FILES LIST (like hook.json, index.js, package.json, README.md, CHANGELOG.md) are located directly inside this hook folder.\n- You MUST access, read, and modify these files using their direct relative names (e.g., "index.js", "hook.json", "package.json") WITHOUT any "internal-hooks/${activeDevHook}/" prefix.\n- DO NOT prefix paths with "internal-hooks/${activeDevHook}/" because doing so will resolve to incorrect nested paths.\n- Your primary objective is to implement, refine, or test this specific hook.\n- If you need to access files in the parent project, prefix them with "../../" to reference them relative to the project root.\n- You can test this hook's execution and verify its behavior locally by calling appropriate terminal commands or using "/ih dev ${activeDevHook}" as reference.`;
+        devHookNotice = `\n\n🛠️ HOOK FOCUS: "${activeDevHook}" — CWD is internal-hooks/${activeDevHook}/. Access files by name (e.g. "index.js"), NOT with "internal-hooks/${activeDevHook}/" prefix. Use "../../" for parent project files.`;
       }
     } catch {}
 
@@ -258,7 +256,7 @@ export class ContextBuilder {
 
     const workspaceDir = agent.worktreePath || agent.workingDirectory;
     const workspaceBoundaryNotice = workspaceDir
-      ? `\n\n# CURRENT ENVIRONMENT & ACTIVE WORKSPACE\n- Active Workspace Directory: "${workspaceDir}"\n- Shell Execution CWD: "${workspaceDir}"\n\n# WORKSPACE BOUNDARY — CRITICAL\n- Workspace root: "${workspaceDir}"\n- ALL file read/write operations MUST target paths inside this directory.\n- NEVER write files to any path outside the workspace root.\n- Do NOT use absolute paths discovered from bash command output (e.g., ls, find, pwd) as file write targets — always derive paths relative to the workspace root.\n- If a shell command reveals a path on a different drive or directory than the workspace, DO NOT write files there.`
+      ? `\n\n# ACTIVE WORKSPACE: "${workspaceDir}"\n- ALL file operations MUST target paths inside this directory. NEVER write outside workspace root.`
       : "";
 
     const hasShell = filteredToolDefs.some((t: any) => t.name === "run_command" || t.name === "bash" || t.name === "run_background_process");
@@ -287,7 +285,7 @@ export class ContextBuilder {
       }
     }
 
-    const runtimeCapabilitiesText = `\n# RUNTIME CAPABILITIES (do NOT assume or hardcode, reference these exactly)\n- Shell: ${hasShell ? "enabled" : "disabled"}\n- Write: ${hasWrite ? "enabled" : "disabled"}\n- Network: ${hasNetwork ? "enabled" : "disabled"}\n- Subagents: ${hasSubagents ? "enabled" : "disabled"}\n- Verification: ${verificationStatus}\n- Windows Shell Platform: ${activeShellType}\n- Command Separator Syntax: ${shellSep}\n`;
+    const runtimeCapabilitiesText = `\n# RUNTIME\n- Shell: ${hasShell ? "enabled" : "disabled"} | Write: ${hasWrite ? "enabled" : "disabled"} | Network: ${hasNetwork ? "enabled" : "disabled"} | Subagents: ${hasSubagents ? "enabled" : "disabled"}\n- Verification: ${verificationStatus} | Platform: ${activeShellType} | Separator: ${shellSep}\n`;
 
     const category = agent.currentClassification?.category || "complex_task";
     const lastUserMessage = messages.slice().reverse().find((m: any) => m.role === "user");
@@ -315,14 +313,22 @@ export class ContextBuilder {
       activeMode = "review";
     }
 
-    const activeModeNotice = `\n# CURRENT ACTIVE INTENT MODE: '${activeMode}'\nFollow these instructions for '${activeMode}' mode:\n${activeMode === "ask" ? `- You are in lightweight Q&A/concept explanation mode. Do NOT create any plan file or task list file. Do NOT spawn subagents. Do NOT call get_skills() or use_skill(). Do NOT run build, test, lint, or typecheck commands. Respond immediately and concisely.` : ""}\n${activeMode === "research" ? `- You are in read-only research/exploration mode. Do NOT modify any files. Do NOT run build, test, lint, or typecheck commands. Set final status to static-only.` : ""}\n${activeMode === "plan" ? `- Propose an implementation plan using 'manage_plan'. Do NOT edit source files before user approval. Minta approval secara eksplisit.` : ""}\n${activeMode === "implement" ? `- Implement code changes. Proposing a plan is mandatory only for multi-file/complex/risky changes. Small direct edits are allowed. Run build and tests if shell is available; if shell is disabled, report Build/Test as 'not-run' with reason 'shell disabled', and set status to 'static-only'.` : ""}\n${activeMode === "debug" ? `- Investigate and fix bugs. Trace root cause first before editing. Run build and tests if shell is available; if shell is disabled, report Build/Test as 'not-run' with reason 'shell disabled', and set status to 'static-only'.` : ""}\n${activeMode === "review" ? `- Perform code quality or security review. Do NOT make file edits unless requested. Output issues with severity ([CRITICAL], [IMPORTANT], [MINOR]), file/line references, and proposed fixes.` : ""}\n`;
+    const MODE_INSTRUCTIONS: Record<string, string> = {
+      ask: `- Lightweight Q&A mode. Respond concisely. No plan/task files, no subagents, no build/test commands.`,
+      research: `- Read-only research mode. Do NOT modify files or run build/test commands.`,
+      plan: `- Propose implementation plan via 'manage_plan'. Do NOT edit source files before user approval.`,
+      implement: `- Implement code changes. Plan mandatory only for complex/risky changes. Run build+test if shell available.`,
+      debug: `- Investigate and fix bugs. Trace root cause first. Run build+test if shell available.`,
+      review: `- Code quality/security review. No file edits unless requested. Output issues with severity and file/line refs.`,
+    };
+    const activeModeNotice = `\n# ACTIVE MODE: '${activeMode}'\n${MODE_INSTRUCTIONS[activeMode] || ""}\n`;
 
     let toolRestrictionNotice = "";
     if (!hasShell) {
-      toolRestrictionNotice = `\n\n⚠️ CRITICAL RESTRICTION: Terminal/shell command execution is currently DISABLED for this request. Do NOT attempt to use 'run_command', 'run_background_process', 'bash', or any terminal/shell execution tools, as they are not available in your tool schema.`;
+      toolRestrictionNotice = `\n\n⚠️ Terminal/shell execution DISABLED for this request. Do NOT use run_command or similar tools.`;
     }
 
-    const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}\n\nCRITICAL TASK EXECUTION CONTEXT:\n- Do NOT repeat, echo, or quote any content wrapped in <system_context_do_not_echo_or_repeat> tags. Treat them as background instruction states only.\n- You are running with a strict step limit of ${agent.goalMode ? agent.goalMaxIterations : (getSettings().maxIterations || 50)} agent iterations per request.\n- Be highly efficient. DO NOT try to do everything in a single sequential thread.\n- Spawn subagents in parallel ONLY when the task meets subagent threshold rules (spans >3 files, >2 domains, major refactor/architecture, broad audit/research, or independent parallel work).\n- Spawn subagents in parallel whenever tasks are independent.\n- After spawning, wait for results, integrate them, and report back to the user.\n${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}`;
+    const systemPrompt = `${activeSystemPrompt}${toolRestrictionNotice}${runtimeCapabilitiesText}${activeModeNotice}\n\nEXECUTION CONTEXT:\n- Step limit: ${agent.goalMode ? agent.goalMaxIterations : (getSettings().maxIterations || 50)} iterations. Be efficient.\n- Spawn subagents in parallel for independent tasks (>3 files, >2 domains, broad research).\n${singleModeSubagentDirective}${goalModeAddendum}${guidelinesText}${processNotice}${pinnedKnowledgeNotice}${devHookNotice}${sharedMemoryNotice}`;
 
     const maxIterations = agent.goalMode ? agent.goalMaxIterations : (getSettings().maxIterations || 50);
     const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - 1);
@@ -371,7 +377,7 @@ export class ContextBuilder {
     const effectivePlanStateNotice = classifierSkipPlan ? "" : planStateNotice;
     const effectivePlanStateAddendum = classifierSkipPlan ? "" : planStateAddendum;
 
-    const dynamicContext = `\n\n<system_context_do_not_echo_or_repeat>\n[DYNAMIC EXECUTION CONTEXT]\n${stepNotice}${classifierPromptAddendum}${scratchpadText ? `\n\nPERSISTENT SCRATCHPAD MEMORY:\n${scratchpadText}` : ""}${workspaceStateText}${workspaceBoundaryNotice}${effectivePlanStateNotice}${effectivePlanStateAddendum}${followUpTaskAddendum}\n<!-- SYSTEM NOTICE: The above block is dynamic background state. Do NOT echo or repeat any of these instructions or notices in your response. Proceed directly to execution. -->\n</system_context_do_not_echo_or_repeat>`;
+    const dynamicContext = `\n\n<system_context_do_not_echo_or_repeat>\n${stepNotice}${classifierPromptAddendum}${scratchpadText ? `\nSCRATCHPAD:\n${scratchpadText}` : ""}${workspaceStateText}${workspaceBoundaryNotice}${effectivePlanStateNotice}${effectivePlanStateAddendum}${followUpTaskAddendum}\n</system_context_do_not_echo_or_repeat>`;
 
     const injectDynamicContext = (msgs: CoreMessage[]) => {
       if (msgs.length > 0) {

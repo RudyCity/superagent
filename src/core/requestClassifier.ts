@@ -343,8 +343,8 @@ const RESEARCH_KW = splitKeywords([
   "where is", "where are", "locate", "explore",
   "show me all", "list all", "find all",
   "grep", "cari", "cek", "check if",
-  "investigate", "scan", "audit", "temukan", "telusuri",
-  "optimasi", "tingkatkan", "optimize", "review",
+  "investigate", "scan", "temukan", "telusuri",
+  "optimasi", "tingkatkan", "optimize",
 ]);
 
 /** Complex task indicator keywords — split into words + phrases */
@@ -355,6 +355,7 @@ const COMPLEX_KW = splitKeywords([
   "architecture", "system", "module", "integration",
   "buat", "bikin", "tambahkan", "tambah fitur",
   "schema", "database", "auth", "oauth", "docker", "kubernetes", "migrasi", "integrasi", "refaktor", "rancang",
+  "audit", "review",
 ]);
 
 /** Command action indicator keywords — split into words + phrases */
@@ -1009,13 +1010,14 @@ export function shouldSkipPlanInjection(category: RequestCategory): boolean {
  * Returns empty string if no addendum needed.
  */
 export function getCategoryPromptAddendum(category: RequestCategory): string {
+  // Mode-specific instructions handled by activeModeNotice in ContextBuilder.
   switch (category) {
     case "conversation":
-      return `\n\nCLASSIFICATION: Conversational message detected. Respond directly without tools. Keep response concise and natural.`;
+      return `\n\nCLASSIFICATION: conversation`;
     case "question":
-      return `\n\nCLASSIFICATION: Question detected. Use read-only tools if needed to answer. Do not modify any files.`;
+      return `\n\nCLASSIFICATION: question`;
     case "research":
-      return `\n\nCLASSIFICATION: Research/exploration request. Focus on searching and reading files to gather information. Report findings.`;
+      return `\n\nCLASSIFICATION: research`;
     default:
       return "";
   }

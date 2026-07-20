@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { recordCompactionToDb, getCompactionHistoryFromDb, clearCompactionHistoryInDb } from "../storage/historyDb.js";
 
 export interface CompactionEvent {
   id: string;
@@ -49,6 +50,22 @@ export class CompactionHistory {
       this.events = this.events.slice(-this.maxHistory);
     }
 
+    try {
+      recordCompactionToDb({
+        id: event.id,
+        timestamp: event.timestamp,
+        strategy: event.strategy,
+        messagesBefore: event.messagesBefore,
+        messagesAfter: event.messagesAfter,
+        tokensBefore: event.tokensBefore,
+        tokensAfter: event.tokensAfter,
+        summary: event.summary,
+        summaryTokens: event.summaryTokens,
+        pinnedMessages: event.pinnedMessages ? JSON.stringify(event.pinnedMessages) : undefined,
+        reason: event.reason,
+      });
+    } catch {}
+
     if (this.filePath) {
       this.save().catch((err) => {
         console.error("Failed to save compaction history:", err);
@@ -82,6 +99,9 @@ export class CompactionHistory {
 
   clear(): void {
     this.events = [];
+    try {
+      clearCompactionHistoryInDb();
+    } catch {}
     if (this.filePath) {
       this.save().catch(() => {});
     }
@@ -103,6 +123,26 @@ export class CompactionHistory {
   }
 
   private async load(): Promise<void> {
+    try {
+      const dbRecords = getCompactionHistoryFromDb(this.maxHistory);
+      if (dbRecords.length > 0) {
+        this.events = dbRecords.map((r) => ({
+          id: r.id,
+          timestamp: r.timestamp,
+          strategy: r.strategy,
+          messagesBefore: r.messagesBefore,
+          messagesAfter: r.messagesAfter,
+          tokensBefore: r.tokensBefore,
+          tokensAfter: r.tokensAfter,
+          summary: r.summary,
+          summaryTokens: r.summaryTokens,
+          pinnedMessages: r.pinnedMessages ? JSON.parse(r.pinnedMessages) : undefined,
+          reason: r.reason as any,
+        }));
+        return;
+      }
+    } catch {}
+
     if (!this.filePath) return;
 
     try {
@@ -115,3 +155,4 @@ export class CompactionHistory {
     }
   }
 }
+
