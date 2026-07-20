@@ -82,11 +82,18 @@ function abortAllAgents() {
 let sigintCount = 0;
 
 export async function runCli() {
+  // Purge empty draft sessions in background on startup
+  try {
+    const { purgeEmptySessions } = await import("./core/config.js");
+    purgeEmptySessions(24);
+  } catch {}
+
   // Start extension server silently in the background
   try {
     const { runServer } = await import("./server.js");
     runServer(7888, true).catch(() => {});
   } catch {}
+
 
   process.on("exit", () => {
     if (masterAgentRef) {

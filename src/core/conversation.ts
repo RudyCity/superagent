@@ -118,8 +118,10 @@ export class Conversation {
       } catch {}
       const sid = path.basename(filePath, ".json");
       const userMessages = this.messages.filter((m) => m.role === "user");
+      const firstUser = userMessages[0];
       const lastUser = userMessages[userMessages.length - 1];
-      const lastUserText = lastUser ? contentToString(lastUser.content) : "";
+      const firstUserText = firstUser ? contentToString(firstUser.content).trim() : "";
+      const lastUserText = lastUser ? contentToString(lastUser.content).trim() : "";
       const preview = lastUser
         ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
         : "(no user messages)";
@@ -130,9 +132,19 @@ export class Conversation {
         .replace(/^_+/, "/")
         .replace(/_/g, "/");
 
-      const displayName = lastUser && lastUserText && lastUserText.trim()
-        ? lastUserText.trim().slice(0, 60).replace(/\n/g, " ") + (lastUserText.trim().length > 60 ? "…" : "")
-        : folderPathName;
+      const formatSnippet = (text: string, maxLen = 30) => {
+        const clean = text.replace(/\n/g, " ").trim();
+        return clean.length > maxLen ? clean.slice(0, maxLen) + "…" : clean;
+      };
+
+      let displayName: string;
+      if (firstUserText && lastUserText && firstUserText !== lastUserText) {
+        displayName = `[First: ${formatSnippet(firstUserText, 30)}] → [Last: ${formatSnippet(lastUserText, 30)}]`;
+      } else if (firstUserText) {
+        displayName = formatSnippet(firstUserText, 60);
+      } else {
+        displayName = folderPathName;
+      }
 
       const serializedSuperagents = Array.from(superagentInstances.values()).map(inst => {
         const { agent, ...rest } = inst;
@@ -209,8 +221,10 @@ export class Conversation {
       } catch {}
       const sid = path.basename(filePath, ".json");
       const userMessages = this.messages.filter((m) => m.role === "user");
+      const firstUser = userMessages[0];
       const lastUser = userMessages[userMessages.length - 1];
-      const lastUserText = lastUser ? contentToString(lastUser.content) : "";
+      const firstUserText = firstUser ? contentToString(firstUser.content).trim() : "";
+      const lastUserText = lastUser ? contentToString(lastUser.content).trim() : "";
       const preview = lastUser
         ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
         : "(no user messages)";
@@ -221,9 +235,19 @@ export class Conversation {
         .replace(/^_+/, "/")
         .replace(/_/g, "/");
 
-      const displayName = lastUser && lastUserText && lastUserText.trim()
-        ? lastUserText.trim().slice(0, 60).replace(/\n/g, " ") + (lastUserText.trim().length > 60 ? "…" : "")
-        : folderPathName;
+      const formatSnippet = (text: string, maxLen = 30) => {
+        const clean = text.replace(/\n/g, " ").trim();
+        return clean.length > maxLen ? clean.slice(0, maxLen) + "…" : clean;
+      };
+
+      let displayName: string;
+      if (firstUserText && lastUserText && firstUserText !== lastUserText) {
+        displayName = `[First: ${formatSnippet(firstUserText, 30)}] → [Last: ${formatSnippet(lastUserText, 30)}]`;
+      } else if (firstUserText) {
+        displayName = formatSnippet(firstUserText, 60);
+      } else {
+        displayName = folderPathName;
+      }
 
       const serializedSuperagents = Array.from(superagentInstances.values()).map(inst => {
         const { agent, ...rest } = inst;

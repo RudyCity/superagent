@@ -14,18 +14,31 @@ if (process.argv.includes("--sync-history-only")) {
   process.exit(0);
 }
 
+if (process.argv[2] === "session") {
+  const { handleSessionCliCommand } = await import("./core/commands/sessionCliHandler.js");
+  await handleSessionCliCommand(process.argv.slice(3));
+  process.exit(0);
+}
+
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.log(`
-Usage: superagent [options] [prompt]
+Usage: superagent [command/options] [prompt]
+
+Commands:
+  session           Manage conversation sessions (list, export, clear --empty, import)
 
 Options:
-  -r, --resume      Resume the last active session
-  --multi           Start in Multi Superagent master orchestrator mode
-  -s, --server [P]  Start API server for Chrome Extension (default port: 7888)
-  -h, --help        Show this help message and exit
+  -r, --resume            Resume the last active session
+  -w, --workspace <path>  Target workspace directory path
+  --multi                 Start in Multi Superagent master orchestrator mode
+  -s, --server [P]        Start API server for Chrome Extension (default port: 7888)
+  -h, --help              Show this help message and exit
 
 Examples:
   superagent
+  superagent session list -w ./my-project
+  superagent session export sess_123 -o output.md
+  superagent session clear --empty
   superagent --resume
   superagent --multi
   superagent --server 7888
@@ -33,6 +46,8 @@ Examples:
 `);
   process.exit(0);
 }
+
+
 
 const serverIndex = process.argv.findIndex(arg => arg === "--server" || arg === "-s" || arg === "--server-only");
 if (serverIndex !== -1) {

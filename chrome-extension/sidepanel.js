@@ -19,6 +19,8 @@ let apiToken = "";
 let currentMode = "single";
 let workspaceDropdownOpen = false;
 window.isWaitingForAgentStart = false;
+window.currentSessionId = null;
+
 
 let extensionClientId = "";
 let extensionWindowId = "";
@@ -569,7 +571,9 @@ async function checkServerStatus() {
 
       // Auto reconnect view if server is running session
       if (data.sessionId && workspaceScreen.className.indexOf("active") === -1) {
+        window.currentSessionId = data.sessionId;
         activeWorkspaceText.textContent = data.workspace;
+
         activeModeText.textContent = data.mode;
         setupScreen.classList.remove("active");
         workspaceScreen.classList.add("active");
@@ -721,7 +725,9 @@ async function connectToWorkspace(workspacePath) {
     const data = await res.json();
 
     if (data.success) {
+      window.currentSessionId = data.sessionId || null;
       activeWorkspaceText.textContent = workspacePath;
+
       activeWorkspaceText.title = workspacePath;
       
       // Hide the add workspace modal
@@ -1225,18 +1231,26 @@ async function sendChatMessage() {
   }
 
   try {
+    const payload = { message: finalMessage };
+    if (window.currentSessionId) {
+      payload.sessionId = window.currentSessionId;
+    }
     const res = await fetch(`${BASE_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: finalMessage })
+      body: JSON.stringify(payload)
     });
+    const data = await res.json().catch(() => ({}));
+    if (data && data.sessionId) {
+      window.currentSessionId = data.sessionId;
+    }
     if (!res.ok) {
       window.isWaitingForAgentStart = false;
-      const data = await res.json();
-      appendMessage("system", "Error: " + data.error);
+      appendMessage("system", "Error: " + (data.error || "Failed to deliver prompt."));
       hideSpinner();
     }
   } catch (err) {
+
     window.isWaitingForAgentStart = false;
     appendMessage("system", "Error: Failed to deliver prompt.");
     hideSpinner();

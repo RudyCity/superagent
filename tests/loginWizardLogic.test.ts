@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, fetchModelsFromEndpoint, resolveTestModelAsync } from "../src/core/loginWizardLogic.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, fetchModelsFromEndpoint, resolveTestModelAsync, resolveProfileFromPicker, fetchModelsForProvider, checkEndpointCompatibility } from "../src/core/loginWizardLogic.js";
 import { getProviderOptionsList } from "../src/core/config/providers.js";
 import { fetchAndCacheModels, getCachedModelIds, getContextWindowLimit } from "../src/core/config/models.js";
 import { addProvider, clearModelConfigCache } from "../src/core/config/jsonConfig.js";
@@ -303,6 +303,71 @@ describe("loginWizardLogic", () => {
       expect(getContextWindowLimit("mistralai/mistral-small-latest")).toBe(262144);
       expect(getContextWindowLimit("codestral-latest")).toBe(256000);
       expect(getContextWindowLimit("mistral-medium-latest")).toBe(262144);
+    });
+  });
+
+  describe("resolveProfileFromPicker", () => {
+    const providers = [
+      { id: "or-main", name: "My OpenRouter", provider: "openrouter", apiKey: "sk-or-123" },
+      { id: "oai-prod", name: "OpenAI Prod", provider: "openai", apiKey: "sk-oai-456" },
+      { id: "custom-ollama", name: "Local Ollama", provider: "custom", apiKey: "", baseUrl: "http://localhost:11434/v1" },
+    ];
+
+    it("resolves numbered index choice", () => {
+      const resolved = resolveProfileFromPicker("1", "openrouter", providers as any);
+      expect(resolved?.id).toBe("or-main");
+    });
+
+    it("resolves numbered option text format", () => {
+      const resolved = resolveProfileFromPicker("1. My OpenRouter (key: sk-or-123)", "openrouter", providers as any);
+      expect(resolved?.id).toBe("or-main");
+    });
+
+    it("resolves unnumbered option text format", () => {
+      const resolved = resolveProfileFromPicker("My OpenRouter (key: sk-or-...)", "openrouter", providers as any);
+      expect(resolved?.id).toBe("or-main");
+    });
+
+    it("resolves exact profile name", () => {
+      const resolved = resolveProfileFromPicker("OpenAI Prod", "openai", providers as any);
+      expect(resolved?.id).toBe("oai-prod");
+    });
+  });
+
+  describe("checkEndpointCompatibility shape support", () => {
+    beforeEach(() => {
+      vi.stubGlobal("fetch", vi.fn());
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("supports { models: [{ name: 'models/xxx' }] } shape", async () => {
+      (globalThis.fetch as any).mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({
+          models: [{ name: "models/gemini-2.5-flash" }, { name: "models/gemini-2.5-pro" }]
+        }),
+      });
+
+      const res = await checkEndpointCompatibility("http://localhost:8080/v1", "key");
+      expect(res.ok).toBe(true);
+      expect(res.models).toEqual(["gemini-2.5-flash", "gemini-2.5-pro"]);
+    });
+
+    it("supports raw array shape", async () => {
+      (globalThis.fetch as any).mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify([
+          { id: "llama3:latest" },
+          { id: "mistral:latest" }
+        ]),
+      });
+
+      const res = await checkEndpointCompatibility("http://localhost:11434/v1", "");
+      expect(res.ok).toBe(true);
+      expect(res.models).toEqual(["llama3:latest", "mistral:latest"]);
     });
   });
 });

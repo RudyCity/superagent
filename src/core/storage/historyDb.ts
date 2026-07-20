@@ -18,6 +18,8 @@ export interface SessionRecord {
   extraData?: string;
   tags?: string;
   workspaceId?: string;
+  firstChat?: string;
+  lastChat?: string;
 }
 
 export interface MessageRecord {
@@ -266,6 +268,8 @@ function initDatabaseSchema(db: any): void {
       { name: "extra_data", type: "TEXT" },
       { name: "tags", type: "TEXT" },
       { name: "workspace_id", type: "TEXT" },
+      { name: "first_chat", type: "TEXT" },
+      { name: "last_chat", type: "TEXT" },
     ];
     for (const col of sessionCols) {
       try {
@@ -353,8 +357,8 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
 
     const upsertSessionStmt = db.prepare(`
       INSERT INTO sessions (
-        id, file_path, display_name, message_count, last_modified, preview, working_directory, plan_state, active_preset, extra_data, workspace_id, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, file_path, display_name, message_count, last_modified, preview, working_directory, plan_state, active_preset, extra_data, workspace_id, first_chat, last_chat, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         file_path = excluded.file_path,
         display_name = excluded.display_name,
@@ -366,6 +370,8 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
         active_preset = excluded.active_preset,
         extra_data = excluded.extra_data,
         workspace_id = excluded.workspace_id,
+        first_chat = excluded.first_chat,
+        last_chat = excluded.last_chat,
         updated_at = excluded.updated_at
     `);
 
@@ -382,6 +388,8 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
       session.activePreset || null,
       session.extraData || null,
       workspaceId,
+      session.firstChat || null,
+      session.lastChat || null,
       now
     );
 
@@ -436,7 +444,7 @@ export function loadSessionFromDb(sessionId: string): {
     SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
            last_modified as lastModified, preview, working_directory as workingDirectory,
            plan_state as planState, active_preset as activePreset, extra_data as extraData,
-           workspace_id as workspaceId
+           workspace_id as workspaceId, first_chat as firstChat, last_chat as lastChat
     FROM sessions WHERE id = ?
   `);
   const sessionRow = getSessionStmt.get(sessionId) as SessionRecord | undefined;
@@ -467,7 +475,8 @@ export function listSessionsFromDb(limit: number = 100): SessionRecord[] {
   const stmt = db.prepare(`
     SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
            last_modified as lastModified, preview, working_directory as workingDirectory,
-           plan_state as planState, active_preset as activePreset, workspace_id as workspaceId
+           plan_state as planState, active_preset as activePreset, workspace_id as workspaceId,
+           first_chat as firstChat, last_chat as lastChat
     FROM sessions ORDER BY last_modified DESC LIMIT ?
   `);
   return (stmt.all(limit) || []) as SessionRecord[];
@@ -488,6 +497,46 @@ export function deleteSessionFromDb(sessionId: string): void {
     throw err;
   }
 }
+
+export function purgeEmptySessionsFromDb(maxAgeMs: number = 24 * 3600 * 1000): { purgedCount: number; purgedFilePaths: string[] } {
+  const db = getHistoryDb();
+  const cutoffTime = Date.now() - maxAgeMs;
+  const stmt = db.prepare(`
+    SELECT id, file_path as filePath FROM sessions
+    WHERE message_count = 0 OR (message_count = 0 AND last_modified <= ?)
+  `);
+  const candidates = (stmt.all(cutoffTime) || []) as { id: string; filePath: string }[];
+  const purgedFilePaths: string[] = [];
+
+  if (candidates.length === 0) {
+    return { purgedCount: 0, purgedFilePaths: [] };
+  }
+
+  db.exec("BEGIN TRANSACTION;");
+  try {
+    const deleteSessionStmt = db.prepare("DELETE FROM sessions WHERE id = ?");
+    const deleteMessagesStmt = db.prepare("DELETE FROM messages WHERE session_id = ?");
+    const deletePinnedStmt = db.prepare("DELETE FROM pinned_messages WHERE session_id = ?");
+    const deleteCheckpointsStmt = db.prepare("DELETE FROM checkpoints WHERE session_id = ?");
+
+    for (const c of candidates) {
+      deleteMessagesStmt.run(c.id);
+      deletePinnedStmt.run(c.id);
+      deleteCheckpointsStmt.run(c.id);
+      deleteSessionStmt.run(c.id);
+      if (c.filePath) {
+        purgedFilePaths.push(c.filePath);
+      }
+    }
+    db.exec("COMMIT;");
+  } catch (err) {
+    db.exec("ROLLBACK;");
+    throw err;
+  }
+
+  return { purgedCount: candidates.length, purgedFilePaths };
+}
+
 
 export function recordCompactionToDb(record: CompactionRecord): void {
   const db = getHistoryDb();

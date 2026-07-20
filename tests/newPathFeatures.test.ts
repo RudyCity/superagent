@@ -6,10 +6,15 @@ import os from "os";
 
 // Import config and checkpoints functions
 import {
+  getRootConfigDir,
   getGlobalConfigDir,
   ensureGlobalConfigDir,
+} from "../src/core/config/paths.js";
+import {
   listHistorySessions,
   getWorkspaceTasksLogDir,
+  closeHistoryDb,
+  clearHistoryCache,
 } from "../src/core/config.js";
 import {
   createCheckpoint,
@@ -33,7 +38,7 @@ vi.mock("execa", () => {
   });
   mockPromise.on = vi.fn().mockImplementation((event, callback) => {
     if (event === "close") {
-      setTimeout(() => callback(0), 5000);
+      setTimeout(() => callback(0), 10000);
     }
     return mockPromise;
   });
@@ -55,8 +60,13 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
   const tempHomeDir = path.join(process.cwd(), "tests", "tmp_new_path_test");
   let originalEnv: NodeJS.ProcessEnv;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    closeHistoryDb();
+    clearHistoryCache();
     originalEnv = { ...process.env };
+    delete process.env.SUPERAGENT_HOME;
+    delete process.env.SUPERAGENT_SESSION_ID;
+    delete process.env.SUPERAGENT_CONFIG_DIR;
     vi.restoreAllMocks();
 
     // Mock os.homedir to use our temp directory inside the workspace
@@ -64,21 +74,33 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
 
     // Clean up temp dir if exists, then recreate
     if (fs.existsSync(tempHomeDir)) {
-      fs.rmSync(tempHomeDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempHomeDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch {}
     }
     fs.mkdirSync(tempHomeDir, { recursive: true });
 
     // Initialize global config directory structure
     ensureGlobalConfigDir();
+
+    try {
+      const { getHistoryDb } = await import("../src/core/storage/historyDb.js");
+      const db = getHistoryDb();
+      db.exec("DELETE FROM sessions; DELETE FROM messages; DELETE FROM checkpoints;");
+    } catch {}
   });
 
   afterEach(() => {
+    closeHistoryDb();
+    clearHistoryCache();
     // Restore environment variables
     process.env = originalEnv;
 
     // Clean up temp dir
     if (fs.existsSync(tempHomeDir)) {
-      fs.rmSync(tempHomeDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempHomeDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch {}
     }
     
     // Clear background tasks map
@@ -86,7 +108,7 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
   });
 
   describe("Checkpoint Path", () => {
-    it("should save checkpoint files under the checkpoints subdirectory of the session file's parent", async () => {
+    it("should save checkpoint files under SQLite database and list/delete them", async () => {
       // 1. Setup session file path
       const mode = "single";
       const sessionId = "session_test_checkpoint";
@@ -102,16 +124,6 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
         "IDLE"
       );
 
-      // Verify checkpoints folder location: <sessionDir>/checkpoints
-      const expectedCheckpointsDir = path.join(sessionDir, "checkpoints");
-      expect(fs.existsSync(expectedCheckpointsDir)).toBe(true);
-
-      const expectedCheckpointFile = path.join(
-        expectedCheckpointsDir,
-        `checkpoint_${checkpoint.timestamp}.json`
-      );
-      expect(fs.existsSync(expectedCheckpointFile)).toBe(true);
-
       // 3. List checkpoints
       const checkpoints = await listCheckpointsForSession(sessionFilePath);
       expect(checkpoints.length).toBe(1);
@@ -120,7 +132,8 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
 
       // 4. Delete checkpoints
       await deleteCheckpointsForSession(sessionFilePath);
-      expect(fs.existsSync(expectedCheckpointsDir)).toBe(false);
+      const remainingCheckpoints = await listCheckpointsForSession(sessionFilePath);
+      expect(remainingCheckpoints.length).toBe(0);
     });
 
     it("should restore plan/task/walkthrough files relative to the session parent directory", async () => {
@@ -153,12 +166,7 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
       await fsPromises.writeFile(walkthroughPath, "# Modified Walkthrough", "utf-8");
 
       // Restore the checkpoint
-      const checkpointsDir = path.join(sessionDir, "checkpoints");
-      const checkpointPath = path.join(
-        checkpointsDir,
-        `checkpoint_${checkpoint.timestamp}.json`
-      );
-      await restoreCheckpoint(checkpointPath, sessionFilePath);
+      await restoreCheckpoint(checkpoint.id, sessionFilePath);
 
       // Verify they are rolled back to checkpoint content
       expect(await fsPromises.readFile(planPath, "utf-8")).toBe("# Initial Plan");
@@ -169,6 +177,7 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
 
   describe("Resume History Path", () => {
     it("should separate single and multi agent histories in their respective directory paths", async () => {
+      const { saveSessionToDb } = await import("../src/core/storage/historyDb.js");
       const mockCwd = path.join(tempHomeDir, "my-project");
       fs.mkdirSync(mockCwd, { recursive: true });
       const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
@@ -178,40 +187,61 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
       const singleSessionDir = path.join(getGlobalConfigDir(), "history", "single", singleSessionId);
       fs.mkdirSync(singleSessionDir, { recursive: true });
       const singleSessionFilePath = path.join(singleSessionDir, `${singleSessionId}.json`);
-      fs.writeFileSync(
-        singleSessionFilePath,
-        JSON.stringify({ messages: [{ role: "user", content: "hello single" }] }),
-        "utf-8"
+
+      saveSessionToDb(
+        {
+          id: singleSessionId,
+          filePath: singleSessionFilePath,
+          displayName: "hello single",
+          messageCount: 1,
+          lastModified: Date.now(),
+          preview: "hello single",
+          workingDirectory: mockCwd,
+        },
+        [{ sessionId: singleSessionId, role: "user", content: "hello single", timestamp: Date.now(), sequenceOrder: 0 }]
       );
 
       const multiSessionId = `${sanitizedCwd}_67890`;
       const multiSessionDir = path.join(getGlobalConfigDir(), "history", "multi", multiSessionId);
       fs.mkdirSync(multiSessionDir, { recursive: true });
       const multiSessionFilePath = path.join(multiSessionDir, `${multiSessionId}.json`);
-      fs.writeFileSync(
-        multiSessionFilePath,
-        JSON.stringify({ messages: [{ role: "user", content: "hello multi" }] }),
-        "utf-8"
+
+      saveSessionToDb(
+        {
+          id: multiSessionId,
+          filePath: multiSessionFilePath,
+          displayName: "hello multi",
+          messageCount: 1,
+          lastModified: Date.now() + 100,
+          preview: "hello multi",
+          workingDirectory: mockCwd,
+        },
+        [{ sessionId: multiSessionId, role: "user", content: "hello multi", timestamp: Date.now(), sequenceOrder: 0 }]
       );
 
       // Check listing for single agent
-      const singleSessions = listHistorySessions(false);
+      const singleSessions = listHistorySessions(false, false, mockCwd);
       expect(singleSessions.length).toBe(1);
       expect(singleSessions[0].filePath).toBe(singleSessionFilePath);
       expect(singleSessions[0].displayName).toBe("hello single");
 
       // Check listing for multi agent
-      const multiSessions = listHistorySessions(true);
+      const multiSessions = listHistorySessions(true, false, mockCwd);
       expect(multiSessions.length).toBe(1);
       expect(multiSessions[0].filePath).toBe(multiSessionFilePath);
       expect(multiSessions[0].displayName).toBe("hello multi");
     });
 
     it("should namespace getGlobalConfigDir if SUPERAGENT_SESSION_ID is provided", () => {
+      delete process.env.SUPERAGENT_CONFIG_DIR;
+      delete process.env.SUPERAGENT_HOME;
       process.env.SUPERAGENT_SESSION_ID = "custom-session-uuid-999";
+      const root = getRootConfigDir();
       const dir = getGlobalConfigDir();
-      expect(dir).toContain(path.join(".superagent-r", "sessions", "custom-session-uuid-999"));
+      expect(dir).toBe(path.join(root, "sessions", "custom-session-uuid-999"));
     });
+
+
   });
 
   describe("Background Tasks Log Path", () => {

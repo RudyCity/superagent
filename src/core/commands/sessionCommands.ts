@@ -509,10 +509,78 @@ try {
   }).catch(() => {});
 } catch {}
 
+export const sessionSlashCommand: SlashCommand = {
+  name: "session",
+  aliases: ["sess"],
+  description: "Manage session history: list, export <id>, clear --empty",
+  async execute(args, ctx) {
+    const now = Date.now();
+    const parts = (args || "").trim().split(/\s+/).filter(Boolean);
+    const action = parts[0]?.toLowerCase() || "list";
+
+    if (action === "list" || action === "ls") {
+      const isAll = parts.includes("--all") || parts.includes("-a");
+      const isMulti = ctx.agent?.isMultiAgent || false;
+      const sessions = listHistorySessions(isMulti, isAll, undefined, 20);
+
+      if (sessions.length === 0) {
+        ctx.addLine({ type: "system", content: "No conversation sessions found.", timestamp: now });
+        return;
+      }
+
+      const lines = [`📋 Active & Past Sessions (${isAll ? "All Workspaces" : "Current Workspace"}):`, ""];
+      for (const s of sessions) {
+        lines.push(`  ID: ${s.id}`);
+        lines.push(`  Name: ${s.displayName || "(unnamed)"} | Msgs: ${s.messageCount} | Last Modified: ${s.lastModified.toLocaleString()}`);
+        lines.push("");
+      }
+      ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });
+      return;
+    }
+
+    if (action === "export") {
+      const sessionId = parts[1];
+      if (!sessionId) {
+        ctx.addLine({ type: "error", content: "Usage: /session export <sessionId> [markdown|json]", timestamp: now });
+        return;
+      }
+      const format = parts[2]?.toLowerCase() === "json" ? "json" : "markdown";
+      const { exportSession } = await import("../config/history.js");
+      const exported = exportSession(sessionId, format);
+      if (!exported) {
+        ctx.addLine({ type: "error", content: `Session "${sessionId}" not found.`, timestamp: now });
+      } else {
+        ctx.addLine({ type: "system", content: `Session "${sessionId}" Export:\n\n${exported}`, timestamp: now });
+      }
+      return;
+    }
+
+    if (action === "clear" || action === "purge") {
+      const { purgeEmptySessions } = await import("../config/history.js");
+      const res = purgeEmptySessions(0);
+      ctx.addLine({ type: "system", content: `✓ Cleaned up ${res.purgedCount} empty draft sessions.`, timestamp: now });
+      return;
+    }
+
+    ctx.addLine({
+      type: "system",
+      content: [
+        "Usage:",
+        "  /session list [--all]         - List active and past sessions",
+        "  /session export <id> [format] - Export session to Markdown or JSON",
+        "  /session clear --empty        - Purge empty draft sessions (0 messages)",
+      ].join("\n"),
+      timestamp: now,
+    });
+  }
+};
+
 // Register session commands
 registry.register(resumeCommand);
 registry.register(searchHistoryCommand);
 registry.register(checkpointCommand);
 registry.register(knowledgeCommand);
 registry.register(historyCommand);
+registry.register(sessionSlashCommand);
+
 

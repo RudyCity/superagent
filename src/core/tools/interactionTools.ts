@@ -292,6 +292,7 @@ export const scheduleTool: Tool = {
           notifyScheduleTriggered(jobId, prompt);
           scheduledJobs.delete(jobId);
         }, ms);
+        if (typeof job.timer?.unref === "function") job.timer.unref();
         scheduledJobs.set(jobId, job);
         return `One-shot timer scheduled with ID: ${jobId} (triggers in ${durationSeconds} seconds)`;
       }
@@ -312,6 +313,7 @@ export const scheduleTool: Tool = {
         console.log(`\n[Recurring Schedule Triggered (ID: ${jobId})]: ${prompt}`);
         notifyScheduleTriggered(jobId, prompt);
       }, ms);
+      if (typeof job.interval?.unref === "function") job.interval.unref();
       scheduledJobs.set(jobId, job);
       return `Recurring schedule configured with ID: ${jobId} (triggers every ${cronExpression})`;
     }

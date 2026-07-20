@@ -6,5 +6,6 @@ export * from "./config/providers.js";
 export * from "./config/presets.js";
 export * from "./config/models.js";
 export * from "./config/jsonConfig.js";
-export { closeHistoryDb, clearInputHistoryInDb, deleteWorkspaceDataFromDb, saveWorkspaceToDb, getWorkspacesFromDb, getWorkspaceFromDb, deleteWorkspaceFromDb } from "./storage/historyDb.js";
+export { closeHistoryDb, clearInputHistoryInDb, deleteWorkspaceDataFromDb, saveWorkspaceToDb, getWorkspacesFromDb, getWorkspaceFromDb, deleteWorkspaceFromDb, deleteSessionFromDb, saveSessionToDb, loadSessionFromDb, listSessionsFromDb, purgeEmptySessionsFromDb } from "./storage/historyDb.js";
+
 

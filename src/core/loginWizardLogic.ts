@@ -34,6 +34,15 @@ export function buildProviderOptions(providers: ConfiguredProvider[]): string[] 
 
 export function getFallbackModels(providerType: ProviderType): string[] {
   switch (providerType) {
+    case "openrouter":
+      return [
+        "google/gemini-2.5-flash",
+        "meta-llama/llama-3.3-70b-instruct",
+        "deepseek/deepseek-chat",
+        "anthropic/claude-3.5-sonnet",
+        "openai/gpt-4o",
+        "openai/gpt-4o-mini",
+      ];
     case "anthropic":
     case "custom-anthropic":
       return [
@@ -71,8 +80,141 @@ export function getModelOptions(providerType: string, cachedModels: string[]): s
   } else if (providerType === "gemini") {
     const filtered = models.filter((m) => m.startsWith("gemini-"));
     models = filtered.length > 0 ? filtered : fallback;
+  } else if (providerType === "openrouter") {
+    const popular = [
+      "google/gemini-2.5-flash",
+      "meta-llama/llama-3.3-70b-instruct",
+      "deepseek/deepseek-chat",
+      "anthropic/claude-3.5-sonnet",
+      "openai/gpt-4o",
+      "openai/gpt-4o-mini",
+    ];
+    const top = popular.filter((p) => models.includes(p));
+    const rest = models.filter((m) => !popular.includes(m));
+    models = [...top, ...rest];
+  } else if (providerType === "custom") {
+    const filtered = models.filter((m) => !m.includes("/") || m.startsWith("custom/"));
+    models = filtered.length > 0 ? filtered : fallback;
   }
   return models.slice(0, 15);
+}
+
+export function resolveProfileFromPicker(
+  value: string,
+  providerType: string,
+  providers: ConfiguredProvider[]
+): ConfiguredProvider | undefined {
+  const matching = providers.filter((p) => {
+    const typeLower = (p.provider || p.type || "").toLowerCase();
+    if (providerType === "anthropic") {
+      return typeLower === "anthropic" && !p.baseUrl;
+    }
+    if (providerType === "custom-anthropic") {
+      return typeLower === "anthropic" && !!p.baseUrl;
+    }
+    return typeLower === providerType.toLowerCase();
+  });
+
+  const trimmed = value.trim();
+  const numMatch = trimmed.match(/^(\d+)$/);
+  if (numMatch) {
+    const idx = parseInt(numMatch[1], 10) - 1;
+    if (idx >= 0 && idx < matching.length) {
+      return matching[idx];
+    }
+    if (idx >= 0 && idx < providers.length) {
+      return providers[idx];
+    }
+  }
+
+  const cleanVal = trimmed.replace(/^\d+\.\s*/, "").trim();
+  const profileName = cleanVal.split(" (key:")[0].trim().toLowerCase();
+
+  let found = matching.find(
+    (p) => p.name.toLowerCase() === profileName || p.id.toLowerCase() === profileName
+  );
+  if (!found) {
+    found = providers.find(
+      (p) => p.name.toLowerCase() === profileName || p.id.toLowerCase() === profileName
+    );
+  }
+  if (!found && matching.length > 0) {
+    found = matching.find(
+      (p) =>
+        p.name.toLowerCase().includes(profileName) ||
+        profileName.includes(p.name.toLowerCase())
+    );
+  }
+
+  return found;
+}
+
+export async function fetchModelsForProvider(
+  providerType: string,
+  apiKey: string,
+  baseUrl: string
+): Promise<string[]> {
+  let url = "";
+  const headers: Record<string, string> = {
+    "HTTP-Referer": "https://github.com/RudyCity/superagent",
+    "X-Title": "SuperAgent CLI",
+  };
+  const cleanUrl = baseUrl ? (ensureProtocol(baseUrl) as string) : "";
+  const cleanBase = cleanUrl.replace(/\/(chat\/completions|models)\/?$/i, "").replace(/\/+$/, "");
+
+  if (providerType === "openrouter") {
+    url = "https://openrouter.ai/api/v1/models";
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  } else if (providerType === "openai") {
+    url = cleanBase ? `${cleanBase}/models` : "https://api.openai.com/v1/models";
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  } else if (providerType === "gemini") {
+    if (!apiKey) return [];
+    url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+  } else if (cleanBase) {
+    url = `${cleanBase}/models`;
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+
+  if (!url) return [];
+
+  try {
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return [];
+    const json = (await res.json()) as any;
+    const isDataArray = Array.isArray(json?.data);
+    const dataArr = isDataArray
+      ? json.data
+      : Array.isArray(json?.models)
+      ? json.models
+      : Array.isArray(json)
+      ? json
+      : null;
+
+    if (dataArr) {
+      const seen = new Set<string>();
+      return dataArr
+        .map((m: any) => {
+          if (typeof m === "string") return m;
+          if (isDataArray) {
+            return typeof m?.id === "string" ? m.id : null;
+          }
+          const rawId = m?.id || (typeof m?.name === "string" ? m.name.replace(/^models\//, "") : null) || m?.model;
+          return typeof rawId === "string" ? rawId : null;
+        })
+        .filter((id: any): id is string => {
+          if (typeof id !== "string") return false;
+          const trimmed = id.trim();
+          if (trimmed.length === 0 || trimmed.length > 256) return false;
+          if (seen.has(trimmed)) return false;
+          seen.add(trimmed);
+          return true;
+        });
+    }
+  } catch {
+    // Return empty on failure
+  }
+  return [];
 }
 
 export function resolveTestModel(providerType: string, baseUrl: string): string {
@@ -107,8 +249,17 @@ function formatInvalidJsonDiagnostic(rawText: string): string {
     return "endpoint returned empty response body";
   }
 
+  if (
+    trimmed.includes("Vercel Security Checkpoint") ||
+    trimmed.includes("verifying your browser") ||
+    trimmed.includes("Just a moment...") ||
+    trimmed.includes("Cloudflare")
+  ) {
+    return "endpoint blocked by Vercel/Cloudflare Security Checkpoint (WAF Bot Protection)";
+  }
+
   const oneLine = trimmed.replace(/\s+/g, " ").slice(0, 160);
-  if (trimmed.startsWith("<")) {
+  if (trimmed.startsWith("<") || trimmed.includes("<!DOCTYPE")) {
     return `endpoint returned HTML instead of JSON: ${oneLine}`;
   }
   if (trimmed.startsWith("data:")) {
@@ -220,13 +371,14 @@ export async function checkEndpointCompatibility(
 ): Promise<EndpointCompatibilityResult> {
   try {
     baseUrl = ensureProtocol(baseUrl) as string;
-    const url = `${baseUrl.replace(/\/+$/, "")}/models`;
+    const cleanBase = baseUrl.replace(/\/(chat\/completions|models)\/?$/i, "").replace(/\/+$/, "");
+    const url = `${cleanBase}/models`;
     const headers: Record<string, string> = {};
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
     const res = await fetch(url, {
       headers,
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(4000),
     });
 
     if (!res.ok) {
@@ -239,10 +391,26 @@ export async function checkEndpointCompatibility(
     const rawText = await safeReadResponseText(res);
     try {
       const json = JSON.parse(rawText) as any;
-      if (json && Array.isArray(json.data)) {
+      const isDataArray = Array.isArray(json?.data);
+      const dataArr = isDataArray
+        ? json.data
+        : Array.isArray(json?.models)
+        ? json.models
+        : Array.isArray(json)
+        ? json
+        : null;
+
+      if (dataArr) {
         const seen = new Set<string>();
-        const models = json.data
-          .map((m: any) => m?.id)
+        const models = dataArr
+          .map((m: any) => {
+            if (typeof m === "string") return m;
+            if (isDataArray) {
+              return typeof m?.id === "string" ? m.id : null;
+            }
+            const rawId = m?.id || (typeof m?.name === "string" ? m.name.replace(/^models\//, "") : null) || m?.model;
+            return typeof rawId === "string" ? rawId : null;
+          })
           .filter((id: any): id is string => {
             if (typeof id !== "string") return false;
             const trimmed = id.trim();
@@ -251,12 +419,14 @@ export async function checkEndpointCompatibility(
             seen.add(trimmed);
             return true;
           });
-        return { ok: true, models };
+        if (models.length > 0) {
+          return { ok: true, models };
+        }
       }
       return {
         ok: false,
         models: [],
-        message: "endpoint /models response missing expected JSON shape: { data: [{ id: string }] }",
+        message: "endpoint /models response missing expected JSON shape with model array",
       };
     } catch {
       return {

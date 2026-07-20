@@ -12,6 +12,7 @@ import {
 } from "../../core/config.js";
 import { getDefaultModel } from "../../core/slash-commands.js";
 import type { PresetMode } from "../../core/config.js";
+import { resolveProfileFromPicker, fetchModelsForProvider, getFallbackModels } from "../../core/loginWizardLogic.js";
 
 interface ModelWizardContext {
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
@@ -499,16 +500,10 @@ export async function handlePresetStep(
       return true;
     }
 
-    const profileName = value.split(" (key:")[0].trim();
-    const list = getProviders();
-    const found = list.find(p => p.name.toLowerCase() === profileName.toLowerCase());
-    
-    let resolvedApiKey = "";
-    let resolvedBaseUrl = "";
-    if (found) {
-      resolvedBaseUrl = found.baseUrl || "";
-      resolvedApiKey = found.apiKey || "";
-    }
+    const found = resolveProfileFromPicker(value, providerType, getProviders());
+    const profileName = found ? found.name : value.replace(/^\d+\.\s*/, "").split(" (key:")[0].trim();
+    const resolvedApiKey = found?.apiKey || "";
+    const resolvedBaseUrl = found?.baseUrl || "";
 
     const nextStep = step === 25 ? 24 : 34;
     setActiveWizard({
@@ -517,132 +512,24 @@ export async function handlePresetStep(
       data: { ...data, provider: profileName },
     });
 
-    let initialModels: string[] = [];
-    if (providerType === "openrouter") {
-      initialModels = [
-        "google/gemini-2.5-flash",
-        "meta-llama/llama-3.3-70b-instruct",
-        "deepseek/deepseek-chat",
-        "anthropic/claude-3.5-sonnet",
-      ];
-      setWizardIsLoadingModels(true);
-      const headers: Record<string, string> = {};
-      if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-      fetch("https://openrouter.ai/api/v1/models", { headers })
-        .then(async (res) => {
-          if (res.ok) {
-            const data = await res.json() as any;
-            if (data && Array.isArray(data.data)) {
-              const modelsList = data.data.map((m: any) => m.id);
-              const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
-              setWizardOptions(opts);
-              setWizardAllOptions?.(opts);
-            }
-          }
-        })
-        .catch(() => {})
-        .finally(() => setWizardIsLoadingModels(false));
-    } else if (providerType === "openai") {
-      initialModels = [
-        "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o1-preview", "o3-mini",
-      ];
-      if (resolvedApiKey) {
-        setWizardIsLoadingModels(true);
-        fetch("https://api.openai.com/v1/models", {
-          headers: { Authorization: `Bearer ${resolvedApiKey}` }
-        })
-          .then(async (res) => {
-            if (res.ok) {
-              const data = await res.json() as any;
-              if (data && Array.isArray(data.data)) {
-                const modelsList = data.data.map((m: any) => m.id);
-                const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
-                setWizardOptions(opts);
-                setWizardAllOptions?.(opts);
-              }
-            }
-          })
-          .catch(() => {})
-          .finally(() => setWizardIsLoadingModels(false));
-      }
-    } else if (providerType === "gemini") {
-      initialModels = [
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
-      ];
-      if (resolvedApiKey) {
-        setWizardIsLoadingModels(true);
-        fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${resolvedApiKey}`)
-          .then(async (res) => {
-            if (res.ok) {
-              const data = await res.json() as any;
-              if (data && Array.isArray(data.models)) {
-                const modelsList = data.models.map((m: any) => m.name.replace(/^models\//, ""));
-                const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
-                setWizardOptions(opts);
-                setWizardAllOptions?.(opts);
-              }
-            }
-          })
-          .catch(() => {})
-          .finally(() => setWizardIsLoadingModels(false));
-      }
-    } else if (providerType === "custom-anthropic") {
-      initialModels = [
-        "claude-3-5-sonnet-20241022",
-        "claude-3-5-haiku-20241022",
-        "claude-3-opus-20240229",
-      ];
-      if (resolvedBaseUrl) {
-        setWizardIsLoadingModels(true);
-        const headers: Record<string, string> = {};
-        if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-        fetch(cleanFetchUrl(resolvedBaseUrl), { headers })
-          .then(async (res) => {
-            if (res.ok) {
-              const data = await res.json() as any;
-              if (data && Array.isArray(data.data)) {
-                const modelsList = data.data.map((m: any) => m.id);
-                const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
-                setWizardOptions(opts);
-                setWizardAllOptions?.(opts);
-              }
-            }
-          })
-          .catch(() => {})
-          .finally(() => setWizardIsLoadingModels(false));
-      }
-    } else if (providerType === "custom") {
-      initialModels = [
-        "deepseek-chat", "llama-3.3-70b-instruct",
-      ];
-      if (resolvedBaseUrl) {
-        setWizardIsLoadingModels(true);
-        const headers: Record<string, string> = {};
-        if (resolvedApiKey) headers["Authorization"] = `Bearer ${resolvedApiKey}`;
-        fetch(cleanFetchUrl(resolvedBaseUrl), { headers })
-          .then(async (res) => {
-            if (res.ok) {
-              const data = await res.json() as any;
-              if (data && Array.isArray(data.data)) {
-                const modelsList = data.data.map((m: any) => m.id);
-                const opts = [...modelsList, "+ Custom Model (Input manually)", "< Back"];
-                setWizardOptions(opts);
-                setWizardAllOptions?.(opts);
-              }
-            }
-          })
-          .catch(() => {})
-          .finally(() => setWizardIsLoadingModels(false));
-      }
-    }
-
-    const initialOpts = [...initialModels, "+ Custom Model (Input manually)", "< Back"];
+    const fallbackModels = getFallbackModels(providerType as any);
+    const initialOpts = [...fallbackModels, "+ Custom Model (Input manually)", "< Back"];
     setWizardOptions(initialOpts);
+    setWizardAllOptions?.(initialOpts);
+    setWizardSelectedIndex(0);
+    setInput("");
+
+    setWizardIsLoadingModels(true);
+    fetchModelsForProvider(providerType, resolvedApiKey, resolvedBaseUrl)
+      .then((fetched) => {
+        if (fetched.length > 0) {
+          const opts = [...fetched, "+ Custom Model (Input manually)", "< Back"];
+          setWizardOptions(opts);
+          setWizardAllOptions?.(opts);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setWizardIsLoadingModels(false));
     setWizardAllOptions?.(initialOpts);
     setWizardSelectedIndex(0);
     setInput("");

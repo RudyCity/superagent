@@ -1,9 +1,10 @@
 import path from "path";
 import fs from "fs";
-import { ensureGlobalConfigDir, getGlobalConfigDir } from "../config.js";
+import { ensureGlobalConfigDir, getGlobalConfigDir, generateSessionId } from "../config.js";
 import { normalizeAndCheckSubpath } from "../permissions.js";
 import { getTaskHistoryPath } from "../taskChecklist.js";
 import type { Agent } from "../agent.js";
+
 
 export class PathResolver {
   public static getPlanFilePath(agent: Agent): string {
@@ -118,10 +119,10 @@ export class PathResolver {
       } catch {}
     }
 
-    const timestamp = Date.now();
-    const sessionId = `${sanitizedPath}_${timestamp}`;
+    const sessionId = generateSessionId();
     const sessionDir = path.join(historyDir, sessionId);
     return path.join(sessionDir, `${sessionId}.json`);
+
   }
 
   public static getCurrentHistoryFilePath(agent: Agent): string {

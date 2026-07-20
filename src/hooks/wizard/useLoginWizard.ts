@@ -19,7 +19,7 @@ import { getDefaultModel } from "../../core/slash-commands.js";
 import { allTools } from "../../core/tools.js";
 import type { Agent } from "../../core/agent.js";
 import type { ChatLine } from "../../core/slash-commands.js";
-import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage } from "../../core/loginWizardLogic.js";
+import { resolveProviderType, buildProviderOptions, getModelOptions, resolveTestModel, resolveTestModelAsync, fetchModelsFromEndpoint, checkEndpointCompatibility, testCustomProviderMessage, fetchModelsForProvider, getFallbackModels } from "../../core/loginWizardLogic.js";
 
 interface LoginWizardContext {
   setActiveWizard: React.Dispatch<React.SetStateAction<any>>;
@@ -598,13 +598,23 @@ Generate ONLY a raw markdown document that maps precisely to this structure:
       }
 
       // Load model options and proceed to step 8
-      try {
-        await fetchAndCacheModels();
-      } catch {}
+      let directFetched: string[] = [];
+      if (fetchedModelsList.length === 0) {
+        directFetched = await fetchModelsForProvider(pType, pApiKey, pBaseUrl);
+      }
 
       let models: string[];
-      if ((pType === "custom" || pType === "custom-anthropic") && testPassed && fetchedModelsList.length > 0) {
+      if (fetchedModelsList.length > 0) {
         models = fetchedModelsList;
+      } else if (directFetched.length > 0) {
+        models = directFetched;
+      } else if (pType === "custom" || pType === "custom-anthropic" || pBaseUrl) {
+        addLine({
+          type: "system",
+          content: `⚠️ Could not fetch model list from ${pName} endpoint (${pBaseUrl || "custom"}). Please enter your model ID manually below.`,
+          timestamp: Date.now(),
+        });
+        models = getFallbackModels("custom");
       } else {
         models = getModelOptions(pType, getCachedModelIds());
       }

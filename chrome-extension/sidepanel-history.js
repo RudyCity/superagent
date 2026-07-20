@@ -299,6 +299,11 @@ async function switchChatSession(sessionId) {
     });
     const data = await res.json().catch(() => null);
     if (res.ok && data && data.success) {
+      if (data.sessionId) {
+        window.currentSessionId = data.sessionId;
+      } else {
+        window.currentSessionId = sessionId;
+      }
       await checkServerStatus();
       await loadChatHistory();
     } else {
@@ -335,12 +340,14 @@ async function startNewChatSession() {
     });
     const data = await res.json().catch(() => null);
     if (res.ok && data && data.success) {
+      window.currentSessionId = data.sessionId || null;
       await checkServerStatus();
       clearChatMessages();
       appendMessage("system", "New chat session started.");
     } else {
       alert("Failed to start new chat");
     }
+
   } catch (err) {
     console.error("Error starting new chat:", err);
     alert("Error connecting to server: " + err.message);

@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
-import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb } from "./core/config.js";
+import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
@@ -40,10 +40,18 @@ export const killVisionServerProcess = () => {
   }
 };
 
-function resolveSession(req: http.IncomingMessage): AgentSession | null {
+function resolveSession(req: http.IncomingMessage, requestedSessionId?: string): AgentSession | null {
   const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
   let wsPath = req.headers["x-workspace-path"] as string || parsedUrl.searchParams.get("workspace");
-  
+  const querySessionId = parsedUrl.searchParams.get("sessionId");
+  const targetSessionId = requestedSessionId || querySessionId;
+
+  if (targetSessionId) {
+    for (const session of activeSessions.values()) {
+      if (session.sessionId === targetSessionId) return session;
+    }
+  }
+
   if (wsPath) {
     wsPath = path.resolve(wsPath);
     const session = activeSessions.get(wsPath);
@@ -82,11 +90,12 @@ export function registerCliAgent(agent: Agent, workspace: string, mode: "single"
     agent,
     workspace: targetWorkspace,
     mode,
-    sessionId: Date.now().toString(),
+    sessionId: generateSessionId(),
     isCliSession: true
   });
   lastActiveWorkspace = targetWorkspace;
 }
+
 
 interface BrowserInstance {
   res: http.ServerResponse;
@@ -311,7 +320,12 @@ const onQuestion = (question: any, options?: string[], isMultiSelect?: boolean) 
 export async function runServer(port: number, silent = false) {
   registerQuestionHandler(onQuestion);
 
+  try {
+    purgeEmptySessions(24);
+  } catch {}
+
   // Start the Python Vision Server in the background
+
   try {
     const { execa } = await import("execa");
     const scriptPath = path.join(process.cwd(), "scripts", "vision_server.py");
@@ -449,11 +463,73 @@ export async function runServer(port: number, silent = false) {
         return;
       }
 
+      // Delete a history session by ID
+      if (pathname.startsWith("/api/history/session/") && req.method === "DELETE") {
+        const sessionId = decodeURIComponent(pathname.replace("/api/history/session/", ""));
+        if (!sessionId) {
+          sendJSON(res, 400, { error: "Missing session ID" });
+          return;
+        }
+        try {
+          const { deleteSessionFromDb } = await import("./core/config.js");
+          deleteSessionFromDb(sessionId);
+          sendJSON(res, 200, { success: true });
+        } catch (err: any) {
+          sendJSON(res, 500, { error: err.message });
+        }
+        return;
+      }
+
+      // Get input history for a workspace
+      if (pathname === "/api/input-history" && req.method === "GET") {
+        const workspacePath = resolveWorkspacePath(req);
+        if (!workspacePath) {
+          sendJSON(res, 200, { success: true, history: [] });
+          return;
+        }
+        try {
+          const { getWorkspaceId } = await import("./core/config/paths.js");
+          const { getInputHistoryFromDb } = await import("./core/storage/historyDb.js");
+          const wsId = getWorkspaceId(workspacePath);
+          const history = getInputHistoryFromDb(wsId, 200);
+          sendJSON(res, 200, { success: true, history });
+        } catch (err: any) {
+          sendJSON(res, 200, { success: true, history: [] });
+        }
+        return;
+      }
+
+      // Save input history for a workspace
+      if (pathname === "/api/input-history" && req.method === "POST") {
+        const workspacePath = resolveWorkspacePath(req);
+        if (!workspacePath) {
+          sendJSON(res, 400, { error: "No workspace path" });
+          return;
+        }
+        try {
+          const bodyStr = await readBody(req);
+          const body = JSON.parse(bodyStr || "{}");
+          const { command } = body;
+          if (!command || typeof command !== "string" || !command.trim()) {
+            sendJSON(res, 400, { error: "Missing or empty 'command' field" });
+            return;
+          }
+          const { getWorkspaceId } = await import("./core/config/paths.js");
+          const { saveInputHistoryToDb } = await import("./core/storage/historyDb.js");
+          const wsId = getWorkspaceId(workspacePath);
+          saveInputHistoryToDb(wsId, command.trim());
+          sendJSON(res, 200, { success: true });
+        } catch (err: any) {
+          sendJSON(res, 500, { error: err.message });
+        }
+        return;
+      }
+
       // Initialize session
       if (pathname === "/api/init" && req.method === "POST") {
         const bodyStr = await readBody(req);
         const body = JSON.parse(bodyStr || "{}");
-        const { mode, workspace, resume, initialPrompt } = body;
+        const { mode, workspace, resume, initialPrompt, sessionId: customSessionId } = body;
 
         const targetWorkspace = workspace ? path.resolve(workspace) : process.cwd();
         
@@ -467,7 +543,7 @@ export async function runServer(port: number, silent = false) {
         }
 
         const targetMode = mode === "multi" ? "multi" : "single";
-        const sessionId = Date.now().toString();
+        const sessionId = customSessionId || generateSessionId();
 
         let customSystemPrompt: string | undefined = undefined;
         let customTools: any[] | undefined = undefined;
@@ -534,17 +610,18 @@ export async function runServer(port: number, silent = false) {
 
       // Send chat message
       if (pathname === "/api/chat" && req.method === "POST") {
-        const session = resolveSession(req);
+        const bodyStr = await readBody(req);
+        const body = JSON.parse(bodyStr || "{}");
+        const { message, sessionId: reqSessionId } = body;
+
+        const session = resolveSession(req, reqSessionId);
         if (!session) {
           sendJSON(res, 400, { error: "Session not initialized" });
           return;
         }
-        const bodyStr = await readBody(req);
-        const body = JSON.parse(bodyStr || "{}");
-        const { message } = body;
 
         if (!message) {
-          sendJSON(res, 400, { error: "Empty message" });
+          sendJSON(res, 400, { error: "Empty message", sessionId: session.sessionId });
           return;
         }
 
@@ -552,7 +629,7 @@ export async function runServer(port: number, silent = false) {
         if (typeof message === "string" && message.startsWith("!")) {
           const command = message.slice(1).trim();
           if (!command) {
-            sendJSON(res, 400, { error: "Empty terminal command" });
+            sendJSON(res, 400, { error: "Empty terminal command", sessionId: session.sessionId });
             return;
           }
 
@@ -614,7 +691,7 @@ export async function runServer(port: number, silent = false) {
             }
           })();
 
-          sendJSON(res, 200, { success: true });
+          sendJSON(res, 200, { success: true, sessionId: session.sessionId });
           return;
         }
 
@@ -624,9 +701,10 @@ export async function runServer(port: number, silent = false) {
           broadcastEvent({ type: "error", message: err.message || String(err) });
         });
 
-        sendJSON(res, 200, { success: true });
+        sendJSON(res, 200, { success: true, sessionId: session.sessionId });
         return;
       }
+
 
       // Handle Permission Approval
       if (pathname === "/api/approve" && req.method === "POST") {
