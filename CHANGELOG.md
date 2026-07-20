@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.492] - 2026-07-20
+
+### Added
+- **History Command Help & Autocomplete Suggestions**:
+  - Registered `/history` command description and usage under `/help` listing in `coreCommands.ts`.
+  - Registered `/history` built-in description and subcommand autocompletes (`/history export`, `/history backup`, `/history migrate`) in `dashboardSuggestions.ts`.
+
 ## [1.2.491] - 2026-07-20
 
 ### Added

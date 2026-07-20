@@ -27,6 +27,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/workspace": "Manage project workspaces (list, add, use)",
   "/w": "Manage project workspaces (list, add, use)",
   "/search-history": "Search through previous session histories",
+  "/history": "Manage SQLite history database — export, backup, or migrate sessions",
   "/compact": "Summarize conversation to free up context window",
   "/init": "Run project system audit and setup",
   "/terminal": "Spawn a visible terminal window or run presets",
@@ -131,6 +132,11 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
 
     if (mainCommand === "/checkpoint") {
       const possibilities = ["/checkpoint list", "/checkpoint restore", "/checkpoint delete"];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/history") {
+      const possibilities = ["/history export", "/history backup", "/history migrate"];
       return filterSuggestions(possibilities, query);
     }
     

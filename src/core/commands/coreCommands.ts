@@ -141,6 +141,8 @@ export const helpCommand: SlashCommand = {
         "              Note: Use /pin list-messages to see correct indexes",
         "  /checkpoint - Manage checkpoints to save/restore conversation state",
         "                Usage: /checkpoint [list|restore <id>|<name>]",
+        "  /history    - Manage SQLite database (export, backup, migrate)",
+        "                Usage: /history [export <id>|backup [path]|migrate]",
         "  /goal     - Activate Goal Mode for long-running overnight tasks",
         "              Usage: /goal <description>  (e.g. /goal implement JWT auth end-to-end)",
         "  /init     - Initialize project (Git setup, agents.md generation, system audit)",
