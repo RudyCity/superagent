@@ -68,6 +68,9 @@ export class PathResolver {
           }
         }
       }
+      if (!val.includes("/") && !val.includes("\\")) {
+        return possibleFile;
+      }
     }
 
     if (autoResume) {
