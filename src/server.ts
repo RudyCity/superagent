@@ -612,13 +612,18 @@ export async function runServer(port: number, silent = false) {
         addTrustedDirectory(targetWorkspace);
         await ensureDirectoryTrusted(targetWorkspace);
 
+        const targetMode = mode === "multi" ? "multi" : "single";
+        const sessionId = customSessionId || resume || generateSessionId();
+
         const existingSession = activeSessions.get(targetWorkspace);
+        if (existingSession && existingSession.sessionId === sessionId && existingSession.mode === targetMode) {
+          sendJSON(res, 200, { success: true, sessionId: existingSession.sessionId });
+          return;
+        }
+
         if (existingSession && existingSession.agent.isAgentRunning()) {
           existingSession.agent.abort();
         }
-
-        const targetMode = mode === "multi" ? "multi" : "single";
-        const sessionId = customSessionId || generateSessionId();
 
         let customSystemPrompt: string | undefined = undefined;
         let customTools: any[] | undefined = undefined;
