@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
-import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories } from "./core/config.js";
+import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
@@ -328,6 +328,9 @@ export async function runServer(port: number, silent = false) {
 
     const cleanup = () => {
       killVisionServerProcess();
+      try {
+        closeHistoryDb();
+      } catch {}
     };
     process.on("exit", cleanup);
     process.on("SIGINT", () => { cleanup(); process.exit(0); });

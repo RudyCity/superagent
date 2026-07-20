@@ -3,7 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { getRootConfigDir } from "./config/paths.js";
+import { getRootConfigDir, getWorkspaceId } from "./config/paths.js";
 
 const execAsync = promisify(exec);
 
@@ -175,7 +175,7 @@ export async function getWorkspaceFingerprint(dir: string): Promise<{
  */
 export function getWorkspaceCachePath(dir: string): string {
   const root = getRootConfigDir();
-  const dirHash = crypto.createHash("md5").update(path.resolve(dir)).digest("hex");
+  const dirHash = getWorkspaceId(dir);
   const cacheDir = path.join(root, "workspace-caches");
   if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });

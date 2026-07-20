@@ -98,6 +98,7 @@ function initDatabaseSchema(db: any): void {
     db.exec("PRAGMA synchronous = NORMAL;");
     db.exec("PRAGMA foreign_keys = ON;");
     db.exec("PRAGMA auto_vacuum = INCREMENTAL;");
+    db.exec("PRAGMA busy_timeout = 5000;");
   } catch {}
 
   db.exec(`
@@ -240,6 +241,38 @@ function initDatabaseSchema(db: any): void {
       PRIMARY KEY (workspace_id, task_id)
     );
   `);
+
+  // Schema migrations for missing columns in existing databases
+  try {
+    const sessionCols = [
+      { name: "working_directory", type: "TEXT" },
+      { name: "plan_state", type: "TEXT" },
+      { name: "active_preset", type: "TEXT" },
+      { name: "extra_data", type: "TEXT" },
+      { name: "tags", type: "TEXT" },
+    ];
+    for (const col of sessionCols) {
+      try {
+        db.exec(`ALTER TABLE sessions ADD COLUMN ${col.name} ${col.type};`);
+      } catch {}
+    }
+  } catch {}
+
+  try {
+    const checkpointCols = [
+      { name: "plan_state", type: "TEXT NOT NULL DEFAULT 'IDLE'" },
+      { name: "plan_file_content", type: "TEXT" },
+      { name: "task_file_content", type: "TEXT" },
+      { name: "task_history_file_content", type: "TEXT" },
+      { name: "walkthrough_file_content", type: "TEXT" },
+      { name: "git_sha", type: "TEXT" },
+    ];
+    for (const col of checkpointCols) {
+      try {
+        db.exec(`ALTER TABLE checkpoints ADD COLUMN ${col.name} ${col.type};`);
+      } catch {}
+    }
+  } catch {}
 
   try {
     db.exec(`
@@ -1378,6 +1411,14 @@ export function deleteWorkspaceTaskFromDb(workspaceId: string, taskId: string): 
   try {
     const db = getHistoryDb();
     db.prepare("DELETE FROM workspace_tasks WHERE workspace_id = ? AND task_id = ?").run(workspaceId, taskId);
+  } catch {}
+}
+
+export function deleteWorkspaceDataFromDb(workspaceId: string): void {
+  try {
+    const db = getHistoryDb();
+    db.prepare("DELETE FROM workspace_tasks WHERE workspace_id = ?").run(workspaceId);
+    db.prepare("DELETE FROM input_history WHERE workspace_id = ?").run(workspaceId);
   } catch {}
 }
 

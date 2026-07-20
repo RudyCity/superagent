@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.503] - 2026-07-20
+
+### Changed
+- **SQLite Concurrency & Workspace Storage Alignment**:
+  - Configured SQLite `PRAGMA busy_timeout = 5000;` during initialization to resolve busy timeouts under parallel execution.
+  - Implemented database migrations to auto-add missing columns (like `extra_data`, `plan_state`) in existing tables, preventing column existence errors.
+  - Added clean connection closing on process exit across CLI, API server, and background synchronization modules.
+  - Unified workspace caching and project summary naming to standard SHA-1 path hashing.
+  - Fixed input history clearing in SQLite on `/new` session command.
+  - Resolved SQLite storage leak by deleting database rows in `workspace_tasks` and `input_history` when workspaces are pruned.
+
 ## [1.2.502] - 2026-07-20
 
 ### Changed

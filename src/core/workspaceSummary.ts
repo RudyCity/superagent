@@ -1,7 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { createHash } from "crypto";
-import { getRootConfigDir } from "./config/paths.js";
+import { getRootConfigDir, getWorkspaceId } from "./config/paths.js";
 import { getNormalizedProjectPath } from "./tools/helpers.js";
 
 export interface WorkspaceSummary {
@@ -14,8 +13,7 @@ export interface WorkspaceSummary {
 }
 
 export function getProjectHash(projectPath: string): string {
-  const normalized = getNormalizedProjectPath(projectPath);
-  return createHash("sha256").update(normalized).digest("hex").slice(0, 12);
+  return getWorkspaceId(projectPath);
 }
 
 export function getWorkspaceSummaryPath(cwd?: string): string {

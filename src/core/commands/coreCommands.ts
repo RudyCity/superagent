@@ -4,7 +4,7 @@ import { execa } from "execa";
 import { registry } from "./registry.js";
 import { SlashCommand, getDefaultModel, getProviderLabel } from "./types.js";
 import { deleteCheckpointsForSession } from "../checkpoints.js";
-import { getGlobalConfigDir, ensureGlobalConfigDir, getEffectiveMasterModel, getWorkspaceInputHistoryPath } from "../config.js";
+import { getGlobalConfigDir, ensureGlobalConfigDir, getEffectiveMasterModel, getWorkspaceInputHistoryPath, getWorkspaceId, clearInputHistoryInDb } from "../config.js";
 import { 
   allTools, 
   superagentInstances, 
@@ -97,6 +97,9 @@ export const newCommand: SlashCommand = {
     try {
       const inputHistoryPath = getWorkspaceInputHistoryPath();
       await fs.writeFile(inputHistoryPath, "[]", "utf-8");
+    } catch { /* non-fatal */ }
+    try {
+      clearInputHistoryInDb(getWorkspaceId());
     } catch { /* non-fatal */ }
 
     ctx.addLine({ type: "system", content: "✓ New conversation started. History, logs, and state cleared.", timestamp: Date.now() });

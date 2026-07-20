@@ -7,6 +7,10 @@ if (process.argv.includes("--sync-history-only")) {
   } catch (err) {
     console.error("History sync background process failed:", err);
   }
+  try {
+    const { closeHistoryDb } = await import("./core/config.js");
+    closeHistoryDb();
+  } catch {}
   process.exit(0);
 }
 

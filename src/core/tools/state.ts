@@ -15,7 +15,8 @@ import {
 import {
   saveWorkspaceTaskToDb,
   getWorkspaceTasksFromDb,
-  deleteWorkspaceTaskFromDb
+  deleteWorkspaceTaskFromDb,
+  deleteWorkspaceDataFromDb
 } from "../storage/historyDb.js";
 
 export const backgroundTasks = new Map<string, BackgroundTask>();
@@ -541,6 +542,9 @@ export function cleanupStaleWorkspaceDirs(): void {
         if (!stat.isDirectory()) continue;
         if (now - stat.mtimeMs > WORKSPACE_DIR_TTL_MS) {
           fs.rmSync(dirPath, { recursive: true, force: true });
+          try {
+            deleteWorkspaceDataFromDb(entry);
+          } catch {}
         }
       } catch { /* ignore per-entry errors */ }
     }

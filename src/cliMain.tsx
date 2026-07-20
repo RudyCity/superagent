@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-import { getConfig } from "./core/config.js";
+import { getConfig, closeHistoryDb } from "./core/config.js";
 import { isDirectoryTrusted, addTrustedDirectory, ensureDirectoryTrusted } from "./core/config/jsonConfig.js";
 import { backgroundTasks, isTaskInWorkspace, subagentInstances, superagentInstances, masterAgentRef } from "./core/tools/state.js";
 import { killProcessTree } from "./core/tools/shellTools.js";
@@ -94,6 +94,9 @@ export async function runCli() {
     }
     cleanupBackgroundTasks();
     restoreTerminal();
+    try {
+      closeHistoryDb();
+    } catch {}
   });
   process.on("SIGINT", () => {
     if (process.stdin.isTTY) {

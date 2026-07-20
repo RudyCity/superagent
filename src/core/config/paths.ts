@@ -62,8 +62,8 @@ export function getPackageRootDir(): string {
  * Used to namespace background tasks per workspace to prevent
  * cross-project task bleeding.
  */
-export function getWorkspaceId(): string {
-  const cwd = process.cwd();
+export function getWorkspaceId(dirPath?: string): string {
+  const cwd = path.resolve(dirPath || process.cwd());
   return crypto.createHash("sha1").update(cwd).digest("hex").slice(0, 12);
 }
 
