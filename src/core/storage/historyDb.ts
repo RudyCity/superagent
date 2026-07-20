@@ -494,6 +494,46 @@ export function migrateLegacyJsonToDb(): number {
   return importedCount;
 }
 
+export function cleanLegacyJsonFiles(): number {
+  const configDir = getGlobalConfigDir();
+  const historyBase = path.join(configDir, "history");
+  if (!fs.existsSync(historyBase)) return 0;
+
+  // First migrate any unimported legacy JSON files
+  migrateLegacyJsonToDb();
+
+  let cleanedCount = 0;
+  const modes = ["single", "multi"];
+
+  for (const mode of modes) {
+    const modeDir = path.join(historyBase, mode);
+    if (!fs.existsSync(modeDir)) continue;
+
+    try {
+      const entries = fs.readdirSync(modeDir);
+      for (const entry of entries) {
+        const fullPath = path.join(modeDir, entry);
+        try {
+          const stat = fs.statSync(fullPath);
+          if (stat.isFile() && entry.endsWith(".json")) {
+            fs.unlinkSync(fullPath);
+            cleanedCount++;
+          } else if (stat.isDirectory() && entry !== "superagents" && entry !== "subagents") {
+            const jsonFile = path.join(fullPath, `${entry}.json`);
+            if (fs.existsSync(jsonFile)) {
+              // Replace bulky JSON with empty 0-byte file anchor
+              fs.writeFileSync(jsonFile, "", "utf-8");
+              cleanedCount++;
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  return cleanedCount;
+}
+
 export function exportSessionToJson(sessionId: string): string | null {
   const loaded = loadSessionFromDb(sessionId);
   if (!loaded.session) return null;

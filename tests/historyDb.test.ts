@@ -200,7 +200,7 @@ describe("SQLite History Database (historyDb)", () => {
     expect(fs.existsSync(backupPath)).toBe(true);
   });
 
-  it("should auto-migrate legacy JSON files into SQLite", () => {
+  it("should auto-migrate legacy JSON files into SQLite and clean them up", () => {
     const historySingleDir = path.join(tempDir, "history", "single", "legacy-sess");
     fs.mkdirSync(historySingleDir, { recursive: true });
     const legacyFile = path.join(historySingleDir, "legacy-sess.json");
@@ -219,5 +219,9 @@ describe("SQLite History Database (historyDb)", () => {
     const loaded = historyDbModule.loadSessionFromDb("legacy-sess");
     expect(loaded.session).not.toBeNull();
     expect(loaded.messages[0].content).toBe("Legacy JSON message");
+
+    const cleanedCount = historyDbModule.cleanLegacyJsonFiles();
+    expect(cleanedCount).toBeGreaterThanOrEqual(1);
+    expect(fs.readFileSync(legacyFile, "utf-8")).toBe("");
   });
 });

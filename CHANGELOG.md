@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.493] - 2026-07-20
+
+### Added
+- **Legacy JSON Cleanup Utility & /history clean Command**:
+  - Implemented `cleanLegacyJsonFiles()` function in `historyDb.ts` to convert legacy `.json` payload files into empty file anchors after SQLite import verification.
+  - Registered `/history clean` (and alias `/history cleanup`) subcommand to safely purge obsolete JSON session files.
+  - Added unit test in `tests/historyDb.test.ts` to verify legacy JSON cleanup behavior.
+
 ## [1.2.492] - 2026-07-20
 
 ### Added

@@ -437,10 +437,18 @@ export const historyCommand: SlashCommand = {
       } catch (err: any) {
         ctx.addLine({ type: "error", content: `Migration failed: ${err.message}`, timestamp: now });
       }
+    } else if (action === "clean" || action === "cleanup") {
+      try {
+        const { cleanLegacyJsonFiles } = await import("../storage/historyDb.js");
+        const count = cleanLegacyJsonFiles();
+        ctx.addLine({ type: "system", content: `✓ Cleaned up ${count} legacy JSON session files. All session data is safely stored in SQLite.`, timestamp: now });
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Cleanup failed: ${err.message}`, timestamp: now });
+      }
     } else {
       ctx.addLine({
         type: "system",
-        content: "Usage:\n  /history export [session_id] - Export session to JSON string\n  /history backup [path]       - Create a timestamped backup of history.db\n  /history migrate            - Auto-import legacy JSON sessions into SQLite",
+        content: "Usage:\n  /history export [session_id] - Export session to JSON string\n  /history backup [path]       - Create a timestamped backup of history.db\n  /history migrate            - Auto-import legacy JSON sessions into SQLite\n  /history clean              - Clean up bulky legacy JSON session files",
         timestamp: now,
       });
     }
