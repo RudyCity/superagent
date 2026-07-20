@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.491] - 2026-07-20
+
+### Added
+- **SQLite Database Architecture & Performance Enhancements**:
+  - Implemented PRAGMA WAL mode (`journal_mode=WAL; synchronous=NORMAL;`) for concurrent read/write throughput.
+  - Implemented `messages_fts` SQLite FTS5 virtual table with auto-sync triggers for fast full-text message search.
+  - Added `migrateLegacyJsonToDb()` utility to automatically import legacy `.json` session files into SQLite.
+  - Added `exportSessionToJson()` and `backupDatabase()` helper functions.
+  - Registered `/history export [session_id]`, `/history backup [path]`, and `/history migrate` slash commands.
+  - Added unit test cases covering WAL, FTS5, legacy migration, export, and backup in `tests/historyDb.test.ts`.
+
 ## [1.2.490] - 2026-07-20
 
 ### Added

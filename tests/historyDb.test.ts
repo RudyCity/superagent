@@ -170,4 +170,54 @@ describe("SQLite History Database (historyDb)", () => {
     expect(loaded.session).toBeNull();
     expect(loaded.messages.length).toBe(0);
   });
+
+  it("should export session to JSON and create database backup", () => {
+    historyDbModule.saveSessionToDb(
+      {
+        id: "session-export",
+        filePath: "/path/export",
+        displayName: "Export Session",
+        messageCount: 1,
+        lastModified: Date.now(),
+        preview: "Export test",
+      },
+      [
+        {
+          sessionId: "session-export",
+          role: "user",
+          content: "Message to export",
+          timestamp: Date.now(),
+          sequenceOrder: 0,
+        },
+      ]
+    );
+
+    const json = historyDbModule.exportSessionToJson("session-export");
+    expect(json).not.toBeNull();
+    expect(json).toContain("Message to export");
+
+    const backupPath = historyDbModule.backupDatabase();
+    expect(fs.existsSync(backupPath)).toBe(true);
+  });
+
+  it("should auto-migrate legacy JSON files into SQLite", () => {
+    const historySingleDir = path.join(tempDir, "history", "single", "legacy-sess");
+    fs.mkdirSync(historySingleDir, { recursive: true });
+    const legacyFile = path.join(historySingleDir, "legacy-sess.json");
+    fs.writeFileSync(
+      legacyFile,
+      JSON.stringify({
+        messages: [{ role: "user", content: "Legacy JSON message" }],
+        workingDirectory: "/legacy/dir",
+      }),
+      "utf-8"
+    );
+
+    const count = historyDbModule.migrateLegacyJsonToDb();
+    expect(count).toBeGreaterThanOrEqual(1);
+
+    const loaded = historyDbModule.loadSessionFromDb("legacy-sess");
+    expect(loaded.session).not.toBeNull();
+    expect(loaded.messages[0].content).toBe("Legacy JSON message");
+  });
 });

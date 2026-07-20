@@ -87,6 +87,12 @@ export function getHistoryDb(): any {
 }
 
 function initDatabaseSchema(db: any): void {
+  try {
+    db.exec("PRAGMA journal_mode = WAL;");
+    db.exec("PRAGMA synchronous = NORMAL;");
+    db.exec("PRAGMA foreign_keys = ON;");
+  } catch {}
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -144,6 +150,36 @@ function initDatabaseSchema(db: any): void {
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
   `);
+
+  try {
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        session_id UNINDEXED,
+        role UNINDEXED,
+        content,
+        display_name
+      );
+
+      CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(rowid, session_id, role, content, display_name)
+        SELECT new.id, new.session_id, new.role, new.content, s.display_name
+        FROM sessions s WHERE s.id = new.session_id;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+        DELETE FROM messages_fts WHERE rowid = old.id;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+        DELETE FROM messages_fts WHERE rowid = old.id;
+        INSERT INTO messages_fts(rowid, session_id, role, content, display_name)
+        SELECT new.id, new.session_id, new.role, new.content, s.display_name
+        FROM sessions s WHERE s.id = new.session_id;
+      END;
+    `);
+  } catch {
+    // FTS5 might not be enabled in all environments; fallback gracefully
+  }
 }
 
 export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[], pinnedMessagesJson?: string): void {
@@ -341,6 +377,27 @@ export function searchMessagesInDb(query: string, limit: number = 50): Array<{
   displayName: string;
 }> {
   const db = getHistoryDb();
+
+  try {
+    const ftsStmt = db.prepare(`
+      SELECT f.session_id as sessionId, f.role, f.content, m.timestamp, s.display_name as displayName
+      FROM messages_fts f
+      JOIN messages m ON f.rowid = m.id
+      JOIN sessions s ON f.session_id = s.id
+      WHERE messages_fts MATCH ?
+      ORDER BY m.timestamp DESC LIMIT ?
+    `);
+    const cleanQuery = query.replace(/[^a-zA-Z0-9\s]/g, " ").trim();
+    if (cleanQuery.length > 0) {
+      const ftsResults = ftsStmt.all(`*${cleanQuery}*`, limit) as Array<any>;
+      if (ftsResults && ftsResults.length > 0) {
+        return ftsResults;
+      }
+    }
+  } catch {
+    // Fallback to SQL LIKE search if FTS syntax error or missing virtual table
+  }
+
   const stmt = db.prepare(`
     SELECT m.session_id as sessionId, m.role, m.content, m.timestamp, s.display_name as displayName
     FROM messages m
@@ -356,6 +413,136 @@ export function searchMessagesInDb(query: string, limit: number = 50): Array<{
     timestamp: number;
     displayName: string;
   }>;
+}
+
+export function migrateLegacyJsonToDb(): number {
+  const configDir = getGlobalConfigDir();
+  const historyBase = path.join(configDir, "history");
+  if (!fs.existsSync(historyBase)) return 0;
+
+  let importedCount = 0;
+  const modes = ["single", "multi"];
+
+  for (const mode of modes) {
+    const modeDir = path.join(historyBase, mode);
+    if (!fs.existsSync(modeDir)) continue;
+
+    try {
+      const dirs = fs.readdirSync(modeDir).filter(d => d !== "superagents" && d !== "subagents" && d !== "history-metadata.json");
+      for (const d of dirs) {
+        const filePath = path.join(modeDir, d, `${d}.json`);
+        if (!fs.existsSync(filePath)) continue;
+
+        const existing = loadSessionFromDb(d);
+        if (existing.session && existing.messages.length > 0) continue;
+
+        try {
+          const raw = fs.readFileSync(filePath, "utf-8");
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object") continue;
+
+          let messages: MessageRecord[] = [];
+          if (Array.isArray(parsed.messages)) {
+            messages = parsed.messages.map((m: any, idx: number) => ({
+              sessionId: d,
+              role: m.role || "user",
+              content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+              toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
+              toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
+              reasoning: m.reasoning,
+              timestamp: m.timestamp || Date.now(),
+              sequenceOrder: idx,
+            }));
+          }
+
+          const userMsgs = messages.filter(m => m.role === "user");
+          const lastUser = userMsgs[userMsgs.length - 1];
+          const preview = lastUser
+            ? lastUser.content.slice(0, 60).replace(/\n/g, " ") + (lastUser.content.length > 60 ? "…" : "")
+            : "(imported session)";
+
+          saveSessionToDb(
+            {
+              id: d,
+              filePath,
+              displayName: d,
+              messageCount: messages.length,
+              lastModified: fs.statSync(filePath).mtimeMs,
+              preview,
+              workingDirectory: parsed.workingDirectory,
+              planState: parsed.planState,
+              activePreset: parsed.activePreset ? JSON.stringify(parsed.activePreset) : undefined,
+              extraData: JSON.stringify({
+                superagents: parsed.superagents || [],
+                subagents: parsed.subagents || [],
+                historicalSuperagentTokens: parsed.historicalSuperagentTokens || 0,
+                masterPromptTokens: parsed.masterPromptTokens || 0,
+                masterCompletionTokens: parsed.masterCompletionTokens || 0,
+                lastMasterPromptTokens: parsed.lastMasterPromptTokens || 0,
+                lastCapturedTimestamp: parsed.lastCapturedTimestamp || 0,
+              }),
+            },
+            messages,
+            parsed.pinnedMessages ? JSON.stringify(parsed.pinnedMessages) : undefined
+          );
+          importedCount++;
+        } catch {}
+      }
+    } catch {}
+  }
+
+  return importedCount;
+}
+
+export function exportSessionToJson(sessionId: string): string | null {
+  const loaded = loadSessionFromDb(sessionId);
+  if (!loaded.session) return null;
+
+  let extraDataObj: any = {};
+  if (loaded.session.extraData) {
+    try { extraDataObj = JSON.parse(loaded.session.extraData); } catch {}
+  }
+
+  let pinnedMessagesObj: any[] = [];
+  if (loaded.pinnedMessagesJson) {
+    try { pinnedMessagesObj = JSON.parse(loaded.pinnedMessagesJson); } catch {}
+  }
+
+  let activePresetObj: any = undefined;
+  if (loaded.session.activePreset) {
+    try { activePresetObj = JSON.parse(loaded.session.activePreset); } catch {}
+  }
+
+  const exportData = {
+    id: loaded.session.id,
+    workingDirectory: loaded.session.workingDirectory,
+    displayName: loaded.session.displayName,
+    planState: loaded.session.planState,
+    activePreset: activePresetObj,
+    messages: loaded.messages.map(m => ({
+      role: m.role,
+      content: m.content.startsWith("[") || m.content.startsWith("{") ? (()=>{try{return JSON.parse(m.content);}catch{return m.content;}})() : m.content,
+      toolCalls: m.toolCalls ? JSON.parse(m.toolCalls) : undefined,
+      toolResults: m.toolResults ? JSON.parse(m.toolResults) : undefined,
+      reasoning: m.reasoning,
+      timestamp: m.timestamp,
+    })),
+    pinnedMessages: pinnedMessagesObj,
+    ...extraDataObj,
+  };
+
+  return JSON.stringify(exportData, null, 2);
+}
+
+export function backupDatabase(targetPath?: string): string {
+  const dbPath = getHistoryDbPath();
+  if (!fs.existsSync(dbPath)) {
+    throw new Error("No SQLite history database exists yet to backup.");
+  }
+
+  const backupPath = targetPath || path.join(path.dirname(dbPath), `history_backup_${Date.now()}.db`);
+  fs.copyFileSync(dbPath, backupPath);
+  return backupPath;
 }
 
 export function closeHistoryDb(): void {

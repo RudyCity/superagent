@@ -1,4 +1,5 @@
 import { execa } from "execa";
+import path from "path";
 import { registry } from "./registry.js";
 import { SlashCommand, SlashCommandContext } from "./types.js";
 import { listHistorySessions } from "../config.js";
@@ -390,8 +391,73 @@ export const checkpointCommand: SlashCommand = {
   }
 };
 
+// /history command
+export const historyCommand: SlashCommand = {
+  name: "history",
+  description: "Manage SQLite history database (export session, backup database, migrate legacy files)",
+  async execute(args, ctx) {
+    const now = Date.now();
+    const parts = args.trim().split(/\s+/);
+    const action = parts[0] ? parts[0].toLowerCase() : "";
+
+    if (action === "export") {
+      const sessionId = parts[1] || (ctx.agent ? path.basename(ctx.agent.getCurrentHistoryFilePath(), ".json") : "");
+      if (!sessionId) {
+        ctx.addLine({ type: "error", content: "Usage: /history export <session_id>", timestamp: now });
+        return;
+      }
+      try {
+        const { exportSessionToJson } = await import("../storage/historyDb.js");
+        const exported = exportSessionToJson(sessionId);
+        if (!exported) {
+          ctx.addLine({ type: "error", content: `Session "${sessionId}" not found in database.`, timestamp: now });
+          return;
+        }
+        ctx.addLine({
+          type: "system",
+          content: `Exported session "${sessionId}":\n\n${exported.slice(0, 1000)}${exported.length > 1000 ? "\n... [truncated]" : ""}`,
+          timestamp: now,
+        });
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Failed to export session: ${err.message}`, timestamp: now });
+      }
+    } else if (action === "backup") {
+      try {
+        const { backupDatabase } = await import("../storage/historyDb.js");
+        const backupPath = backupDatabase(parts[1]);
+        ctx.addLine({ type: "system", content: `✓ Database backed up successfully to:\n  ${backupPath}`, timestamp: now });
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Failed to backup database: ${err.message}`, timestamp: now });
+      }
+    } else if (action === "migrate") {
+      try {
+        const { migrateLegacyJsonToDb } = await import("../storage/historyDb.js");
+        const count = migrateLegacyJsonToDb();
+        ctx.addLine({ type: "system", content: `✓ Migrated ${count} legacy JSON sessions into SQLite database.`, timestamp: now });
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Migration failed: ${err.message}`, timestamp: now });
+      }
+    } else {
+      ctx.addLine({
+        type: "system",
+        content: "Usage:\n  /history export [session_id] - Export session to JSON string\n  /history backup [path]       - Create a timestamped backup of history.db\n  /history migrate            - Auto-import legacy JSON sessions into SQLite",
+        timestamp: now,
+      });
+    }
+  }
+};
+
+// Auto-run legacy migration on load if available
+try {
+  import("../storage/historyDb.js").then((mod) => {
+    mod.migrateLegacyJsonToDb();
+  }).catch(() => {});
+} catch {}
+
 // Register session commands
 registry.register(resumeCommand);
 registry.register(searchHistoryCommand);
 registry.register(checkpointCommand);
 registry.register(knowledgeCommand);
+registry.register(historyCommand);
+
