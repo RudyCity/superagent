@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.504] - 2026-07-20
+
+### Changed
+- **SQLite-Backed Workspace Trust & Parent Model**:
+  - Migrated trusted directory registration from `model-config.json` to the central SQLite database inside a new `workspaces` table.
+  - Established workspaces as the main parent data, registering workspace paths with their 12-char SHA-1 hashes.
+  - Linked sessions to workspaces via a `workspace_id` column in the `sessions` table.
+  - Implemented automatic, transparent migration of existing `trustedDirectories` config from `model-config.json` to SQLite.
+  - Updated config JSON tests to resolve resource busy locks during teardown hooks.
+
 ## [1.2.503] - 2026-07-20
 
 ### Changed

@@ -1,7 +1,7 @@
 import { createRequire } from "module";
 import fs from "fs";
 import path from "path";
-import { getGlobalConfigDir } from "../config/paths.js";
+import { getGlobalConfigDir, getWorkspaceId, getModelConfigPath } from "../config/paths.js";
 
 const require = createRequire(import.meta.url);
 
@@ -102,6 +102,14 @@ function initDatabaseSchema(db: any): void {
   } catch {}
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id TEXT PRIMARY KEY,
+      path TEXT NOT NULL UNIQUE,
+      is_trusted INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       file_path TEXT NOT NULL,
@@ -114,8 +122,10 @@ function initDatabaseSchema(db: any): void {
       active_preset TEXT,
       extra_data TEXT,
       tags TEXT,
+      workspace_id TEXT,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
-      updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS messages (
@@ -250,6 +260,7 @@ function initDatabaseSchema(db: any): void {
       { name: "active_preset", type: "TEXT" },
       { name: "extra_data", type: "TEXT" },
       { name: "tags", type: "TEXT" },
+      { name: "workspace_id", type: "TEXT" },
     ];
     for (const col of sessionCols) {
       try {
@@ -303,6 +314,9 @@ function initDatabaseSchema(db: any): void {
   } catch {
     // FTS5 might not be enabled in all environments; fallback gracefully
   }
+
+  // Run legacy migration to import existing trusted directories
+  migrateLegacyTrustedDirs(db);
 }
 
 export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[], pinnedMessagesJson?: string): void {
@@ -310,10 +324,21 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
 
   db.exec("BEGIN TRANSACTION;");
   try {
+    const workspaceId = session.workingDirectory ? getWorkspaceId(session.workingDirectory) : null;
+    if (workspaceId && session.workingDirectory) {
+      try {
+        db.prepare(`
+          INSERT INTO workspaces (id, path, is_trusted)
+          VALUES (?, ?, 0)
+          ON CONFLICT(id) DO NOTHING
+        `).run(workspaceId, path.resolve(session.workingDirectory));
+      } catch {}
+    }
+
     const upsertSessionStmt = db.prepare(`
       INSERT INTO sessions (
-        id, file_path, display_name, message_count, last_modified, preview, working_directory, plan_state, active_preset, extra_data, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, file_path, display_name, message_count, last_modified, preview, working_directory, plan_state, active_preset, extra_data, workspace_id, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         file_path = excluded.file_path,
         display_name = excluded.display_name,
@@ -324,6 +349,7 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
         plan_state = excluded.plan_state,
         active_preset = excluded.active_preset,
         extra_data = excluded.extra_data,
+        workspace_id = excluded.workspace_id,
         updated_at = excluded.updated_at
     `);
 
@@ -339,6 +365,7 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
       session.planState || null,
       session.activePreset || null,
       session.extraData || null,
+      workspaceId,
       now
     );
 
@@ -1419,6 +1446,99 @@ export function deleteWorkspaceDataFromDb(workspaceId: string): void {
     const db = getHistoryDb();
     db.prepare("DELETE FROM workspace_tasks WHERE workspace_id = ?").run(workspaceId);
     db.prepare("DELETE FROM input_history WHERE workspace_id = ?").run(workspaceId);
+    db.prepare("DELETE FROM workspaces WHERE id = ?").run(workspaceId);
+  } catch {}
+}
+
+export interface WorkspaceRecord {
+  id: string;
+  path: string;
+  isTrusted: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export function saveWorkspaceToDb(workspace: WorkspaceRecord): void {
+  try {
+    const db = getHistoryDb();
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO workspaces (id, path, is_trusted, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        path = excluded.path,
+        is_trusted = excluded.is_trusted,
+        updated_at = excluded.updated_at
+    `).run(workspace.id, workspace.path, workspace.isTrusted ? 1 : 0, now);
+  } catch {}
+}
+
+export function getWorkspacesFromDb(): WorkspaceRecord[] {
+  try {
+    const db = getHistoryDb();
+    const rows = db.prepare("SELECT * FROM workspaces").all() || [];
+    return rows.map((row: any) => ({
+      id: row.id,
+      path: row.path,
+      isTrusted: row.is_trusted === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function getWorkspaceFromDb(id: string): WorkspaceRecord | null {
+  try {
+    const db = getHistoryDb();
+    const row = db.prepare("SELECT * FROM workspaces WHERE id = ?").get(id);
+    if (row) {
+      return {
+        id: row.id,
+        path: row.path,
+        isTrusted: row.is_trusted === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+    }
+  } catch {}
+  return null;
+}
+
+export function deleteWorkspaceFromDb(id: string): void {
+  try {
+    const db = getHistoryDb();
+    db.prepare("DELETE FROM workspaces WHERE id = ?").run(id);
+  } catch {}
+}
+
+export function migrateLegacyTrustedDirs(db: any): void {
+  try {
+    const configPath = getModelConfigPath();
+    if (!fs.existsSync(configPath)) return;
+    const content = fs.readFileSync(configPath, "utf-8");
+    const parsed = JSON.parse(content);
+    if (parsed && Array.isArray(parsed.trustedDirectories)) {
+      for (const dir of parsed.trustedDirectories) {
+        if (typeof dir === "string" && dir.trim()) {
+          const resolved = path.resolve(dir);
+          const id = getWorkspaceId(resolved);
+          try {
+            db.prepare(`
+              INSERT INTO workspaces (id, path, is_trusted, created_at, updated_at)
+              VALUES (?, ?, 1, ?, ?)
+              ON CONFLICT(id) DO NOTHING
+            `).run(id, resolved, Date.now(), Date.now());
+          } catch {}
+        }
+      }
+      // Remove trustedDirectories from configuration once migrated to SQLite
+      try {
+        delete parsed.trustedDirectories;
+        fs.writeFileSync(configPath, JSON.stringify(parsed, null, 2), "utf-8");
+      } catch {}
+    }
   } catch {}
 }
 

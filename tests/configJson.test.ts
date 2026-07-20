@@ -17,6 +17,7 @@ import {
   getSettings
 } from "../src/core/config/jsonConfig";
 import { getModelInstanceForTier } from "../src/core/config/models";
+import { closeHistoryDb } from "../src/core/storage/historyDb";
 
 describe("JSON-based model-config.json storage", () => {
   const originalEnv = process.env;
@@ -25,18 +26,21 @@ describe("JSON-based model-config.json storage", () => {
   beforeAll(() => {
     process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
     clearModelConfigCache();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    closeHistoryDb();
+    try { fs.rmSync(testConfigDir, { recursive: true, force: true }); } catch {}
   });
 
   afterAll(() => {
     clearModelConfigCache();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    closeHistoryDb();
+    try { fs.rmSync(testConfigDir, { recursive: true, force: true }); } catch {}
     process.env = originalEnv;
   });
 
   beforeEach(() => {
     clearModelConfigCache();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    closeHistoryDb();
+    try { fs.rmSync(testConfigDir, { recursive: true, force: true }); } catch {}
   });
 
   it("should initialize default configuration correctly", () => {

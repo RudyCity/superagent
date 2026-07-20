@@ -2,7 +2,8 @@ import fs from "fs";
 import path from "path";
 import { execa } from "execa";
 import { threadId } from "worker_threads";
-import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir, ensureProtocol } from "./paths.js";
+import { getModelConfigPath, ensureGlobalConfigDir, getRootConfigDir, ensureProtocol, getWorkspaceId } from "./paths.js";
+import { saveWorkspaceToDb, getWorkspacesFromDb, getWorkspaceFromDb } from "../storage/historyDb.js";
 
 export interface ProviderProfile {
   id: string;
@@ -1025,36 +1026,26 @@ export function getModelInfoForDisplay(isMulti: boolean): {
   };
 }
 
-/**
- * Get the list of all trusted project directories.
- */
 export function getTrustedDirectories(): string[] {
-  const config = loadModelConfig();
-  return config.trustedDirectories || [];
+  const workspaces = getWorkspacesFromDb();
+  return workspaces.filter(ws => ws.isTrusted).map(ws => ws.path);
 }
 
-/**
- * Add a directory path to the trusted list in configuration.
- */
 export function addTrustedDirectory(dirPath: string): void {
-  mutateModelConfig((config) => {
-    if (!config.trustedDirectories) {
-      config.trustedDirectories = [];
-    }
-    const resolvedPath = path.resolve(dirPath);
-    if (!config.trustedDirectories.includes(resolvedPath)) {
-      config.trustedDirectories.push(resolvedPath);
-    }
+  const resolvedPath = path.resolve(dirPath);
+  const id = getWorkspaceId(resolvedPath);
+  saveWorkspaceToDb({
+    id,
+    path: resolvedPath,
+    isTrusted: true
   });
 }
 
-/**
- * Check if a directory path is trusted in configuration.
- */
 export function isDirectoryTrusted(dirPath: string): boolean {
-  const trustedDirs = getTrustedDirectories();
   const resolvedPath = path.resolve(dirPath);
-  return trustedDirs.includes(resolvedPath);
+  const id = getWorkspaceId(resolvedPath);
+  const ws = getWorkspaceFromDb(id);
+  return ws ? ws.isTrusted : false;
 }
 
 /**
