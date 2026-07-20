@@ -16,6 +16,7 @@ export interface SessionRecord {
   planState?: string;
   activePreset?: string;
   extraData?: string;
+  tags?: string;
 }
 
 export interface MessageRecord {
@@ -91,6 +92,7 @@ function initDatabaseSchema(db: any): void {
     db.exec("PRAGMA journal_mode = WAL;");
     db.exec("PRAGMA synchronous = NORMAL;");
     db.exec("PRAGMA foreign_keys = ON;");
+    db.exec("PRAGMA auto_vacuum = INCREMENTAL;");
   } catch {}
 
   db.exec(`
@@ -105,6 +107,7 @@ function initDatabaseSchema(db: any): void {
       plan_state TEXT,
       active_preset TEXT,
       extra_data TEXT,
+      tags TEXT,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
       updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
     );
@@ -334,6 +337,7 @@ export function deleteSessionFromDb(sessionId: string): void {
     db.prepare("DELETE FROM checkpoints WHERE session_id = ?").run(sessionId);
     db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
     db.exec("COMMIT;");
+    vacuumDatabase();
   } catch (err) {
     db.exec("ROLLBACK;");
     throw err;
@@ -805,6 +809,130 @@ export function cleanLegacyCheckpointsFiles(): number {
   }
 
   return cleanedCount;
+}
+
+export function vacuumDatabase(): void {
+  try {
+    const db = getHistoryDb();
+    db.exec("PRAGMA incremental_vacuum(100);");
+  } catch {}
+}
+
+export function performRollingBackup(maxBackups: number = 7): string | null {
+  const dbPath = getHistoryDbPath();
+  if (!fs.existsSync(dbPath)) return null;
+
+  const configDir = getGlobalConfigDir();
+  const backupDir = path.join(configDir, "backups");
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
+
+  const d = new Date();
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  const backupPath = path.join(backupDir, `history_backup_${timestamp}.db`);
+
+  try {
+    fs.copyFileSync(dbPath, backupPath);
+
+    // Prune old backups keeping maxBackups newest
+    const files = fs.readdirSync(backupDir).filter(f => f.startsWith("history_backup_") && f.endsWith(".db"));
+    if (files.length > maxBackups) {
+      const sorted = files.sort((a, b) => {
+        const timeA = fs.statSync(path.join(backupDir, a)).mtimeMs;
+        const timeB = fs.statSync(path.join(backupDir, b)).mtimeMs;
+        return timeA - timeB; // oldest first
+      });
+      const toDelete = sorted.length - maxBackups;
+      for (let i = 0; i < toDelete; i++) {
+        try { fs.unlinkSync(path.join(backupDir, sorted[i])); } catch {}
+      }
+    }
+    return backupPath;
+  } catch {
+    return null;
+  }
+}
+
+export function getDatabaseStats(): {
+  dbPath: string;
+  dbSizeMb: number;
+  sessionCount: number;
+  messageCount: number;
+  compactionCount: number;
+  checkpointCount: number;
+  journalMode: string;
+  backupCount: number;
+} {
+  const dbPath = getHistoryDbPath();
+  const db = getHistoryDb();
+
+  let dbSizeMb = 0;
+  try {
+    if (fs.existsSync(dbPath)) {
+      dbSizeMb = Number((fs.statSync(dbPath).size / (1024 * 1024)).toFixed(2));
+    }
+  } catch {}
+
+  let sessionCount = 0;
+  try { sessionCount = Number((db.prepare("SELECT COUNT(*) as count FROM sessions").get() as any)?.count || 0); } catch {}
+
+  let messageCount = 0;
+  try { messageCount = Number((db.prepare("SELECT COUNT(*) as count FROM messages").get() as any)?.count || 0); } catch {}
+
+  let compactionCount = 0;
+  try { compactionCount = Number((db.prepare("SELECT COUNT(*) as count FROM compaction_events").get() as any)?.count || 0); } catch {}
+
+  let checkpointCount = 0;
+  try { checkpointCount = Number((db.prepare("SELECT COUNT(*) as count FROM checkpoints").get() as any)?.count || 0); } catch {}
+
+  let journalMode = "unknown";
+  try { journalMode = String((db.prepare("PRAGMA journal_mode;").get() as any)?.journal_mode || "unknown"); } catch {}
+
+  let backupCount = 0;
+  try {
+    const backupDir = path.join(getGlobalConfigDir(), "backups");
+    if (fs.existsSync(backupDir)) {
+      backupCount = fs.readdirSync(backupDir).filter(f => f.startsWith("history_backup_")).length;
+    }
+  } catch {}
+
+  return {
+    dbPath,
+    dbSizeMb,
+    sessionCount,
+    messageCount,
+    compactionCount,
+    checkpointCount,
+    journalMode,
+    backupCount,
+  };
+}
+
+export function tagSessionInDb(sessionId: string, tags: string): boolean {
+  const db = getHistoryDb();
+  try {
+    const res = db.prepare("UPDATE sessions SET tags = ?, updated_at = ? WHERE id = ?").run(tags, Date.now(), sessionId);
+    return res && res.changes > 0;
+  } catch {
+    return false;
+  }
+}
+
+export function getSessionsByTagFromDb(tag: string): SessionRecord[] {
+  const db = getHistoryDb();
+  try {
+    const stmt = db.prepare(`
+      SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
+             last_modified as lastModified, preview, working_directory as workingDirectory,
+             plan_state as planState, active_preset as activePreset, tags
+      FROM sessions WHERE tags LIKE ? ORDER BY last_modified DESC
+    `);
+    return (stmt.all(`%${tag}%`) || []) as SessionRecord[];
+  } catch {
+    return [];
+  }
 }
 
 export function closeHistoryDb(): void {

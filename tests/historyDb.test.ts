@@ -273,4 +273,34 @@ describe("SQLite History Database (historyDb)", () => {
     expect(cleanedCpCount).toBeGreaterThanOrEqual(1);
     expect(fs.existsSync(legacyChkFile)).toBe(false);
   });
+
+  it("should calculate database stats, perform rolling backups, and tag sessions", () => {
+    historyDbModule.saveSessionToDb(
+      {
+        id: "session-tag-test",
+        filePath: "/path/tag-test",
+        displayName: "Tag Test",
+        messageCount: 1,
+        lastModified: Date.now(),
+        preview: "Tag preview",
+      },
+      []
+    );
+
+    const tagged = historyDbModule.tagSessionInDb("session-tag-test", "bug-fix");
+    expect(tagged).toBe(true);
+
+    const taggedList = historyDbModule.getSessionsByTagFromDb("bug-fix");
+    expect(taggedList.length).toBe(1);
+    expect(taggedList[0].id).toBe("session-tag-test");
+
+    const backupPath = historyDbModule.performRollingBackup(3);
+    expect(backupPath).not.toBeNull();
+    expect(fs.existsSync(backupPath!)).toBe(true);
+
+    const stats = historyDbModule.getDatabaseStats();
+    expect(stats.sessionCount).toBeGreaterThanOrEqual(1);
+    expect(stats.journalMode.toLowerCase()).toBe("wal");
+    expect(stats.backupCount).toBeGreaterThanOrEqual(1);
+  });
 });

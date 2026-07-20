@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.498] - 2026-07-20
+
+### Added
+- **Incremental Vacuuming, Rolling Daily Backups, DB Stats, & Session Tagging**:
+  - Implemented `PRAGMA auto_vacuum = INCREMENTAL;` and `vacuumDatabase()` after session and checkpoint deletions.
+  - Implemented `performRollingBackup()` maintaining up to 7 timestamped rolling backups under `~/.superagent-r/backups/`.
+  - Added `getDatabaseStats()` and registered `/history stats` subcommand to display database metrics and disk usage.
+  - Added `tags` column to `sessions` table and registered `/history tag <id> <label>` subcommand for session tagging and filtering.
+  - Added unit test cases covering stats, rolling backups, tagging, and vacuuming in `tests/historyDb.test.ts`.
+
 ## [1.2.497] - 2026-07-20
 
 ### Fixed

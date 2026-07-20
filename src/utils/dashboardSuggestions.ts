@@ -136,7 +136,7 @@ export function getDashboardSuggestions(originalQuery: string): string[] {
     }
 
     if (mainCommand === "/history") {
-      const possibilities = ["/history export", "/history backup", "/history migrate", "/history clean"];
+      const possibilities = ["/history stats", "/history tag", "/history export", "/history backup", "/history migrate", "/history clean"];
       return filterSuggestions(possibilities, query);
     }
     

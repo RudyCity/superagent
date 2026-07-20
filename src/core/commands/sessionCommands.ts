@@ -438,32 +438,72 @@ export const historyCommand: SlashCommand = {
       } catch (err: any) {
         ctx.addLine({ type: "error", content: `Migration failed: ${err.message}`, timestamp: now });
       }
-    } else if (action === "clean" || action === "cleanup") {
+    } else if (action === "stats") {
       try {
-        const { cleanLegacyJsonFiles, cleanLegacyCheckpointsFiles } = await import("../storage/historyDb.js");
-        const count = cleanLegacyJsonFiles();
-        const cpCount = cleanLegacyCheckpointsFiles();
-        ctx.addLine({ type: "system", content: `✓ Cleaned up ${count} session JSON files and ${cpCount} checkpoint files. All data is safely stored in SQLite.`, timestamp: now });
+        const { getDatabaseStats } = await import("../storage/historyDb.js");
+        const stats = getDatabaseStats();
+        ctx.addLine({
+          type: "system",
+          content: [
+            "📊 SQLite Database Metrics (history.db)",
+            `  Database File  : ${stats.dbPath}`,
+            `  Size on Disk   : ${stats.dbSizeMb} MB`,
+            `  Journal Mode   : ${stats.journalMode.toUpperCase()} (WAL Enabled)`,
+            `  Total Sessions : ${stats.sessionCount}`,
+            `  Total Messages : ${stats.messageCount}`,
+            `  Compaction Logs: ${stats.compactionCount}`,
+            `  Checkpoints    : ${stats.checkpointCount}`,
+            `  Daily Backups  : ${stats.backupCount} files`,
+          ].join("\n"),
+          timestamp: now,
+        });
       } catch (err: any) {
-        ctx.addLine({ type: "error", content: `Cleanup failed: ${err.message}`, timestamp: now });
+        ctx.addLine({ type: "error", content: `Failed to fetch stats: ${err.message}`, timestamp: now });
+      }
+    } else if (action === "tag") {
+      const sessionId = parts[1];
+      const tagLabel = parts.slice(2).join(" ").trim();
+      if (!sessionId || !tagLabel) {
+        ctx.addLine({ type: "error", content: "Usage: /history tag <session_id> <tag_label>", timestamp: now });
+        return;
+      }
+      try {
+        const { tagSessionInDb } = await import("../storage/historyDb.js");
+        const updated = tagSessionInDb(sessionId, tagLabel);
+        if (updated) {
+          ctx.addLine({ type: "system", content: `✓ Tagged session "${sessionId}" with label "${tagLabel}".`, timestamp: now });
+        } else {
+          ctx.addLine({ type: "error", content: `Session "${sessionId}" not found.`, timestamp: now });
+        }
+      } catch (err: any) {
+        ctx.addLine({ type: "error", content: `Failed to tag session: ${err.message}`, timestamp: now });
       }
     } else {
       ctx.addLine({
         type: "system",
-        content: "Usage:\n  /history export [session_id] - Export session to JSON string\n  /history backup [path]       - Create a timestamped backup of history.db\n  /history migrate            - Auto-import legacy sessions & checkpoints into SQLite\n  /history clean              - Clean up bulky legacy JSON session and checkpoint files",
+        content: [
+          "Usage:",
+          "  /history stats              - View database metrics, file size & counts",
+          "  /history tag <id> <tag>     - Tag a session with custom labels",
+          "  /history export [id]        - Export session to JSON string",
+          "  /history backup [path]      - Create a backup of history.db",
+          "  /history migrate           - Auto-import legacy files into SQLite",
+          "  /history clean             - Purge legacy JSON files",
+        ].join("\n"),
         timestamp: now,
       });
     }
   }
 };
 
-// Auto-run legacy migration and cleanup on startup
+// Auto-run legacy migration, cleanup, and rolling backup on startup
 try {
   import("../storage/historyDb.js").then((mod) => {
     mod.migrateLegacyJsonToDb();
     mod.cleanLegacyJsonFiles();
     mod.migrateLegacyCheckpointsToDb();
     mod.cleanLegacyCheckpointsFiles();
+    mod.performRollingBackup();
   }).catch(() => {});
 } catch {}
 
