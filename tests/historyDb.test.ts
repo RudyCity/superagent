@@ -303,4 +303,31 @@ describe("SQLite History Database (historyDb)", () => {
     expect(stats.journalMode.toLowerCase()).toBe("wal");
     expect(stats.backupCount).toBeGreaterThanOrEqual(1);
   });
+
+  it("should save, retrieve, migrate, and clean CLI prompt input history in SQLite", () => {
+    const wsId = "ws-test-123";
+    historyDbModule.saveInputHistoryToDb(wsId, "npm run dev");
+    historyDbModule.saveInputHistoryToDb(wsId, "git status");
+
+    const history = historyDbModule.getInputHistoryFromDb(wsId);
+    expect(history.length).toBe(2);
+    expect(history[0]).toBe("npm run dev");
+    expect(history[1]).toBe("git status");
+
+    // Test legacy input history migration and cleanup
+    const wsDir = path.join(tempDir, "workspaces", "ws-legacy-456");
+    fs.mkdirSync(wsDir, { recursive: true });
+    const legacyInputFile = path.join(wsDir, "input-history.json");
+    fs.writeFileSync(legacyInputFile, JSON.stringify(["/help", "bun test"]), "utf-8");
+
+    const migratedCount = historyDbModule.migrateLegacyInputHistoryToDb();
+    expect(migratedCount).toBeGreaterThanOrEqual(2);
+
+    const migratedHistory = historyDbModule.getInputHistoryFromDb("ws-legacy-456");
+    expect(migratedHistory).toContain("/help");
+
+    const cleanedCount = historyDbModule.cleanLegacyInputHistoryFiles();
+    expect(cleanedCount).toBeGreaterThanOrEqual(1);
+    expect(fs.readFileSync(legacyInputFile, "utf-8")).toBe("[]");
+  });
 });

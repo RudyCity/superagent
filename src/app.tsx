@@ -163,15 +163,19 @@ export function App({
   const [tempInput, setTempInput] = useState("");
   const agentRef = useRef<Agent | null>(null);
 
-  // Persist input history to disk so it survives restarts
-  const INPUT_HISTORY_FILE = getWorkspaceInputHistoryPath();
+  // Persist input history to SQLite database
   useEffect(() => {
-    fs.readFile(INPUT_HISTORY_FILE, "utf8").then((raw) => {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        setHistory(parsed);
-      }
-    }).catch(() => { /* first run or corrupt file — start fresh */ });
+    try {
+      import("./core/config/paths.js").then(({ getWorkspaceId }) => {
+        const wsId = getWorkspaceId();
+        import("./core/storage/historyDb.js").then(({ getInputHistoryFromDb }) => {
+          const dbHistory = getInputHistoryFromDb(wsId);
+          if (dbHistory.length > 0) {
+            setHistory(dbHistory);
+          }
+        }).catch(() => {});
+      }).catch(() => {});
+    } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
@@ -587,9 +591,17 @@ export function App({
           if (prev.length > 0 && prev[prev.length - 1] === trimmed) {
             return prev;
           }
-          const next = [...prev, trimmed].slice(-200);
-          fs.writeFile(INPUT_HISTORY_FILE, JSON.stringify(next, null, 2), "utf8").catch(() => {});
-          return next;
+          if (trimmed) {
+            try {
+              import("./core/config/paths.js").then(({ getWorkspaceId }) => {
+                const wsId = getWorkspaceId();
+                import("./core/storage/historyDb.js").then(({ saveInputHistoryToDb }) => {
+                  saveInputHistoryToDb(wsId, trimmed);
+                }).catch(() => {});
+              }).catch(() => {});
+            } catch {}
+          }
+          return [...prev, trimmed].slice(-200);
         });
 
         setInput("");
@@ -686,9 +698,17 @@ export function App({
         if (prev.length > 0 && prev[prev.length - 1] === trimmed) {
           return prev;
         }
-        const next = [...prev, trimmed].slice(-200);
-        fs.writeFile(INPUT_HISTORY_FILE, JSON.stringify(next, null, 2), "utf8").catch(() => {});
-        return next;
+        if (trimmed) {
+          try {
+            import("./core/config/paths.js").then(({ getWorkspaceId }) => {
+              const wsId = getWorkspaceId();
+              import("./core/storage/historyDb.js").then(({ saveInputHistoryToDb }) => {
+                saveInputHistoryToDb(wsId, trimmed);
+              }).catch(() => {});
+            }).catch(() => {});
+          } catch {}
+        }
+        return [...prev, trimmed].slice(-200);
       });
 
       setInput("");

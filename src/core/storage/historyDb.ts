@@ -171,6 +171,15 @@ function initDatabaseSchema(db: any): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_checkpoints_session ON checkpoints(session_id, timestamp DESC);
+
+    CREATE TABLE IF NOT EXISTS input_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_id TEXT NOT NULL,
+      command TEXT NOT NULL,
+      timestamp INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_input_history_ws ON input_history(workspace_id, id ASC);
   `);
 
   try {
@@ -933,6 +942,100 @@ export function getSessionsByTagFromDb(tag: string): SessionRecord[] {
   } catch {
     return [];
   }
+}
+
+export function saveInputHistoryToDb(workspaceId: string, command: string): void {
+  const db = getHistoryDb();
+  try {
+    const stmt = db.prepare("INSERT INTO input_history (workspace_id, command, timestamp) VALUES (?, ?, ?)");
+    stmt.run(workspaceId, command, Date.now());
+
+    const pruneStmt = db.prepare(`
+      DELETE FROM input_history WHERE id IN (
+        SELECT id FROM input_history WHERE workspace_id = ? ORDER BY id DESC LIMIT -1 OFFSET 500
+      )
+    `);
+    pruneStmt.run(workspaceId);
+  } catch {}
+}
+
+export function getInputHistoryFromDb(workspaceId: string, limit: number = 100): string[] {
+  const db = getHistoryDb();
+  try {
+    const stmt = db.prepare(`
+      SELECT command FROM (
+        SELECT id, command FROM input_history WHERE workspace_id = ? ORDER BY id DESC LIMIT ?
+      ) ORDER BY id ASC
+    `);
+    const rows = stmt.all(workspaceId, limit) as Array<{ command: string }>;
+    return rows.map((r) => r.command);
+  } catch {
+    return [];
+  }
+}
+
+export function clearInputHistoryInDb(workspaceId: string): void {
+  const db = getHistoryDb();
+  try {
+    db.prepare("DELETE FROM input_history WHERE workspace_id = ?").run(workspaceId);
+  } catch {}
+}
+
+export function migrateLegacyInputHistoryToDb(): number {
+  const configDir = getGlobalConfigDir();
+  const workspacesDir = path.join(configDir, "workspaces");
+  if (!fs.existsSync(workspacesDir)) return 0;
+
+  let count = 0;
+  try {
+    const dirs = fs.readdirSync(workspacesDir);
+    for (const wsId of dirs) {
+      const historyFile = path.join(workspacesDir, wsId, "input-history.json");
+      if (!fs.existsSync(historyFile)) continue;
+
+      try {
+        const raw = fs.readFileSync(historyFile, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const existing = getInputHistoryFromDb(wsId, 1);
+          if (existing.length === 0) {
+            for (const cmd of parsed) {
+              if (typeof cmd === "string" && cmd.trim()) {
+                saveInputHistoryToDb(wsId, cmd.trim());
+                count++;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+
+  return count;
+}
+
+export function cleanLegacyInputHistoryFiles(): number {
+  const configDir = getGlobalConfigDir();
+  const workspacesDir = path.join(configDir, "workspaces");
+  if (!fs.existsSync(workspacesDir)) return 0;
+
+  migrateLegacyInputHistoryToDb();
+
+  let cleaned = 0;
+  try {
+    const dirs = fs.readdirSync(workspacesDir);
+    for (const wsId of dirs) {
+      const historyFile = path.join(workspacesDir, wsId, "input-history.json");
+      if (fs.existsSync(historyFile)) {
+        try {
+          fs.writeFileSync(historyFile, "[]", "utf-8");
+          cleaned++;
+        } catch {}
+      }
+    }
+  } catch {}
+
+  return cleaned;
 }
 
 export function closeHistoryDb(): void {

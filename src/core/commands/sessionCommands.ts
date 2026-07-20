@@ -503,6 +503,8 @@ try {
     mod.cleanLegacyJsonFiles();
     mod.migrateLegacyCheckpointsToDb();
     mod.cleanLegacyCheckpointsFiles();
+    mod.migrateLegacyInputHistoryToDb();
+    mod.cleanLegacyInputHistoryFiles();
     mod.performRollingBackup();
   }).catch(() => {});
 } catch {}

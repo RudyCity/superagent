@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.499] - 2026-07-20
+
+### Added
+- **CLI Prompt Input History SQLite Migration & Auto-Cleanup**:
+  - Created `input_history` table in SQLite `history.db` with workspace-scoped indexing.
+  - Implemented `saveInputHistoryToDb()`, `getInputHistoryFromDb()`, and `clearInputHistoryInDb()` functions.
+  - Updated `app.tsx` terminal UI to load and save typed command history directly to SQLite.
+  - Added `migrateLegacyInputHistoryToDb()` and `cleanLegacyInputHistoryFiles()` functions with startup auto-execution.
+  - Added unit test case in `tests/historyDb.test.ts` for input history operations.
+
 ## [1.2.498] - 2026-07-20
 
 ### Added
