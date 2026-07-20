@@ -203,6 +203,42 @@ function initDatabaseSchema(db: any): void {
       tokens_remaining INTEGER NOT NULL,
       last_updated INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS pinned_knowledge (
+      id TEXT PRIMARY KEY,
+      content TEXT NOT NULL,
+      role TEXT NOT NULL,
+      agent_tag TEXT,
+      tag TEXT,
+      source_session_path TEXT NOT NULL,
+      working_directory TEXT NOT NULL,
+      pinned_at INTEGER NOT NULL,
+      timestamp INTEGER NOT NULL,
+      preview TEXT NOT NULL,
+      tool_calls TEXT,
+      tool_results TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pinned_knowledge_wd ON pinned_knowledge(working_directory);
+    CREATE INDEX IF NOT EXISTS idx_pinned_knowledge_tag ON pinned_knowledge(tag);
+
+    CREATE TABLE IF NOT EXISTS workspace_tasks (
+      workspace_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      command TEXT NOT NULL,
+      pid INTEGER NOT NULL,
+      log_path TEXT,
+      is_detached_window INTEGER NOT NULL DEFAULT 0,
+      window_label TEXT,
+      auto_retry INTEGER NOT NULL DEFAULT 0,
+      on_exit TEXT,
+      has_exited INTEGER NOT NULL DEFAULT 0,
+      exit_code INTEGER,
+      completed_at INTEGER,
+      is_hidden INTEGER NOT NULL DEFAULT 0,
+      cwd TEXT,
+      PRIMARY KEY (workspace_id, task_id)
+    );
   `);
 
   try {
@@ -1179,4 +1215,170 @@ export function saveRateLimitStateToDb(key: string, tokensRemaining: number, las
     `).run(key, tokensRemaining, lastUpdated);
   } catch {}
 }
+
+export function savePinnedKnowledgeToDb(entry: any): void {
+  try {
+    const db = getHistoryDb();
+    db.prepare(`
+      INSERT INTO pinned_knowledge (
+        id, content, role, agent_tag, tag, source_session_path, working_directory,
+        pinned_at, timestamp, preview, tool_calls, tool_results
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        content = excluded.content,
+        role = excluded.role,
+        agent_tag = excluded.agent_tag,
+        tag = excluded.tag,
+        source_session_path = excluded.source_session_path,
+        working_directory = excluded.working_directory,
+        pinned_at = excluded.pinned_at,
+        timestamp = excluded.timestamp,
+        preview = excluded.preview,
+        tool_calls = excluded.tool_calls,
+        tool_results = excluded.tool_results
+    `).run(
+      entry.id,
+      entry.content,
+      entry.role,
+      entry.agentTag ? JSON.stringify(entry.agentTag) : null,
+      entry.tag || null,
+      entry.sourceSessionPath,
+      entry.workingDirectory,
+      entry.pinnedAt,
+      entry.timestamp,
+      entry.preview,
+      entry.toolCalls ? JSON.stringify(entry.toolCalls) : null,
+      entry.toolResults ? JSON.stringify(entry.toolResults) : null
+    );
+  } catch {}
+}
+
+export function deletePinnedKnowledgeFromDb(id: string): void {
+  try {
+    const db = getHistoryDb();
+    db.prepare("DELETE FROM pinned_knowledge WHERE id = ?").run(id);
+  } catch {}
+}
+
+export function deletePinnedKnowledgeByPinFromDb(sourceSessionPath: string, contentPreview: string): void {
+  try {
+    const db = getHistoryDb();
+    const preview = contentPreview.substring(0, 200);
+    db.prepare("DELETE FROM pinned_knowledge WHERE source_session_path = ? AND preview = ?").run(sourceSessionPath, preview);
+  } catch {}
+}
+
+export function updatePinnedKnowledgeTagInDb(sourceSessionPath: string, contentPreview: string, tag: string): void {
+  try {
+    const db = getHistoryDb();
+    const preview = contentPreview.substring(0, 200);
+    db.prepare("UPDATE pinned_knowledge SET tag = ? WHERE source_session_path = ? AND preview = ?").run(tag || null, sourceSessionPath, preview);
+  } catch {}
+}
+
+export function deleteSessionFromPinnedKnowledgeDb(sourceSessionPath: string): number {
+  try {
+    const db = getHistoryDb();
+    const stmt = db.prepare("DELETE FROM pinned_knowledge WHERE source_session_path = ?");
+    const info = stmt.run(sourceSessionPath);
+    return info.changes || 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function getAllPinnedKnowledgeFromDb(): any[] {
+  try {
+    const db = getHistoryDb();
+    const rows = db.prepare("SELECT * FROM pinned_knowledge").all() || [];
+    return rows.map((row: any) => ({
+      id: row.id,
+      content: row.content,
+      role: row.role,
+      agentTag: row.agent_tag ? JSON.parse(row.agent_tag) : undefined,
+      tag: row.tag || undefined,
+      sourceSessionPath: row.source_session_path,
+      workingDirectory: row.working_directory,
+      pinnedAt: row.pinned_at,
+      timestamp: row.timestamp,
+      preview: row.preview,
+      toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
+      toolResults: row.tool_results ? JSON.parse(row.tool_results) : undefined,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function saveWorkspaceTaskToDb(workspaceId: string, task: any): void {
+  try {
+    const db = getHistoryDb();
+    db.prepare(`
+      INSERT INTO workspace_tasks (
+        workspace_id, task_id, command, pid, log_path, is_detached_window, window_label,
+        auto_retry, on_exit, has_exited, exit_code, completed_at, is_hidden, cwd
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(workspace_id, task_id) DO UPDATE SET
+        command = excluded.command,
+        pid = excluded.pid,
+        log_path = excluded.log_path,
+        is_detached_window = excluded.is_detached_window,
+        window_label = excluded.window_label,
+        auto_retry = excluded.auto_retry,
+        on_exit = excluded.on_exit,
+        has_exited = excluded.has_exited,
+        exit_code = excluded.exit_code,
+        completed_at = excluded.completed_at,
+        is_hidden = excluded.is_hidden,
+        cwd = excluded.cwd
+    `).run(
+      workspaceId,
+      task.id,
+      task.command,
+      task.pid,
+      task.logPath || null,
+      task.isDetachedWindow ? 1 : 0,
+      task.windowLabel || null,
+      task.autoRetry ? 1 : 0,
+      task.onExit || null,
+      task.hasExited ? 1 : 0,
+      task.exitCode !== undefined ? task.exitCode : null,
+      task.completedAt || null,
+      task.isHidden ? 1 : 0,
+      task.cwd || null
+    );
+  } catch {}
+}
+
+export function getWorkspaceTasksFromDb(workspaceId: string): any[] {
+  try {
+    const db = getHistoryDb();
+    const rows = db.prepare("SELECT * FROM workspace_tasks WHERE workspace_id = ?").all(workspaceId) || [];
+    return rows.map((row: any) => ({
+      id: row.task_id,
+      command: row.command,
+      pid: row.pid,
+      logPath: row.log_path || undefined,
+      isDetachedWindow: row.is_detached_window === 1,
+      windowLabel: row.window_label || undefined,
+      autoRetry: row.auto_retry === 1,
+      onExit: row.on_exit || undefined,
+      hasExited: row.has_exited === 1,
+      exitCode: row.exit_code !== null ? row.exit_code : undefined,
+      completedAt: row.completed_at || undefined,
+      isHidden: row.is_hidden === 1,
+      cwd: row.cwd || undefined,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function deleteWorkspaceTaskFromDb(workspaceId: string, taskId: string): void {
+  try {
+    const db = getHistoryDb();
+    db.prepare("DELETE FROM workspace_tasks WHERE workspace_id = ? AND task_id = ?").run(workspaceId, taskId);
+  } catch {}
+}
+
 

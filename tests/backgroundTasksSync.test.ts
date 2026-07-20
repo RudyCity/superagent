@@ -12,13 +12,20 @@ import {
   savePersistedTasks, 
   loadAndSyncPersistedTasks,
   isTaskInWorkspace,
-  cleanupStaleWorkspaceDirs
+  cleanupStaleWorkspaceDirs,
+  resetWorkspaceTasksMigrationFlag
 } from "../src/core/tools/state";
 import { getRootConfigDir, getWorkspaceTasksFilePath, getWorkspaceId } from "../src/core/config/paths";
+import { closeHistoryDb } from "../src/core/config";
+import { saveWorkspaceTaskToDb, getWorkspaceTasksFromDb } from "../src/core/storage/historyDb.js";
 
 describe("Background Tasks Persistence & Sync Tests", () => {
   beforeEach(() => {
     delete process.env.SUPERAGENT_CONFIG_DIR;
+    
+    closeHistoryDb();
+    resetWorkspaceTasksMigrationFlag();
+
     if (fs.existsSync(tempHome)) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
@@ -27,6 +34,8 @@ describe("Background Tasks Persistence & Sync Tests", () => {
   });
 
   afterEach(() => {
+    closeHistoryDb();
+
     if (fs.existsSync(tempHome)) {
       try {
         fs.rmSync(tempHome, { recursive: true, force: true });
@@ -35,7 +44,7 @@ describe("Background Tasks Persistence & Sync Tests", () => {
     backgroundTasks.clear();
   });
 
-  it("should persist background tasks to a JSON file", () => {
+  it("should persist background tasks to SQLite", () => {
     const taskId = "test-task-123";
     const dummyTask = {
       id: taskId,
@@ -50,11 +59,8 @@ describe("Background Tasks Persistence & Sync Tests", () => {
     backgroundTasks.set(taskId, dummyTask);
     savePersistedTasks();
 
-    const tasksFilePath = getWorkspaceTasksFilePath();
-    expect(fs.existsSync(tasksFilePath)).toBe(true);
-
-    const content = fs.readFileSync(tasksFilePath, "utf-8");
-    const list = JSON.parse(content);
+    const workspaceId = getWorkspaceId();
+    const list = getWorkspaceTasksFromDb(workspaceId);
     expect(list).toHaveLength(1);
     expect(list[0].id).toBe(taskId);
     expect(list[0].command).toBe("sleep 100");
@@ -64,27 +70,22 @@ describe("Background Tasks Persistence & Sync Tests", () => {
   });
 
   it("should restore and sync tasks, marking dead processes as exited", () => {
-    const tasksFilePath = getWorkspaceTasksFilePath();
-    // Ensure the workspace dir exists (getWorkspaceTasksFilePath creates it)
-    fs.mkdirSync(path.dirname(tasksFilePath), { recursive: true });
+    const workspaceId = getWorkspaceId();
 
-    // Create a mock list with two processes: one active (this process PID) and one dead (pid 99999)
-    const list = [
-      {
-        id: "active-task",
-        command: "node active",
-        pid: process.pid,
-        hasExited: false,
-      },
-      {
-        id: "dead-task",
-        command: "node dead",
-        pid: 99999,
-        hasExited: false,
-      }
-    ];
+    // Seed SQLite directly
+    saveWorkspaceTaskToDb(workspaceId, {
+      id: "active-task",
+      command: "node active",
+      pid: process.pid,
+      hasExited: false,
+    });
 
-    fs.writeFileSync(tasksFilePath, JSON.stringify(list, null, 2), "utf-8");
+    saveWorkspaceTaskToDb(workspaceId, {
+      id: "dead-task",
+      command: "node dead",
+      pid: 99999,
+      hasExited: false,
+    });
 
     // Load and sync
     loadAndSyncPersistedTasks();

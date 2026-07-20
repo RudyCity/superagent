@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.502] - 2026-07-20
+
+### Changed
+- **Pinned Knowledge & Background Tasks SQLite Migration**:
+  - Migrated `pinned-knowledge.json` and workspace-scoped `background-tasks.json` to SQLite tables (`pinned_knowledge` and `workspace_tasks`) in the central `history.db`.
+  - Removed all file-based locks (`background-tasks.json.lock`), relying entirely on SQLite's concurrent writes.
+  - Implemented one-time transparent migrations for both stores upon first access.
+  - Updated `pinnedKnowledge.test.ts` and `backgroundTasksSync.test.ts` to assert against the database state, seeding the database directly to ensure test isolation.
+
 ## [1.2.501] - 2026-07-20
 
 ### Changed

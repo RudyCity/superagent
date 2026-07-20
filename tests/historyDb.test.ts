@@ -390,4 +390,82 @@ describe("SQLite History Database (historyDb)", () => {
     const nonExistent = historyDbModule.getRateLimitStateFromDb("unknown-key");
     expect(nonExistent).toBeNull();
   });
+
+  it("should perform CRUD on pinned knowledge in SQLite", () => {
+    const entry = {
+      id: "pk-1",
+      content: "pinned content",
+      role: "user",
+      agentTag: { tier: "master" },
+      tag: "test-tag",
+      sourceSessionPath: "/session/path.json",
+      workingDirectory: "/workspace/dir",
+      pinnedAt: 1000,
+      timestamp: 2000,
+      preview: "pinned",
+      toolCalls: [{ id: "c1", name: "t1", args: {} }],
+      toolResults: [{ toolCallId: "c1", name: "t1", result: "r1" }],
+    };
+
+    historyDbModule.savePinnedKnowledgeToDb(entry);
+
+    const all = historyDbModule.getAllPinnedKnowledgeFromDb();
+    expect(all).toHaveLength(1);
+    expect(all[0].id).toBe("pk-1");
+    expect(all[0].content).toBe("pinned content");
+    expect(all[0].agentTag).toEqual({ tier: "master" });
+    expect(all[0].tag).toBe("test-tag");
+
+    // update tag
+    historyDbModule.updatePinnedKnowledgeTagInDb("/session/path.json", "pinned", "new-tag");
+    const all2 = historyDbModule.getAllPinnedKnowledgeFromDb();
+    expect(all2[0].tag).toBe("new-tag");
+
+    // delete by pin
+    historyDbModule.deletePinnedKnowledgeByPinFromDb("/session/path.json", "pinned");
+    expect(historyDbModule.getAllPinnedKnowledgeFromDb()).toHaveLength(0);
+
+    // save again and delete by ID
+    historyDbModule.savePinnedKnowledgeToDb(entry);
+    historyDbModule.deletePinnedKnowledgeFromDb("pk-1");
+    expect(historyDbModule.getAllPinnedKnowledgeFromDb()).toHaveLength(0);
+
+    // save again and delete by session
+    historyDbModule.savePinnedKnowledgeToDb(entry);
+    const removedCount = historyDbModule.deleteSessionFromPinnedKnowledgeDb("/session/path.json");
+    expect(removedCount).toBe(1);
+    expect(historyDbModule.getAllPinnedKnowledgeFromDb()).toHaveLength(0);
+  });
+
+  it("should perform CRUD on workspace tasks in SQLite", () => {
+    const task = {
+      id: "task-1",
+      command: "sleep 1",
+      pid: 12345,
+      logPath: "/log/path",
+      isDetachedWindow: true,
+      windowLabel: "label",
+      autoRetry: false,
+      onExit: "on-exit-cmd",
+      hasExited: true,
+      exitCode: 0,
+      completedAt: 5000,
+      isHidden: false,
+      cwd: "/workspace/cwd",
+    };
+
+    historyDbModule.saveWorkspaceTaskToDb("ws-1", task);
+
+    const list = historyDbModule.getWorkspaceTasksFromDb("ws-1");
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe("task-1");
+    expect(list[0].command).toBe("sleep 1");
+    expect(list[0].isDetachedWindow).toBe(true);
+    expect(list[0].hasExited).toBe(true);
+    expect(list[0].exitCode).toBe(0);
+
+    // delete
+    historyDbModule.deleteWorkspaceTaskFromDb("ws-1", "task-1");
+    expect(historyDbModule.getWorkspaceTasksFromDb("ws-1")).toHaveLength(0);
+  });
 });

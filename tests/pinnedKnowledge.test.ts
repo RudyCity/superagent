@@ -12,11 +12,14 @@ import {
 } from "../src/core/pinnedKnowledge.js";
 import * as configModule from "../src/core/config.js";
 import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
+import { closeHistoryDb, getAllPinnedKnowledgeFromDb } from "../src/core/storage/historyDb.js";
 
 vi.mock("../src/core/config.js", () => ({
   getSettings: vi.fn().mockReturnValue({ enableRmemory: false }),
   getRootConfigDir: vi.fn(),
+  getGlobalConfigDir: vi.fn(),
   ensureGlobalConfigDir: vi.fn(),
+  closeHistoryDb: vi.fn(),
 }));
 
 vi.mock("../src/core/rmemoryUtil.js", () => {
@@ -36,17 +39,25 @@ describe("pinnedKnowledge", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    
+    // Close history db to release locks before cleanup
+    closeHistoryDb();
+
     process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
     clearModelConfigCache();
     fs.rmSync(testConfigDir, { recursive: true, force: true });
     fs.mkdirSync(testConfigDir, { recursive: true });
     
-    // Setup getRootConfigDir mock
+    // Setup mocks
     vi.mocked(configModule.getRootConfigDir).mockReturnValue(testConfigDir);
+    vi.mocked(configModule.getGlobalConfigDir).mockReturnValue(testConfigDir);
   });
 
   afterEach(() => {
     clearModelConfigCache();
+    
+    closeHistoryDb();
+
     fs.rmSync(testConfigDir, { recursive: true, force: true });
     process.env = originalEnv;
   });
@@ -65,12 +76,10 @@ describe("pinnedKnowledge", () => {
       const id = addToKnowledge(pin, "/path/to/session.json", "/path/to/project");
       expect(id).toBeDefined();
 
-      // Read file to check if it's there
-      const storeFile = path.join(testConfigDir, "pinned-knowledge.json");
-      expect(fs.existsSync(storeFile)).toBe(true);
-      const storeContent = JSON.parse(fs.readFileSync(storeFile, "utf-8"));
-      expect(storeContent.entries.length).toBe(1);
-      expect(storeContent.entries[0].content).toBe(pin.content);
+      // Check SQLite database directly instead of JSON file
+      const entries = getAllPinnedKnowledgeFromDb();
+      expect(entries.length).toBe(1);
+      expect(entries[0].content).toBe(pin.content);
 
       // Search it
       const results = await searchKnowledge("architecture");

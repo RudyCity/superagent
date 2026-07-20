@@ -12,6 +12,11 @@ import {
   SuperagentType,
   QuestionHandler 
 } from "./types.js";
+import {
+  saveWorkspaceTaskToDb,
+  getWorkspaceTasksFromDb,
+  deleteWorkspaceTaskFromDb
+} from "../storage/historyDb.js";
 
 export const backgroundTasks = new Map<string, BackgroundTask>();
 export const taskChangeListeners = new Set<TaskChangeListener>();
@@ -36,56 +41,82 @@ interface PersistedTask {
   cwd?: string;
 }
 
-function acquireTasksLockSync(lockPath: string): boolean {
-  const start = Date.now();
-  const timeoutMs = 2000;
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const fd = fs.openSync(lockPath, "wx");
-      fs.writeFileSync(fd, String(process.pid));
-      fs.closeSync(fd);
-      return true;
-    } catch (err: any) {
-      if (err.code === "ENOENT") {
-        try {
-          fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-        } catch {}
-      }
-      // Simple sleep/retry
-      const sab = new SharedArrayBuffer(4);
-      const int32 = new Int32Array(sab);
-      try { Atomics.wait(int32, 0, 0, 50); } catch {
-        const end = Date.now() + 50;
-        while (Date.now() < end) {}
-      }
-    }
-  }
-  return false;
+// Global flag to prevent re-entrant calls to loadAndSyncPersistedTasks
+let isSyncing = false;
+let legacyWorkspaceTasksMigrated = false;
+
+export function resetWorkspaceTasksMigrationFlag(): void {
+  legacyWorkspaceTasksMigrated = false;
 }
 
-function releaseTasksLockSync(lockPath: string) {
+function migrateGlobalTasksToWorkspace(): void {
   try {
-    if (fs.existsSync(lockPath)) {
-      fs.unlinkSync(lockPath);
+    const rootDir = getRootConfigDir();
+    const legacyPath = path.join(rootDir, "background-tasks.json");
+    if (!fs.existsSync(legacyPath)) return;
+
+    const content = fs.readFileSync(legacyPath, "utf-8");
+    const allTasks = JSON.parse(content) as PersistedTask[];
+    const cwd = process.cwd();
+
+    const mine = allTasks.filter((t) => {
+      if (!t.cwd) return false;
+      try {
+        let p = path.resolve(cwd);
+        let c = path.resolve(t.cwd);
+        if (process.platform === "win32") { p = p.toLowerCase(); c = c.toLowerCase(); }
+        const rel = path.relative(p, c);
+        return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+      } catch { return false; }
+    });
+
+    if (mine.length > 0) {
+      const workspaceId = getWorkspaceId();
+      for (const t of mine) {
+        saveWorkspaceTaskToDb(workspaceId, t);
+      }
     }
-  } catch {}
+
+    fs.unlinkSync(legacyPath);
+  } catch {
+    // Migration is best-effort
+  }
+}
+
+function migrateWorkspaceTasksToSqlite(): void {
+  if (legacyWorkspaceTasksMigrated) return;
+
+  migrateGlobalTasksToWorkspace();
+
+  const tasksFilePath = getWorkspaceTasksFilePath();
+  if (fs.existsSync(tasksFilePath)) {
+    try {
+      const content = fs.readFileSync(tasksFilePath, "utf-8");
+      const list = JSON.parse(content) as PersistedTask[];
+      const workspaceId = getWorkspaceId();
+      for (const t of list) {
+        saveWorkspaceTaskToDb(workspaceId, t);
+      }
+      fs.unlinkSync(tasksFilePath);
+      const lockPath = tasksFilePath + ".lock";
+      if (fs.existsSync(lockPath)) {
+        fs.unlinkSync(lockPath);
+      }
+    } catch {}
+  }
+  legacyWorkspaceTasksMigrated = true;
 }
 
 export function savePersistedTasks(): void {
-  const tasksFilePath = getWorkspaceTasksFilePath();
-  const lockPath = tasksFilePath + ".lock";
-
-  if (!acquireTasksLockSync(lockPath)) {
-    return;
-  }
+  migrateWorkspaceTasksToSqlite();
 
   try {
-    const list: PersistedTask[] = [];
+    const workspaceId = getWorkspaceId();
     for (const [id, task] of backgroundTasks.entries()) {
       if (task.hasExited && !task.completedAt) {
         task.completedAt = Date.now();
       }
-      list.push({
+      saveWorkspaceTaskToDb(workspaceId, {
         id: task.id,
         command: task.command,
         pid: task.process?.pid || 0,
@@ -101,61 +132,8 @@ export function savePersistedTasks(): void {
         cwd: task.cwd,
       });
     }
-    fs.writeFileSync(tasksFilePath, JSON.stringify(list, null, 2), "utf-8");
   } catch (err) {
     // Ignore errors
-  } finally {
-    releaseTasksLockSync(lockPath);
-  }
-}
-
-// Global flag to prevent re-entrant calls to loadAndSyncPersistedTasks
-let isSyncing = false;
-
-/**
- * One-time migration: moves tasks that belong to the current workspace
- * from the old global background-tasks.json (pre-v1.2.175) into the
- * new workspace-scoped file, then removes the global file.
- * Safe to call repeatedly — exits immediately if global file is gone.
- */
-function migrateGlobalTasksToWorkspace(): void {
-  try {
-    const rootDir = getRootConfigDir();
-    const legacyPath = path.join(rootDir, "background-tasks.json");
-    if (!fs.existsSync(legacyPath)) return;
-
-    const content = fs.readFileSync(legacyPath, "utf-8");
-    const allTasks = JSON.parse(content) as PersistedTask[];
-    const cwd = process.cwd();
-
-    // Filter to tasks that belong to the current workspace
-    const mine = allTasks.filter((t) => {
-      if (!t.cwd) return false;
-      try {
-        let p = path.resolve(cwd);
-        let c = path.resolve(t.cwd);
-        if (process.platform === "win32") { p = p.toLowerCase(); c = c.toLowerCase(); }
-        const rel = path.relative(p, c);
-        return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
-      } catch { return false; }
-    });
-
-    if (mine.length > 0) {
-      const destPath = getWorkspaceTasksFilePath();
-      // Merge: don't overwrite tasks already in the workspace file
-      let existing: PersistedTask[] = [];
-      if (fs.existsSync(destPath)) {
-        try { existing = JSON.parse(fs.readFileSync(destPath, "utf-8")); } catch {}
-      }
-      const existingIds = new Set(existing.map((t) => t.id));
-      const merged = [...existing, ...mine.filter((t) => !existingIds.has(t.id))];
-      fs.writeFileSync(destPath, JSON.stringify(merged, null, 2), "utf-8");
-    }
-
-    // Remove the global file — it is now fully replaced by workspace-scoped files
-    fs.unlinkSync(legacyPath);
-  } catch {
-    // Migration is best-effort — never crash on failure
   }
 }
 
@@ -164,121 +142,110 @@ export function loadAndSyncPersistedTasks(): void {
   isSyncing = true;
 
   try {
-    const tasksFilePath = getWorkspaceTasksFilePath();
-    if (!fs.existsSync(tasksFilePath)) {
-      return;
-    }
+    migrateWorkspaceTasksToSqlite();
 
-    const lockPath = tasksFilePath + ".lock";
-    if (!acquireTasksLockSync(lockPath)) {
-      return;
-    }
+    const workspaceId = getWorkspaceId();
+    const list = getWorkspaceTasksFromDb(workspaceId);
+    let changed = false;
 
-    try {
-      const content = fs.readFileSync(tasksFilePath, "utf-8");
-      const list = JSON.parse(content) as PersistedTask[];
-      let changed = false;
-
-      for (const item of list) {
-        let isAlive = false;
-        if (item.pid > 0) {
-          try {
-            process.kill(item.pid, 0);
-            isAlive = true;
-          } catch (e: any) {
-            isAlive = (e.code === "EPERM");
-          }
-        } else if (process.env.VITEST && (item.pid === 0 || !item.pid)) {
+    for (const item of list) {
+      let isAlive = false;
+      if (item.pid > 0) {
+        try {
+          process.kill(item.pid, 0);
           isAlive = true;
+        } catch (e: any) {
+          isAlive = (e.code === "EPERM");
         }
+      } else if (process.env.VITEST && (item.pid === 0 || !item.pid)) {
+        isAlive = true;
+      }
 
-        const hasExited = !isAlive;
-        const exitCode = hasExited ? (item.exitCode ?? -1) : null;
-        const completedAt = hasExited ? (item.completedAt ?? Date.now()) : undefined;
+      const hasExited = !isAlive;
+      const exitCode = hasExited ? (item.exitCode ?? -1) : null;
+      const completedAt = hasExited ? (item.completedAt ?? Date.now()) : undefined;
 
-        const existing = backgroundTasks.get(item.id);
-        if (existing) {
-          let itemChanged = false;
-          if (existing.hasExited !== hasExited) {
-            existing.hasExited = hasExited;
-            existing.exitCode = exitCode;
-            existing.completedAt = completedAt;
-            itemChanged = true;
-          }
-          const expectedHidden = item.isHidden !== undefined ? item.isHidden : (item.id === "rmemory-gateway" ? true : undefined);
-          if (existing.isHidden !== expectedHidden) {
-            existing.isHidden = expectedHidden;
-            itemChanged = true;
-          }
-          if (itemChanged) {
-            changed = true;
-          }
-        } else {
-          const restoredTask: BackgroundTask = {
-            id: item.id,
-            command: item.command,
-            process: {
-              pid: item.pid,
-              killed: hasExited,
-              stdin: null,
-            },
-            output: [],
-            logPath: item.logPath,
-            hasExited,
-            exitCode,
-            isDetachedWindow: item.isDetachedWindow,
-            windowLabel: item.windowLabel,
-            autoRetry: item.autoRetry,
-            onExit: item.onExit,
-            completedAt,
-            isHidden: item.isHidden !== undefined ? item.isHidden : (item.id === "rmemory-gateway" ? true : undefined),
-            cwd: item.cwd,
-          };
-          if (item.logPath && fs.existsSync(item.logPath)) {
-            try {
-              const logs = fs.readFileSync(item.logPath, "utf-8");
-              restoredTask.output = logs.split("\n").map(l => l + "\n").slice(-1000);
-            } catch {}
-          }
-          backgroundTasks.set(item.id, restoredTask);
+      const existing = backgroundTasks.get(item.id);
+      if (existing) {
+        let itemChanged = false;
+        if (existing.hasExited !== hasExited) {
+          existing.hasExited = hasExited;
+          existing.exitCode = exitCode;
+          existing.completedAt = completedAt;
+          itemChanged = true;
+        }
+        const expectedHidden = item.isHidden !== undefined ? item.isHidden : (item.id === "rmemory-gateway" ? true : undefined);
+        if (existing.isHidden !== expectedHidden) {
+          existing.isHidden = expectedHidden;
+          itemChanged = true;
+        }
+        if (itemChanged) {
           changed = true;
         }
-      }
-
-      if (changed) {
-        const updatedList: PersistedTask[] = [];
-        for (const [id, task] of backgroundTasks.entries()) {
-          updatedList.push({
-            id: task.id,
-            command: task.command,
-            pid: task.process?.pid || 0,
-            logPath: task.logPath,
-            isDetachedWindow: task.isDetachedWindow,
-            windowLabel: task.windowLabel,
-            autoRetry: task.autoRetry,
-            onExit: task.onExit,
-            hasExited: !!task.hasExited,
-            exitCode: task.exitCode,
-            completedAt: task.completedAt,
-            isHidden: task.isHidden,
-            cwd: task.cwd,
-          });
+      } else {
+        const restoredTask: BackgroundTask = {
+          id: item.id,
+          command: item.command,
+          process: {
+            pid: item.pid,
+            killed: hasExited,
+            stdin: null,
+          },
+          output: [],
+          logPath: item.logPath,
+          hasExited,
+          exitCode,
+          isDetachedWindow: item.isDetachedWindow,
+          windowLabel: item.windowLabel,
+          autoRetry: item.autoRetry,
+          onExit: item.onExit,
+          completedAt,
+          isHidden: item.isHidden !== undefined ? item.isHidden : (item.id === "rmemory-gateway" ? true : undefined),
+          cwd: item.cwd,
+        };
+        if (item.logPath && fs.existsSync(item.logPath)) {
+          try {
+            const logs = fs.readFileSync(item.logPath, "utf-8");
+            restoredTask.output = logs.split("\n").map(l => l + "\n").slice(-1000);
+          } catch {}
         }
-        fs.writeFileSync(tasksFilePath, JSON.stringify(updatedList, null, 2), "utf-8");
+        backgroundTasks.set(item.id, restoredTask);
+        changed = true;
       }
-
-      if (changed) {
-        setTimeout(() => {
-          for (const listener of taskChangeListeners) {
-            listener();
-          }
-        }, 0);
-      }
-    } catch (err) {
-      // Ignore errors
-    } finally {
-      releaseTasksLockSync(lockPath);
     }
+
+    if (changed) {
+      for (const [id, task] of backgroundTasks.entries()) {
+        if (task.hasExited && !task.completedAt) {
+          task.completedAt = Date.now();
+        }
+        saveWorkspaceTaskToDb(workspaceId, {
+          id: task.id,
+          command: task.command,
+          pid: task.process?.pid || 0,
+          logPath: task.logPath,
+          isDetachedWindow: task.isDetachedWindow,
+          windowLabel: task.windowLabel,
+          autoRetry: task.autoRetry,
+          onExit: task.onExit,
+          hasExited: !!task.hasExited,
+          exitCode: task.exitCode,
+          completedAt: task.completedAt,
+          isHidden: task.isHidden,
+          cwd: task.cwd,
+        });
+      }
+    }
+
+    if (changed) {
+      setTimeout(() => {
+        for (const listener of taskChangeListeners) {
+          listener();
+        }
+      }, 0);
+    }
+  } catch (err) {
+    // Ignore errors
   } finally {
     isSyncing = false;
   }

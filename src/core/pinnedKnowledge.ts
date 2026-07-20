@@ -11,6 +11,14 @@ import path from "path";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./config/paths.js";
 import { getSettings } from "./config.js";
 import type { PinnedMessage, AgentTag } from "./context/ContextManager.js";
+import {
+  savePinnedKnowledgeToDb,
+  deletePinnedKnowledgeFromDb,
+  deletePinnedKnowledgeByPinFromDb,
+  updatePinnedKnowledgeTagInDb,
+  deleteSessionFromPinnedKnowledgeDb,
+  getAllPinnedKnowledgeFromDb
+} from "./storage/historyDb.js";
 
 export interface KnowledgeEntry {
   /** Unique ID for this knowledge entry */
@@ -51,47 +59,57 @@ function getKnowledgePath(): string {
   return path.join(getRootConfigDir(), "pinned-knowledge.json");
 }
 
-let cachedStore: KnowledgeStore | null = null;
+let legacyPinnedKnowledgeMigrated = false;
 
-function readStore(): KnowledgeStore {
-  if (cachedStore) {
-    return cachedStore;
+function loadPinnedKnowledgeWithMigration(): KnowledgeEntry[] {
+  if (legacyPinnedKnowledgeMigrated) {
+    return getAllPinnedKnowledgeFromDb();
   }
+
   const filePath = getKnowledgePath();
-  try {
-    if (fs.existsSync(filePath)) {
+  if (fs.existsSync(filePath)) {
+    try {
       const raw = fs.readFileSync(filePath, "utf-8");
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.entries)) {
-        cachedStore = parsed as KnowledgeStore;
-        return cachedStore;
+        for (const entry of parsed.entries) {
+          savePinnedKnowledgeToDb(entry);
+        }
       }
+      fs.unlinkSync(filePath);
+    } catch (e) {
+      // Ignore migration errors
     }
-  } catch {
-    // Corrupted file — start fresh
   }
-  cachedStore = { version: STORE_VERSION, entries: [] };
-  return cachedStore;
+
+  legacyPinnedKnowledgeMigrated = true;
+  return getAllPinnedKnowledgeFromDb();
 }
 
-function writeStore(store: KnowledgeStore): void {
-  cachedStore = store;
-  try {
-    ensureGlobalConfigDir();
-    const filePath = getKnowledgePath();
-    // Enforce max entries (remove oldest)
-    if (store.entries.length > MAX_ENTRIES) {
-      store.entries.sort((a, b) => b.pinnedAt - a.pinnedAt);
-      store.entries = store.entries.slice(0, MAX_ENTRIES);
-    }
-    fs.writeFileSync(filePath, JSON.stringify(store, null, 2), "utf-8");
-  } catch (err) {
-    console.error("Failed to write pinned knowledge store:", err);
-  }
+function readStore(): KnowledgeStore {
+  const entries = loadPinnedKnowledgeWithMigration();
+  return { version: STORE_VERSION, entries };
 }
 
 function generateId(): string {
   return `pk-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+}
+
+function enforceMaxEntriesLimit(): void {
+  try {
+    const { getHistoryDb } = require("./storage/historyDb.js");
+    const db = getHistoryDb();
+    const countRow = db.prepare("SELECT count(*) as cnt FROM pinned_knowledge").get();
+    if (countRow && countRow.cnt > MAX_ENTRIES) {
+      const excess = countRow.cnt - MAX_ENTRIES;
+      const oldestRows = db.prepare("SELECT id FROM pinned_knowledge ORDER BY pinned_at ASC LIMIT ?").all(excess);
+      if (Array.isArray(oldestRows)) {
+        for (const row of oldestRows) {
+          deletePinnedKnowledgeFromDb(row.id);
+        }
+      }
+    }
+  } catch {}
 }
 
 /**
@@ -122,7 +140,7 @@ export function addToKnowledge(
     existing.preview = (pinned.content || "").substring(0, 200);
     existing.toolCalls = pinned.toolCalls;
     existing.toolResults = pinned.toolResults;
-    writeStore(store);
+    savePinnedKnowledgeToDb(existing);
     entry = existing;
   } else {
     const id = generateId();
@@ -140,8 +158,8 @@ export function addToKnowledge(
       toolCalls: pinned.toolCalls,
       toolResults: pinned.toolResults,
     };
-    store.entries.push(entry);
-    writeStore(store);
+    savePinnedKnowledgeToDb(entry);
+    enforceMaxEntriesLimit();
   }
 
   // Sync to RMemory
@@ -169,11 +187,7 @@ export function addToKnowledge(
  * Remove a knowledge entry by ID.
  */
 export function removeFromKnowledge(id: string): boolean {
-  const store = readStore();
-  const idx = store.entries.findIndex((e) => e.id === id);
-  if (idx === -1) return false;
-  store.entries.splice(idx, 1);
-  writeStore(store);
+  deletePinnedKnowledgeFromDb(id);
 
   // Sync to RMemory
   const settings = getSettings();
@@ -197,13 +211,12 @@ export function removeFromKnowledge(id: string): boolean {
 export function removeKnowledgeByPin(sourceSessionPath: string, contentPreview: string): boolean {
   const store = readStore();
   const preview = contentPreview.substring(0, 200);
-  const idx = store.entries.findIndex(
+  const entry = store.entries.find(
     (e) => e.sourceSessionPath === sourceSessionPath && e.preview === preview
   );
-  if (idx === -1) return false;
-  const entry = store.entries[idx];
-  store.entries.splice(idx, 1);
-  writeStore(store);
+  if (!entry) return false;
+
+  deletePinnedKnowledgeByPinFromDb(sourceSessionPath, contentPreview);
 
   // Sync to RMemory
   const settings = getSettings();
@@ -231,8 +244,9 @@ export function updateKnowledgeTag(sourceSessionPath: string, contentPreview: st
     (e) => e.sourceSessionPath === sourceSessionPath && e.preview === preview
   );
   if (!entry) return false;
+
+  updatePinnedKnowledgeTagInDb(sourceSessionPath, contentPreview, tag);
   entry.tag = tag;
-  writeStore(store);
 
   // Sync to RMemory
   const settings = getSettings();
@@ -260,25 +274,22 @@ export function updateKnowledgeTag(sourceSessionPath: string, contentPreview: st
  */
 export function removeSessionFromKnowledge(sourceSessionPath: string): number {
   const store = readStore();
-  const before = store.entries.length;
   const toRemove = store.entries.filter((e) => e.sourceSessionPath === sourceSessionPath);
-  store.entries = store.entries.filter((e) => e.sourceSessionPath !== sourceSessionPath);
-  const removed = before - store.entries.length;
-  if (removed > 0) {
-    writeStore(store);
+  if (toRemove.length === 0) return 0;
 
-    // Sync to RMemory
-    const settings = getSettings();
-    if (settings.enableRmemory) {
-      Promise.resolve().then(async () => {
-        try {
-          const { getRMemoryClient } = await import("./rmemoryUtil.js");
-          const client = getRMemoryClient(2000);
-          const ids = toRemove.map((e) => `pinned-knowledge-${e.id}`);
-          await client.deleteAtomic({ ids });
-        } catch {}
-      });
-    }
+  const removed = deleteSessionFromPinnedKnowledgeDb(sourceSessionPath);
+
+  // Sync to RMemory
+  const settings = getSettings();
+  if (settings.enableRmemory && removed > 0) {
+    Promise.resolve().then(async () => {
+      try {
+        const { getRMemoryClient } = await import("./rmemoryUtil.js");
+        const client = getRMemoryClient(2000);
+        const ids = toRemove.map((e) => `pinned-knowledge-${e.id}`);
+        await client.deleteAtomic({ ids });
+      } catch {}
+    });
   }
   return removed;
 }
