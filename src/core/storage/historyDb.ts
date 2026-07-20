@@ -427,6 +427,10 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
     }
 
     db.exec("COMMIT;");
+    try {
+      const { clearHistoryCache } = require("../config/history.js");
+      clearHistoryCache();
+    } catch {}
   } catch (err) {
     db.exec("ROLLBACK;");
     throw err;
@@ -494,6 +498,10 @@ export function deleteSessionFromDb(sessionId: string): void {
     db.prepare("DELETE FROM checkpoints WHERE session_id = ?").run(sessionId);
     db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
     db.exec("COMMIT;");
+    try {
+      const { clearHistoryCache } = require("../config/history.js");
+      clearHistoryCache();
+    } catch {}
     vacuumDatabase();
   } catch (err) {
     db.exec("ROLLBACK;");
