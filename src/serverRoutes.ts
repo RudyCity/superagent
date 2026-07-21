@@ -699,14 +699,25 @@ export async function handleServerRoute(
     }));
     const procs = Array.from(backgroundTasks.values())
       .filter(t => !t.isHidden)
-      .map(t => ({
-        pid: t.process?.pid || 0,
-        name: t.command,
-        status: t.hasExited ? 'stopped' : 'running',
-        commandLine: t.command,
-        hasExited: !!t.hasExited,
-        id: t.id
-      }));
+      .map(t => {
+        let logs: string[] = t.output || [];
+        if (t.logPath && fs.existsSync(t.logPath)) {
+          try {
+            const raw = fs.readFileSync(t.logPath, "utf-8");
+            const lines = raw.split("\n").filter(l => l.trim().length > 0);
+            if (lines.length > 0) logs = lines.slice(-1000);
+          } catch {}
+        }
+        return {
+          id: t.id,
+          pid: t.process?.pid || 0,
+          name: t.command,
+          status: t.hasExited ? 'stopped' : 'running',
+          commandLine: t.command,
+          hasExited: !!t.hasExited,
+          logs
+        };
+      });
     sendJSON(res, 200, { subagents, superagents, procs });
     return true;
   }
