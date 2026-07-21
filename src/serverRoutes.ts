@@ -11,6 +11,7 @@ import {
   getPresets, 
   getActivePresetId, 
   setActivePresetId, 
+  applyModelPreset,
   updateSettings, 
   listHistorySessions, 
   getTrustedDirectories, 
@@ -858,8 +859,8 @@ export async function handleServerRoute(
       const body = JSON.parse(bodyStr || "{}");
       if (body.settings) updateSettings(body.settings);
       if (body.activePresetId) {
-        if (body.activePresetId.single) setActivePresetId("single", body.activePresetId.single);
-        if (body.activePresetId.multi) setActivePresetId("multi", body.activePresetId.multi);
+        if (body.activePresetId.single) applyModelPreset(body.activePresetId.single, "single");
+        if (body.activePresetId.multi) applyModelPreset(body.activePresetId.multi, "multi");
       }
       sendJSON(res, 200, { success: true });
     } catch (err: any) {

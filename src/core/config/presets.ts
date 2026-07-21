@@ -301,8 +301,22 @@ export function applyModelPreset(name: string, mode?: PresetMode, persist?: bool
   const fileData = readPresetsFile();
   const targetName = name.toLowerCase().trim();
 
-  const preset = fileData[targetMode].find(p => p.name.toLowerCase() === targetName);
+  let preset = fileData[targetMode].find(p => p.name.toLowerCase() === targetName);
   if (!preset) {
+    // Fallback: check model-config.json
+    const config = loadModelConfig();
+    const configPreset = config.presets?.[targetMode]?.find(
+      (p: any) => p.id?.toLowerCase() === targetName || p.name?.toLowerCase() === targetName
+    );
+    if (configPreset) {
+      if (persist ?? true) {
+        savePreset(targetMode, configPreset);
+        setActivePresetId(targetMode, targetName);
+      } else {
+        setActivePreset(targetMode, configPreset);
+      }
+      return;
+    }
     throw new Error(`Model preset "${name}" not found in ${targetMode}-agent presets.`);
   }
 
