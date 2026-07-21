@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.516] - 2026-07-21
+
+### Changed
+- **Default Terminal Stream Response Logging Disabled (`server.ts`)**:
+  - Wrapped SSE stream log output in `broadcastEvent` with a `process.env.LOG_STREAM_RESPONSE === 'true'` check.
+  - Stream response logging to server terminal is now disabled by default.
+
 ## [1.2.515] - 2026-07-21
 
 ### Added
