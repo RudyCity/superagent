@@ -34,7 +34,7 @@ import {
   getWorkspaceId
 } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
-import { subagentInstances, superagentInstances } from "./core/tools/state.js";
+import { subagentInstances, superagentInstances, backgroundTasks } from "./core/tools/state.js";
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
 
 export async function handleServerRoute(
@@ -675,7 +675,7 @@ export async function handleServerRoute(
     return true;
   }
 
-  // Fetch active subagents/superagents instances
+  // Fetch active subagents/superagents instances & background procs
   if (pathname === "/api/instances" && req.method === "GET") {
     const subagents = Array.from(subagentInstances.entries()).map(([id, inst]) => ({
       id,
@@ -689,14 +689,25 @@ export async function handleServerRoute(
     }));
     const superagents = Array.from(superagentInstances.entries()).map(([id, inst]) => ({
       id,
-      role: inst.role,
+      typeName: 'superagent',
+      role: inst.role || 'Superagent',
       status: inst.status,
       result: inst.result,
       logs: inst.logs || [],
       prompt: inst.task,
       completedAt: inst.completedAt
     }));
-    sendJSON(res, 200, { subagents, superagents });
+    const procs = Array.from(backgroundTasks.values())
+      .filter(t => !t.isHidden)
+      .map(t => ({
+        pid: t.process?.pid || 0,
+        name: t.command,
+        status: t.hasExited ? 'stopped' : 'running',
+        commandLine: t.command,
+        hasExited: !!t.hasExited,
+        id: t.id
+      }));
+    sendJSON(res, 200, { subagents, superagents, procs });
     return true;
   }
 
