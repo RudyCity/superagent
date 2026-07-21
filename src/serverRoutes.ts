@@ -12,6 +12,15 @@ import {
   getActivePresetId, 
   setActivePresetId, 
   applyModelPreset,
+  saveModelPreset,
+  deleteModelPreset,
+  savePreset,
+  deletePreset,
+  getProviders,
+  addProvider,
+  removeProvider,
+  switchActiveProvider,
+  loadModelConfig,
   updateSettings, 
   listHistorySessions, 
   getTrustedDirectories, 
@@ -833,7 +842,7 @@ export async function handleServerRoute(
     return true;
   }
 
-  // Fetch Config
+  // Fetch Config (full snapshot: settings, providers, presets, activePresetId)
   if (pathname === "/api/config" && req.method === "GET") {
     const settings = getSettings();
     const providers = getConfiguredProviders();
@@ -842,17 +851,19 @@ export async function handleServerRoute(
     const activeSinglePresetId = getActivePresetId("single");
     const activeMultiPresetId = getActivePresetId("multi");
     const trustedDirectories = getTrustedDirectories();
+    const config = loadModelConfig();
     sendJSON(res, 200, {
       settings,
       providers,
       presets: { single: singlePresets, multi: multiPresets },
       activePresetId: { single: activeSinglePresetId, multi: activeMultiPresetId },
+      activeProviderProfileId: (config as any).activeProviderProfileId || "",
       trustedDirectories
     });
     return true;
   }
 
-  // Update Config
+  // Update Config (settings + active preset switching)
   if (pathname === "/api/config" && req.method === "POST") {
     try {
       const bodyStr = await readBody(req);
@@ -865,6 +876,241 @@ export async function handleServerRoute(
       sendJSON(res, 200, { success: true });
     } catch (err: any) {
       sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Set Active Preset
+  if (pathname === "/api/config/active-preset" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { mode, presetId } = JSON.parse(bodyStr || "{}");
+      if (!mode || !presetId) {
+        sendJSON(res, 400, { error: "mode and presetId are required" });
+        return true;
+      }
+      applyModelPreset(presetId, mode as "single" | "multi");
+      const config = loadModelConfig();
+      sendJSON(res, 200, {
+        success: true,
+        activePresetId: config.activePresetId,
+        activeProviderProfileId: (config as any).activeProviderProfileId || ""
+      });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Save/Update a Preset
+  if (pathname === "/api/config/preset" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { mode, preset } = JSON.parse(bodyStr || "{}");
+      if (!mode || !preset?.name) {
+        sendJSON(res, 400, { error: "mode and preset.name are required" });
+        return true;
+      }
+      const m = mode as "single" | "multi";
+      // Normalize incoming structured preset into JSONModelPreset format
+      const presetId = (preset.id || preset.name).toLowerCase().replace(/\s+/g, "-");
+      const jsonPreset = {
+        id: presetId,
+        name: preset.name,
+        description: preset.description || "Custom model preset.",
+        models: preset.models || {}
+      };
+      savePreset(m, jsonPreset);
+      // Also add to model-presets.json via saveModelPreset for CLI compatibility
+      try { saveModelPreset(preset.name, preset.description || "", preset.models, m); } catch {}
+      const singlePresets = getPresets("single");
+      const multiPresets = getPresets("multi");
+      sendJSON(res, 200, {
+        success: true,
+        presets: { single: singlePresets, multi: multiPresets },
+        activePresetId: { single: getActivePresetId("single"), multi: getActivePresetId("multi") }
+      });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Delete a Preset
+  if (pathname.startsWith("/api/config/preset/") && req.method === "DELETE") {
+    try {
+      const parts = pathname.replace("/api/config/preset/", "").split("/");
+      const mode = parts[0] as "single" | "multi";
+      const presetId = decodeURIComponent(parts[1] || "");
+      if (!mode || !presetId) {
+        sendJSON(res, 400, { error: "mode and preset id are required" });
+        return true;
+      }
+      deletePreset(mode, presetId);
+      try { deleteModelPreset(presetId, mode); } catch {}
+      const singlePresets = getPresets("single");
+      const multiPresets = getPresets("multi");
+      sendJSON(res, 200, {
+        success: true,
+        presets: { single: singlePresets, multi: multiPresets },
+        activePresetId: { single: getActivePresetId("single"), multi: getActivePresetId("multi") }
+      });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Save/Update a Provider Profile
+  if (pathname === "/api/config/provider" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { provider } = JSON.parse(bodyStr || "{}");
+      if (!provider?.id || !provider?.name) {
+        sendJSON(res, 400, { error: "provider.id and provider.name are required" });
+        return true;
+      }
+      addProvider({
+        id: provider.id,
+        name: provider.name,
+        provider: provider.type || provider.provider || "openai",
+        apiKey: provider.apiKey || "",
+        baseUrl: provider.baseUrl || ""
+      });
+      const config = loadModelConfig();
+      sendJSON(res, 200, {
+        success: true,
+        providers: config.providers,
+        activeProviderProfileId: (config as any).activeProviderProfileId || ""
+      });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Delete a Provider Profile
+  if (pathname.startsWith("/api/config/provider/") && req.method === "DELETE") {
+    try {
+      const providerId = decodeURIComponent(pathname.replace("/api/config/provider/", ""));
+      if (!providerId) {
+        sendJSON(res, 400, { error: "provider id is required" });
+        return true;
+      }
+      removeProvider(providerId);
+      const config = loadModelConfig();
+      sendJSON(res, 200, {
+        success: true,
+        providers: config.providers,
+        activeProviderProfileId: (config as any).activeProviderProfileId || ""
+      });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Set Active Provider Profile
+  if (pathname === "/api/config/active-provider" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { providerId } = JSON.parse(bodyStr || "{}");
+      if (!providerId) {
+        sendJSON(res, 400, { error: "providerId is required" });
+        return true;
+      }
+      switchActiveProvider(providerId);
+      const config = loadModelConfig();
+      sendJSON(res, 200, {
+        success: true,
+        activeProviderProfileId: (config as any).activeProviderProfileId || providerId
+      });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Fetch Provider Models (live from provider API)
+  if (pathname === "/api/config/provider-models" && req.method === "GET") {
+    const parsedQs = new URL("http://localhost" + req.url!).searchParams;
+    const providerId = parsedQs.get("providerId") || "";
+    try {
+      const config = loadModelConfig();
+      const providers = config.providers || [];
+      const provider = (providerId ? providers.find((p: any) => p.id === providerId) : null) || providers[0];
+
+      const DEFAULT_PROVIDER_MODELS: Record<string, string[]> = {
+        openai: ["gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o3-mini", "gpt-4-turbo"],
+        anthropic: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+        gemini: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"],
+        deepseek: ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"],
+        openrouter: ["anthropic/claude-3.5-sonnet", "openai/gpt-4o", "google/gemini-2.5-flash", "deepseek/deepseek-r1"],
+        groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "deepseek-r1-distill-llama-70b"],
+        mistral: ["mistral-large-latest", "mistral-small-latest", "codestral-latest"],
+        ollama: ["llama3.2", "qwen2.5-coder", "deepseek-r1", "mistral", "phi4", "codellama"],
+        azure: ["gpt-4o", "gpt-4o-mini"]
+      };
+
+      if (!provider) {
+        sendJSON(res, 200, { models: DEFAULT_PROVIDER_MODELS.openai, providerType: "openai", isRealFetched: false });
+        return true;
+      }
+
+      const providerType = ((provider as any).provider || (provider as any).type || "openai").toLowerCase();
+      const defaultModels = DEFAULT_PROVIDER_MODELS[providerType] || DEFAULT_PROVIDER_MODELS.openai;
+      const apiKey = (provider.apiKey || "").trim();
+      let baseUrl = (provider.baseUrl || "").trim().replace(/\/+$/, "");
+      let fetchedModels: string[] = [];
+      let isRealFetched = false;
+      let fetchError: string | undefined;
+
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 5000);
+      try {
+        if (providerType === "ollama") {
+          const url = baseUrl ? (baseUrl.endsWith("/api/tags") ? baseUrl : `${baseUrl}/api/tags`) : "http://localhost:11434/api/tags";
+          const r = await fetch(url, { signal: controller.signal });
+          if (r.ok) { const d: any = await r.json(); if (Array.isArray(d.models)) { fetchedModels = d.models.map((m: any) => m.name || m.model).filter(Boolean); isRealFetched = fetchedModels.length > 0; } }
+        } else if (providerType === "anthropic") {
+          if (apiKey) {
+            const url = baseUrl ? `${baseUrl}/v1/models` : "https://api.anthropic.com/v1/models";
+            const r = await fetch(url, { headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }, signal: controller.signal });
+            if (r.ok) { const d: any = await r.json(); const raw = Array.isArray(d.data) ? d.data : (Array.isArray(d.models) ? d.models : []); fetchedModels = raw.map((m: any) => m.id || m.name).filter(Boolean); isRealFetched = fetchedModels.length > 0; }
+          }
+        } else if (providerType === "gemini") {
+          if (apiKey) {
+            const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, { signal: controller.signal });
+            if (r.ok) { const d: any = await r.json(); if (Array.isArray(d.models)) { fetchedModels = d.models.map((m: any) => (m.name || "").replace(/^models\//, "")).filter((n: string) => n && n.includes("gemini")); isRealFetched = fetchedModels.length > 0; } }
+          }
+        } else {
+          if (apiKey || providerType === "custom") {
+            if (!baseUrl) {
+              if (providerType === "openai") baseUrl = "https://api.openai.com/v1";
+              else if (providerType === "deepseek") baseUrl = "https://api.deepseek.com/v1";
+              else if (providerType === "openrouter") baseUrl = "https://openrouter.ai/api/v1";
+              else if (providerType === "groq") baseUrl = "https://api.groq.com/openai/v1";
+              else if (providerType === "mistral") baseUrl = "https://api.mistral.ai/v1";
+            }
+            if (baseUrl) {
+              const url = baseUrl.endsWith("/models") ? baseUrl : `${baseUrl}/models`;
+              const headers: Record<string, string> = {};
+              if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+              if (providerType === "azure") headers["api-key"] = apiKey;
+              const r = await fetch(url, { headers, signal: controller.signal });
+              if (r.ok) { const d: any = await r.json(); const raw = Array.isArray(d.data) ? d.data : (Array.isArray(d.models) ? d.models : []); fetchedModels = raw.map((m: any) => m.id || m.name).filter(Boolean); isRealFetched = fetchedModels.length > 0; }
+              else { fetchError = `${providerType} API returned HTTP ${r.status}`; }
+            }
+          }
+        }
+      } catch (e: any) {
+        fetchError = e.name === "AbortError" ? "Provider request timed out (5s)" : e.message;
+      } finally { clearTimeout(tid); }
+
+      const combined = isRealFetched ? Array.from(new Set([...fetchedModels, ...defaultModels])) : defaultModels;
+      sendJSON(res, 200, { models: combined, providerType, isRealFetched, error: fetchError });
+    } catch (err: any) {
+      sendJSON(res, 200, { models: [], providerType: "openai", isRealFetched: false, error: err.message });
     }
     return true;
   }
