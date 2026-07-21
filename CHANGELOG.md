@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.518] - 2026-07-21
+
+### Fixed
+- **Excessive Context Compaction & Summarization Loop**:
+  - Excluded conversation summary messages (`[System Conversation Summary]`) from `autoPinKeyMessages` in `ContextManager.ts` to prevent summaries from being auto-pinned into permanent un-prunable state.
+  - Added filtering in `PinningStrategy.ts` and `SummarizationStrategy.ts` to strip previous summary messages when compacting, preventing duplicate summary stacking.
+  - Aligned emergency compaction threshold `safetyMax` in `ContextBuilder.ts` with `ContextManager.ts` threshold ratio.
+  - Added unit test in `ContextManager.test.ts` verifying summaries are not auto-pinned and do not accumulate across compaction cycles.
+
 ## [1.2.517] - 2026-07-21
 
 ### Fixed

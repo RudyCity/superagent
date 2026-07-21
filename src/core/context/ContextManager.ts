@@ -135,17 +135,24 @@ export class ContextManager {
    * Scan messages and automatically pin those containing critical planning metadata
    */
   public autoPinKeyMessages(messages: Message[]): void {
+    // Clean up any previously pinned summary messages if present
+    for (const [id, pinnedMsg] of this.pinnedMessages.entries()) {
+      if (pinnedMsg.content.includes("[System Conversation Summary]")) {
+        this.pinnedMessages.delete(id);
+      }
+    }
+
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
       const content = contentToString(msg.content);
 
       // Pin the initial user request, task checklists, and implementation plans
+      // (Do NOT pin conversation summaries)
       if (
-        (msg.role === "user" && i === 0) || // First user request
+        (msg.role === "user" && i === 0 && !content.includes("[System Conversation Summary]")) || // First user request (excluding summaries)
         content.includes("# Implementation Plan") ||
         content.includes("task.md") ||
-        content.includes("implementation_plan.md") ||
-        content.includes("[System Conversation Summary]")
+        content.includes("implementation_plan.md")
       ) {
         const contentPrefix = content.slice(0, 64);
         const stableId = `${msg.role}:${msg.timestamp}:${contentPrefix}`;

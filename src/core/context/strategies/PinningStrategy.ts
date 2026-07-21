@@ -32,7 +32,12 @@ export class PinningStrategy implements CompactionStrategy {
     // These survive compaction (unlike index-based IDs which shift after pruning).
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
-      const contentPrefix = contentToString(msg.content).slice(0, 64);
+      const textContent = contentToString(msg.content);
+      // Skip old conversation summaries so they are not retained as duplicate pinned/unpinned items
+      if (textContent.includes("[System Conversation Summary]")) {
+        continue;
+      }
+      const contentPrefix = textContent.slice(0, 64);
       const stableId = `${msg.role}:${msg.timestamp}:${contentPrefix}`;
       // Also try legacy index-based ID for backward compatibility
       const legacyId = `${i}:${msg.role}:${msg.timestamp}`;

@@ -206,4 +206,48 @@ describe("ContextManager", () => {
     const result = await manager.compact(messages);
     expect(result.messages.length).toBeLessThan(messages.length);
   });
+
+  it("should NOT auto-pin conversation summary messages or accumulate duplicate summaries", async () => {
+    const manager = new ContextManager({
+      model: "claude-3-5-sonnet-20241022",
+      contextWindowLimit: 10000,
+    });
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 50; i++) {
+      messages.push({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `Iteration ${i}: ` + "X".repeat(500),
+        timestamp: Date.now() + i * 10,
+      });
+    }
+
+    // Pass 1 compaction
+    const result1 = await manager.compact(messages);
+    manager.autoPinKeyMessages(result1.messages);
+
+    // Verify summary message is not in pinnedMessages map
+    for (const pinned of manager.getPinnedMessagesFull().values()) {
+      expect(pinned.content).not.toContain("[System Conversation Summary]");
+    }
+
+    // Add more messages and perform Pass 2 compaction
+    const messages2 = [...result1.messages];
+    for (let i = 50; i < 70; i++) {
+      messages2.push({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `Iteration ${i}: ` + "Y".repeat(500),
+        timestamp: Date.now() + i * 10,
+      });
+    }
+
+    const result2 = await manager.compact(messages2);
+
+    // Count [System Conversation Summary] messages in result2
+    const summaryCount = result2.messages.filter((m) =>
+      typeof m.content === "string" && m.content.includes("[System Conversation Summary]")
+    ).length;
+
+    expect(summaryCount).toBeLessThanOrEqual(1);
+  });
 });

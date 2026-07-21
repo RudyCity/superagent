@@ -40,12 +40,16 @@ export class SummarizationStrategy implements CompactionStrategy {
     const tokenBudget = options.tokenBudget || 0;
     const abortSignal = options.abortSignal ?? this.config?.abortSignal;
 
-    let keepIndex = Math.max(0, messages.length - preserveRecent);
-    while (keepIndex < messages.length && messages[keepIndex]?.role === "tool") {
+    const filteredMessages = messages.filter(
+      (m) => !contentToString(m.content).includes("[System Conversation Summary]")
+    );
+
+    let keepIndex = Math.max(0, filteredMessages.length - preserveRecent);
+    while (keepIndex < filteredMessages.length && filteredMessages[keepIndex]?.role === "tool") {
       keepIndex++;
     }
-    let toSummarize = messages.slice(0, keepIndex);
-    let toKeep = messages.slice(keepIndex);
+    let toSummarize = filteredMessages.slice(0, keepIndex);
+    let toKeep = filteredMessages.slice(keepIndex);
 
     // Enforce token budget: reduce preserved messages if they exceed budget
     if (tokenBudget > 0) {
