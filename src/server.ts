@@ -268,6 +268,17 @@ setBrowserControlHandler((action, target, value, instanceId) => {
 
 function broadcastEvent(event: any) {
   const data = `data: ${JSON.stringify(event)}\n\n`;
+  if (event?.event?.type === 'text_delta') {
+    process.stdout.write(event.event.text || event.event.delta || '');
+  } else if (event?.event?.type === 'message') {
+    const sub = event.event;
+    const contentStr = typeof sub.content === 'string' ? sub.content : JSON.stringify(sub.content);
+    console.log(`\n[SuperAgent][Stream Message] [${sub.role || 'assistant'}]: ${contentStr}`);
+  } else if (event?.event?.type) {
+    console.log(`\n[SuperAgent][Stream Event] [${event.event.type}]`, JSON.stringify(event.event));
+  } else {
+    console.log(`\n[SuperAgent][Stream Event]`, JSON.stringify(event));
+  }
   for (const client of sseClients) {
     try {
       client.write(data);

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.515] - 2026-07-21
+
+### Added
+- **Stream Response Terminal Logging (`server.ts`)**:
+  - Added stdout/console logging for SSE stream events in `broadcastEvent`.
+  - Stream events broadcasted from SuperAgent HTTP server are now logged directly to the server terminal process.
+
 ## [1.2.514] - 2026-07-20
 
 ### Added
