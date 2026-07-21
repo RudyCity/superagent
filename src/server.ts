@@ -344,6 +344,22 @@ subscribeToActiveOutput((output) => {
 // Subscribe to subagents/superagents completion notifications to broadcast and/or resume the agent
 subscribeToSubagents(() => {
   const activeList = Array.from(subagentInstances.values());
+
+  // Broadcast subagents_update to SSE clients so frontend receives live logs & state updates
+  broadcastEvent({
+    type: "subagents_update",
+    subagents: activeList.map((inst) => ({
+      id: inst.id,
+      typeName: inst.typeName,
+      role: inst.role,
+      status: inst.status,
+      result: inst.result,
+      logs: inst.logs || [],
+      prompt: inst.prompt,
+      completedAt: inst.completedAt
+    }))
+  });
+
   activeList.forEach((inst) => {
     if (inst.status === "completed" && inst.result && !(inst as any).notified) {
       (inst as any).notified = true;
@@ -1160,8 +1176,11 @@ export async function runServer(port: number, silent = false, defaultClientMode:
         const subagents = Array.from(subagentInstances.entries()).map(([id, inst]) => ({
           id,
           typeName: inst.typeName,
+          role: inst.role,
           status: inst.status,
           result: inst.result,
+          logs: inst.logs || [],
+          prompt: inst.prompt,
           completedAt: inst.completedAt
         }));
         const superagents = Array.from(superagentInstances.entries()).map(([id, inst]) => ({
@@ -1169,6 +1188,8 @@ export async function runServer(port: number, silent = false, defaultClientMode:
           role: inst.role,
           status: inst.status,
           result: inst.result,
+          logs: inst.logs || [],
+          prompt: inst.task,
           completedAt: inst.completedAt
         }));
         sendJSON(res, 200, { subagents, superagents });

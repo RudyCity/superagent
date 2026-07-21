@@ -53,6 +53,7 @@ export interface SubagentInstance {
   id: string;
   typeName: string;
   role: string;
+  prompt?: string;
   agent: any;
   status: "idle" | "running" | "completed" | "paused" | "error" | "waiting";
   logs: string[];
@@ -118,4 +119,3 @@ export type QuestionHandler = (
   isMultiSelect?: boolean,
   initialCheckedIndices?: number[]
 ) => Promise<string | string[]>;
-

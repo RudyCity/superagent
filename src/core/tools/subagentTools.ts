@@ -545,6 +545,7 @@ export const invokeSubagentTool: Tool = {
       id: subagentId,
       typeName,
       role,
+      prompt,
       agent: agentInstance,
       status: "running",
       logs,
