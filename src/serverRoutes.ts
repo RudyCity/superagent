@@ -325,11 +325,21 @@ export async function handleServerRoute(
     });
 
     if (initialPrompt && initialPrompt.trim()) {
-      setTimeout(() => {
-        agent.sendMessage(initialPrompt).catch((err: any) => {
-          broadcastEvent({ type: "error", message: err.message || String(err) });
-        });
-      }, 100);
+      const activePresetId = getActivePresetId(targetMode);
+      const presetsForMode = getPresets(targetMode) || [];
+      const hasValidActivePreset = Boolean(
+        activePresetId &&
+        presetsForMode.some(p => p.id?.toLowerCase() === activePresetId.toLowerCase() || p.name?.toLowerCase() === activePresetId.toLowerCase())
+      );
+      if (hasValidActivePreset) {
+        setTimeout(() => {
+          agent.sendMessage(initialPrompt).catch((err: any) => {
+            broadcastEvent({ type: "error", message: err.message || String(err) });
+          });
+        }, 100);
+      } else {
+        broadcastEvent({ type: "error", message: `Cannot run initial prompt: No active model preset configured for ${targetMode} mode.` });
+      }
     }
     return true;
   }
