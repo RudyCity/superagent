@@ -5,11 +5,11 @@ import { URL } from "url";
 import type { Agent } from "./core/agent.js";
 import { 
   getSettings, 
-  getConfiguredProviders, 
   addTrustedDirectory, 
   ensureDirectoryTrusted, 
   getPresets, 
   getActivePresetId, 
+  getActivePreset,
   setActivePresetId, 
   applyModelPreset,
   saveModelPreset,
@@ -842,22 +842,31 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Helper: derive active provider profile id from active preset's main tier
+  const deriveActiveProviderId = (): string => {
+    try {
+      const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
+      const preset = getActivePreset<any>(isMulti ? "multi" : "single");
+      const tier = isMulti ? preset.models?.master : preset.models?.superagent;
+      return tier?.providerProfileId || "";
+    } catch { return ""; }
+  };
+
   // Fetch Config (full snapshot: settings, providers, presets, activePresetId)
   if (pathname === "/api/config" && req.method === "GET") {
     const settings = getSettings();
-    const providers = getConfiguredProviders();
+    const config = loadModelConfig();
     const singlePresets = getPresets("single");
     const multiPresets = getPresets("multi");
     const activeSinglePresetId = getActivePresetId("single");
     const activeMultiPresetId = getActivePresetId("multi");
     const trustedDirectories = getTrustedDirectories();
-    const config = loadModelConfig();
     sendJSON(res, 200, {
       settings,
-      providers,
+      providers: config.providers,    // ALL providers, not filtered by apiKey
       presets: { single: singlePresets, multi: multiPresets },
       activePresetId: { single: activeSinglePresetId, multi: activeMultiPresetId },
-      activeProviderProfileId: (config as any).activeProviderProfileId || "",
+      activeProviderProfileId: deriveActiveProviderId(),
       trustedDirectories
     });
     return true;
@@ -894,7 +903,7 @@ export async function handleServerRoute(
       sendJSON(res, 200, {
         success: true,
         activePresetId: config.activePresetId,
-        activeProviderProfileId: (config as any).activeProviderProfileId || ""
+        activeProviderProfileId: deriveActiveProviderId()
       });
     } catch (err: any) {
       sendJSON(res, 400, { success: false, error: err.message || String(err) });
@@ -912,7 +921,6 @@ export async function handleServerRoute(
         return true;
       }
       const m = mode as "single" | "multi";
-      // Normalize incoming structured preset into JSONModelPreset format
       const presetId = (preset.id || preset.name).toLowerCase().replace(/\s+/g, "-");
       const jsonPreset = {
         id: presetId,
@@ -921,8 +929,30 @@ export async function handleServerRoute(
         models: preset.models || {}
       };
       savePreset(m, jsonPreset);
-      // Also add to model-presets.json via saveModelPreset for CLI compatibility
-      try { saveModelPreset(preset.name, preset.description || "", preset.models, m); } catch {}
+      // CLI compat: convert structured models to MODEL_* flat format for model-presets.json
+      try {
+        const raw = preset.models || {};
+        const fmtTier = (tier: any): string => {
+          if (!tier?.model) return "";
+          return tier.providerProfileId ? `${tier.providerProfileId}@${tier.model}` : tier.model;
+        };
+        const cliModels: Record<string, string> = {};
+        if (m === "multi") {
+          const mv = fmtTier(raw.master); if (mv) cliModels.MODEL_MULTI_MASTER = mv;
+          const sv = fmtTier(raw.superagent); if (sv) cliModels.MODEL_MULTI_SUPERAGENT = sv;
+          const dv = fmtTier(raw.subagentDefault); if (dv) cliModels.MODEL_MULTI_SUBAGENT = dv;
+          for (const [k, v] of Object.entries(raw.subagentDetails || {})) {
+            const fv = fmtTier(v); if (fv) cliModels[`MODEL_MULTI_SUBAGENT_${k.toUpperCase()}`] = fv;
+          }
+        } else {
+          const sv = fmtTier(raw.superagent); if (sv) cliModels.MODEL_SINGLE_SUPERAGENT = sv;
+          const dv = fmtTier(raw.subagentDefault); if (dv) cliModels.MODEL_SINGLE_SUBAGENT = dv;
+          for (const [k, v] of Object.entries(raw.subagentDetails || {})) {
+            const fv = fmtTier(v); if (fv) cliModels[`MODEL_SINGLE_SUBAGENT_${k.toUpperCase()}`] = fv;
+          }
+        }
+        if (Object.keys(cliModels).length > 0) saveModelPreset(preset.name, preset.description || "", cliModels, m);
+      } catch {}
       const singlePresets = getPresets("single");
       const multiPresets = getPresets("multi");
       sendJSON(res, 200, {
@@ -947,7 +977,15 @@ export async function handleServerRoute(
         return true;
       }
       deletePreset(mode, presetId);
-      try { deleteModelPreset(presetId, mode); } catch {}
+      // Resolve preset name from model-config.json for model-presets.json cleanup
+      try {
+        const cfg = loadModelConfig();
+        const match = (cfg.presets[mode] as any[]).find(
+          (p) => p.id?.toLowerCase() === presetId.toLowerCase() || p.name?.toLowerCase() === presetId.toLowerCase()
+        );
+        const nameToDelete = match?.name || presetId;
+        deleteModelPreset(nameToDelete, mode);
+      } catch {}
       const singlePresets = getPresets("single");
       const multiPresets = getPresets("multi");
       sendJSON(res, 200, {
@@ -981,7 +1019,7 @@ export async function handleServerRoute(
       sendJSON(res, 200, {
         success: true,
         providers: config.providers,
-        activeProviderProfileId: (config as any).activeProviderProfileId || ""
+        activeProviderProfileId: deriveActiveProviderId()
       });
     } catch (err: any) {
       sendJSON(res, 400, { success: false, error: err.message || String(err) });
