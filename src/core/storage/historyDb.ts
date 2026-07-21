@@ -375,6 +375,10 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
         updated_at = excluded.updated_at
     `);
 
+    const userMsgs = (messages || []).filter(m => m && m.role === 'user' && m.content);
+    const firstUserContent = userMsgs[0]?.content || null;
+    const lastUserContent = userMsgs[userMsgs.length - 1]?.content || null;
+
     const now = Date.now();
     upsertSessionStmt.run(
       session.id,
@@ -388,8 +392,8 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
       session.activePreset || null,
       session.extraData || null,
       workspaceId,
-      session.firstChat || null,
-      session.lastChat || null,
+      session.firstChat || firstUserContent,
+      session.lastChat || lastUserContent,
       now
     );
 
@@ -448,7 +452,9 @@ export function loadSessionFromDb(sessionId: string): {
     SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
            last_modified as lastModified, preview, working_directory as workingDirectory,
            plan_state as planState, active_preset as activePreset, extra_data as extraData,
-           workspace_id as workspaceId, first_chat as firstChat, last_chat as lastChat
+           workspace_id as workspaceId,
+           COALESCE(first_chat, (SELECT m.content FROM messages m WHERE m.session_id = sessions.id AND m.role = 'user' ORDER BY m.sequence_order ASC LIMIT 1)) as firstChat,
+           COALESCE(last_chat, (SELECT m.content FROM messages m WHERE m.session_id = sessions.id AND m.role = 'user' ORDER BY m.sequence_order DESC LIMIT 1)) as lastChat
     FROM sessions WHERE id = ?
   `);
   const sessionRow = getSessionStmt.get(sessionId) as SessionRecord | undefined;
@@ -477,11 +483,12 @@ export function loadSessionFromDb(sessionId: string): {
 export function listSessionsFromDb(limit: number = 100): SessionRecord[] {
   const db = getHistoryDb();
   const stmt = db.prepare(`
-    SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
-           last_modified as lastModified, preview, working_directory as workingDirectory,
-           plan_state as planState, active_preset as activePreset, workspace_id as workspaceId,
-           first_chat as firstChat, last_chat as lastChat
-    FROM sessions ORDER BY last_modified DESC LIMIT ?
+    SELECT s.id, s.file_path as filePath, s.display_name as displayName, s.message_count as messageCount,
+           s.last_modified as lastModified, s.preview, s.working_directory as workingDirectory,
+           s.plan_state as planState, s.active_preset as activePreset, s.workspace_id as workspaceId,
+           COALESCE(s.first_chat, (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.role = 'user' ORDER BY m.sequence_order ASC LIMIT 1)) as firstChat,
+           COALESCE(s.last_chat, (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.role = 'user' ORDER BY m.sequence_order DESC LIMIT 1)) as lastChat
+    FROM sessions s ORDER BY s.last_modified DESC LIMIT ?
   `);
   return (stmt.all(limit) || []) as SessionRecord[];
 }
