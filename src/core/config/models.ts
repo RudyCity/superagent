@@ -706,6 +706,7 @@ export function getModelConnectionDetailsForTier(
 
   const config = loadModelConfig();
   const activePreset = getActivePreset<any>(mode);
+  const models = activePreset?.models || {};
   const providers = config.providers || [];
 
   let tierConfig: TierModelConfig | undefined;
@@ -713,36 +714,36 @@ export function getModelConnectionDetailsForTier(
   if (mode === "multi") {
     // Prioritize explicit tier checks over depth fallback
     if (tier === "master") {
-      tierConfig = activePreset.models.master;
+      tierConfig = models.master;
     } else if (tier === "superagent") {
-      tierConfig = activePreset.models.superagent;
+      tierConfig = models.superagent;
     } else if (tier === "subagent") {
-      tierConfig = resolveSubagentTierConfig(subagentType, activePreset.models.subagentDetails, activePreset.models.subagentDefault, providers);
+      tierConfig = resolveSubagentTierConfig(subagentType, models.subagentDetails, models.subagentDefault, providers);
     } else if (depth === 0) {
-      tierConfig = activePreset.models.master;
+      tierConfig = models.master;
     } else if (depth === 1) {
-      tierConfig = activePreset.models.superagent;
+      tierConfig = models.superagent;
     } else {
       // Subagent depth fallback
-      tierConfig = resolveSubagentTierConfig(subagentType, activePreset.models.subagentDetails, activePreset.models.subagentDefault, providers);
+      tierConfig = resolveSubagentTierConfig(subagentType, models.subagentDetails, models.subagentDefault, providers);
     }
   } else {
     // Single mode logic
     if (tier === "superagent") {
-      tierConfig = activePreset.models.superagent;
+      tierConfig = models.superagent;
     } else if (tier === "subagent") {
-      tierConfig = resolveSubagentTierConfig(subagentType, activePreset.models.subagentDetails, activePreset.models.subagentDefault, providers);
+      tierConfig = resolveSubagentTierConfig(subagentType, models.subagentDetails, models.subagentDefault, providers);
     } else if (depth <= 1) {
-      tierConfig = activePreset.models.superagent;
+      tierConfig = models.superagent;
     } else {
       // Subagent depth fallback
-      tierConfig = resolveSubagentTierConfig(subagentType, activePreset.models.subagentDetails, activePreset.models.subagentDefault, providers);
+      tierConfig = resolveSubagentTierConfig(subagentType, models.subagentDetails, models.subagentDefault, providers);
     }
   }
 
   // Fallback to active preset superagent if tierConfig is missing
   if (!tierConfig) {
-    tierConfig = activePreset.models.superagent || (activePreset.models as any).master;
+    tierConfig = models.superagent || (models as any).master;
   }
 
   // Find the provider profile with robust fallback chain
@@ -763,14 +764,33 @@ export function getModelConnectionDetailsForTier(
     );
     if (anyWithKey) {
       providerProfile = anyWithKey;
-    } else {
+    } else if (config.providers && config.providers.length > 0) {
       providerProfile = config.providers[0];
     }
   }
 
   const apiKey = providerProfile?.apiKey || "";
-  const provider = providerProfile?.provider || "openai";
-  const modelName = tierConfig?.model || getEffectiveMasterModel(mode) || (provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o");
+  const provider = (providerProfile?.provider || "openai").toLowerCase();
+
+  let modelName = tierConfig?.model && tierConfig.model.trim() !== "" ? tierConfig.model : "";
+
+  // Verify modelName compatibility when provider was substituted
+  const isAnthropicModel = modelName.toLowerCase().includes("claude");
+  const isGeminiModel = modelName.toLowerCase().includes("gemini");
+
+  if (provider === "anthropic" && !isAnthropicModel) {
+    modelName = "claude-3-5-sonnet-20241022";
+  } else if (provider === "gemini" && !isGeminiModel) {
+    modelName = "gemini-2.5-flash";
+  } else if (provider === "openai" && (isAnthropicModel || isGeminiModel)) {
+    modelName = "gpt-4o";
+  } else if (!modelName) {
+    if (provider === "anthropic") modelName = "claude-3-5-sonnet-20241022";
+    else if (provider === "gemini") modelName = "gemini-2.5-flash";
+    else if (provider === "openrouter") modelName = "openai/gpt-4o-mini";
+    else modelName = "gpt-4o";
+  }
+
   const profileId = providerProfile?.id || provider;
   const baseUrl = ensureProtocol(providerProfile?.baseUrl) || undefined;
 

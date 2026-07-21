@@ -902,7 +902,15 @@ export function getActivePresetId(mode: "multi" | "single"): string {
     return sessionActivePreset[mode].id;
   }
   const config = loadModelConfig();
-  return config.activePresetId?.[mode] || DEFAULT_CONFIG.activePresetId[mode];
+  const activeId = config.activePresetId?.[mode] || DEFAULT_CONFIG.activePresetId[mode];
+  const presetsList = config.presets?.[mode] as any[] | undefined;
+  if (presetsList && Array.isArray(presetsList) && presetsList.length > 0) {
+    const exists = presetsList.some((p) => p && (p.id === activeId || p.name === activeId));
+    if (!exists) {
+      return presetsList[0].id || DEFAULT_CONFIG.activePresetId[mode];
+    }
+  }
+  return activeId;
 }
 
 export function setActivePresetId(mode: "multi" | "single", id: string): void {
@@ -929,22 +937,47 @@ export function clearSessionActivePreset(mode?: "multi" | "single"): void {
 }
 
 export function getActivePreset<T>(mode: "multi" | "single"): JSONModelPreset<T> {
+  const defaultPreset = DEFAULT_CONFIG.presets[mode][0];
   if (sessionActivePreset[mode]) {
-    return sessionActivePreset[mode] as any;
+    const sPreset = sessionActivePreset[mode] as any;
+    if (sPreset && typeof sPreset === "object") {
+      if (!sPreset.models || typeof sPreset.models !== "object") {
+        sPreset.models = JSON.parse(JSON.stringify(defaultPreset.models));
+      }
+      return JSON.parse(JSON.stringify(sPreset)) as any;
+    }
   }
   const config = loadModelConfig();
   const activeId = getActivePresetId(mode);
   const presetsList = config.presets?.[mode] as any[] | undefined;
   let preset: any;
-  if (presetsList) {
-    preset = presetsList.find((p) => p.id === activeId);
+  if (presetsList && Array.isArray(presetsList)) {
+    preset = presetsList.find((p) => p && (p.id === activeId || p.name === activeId));
+    if (!preset && presetsList.length > 0) {
+      preset = presetsList[0];
+    }
   }
-  if (!preset && presetsList && presetsList.length > 0) {
-    preset = presetsList[0];
+  if (!preset || typeof preset !== "object") {
+    preset = JSON.parse(JSON.stringify(defaultPreset));
   }
-  if (!preset) {
-    preset = JSON.parse(JSON.stringify(DEFAULT_CONFIG.presets[mode][0]));
+  if (!preset.models || typeof preset.models !== "object") {
+    preset.models = JSON.parse(JSON.stringify(defaultPreset.models));
   }
+
+  const defaultModels = defaultPreset.models as any;
+  if (mode === "multi" && !preset.models.master) {
+    preset.models.master = defaultModels.master;
+  }
+  if (!preset.models.superagent) {
+    preset.models.superagent = defaultModels.superagent;
+  }
+  if (!preset.models.subagentDefault) {
+    preset.models.subagentDefault = defaultModels.subagentDefault;
+  }
+  if (!preset.models.subagentDetails || typeof preset.models.subagentDetails !== "object") {
+    preset.models.subagentDetails = {};
+  }
+
   return JSON.parse(JSON.stringify(preset)) as any;
 }
 

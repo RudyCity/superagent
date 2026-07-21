@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.518] - 2026-07-21
+
+### Fixed
+- **Preset Requirement & Crash Prevention (`jsonConfig.ts`, `providers.ts`, `models.ts`)**:
+  - `getActivePresetId()` and `getActivePreset()` now validate that active preset IDs exist and guarantee non-null `models` structure with `master`, `superagent`, `subagentDefault` tiers.
+  - `getModelConnectionDetailsForTier()` dynamically adapts `modelName` if provider profile is substituted or preset is unconfigured (e.g. auto-switching to `gpt-4o` for OpenAI, `claude-3-5-sonnet-20241022` for Anthropic, or `gemini-2.5-flash` for Gemini).
+  - Fixed `TypeError: Cannot read properties of undefined (reading 'master')` across config modules, making chat to SuperAgent server non-dependent on having an explicit preset configured.
+
 ## [1.2.517] - 2026-07-21
 
 ### Fixed
