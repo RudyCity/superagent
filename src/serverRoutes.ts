@@ -351,6 +351,17 @@ export async function handleServerRoute(
       return true;
     }
 
+    const activePresetId = getActivePresetId(session.mode);
+    const presetsForMode = getPresets(session.mode) || [];
+    const hasValidActivePreset = Boolean(
+      activePresetId &&
+      presetsForMode.some(p => p.id?.toLowerCase() === activePresetId.toLowerCase() || p.name?.toLowerCase() === activePresetId.toLowerCase())
+    );
+    if (!hasValidActivePreset) {
+      sendJSON(res, 400, { error: `No active model preset configured for ${session.mode} mode. Please select an active preset first.`, sessionId: session.sessionId });
+      return true;
+    }
+
     if (typeof message === "string" && message.startsWith("!")) {
       const command = message.slice(1).trim();
       if (!command) {

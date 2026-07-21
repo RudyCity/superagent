@@ -16,8 +16,7 @@ export function getConfiguredProviders(): ConfiguredProvider[] {
   const isMulti = process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true";
   const mode = isMulti ? "multi" : "single";
   const activePreset = getActivePreset<any>(mode);
-  const models = activePreset?.models || {};
-  const tierConfig = mode === "multi" ? models.master : models.superagent;
+  const tierConfig = mode === "multi" ? activePreset.models.master : activePreset.models.superagent;
   const activeProfileId = tierConfig?.providerProfileId || "";
 
   const list = providers
@@ -173,11 +172,10 @@ function resolveMode(mode: ModelMode | "auto"): ModelMode {
 export function getEffectiveMasterModel(mode: ModelMode | "auto" = "auto"): string {
   const m = resolveMode(mode);
   const preset = getActivePreset<any>(m);
-  const models = preset?.models || {};
   if (m === "multi") {
-    return models.master?.model || models.superagent?.model || "gpt-4o";
+    return preset.models.master?.model || preset.models.superagent?.model || "gpt-4o";
   }
-  return models.superagent?.model || "gpt-4o";
+  return preset.models.superagent?.model || "gpt-4o";
 }
 
 /**
@@ -189,7 +187,6 @@ export function getEffectiveMasterModel(mode: ModelMode | "auto" = "auto"): stri
 export function getTierModelConfig(mode: ModelMode | "auto", tier: string): TierModelConfig | undefined {
   const m = resolveMode(mode);
   const preset = getActivePreset<any>(m);
-  const models = preset?.models || {};
   const key = tier.toLowerCase();
 
   const pick = (...configs: (any | undefined)[]): any =>
@@ -198,9 +195,9 @@ export function getTierModelConfig(mode: ModelMode | "auto", tier: string): Tier
   let tierConfig: any;
 
   if (key === "master") {
-    tierConfig = m === "multi" ? models.master : models.superagent;
+    tierConfig = m === "multi" ? preset.models.master : preset.models.superagent;
   } else if (key === "superagent") {
-    tierConfig = models.superagent;
+    tierConfig = preset.models.superagent;
   } else if (key === "subagent") {
     tierConfig = pick(
       preset.models.subagentDefault,
