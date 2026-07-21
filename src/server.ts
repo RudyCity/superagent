@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
-import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions, getPackageRootDir } from "./core/config.js";
+import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions, getPackageRootDir, getInstalledSkills } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
@@ -1368,6 +1368,17 @@ export async function runServer(port: number, silent = false, defaultClientMode:
           }
         } catch (err: any) {
           sendJSON(res, 500, { error: err.message });
+        }
+        return;
+      }
+
+      // Fetch installed skills list (for t-line autocomplete)
+      if (pathname === "/api/skills" && req.method === "GET") {
+        try {
+          const skills = getInstalledSkills();
+          sendJSON(res, 200, { skills });
+        } catch (err: any) {
+          sendJSON(res, 500, { error: err.message || String(err) });
         }
         return;
       }
