@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.517] - 2026-07-21
+
+### Fixed
+- **Python Vision Server Orphan Leak (`server.ts`)**:
+  - Imported `execSync` statically from `child_process`.
+  - Modified process exit hook `killVisionServerProcess()` to kill the Python child process synchronously using `execSync` instead of an asynchronous dynamic `import(...)` that fails to execute during the process exit phase.
+
 ## [1.2.516] - 2026-07-21
 
 ### Changed

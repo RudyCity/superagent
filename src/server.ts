@@ -9,6 +9,7 @@ import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
+import { execSync } from "child_process";
 
 export type ClientMode = "chrome-extension" | "tline";
 
@@ -100,12 +101,9 @@ export const killVisionServerProcess = () => {
   if (visionServerProcess) {
     try {
       if (process.platform === "win32") {
-        // execSync is loaded dynamically using a helper to avoid require/import issues in ES Module context
-        import("child_process").then(({ execSync }) => {
-          try {
-            execSync(`taskkill /F /T /PID ${visionServerProcess.pid}`, { stdio: "ignore" });
-          } catch {}
-        });
+        try {
+          execSync(`taskkill /F /T /PID ${visionServerProcess.pid}`, { stdio: "ignore" });
+        } catch {}
       } else {
         visionServerProcess.kill();
       }
