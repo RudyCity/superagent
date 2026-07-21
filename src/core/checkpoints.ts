@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
 import { execSync } from "child_process";
+import { execa } from "execa";
 import { clearHistoryCache } from "./config.js";
 import { Message } from "./conversation.js";
 import { backgroundTasks, subagentInstances, notifyTasksChanged, notifySubagentsChanged, isTaskInWorkspace } from "./tools/state.js";
@@ -33,13 +34,13 @@ export interface Checkpoint {
 /**
  * Gets the current short git SHA from the repository.
  */
-export function getGitSha(cwd?: string): string | undefined {
+export async function getGitSha(cwd?: string): Promise<string | undefined> {
   try {
-    return execSync("git rev-parse --short HEAD", {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
+    const res = await execa("git", ["rev-parse", "--short", "HEAD"], {
       cwd: cwd || process.cwd(),
-    }).trim();
+      reject: false,
+    });
+    return res.stdout.trim() || undefined;
   } catch {
     return undefined;
   }
@@ -71,7 +72,7 @@ export async function createCheckpoint(
   try { taskHistoryFileContent = await fs.readFile(taskHistoryPath, "utf-8"); } catch {}
   try { walkthroughFileContent = await fs.readFile(walkthroughPath, "utf-8"); } catch {}
 
-  const gitSha = getGitSha(workingDirectory);
+  const gitSha = await getGitSha(workingDirectory);
   const timestamp = Date.now();
   const id = `chk_${timestamp}`;
 

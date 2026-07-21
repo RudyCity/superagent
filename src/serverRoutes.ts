@@ -78,6 +78,7 @@ export async function handleServerRoute(
       "Connection": "keep-alive",
       "Access-Control-Allow-Origin": "*",
     });
+    try { (res.socket as any)?.setNoDelay(true); } catch {}
     sseClients.add(res);
 
     const clientId = parsedUrl.searchParams.get("clientId") || "";
