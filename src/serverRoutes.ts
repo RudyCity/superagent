@@ -21,11 +21,17 @@ import {
   removeProvider,
   switchActiveProvider,
   loadModelConfig,
+  mutateModelConfig,
   updateSettings, 
   listHistorySessions, 
   getTrustedDirectories, 
   generateSessionId, 
-  getInstalledSkills 
+  getInstalledSkills,
+  exportSession,
+  saveWorkspaceToDb,
+  saveSessionToDb,
+  clearHistoryCache,
+  getWorkspaceId
 } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances } from "./core/tools/state.js";
@@ -1058,10 +1064,9 @@ export async function handleServerRoute(
         return true;
       }
       switchActiveProvider(providerId);
-      const config = loadModelConfig();
       sendJSON(res, 200, {
         success: true,
-        activeProviderProfileId: (config as any).activeProviderProfileId || providerId
+        activeProviderProfileId: providerId
       });
     } catch (err: any) {
       sendJSON(res, 400, { success: false, error: err.message || String(err) });
@@ -1234,6 +1239,165 @@ export async function handleServerRoute(
     const walkthroughContent = await readMarkdown(walkthroughPath);
 
     sendJSON(res, 200, { plan: planContent, tasks: taskContent, walkthrough: walkthroughContent });
+    return true;
+  }
+
+  // ─── MCP Server Config CRUD ─────────────────────────────────────────────────
+
+  // List MCP servers + connection status
+  if (pathname === "/api/config/mcp" && req.method === "GET") {
+    const config = loadModelConfig();
+    const mcpServers = config.mcpServers || {};
+    let statusMap: Record<string, { status: string; tools: string[]; error?: string }> = {};
+    try {
+      const { connectedServers } = await import("./core/mcp/McpManager.js");
+      for (const [name, srv] of connectedServers.entries()) {
+        statusMap[name] = { status: srv.status, tools: srv.tools, error: srv.error };
+      }
+    } catch {}
+    const servers = Object.entries(mcpServers).map(([name, cfg]) => ({
+      name,
+      command: cfg.command,
+      args: cfg.args || [],
+      env: cfg.env || {},
+      ...(statusMap[name.trim().toLowerCase()] || { status: "not-connected", tools: [] })
+    }));
+    sendJSON(res, 200, { success: true, servers });
+    return true;
+  }
+
+  // Add / update a MCP server
+  if (pathname === "/api/config/mcp" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { name, command, args, env } = JSON.parse(bodyStr || "{}");
+      if (!name || !command) {
+        sendJSON(res, 400, { error: "name and command are required" });
+        return true;
+      }
+      mutateModelConfig((config) => {
+        if (!config.mcpServers) config.mcpServers = {};
+        const entry: any = { command, args: args || [] };
+        if (env && Object.keys(env).length > 0) entry.env = env;
+        config.mcpServers[name] = entry;
+      });
+      const config = loadModelConfig();
+      sendJSON(res, 200, { success: true, mcpServers: config.mcpServers || {} });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Reload (close all + reinit) MCP servers
+  if (pathname === "/api/config/mcp/reload" && req.method === "POST") {
+    try {
+      const { closeMcpServers, initMcpServers, connectedServers } = await import("./core/mcp/McpManager.js");
+      await closeMcpServers();
+      await initMcpServers();
+      const servers = Array.from(connectedServers.entries()).map(([name, srv]) => ({
+        name, status: srv.status, tools: srv.tools, error: srv.error
+      }));
+      sendJSON(res, 200, { success: true, servers });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Delete a MCP server
+  if (pathname.startsWith("/api/config/mcp/") && req.method === "DELETE") {
+    try {
+      const name = decodeURIComponent(pathname.replace("/api/config/mcp/", ""));
+      if (!name) {
+        sendJSON(res, 400, { error: "MCP server name is required" });
+        return true;
+      }
+      mutateModelConfig((config) => {
+        if (config.mcpServers) delete config.mcpServers[name];
+      });
+      const config = loadModelConfig();
+      sendJSON(res, 200, { success: true, mcpServers: config.mcpServers || {} });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // ─── Session Export / Import ─────────────────────────────────────────────────
+
+  // Export session as JSON or Markdown
+  if (pathname.startsWith("/api/history/session/") && pathname.endsWith("/export") && req.method === "GET") {
+    const format = (parsedUrl.searchParams.get("format") || "json") as "json" | "markdown";
+    const sessionId = decodeURIComponent(pathname.replace("/api/history/session/", "").replace("/export", ""));
+    if (!sessionId) {
+      sendJSON(res, 400, { error: "Session ID required" });
+      return true;
+    }
+    const content = exportSession(sessionId, format);
+    if (!content) {
+      sendJSON(res, 404, { error: "Session not found" });
+      return true;
+    }
+    const contentType = format === "markdown" ? "text/markdown; charset=utf-8" : "application/json; charset=utf-8";
+    res.writeHead(200, { "Content-Type": contentType });
+    res.end(content);
+    return true;
+  }
+
+  // Import session from JSON body { session, messages }
+  if (pathname === "/api/history/import" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { session, messages } = JSON.parse(bodyStr || "{}");
+      if (!session?.id) {
+        sendJSON(res, 400, { error: "session.id is required" });
+        return true;
+      }
+      saveSessionToDb(session, messages || []);
+      clearHistoryCache();
+      sendJSON(res, 200, { success: true, id: session.id });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // ─── Trusted Directory Write ─────────────────────────────────────────────────
+
+  // Add a trusted directory
+  if (pathname === "/api/config/trusted-directory" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const { path: dirPath } = JSON.parse(bodyStr || "{}");
+      if (!dirPath) {
+        sendJSON(res, 400, { error: "path is required" });
+        return true;
+      }
+      addTrustedDirectory(dirPath);
+      sendJSON(res, 200, { success: true, trustedDirectories: getTrustedDirectories() });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  // Remove trust from a directory
+  if (pathname === "/api/config/trusted-directory" && req.method === "DELETE") {
+    try {
+      const bodyStr = await readBody(req);
+      const { path: dirPath } = JSON.parse(bodyStr || "{}");
+      if (!dirPath) {
+        sendJSON(res, 400, { error: "path is required" });
+        return true;
+      }
+      const resolvedPath = path.resolve(dirPath);
+      const wsId = getWorkspaceId(resolvedPath);
+      saveWorkspaceToDb({ id: wsId, path: resolvedPath, isTrusted: false });
+      sendJSON(res, 200, { success: true, trustedDirectories: getTrustedDirectories() });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
     return true;
   }
 
