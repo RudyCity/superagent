@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.519] - 2026-07-22
+
+### Enhanced
+- **System Prompts Optimization (`src/core/prompts.ts`)**:
+  - Integrated Pragmatic Minimalism to enforce lean, high-density, zero-fluff prompts.
+  - Integrated Single-Agent Cognitive Scale-Up protocols including symbolic problem indexing (`P[001..100]`), Graph of Thought representation, and consolidated single-pass delta execution.
+  - Integrated Hundred-Minds Collective 6-team deliberation structure (Arch, Tech, Red Team, Empirical Validators, Consensus, Lean Ops).
+  - Integrated Non-Linear Debugging Engine with 5-pass cause-effect triangulation, multi-hypothesis superposition matrix, and collision node pinpointing.
+  - Enforced Concept A (Telegraphic English), Concept B (Markdown Hierarchy), and Concept C (Pseudocode Logic Gates) across Master Agent, Superagent, Subagents, and Chrome Extension prompts.
+
 ## [1.2.518] - 2026-07-21
 
 ### Fixed
