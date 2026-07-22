@@ -486,4 +486,42 @@ describe("SQLite History Database (historyDb)", () => {
     historyDbModule.deleteWorkspaceTaskFromDb("ws-1", "task-1");
     expect(historyDbModule.getWorkspaceTasksFromDb("ws-1")).toHaveLength(0);
   });
+
+  it("should support name field in workspaces table", () => {
+    const wsId = "ws-name-test";
+    
+    // Save workspace with name
+    historyDbModule.saveWorkspaceToDb({
+      id: wsId,
+      path: "/workspace/ws-name-test",
+      name: "Cool Project",
+      isTrusted: true
+    });
+
+    const retrieved = historyDbModule.getWorkspaceFromDb(wsId);
+    expect(retrieved).not.toBeNull();
+    expect(retrieved?.name).toBe("Cool Project");
+
+    // Save again without name to test name preservation
+    historyDbModule.saveWorkspaceToDb({
+      id: wsId,
+      path: "/workspace/ws-name-test",
+      isTrusted: true
+    });
+
+    const preserved = historyDbModule.getWorkspaceFromDb(wsId);
+    expect(preserved?.name).toBe("Cool Project");
+
+    // Update with a different name
+    historyDbModule.saveWorkspaceToDb({
+      id: wsId,
+      path: "/workspace/ws-name-test",
+      name: "Amazing Project",
+      isTrusted: true
+    });
+
+    const updated = historyDbModule.getWorkspaceFromDb(wsId);
+    expect(updated?.name).toBe("Amazing Project");
+  });
 });
+

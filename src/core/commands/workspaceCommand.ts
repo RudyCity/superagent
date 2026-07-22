@@ -1,6 +1,7 @@
 import { registry } from "./registry.js";
 import { SlashCommand } from "./types.js";
 import { getTrustedDirectories, addTrustedDirectory } from "../config/jsonConfig.js";
+import { getWorkspacesFromDb } from "../storage/historyDb.js";
 import path from "path";
 import fs from "fs";
 
@@ -57,6 +58,8 @@ export const workspaceCommand: SlashCommand = {
     if (action === "list") {
       const trustedDirs = getTrustedDirectories().map(d => path.resolve(d));
       const allDirs = [...new Set([currentWorkspace, ...trustedDirs])];
+      const dbWorkspaces = getWorkspacesFromDb();
+      const workspacesMap = new Map(dbWorkspaces.map(w => [path.resolve(w.path), w]));
 
       ctx.addLine({
         type: "system",
@@ -77,9 +80,11 @@ export const workspaceCommand: SlashCommand = {
         const isActive = dir === currentWorkspace;
         const marker = isActive ? "*" : "-";
         const label = isActive ? " (active)" : "";
+        const wsRecord = workspacesMap.get(dir);
+        const namePart = wsRecord?.name ? ` [${wsRecord.name}]` : "";
         ctx.addLine({
           type: "system",
-          content: `  ${marker} ${idx + 1}: ${dir}${label}`,
+          content: `  ${marker} ${idx + 1}:${namePart} ${dir}${label}`,
           timestamp: now
         });
       });
@@ -90,13 +95,46 @@ export const workspaceCommand: SlashCommand = {
       if (!targetArg) {
         ctx.addLine({
           type: "error",
-          content: "Error: Please specify a workspace path to add. Usage: /workspace add <path>",
+          content: "Error: Please specify a workspace path to add. Usage: /workspace add <path> [name]",
           timestamp: now
         });
         return;
       }
 
-      const resolvedPath = path.resolve(currentWorkspace, targetArg);
+      let resolvedPath = "";
+      let wsName: string | undefined = undefined;
+
+      const fullPath = path.resolve(currentWorkspace, targetArg);
+      if (fs.existsSync(fullPath)) {
+        resolvedPath = fullPath;
+      } else {
+        let found = false;
+        const lastSpaceIndices: number[] = [];
+        for (let i = 0; i < targetArg.length; i++) {
+          if (targetArg[i] === " " || targetArg[i] === "\t") {
+            lastSpaceIndices.push(i);
+          }
+        }
+        for (let i = lastSpaceIndices.length - 1; i >= 0; i--) {
+          const splitIdx = lastSpaceIndices[i];
+          const pathPart = targetArg.slice(0, splitIdx).trim();
+          const namePart = targetArg.slice(splitIdx + 1).trim();
+          if (namePart.includes("/") || namePart.includes("\\")) {
+            continue;
+          }
+          const cleanPathPart = pathPart.replace(/^["']|["']$/g, "");
+          const testPath = path.resolve(currentWorkspace, cleanPathPart);
+          if (fs.existsSync(testPath)) {
+            resolvedPath = testPath;
+            wsName = namePart.replace(/^["']|["']$/g, "");
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          resolvedPath = fullPath;
+        }
+      }
 
       if (!fs.existsSync(resolvedPath)) {
         ctx.addLine({
@@ -117,11 +155,12 @@ export const workspaceCommand: SlashCommand = {
         return;
       }
 
-      addTrustedDirectory(resolvedPath);
+      addTrustedDirectory(resolvedPath, wsName);
 
+      const addedLabel = wsName ? `Added workspace "${wsName}": ${resolvedPath}` : `Added workspace: ${resolvedPath}`;
       ctx.addLine({
         type: "system",
-        content: `Added workspace: ${resolvedPath}`,
+        content: addedLabel,
         timestamp: now
       });
       return;

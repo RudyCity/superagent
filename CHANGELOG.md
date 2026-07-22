@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.523] - 2026-07-22
+
+### Added
+- **Workspace Custom Name Support (`src/core/storage/historyDb.ts`, `src/core/commands/workspaceCommand.ts`, `src/serverRoutes.ts`)**:
+  - Added a `name` column to the SQLite `workspaces` table to persist custom user-friendly names for directories.
+  - Implemented schema migration inside database initialization to automatically alter existing tables with the new `name` column.
+  - Updated the `/workspace add` command to support parsing an optional workspace name argument, e.g., `/workspace add <path> [name]`. Added support for unquoted paths with spaces.
+  - Modified `/workspace list` to print the custom workspace name (if registered) alongside the directory path.
+  - Updated `addTrustedDirectory` API and `/api/config/trusted-directory` endpoint to accept and record a workspace name.
+  - Exposed workspace names in the `/api/workspaces` list endpoint.
+  - Added unit test coverage for name retrieval, insertion, and CLI command printing.
+
 ## [1.2.522] - 2026-07-22
 
 ### Changed

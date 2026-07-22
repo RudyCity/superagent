@@ -168,4 +168,17 @@ describe("Slash Command: /workspace and /w", () => {
     const targetCwd = testAgent?.workingDirectory || process.cwd();
     expect(targetCwd).toBe(path.resolve(customWorkspace));
   });
+
+  it("should add a workspace with a custom name and list it with the name", async () => {
+    const dummyDir = path.join(tempHome, "custom-name-workspace");
+    fs.mkdirSync(dummyDir, { recursive: true });
+
+    await handleSlashCommand(`/workspace add "${dummyDir}" "My Super Project"`, mockCtx as any);
+    expect(addedLines.some(l => l.content.includes('Added workspace "My Super Project"'))).toBe(true);
+
+    addedLines = [];
+    await handleSlashCommand("/workspace list", mockCtx as any);
+    expect(addedLines.some(l => l.content.includes("[My Super Project]"))).toBe(true);
+  });
 });
+

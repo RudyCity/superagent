@@ -108,6 +108,7 @@ function initDatabaseSchema(db: any): void {
     CREATE TABLE IF NOT EXISTS workspaces (
       id TEXT PRIMARY KEY,
       path TEXT NOT NULL UNIQUE,
+      name TEXT,
       is_trusted INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
       updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)
@@ -306,6 +307,17 @@ function initDatabaseSchema(db: any): void {
   } catch {}
 
   try {
+    const workspacesCols = [
+      { name: "name", type: "TEXT" },
+    ];
+    for (const col of workspacesCols) {
+      try {
+        db.exec(`ALTER TABLE workspaces ADD COLUMN ${col.name} ${col.type};`);
+      } catch {}
+    }
+  } catch {}
+
+  try {
     db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
         session_id UNINDEXED,
@@ -348,10 +360,10 @@ export function saveSessionToDb(session: SessionRecord, messages: MessageRecord[
     if (workspaceId && session.workingDirectory) {
       try {
         db.prepare(`
-          INSERT INTO workspaces (id, path, is_trusted)
-          VALUES (?, ?, 0)
+          INSERT INTO workspaces (id, path, name, is_trusted)
+          VALUES (?, ?, ?, 0)
           ON CONFLICT(id) DO NOTHING
-        `).run(workspaceId, path.resolve(session.workingDirectory));
+        `).run(workspaceId, path.resolve(session.workingDirectory), path.basename(session.workingDirectory));
       } catch {}
     }
 
@@ -1391,10 +1403,10 @@ export function savePinnedKnowledgeToDb(entry: any): void {
     if (workspaceId && entry.workingDirectory) {
       try {
         db.prepare(`
-          INSERT INTO workspaces (id, path, is_trusted)
-          VALUES (?, ?, 0)
+          INSERT INTO workspaces (id, path, name, is_trusted)
+          VALUES (?, ?, ?, 0)
           ON CONFLICT(id) DO NOTHING
-        `).run(workspaceId, path.resolve(entry.workingDirectory));
+        `).run(workspaceId, path.resolve(entry.workingDirectory), path.basename(entry.workingDirectory));
       } catch {}
     }
 
@@ -1582,6 +1594,7 @@ export function deleteWorkspaceDataFromDb(workspaceId: string): void {
 export interface WorkspaceRecord {
   id: string;
   path: string;
+  name?: string;
   isTrusted: boolean;
   createdAt?: number;
   updatedAt?: number;
@@ -1591,14 +1604,33 @@ export function saveWorkspaceToDb(workspace: WorkspaceRecord): void {
   try {
     const db = getHistoryDb();
     const now = Date.now();
+    
+    // Determine the name to save:
+    // 1. If explicitly provided, use it.
+    // 2. If it already exists in the DB, preserve it.
+    // 3. Otherwise, default to path.basename.
+    let name = workspace.name;
+    if (name === undefined) {
+      try {
+        const existing = db.prepare("SELECT name FROM workspaces WHERE id = ?").get(workspace.id);
+        if (existing) {
+          name = existing.name;
+        }
+      } catch {}
+      if (name === undefined) {
+        name = path.basename(workspace.path);
+      }
+    }
+
     db.prepare(`
-      INSERT INTO workspaces (id, path, is_trusted, updated_at)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO workspaces (id, path, name, is_trusted, updated_at)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         path = excluded.path,
+        name = excluded.name,
         is_trusted = excluded.is_trusted,
         updated_at = excluded.updated_at
-    `).run(workspace.id, workspace.path, workspace.isTrusted ? 1 : 0, now);
+    `).run(workspace.id, workspace.path, name || null, workspace.isTrusted ? 1 : 0, now);
   } catch {}
 }
 
@@ -1609,6 +1641,7 @@ export function getWorkspacesFromDb(): WorkspaceRecord[] {
     return rows.map((row: any) => ({
       id: row.id,
       path: row.path,
+      name: row.name || undefined,
       isTrusted: row.is_trusted === 1,
       createdAt: row.created_at,
       updatedAt: row.updated_at
@@ -1626,6 +1659,7 @@ export function getWorkspaceFromDb(id: string): WorkspaceRecord | null {
       return {
         id: row.id,
         path: row.path,
+        name: row.name || undefined,
         isTrusted: row.is_trusted === 1,
         createdAt: row.created_at,
         updatedAt: row.updated_at
@@ -1655,10 +1689,10 @@ export function migrateLegacyTrustedDirs(db: any): void {
           const id = getWorkspaceId(resolved);
           try {
             db.prepare(`
-              INSERT INTO workspaces (id, path, is_trusted, created_at, updated_at)
-              VALUES (?, ?, 1, ?, ?)
+              INSERT INTO workspaces (id, path, name, is_trusted, created_at, updated_at)
+              VALUES (?, ?, ?, 1, ?, ?)
               ON CONFLICT(id) DO NOTHING
-            `).run(id, resolved, Date.now(), Date.now());
+            `).run(id, resolved, path.basename(resolved), Date.now(), Date.now());
           } catch {}
         }
       }

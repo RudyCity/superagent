@@ -1033,12 +1033,13 @@ export function getTrustedDirectories(): string[] {
   return workspaces.filter(ws => ws.isTrusted).map(ws => ws.path);
 }
 
-export function addTrustedDirectory(dirPath: string): void {
+export function addTrustedDirectory(dirPath: string, name?: string): void {
   const resolvedPath = path.resolve(dirPath);
   const id = getWorkspaceId(resolvedPath);
   saveWorkspaceToDb({
     id,
     path: resolvedPath,
+    name,
     isTrusted: true
   });
 }

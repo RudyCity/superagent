@@ -33,6 +33,7 @@ import {
   loadSessionFromDb,
   clearHistoryCache,
   getWorkspaceId,
+  getWorkspaceFromDb,
   getSuperAgentVersion
 } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
@@ -150,16 +151,21 @@ export async function handleServerRoute(
 
   // Workspaces List
   if (pathname === "/api/workspaces" && req.method === "GET") {
-    const workspaces = Array.from(activeSessions.values()).map(s => ({
-      sessionId: s.sessionId,
-      workspace: s.workspace,
-      mode: s.mode,
-      clientMode: s.clientMode,
-      isCliSession: s.isCliSession,
-      agentRunning: s.agent.isAgentRunning(),
-      planState: s.agent.planState,
-      lastActiveTime: s.lastActiveTime || Date.now()
-    }));
+    const workspaces = Array.from(activeSessions.values()).map(s => {
+      const wsId = s.workspace ? getWorkspaceId(s.workspace) : "";
+      const wsRecord = wsId ? getWorkspaceFromDb(wsId) : null;
+      return {
+        sessionId: s.sessionId,
+        workspace: s.workspace,
+        name: wsRecord?.name || (s.workspace ? path.basename(s.workspace) : undefined),
+        mode: s.mode,
+        clientMode: s.clientMode,
+        isCliSession: s.isCliSession,
+        agentRunning: s.agent.isAgentRunning(),
+        planState: s.agent.planState,
+        lastActiveTime: s.lastActiveTime || Date.now()
+      };
+    });
     sendJSON(res, 200, { success: true, workspaces });
     return true;
   }
@@ -1506,12 +1512,12 @@ export async function handleServerRoute(
   if (pathname === "/api/config/trusted-directory" && req.method === "POST") {
     try {
       const bodyStr = await readBody(req);
-      const { path: dirPath } = JSON.parse(bodyStr || "{}");
+      const { path: dirPath, name } = JSON.parse(bodyStr || "{}");
       if (!dirPath) {
         sendJSON(res, 400, { error: "path is required" });
         return true;
       }
-      addTrustedDirectory(dirPath);
+      addTrustedDirectory(dirPath, name);
       sendJSON(res, 200, { success: true, trustedDirectories: getTrustedDirectories() });
     } catch (err: any) {
       sendJSON(res, 400, { success: false, error: err.message || String(err) });
