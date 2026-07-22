@@ -448,13 +448,19 @@ export function loadSessionFromDb(sessionId: string): {
 } {
   const db = getHistoryDb();
 
-  const getSessionStmt = db.prepare(`
+   const getSessionStmt = db.prepare(`
     SELECT id, file_path as filePath, display_name as displayName, message_count as messageCount,
            last_modified as lastModified, preview, working_directory as workingDirectory,
            plan_state as planState, active_preset as activePreset, extra_data as extraData,
            workspace_id as workspaceId,
-           COALESCE(first_chat, (SELECT m.content FROM messages m WHERE m.session_id = sessions.id AND m.role = 'user' ORDER BY m.sequence_order ASC LIMIT 1)) as firstChat,
-           COALESCE(last_chat, (SELECT m.content FROM messages m WHERE m.session_id = sessions.id AND m.role = 'user' ORDER BY m.sequence_order DESC LIMIT 1)) as lastChat
+           COALESCE(
+             NULLIF(NULLIF(first_chat, ''), 'New Chat'),
+             (SELECT m.content FROM messages m WHERE m.session_id = sessions.id AND m.role = 'user' AND m.content != '' ORDER BY m.sequence_order ASC LIMIT 1)
+           ) as firstChat,
+           COALESCE(
+             NULLIF(NULLIF(last_chat, ''), 'New Chat'),
+             (SELECT m.content FROM messages m WHERE m.session_id = sessions.id AND m.role = 'user' AND m.content != '' ORDER BY m.sequence_order DESC LIMIT 1)
+           ) as lastChat
     FROM sessions WHERE id = ?
   `);
   const sessionRow = getSessionStmt.get(sessionId) as SessionRecord | undefined;
@@ -486,8 +492,14 @@ export function listSessionsFromDb(limit: number = 100): SessionRecord[] {
     SELECT s.id, s.file_path as filePath, s.display_name as displayName, s.message_count as messageCount,
            s.last_modified as lastModified, s.preview, s.working_directory as workingDirectory,
            s.plan_state as planState, s.active_preset as activePreset, s.workspace_id as workspaceId,
-           COALESCE(s.first_chat, (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.role = 'user' ORDER BY m.sequence_order ASC LIMIT 1)) as firstChat,
-           COALESCE(s.last_chat, (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.role = 'user' ORDER BY m.sequence_order DESC LIMIT 1)) as lastChat
+           COALESCE(
+             NULLIF(NULLIF(s.first_chat, ''), 'New Chat'),
+             (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.role = 'user' AND m.content != '' ORDER BY m.sequence_order ASC LIMIT 1)
+           ) as firstChat,
+           COALESCE(
+             NULLIF(NULLIF(s.last_chat, ''), 'New Chat'),
+             (SELECT m.content FROM messages m WHERE m.session_id = s.id AND m.role = 'user' AND m.content != '' ORDER BY m.sequence_order DESC LIMIT 1)
+           ) as lastChat
     FROM sessions s ORDER BY s.last_modified DESC LIMIT ?
   `);
   return (stmt.all(limit) || []) as SessionRecord[];

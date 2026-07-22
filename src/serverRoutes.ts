@@ -281,6 +281,10 @@ export async function handleServerRoute(
         sequenceOrder: idx
       })) : (existing.messages || []);
 
+      const userMsgs = msgsToSave.filter((m: any) => m.role === "user" && m.content);
+      const firstUserContent = userMsgs[0]?.content || null;
+      const lastUserContent = userMsgs[userMsgs.length - 1]?.content || null;
+
       saveSessionToDb(
         {
           id: sessionId,
@@ -290,8 +294,8 @@ export async function handleServerRoute(
           lastModified: session.updatedAt || Date.now(),
           preview: title,
           workingDirectory: workspacePath,
-          firstChat: title,
-          lastChat: title
+          firstChat: firstUserContent || title,
+          lastChat: lastUserContent || title
         },
         msgsToSave
       );

@@ -1,6 +1,13 @@
 # Changelog
 
-## [1.2.519] - 2026-07-22
+## [1.2.521] - 2026-07-22
+
+### Fixed
+- **First/Last Chat Session Title Duplication/Locking Bug (`src/serverRoutes.ts`)**:
+  - Extracted the actual first and last user message content instead of hardcoding `title` to `firstChat` and `lastChat` when saving session metadata to SQLite database via `POST /api/history/session`.
+  - This preserves the actual start and end prompts of a chat session, allowing the t-line bridge to calculate cleaner, more representative conversation titles.
+
+## [1.2.520] - 2026-07-22
 
 ### Enhanced
 - **System Prompts Optimization (`src/core/prompts.ts`)**:

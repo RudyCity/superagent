@@ -21,7 +21,12 @@ function normalizeAndCheckSubpath(childPath: string, parentPath: string): boolea
     resolvedChild = resolvedChild.toLowerCase();
     resolvedParent = resolvedParent.toLowerCase();
   }
-  return resolvedChild.startsWith(resolvedParent + path.sep) || resolvedChild === resolvedParent;
+  const childSlash = resolvedChild.replace(/\\/g, "/");
+  const parentSlash = resolvedParent.replace(/\\/g, "/");
+  return resolvedChild.startsWith(resolvedParent + path.sep) || 
+         resolvedChild === resolvedParent || 
+         childSlash.startsWith(parentSlash + "/") || 
+         childSlash === parentSlash;
 }
 
 export interface HistorySession {
