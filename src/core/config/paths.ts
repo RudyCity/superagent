@@ -72,9 +72,6 @@ export function getWorkspaceTasksFilePath(): string {
   const root = getRootConfigDir();
   const wsId = getWorkspaceId();
   const wsDir = path.join(root, "workspaces", wsId);
-  if (!fs.existsSync(wsDir)) {
-    fs.mkdirSync(wsDir, { recursive: true });
-  }
   return path.join(wsDir, "background-tasks.json");
 }
 
@@ -103,9 +100,6 @@ export function getWorkspaceInputHistoryPath(): string {
   const root = getRootConfigDir();
   const wsId = getWorkspaceId();
   const wsDir = path.join(root, "workspaces", wsId);
-  if (!fs.existsSync(wsDir)) {
-    fs.mkdirSync(wsDir, { recursive: true });
-  }
   return path.join(wsDir, "input-history.json");
 }
 
