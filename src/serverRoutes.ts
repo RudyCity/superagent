@@ -30,6 +30,7 @@ import {
   exportSession,
   saveWorkspaceToDb,
   saveSessionToDb,
+  loadSessionFromDb,
   clearHistoryCache,
   getWorkspaceId,
   getSuperAgentVersion
@@ -165,13 +166,45 @@ export async function handleServerRoute(
 
   // Get chat history
   if (pathname === "/api/history" && req.method === "GET") {
-    const session = resolveSession(req);
-    if (!session) {
-      sendJSON(res, 200, { success: true, messages: [] });
-      return true;
+    const targetSessionId = parsedUrl.searchParams.get("sessionId") || parsedUrl.searchParams.get("id");
+    const session = resolveSession(req, targetSessionId || undefined);
+    if (session && targetSessionId && session.sessionId === targetSessionId) {
+      const msgs = session.agent.getConversationMessages();
+      if (msgs.length > 0) {
+        sendJSON(res, 200, { success: true, messages: msgs });
+        return true;
+      }
     }
-    const messages = session.agent.getConversationMessages();
-    sendJSON(res, 200, { success: true, messages });
+    if (targetSessionId) {
+      const dbResult = loadSessionFromDb(targetSessionId);
+      if (dbResult && dbResult.session && dbResult.messages.length > 0) {
+        const formattedMsgs = dbResult.messages.map((m) => {
+          let content = m.content;
+          if (typeof m.content === "string" && (m.content.startsWith("[") || m.content.startsWith("{"))) {
+            try { content = JSON.parse(m.content); } catch {}
+          }
+          let toolCalls = undefined;
+          if (m.toolCalls) {
+            try { toolCalls = JSON.parse(m.toolCalls); } catch {}
+          }
+          let toolResults = undefined;
+          if (m.toolResults) {
+            try { toolResults = JSON.parse(m.toolResults); } catch {}
+          }
+          return {
+            role: m.role,
+            content,
+            toolCalls,
+            toolResults,
+            reasoning: m.reasoning,
+            timestamp: m.timestamp,
+          };
+        });
+        sendJSON(res, 200, { success: true, messages: formattedMsgs });
+        return true;
+      }
+    }
+    sendJSON(res, 200, { success: true, messages: [] });
     return true;
   }
 
@@ -210,6 +243,60 @@ export async function handleServerRoute(
         }
       }
 
+      broadcastEvent({ type: "superagent-sessions-changed" });
+      sendJSON(res, 200, { success: true });
+    } catch (err: any) {
+      sendJSON(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  // Save or update session metadata (title, messages) in SQLite DB
+  if (pathname === "/api/history/session" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const body = JSON.parse(bodyStr || "{}");
+      const { session, messages } = body;
+      if (!session || !session.id) {
+        sendJSON(res, 400, { error: "Session metadata with id is required" });
+        return true;
+      }
+      const workspacePath = resolveWorkspacePath(req);
+      const sessionId = session.id;
+      const title = session.title || session.displayName || "New Chat";
+      
+      const { saveSessionToDb, loadSessionFromDb, clearHistoryCache, getGlobalConfigDir } = await import("./core/config.js");
+      
+      const existing = loadSessionFromDb(sessionId);
+      const filePath = existing.session?.filePath || session.filePath || path.join(getGlobalConfigDir(), "history", "single", sessionId, `${sessionId}.json`);
+      
+      const msgsToSave = Array.isArray(messages) && messages.length > 0 ? messages.map((m: any, idx: number) => ({
+        sessionId,
+        role: m.role || "user",
+        content: typeof m.text === "string" ? m.text : (typeof m.content === "string" ? m.content : JSON.stringify(m.content || m.text || "")),
+        toolCalls: m.toolCalls ? JSON.stringify(m.toolCalls) : undefined,
+        toolResults: m.toolResults ? JSON.stringify(m.toolResults) : undefined,
+        reasoning: m.reasoning || m.thought,
+        timestamp: m.timestamp || Date.now(),
+        sequenceOrder: idx
+      })) : (existing.messages || []);
+
+      saveSessionToDb(
+        {
+          id: sessionId,
+          filePath,
+          displayName: title,
+          messageCount: msgsToSave.length,
+          lastModified: session.updatedAt || Date.now(),
+          preview: title,
+          workingDirectory: workspacePath,
+          firstChat: title,
+          lastChat: title
+        },
+        msgsToSave
+      );
+
+      clearHistoryCache();
       broadcastEvent({ type: "superagent-sessions-changed" });
       sendJSON(res, 200, { success: true });
     } catch (err: any) {
