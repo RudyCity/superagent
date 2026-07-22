@@ -29,22 +29,6 @@ export function ensureGlobalConfigDir(): void {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  const historyDir = path.join(dir, "history");
-  if (!fs.existsSync(historyDir)) {
-    fs.mkdirSync(historyDir, { recursive: true });
-  }
-  const singleDir = path.join(historyDir, "single");
-  if (!fs.existsSync(singleDir)) {
-    fs.mkdirSync(singleDir, { recursive: true });
-  }
-  const multiDir = path.join(historyDir, "multi");
-  if (!fs.existsSync(multiDir)) {
-    fs.mkdirSync(multiDir, { recursive: true });
-  }
-  const checkpointsDir = path.join(dir, "checkpoints");
-  if (!fs.existsSync(checkpointsDir)) {
-    fs.mkdirSync(checkpointsDir, { recursive: true });
-  }
 }
 
 export function getModelConfigPath(): string {

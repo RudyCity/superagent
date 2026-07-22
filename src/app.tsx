@@ -4,7 +4,7 @@ import ChatTextInput, { ChatTextInputRef } from "./components/ChatTextInput.js";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent, PermissionHandler, QuestionHandler, QuestionItem } from "./core/agent.js";
 import type { ToolCall } from "./core/conversation.js";
-import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel, getSettings, getModelPresets, getActivePreset, getWorkspaceInputHistoryPath, getTrustedDirectories } from "./core/config.js";
+import { getContextWindowLimit, getInstalledSkills, getConfiguredProviders, switchActiveProvider, fetchAndCacheModels, getRootConfigDir, getEffectiveMasterModel, getSettings, getModelPresets, getActivePreset, getTrustedDirectories } from "./core/config.js";
 import { type MessageContent, contentToString } from "./core/conversation.js";
 import ImageAttachmentBar from "./components/ImageAttachmentBar.js";
 import {

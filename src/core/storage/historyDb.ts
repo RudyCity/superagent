@@ -1255,7 +1255,7 @@ export function cleanLegacyInputHistoryFiles(): number {
       const historyFile = path.join(workspacesDir, wsId, "input-history.json");
       if (fs.existsSync(historyFile)) {
         try {
-          fs.writeFileSync(historyFile, "[]", "utf-8");
+          fs.unlinkSync(historyFile);
           cleaned++;
         } catch {}
       }

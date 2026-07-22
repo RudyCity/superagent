@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.522] - 2026-07-22
+
+### Changed
+- **Removed Legacy JSON Files Creation**:
+  - Cleaned up [ensureGlobalConfigDir](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/config/paths.ts#L23) in [paths.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/config/paths.ts) to stop pre-creating legacy history directories (history, history/single, history/multi, checkpoints) which are no longer needed as all conversation history, session messages, and checkpoints are stored in SQLite database.
+  - Updated [cleanLegacyInputHistoryFiles](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/storage/historyDb.ts#L1244) in [historyDb.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/storage/historyDb.ts) to fully delete (unlink) legacy input-history.json files after migration instead of writing an empty array to them.
+  - Updated `/new` command in [coreCommands.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/core/commands/coreCommands.ts) to delete the workspace's legacy input-history.json file upon session reset rather than writing an empty array.
+  - Adjusted unit tests in [historyDb.test.ts](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/tests/historyDb.test.ts) to assert that legacy input history files are successfully unlinked/deleted.
+  - Cleaned up unused import of getWorkspaceInputHistoryPath in [app.tsx](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/src/app.tsx).
+
 ## [1.2.521] - 2026-07-22
 
 ### Fixed

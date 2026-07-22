@@ -96,7 +96,7 @@ export const newCommand: SlashCommand = {
     ctx.setInputHistory?.([]);
     try {
       const inputHistoryPath = getWorkspaceInputHistoryPath();
-      await fs.writeFile(inputHistoryPath, "[]", "utf-8");
+      await fs.unlink(inputHistoryPath);
     } catch { /* non-fatal */ }
     try {
       clearInputHistoryInDb(getWorkspaceId());

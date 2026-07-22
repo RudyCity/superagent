@@ -340,7 +340,7 @@ describe("SQLite History Database (historyDb)", () => {
 
     const cleanedCount = historyDbModule.cleanLegacyInputHistoryFiles();
     expect(cleanedCount).toBeGreaterThanOrEqual(1);
-    expect(fs.readFileSync(legacyInputFile, "utf-8")).toBe("[]");
+    expect(fs.existsSync(legacyInputFile)).toBe(false);
   });
 
   it("should save and load model caches in SQLite", () => {

@@ -144,7 +144,14 @@ export async function restoreCheckpoint(
   sessionFilePath: string
 ): Promise<Checkpoint> {
   const sessionId = path.basename(sessionFilePath, ".json");
-  const cpRecord = loadCheckpointFromDb(checkpointId);
+  let resolvedId = checkpointId;
+  if (checkpointId.includes("checkpoint_")) {
+    const match = checkpointId.match(/checkpoint_(\d+)(?:\.json)?$/);
+    if (match) {
+      resolvedId = `chk_${match[1]}`;
+    }
+  }
+  const cpRecord = loadCheckpointFromDb(resolvedId);
 
   if (!cpRecord) {
     throw new Error(`Checkpoint "${checkpointId}" not found in database.`);
