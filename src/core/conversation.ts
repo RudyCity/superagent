@@ -132,16 +132,25 @@ export class Conversation {
         .replace(/^_+/, "/")
         .replace(/_/g, "/");
 
-      const formatSnippet = (text: string, maxLen = 30) => {
-        const clean = text.replace(/\n/g, " ").trim();
-        return clean.length > maxLen ? clean.slice(0, maxLen) + "…" : clean;
+      const formatSnippet = (text: string, maxLen = 45) => {
+        let clean = text.replace(/\[(RMemory|TencentDB|Emergency|Context|SYS|System)[^\]]*\]/gi, '')
+          .replace(/<\/?user_request>/gi, '')
+          .replace(/<[^>]+>/g, '')
+          .replace(/^(\/[a-zA-Z0-9_-]+\s*)+/g, '')
+          .replace(/\n/g, " ")
+          .trim();
+        return clean.length > maxLen ? clean.slice(0, maxLen).trim() + "…" : clean;
       };
 
       let displayName: string;
-      if (firstUserText && lastUserText && firstUserText !== lastUserText) {
-        displayName = `[First: ${formatSnippet(firstUserText, 30)}] → [Last: ${formatSnippet(lastUserText, 30)}]`;
-      } else if (firstUserText) {
-        displayName = formatSnippet(firstUserText, 60);
+      const cleanFirstSnippet = formatSnippet(firstUserText, 25);
+      const cleanLastSnippet = formatSnippet(lastUserText, 25);
+      if (cleanFirstSnippet && cleanLastSnippet && cleanFirstSnippet.toLowerCase() !== cleanLastSnippet.toLowerCase()) {
+        displayName = `${cleanFirstSnippet} → ${cleanLastSnippet}`;
+      } else if (cleanFirstSnippet) {
+        displayName = formatSnippet(firstUserText, 45);
+      } else if (cleanLastSnippet) {
+        displayName = formatSnippet(lastUserText, 45);
       } else {
         displayName = folderPathName;
       }
@@ -235,16 +244,25 @@ export class Conversation {
         .replace(/^_+/, "/")
         .replace(/_/g, "/");
 
-      const formatSnippet = (text: string, maxLen = 30) => {
-        const clean = text.replace(/\n/g, " ").trim();
-        return clean.length > maxLen ? clean.slice(0, maxLen) + "…" : clean;
+      const formatSnippet = (text: string, maxLen = 45) => {
+        let clean = text.replace(/\[(RMemory|TencentDB|Emergency|Context|SYS|System)[^\]]*\]/gi, '')
+          .replace(/<\/?user_request>/gi, '')
+          .replace(/<[^>]+>/g, '')
+          .replace(/^(\/[a-zA-Z0-9_-]+\s*)+/g, '')
+          .replace(/\n/g, " ")
+          .trim();
+        return clean.length > maxLen ? clean.slice(0, maxLen).trim() + "…" : clean;
       };
 
       let displayName: string;
-      if (firstUserText && lastUserText && firstUserText !== lastUserText) {
-        displayName = `[First: ${formatSnippet(firstUserText, 30)}] → [Last: ${formatSnippet(lastUserText, 30)}]`;
-      } else if (firstUserText) {
-        displayName = formatSnippet(firstUserText, 60);
+      const cleanFirstSnippet = formatSnippet(firstUserText, 25);
+      const cleanLastSnippet = formatSnippet(lastUserText, 25);
+      if (cleanFirstSnippet && cleanLastSnippet && cleanFirstSnippet.toLowerCase() !== cleanLastSnippet.toLowerCase()) {
+        displayName = `${cleanFirstSnippet} → ${cleanLastSnippet}`;
+      } else if (cleanFirstSnippet) {
+        displayName = formatSnippet(firstUserText, 45);
+      } else if (cleanLastSnippet) {
+        displayName = formatSnippet(lastUserText, 45);
       } else {
         displayName = folderPathName;
       }
