@@ -57,6 +57,18 @@ export function getPackageRootDir(): string {
   return path.resolve(__dirname, "..", "..", "..");
 }
 
+export function getSuperAgentVersion(): string {
+  try {
+    const pkgPath = path.join(getPackageRootDir(), "package.json");
+    if (fs.existsSync(pkgPath)) {
+      const content = fs.readFileSync(pkgPath, "utf-8");
+      const pkg = JSON.parse(content);
+      return pkg.version || "1.2.520";
+    }
+  } catch {}
+  return "1.2.520";
+}
+
 /**
  * Returns a short, stable hash of the current working directory.
  * Used to namespace background tasks per workspace to prevent

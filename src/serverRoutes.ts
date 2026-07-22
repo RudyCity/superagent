@@ -31,7 +31,8 @@ import {
   saveWorkspaceToDb,
   saveSessionToDb,
   clearHistoryCache,
-  getWorkspaceId
+  getWorkspaceId,
+  getSuperAgentVersion
 } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, backgroundTasks } from "./core/tools/state.js";
@@ -133,6 +134,7 @@ export async function handleServerRoute(
     const session = resolveSession(req);
     sendJSON(res, 200, {
       status: "online",
+      version: getSuperAgentVersion(),
       workspace: resolveWorkspacePath(req),
       mode: session ? session.mode : "single",
       clientMode: session ? session.clientMode : serverDefaultClientMode,
@@ -912,6 +914,7 @@ export async function handleServerRoute(
     const trustedDirectories = getTrustedDirectories();
     sendJSON(res, 200, {
       settings,
+      superagentVersion: getSuperAgentVersion(),
       providers: config.providers,    // ALL providers, not filtered by apiKey
       presets: { single: singlePresets, multi: multiPresets },
       activePresetId: { single: activeSinglePresetId, multi: activeMultiPresetId },

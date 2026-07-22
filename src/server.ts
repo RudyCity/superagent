@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
-import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions, getPackageRootDir, getInstalledSkills } from "./core/config.js";
+import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions, getPackageRootDir, getInstalledSkills, getSuperAgentVersion } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
 import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
@@ -559,7 +559,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
 
   server.listen(port, '127.0.0.1', () => {
     if (!silent) {
-      console.log(`\n🚀 Superagent Server is running at http://localhost:${port}`);
+      console.log(`\n🚀 SuperAgent Server v${getSuperAgentVersion()} is running at http://localhost:${port}`);
       console.log(`💡 Mode: REST API & Server-Sent Events (SSE)`);
       console.log(`🎯 Default Client Mode: ${serverDefaultClientMode}`);
       console.log(`📂 Current Workspace: ${lastActiveWorkspace}\n`);
