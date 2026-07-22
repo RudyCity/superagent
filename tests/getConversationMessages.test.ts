@@ -1,40 +1,36 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { Agent } from "../src/core/agent.js";
+import * as jsonConfigModule from "../src/core/config/jsonConfig.js";
+import * as providersModule from "../src/core/config/providers.js";
 
-vi.mock("../src/core/config/jsonConfig.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/core/config/jsonConfig.js")>();
-  return {
-    ...actual,
-    getSettings: vi.fn().mockReturnValue({
+describe("Agent – getConversationMessages", () => {
+  beforeEach(() => {
+    vi.spyOn(jsonConfigModule, "getSettings").mockReturnValue({
       maxConcurrency: 1,
       rateLimitRequests: 10,
       rateLimitInterval: 1000,
       disableStreaming: false,
       contextWindowLimit: 10000,
       maxIterations: 2,
-    }),
-  };
-});
+    } as any);
 
-vi.mock("../src/core/config/providers.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/core/config/providers.js")>();
-  return {
-    ...actual,
-    getEffectiveMasterModel: vi.fn().mockReturnValue("gpt-4"),
-    getTierModel: vi.fn().mockReturnValue("gpt-4"),
-    getActiveProviderName: vi.fn().mockReturnValue("openai"),
-    getConfiguredProviders: vi.fn().mockReturnValue({
+    vi.spyOn(providersModule, "getEffectiveMasterModel").mockReturnValue("gpt-4" as any);
+    vi.spyOn(providersModule, "getTierModel").mockReturnValue("gpt-4" as any);
+    vi.spyOn(providersModule, "getActiveProviderName").mockReturnValue("openai" as any);
+    vi.spyOn(providersModule, "getConfiguredProviders").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
       apiKey: "fake-key",
       disableStreaming: false,
       workingDirectory: process.cwd(),
       systemPrompt: "Base Agent Prompt Content",
-    }),
-  };
-});
+    } as any);
+  });
 
-describe("Agent – getConversationMessages", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("should return the list of messages in the conversation", () => {
     const onEvent = vi.fn();
     const onPermission = vi.fn().mockResolvedValue(true);

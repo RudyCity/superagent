@@ -27,5 +27,76 @@ beforeEach(() => {
 
 afterEach(() => {
   process.argv = originalArgv;
-  process.env = originalEnv;
+  // Restore process.env key-by-key since process.env is a read-only object reference
+  for (const key in process.env) {
+    if (!(key in originalEnv)) {
+      delete process.env[key];
+    }
+  }
+  for (const key in originalEnv) {
+    process.env[key] = originalEnv[key];
+  }
 });
+
+// Polyfill Vitest functions for Bun Test compatibility
+import { vi } from "vitest";
+
+if (typeof vi !== "undefined") {
+  // vi.mocked polyfill
+  if (!(vi as any).mocked) {
+    (vi as any).mocked = (fn: any) => fn;
+  }
+
+  // vi.stubGlobal and vi.unstubAllGlobals polyfills
+  const stubbedGlobals = new Map<any, any>();
+  if (!(vi as any).stubGlobal) {
+    (vi as any).stubGlobal = function (name: any, value: any) {
+      stubbedGlobals.set(name, (globalThis as any)[name]);
+      (globalThis as any)[name] = value;
+      return vi;
+    };
+  }
+  if (!(vi as any).unstubAllGlobals) {
+    (vi as any).unstubAllGlobals = function () {
+      for (const [name, originalValue] of stubbedGlobals.entries()) {
+        if (originalValue === undefined) {
+          delete (globalThis as any)[name];
+        } else {
+          (globalThis as any)[name] = originalValue;
+        }
+      }
+      stubbedGlobals.clear();
+      return vi;
+    };
+  }
+
+  // vi.importActual polyfill using pathToFileURL for Windows ES modules support
+  if (!(vi as any).importActual) {
+    (vi as any).importActual = async function (modulePath: string) {
+      let callerDir = process.cwd();
+      try {
+        const stack = new Error().stack || "";
+        const lines = stack.split("\n");
+        for (const line of lines) {
+          if (line.includes("setup.ts")) continue;
+          const match = line.match(/(?:at\s+)?([a-zA-Z]:\\[^\s:]+|\/[^\s:]+)/);
+          if (match) {
+            callerDir = path.dirname(match[1]);
+            break;
+          }
+        }
+      } catch {}
+
+      let importPath = modulePath;
+      if (modulePath.startsWith(".")) {
+        importPath = path.resolve(callerDir, modulePath);
+      }
+      const { pathToFileURL } = require("url");
+      importPath = pathToFileURL(importPath).href;
+      return await import(importPath + "?original");
+    };
+  }
+}
+
+
+

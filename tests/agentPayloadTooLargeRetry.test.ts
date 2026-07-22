@@ -7,46 +7,37 @@ const tempHome = path.join(process.cwd(), "tests", "temp-home-payload-retry");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
 import { Agent, parsePayloadLimitBytes } from "../src/core/agent.js";
-import { streamText, generateText } from "ai";
+import * as aiModule from "ai";
 import * as configModule from "../src/core/config.js";
 
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
+describe("Agent - Payload Too Large (413) Retry", () => {
+  let delaySpy: any;
+  let compactSpy: any;
+  let getConfigSpy: any;
+  let streamTextSpy: any;
+  let generateTextSpy: any;
+
+  beforeEach(() => {
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+
+    getConfigSpy = vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
       apiKey: "fake-key",
       disableStreaming: false,
       workingDirectory: process.cwd(),
       systemPrompt: "Base Master Agent Prompt Content",
-    }),
-    getSettings: vi.fn().mockReturnValue({
+    } as any);
+
+    vi.spyOn(configModule, "getSettings").mockReturnValue({
       autoVisionTokenSaving: false,
-    }),
-  };
-});
+    } as any);
 
-vi.mock("ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("ai")>();
-  return {
-    ...actual,
-    generateText: vi.fn(),
-    streamText: vi.fn(),
-  };
-});
+    streamTextSpy = vi.spyOn(aiModule, "streamText");
+    generateTextSpy = vi.spyOn(aiModule, "generateText");
 
-describe("Agent - Payload Too Large (413) Retry", () => {
-  let delaySpy: any;
-  let compactSpy: any;
-
-  beforeEach(() => {
-    if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
-    }
-    vi.restoreAllMocks();
-    vi.clearAllMocks();
     delaySpy = vi.spyOn(Agent.prototype as any, "delayWithCountdown").mockResolvedValue(undefined);
     compactSpy = vi.spyOn(Agent.prototype, "compactHistoryIfNeeded").mockResolvedValue(undefined);
   });
@@ -55,8 +46,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
     if (fs.existsSync(tempHome)) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
-    delaySpy.mockRestore();
-    compactSpy.mockRestore();
+    vi.restoreAllMocks();
   });
 
   describe("Streaming Mode (disableStreaming: false)", () => {
@@ -70,7 +60,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       agent.planState = "APPROVED";
 
       let callCount = 0;
-      vi.mocked(streamText).mockImplementation(() => {
+      streamTextSpy.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
           throw new Error("Payload Too Large (status: 413) - response body snippet: Request entity too large");
@@ -87,7 +77,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       await agent.sendMessage("test message");
 
       // Called twice: 1 failure + 1 success retry
-      expect(streamText).toHaveBeenCalledTimes(2);
+      expect(streamTextSpy).toHaveBeenCalledTimes(2);
       expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true, undefined, expect.any(Number));
       expect(delaySpy).toHaveBeenCalledWith(1, 1000, expect.anything());
 
@@ -98,14 +88,14 @@ describe("Agent - Payload Too Large (413) Retry", () => {
 
   describe("Non-Streaming Mode (disableStreaming: true)", () => {
     beforeEach(() => {
-      vi.mocked(configModule.getConfig).mockReturnValue({
+      getConfigSpy.mockReturnValue({
         provider: "openai",
         model: "gpt-4",
         apiKey: "fake-key",
         disableStreaming: true,
         workingDirectory: process.cwd(),
         systemPrompt: "Base Master Agent Prompt Content",
-      });
+      } as any);
     });
 
     it("should trigger compaction with force=true and retry quickly when encountering 413 error", async () => {
@@ -118,7 +108,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       agent.planState = "APPROVED";
 
       let callCount = 0;
-      vi.mocked(generateText).mockImplementation(async () => {
+      generateTextSpy.mockImplementation(async () => {
         callCount++;
         if (callCount === 1) {
           throw new Error("Payload Too Large (status: 413) - response body snippet: Request entity too large");
@@ -132,7 +122,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
       await agent.sendMessage("test message");
 
       // Called twice: 1 failure + 1 success retry
-      expect(generateText).toHaveBeenCalledTimes(2);
+      expect(generateTextSpy).toHaveBeenCalledTimes(2);
       expect(compactSpy).toHaveBeenCalledWith(expect.anything(), true, undefined, expect.any(Number));
       expect(delaySpy).toHaveBeenCalledWith(1, 1000, expect.anything());
 
@@ -159,7 +149,7 @@ describe("Agent - Payload Too Large (413) Retry", () => {
         return 100;
       });
 
-      vi.mocked(streamText).mockImplementation(() => {
+      streamTextSpy.mockImplementation(() => {
         return {
           fullStream: (async function* () {
             yield { type: "text-delta", textDelta: "Success" };
@@ -204,4 +194,3 @@ describe("Agent - Payload Too Large (413) Retry", () => {
     });
   });
 });
-

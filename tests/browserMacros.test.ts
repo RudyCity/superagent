@@ -1,11 +1,26 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import fs from "fs";
 import path from "path";
 import os from "os";
 
 // Isolated temp config dir
 const tmpDir = path.join(os.tmpdir(), `superagent-test-macros-${Date.now()}`);
-process.env.SUPERAGENT_CONFIG_DIR = tmpDir;
+
+let originalConfigDir: string | undefined;
+
+beforeAll(() => {
+  originalConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
+  process.env.SUPERAGENT_CONFIG_DIR = tmpDir;
+});
+
+afterAll(() => {
+  if (originalConfigDir === undefined) {
+    delete process.env.SUPERAGENT_CONFIG_DIR;
+  } else {
+    process.env.SUPERAGENT_CONFIG_DIR = originalConfigDir;
+  }
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+});
 
 import {
   getBrowserMacros,

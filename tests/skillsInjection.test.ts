@@ -4,35 +4,27 @@ import { streamText } from "ai";
 import * as configModule from "../src/core/config.js";
 import fs from "fs";
 
-// Mock configuration partially, keeping other config helpers intact
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
+// Mock ai SDK synchronously
+vi.mock("ai", () => ({
+  streamText: vi.fn(),
+  generateText: vi.fn(),
+  jsonSchema: (s: any) => s,
+}));
+
+
+describe("Skills Injection into Agent System Prompts", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    // Re-apply config spy after restoreAllMocks
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
       apiKey: "fake-key",
       disableStreaming: false,
       workingDirectory: process.cwd(),
       systemPrompt: "Base Master Agent Prompt Content",
-    }),
-    loadAgentSkills: vi.fn().mockReturnValue("\n\nINSTALLED AGENT SKILLS:\n- **test-skill**: A test skill\n  Instruction File: /path/to/test-skill/SKILL.md"),
-  };
-});
-
-// Mock ai SDK partially
-vi.mock("ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("ai")>();
-  return {
-    ...actual,
-    streamText: vi.fn(),
-  };
-});
-
-describe("Skills Injection into Agent System Prompts", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
+    } as any);
+    vi.spyOn(configModule, "loadAgentSkills" as any).mockReturnValue("\n\nINSTALLED AGENT SKILLS:\n- **test-skill**: A test skill\n  Instruction File: /path/to/test-skill/SKILL.md");
   });
 
   it("should append skills to custom system prompts (Superagent/Subagent tiers)", async () => {

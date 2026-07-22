@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Conversation, Message, contentToString } from "../src/core/conversation.js";
 import { PruningStrategy } from "../src/core/context/strategies/PruningStrategy.js";
 import { SummarizationStrategy } from "../src/core/context/strategies/SummarizationStrategy.js";
@@ -8,37 +8,33 @@ import { streamText } from "ai";
 
 import * as configModule from "../src/core/config.js";
 
-// Mock configuration partially
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
+// Mock ai SDK with simple synchronous factory
+vi.mock("ai", () => ({
+  streamText: vi.fn(),
+  generateText: vi.fn(),
+  jsonSchema: (val: any) => val,
+}));
+
+describe("Orphaned Tool Messages & Error Handling", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+
+    // Mock configuration using vi.spyOn for local module
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
       apiKey: "fake-key",
       disableStreaming: false,
       workingDirectory: process.cwd(),
       systemPrompt: "Base Master Agent Prompt Content",
-    }),
-    getContextWindowLimit: vi.fn().mockReturnValue(8000),
-    getSettings: vi.fn().mockReturnValue({
+    } as any);
+    vi.spyOn(configModule, "getContextWindowLimit").mockReturnValue(8000);
+    vi.spyOn(configModule, "getSettings").mockReturnValue({
       autoVisionTokenSaving: false,
-    }),
-  };
-});
+    } as any);
+  });
 
-// Mock ai SDK partially
-vi.mock("ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("ai")>();
-  return {
-    ...actual,
-    streamText: vi.fn(),
-    generateText: vi.fn(),
-  };
-});
-
-describe("Orphaned Tool Messages & Error Handling", () => {
   describe("isRetryableError Status 400", () => {
     it("should classify DeepSeek/OpenRouter status 400 invalid request error as non-retryable", () => {
       const errorWithStatus400 = new Error(

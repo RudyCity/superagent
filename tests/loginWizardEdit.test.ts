@@ -1,9 +1,28 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import React from "react";
-import { render } from "ink";
-import { Console } from "node:console";
 import fs from "fs";
 import path from "path";
+import os from "os";
+
+vi.mock("react", () => {
+  const mocked = {
+    useRef: (val: any) => ({ current: val }),
+    useCallback: (fn: any) => fn,
+    useState: (initial: any) => [initial, vi.fn()],
+    useEffect: vi.fn(),
+    createElement: vi.fn(),
+  };
+  return { ...mocked, default: mocked };
+});
+
+let inputCallbacks: any[] = [];
+vi.mock("ink", () => ({
+  useApp: () => ({ exit: vi.fn() }),
+  useInput: vi.fn((cb: any) => {
+    inputCallbacks.push(cb);
+  }),
+  Box: ({ children }: any) => children,
+  Text: ({ children }: any) => children,
+}));
 
 const tempHome = path.join(process.cwd(), "tests", "temp-home-login-edit");
 
@@ -12,22 +31,6 @@ import { useLoginWizard } from "../src/hooks/wizard/useLoginWizard.js";
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
 import { ensureGlobalConfigDir } from "../src/core/config/paths.js";
 import { clearModelConfigCache, getProviders, addProvider } from "../src/core/config/jsonConfig.js";
-
-if (!console.Console) {
-  console.Console = Console;
-}
-
-let inputCallbacks: any[] = [];
-vi.mock("ink", async (importOriginal) => {
-  const original = await importOriginal<typeof import("ink")>();
-  return {
-    ...original,
-    useApp: () => ({ exit: vi.fn() }),
-    useInput: vi.fn((cb) => {
-      inputCallbacks.push(cb);
-    }),
-  };
-});
 
 describe("Login Wizard Provider Edition", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -130,12 +133,7 @@ describe("Login Wizard Provider Edition", () => {
       apiKey: "sk-test-key",
     });
 
-    let capturedHandler: any = null;
-    const TestComponent = () => {
-      capturedHandler = useLoginWizard(mockCtx as any);
-      return null;
-    };
-    const { unmount } = render(React.createElement(TestComponent));
+    const capturedHandler = useLoginWizard(mockCtx as any);
 
     await capturedHandler("4. Edit an Existing Provider", 1, {});
 
@@ -145,24 +143,15 @@ describe("Login Wizard Provider Edition", () => {
       data: {},
     });
     expect(wizardOptions.some(opt => opt.includes("OpenAI Test"))).toBe(true);
-
-    unmount();
   });
 
   it("should show error when Edit is chosen but no providers exist", async () => {
-    let capturedHandler: any = null;
-    const TestComponent = () => {
-      capturedHandler = useLoginWizard(mockCtx as any);
-      return null;
-    };
-    const { unmount } = render(React.createElement(TestComponent));
+    const capturedHandler = useLoginWizard(mockCtx as any);
 
     await capturedHandler("4. Edit an Existing Provider", 1, {});
 
     expect(activeWizard).toBeNull();
     expect(addedLines.some(line => line.content.includes("No providers configured yet"))).toBe(true);
-
-    unmount();
   });
 
   it("should transition to step 18 and ask for new API Key in step 17", async () => {
@@ -174,12 +163,7 @@ describe("Login Wizard Provider Edition", () => {
       baseUrl: "https://api.openai.com/v1",
     });
 
-    let capturedHandler: any = null;
-    const TestComponent = () => {
-      capturedHandler = useLoginWizard(mockCtx as any);
-      return null;
-    };
-    const { unmount } = render(React.createElement(TestComponent));
+    const capturedHandler = useLoginWizard(mockCtx as any);
 
     await capturedHandler("1", 17, {});
 
@@ -196,17 +180,10 @@ describe("Login Wizard Provider Edition", () => {
       },
     });
     expect(addedLines[addedLines.length - 1].content).toContain("Enter new API Key (or press Enter to keep current):");
-
-    unmount();
   });
 
   it("should transition to step 19 and ask for new Base URL in step 18", async () => {
-    let capturedHandler: any = null;
-    const TestComponent = () => {
-      capturedHandler = useLoginWizard(mockCtx as any);
-      return null;
-    };
-    const { unmount } = render(React.createElement(TestComponent));
+    const capturedHandler = useLoginWizard(mockCtx as any);
 
     await capturedHandler("sk-new-key", 18, {
       providerId: "openai-test",
@@ -228,8 +205,6 @@ describe("Login Wizard Provider Edition", () => {
       },
     });
     expect(addedLines[addedLines.length - 1].content).toContain("Enter new Base URL (or press Enter to keep current:");
-
-    unmount();
   });
 
   it("should save changes and transition to step 7 on confirming in step 19", async () => {
@@ -241,12 +216,7 @@ describe("Login Wizard Provider Edition", () => {
       baseUrl: "https://api.openai.com/v1",
     });
 
-    let capturedHandler: any = null;
-    const TestComponent = () => {
-      capturedHandler = useLoginWizard(mockCtx as any);
-      return null;
-    };
-    const { unmount } = render(React.createElement(TestComponent));
+    const capturedHandler = useLoginWizard(mockCtx as any);
 
     await capturedHandler("https://new.openai.com/v2", 19, {
       providerId: "openai-test",
@@ -275,8 +245,6 @@ describe("Login Wizard Provider Edition", () => {
     const updated = providers.find(p => p.id === "openai-test");
     expect(updated?.apiKey).toBe("sk-new-key");
     expect(updated?.baseUrl).toBe("https://new.openai.com/v2");
-
-    unmount();
   });
 
   it("should support keyboard navigation from step 1 to step 17 when choosing Edit", async () => {
@@ -288,29 +256,25 @@ describe("Login Wizard Provider Edition", () => {
     });
 
     const mockSubmit = vi.fn();
-    const TestComponent = () => {
-      useKeyboardHandler({
-        activeWizard: { type: "login", step: 1, data: {} },
-        setActiveWizard: (w: any) => { activeWizard = w; },
-        setWizardOptions: (opts: string[]) => { wizardOptions = opts; },
-        setWizardSelectedIndex: (idx: number) => { wizardSelectedIndex = idx; },
-        wizardOptions: ["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider", "4. Edit an Existing Provider"],
-        wizardSelectedIndex: 3,
-        setInput: mockCtx.setInput,
-        addLine: mockCtx.addLine,
-        focusedResponseIndex: null,
-        focusMode: "input",
-        scrollOffset: 0,
-        focusedResponseOffset: 0,
-        handleWizardSubmit: mockSubmit,
-        input: "",
-        isPasted: false,
-        pastePrefixLength: 0,
-        pasteSuffixLength: 0,
-      } as any);
-      return null;
-    };
-    const { unmount } = render(React.createElement(TestComponent));
+    useKeyboardHandler({
+      activeWizard: { type: "login", step: 1, data: {} },
+      setActiveWizard: (w: any) => { activeWizard = w; },
+      setWizardOptions: (opts: string[]) => { wizardOptions = opts; },
+      setWizardSelectedIndex: (idx: number) => { wizardSelectedIndex = idx; },
+      wizardOptions: ["1. List Configured Providers", "2. Create / Log in to a Provider", "3. Delete / Remove a Provider", "4. Edit an Existing Provider"],
+      wizardSelectedIndex: 3,
+      setInput: mockCtx.setInput,
+      addLine: mockCtx.addLine,
+      focusedResponseIndex: null,
+      focusMode: "input",
+      scrollOffset: 0,
+      focusedResponseOffset: 0,
+      handleWizardSubmit: mockSubmit,
+      input: "",
+      isPasted: false,
+      pastePrefixLength: 0,
+      pasteSuffixLength: 0,
+    } as any);
 
     expect(inputCallbacks.length).toBeGreaterThan(0);
 
@@ -324,34 +288,29 @@ describe("Login Wizard Provider Edition", () => {
       data: {},
     });
     expect(wizardOptions.some(opt => opt.includes("OpenAI Test"))).toBe(true);
-    unmount();
   });
 
   it("should support keyboard navigation going back from step 17 to step 1", async () => {
     const mockSubmit = vi.fn();
-    const TestComponent = () => {
-      useKeyboardHandler({
-        activeWizard: { type: "login", step: 17, data: {} },
-        setActiveWizard: (w: any) => { activeWizard = w; },
-        setWizardOptions: (opts: string[]) => { wizardOptions = opts; },
-        setWizardSelectedIndex: (idx: number) => { wizardSelectedIndex = idx; },
-        wizardOptions: ["1. OpenAI Test [openai]"],
-        wizardSelectedIndex: 0,
-        setInput: mockCtx.setInput,
-        addLine: mockCtx.addLine,
-        focusedResponseIndex: null,
-        focusMode: "input",
-        scrollOffset: 0,
-        focusedResponseOffset: 0,
-        handleWizardSubmit: mockSubmit,
-        input: "",
-        isPasted: false,
-        pastePrefixLength: 0,
-        pasteSuffixLength: 0,
-      } as any);
-      return null;
-    };
-    const { unmount } = render(React.createElement(TestComponent));
+    useKeyboardHandler({
+      activeWizard: { type: "login", step: 17, data: {} },
+      setActiveWizard: (w: any) => { activeWizard = w; },
+      setWizardOptions: (opts: string[]) => { wizardOptions = opts; },
+      setWizardSelectedIndex: (idx: number) => { wizardSelectedIndex = idx; },
+      wizardOptions: ["1. OpenAI Test [openai]"],
+      wizardSelectedIndex: 0,
+      setInput: mockCtx.setInput,
+      addLine: mockCtx.addLine,
+      focusedResponseIndex: null,
+      focusMode: "input",
+      scrollOffset: 0,
+      focusedResponseOffset: 0,
+      handleWizardSubmit: mockSubmit,
+      input: "",
+      isPasted: false,
+      pastePrefixLength: 0,
+      pasteSuffixLength: 0,
+    } as any);
 
     expect(inputCallbacks.length).toBeGreaterThan(0);
 
@@ -365,6 +324,5 @@ describe("Login Wizard Provider Edition", () => {
       data: {},
     });
     expect(wizardOptions).toContain("4. Edit an Existing Provider");
-    unmount();
   });
 });

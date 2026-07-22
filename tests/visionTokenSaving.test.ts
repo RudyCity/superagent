@@ -9,71 +9,37 @@ vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 import { Agent } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
 
-// Mock configuration
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
-      provider: "openai",
-      model: "gpt-4o",
-      apiKey: "fake-key",
-      disableStreaming: false,
-      workingDirectory: process.cwd(),
-    }),
-    getTierModel: vi.fn().mockReturnValue("gpt-4o"),
-    getTierModelConfig: vi.fn().mockReturnValue({ model: "gpt-4o", supportsVision: true }),
-    getSettings: vi.fn().mockReturnValue({
-      autoVisionTokenSaving: true,
-      visionTokenSavingThreshold: 100, // Small threshold for easy testing
-    }),
-    getDynamicVisionThreshold: vi.fn().mockImplementation((modelName) => {
-      return 100; // Force threshold of 100 for all models in tests
-    }),
-  };
-});
-
 // Mock the textToImage module so we don't need real PowerShell/Python dependency in unit test
-vi.mock("../src/utils/textToImage.js", () => {
-  return {
-    sliceTextIntoPages: (text: string, maxLines = 150, maxPages = 3) => {
-      return [text]; // Simpler slicing for tests
-    },
-    renderTextToImageBase64: vi.fn().mockReturnValue("MOCK_BASE64_IMAGE_DATA"),
-    minifyTextForImage: (text: string) => {
-      return text.trim();
-    },
-  };
-});
+vi.mock("../src/utils/textToImage.js", () => ({
+  sliceTextIntoPages: (text: string) => [text],
+  renderTextToImageBase64: vi.fn().mockReturnValue("MOCK_BASE64_IMAGE_DATA"),
+  minifyTextForImage: (text: string) => text.trim(),
+}));
 
+// Mock ai SDK synchronously
 let lastGenerateTextOptions: any = null;
-vi.mock("ai", async (importOriginal) => {
-  const original = await importOriginal<any>();
-  return {
-    ...original,
-    generateText: vi.fn(async (options: any) => {
-      lastGenerateTextOptions = options;
-      return {
-        text: "Mocked response",
-        toolCalls: [],
-        usage: { promptTokens: 10, completionTokens: 2 }
-      };
-    }),
-    streamText: vi.fn((options: any) => {
-      lastGenerateTextOptions = options;
-      const mockStream = (async function* () {
-        yield { type: "text-delta", textDelta: "Mocked stream response" };
-      })();
-      return {
-        fullStream: mockStream,
-        usage: Promise.resolve({
-          promptTokens: 10,
-          completionTokens: 2
-        })
-      };
-    })
-  };
-});
+vi.mock("ai", () => ({
+  generateText: vi.fn(async (options: any) => {
+    lastGenerateTextOptions = options;
+    return {
+      text: "Mocked response",
+      toolCalls: [],
+      usage: { promptTokens: 10, completionTokens: 2 }
+    };
+  }),
+  streamText: vi.fn((options: any) => {
+    lastGenerateTextOptions = options;
+    const mockStream = (async function* () {
+      yield { type: "text-delta", textDelta: "Mocked stream response" };
+    })();
+    return {
+      fullStream: mockStream,
+      usage: Promise.resolve({ promptTokens: 10, completionTokens: 2 })
+    };
+  }),
+  jsonSchema: (s: any) => s,
+}));
+
 
 describe("Agent - Vision Token Saving Auto-Conversion", () => {
   beforeEach(() => {
@@ -82,10 +48,21 @@ describe("Agent - Vision Token Saving Auto-Conversion", () => {
     }
     vi.restoreAllMocks();
     vi.clearAllMocks();
-    vi.mocked(configModule.getSettings).mockReturnValue({
+    // Re-apply config spies after restoreAllMocks
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: "fake-key",
+      disableStreaming: false,
+      workingDirectory: process.cwd(),
+    } as any);
+    vi.spyOn(configModule, "getTierModel" as any).mockReturnValue("gpt-4o");
+    vi.spyOn(configModule, "getTierModelConfig" as any).mockReturnValue({ model: "gpt-4o", supportsVision: true });
+    vi.spyOn(configModule, "getSettings" as any).mockReturnValue({
       autoVisionTokenSaving: true,
       visionTokenSavingThreshold: 100,
     });
+    vi.spyOn(configModule, "getDynamicVisionThreshold" as any).mockReturnValue(100);
   });
 
   afterEach(() => {

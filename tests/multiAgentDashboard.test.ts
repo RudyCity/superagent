@@ -11,17 +11,22 @@ if (!console.Console) {
 
 let inputCallback: any = null;
 
-// Mock useApp and useInput from ink
-vi.mock("ink", async (importOriginal) => {
-  const original = await importOriginal<typeof import("ink")>();
-  return {
-    ...original,
-    useApp: () => ({ exit: vi.fn() }),
-    useInput: vi.fn((cb) => {
-      inputCallback = cb;
-    }),
-  };
-});
+// Mock useApp and useInput from ink (synchronous factory — no importOriginal)
+vi.mock("ink", () => ({
+  useApp: () => ({ exit: vi.fn() }),
+  useInput: vi.fn((cb) => {
+    inputCallback = cb;
+  }),
+  render: vi.fn((el) => {
+    // minimal stub so callers that use render() directly still get an unmount
+    return { unmount: vi.fn(), rerender: vi.fn(), clear: vi.fn(), cleanup: vi.fn() };
+  }),
+  Text: ({ children }: any) => children,
+  Box: ({ children }: any) => children,
+  Static: ({ children }: any) => children,
+  Newline: () => null,
+  Spacer: () => null,
+}));
 
 describe("MultiAgentDashboard UI Component", () => {
   it("should instantiate the dashboard React element successfully", () => {

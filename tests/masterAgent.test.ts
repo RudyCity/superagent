@@ -4,21 +4,7 @@ import path from "path";
 import os from "os";
 import { execa } from "execa";
 import { parseConflictHunks, resolveFileConflicts, MasterAgent, detectPackageManager } from "../src/core/masterAgent.js";
-
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/core/config.js")>();
-  return {
-    ...actual,
-    getSettings: vi.fn(() => ({
-      concurrencyLimit: 0,
-      rateLimitRpm: 0,
-      rateLimitCapacity: 60,
-      disableStreaming: false,
-      contextWindowLimit: 0,
-      maxIterations: 50,
-    })),
-  };
-});
+import * as configModule from "../src/core/config.js";
 
 // Mock execa
 vi.mock("execa", () => ({
@@ -36,6 +22,14 @@ describe("MasterAgent & Surgical Diff Resolution", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     process.env = { ...originalEnv };
+    vi.spyOn(configModule, "getSettings").mockReturnValue({
+      concurrencyLimit: 0,
+      rateLimitRpm: 0,
+      rateLimitCapacity: 60,
+      disableStreaming: false,
+      contextWindowLimit: 0,
+      maxIterations: 50,
+    } as any);
   });
 
   afterEach(() => {

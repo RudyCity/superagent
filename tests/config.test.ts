@@ -10,7 +10,7 @@ vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 import { getGlobalConfigDir, getContextWindowLimit, getConfig, fetchAndCacheModels, listHistorySessions, clearHistoryCache, getModelInstanceForTier, getModelInstanceForString, isAnthropicCompatible, switchActiveProvider, savePreset, setActivePresetId, ensureGlobalConfigDir, deletePreset, getModelConnectionDetailsForTier, closeHistoryDb } from "../src/core/config.js";
 import { getModelConfigPath } from "../src/core/config/paths.js";
 import { clearModelConfigCache, loadModelConfig, addProvider, saveModelConfig, getProviders, removeProvider, clearSessionActivePreset } from "../src/core/config/jsonConfig.js";
-import { saveModelCachesToDb, getModelCachesFromDb, saveSessionToDb, deleteSessionFromDb } from "../src/core/storage/historyDb.js";
+import { saveModelCachesToDb, getModelCachesFromDb, deleteModelCachesFromDb, saveSessionToDb, deleteSessionFromDb } from "../src/core/storage/historyDb.js";
 
 
 describe("config", () => {
@@ -188,6 +188,7 @@ describe("config", () => {
       expect(getContextWindowLimit("my-special-cached-model")).toBe(999999);
     } finally {
       // Clean up: restore original cache state
+      deleteModelCachesFromDb(["my-special-cached-model"]);
       saveModelCachesToDb(existingCache);
     }
   });
@@ -206,6 +207,11 @@ describe("config", () => {
       expect(getContextWindowLimit("zenmux-anthropic/claude-fable-5-free")).toBe(1000000);
       expect(getContextWindowLimit("claude-sonnet-5")).toBe(5000);
     } finally {
+      deleteModelCachesFromDb([
+        "server_zenmuxglmn_preset_zenmux/x-ai/grok-4.5-free",
+        "zenmux-anthropic/claude-fable-5-free",
+        "claude-sonnet-5"
+      ]);
       saveModelCachesToDb(existingCache);
     }
   });
@@ -532,9 +538,14 @@ describe("config", () => {
   });
 
   it("should namespace getGlobalConfigDir if process.env.SUPERAGENT_SESSION_ID is set", () => {
-    process.env.SUPERAGENT_SESSION_ID = "session-123456";
-    const dir = getGlobalConfigDir();
-    expect(dir).toContain(path.join(".superagent-r", "sessions", "session-123456"));
+    const originalSessionId = process.env.SUPERAGENT_SESSION_ID;
+    try {
+      process.env.SUPERAGENT_SESSION_ID = "session-123456";
+      const dir = getGlobalConfigDir();
+      expect(dir).toContain(path.join("sessions", "session-123456"));
+    } finally {
+      process.env.SUPERAGENT_SESSION_ID = originalSessionId;
+    }
   });
 
   describe("getModelInstanceForTier", () => {

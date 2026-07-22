@@ -10,32 +10,8 @@ import { Agent } from "../src/core/agent.js";
 import { generateText } from "ai";
 import * as configModule from "../src/core/config.js";
 
-// Mock configuration partially
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
-      provider: "openai",
-      model: "gpt-4",
-      apiKey: "fake-key",
-      disableStreaming: true, // test with non-streaming to simplify generateText mock
-      workingDirectory: process.cwd(),
-      systemPrompt: "Base Master Agent Prompt Content",
-    }),
-    getSettings: vi.fn().mockReturnValue({
-      classifierEnabled: false, // disable classifier in config to control manually
-      disableStreaming: true,
-    }),
-  };
-});
-
-// Mock ai SDK partially
-vi.mock("ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("ai")>();
-
-  // Helper to create a minimal streamText result for the conversation fast-path.
-  // The fast-path iterates result.fullStream and then awaits result.usage.
+// Mock ai SDK with simple synchronous factory
+vi.mock("ai", () => {
   const makeFakeStreamResult = (text: string) => {
     const fullStream = (async function* () {
       yield { type: "text-delta", textDelta: text };
@@ -47,9 +23,9 @@ vi.mock("ai", async (importOriginal) => {
   };
 
   return {
-    ...actual,
     generateText: vi.fn(),
     streamText: vi.fn().mockReturnValue(makeFakeStreamResult("Hello! How can I help you?")),
+    jsonSchema: (val: any) => val,
   };
 });
 
@@ -60,6 +36,20 @@ describe("Agent - Planning Nudge Skip on Conversation and Question", () => {
     }
     vi.restoreAllMocks();
     vi.clearAllMocks();
+
+    // Mock configuration using vi.spyOn for local module
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
+      provider: "openai",
+      model: "gpt-4",
+      apiKey: "fake-key",
+      disableStreaming: true, // test with non-streaming to simplify generateText mock
+      workingDirectory: process.cwd(),
+      systemPrompt: "Base Master Agent Prompt Content",
+    } as any);
+    vi.spyOn(configModule, "getSettings").mockReturnValue({
+      classifierEnabled: false, // disable classifier in config to control manually
+      disableStreaming: true,
+    } as any);
   });
 
   afterEach(() => {

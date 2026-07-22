@@ -553,8 +553,12 @@ export function cleanupStaleWorkspaceDirs(): void {
   }
 }
 
-// Run cleanup every 5 minutes
-setInterval(cleanupStaleInstances, 5 * 60 * 1000).unref();
+const isTestEnv = process.env.NODE_ENV === "test" || Boolean(process.env.VITEST) || Boolean(process.env.BUN_ENV) || Boolean(process.env.BUN_TEST) || typeof (globalThis as any).it !== "undefined";
+
+if (!isTestEnv) {
+  // Run cleanup every 5 minutes
+  setInterval(cleanupStaleInstances, 5 * 60 * 1000).unref();
+}
 
 export function isTaskInWorkspace(taskCwd: string | undefined, workspacePath: string): boolean {
   if (!taskCwd) {
@@ -574,13 +578,19 @@ export function isTaskInWorkspace(taskCwd: string | undefined, workspacePath: st
   }
 }
 
-// Cleanup stale workspace dirs once on startup and then daily
-setTimeout(() => { cleanupStaleWorkspaceDirs(); }, 5000).unref();
-setInterval(cleanupStaleWorkspaceDirs, 24 * 60 * 60 * 1000).unref();
+if (!isTestEnv) {
+  // Cleanup stale workspace dirs once on startup and then daily
+  setTimeout(() => { cleanupStaleWorkspaceDirs(); }, 5000).unref();
+  setInterval(cleanupStaleWorkspaceDirs, 24 * 60 * 60 * 1000).unref();
+}
 
 // Initial load and periodic synchronization of background tasks
-try {
-  migrateGlobalTasksToWorkspace();
-  loadAndSyncPersistedTasks();
-  setInterval(loadAndSyncPersistedTasks, 3000).unref();
-} catch {}
+if (!isTestEnv) {
+  try {
+    migrateGlobalTasksToWorkspace();
+    loadAndSyncPersistedTasks();
+    setInterval(loadAndSyncPersistedTasks, 3000).unref();
+  } catch {}
+}
+
+

@@ -1,33 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import React from "react";
 
-vi.mock("react", async (importOriginal) => {
-  const original = await importOriginal<typeof import("react")>();
+vi.mock("react", () => {
   const mocked = {
-    ...original,
     useRef: (val: any) => ({ current: val }),
     useCallback: (fn: any) => fn,
+    useState: (initial: any) => [initial, vi.fn()],
+    useEffect: vi.fn(),
+    createElement: vi.fn(),
   };
-  return {
-    ...mocked,
-    default: mocked,
-  };
+  return { ...mocked, default: mocked };
 });
 
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
 import { useDashboardKeyboard } from "../src/hooks/useDashboardKeyboard.js";
 
 let inputCallbacks: any[] = [];
-vi.mock("ink", async (importOriginal) => {
-  const original = await importOriginal<typeof import("ink")>();
-  return {
-    ...original,
-    useApp: () => ({ exit: vi.fn() }),
-    useInput: vi.fn((cb) => {
-      inputCallbacks.push(cb);
-    }),
-  };
-});
+vi.mock("ink", () => ({
+  render: vi.fn(),
+  useApp: () => ({ exit: vi.fn() }),
+  useInput: vi.fn((cb: any) => {
+    inputCallbacks.push(cb);
+  }),
+  Box: ({ children }: any) => children,
+  Text: ({ children }: any) => children,
+}));
+
 
 describe("Tab Suggestion Cycling", () => {
   beforeEach(() => {

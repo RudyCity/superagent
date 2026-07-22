@@ -2,11 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { isDangerousCommand, isPathInWorktree, isSuperagentOutOfBounds, isToolCallOutOfBounds, getToolDescription } from "../src/core/permissions.js";
 import path from "path";
 
-vi.mock("../src/core/config.js", async () => {
-  const vitest = await import("vitest");
-  const actual = await vitest.vi.importActual<any>("../src/core/config.js");
+vi.mock("../src/core/config.js", () => {
   return {
-    ...actual,
     getRootConfigDir: () => process.platform === "win32" ? "C:\\superagent-config-test" : "/tmp/superagent-config-test",
   };
 });

@@ -7,31 +7,17 @@ import { Agent } from "../src/core/agent.js";
 import { generateText, streamText } from "ai";
 import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 import { superagentInstances, subagentInstances } from "../src/core/tools/state.js";
+import * as configModule from "../src/core/config.js";
+import * as aiModule from "ai";
+import { closeHistoryDb } from "../src/core/storage/historyDb.js";
 
-// Mock configuration partially, keeping other config helpers intact
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/core/config.js")>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
-      provider: "openai",
-      model: "gpt-4",
-      apiKey: "fake-key",
-      disableStreaming: false, // test streaming code path
-      workingDirectory: process.cwd(),
-    }),
-  };
-});
+// Mock ai SDK synchronously
+vi.mock("ai", () => ({
+  generateText: vi.fn(),
+  streamText: vi.fn(),
+  jsonSchema: (s: any) => s,
+}));
 
-// Mock ai SDK partially, preserving other helpers like jsonSchema
-vi.mock("ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("ai")>();
-  return {
-    ...actual,
-    generateText: vi.fn(),
-    streamText: vi.fn(),
-  };
-});
 
 // Mock execa to prevent executing real git commands (e.g. worktree creation)
 vi.mock("execa", () => ({
@@ -51,6 +37,17 @@ describe("Master Agent Workflow & Guardrails", () => {
 
   beforeEach(async () => {
     vi.restoreAllMocks();
+    // Spy on config after restoreAllMocks
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
+      provider: "openai",
+      model: "gpt-4",
+      apiKey: "fake-key",
+      disableStreaming: false,
+      workingDirectory: process.cwd(),
+    } as any);
+    // Re-mock ai fns after restoreAllMocks
+    vi.spyOn(aiModule, "generateText" as any).mockImplementation(vi.fn());
+    vi.spyOn(aiModule, "streamText" as any).mockImplementation(vi.fn());
     for (const inst of superagentInstances.values()) {
       if (inst.agent && typeof inst.agent.abort === "function") {
         inst.agent.abort();
@@ -62,9 +59,12 @@ describe("Master Agent Workflow & Guardrails", () => {
     }
     superagentInstances.clear();
     subagentInstances.clear();
+    closeHistoryDb();
     process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
     clearModelConfigCache();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(testConfigDir, { recursive: true, force: true });
+    } catch {}
     const originalWriteFile = fs.writeFileSync;
     const originalAppendFile = fs.appendFileSync;
     vi.spyOn(fs, "writeFileSync").mockImplementation((filePath, data, options) => {
@@ -90,7 +90,10 @@ describe("Master Agent Workflow & Guardrails", () => {
     superagentInstances.clear();
     subagentInstances.clear();
     clearModelConfigCache();
-    fs.rmSync(testConfigDir, { recursive: true, force: true });
+    closeHistoryDb();
+    try {
+      fs.rmSync(testConfigDir, { recursive: true, force: true });
+    } catch {}
     process.env = originalEnv;
   });
 

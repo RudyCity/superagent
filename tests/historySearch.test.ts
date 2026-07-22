@@ -8,20 +8,13 @@ import { agentLocalStorage } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
 import { clearModelConfigCache } from "../src/core/config/jsonConfig.js";
 import { generateText } from "ai";
+import { closeHistoryDb } from "../src/core/storage/historyDb.js";
 
 vi.mock("ai", () => ({
   generateText: vi.fn(),
 }));
 
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    listHistorySessions: vi.fn(),
-    getConfig: vi.fn().mockReturnValue({ apiKey: "" }),
-    getModelInstance: vi.fn().mockReturnValue({}),
-  };
-});
+
 
 vi.mock("../src/core/rmemoryUtil.js", () => {
   const mockClient = {
@@ -42,13 +35,19 @@ describe("historySearch", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    closeHistoryDb();
     process.env = { ...originalEnv, SUPERAGENT_CONFIG_DIR: testConfigDir };
     clearModelConfigCache();
     clearSemanticSearchCache();
     fs.rmSync(testConfigDir, { recursive: true, force: true });
+    // Spy on config module after restoreAllMocks
+    vi.spyOn(configModule, "listHistorySessions" as any).mockResolvedValue([]);
+    vi.spyOn(configModule, "getConfig").mockReturnValue({ apiKey: "" } as any);
+    vi.spyOn(configModule, "getModelInstance" as any).mockReturnValue({});
   });
 
   afterEach(() => {
+    closeHistoryDb();
     clearModelConfigCache();
     clearSemanticSearchCache();
     fs.rmSync(testConfigDir, { recursive: true, force: true });

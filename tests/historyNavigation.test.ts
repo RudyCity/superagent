@@ -1,55 +1,57 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.mock("react", async (importOriginal) => {
-  const original = await importOriginal<typeof import("react")>();
+vi.mock("react", () => {
   const mocked = {
-    ...original,
     useRef: (val: any) => ({ current: val }),
     useCallback: (fn: any) => fn,
+    useState: (init: any) => [init, vi.fn()],
+    useEffect: (fn: any) => fn(),
+    useMemo: (fn: any) => fn(),
+    useContext: vi.fn(),
+    createContext: vi.fn(),
+    default: {} as any,
   };
-  return {
-    ...mocked,
-    default: mocked,
-  };
+  mocked.default = mocked;
+  return mocked;
 });
 
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
 import { useDashboardKeyboard } from "../src/hooks/useDashboardKeyboard.js";
+import * as configModule from "../src/core/config.js";
 
 let inputCallbacks: any[] = [];
-vi.mock("ink", async (importOriginal) => {
-  const original = await importOriginal<typeof import("ink")>();
-  return {
-    ...original,
-    useApp: () => ({ exit: vi.fn() }),
-    useInput: vi.fn((cb) => {
-      inputCallbacks.push(cb);
-    }),
-  };
-});
+vi.mock("ink", () => ({
+  useApp: () => ({ exit: vi.fn() }),
+  useInput: vi.fn((cb) => {
+    inputCallbacks.push(cb);
+  }),
+  render: vi.fn(),
+  Text: ({ children }: any) => children,
+  Box: ({ children }: any) => children,
+}));
 
 // Mock the config module to avoid filesystem access
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../src/core/config.js")>();
-  return {
-    ...original,
-    getConfiguredProviders: () => [],
-    switchActiveProvider: vi.fn(),
-    fetchAndCacheModels: vi.fn(),
-    getContextWindowLimit: () => 200000,
-    listHistorySessions: () => [],
-    getModelPresets: () => [],
-    BUILT_IN_PRESETS: [],
-    getInstalledSkills: () => [],
-    getProviderOptionsList: () => [],
-    getDefaultModel: () => "test-model",
-  };
-});
+vi.mock("../src/core/config.js", () => ({
+  getConfiguredProviders: () => [],
+  switchActiveProvider: vi.fn(),
+  fetchAndCacheModels: vi.fn(),
+  getContextWindowLimit: () => 200000,
+  listHistorySessions: () => [],
+  getModelPresets: () => [],
+  BUILT_IN_PRESETS: [],
+  getInstalledSkills: () => [],
+  getProviderOptionsList: () => [],
+  getDefaultModel: () => "test-model",
+}));
 
 describe("History Up/Down Navigation", () => {
   beforeEach(() => {
     inputCallbacks = [];
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   describe("Single Agent (useKeyboardHandler)", () => {

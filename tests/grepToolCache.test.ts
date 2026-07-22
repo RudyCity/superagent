@@ -6,41 +6,29 @@ import { grepTool } from "../src/core/tools/systemTools.js";
 import * as workspaceDiscovery from "../src/core/workspaceDiscovery.js";
 import fg from "fast-glob";
 
-// Mock fast-glob's default execution to see if it is called
-vi.mock("fast-glob", async (importOriginal) => {
-  const original = await importOriginal<any>();
-  const spyFg = vi.fn().mockImplementation(async (pattern: any, options: any) => {
+// Mock fast-glob's default execution synchronously — avoids Bun deadlock from async importOriginal.
+vi.mock("fast-glob", () => {
+  const spyFg = vi.fn().mockImplementation(async (_pattern: any, _options: any) => {
     return ["disk-file-1.ts", "disk-file-2.ts"];
   });
-  
-  (spyFg as any).isMatch = original.default.isMatch;
-  
-  return {
-    ...original,
-    default: spyFg
-  };
+
+  // Real isMatch will be patched in beforeEach
+  (spyFg as any).isMatch = (_str: string, _pattern: string | string[]) => false;
+
+  return { default: spyFg };
 });
 
-// Mock fs/promises's readFile since grepTool reads matched files from disk
-vi.mock("fs/promises", async (importOriginal) => {
-  const original = await importOriginal<any>();
+// Mock fs/promises readFile synchronously
+vi.mock("fs/promises", () => {
+  const readFileMock = vi.fn().mockImplementation(async (filePath: string) => {
+    if (String(filePath).includes("index.ts")) {
+      return "console.log('hello matching query');";
+    }
+    return "some other content";
+  });
   return {
-    ...original,
-    default: {
-      ...original.default,
-      readFile: vi.fn().mockImplementation(async (filePath: string) => {
-        if (filePath.includes("index.ts")) {
-          return "console.log('hello matching query');";
-        }
-        return "some other content";
-      })
-    },
-    readFile: vi.fn().mockImplementation(async (filePath: string) => {
-      if (filePath.includes("index.ts")) {
-        return "console.log('hello matching query');";
-      }
-      return "some other content";
-    })
+    default: { readFile: readFileMock },
+    readFile: readFileMock,
   };
 });
 
@@ -49,13 +37,17 @@ describe("grepTool Cache Interception", () => {
   let testConfigDir: string;
   let originalConfigDirEnv: string | undefined;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     originalConfigDirEnv = process.env.SUPERAGENT_CONFIG_DIR;
     testWorkspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "sa-grep-test-ws-"));
     testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "sa-grep-test-cfg-"));
     process.env.SUPERAGENT_CONFIG_DIR = testConfigDir;
 
     vi.restoreAllMocks();
+
+    // Patch isMatch with real implementation
+    const realFg = await import("fast-glob");
+    (fg as any).isMatch = realFg.default.isMatch;
   });
 
   afterEach(() => {

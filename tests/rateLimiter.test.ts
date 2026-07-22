@@ -15,14 +15,13 @@ const mockSettings = {
   maxIterations: 50,
 };
 
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/core/config.js")>();
-  return {
-    ...actual,
-    getRootConfigDir: vi.fn(() => path.join(os.tmpdir(), `superagent-rate-limit-test-${process.pid}`)),
-    getSettings: vi.fn(() => mockSettings),
-  };
-});
+import * as configModule from "../src/core/config.js";
+
+vi.mock("../src/core/config.js", () => ({
+  getRootConfigDir: vi.fn(() => path.join(os.tmpdir(), `superagent-rate-limit-test-${process.pid}`)),
+  getSettings: vi.fn(() => mockSettings),
+  closeHistoryDb: vi.fn(),
+}));
 
 describe("SharedRateLimiter", () => {
   let limiter: SharedRateLimiter;

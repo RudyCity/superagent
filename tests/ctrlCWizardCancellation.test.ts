@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
-import { render } from "ink";
+import * as inkModule from "ink";
 import { Console } from "node:console";
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
 import { useDashboardKeyboard } from "../src/hooks/useDashboardKeyboard.js";
@@ -9,22 +9,21 @@ if (!console.Console) {
   console.Console = Console;
 }
 
-let inputCallbacks: any[] = [];
-vi.mock("ink", async (importOriginal) => {
-  const original = await importOriginal<typeof import("ink")>();
-  return {
-    ...original,
-    useApp: () => ({ exit: vi.fn() }),
-    useInput: vi.fn((cb) => {
-      inputCallbacks.push(cb);
-    }),
-  };
-});
-
 describe("Ctrl+C Wizard Cancellation Tests", () => {
+  let inputCallbacks: any[] = [];
+
   beforeEach(() => {
     inputCallbacks = [];
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
+
+    vi.spyOn(inkModule, "useApp").mockReturnValue({ exit: vi.fn() });
+    vi.spyOn(inkModule, "useInput").mockImplementation((cb: any) => {
+      inputCallbacks.push(cb);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("should cancel active wizard in useKeyboardHandler on Ctrl+C and not call exit", async () => {
@@ -52,7 +51,7 @@ describe("Ctrl+C Wizard Cancellation Tests", () => {
       } as any);
       return null;
     };
-    const { unmount } = render(React.createElement(TestComponent));
+    const { unmount } = inkModule.render(React.createElement(TestComponent));
 
     expect(inputCallbacks.length).toBeGreaterThan(0);
 
@@ -133,7 +132,7 @@ describe("Ctrl+C Wizard Cancellation Tests", () => {
       } as any);
       return null;
     };
-    const { unmount } = render(React.createElement(TestComponent));
+    const { unmount } = inkModule.render(React.createElement(TestComponent));
 
     expect(inputCallbacks.length).toBeGreaterThan(0);
 

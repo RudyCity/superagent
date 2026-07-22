@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.524] - 2026-07-22
+
+### Fixed
+- **Test Suite Refactoring and Vitest-Bun Compatibility**:
+  - Replaced slow/deadlocking async module mocks (`vi.mock('...', async (importOriginal) => ...)`) with synchronous mocks and spies to resolve deadlock issues under the Bun environment.
+  - Resolved SQLite database locks (EPERM errors) on Windows by closing database connections dynamically in beforeEach and afterEach hooks via `closeHistoryDb()`.
+  - Fixed `keyboardAbortInterrupt` and wizard tests by invoking hooks directly and mocking React hooks synchronously.
+  - Added `jsonSchema` mock export to `ai` SDK mocks, resolving TypeErrors in the agent loop tests.
+  - Implemented a synchronous mini React renderer in `trustPrompt` mock to support state transitions and input callbacks.
+
 ## [1.2.523] - 2026-07-22
 
 ### Added

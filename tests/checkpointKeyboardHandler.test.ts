@@ -1,40 +1,34 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
-import { render } from "ink";
+import * as inkModule from "ink";
 import { Console } from "node:console";
 import { useKeyboardHandler } from "../src/hooks/useKeyboardHandler.js";
+import * as checkpointsModule from "../src/core/checkpoints.js";
 
 if (!console.Console) {
   console.Console = Console;
 }
 
-let inputCallbacks: any[] = [];
-vi.mock("ink", async (importOriginal) => {
-  const original = await importOriginal<typeof import("ink")>();
-  return {
-    ...original,
-    useApp: () => ({ exit: vi.fn() }),
-    useInput: vi.fn((cb) => {
-      inputCallbacks.push(cb);
-    }),
-  };
-});
-
-vi.mock("execa", () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: "", failed: false }),
-}));
-
-vi.mock("../src/core/checkpoints.js", () => ({
-  restoreCheckpoint: vi.fn().mockResolvedValue(undefined),
-  terminateActiveTasksAndSubagents: vi.fn(),
-  listCheckpointsForSession: vi.fn().mockResolvedValue([]),
-  deleteCheckpointById: vi.fn().mockResolvedValue(true),
-}));
-
 describe("Checkpoint Keyboard Handler Step 2 Tests", () => {
+  let inputCallbacks: any[] = [];
+
   beforeEach(() => {
     inputCallbacks = [];
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
+
+    vi.spyOn(inkModule, "useApp").mockReturnValue({ exit: vi.fn() });
+    vi.spyOn(inkModule, "useInput").mockImplementation((cb: any) => {
+      inputCallbacks.push(cb);
+    });
+
+    vi.spyOn(checkpointsModule, "restoreCheckpoint").mockResolvedValue(undefined as any);
+    vi.spyOn(checkpointsModule, "terminateActiveTasksAndSubagents").mockImplementation(() => {});
+    vi.spyOn(checkpointsModule, "listCheckpointsForSession").mockResolvedValue([] as any);
+    vi.spyOn(checkpointsModule, "deleteCheckpointById").mockResolvedValue(true as any);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("should execute workspace restore (git checkout) when selecting index 0 in step 2", async () => {
@@ -94,7 +88,7 @@ describe("Checkpoint Keyboard Handler Step 2 Tests", () => {
       return null;
     };
 
-    const { unmount } = render(React.createElement(TestComponent));
+    const { unmount } = inkModule.render(React.createElement(TestComponent));
 
     expect(inputCallbacks.length).toBeGreaterThan(0);
 
@@ -112,9 +106,6 @@ describe("Checkpoint Keyboard Handler Step 2 Tests", () => {
     expect(setWizardSelectedIndexMock).toHaveBeenCalledWith(0);
     expect(setCheckpointsListMock).toHaveBeenCalledWith([]);
 
-    // Checkpoint list shouldn't have reset back to step 1
-    // (If the bug were present, it would set activeWizard back to step 1 browse options,
-    // which starts by calling setActiveWizard with { type: "checkpoint", step: 1, ... } instead of null)
     expect(activeWizard).toBeNull();
 
     unmount();

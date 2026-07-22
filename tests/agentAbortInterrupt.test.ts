@@ -7,49 +7,38 @@ const tempHome = path.join(process.cwd(), "tests", "temp-home-abort-interrupt");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
 import { Agent } from "../src/core/agent.js";
-import { streamText } from "ai";
+import * as aiModule from "ai";
 import * as configModule from "../src/core/config.js";
 
-// Mock configuration partially, keeping other config helpers intact
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
+describe("Agent - Abort and Instant Interruption", () => {
+  let streamTextSpy: any;
+  let getConfigSpy: any;
+  let getModelInstanceForTierSpy: any;
+
+  beforeEach(() => {
+    if (fs.existsSync(tempHome)) {
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
+
+    getConfigSpy = vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
       apiKey: "fake-key",
       disableStreaming: false,
       workingDirectory: process.cwd(),
       systemPrompt: "Base Master Agent Prompt Content",
-    }),
-    getModelInstanceForTier: vi.fn().mockReturnValue({}),
-  };
-});
+    } as any);
 
-// Mock ai SDK partially
-vi.mock("ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("ai")>();
-  return {
-    ...actual,
-    generateText: vi.fn(),
-    streamText: vi.fn(),
-  };
-});
+    getModelInstanceForTierSpy = vi.spyOn(configModule, "getModelInstanceForTier").mockReturnValue({} as any);
 
-describe("Agent - Abort and Instant Interruption", () => {
-  beforeEach(() => {
-    if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
-    }
-    vi.restoreAllMocks();
-    vi.clearAllMocks();
+    streamTextSpy = vi.spyOn(aiModule, "streamText");
   });
 
   afterEach(() => {
     if (fs.existsSync(tempHome)) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
+    vi.restoreAllMocks();
   });
 
   it("should instantly interrupt and fire done event when abort() is called during text streaming", async () => {
@@ -63,7 +52,7 @@ describe("Agent - Abort and Instant Interruption", () => {
 
     let abortSignalPassed: AbortSignal | undefined;
 
-    vi.mocked(streamText).mockImplementation(({ abortSignal }) => {
+    streamTextSpy.mockImplementation(({ abortSignal }: any) => {
       abortSignalPassed = abortSignal;
       return {
         fullStream: (async function* () {
@@ -100,7 +89,7 @@ describe("Agent - Abort and Instant Interruption", () => {
     expect(agent.wasRunningBeforeAbort).toBe(true);
 
     // The sendMessage promise should resolve/reject quickly
-    await expect(sendPromise).resolves.not.toThrow();
+    await sendPromise;
 
     expect(agent.isAgentRunning()).toBe(false);
     expect(abortSignalPassed?.aborted).toBe(true);
@@ -131,7 +120,7 @@ describe("Agent - Abort and Instant Interruption", () => {
 
     let callCount = 0;
 
-    vi.mocked(streamText).mockImplementation(() => {
+    streamTextSpy.mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
         throw new Error("Temporary network error");
@@ -158,7 +147,7 @@ describe("Agent - Abort and Instant Interruption", () => {
     agent.abort();
 
     // The sendMessage promise should resolve/reject quickly
-    await expect(sendPromise).resolves.not.toThrow();
+    await sendPromise;
 
     expect(agent.isAgentRunning()).toBe(false);
 

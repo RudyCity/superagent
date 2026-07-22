@@ -2,30 +2,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Agent } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
 
-// Mock configuration partially
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
+describe("Anthropic Prompt Caching", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    process.env.TEST_PROMPT_CACHING = "true";
+
+    // Mock configuration using vi.spyOn for local module
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "anthropic",
       model: "claude-3-5-sonnet",
       apiKey: "fake-key",
       disableStreaming: false,
       workingDirectory: process.cwd(),
       systemPrompt: "Base Master Agent Prompt Content",
-    }),
-    getContextWindowLimit: vi.fn().mockReturnValue(8000),
-    getSettings: vi.fn().mockReturnValue({
+    } as any);
+    vi.spyOn(configModule, "getContextWindowLimit").mockReturnValue(8000);
+    vi.spyOn(configModule, "getSettings").mockReturnValue({
       autoVisionTokenSaving: false,
-    }),
-  };
-});
-
-describe("Anthropic Prompt Caching", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    process.env.TEST_PROMPT_CACHING = "true";
+    } as any);
   });
 
   afterEach(() => {

@@ -182,7 +182,18 @@ describe("Agent – delayWithCountdown", () => {
 
     const delayPromise = (agent as any).delayWithCountdown(1, 4000);
 
-    await vi.runAllTimersAsync();
+    if (typeof vi.runAllTimersAsync === "function") {
+      await vi.runAllTimersAsync();
+    } else {
+      // delayWithCountdown(1, 4000) loops 4 times, each waiting for a 1000ms timeout.
+      // We must advance the timers 1000ms at a time, allowing microtasks to resolve sequentially.
+      for (let i = 0; i < 4; i++) {
+        vi.advanceTimersByTime(1000);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+    }
     await delayPromise;
 
     vi.useRealTimers();

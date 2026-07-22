@@ -2,32 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Agent } from "../src/core/agent.js";
 import * as configModule from "../src/core/config.js";
 
-// Mock configuration partially
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
-      provider: "openai",
-      model: "gpt-4",
-      apiKey: "fake-key",
-      disableStreaming: false,
-      workingDirectory: process.cwd(),
-      systemPrompt: "Base Master Agent Prompt Content",
-    }),
-    getContextWindowLimit: vi.fn().mockReturnValue(8000),
-    getTierModel: vi.fn(),
-    getSettings: vi.fn().mockReturnValue({
-      autoVisionTokenSaving: false,
-    }),
-  };
-});
+
 
 describe("Vision Message Serialization", () => {
   let agent: Agent;
 
   beforeEach(() => {
-    vi.mocked(configModule.getConfig).mockReturnValue({
+    vi.restoreAllMocks();
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
       provider: "openai",
       model: "gpt-4",
       apiKey: "fake-key",
@@ -35,6 +17,9 @@ describe("Vision Message Serialization", () => {
       workingDirectory: process.cwd(),
       systemPrompt: "Base Master Agent Prompt Content",
     } as any);
+    vi.spyOn(configModule, "getContextWindowLimit" as any).mockReturnValue(8000);
+    vi.spyOn(configModule, "getTierModel" as any).mockReturnValue(undefined);
+    vi.spyOn(configModule, "getSettings" as any).mockReturnValue({ autoVisionTokenSaving: false });
     agent = new Agent(() => {}, () => Promise.resolve(true), () => {});
     agent.tier = "master";
   });

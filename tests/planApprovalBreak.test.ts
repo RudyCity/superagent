@@ -5,68 +5,46 @@ import os from "os";
 import { Agent } from "../src/core/agent.js";
 import { streamText } from "ai";
 import type { AgentEvent } from "../src/core/tools/types.js";
+import { closeHistoryDb } from "../src/core/storage/historyDb.js";
 
 // Mock providers config and jsonConfig to avoid actual files and API keys.
 const tempHome = path.join(os.tmpdir(), "superagent-test-home-" + Date.now());
 process.env.HOME = tempHome;
 process.env.USERPROFILE = tempHome;
 
-vi.mock("../src/core/config/jsonConfig.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/core/config/jsonConfig.js")>();
-  return {
-    ...actual,
-    getSettings: vi.fn().mockReturnValue({
-      maxConcurrency: 1,
-      rateLimitRequests: 10,
-      rateLimitInterval: 1000,
-      disableStreaming: false,
-      contextWindowLimit: 10000,
-      maxIterations: 10,
-    }),
-  };
-});
-
-vi.mock("../src/core/config/providers.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/core/config/providers.js")>();
-  return {
-    ...actual,
-    getEffectiveMasterModel: vi.fn().mockReturnValue("gpt-4"),
-    getTierModel: vi.fn().mockReturnValue("gpt-4"),
-    getActiveProviderName: vi.fn().mockReturnValue("openai"),
-    getConfiguredProviders: vi.fn().mockReturnValue({
-      provider: "openai",
-      model: "gpt-4",
-      apiKey: "fake-key",
-      disableStreaming: false,
-      workingDirectory: process.cwd(),
-      systemPrompt: "Base Agent Prompt Content",
-    }),
-  };
-});
+import * as jsonConfigModule from "../src/core/config/jsonConfig.js";
+import * as providersModule from "../src/core/config/providers.js";
+import * as permissionsModule from "../src/core/permissions.js";
 
 // Mock the AI SDK so we never hit a real provider.
-vi.mock("ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("ai")>();
-  return {
-    ...actual,
-    streamText: vi.fn(),
-  };
-});
+vi.mock("ai", () => ({
+  streamText: vi.fn(),
+  jsonSchema: (val: any) => val,
+}));
 
 // Stub executeToolCall so the model's `write` tool call to the plan file is a
 // no-op on disk — the agent's own MODIFYING_TOOLS guard handles the planState
 // transition before executeToolCall runs, which is what we are testing.
-vi.mock("../src/core/permissions.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/core/permissions.js")>();
-  return {
-    ...actual,
-    executeToolCall: vi.fn(async (tc: any) => ({
-      toolCallId: tc.id,
-      name: tc.name,
-      result: "ok",
-    })),
-  };
-});
+vi.mock("../src/core/permissions.js", () => ({
+  executeToolCall: vi.fn(async (tc: any) => ({
+    toolCallId: tc.id,
+    name: tc.name,
+    result: "ok",
+  })),
+  getToolDescription: vi.fn(() => "mock tool description"),
+  isDangerousCommand: vi.fn(() => false),
+  isToolCallOutOfBounds: vi.fn(() => false),
+  isModelConfigAccess: vi.fn(() => false),
+  isSensitiveEnvFileAccess: vi.fn(() => false),
+  MODIFYING_TOOLS: [
+    "write",
+    "write_to_file",
+    "edit",
+    "replace_file_content",
+    "multi_replace_file_content",
+    "apply_patch",
+  ],
+}));
 
 describe("Agent – plan approval breaks the loop", () => {
   beforeEach(() => {
@@ -75,11 +53,39 @@ describe("Agent – plan approval breaks the loop", () => {
     }
     fs.mkdirSync(tempHome, { recursive: true });
     vi.clearAllMocks();
+
+    // Mock jsonConfig using vi.spyOn
+    vi.spyOn(jsonConfigModule, "getSettings").mockReturnValue({
+      maxConcurrency: 1,
+      rateLimitRequests: 10,
+      rateLimitInterval: 1000,
+      disableStreaming: false,
+      contextWindowLimit: 10000,
+      maxIterations: 10,
+    } as any);
+
+    // Mock providers using vi.spyOn
+    vi.spyOn(providersModule, "getEffectiveMasterModel").mockReturnValue("gpt-4");
+    vi.spyOn(providersModule, "getTierModel").mockReturnValue("gpt-4");
+    vi.spyOn(providersModule, "getActiveProviderName").mockReturnValue("openai");
+    vi.spyOn(providersModule, "getConfiguredProviders").mockReturnValue({
+      provider: "openai",
+      model: "gpt-4",
+      apiKey: "fake-key",
+      disableStreaming: false,
+      workingDirectory: process.cwd(),
+      systemPrompt: "Base Agent Prompt Content",
+    } as any);
   });
 
   afterEach(() => {
+    try {
+      closeHistoryDb();
+    } catch {}
     if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempHome, { recursive: true, force: true });
+      } catch {}
     }
   });
 

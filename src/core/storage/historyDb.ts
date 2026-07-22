@@ -1329,6 +1329,23 @@ export function getModelCachesFromDb(): Record<string, number> {
   return result;
 }
 
+export function deleteModelCachesFromDb(ids: string[]): void {
+  try {
+    const db = getHistoryDb();
+    db.exec("BEGIN;");
+    try {
+      const stmt = db.prepare("DELETE FROM model_caches WHERE id = ?");
+      for (const id of ids) {
+        stmt.run(id);
+      }
+      db.exec("COMMIT;");
+    } catch (err) {
+      db.exec("ROLLBACK;");
+      throw err;
+    }
+  } catch {}
+}
+
 export function saveToolSupportCacheToDb(modelId: string, supported: boolean): void {
   try {
     const db = getHistoryDb();

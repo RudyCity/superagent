@@ -14,21 +14,12 @@ import {
 const tempHome = path.join(process.cwd(), "tests", "temp-home-tier-toolset");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-// Mock configuration partially
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
-      provider: "openai",
-      model: "gpt-4",
-      apiKey: "fake-key",
-      disableStreaming: false,
-      workingDirectory: process.cwd(),
-      systemPrompt: "Base Agent Prompt Content",
-    }),
-  };
-});
+// Mock ai SDK synchronously
+vi.mock("ai", () => ({
+  streamText: vi.fn(),
+  generateText: vi.fn(),
+  jsonSchema: (s: any) => s,
+}));
 
 // Mock rmemoryUtil
 vi.mock("../src/core/rmemoryUtil.js", () => ({
@@ -36,15 +27,6 @@ vi.mock("../src/core/rmemoryUtil.js", () => ({
   getRMemorySessionKey: vi.fn().mockReturnValue("test-sess"),
   isRmemoryActive: vi.fn().mockResolvedValue(true),
 }));
-
-// Mock ai SDK partially
-vi.mock("ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("ai")>();
-  return {
-    ...actual,
-    streamText: vi.fn(),
-  };
-});
 
 describe("Agent - Tier-Specific Default Toolset Resolution", () => {
   beforeEach(() => {
@@ -55,6 +37,15 @@ describe("Agent - Tier-Specific Default Toolset Resolution", () => {
     vi.clearAllMocks();
     // Speed up tests by skipping actual countdown delay
     vi.spyOn(Agent.prototype as any, "delayWithCountdown").mockResolvedValue(undefined);
+    // Re-apply config spy after restoreAllMocks
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
+      provider: "openai",
+      model: "gpt-4",
+      apiKey: "fake-key",
+      disableStreaming: false,
+      workingDirectory: process.cwd(),
+      systemPrompt: "Base Agent Prompt Content",
+    } as any);
   });
 
   afterEach(() => {

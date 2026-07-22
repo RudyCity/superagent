@@ -6,23 +6,17 @@ import { agentLocalStorage } from "../src/core/agent.js";
 import { getGlobalConfigDir, saveSessionToDb, deleteSessionFromDb } from "../src/core/config.js";
 import * as configModule from "../src/core/config.js";
 
-// Mock getConfig to return empty apiKey so searchHistory uses offline fuzzy search
+// Spy on getConfig to return empty apiKey so searchHistory uses offline fuzzy search
 // instead of hitting the AI API from model-config.json (causes timeouts).
-vi.mock("./config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
-      apiKey: "",
-      provider: "openai",
-      model: "gpt-4o",
-      baseUrl: "",
-      maxTokens: 16384,
-      systemPrompt: "",
-      workingDirectory: process.cwd(),
-    }),
-  };
-});
+vi.spyOn(configModule, "getConfig").mockReturnValue({
+  apiKey: "",
+  provider: "openai",
+  model: "gpt-4o",
+  baseUrl: "",
+  maxTokens: 16384,
+  systemPrompt: "",
+  workingDirectory: process.cwd(),
+} as any);
 
 // Mock execa to avoid running real shell commands in the unit tests
 vi.mock("execa", () => {

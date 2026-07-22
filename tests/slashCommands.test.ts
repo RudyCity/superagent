@@ -21,19 +21,7 @@ vi.mock("execa", () => ({
   execa: vi.fn().mockResolvedValue({ stdout: "" }),
 }));
 
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getInstalledSkills: () => [
-      {
-        name: "Test Skill",
-        description: "A test skill description",
-        path: "/path/to/test-skill/SKILL.md",
-      }
-    ],
-  };
-});
+
 
 describe("Slash Command: /model", () => {
   let originalEnv: NodeJS.ProcessEnv;
@@ -78,6 +66,10 @@ describe("Slash Command: /model", () => {
     }
     ensureGlobalConfigDir();
     clearModelConfigCache();
+    // Spy on config methods
+    vi.spyOn(configModule, "getInstalledSkills" as any).mockReturnValue([
+      { name: "Test Skill", description: "A test skill description", path: "/path/to/test-skill/SKILL.md" }
+    ]);
   });
 
   afterEach(() => {

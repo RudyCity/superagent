@@ -8,29 +8,8 @@ import os from "os";
 const tempHome = path.join(process.cwd(), "tests", "temp-home-auto-checkpoint");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-// Mock execa to avoid running real shell commands
-vi.mock("execa", () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: "" }),
-}));
 
-// Mock config to avoid API key / provider issues
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/core/config.js")>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
-      apiKey: "test-key",
-      provider: "openai",
-      model: "gpt-4o",
-      baseUrl: "",
-      maxTokens: 4096,
-      systemPrompt: "",
-      workingDirectory: process.cwd(),
-    }),
-    getInstalledSkills: () => [],
-    getInstalledSkillInstructions: () => [],
-  };
-});
+import * as configModule from "../src/core/config.js";
 
 import {
   createCheckpoint,
@@ -49,11 +28,26 @@ const sampleMessages = [
 
 describe("Auto-checkpoint: deleteCheckpointById", () => {
   beforeEach(async () => {
+    // Spy on config functions to avoid API key / provider issues
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
+      apiKey: "test-key",
+      provider: "openai",
+      model: "gpt-4o",
+      baseUrl: "",
+      maxTokens: 4096,
+      systemPrompt: "",
+      workingDirectory: process.cwd(),
+    } as any);
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([] as any);
+    vi.spyOn(configModule, "getInstalledSkillInstructions").mockReturnValue([] as any);
+
     await fs.mkdir(TEST_SESSION_DIR, { recursive: true });
     await fs.writeFile(TEST_SESSION_FILE, "{}", "utf-8");
+    await deleteCheckpointsForSession(TEST_SESSION_FILE);
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     try {
       await fs.rm(TEST_SESSION_DIR, { recursive: true, force: true });
     } catch {}
@@ -97,11 +91,25 @@ describe("Auto-checkpoint: deleteCheckpointById", () => {
 
 describe("Auto-checkpoint: max rotation (20)", () => {
   beforeEach(async () => {
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
+      apiKey: "test-key",
+      provider: "openai",
+      model: "gpt-4o",
+      baseUrl: "",
+      maxTokens: 4096,
+      systemPrompt: "",
+      workingDirectory: process.cwd(),
+    } as any);
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([] as any);
+    vi.spyOn(configModule, "getInstalledSkillInstructions").mockReturnValue([] as any);
+
     await fs.mkdir(TEST_SESSION_DIR, { recursive: true });
     await fs.writeFile(TEST_SESSION_FILE, "{}", "utf-8");
+    await deleteCheckpointsForSession(TEST_SESSION_FILE);
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     try {
       await fs.rm(TEST_SESSION_DIR, { recursive: true, force: true });
     } catch {}
@@ -120,11 +128,25 @@ describe("Auto-checkpoint: max rotation (20)", () => {
 
 describe("Auto-checkpoint: createCheckpoint preserves git SHA", () => {
   beforeEach(async () => {
+    vi.spyOn(configModule, "getConfig").mockReturnValue({
+      apiKey: "test-key",
+      provider: "openai",
+      model: "gpt-4o",
+      baseUrl: "",
+      maxTokens: 4096,
+      systemPrompt: "",
+      workingDirectory: process.cwd(),
+    } as any);
+    vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([] as any);
+    vi.spyOn(configModule, "getInstalledSkillInstructions").mockReturnValue([] as any);
+
     await fs.mkdir(TEST_SESSION_DIR, { recursive: true });
     await fs.writeFile(TEST_SESSION_FILE, "{}", "utf-8");
+    await deleteCheckpointsForSession(TEST_SESSION_FILE);
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     try {
       await fs.rm(TEST_SESSION_DIR, { recursive: true, force: true });
     } catch {}

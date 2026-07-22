@@ -6,9 +6,7 @@ import os from "os";
 const tempHome = path.join(process.cwd(), "tests", "temp-home-checkpoint-wizard");
 vi.spyOn(os, "homedir").mockReturnValue(tempHome);
 
-vi.mock("execa", () => ({
-  execa: vi.fn().mockResolvedValue({ stdout: "" }),
-}));
+
 
 import { handleSlashCommand, type ChatLine } from "../src/core/slash-commands.js";
 import { Agent } from "../src/core/agent.js";
@@ -20,23 +18,19 @@ import {
   listCheckpointsForSession,
 } from "../src/core/checkpoints.js";
 
-vi.mock("../src/core/config.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof configModule>();
-  return {
-    ...actual,
-    getConfig: vi.fn().mockReturnValue({
-      apiKey: "test-key",
-      provider: "openai",
-      model: "gpt-4o",
-      baseUrl: "",
-      maxTokens: 4096,
-      systemPrompt: "",
-      workingDirectory: process.cwd(),
-    }),
-    getInstalledSkills: () => [],
-    getInstalledSkillInstructions: () => [],
-  };
-});
+function setupConfigSpies() {
+  vi.spyOn(configModule, "getConfig").mockReturnValue({
+    apiKey: "test-key",
+    provider: "openai",
+    model: "gpt-4o",
+    baseUrl: "",
+    maxTokens: 4096,
+    systemPrompt: "",
+    workingDirectory: process.cwd(),
+  } as any);
+  vi.spyOn(configModule, "getInstalledSkills").mockReturnValue([]);
+  vi.spyOn(configModule, "getInstalledSkillInstructions").mockReturnValue([]);
+}
 
 const configPath = getModelConfigPath();
 
@@ -86,12 +80,14 @@ describe("Checkpoint wizard: /checkpoint (no args)", () => {
   let sessionDir: string;
 
   beforeEach(() => {
+    setupConfigSpies();
     sessionDir = path.join(tempHome, `test-wizard-${Date.now()}`);
     fs.mkdirSync(sessionDir, { recursive: true });
     clearModelConfigCache();
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(tempHome, { recursive: true, force: true }); } catch {}
   });
@@ -135,12 +131,14 @@ describe("Checkpoint wizard: /checkpoint restore (no ID)", () => {
   let sessionDir: string;
 
   beforeEach(() => {
+    setupConfigSpies();
     sessionDir = path.join(tempHome, `test-restore-${Date.now()}`);
     fs.mkdirSync(sessionDir, { recursive: true });
     clearModelConfigCache();
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(tempHome, { recursive: true, force: true }); } catch {}
   });
@@ -169,12 +167,14 @@ describe("Checkpoint wizard: /checkpoint delete (no ID)", () => {
   let sessionDir: string;
 
   beforeEach(() => {
+    setupConfigSpies();
     sessionDir = path.join(tempHome, `test-delete-${Date.now()}`);
     fs.mkdirSync(sessionDir, { recursive: true });
     clearModelConfigCache();
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(tempHome, { recursive: true, force: true }); } catch {}
   });
@@ -203,12 +203,14 @@ describe("Checkpoint: /checkpoint delete <id> direct", () => {
   let sessionDir: string;
 
   beforeEach(() => {
+    setupConfigSpies();
     sessionDir = path.join(tempHome, `test-direct-del-${Date.now()}`);
     fs.mkdirSync(sessionDir, { recursive: true });
     clearModelConfigCache();
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(tempHome, { recursive: true, force: true }); } catch {}
   });
@@ -251,12 +253,14 @@ describe("Checkpoint: /checkpoint <name> creates checkpoint", () => {
   let sessionDir: string;
 
   beforeEach(() => {
+    setupConfigSpies();
     sessionDir = path.join(tempHome, `test-create-${Date.now()}`);
     fs.mkdirSync(sessionDir, { recursive: true });
     clearModelConfigCache();
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(tempHome, { recursive: true, force: true }); } catch {}
   });

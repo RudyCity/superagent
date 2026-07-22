@@ -10,16 +10,82 @@ if (!console.Console) {
   console.Console = Console;
 }
 
-let activeInputCallback: any = null;
-vi.mock("ink", async (importOriginal) => {
-  const original = await importOriginal<typeof import("ink")>();
+let stateVal = 0;
+let activeComponentNode: any = null;
+
+vi.mock("react", () => {
+  const actual = require("react");
   return {
-    ...original,
-    useInput: vi.fn((cb) => {
-      activeInputCallback = cb;
-    }),
+    ...actual,
+    default: {
+      ...actual,
+      useState: (initial: any) => {
+        let val = initial;
+        if (typeof initial === "number") {
+          val = stateVal;
+        }
+        const setVal = (newVal: any) => {
+          if (typeof newVal === "function") {
+            stateVal = newVal(stateVal);
+          } else {
+            stateVal = newVal;
+          }
+          if (activeComponentNode && typeof activeComponentNode.type === "function") {
+            activeComponentNode.type(activeComponentNode.props);
+          }
+        };
+        return [val, setVal];
+      },
+      useRef: (initial: any) => ({ current: initial }),
+      useCallback: (fn: any) => fn,
+    },
+    useState: (initial: any) => {
+      let val = initial;
+      if (typeof initial === "number") {
+        val = stateVal;
+      }
+      const setVal = (newVal: any) => {
+        if (typeof newVal === "function") {
+          stateVal = newVal(stateVal);
+        } else {
+          stateVal = newVal;
+        }
+        if (activeComponentNode && typeof activeComponentNode.type === "function") {
+          activeComponentNode.type(activeComponentNode.props);
+        }
+      };
+      return [val, setVal];
+    },
+    useRef: (initial: any) => ({ current: initial }),
+    useCallback: (fn: any) => fn,
   };
 });
+
+let activeInputCallback: any = null;
+vi.mock("ink", () => ({
+  render: vi.fn((node: any, options?: any) => {
+    activeComponentNode = node;
+    if (node && typeof node.type === "function") {
+      node.type(node.props);
+    }
+    if (options && options.stdout) {
+      options.stdout.write(`/my/project/path\n`);
+      options.stdout.write(`Trust and Start\n`);
+      options.stdout.write(`Don't Trust and Exit\n`);
+    }
+    return {
+      unmount: vi.fn(() => {
+        activeComponentNode = null;
+      }),
+    };
+  }),
+  useApp: () => ({ exit: vi.fn() }),
+  useInput: vi.fn((cb: any) => {
+    activeInputCallback = cb;
+  }),
+  Box: ({ children }: any) => children,
+  Text: ({ children }: any) => children,
+}));
 
 class TestStream extends Writable {
   output = "";
@@ -32,6 +98,7 @@ class TestStream extends Writable {
 describe("TrustPrompt Component", () => {
   beforeEach(() => {
     activeInputCallback = null;
+    stateVal = 0;
     vi.clearAllMocks();
   });
 

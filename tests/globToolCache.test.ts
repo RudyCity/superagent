@@ -6,20 +6,26 @@ import { globTool } from "../src/core/tools/systemTools.js";
 import * as workspaceDiscovery from "../src/core/workspaceDiscovery.js";
 import fg from "fast-glob";
 
-// Mock fast-glob's default execution to see if it is called
-vi.mock("fast-glob", async (importOriginal) => {
-  const original = await importOriginal<any>();
-  // We spy on the default function
-  const spyFg = vi.fn().mockImplementation(async (pattern: any, options: any) => {
+import picomatch from "picomatch";
+
+// Mock fast-glob's default execution to see if it is called.
+// Synchronous factory — avoids Bun deadlock from async importOriginal.
+vi.mock("fast-glob", () => {
+  const spyFg = vi.fn().mockImplementation(async (_pattern: any, _options: any) => {
     return ["disk-file-1.ts", "disk-file-2.ts"];
   });
-  
-  // Attach isMatch
-  (spyFg as any).isMatch = original.default.isMatch;
-  
+
+  (spyFg as any).isMatch = (str: string, pattern: string | string[], options?: any) => {
+    const patterns = Array.isArray(pattern) ? pattern : [pattern];
+    return patterns.some((p) => picomatch.isMatch(str, p, options));
+  };
+
   return {
-    ...original,
-    default: spyFg
+    default: spyFg,
+    isMatch: (str: string, pattern: string | string[], options?: any) => {
+      const patterns = Array.isArray(pattern) ? pattern : [pattern];
+      return patterns.some((p) => picomatch.isMatch(str, p, options));
+    },
   };
 });
 

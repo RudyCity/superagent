@@ -330,9 +330,9 @@ export function loadModelConfig(): GlobalModelConfig {
   const configPath = getModelConfigPath();
   if (cachedConfig) {
     // Throttle disk stats: if checked less than 50ms ago, use cache directly
-    const isVitest = typeof process.env.VITEST !== "undefined";
+    const isTest = typeof process.env.VITEST !== "undefined" || typeof process.env.BUN_TEST !== "undefined" || process.env.NODE_ENV === "test";
     const now = Date.now();
-    if (!isVitest && now - lastStatCheckTime < 50) {
+    if (!isTest && now - lastStatCheckTime < 50) {
       return cachedConfig;
     }
     lastStatCheckTime = now;
