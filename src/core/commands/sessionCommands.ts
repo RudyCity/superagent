@@ -18,7 +18,7 @@ export const resumeCommand: SlashCommand = {
   description: "Resume a conversation session from history via wizard dialog",
   execute(args, ctx) {
     const isMulti = ctx.agent?.isMultiAgent || false;
-    const sessions = listHistorySessions(isMulti, false, undefined, 20).slice(0, 10);
+    const sessions = listHistorySessions(isMulti, false, ctx.agent?.workingDirectory, 20).slice(0, 10);
     const now = Date.now();
     if (sessions.length === 0) {
       ctx.addLine({ type: "system", content: "No previous sessions found. Start a conversation first!", timestamp: now });
@@ -521,7 +521,7 @@ export const sessionSlashCommand: SlashCommand = {
     if (action === "list" || action === "ls") {
       const isAll = parts.includes("--all") || parts.includes("-a");
       const isMulti = ctx.agent?.isMultiAgent || false;
-      const sessions = listHistorySessions(isMulti, isAll, undefined, 20);
+      const sessions = listHistorySessions(isMulti, isAll, ctx.agent?.workingDirectory, 20);
 
       if (sessions.length === 0) {
         ctx.addLine({ type: "system", content: "No conversation sessions found.", timestamp: now });

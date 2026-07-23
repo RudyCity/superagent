@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.534] - 2026-07-23
+
+### Fixed
+- **Filter Terminal UI (tline) Chat History Sessions by Workspace**:
+  - Scoped the history sessions list in `/resume` wizard, `/session list` slash command, keyboard handler wizard activation, and dashboard wizard to use the agent's active `workingDirectory` workspace path instead of defaulting to process root.
+  - This ensures that when switching workspaces in `tline` terminal UI mode, the chat sessions list updates dynamically to show only the sessions matching the active workspace.
+
 ## [1.2.533] - 2026-07-23
 
 ### Fixed
