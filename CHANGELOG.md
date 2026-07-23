@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.526] - 2026-07-23
+
+### Optimized
+- **Workspace Telemetry Optimization in GitUtils**:
+  - Prevented parallel file I/O bottlenecks and memory blowup when capturing Git snapshots in workspaces with massive untracked file counts (e.g. desktop apps with large build outputs or unpacked assets). If there are more than 100 untracked files, content reading is bypassed.
+
 ## [1.2.525] - 2026-07-23
 
 ### Fixed

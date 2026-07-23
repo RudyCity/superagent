@@ -35,31 +35,36 @@ export async function captureGitSnapshot(cwd: string): Promise<GitSnapshot | nul
 
     // Get untracked files
     const { stdout: untracked } = await execa("git", ["ls-files", "--others", "--exclude-standard"], { cwd, reject: false });
-    const untrackedFiles = untracked.split("\n");
+    const untrackedFiles = untracked.split("\n").map(f => f.trim()).filter(Boolean);
     
-    // Read files concurrently to avoid serial disk I/O bottlenecks
-    await Promise.all(
-      untrackedFiles.map(async (file) => {
-        const filepath = file.trim();
-        if (!filepath) return;
-        const fullPath = path.resolve(cwd, filepath);
-        try {
-          const stat = await fs.promises.stat(fullPath);
-          if (stat.isFile()) {
-            // Only read contents if file is under 1MB to avoid memory blowup on large artifacts
-            if (stat.size < 1024 * 1024) {
-              const content = await fs.promises.readFile(fullPath, "utf-8");
-              const linesCount = content.split(/\r?\n/).length;
-              snapshot[filepath] = { added: linesCount, deleted: 0 };
-            } else {
-              snapshot[filepath] = { added: 0, deleted: 0 };
+    if (untrackedFiles.length > 100) {
+      // Avoid parallel disk reads on massive untracked files lists (e.g. build directories)
+      for (const filepath of untrackedFiles) {
+        snapshot[filepath] = { added: 0, deleted: 0 };
+      }
+    } else {
+      // Read files concurrently to avoid serial disk I/O bottlenecks
+      await Promise.all(
+        untrackedFiles.map(async (filepath) => {
+          const fullPath = path.resolve(cwd, filepath);
+          try {
+            const stat = await fs.promises.stat(fullPath);
+            if (stat.isFile()) {
+              // Only read contents if file is under 1MB to avoid memory blowup on large artifacts
+              if (stat.size < 1024 * 1024) {
+                const content = await fs.promises.readFile(fullPath, "utf-8");
+                const linesCount = content.split(/\r?\n/).length;
+                snapshot[filepath] = { added: linesCount, deleted: 0 };
+              } else {
+                snapshot[filepath] = { added: 0, deleted: 0 };
+              }
             }
+          } catch {
+            snapshot[filepath] = { added: 0, deleted: 0 };
           }
-        } catch {
-          snapshot[filepath] = { added: 0, deleted: 0 };
-        }
-      })
-    );
+        })
+      );
+    }
 
     return snapshot;
   } catch {
