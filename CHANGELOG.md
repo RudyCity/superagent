@@ -1,6 +1,14 @@
 # Changelog
 
+## [1.2.532] - 2026-07-23
+
+### Fixed
+- **Cleaned Session Display Names**:
+  - Filtered out system-generated RMemory memory context messages when determining the first and last user messages.
+  - This ensures that sessions with active RMemory context display the actual user conversation prompts on the dashboard rather than leaking RMemory configuration text like ": - [memory] ...".
+
 ## [1.2.531] - 2026-07-23
+
 
 ### Fixed
 - **Resolved Tool Calls Leaking as Raw Text in Assistant Responses**:

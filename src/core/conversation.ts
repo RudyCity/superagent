@@ -117,7 +117,11 @@ export class Conversation {
         await fs.writeFile(filePath, "", "utf-8");
       } catch {}
       const sid = path.basename(filePath, ".json");
-      const userMessages = this.messages.filter((m) => m.role === "user");
+      const userMessages = this.messages.filter((m) => {
+        if (m.role !== "user") return false;
+        const text = contentToString(m.content);
+        return !text.startsWith("[RMemory Agent Memory Context]:");
+      });
       const firstUser = userMessages[0];
       const lastUser = userMessages[userMessages.length - 1];
       const firstUserText = firstUser ? contentToString(firstUser.content).trim() : "";
@@ -229,7 +233,11 @@ export class Conversation {
         fsSync.writeFileSync(filePath, "");
       } catch {}
       const sid = path.basename(filePath, ".json");
-      const userMessages = this.messages.filter((m) => m.role === "user");
+      const userMessages = this.messages.filter((m) => {
+        if (m.role !== "user") return false;
+        const text = contentToString(m.content);
+        return !text.startsWith("[RMemory Agent Memory Context]:");
+      });
       const firstUser = userMessages[0];
       const lastUser = userMessages[userMessages.length - 1];
       const firstUserText = firstUser ? contentToString(firstUser.content).trim() : "";
