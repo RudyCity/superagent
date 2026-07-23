@@ -269,6 +269,7 @@ ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 - SKILL_CHECK: CALL get_skills(query). If found: CALL use_skill(name).
 ${CONTEXT_ANCHOR_RULE}
+${BROWSER_CONTROL_RULE}
 
 # LOGIC GATES
 if decision_point:
