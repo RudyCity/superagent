@@ -338,7 +338,8 @@ export class Agent {
       tools = tools.filter((t) => !t.name.startsWith("rmemory_"));
     }
 
-    const isServerMode = process.argv.some(arg => arg === "--server" || arg === "-s" || arg === "--server-only") || !!process.env.VITEST;
+    const { browserControlHandler } = await import("./tools/browserMacroTools.js");
+    const isServerMode = process.argv.some(arg => arg === "--server" || arg === "-s" || arg === "--server-only") || !!process.env.VITEST || !!browserControlHandler;
     if (!isServerMode) {
       tools = tools.filter((t) => !t.name.startsWith("control_browser_"));
     }

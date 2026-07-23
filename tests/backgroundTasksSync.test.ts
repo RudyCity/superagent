@@ -27,7 +27,9 @@ describe("Background Tasks Persistence & Sync Tests", () => {
     resetWorkspaceTasksMigrationFlag();
 
     if (fs.existsSync(tempHome)) {
-      fs.rmSync(tempHome, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch (_) {}
     }
     fs.mkdirSync(tempHome, { recursive: true });
     backgroundTasks.clear();

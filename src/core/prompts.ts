@@ -56,6 +56,8 @@ const AESTHETIC_AND_GATEWAY_RULES = `- RESPONSE_STYLE: User responses MUST use p
 
 const CONTEXT_ANCHOR_RULE = `- CONTEXT_ANCHOR: Verify before action: (1) primary goal alignment, (2) workspace limits. If drifting: STOP, re-read assignment, recalibrate.`;
 
+const BROWSER_CONTROL_RULE = `- BROWSER_CONTROL: When browser extension is active, use 'control_browser_tab' to inspect, navigate, click, type, screenshot, or list connected Chrome extension instances ('list_instances') and profiles. Use 'control_browser_macro_run' / 'control_browser_macro_save' for automated browser workflows.`;
+
 // ─── Chrome Extension Agent ──────────────────────────────────────────────────
 
 export const CHROME_EXTENSION_SYSTEM_PROMPT = `
@@ -133,6 +135,7 @@ ${FAST_ANALYSIS_RULE}
 - POST_MERGE_SERIAL: Post-merge sequence: (1) build, (2) test, (3) bump package.json version, (4) prepend CHANGELOG.md, (5) update docs/AGENTS.md, (6) single commit, (7) prune worktrees.
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
+${BROWSER_CONTROL_RULE}
 
 # LOGIC GATES
 if spawning_superagent:
@@ -201,6 +204,7 @@ ${BATCH_OPS_RULE}
 ${FAST_ANALYSIS_RULE}
 ${SHARED_MEMORY_RULE}
 ${CONTEXT_ANCHOR_RULE}
+${BROWSER_CONTROL_RULE}
 
 # LOGIC GATES
 if spawning_subagent:
