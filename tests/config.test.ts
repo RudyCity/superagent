@@ -339,10 +339,11 @@ describe("config", () => {
         deleteSessionFromDb("sess-1");
         deleteSessionFromDb("sess-2");
         deleteSessionFromDb("sess-3");
+        deleteSessionFromDb("sess-4");
       } catch {}
     });
 
-    it("should only return history sessions matching the current active project path or its subdirectories", () => {
+    it("should only return history sessions matching the current active project path or its subdirectories, and exclude empty working directories", () => {
       const mockCwd = "D:\\projects\\my-awesome-project";
       const spyCwd = vi.spyOn(process, "cwd").mockReturnValue(mockCwd);
 
@@ -389,6 +390,20 @@ describe("config", () => {
         []
       );
 
+      // 4. Missing/empty working directory
+      saveSessionToDb(
+        {
+          id: "sess-4",
+          filePath: path.join(getGlobalConfigDir(), "history", "single", "sess-4.json"),
+          displayName: "No Working Directory",
+          messageCount: 2,
+          lastModified: Date.now() + 300,
+          preview: "hello no-wd",
+          workingDirectory: ""
+        },
+        []
+      );
+
       try {
         const sessions = listHistorySessions(false, false);
         expect(sessions.length).toBe(2);
@@ -396,6 +411,7 @@ describe("config", () => {
         expect(displays).toContain("Exact Match");
         expect(displays).toContain("Subdir Match");
         expect(displays).not.toContain("No Match");
+        expect(displays).not.toContain("No Working Directory");
       } finally {
         spyCwd.mockRestore();
       }

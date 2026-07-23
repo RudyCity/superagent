@@ -224,10 +224,18 @@ function renderChatHistory(messages) {
 }
 
 async function loadChatHistorySessions() {
+  const activeWorkspaceText = document.getElementById("active-workspace-text");
+  const workspace = activeWorkspaceText ? activeWorkspaceText.textContent : "";
+
+  if (!workspace || workspace === "Not Selected") {
+    chatHistoryList.innerHTML = '<div class="p-3 text-center text-vscode-muted text-[11px]">Select a workspace to view sessions</div>';
+    return;
+  }
+
   chatHistoryList.innerHTML = '<div class="p-3 text-center text-vscode-muted text-[11px]">Loading sessions...</div>';
   try {
     const mode = typeof currentMode !== "undefined" ? currentMode : "single";
-    const res = await fetch(`${BASE_URL}/api/history/sessions?mode=${mode}`);
+    const res = await fetch(`${BASE_URL}/api/history/sessions?mode=${mode}&workspace=${encodeURIComponent(workspace)}`);
     const data = await res.json().catch(() => null);
     if (res.ok && data && data.success && Array.isArray(data.sessions)) {
       renderChatHistorySessionsList(data.sessions);

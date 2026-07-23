@@ -130,11 +130,14 @@ export class Conversation {
         ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
         : "(no user messages)";
 
-      const cleanName = sid.replace(/_\d+$/, "");
-      const folderPathName = cleanName
-        .replace(/^([a-zA-Z])__/, "$1:\\")
-        .replace(/^_+/, "/")
-        .replace(/_/g, "/");
+      let folderPathName = sid;
+      if (!sid.startsWith("sess_") && !sid.startsWith("session_")) {
+        const cleanName = sid.replace(/_\d+$/, "");
+        folderPathName = cleanName
+          .replace(/^([a-zA-Z])__/, "$1:\\")
+          .replace(/^_+/, "/")
+          .replace(/_/g, "/");
+      }
 
       const formatSnippet = (text: string, maxLen = 45) => {
         let clean = text.replace(/\[(RMemory|TencentDB|Emergency|Context|SYS|System)[^\]]*\]/gi, '')
@@ -246,11 +249,14 @@ export class Conversation {
         ? lastUserText.slice(0, 60).replace(/\n/g, " ") + (lastUserText.length > 60 ? "…" : "")
         : "(no user messages)";
 
-      const cleanName = sid.replace(/_\d+$/, "");
-      const folderPathName = cleanName
-        .replace(/^([a-zA-Z])__/, "$1:\\")
-        .replace(/^_+/, "/")
-        .replace(/_/g, "/");
+      let folderPathName = sid;
+      if (!sid.startsWith("sess_") && !sid.startsWith("session_")) {
+        const cleanName = sid.replace(/_\d+$/, "");
+        folderPathName = cleanName
+          .replace(/^([a-zA-Z])__/, "$1:\\")
+          .replace(/^_+/, "/")
+          .replace(/_/g, "/");
+      }
 
       const formatSnippet = (text: string, maxLen = 45) => {
         let clean = text.replace(/\[(RMemory|TencentDB|Emergency|Context|SYS|System)[^\]]*\]/gi, '')

@@ -2,7 +2,7 @@ import { execa } from "execa";
 import path from "path";
 import { registry } from "./registry.js";
 import { SlashCommand, SlashCommandContext } from "./types.js";
-import { listHistorySessions } from "../config.js";
+import { listHistorySessions, formatSessionLabel } from "../config.js";
 import { searchHistory } from "../historySearch.js";
 import {
   createCheckpoint,
@@ -32,7 +32,7 @@ export const resumeCommand: SlashCommand = {
       return `${Math.floor(diff / 86400)}d ago`;
     };
     const sessionOptions = sessions.map(
-      (s) => `📁 ${s.displayName}  |  ${s.messageCount} msgs  |  ${relTime(s.lastModified)}`
+      (s) => `📁 ${formatSessionLabel(s)}  |  ${s.messageCount} msgs  |  ${relTime(s.lastModified)}`
     );
     ctx.setActiveWizard?.({
       type: "resume",
@@ -531,7 +531,7 @@ export const sessionSlashCommand: SlashCommand = {
       const lines = [`📋 Active & Past Sessions (${isAll ? "All Workspaces" : "Current Workspace"}):`, ""];
       for (const s of sessions) {
         lines.push(`  ID: ${s.id}`);
-        lines.push(`  Name: ${s.displayName || "(unnamed)"} | Msgs: ${s.messageCount} | Last Modified: ${s.lastModified.toLocaleString()}`);
+        lines.push(`  Name: ${formatSessionLabel(s)} | Msgs: ${s.messageCount} | Last Modified: ${s.lastModified.toLocaleString()}`);
         lines.push("");
       }
       ctx.addLine({ type: "system", content: lines.join("\n"), timestamp: now });

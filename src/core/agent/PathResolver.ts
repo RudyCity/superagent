@@ -49,7 +49,10 @@ export class PathResolver {
     }
 
     if (typeof autoResume === "string" && autoResume.trim() !== "") {
-      const val = autoResume.trim();
+      let val = autoResume.trim();
+      if (val.startsWith("sess/") || val.startsWith("session/")) {
+        val = val.replace(/\//g, "_");
+      }
       if (fs.existsSync(val) && val.endsWith(".json")) {
         return val;
       }

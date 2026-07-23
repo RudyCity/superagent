@@ -40,6 +40,26 @@ export interface HistorySession {
   lastChat?: string;
 }
 
+/** Build a display label from firstChat/lastChat, falling back to displayName */
+export function formatSessionLabel(s: HistorySession): string {
+  const clean = (t?: string) => t
+    ?.replace(/\[(RMemory|TencentDB|Emergency|Context|SYS|System)[^\]]*\]/gi, "")
+    .replace(/<\/?user_request>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/^(\/[a-zA-Z0-9_-]+\s*)+/g, "")
+    .replace(/\n/g, " ")
+    .trim() || "";
+  const first = clean(s.firstChat);
+  const last = clean(s.lastChat);
+  if (first && last && first.toLowerCase() !== last.toLowerCase()) {
+    const cap = (t: string, n: number) => t.length > n ? t.slice(0, n).trim() + "…" : t;
+    return `${cap(first, 25)} → ${cap(last, 25)}`;
+  }
+  if (first) return first.length > 50 ? first.slice(0, 50).trim() + "…" : first;
+  if (last) return last.length > 50 ? last.slice(0, 50).trim() + "…" : last;
+  return s.displayName || s.id;
+}
+
 interface HistoryCacheEntry {
   timestamp: number;
   data: HistorySession[];
@@ -139,8 +159,8 @@ export function listHistorySessions(isMulti = false, crossSession = false, works
       if (normalizedPath.includes("/superagents/") || normalizedPath.includes("/subagents/")) {
         continue;
       }
-      if (!crossSession && s.workingDirectory) {
-        if (!normalizeAndCheckSubpath(s.workingDirectory, currentDir)) {
+      if (!crossSession) {
+        if (!s.workingDirectory || !normalizeAndCheckSubpath(s.workingDirectory, currentDir)) {
           continue;
         }
       }

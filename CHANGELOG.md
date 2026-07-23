@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.533] - 2026-07-23
+
+### Fixed
+- **Filter Chrome Extension Chat History Sessions by Workspace**:
+  - Scoped the history sessions retrieval endpoint in the Chrome Extension's side panel to request and filter sessions based on the currently active workspace.
+  - Added a placeholder message in the history tab prompt when no workspace is active to prompt the user to select one.
+  - Modified the backend session list implementation (`listHistorySessions` in `history.ts`) to strictly exclude sessions with empty/missing working directories when filtering by workspace path, and added unit tests to verify.
+
 ## [1.2.532] - 2026-07-23
 
 ### Fixed
