@@ -6,6 +6,7 @@ This file contains key information about the project for AI agents to study and 
 - **Name**: Superagent
 - **Description**: An interactive, terminal-based AI coding assistant featuring a cyberpunk style terminal UI, context token tracking, and a 3-tier multi-agent orchestration system (Master Agent → Superagent → Subagent).
 - **Technology Stack**: Node.js, TypeScript, React, Ink (Terminal UI Components), Vercel AI SDK, Execa, Vitest
+- **Desktop Client Integration (t-line)**: Superagent integrates with [t-line](file:///D:/backup%20from%20pc%20asus/Documents%20Development/t-line), which is the desktop version of the superagent CLI. This is supported via a client/server bridge mode (`superagent --server [port] --client-mode tline`).
 
 ## 3-Tier Multi-Agent Architecture
 

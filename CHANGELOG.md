@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.535] - 2026-07-23
+
+### Documentation
+- **Integrations**: Documented the integration between Superagent and `t-line` desktop client in [AGENTS.md](file:///d:/backup%20from%20pc%20asus/Documents%20Development/superagent/AGENTS.md).
+
 ## [1.2.534] - 2026-07-23
 
 ### Fixed
