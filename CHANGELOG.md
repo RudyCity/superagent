@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.537] - 2026-07-23
+
+### Changed
+- **Global History Sessions in Terminal UI**: Removed workspace-specific path filtering from the `/resume` wizard, `/session list` slash command, keyboard handler wizard, and dashboard wizard. This allows all history sessions to be listed and accessible in the CLI/terminal UI regardless of the active workspace directory.
+
 ## [1.2.536] - 2026-07-23
 
 ### Removed

@@ -1357,7 +1357,7 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
         }
         if (key.return) {
           const isMulti = agentRef.current?.isMultiAgent || false;
-          const sessions = listHistorySessions(isMulti, false, agentRef.current?.workingDirectory, 20).slice(0, 10);
+          const sessions = listHistorySessions(isMulti, false, undefined, 20).slice(0, 10);
           const chosen = sessions[wizardSelectedIndex];
           if (!chosen) return;
           const now = Date.now();
