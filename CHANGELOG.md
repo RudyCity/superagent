@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.528] - 2026-07-23
+
+### Fixed
+- **Optimized `tests/androidSetup.test.ts` Execution**:
+  - Added conditional mock setup and deferred dynamic import of `androidSetup` module in tests, enabling execution-level mocks for both Vitest and Bun test runner environments. This prevents `bun test` from executing slow, blocking real-world `execa` commands on Windows.
+
 ## [1.2.527] - 2026-07-23
 
 ### Fixed
