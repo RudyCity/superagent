@@ -103,10 +103,7 @@ After all tasks complete, dispatch final code-reviewer:
 
 ### 7. Complete Development
 
-After final review passes:
-- Announce: "I'm using the Finishing a Development Branch skill to complete this work."
-- Switch to skills/collaboration/finishing-a-development-branch
-- Follow that skill to verify tests, present options, execute choice
+After final review passes, proceed to integrate the work (e.g. merge the branch locally, push and create a PR, or request feedback).
 
 ## Example Workflow
 

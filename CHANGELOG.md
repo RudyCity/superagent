@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.536] - 2026-07-23
+
+### Removed
+- **Finishing a Development Branch Skill**: Removed the skill, cleaned up files referencing it, and updated configuration to reflect the deletion.
+
 ## [1.2.535] - 2026-07-23
 
 ### Documentation

@@ -211,5 +211,4 @@ Ready to implement auth feature
 - Any skill needing isolated workspace
 
 **Pairs with:**
-- skills/collaboration/finishing-a-development-branch (cleanup)
 - skills/collaboration/executing-plans (work happens here)

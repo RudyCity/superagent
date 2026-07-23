@@ -43,12 +43,6 @@
       "skillPath": "skills/collaboration/executing-plans/SKILL.md",
       "computedHash": "86f75db6d7e4fd2fc6ad26dea788c0ac9ccf07f0d9abac49022e6cf5b0c1e0d4"
     },
-    "Finishing a Development Branch": {
-      "source": "obra/superpowers-skills",
-      "sourceType": "github",
-      "skillPath": "skills/collaboration/finishing-a-development-branch/SKILL.md",
-      "computedHash": "5482c6b626f84793bd68cfb2f8a52a2c8ba4c7de465f151e946ae1221277c5f2"
-    },
     "Gardening Skills Wiki": {
       "source": "obra/superpowers-skills",
       "sourceType": "github",

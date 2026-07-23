@@ -28,7 +28,6 @@ const OBRA_SKILLS = new Set([
   "dispatching-parallel-agents",
   "executing-plans",
   "find-skills",
-  "finishing-a-development-branch",
   "gardening-skills-wiki",
   "getting-started-with-skills",
   "inversion-exercise",

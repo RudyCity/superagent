@@ -232,4 +232,3 @@ Fix: Always pass `fileScope: [...]` to `invoke_subagent`. It is auto-injected st
 - `superagent-planning` — use `manage_plan` to create assignment-annotated plans
 - `using-git-worktrees` — worktree lifecycle management
 - `dispatching-parallel-agents` — when to dispatch; use THIS skill for coordination
-- `finishing-a-development-branch` — Phase 3 cleanup and merge
