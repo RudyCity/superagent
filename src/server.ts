@@ -130,17 +130,6 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
 
   if (wsPath) {
     wsPath = path.resolve(wsPath);
-    const session = activeSessions.get(`${reqClientMode}:${wsPath}`);
-    if (session) {
-      if (targetSessionId) {
-        session.sessionId = targetSessionId;
-      }
-      session.lastActiveTime = Date.now();
-      return session;
-    }
-  }
-  
-  if (wsPath) {
     for (const [key, session] of activeSessions.entries()) {
       if (session.clientMode === reqClientMode && session.workspace.toLowerCase() === wsPath.toLowerCase()) {
         if (targetSessionId) {
@@ -177,7 +166,7 @@ function resolveWorkspacePath(req: http.IncomingMessage): string {
 
 export function registerCliAgent(agent: Agent, workspace: string, mode: "single" | "multi", clientMode: ClientMode = "tline") {
   const targetWorkspace = path.resolve(workspace);
-  activeSessions.set(`${clientMode}:${targetWorkspace}`, {
+  activeSessions.set(`${clientMode}:${targetWorkspace}:cli`, {
     agent,
     workspace: targetWorkspace,
     mode,

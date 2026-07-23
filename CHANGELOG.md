@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.529] - 2026-07-23
+
+### Fixed
+- **Prevented CLI and Server Session Collision**:
+  - Differentiated map keys for active CLI and Server sessions using `:cli` and `:server` suffixes. This allows a terminal CLI session and a desktop app session running in the same workspace to coexist seamlessly, preventing them from overwriting each other in the server's session registry.
+
 ## [1.2.528] - 2026-07-23
 
 ### Fixed
