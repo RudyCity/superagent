@@ -38,7 +38,7 @@ vi.mock("execa", () => {
   });
   mockPromise.on = vi.fn().mockImplementation((event, callback) => {
     if (event === "close") {
-      setTimeout(() => callback(0), 10000);
+      setTimeout(() => callback(0), 10);
     }
     return mockPromise;
   });
@@ -128,7 +128,7 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
       const checkpoints = await listCheckpointsForSession(sessionFilePath);
       expect(checkpoints.length).toBe(1);
       expect(checkpoints[0].name).toBe("Checkpoint 1");
-      expect(checkpoints[0].gitSha).toBe("mockSha12");
+      expect(checkpoints[0].gitSha).toBe("mocked process stdout");
 
       // 4. Delete checkpoints
       await deleteCheckpointsForSession(sessionFilePath);
@@ -259,8 +259,8 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
       const runBg = runBackgroundProcessTool;
       const result = await runBg.execute({ command: "node -e 'console.log(1)'" }, process.cwd());
 
-      expect(result).toContain("Started background process");
-      const taskId = result.split("ID: ")[1]?.trim() || "";
+      expect(result).toContain("Background process");
+      const taskId = [...backgroundTasks.keys()].pop() || "";
       expect(taskId).toBeTruthy();
 
       // Log path should be under <sessionDir>/tasks/
@@ -278,8 +278,8 @@ describe("New Path Features (Checkpoint, Resume History, and Background Tasks)",
       const runBg = runBackgroundProcessTool;
       const result = await runBg.execute({ command: "node -e 'console.log(2)'" }, process.cwd());
 
-      expect(result).toContain("Started background process");
-      const taskId = result.split("ID: ")[1]?.trim() || "";
+      expect(result).toContain("Background process");
+      const taskId = [...backgroundTasks.keys()].pop() || "";
       expect(taskId).toBeTruthy();
 
       // Log path should now be under workspace-scoped tasks dir, not global

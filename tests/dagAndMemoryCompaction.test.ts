@@ -78,6 +78,7 @@ describe("DAG Cycle Detection", () => {
         role: "B",
         branch: "branch-b",
         task: "task b",
+        mode: "patch",
         dependsOn: ["A"],
       }, process.cwd());
 
@@ -105,6 +106,7 @@ describe("DAG Cycle Detection", () => {
         role: "B",
         branch: "branch-b",
         task: "task b",
+        mode: "patch",
         dependsOn: ["A"],
       }, process.cwd());
 
@@ -146,6 +148,7 @@ describe("DAG Cycle Detection", () => {
         role: "C",
         branch: "branch-c",
         task: "task c",
+        mode: "patch",
         dependsOn: ["A"],
       }, process.cwd());
 
