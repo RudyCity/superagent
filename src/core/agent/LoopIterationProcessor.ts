@@ -138,6 +138,16 @@ export class LoopIterationProcessor {
                 }),
               });
 
+              let xmlFilter: any = null;
+              try {
+                const { StreamXmlFilter } = await import("../../utils/xmlToolParser.js");
+                xmlFilter = new StreamXmlFilter((text) => {
+                  agent.onEvent({ type: "text", content: text });
+                }, toolDefs);
+              } catch (err: any) {
+                agent.writeToLogFile("WARN", `Failed to initialize StreamXmlFilter: ${err.message}`);
+              }
+
               for await (const delta of resultStream.fullStream) {
                 if (signal?.aborted) {
                   const err = new Error("AbortError");
@@ -146,7 +156,11 @@ export class LoopIterationProcessor {
                 }
                 if (delta.type === "text-delta") {
                   textContent += delta.textDelta;
-                  agent.onEvent({ type: "text", content: delta.textDelta });
+                  if (xmlFilter) {
+                    xmlFilter.push(delta.textDelta);
+                  } else {
+                    agent.onEvent({ type: "text", content: delta.textDelta });
+                  }
                 } else if ((delta.type as string) === "reasoning" || (delta.type as string) === "reasoning-delta") {
                   const reasoningText = (delta as any).reasoning || (delta as any).reasoningDelta || (delta as any).delta || "";
                   if (reasoningText) {
@@ -164,6 +178,10 @@ export class LoopIterationProcessor {
                 } else if (delta.type === "error") {
                   throw delta.error instanceof Error ? delta.error : new Error(formatError(delta.error));
                 }
+              }
+
+              if (xmlFilter) {
+                xmlFilter.flush();
               }
 
               try {
@@ -489,14 +507,12 @@ export class LoopIterationProcessor {
             });
 
             textContent = result.text || "";
-            if (textContent) {
-              agent.onEvent({ type: "text", content: textContent });
-            }
             reasoningContent = (result as any).reasoning || "";
             if (reasoningContent) {
               agent.onEvent({ type: "reasoning", content: reasoningContent });
             }
 
+            let cleanText = textContent;
             try {
               const { parseXmlToolCalls } = await import("../../utils/xmlToolParser.js");
               const parsed = parseXmlToolCalls(textContent, toolDefs);
@@ -509,7 +525,12 @@ export class LoopIterationProcessor {
                   });
                 }
               }
+              cleanText = parsed.cleanText;
             } catch {}
+
+            if (cleanText) {
+              agent.onEvent({ type: "text", content: cleanText });
+            }
 
             if (!textContent.trim() && toolCalls.length === 0) {
               throw new Error("Empty response from model. Check your endpoint/model config.");
@@ -623,6 +644,28 @@ export class LoopIterationProcessor {
     } finally {
       if (concurrencyAcquired) {
         concurrencyLimiter.release();
+      }
+    }
+
+    if (textContent.trim()) {
+      try {
+        const { parseXmlToolCalls } = await import("../../utils/xmlToolParser.js");
+        const parsed = parseXmlToolCalls(textContent, toolDefs);
+        if (parsed.toolCalls && parsed.toolCalls.length > 0) {
+          for (const tc of parsed.toolCalls) {
+            const isDuplicate = toolCalls.some(
+              (existing) =>
+                existing.name === tc.name &&
+                JSON.stringify(existing.args) === JSON.stringify(tc.args)
+            );
+            if (!isDuplicate) {
+              toolCalls.push(tc);
+            }
+          }
+        }
+        textContent = parsed.cleanText;
+      } catch (err: any) {
+        agent.writeToLogFile("WARN", `Failed to parse XML tool calls: ${err.message}`);
       }
     }
 

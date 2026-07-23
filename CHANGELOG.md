@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.531] - 2026-07-23
+
+### Fixed
+- **Resolved Tool Calls Leaking as Raw Text in Assistant Responses**:
+  - Restored the XML tool call parsing and cleanup block at the end of the agent loop iteration in `LoopIterationProcessor.ts` that was accidentally removed during the modularization refactoring of `agent.ts`.
+  - Re-integrated `StreamXmlFilter` in the text-delta streaming loop inside `LoopIterationProcessor.ts` to block and filter raw XML tool call tags (e.g. `<tool_call>`) from being streamed in real-time.
+  - Ensured only cleaned assistant response text is stored in history and emitted via `onEvent`, resolving issues where raw `<tool_call>` elements and JSON payloads would leak onto the user terminal and Chrome Extension chat interface.
+
 ## [1.2.530] - 2026-07-23
 
 ### Fixed
