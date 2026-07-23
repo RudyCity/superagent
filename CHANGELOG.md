@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.530] - 2026-07-23
+
+### Fixed
+- **Disabled Local Request Classifier by Default**:
+  - Changed the default value of `classifierEnabled` from `true` to `false` in `jsonConfig.ts` and set it to `false` in the user's `model-config.json` settings.
+  - This avoids loading and running the local `Sharjeelbaig/Supra-Router-51M-ONNX` classifier model via `transformers.js` on CPU-only machines. On CPU, the ONNX model inference blocks the Node.js event loop completely, causing the superagent server to freeze and experience extremely long "thinking" delays (~1 minute per simple message) without displaying any streaming response.
+
 ## [1.2.529] - 2026-07-23
 
 ### Fixed

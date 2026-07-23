@@ -791,7 +791,7 @@ export function getSettings(): SystemSettings {
     maxIterations: s.maxIterations ?? 50,
     simpleTaskFileThreshold: s.simpleTaskFileThreshold ?? 3,
     simpleTaskKeywords: s.simpleTaskKeywords ?? ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'],
-    classifierEnabled: s.classifierEnabled ?? true,
+    classifierEnabled: s.classifierEnabled ?? false,
     classifierConfidenceThreshold: s.classifierConfidenceThreshold ?? "high",
     classifierKeywords: s.classifierKeywords ?? {},
     rmemoryGatewayUrl: s.rmemoryGatewayUrl ?? "http://127.0.0.1:8420",
