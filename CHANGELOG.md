@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.527] - 2026-07-23
+
+### Fixed
+- **Resolved Cross-Workspace Session Hijack Mismatch**:
+  - Restrained resolveSession's active CLI session fallback so it only routes requests if the requested workspace path matches the CLI session's workspace path (or if no workspace path was requested). This stops multiple clients/environments with different workspaces (like desktop t-line) from accidentally hijacking and routing messages to an unrelated active terminal session.
+
 ## [1.2.526] - 2026-07-23
 
 ### Optimized

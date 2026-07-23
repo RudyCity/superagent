@@ -154,8 +154,10 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
 
   for (const session of activeSessions.values()) {
     if (session.clientMode === reqClientMode && session.isCliSession) {
-      session.lastActiveTime = Date.now();
-      return session;
+      if (!wsPath || session.workspace.toLowerCase() === wsPath.toLowerCase()) {
+        session.lastActiveTime = Date.now();
+        return session;
+      }
     }
   }
   
