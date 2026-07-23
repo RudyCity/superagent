@@ -55,6 +55,7 @@ export interface SubagentInstance {
   role: string;
   prompt?: string;
   agent: any;
+  parentAgent?: any;
   status: "idle" | "running" | "completed" | "paused" | "error" | "waiting";
   logs: string[];
   result?: string;
@@ -73,6 +74,7 @@ export interface SuperagentInstance {
   branch: string;
   worktreePath: string;
   agent: any;
+  parentAgent?: any;
   status: "running" | "completed" | "error" | "paused" | "waiting" | "terminated";
   logs: string[];
   result?: string;

@@ -33,11 +33,11 @@ describe("prompt and command guidance", () => {
   it("keeps prompt hardening guidance aligned", () => {
     const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
 
-    expect(prompts).toContain("kill ONLY its specific process ID");
+    expect(prompts).toContain("Kill ONLY target PID");
     expect(prompts).not.toContain("taskkill /F /IM bun.exe");
     expect(prompts).not.toContain("## Rencana Perubahan");
-    expect(prompts).toContain("Final user responses use plain terminal text only");
-    expect(prompts).toContain("spawn a researcher Superagent only for broad or multi-domain exploration");
+    expect(prompts).toContain("User responses MUST use plain terminal text only");
+    expect(prompts).toContain("spawn 'researcher' subagent for broad mapping");
   });
 
   it("documents tool failure recovery guidance", () => {
@@ -49,7 +49,7 @@ describe("prompt and command guidance", () => {
     expect(configBase).toContain("Use action 'report' (singular), not 'reports'");
     expect(configBase).toContain("npm.cmd");
 
-    expect(prompts).toContain("Edit failures: Do not repeat stale exact-match edits");
+    expect(prompts).toContain("Failures: Re-read target range, apply line-range replacement. Avoid repeating stale edits.");
     expect(prompts).toContain("DIRTY_WORKSPACE");
   });
 
@@ -57,8 +57,8 @@ describe("prompt and command guidance", () => {
     const prompts = fs.readFileSync(path.resolve(process.cwd(), "src/core/prompts.ts"), "utf-8");
     const base = fs.readFileSync(path.resolve(process.cwd(), "src/core/config/base.ts"), "utf-8");
 
-    expect(prompts).toContain("Batch all multi-file, multi-edit, multi-task, and multi-agent operations");
-    expect(prompts).toContain("Sequential single-item calls are allowed only when one item exists");
+    expect(prompts).toContain("BATCH_OPS: Execute consolidated parallel delta operations");
+    expect(prompts).toContain("subagents/superagents: Issue multiple invoke_* tool calls concurrently");
     expect(base).toContain("Plan batches upfront");
     expect(base).toContain("conversationIds");
   });

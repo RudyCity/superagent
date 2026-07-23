@@ -374,7 +374,7 @@ export async function handleServerRoute(
     const targetClientMode = resolveClientMode(req, body, serverDefaultClientMode);
     const sessionId = customSessionId || resume || generateSessionId();
 
-    const existingSession = activeSessions.get(targetWorkspace);
+    const existingSession = activeSessions.get(`${targetClientMode}:${targetWorkspace}`);
     if (
       existingSession &&
       existingSession.sessionId === sessionId &&
@@ -405,7 +405,7 @@ export async function handleServerRoute(
       try { await agent.loadHistory(resume); } catch {}
     }
 
-    activeSessions.set(targetWorkspace, {
+    activeSessions.set(`${targetClientMode}:${targetWorkspace}`, {
       agent,
       workspace: targetWorkspace,
       mode: targetMode,
@@ -1317,7 +1317,7 @@ export async function handleServerRoute(
     const targetMode = mode === "multi" ? "multi" : "single";
     const targetClientMode = resolveClientMode(req, body, serverDefaultClientMode);
 
-    let session = activeSessions.get(targetWorkspace);
+    let session = activeSessions.get(`${targetClientMode}:${targetWorkspace}`);
     if (!session || session.mode !== targetMode || session.clientMode !== targetClientMode) {
       if (session && session.agent.isAgentRunning()) session.agent.abort();
 
@@ -1334,7 +1334,7 @@ export async function handleServerRoute(
         sessionId,
         isCliSession: false
       };
-      activeSessions.set(targetWorkspace, session);
+      activeSessions.set(`${targetClientMode}:${targetWorkspace}`, session);
     } else {
       if (session.agent.isAgentRunning()) session.agent.abort();
     }

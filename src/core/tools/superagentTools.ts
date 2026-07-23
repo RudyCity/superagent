@@ -599,6 +599,7 @@ export const invokeSuperagentTool: Tool = {
       branch,
       worktreePath,
       agent: agentInstance,
+      parentAgent,
       status: "running" as const,
       logs,
       tokenUsage: { prompt: 0, completion: 0 },

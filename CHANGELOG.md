@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.525] - 2026-07-23
+
+### Fixed
+- **Resolved Server-CLI Chat Session Routing Conflict**:
+  - Keyed active sessions in the server map by `${clientMode}:${targetWorkspace}` to allow concurrent CLI and Chrome Extension sessions for the same workspace path.
+  - Refactored `resolveSession` to match sessions against the request's client mode (using `resolveClientMode`), preventing extension requests from resolving to CLI sessions.
+  - Added `parentAgent` tracking to subagent and superagent instances, and updated server event subscribers to match completed children only to their spawning parent agent session.
+  - Fixed pre-existing Vitest test failures in `server2.test.ts` (preset config naming mismatch) and `promptToolGuidance.test.ts` (assertions outdated relative to minified system prompts).
+
 ## [1.2.524] - 2026-07-22
 
 ### Fixed

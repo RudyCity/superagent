@@ -547,6 +547,7 @@ export const invokeSubagentTool: Tool = {
       role,
       prompt,
       agent: agentInstance,
+      parentAgent,
       status: "running",
       logs,
       parentId,

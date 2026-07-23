@@ -117,10 +117,11 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
   let wsPath = req.headers["x-workspace-path"] as string || parsedUrl.searchParams.get("workspace");
   const querySessionId = parsedUrl.searchParams.get("sessionId");
   const targetSessionId = requestedSessionId || querySessionId;
+  const reqClientMode = resolveClientMode(req);
 
   if (targetSessionId) {
     for (const session of activeSessions.values()) {
-      if (session.sessionId === targetSessionId) {
+      if (session.sessionId === targetSessionId && session.clientMode === reqClientMode) {
         session.lastActiveTime = Date.now();
         return session;
       }
@@ -129,7 +130,7 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
 
   if (wsPath) {
     wsPath = path.resolve(wsPath);
-    const session = activeSessions.get(wsPath);
+    const session = activeSessions.get(`${reqClientMode}:${wsPath}`);
     if (session) {
       if (targetSessionId) {
         session.sessionId = targetSessionId;
@@ -141,7 +142,7 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
   
   if (wsPath) {
     for (const [key, session] of activeSessions.entries()) {
-      if (key.toLowerCase() === wsPath.toLowerCase()) {
+      if (session.clientMode === reqClientMode && session.workspace.toLowerCase() === wsPath.toLowerCase()) {
         if (targetSessionId) {
           session.sessionId = targetSessionId;
         }
@@ -152,7 +153,7 @@ function resolveSession(req: http.IncomingMessage, requestedSessionId?: string):
   }
 
   for (const session of activeSessions.values()) {
-    if (session.isCliSession) {
+    if (session.clientMode === reqClientMode && session.isCliSession) {
       session.lastActiveTime = Date.now();
       return session;
     }
@@ -174,7 +175,7 @@ function resolveWorkspacePath(req: http.IncomingMessage): string {
 
 export function registerCliAgent(agent: Agent, workspace: string, mode: "single" | "multi", clientMode: ClientMode = "tline") {
   const targetWorkspace = path.resolve(workspace);
-  activeSessions.set(targetWorkspace, {
+  activeSessions.set(`${clientMode}:${targetWorkspace}`, {
     agent,
     workspace: targetWorkspace,
     mode,
@@ -373,7 +374,10 @@ subscribeToSubagents(() => {
       });
 
       for (const session of activeSessions.values()) {
-        if (path.resolve(session.workspace) === path.resolve(inst.agent.workingDirectory) && !session.agent.isAgentRunning()) {
+        const isMatch = inst.parentAgent
+          ? session.agent === inst.parentAgent
+          : path.resolve(session.workspace) === path.resolve(inst.agent.workingDirectory);
+        if (isMatch && !session.agent.isAgentRunning()) {
           broadcastEvent({
             type: "agent_event",
             event: {
@@ -406,7 +410,10 @@ subscribeToSuperagents(() => {
       });
 
       for (const session of activeSessions.values()) {
-        if (path.resolve(session.workspace) === path.resolve(inst.agent.workingDirectory) && !session.agent.isAgentRunning()) {
+        const isMatch = inst.parentAgent
+          ? session.agent === inst.parentAgent
+          : path.resolve(session.workspace) === path.resolve(inst.agent.workingDirectory);
+        if (isMatch && !session.agent.isAgentRunning()) {
           broadcastEvent({
             type: "agent_event",
             event: {

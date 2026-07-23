@@ -70,7 +70,7 @@ describe("agentOptimizations", () => {
       expect(researcherPrompt).toContain("Research Subagent");
       expect(researcherPrompt).toContain("CRITICAL RULES");
 
-      expect(coderPrompt).toContain("LOCATE");
+      expect(coderPrompt).toContain("SCOPE_GUARD");
       expect(coderPrompt).toContain("CRITICAL RULES");
     });
   });

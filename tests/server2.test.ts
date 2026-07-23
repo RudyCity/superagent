@@ -436,7 +436,7 @@ describe("POST /api/config", () => {
 
   it("returns success when setting activePresetId.single", async () => {
     const { status, body } = await postJSON(port, "/api/config", {
-      activePresetId: { single: "default" },
+      activePresetId: { single: "default-single" },
     });
     expect(status).toBe(200);
     expect(body.success).toBe(true);
