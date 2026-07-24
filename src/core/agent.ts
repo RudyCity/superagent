@@ -88,7 +88,7 @@ export class Agent {
   public currentClassification: import("./requestClassifier.js").ClassificationResult | null = null;
   public lastSpeed: number | null = null;
   public goalMode: string | null = null;
-  public goalMaxIterations: number = 200;
+  public goalMaxIterations: number = Infinity;
   public wasRunningBeforeAbort = false;
   public allowSessionOutOfBounds = false;
   /** Separate flag — file write tools (write_to_file, replace_file_content, etc.) are NEVER granted session-wide bypass. */

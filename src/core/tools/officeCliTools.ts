@@ -1,6 +1,7 @@
 import { execa } from "execa";
 import { Tool } from "./types.js";
 import { resolveFilePathFromArgs } from "./pathHelpers.js";
+import { getLocalOfficeCliPath, isOfficeCliInstalledLocally } from "../androidSetup.js";
 
 export const officeCliTool: Tool = {
   name: "office_cli",
@@ -32,9 +33,11 @@ export const officeCliTool: Tool = {
       return "Error: Empty command parameter";
     }
 
+    const bin = (await isOfficeCliInstalledLocally()) ? getLocalOfficeCliPath() : "officecli";
+
     // Attempt to execute officecli
     try {
-      const { stdout, stderr } = await execa("officecli", cleanParts, {
+      const { stdout, stderr } = await execa(bin, cleanParts, {
         cwd,
         reject: false,
         signal,

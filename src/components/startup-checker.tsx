@@ -17,6 +17,7 @@ import {
   isUvInstalledLocally,
   isUvInstalledGlobally,
   isPythonInstalled,
+  isOfficeCliInstalledLocally,
   isOfficeCliInstalledGlobally,
   isRmemoryInstalled
 } from "../core/androidSetup.js";
@@ -219,7 +220,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
 
       // 7. Office CLI check & setup
       updateTask("officeCli", { status: "checking" });
-      const hasOfficeCli = await isOfficeCliInstalledGlobally();
+      const hasOfficeCli = (await isOfficeCliInstalledLocally()) || (await isOfficeCliInstalledGlobally());
       if (hasOfficeCli) {
         updateTask("officeCli", { status: "ready" });
       } else {

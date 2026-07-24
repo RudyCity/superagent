@@ -25,7 +25,7 @@ async function fetchWithRetry(url: string, retries = 3, delay = 2000): Promise<R
   throw new Error(`Failed to fetch ${url}`);
 }
 
-export type DownloadProgressCallback = (downloaded: number, total: number, stage: "downloading" | "extracting" | "done") => void;
+export type DownloadProgressCallback = (downloaded: number, total: number, stage: "downloading" | "extracting" | "done" | "error") => void;
 
 async function downloadFileWithProgress(
   url: string,
@@ -114,6 +114,23 @@ export function getLocalBinDir(): string {
 export function getLocalRgPath(): string {
   const isWin = process.platform === "win32";
   return path.join(getLocalBinDir(), isWin ? "rg.exe" : "rg");
+}
+
+export function getLocalOfficeCliPath(): string {
+  const isWin = process.platform === "win32";
+  return path.join(getLocalBinDir(), isWin ? "officecli.exe" : "officecli");
+}
+
+let cachedOfficeCliInstalledLocally: boolean | null = null;
+export async function isOfficeCliInstalledLocally(): Promise<boolean> {
+  if (cachedOfficeCliInstalledLocally !== null) return cachedOfficeCliInstalledLocally;
+  try {
+    await fs.access(getLocalOfficeCliPath());
+    cachedOfficeCliInstalledLocally = true;
+  } catch {
+    cachedOfficeCliInstalledLocally = false;
+  }
+  return cachedOfficeCliInstalledLocally;
 }
 
 let cachedRgInstalledLocally: boolean | null = null;
@@ -489,73 +506,95 @@ export async function isOfficeCliInstalledGlobally(): Promise<boolean> {
   }
 }
 
+function getOfficeCliBinaryName(): string {
+  const platform = process.platform;
+  const arch = process.arch;
+
+  if (platform === "win32") {
+    return arch === "arm64" ? "officecli-win-arm64.exe" : "officecli-win-x64.exe";
+  } else if (platform === "darwin") {
+    return arch === "arm64" ? "officecli-darwin-arm64" : "officecli-darwin-x64";
+  } else {
+    return arch === "arm64" ? "officecli-linux-arm64" : "officecli-linux-x64";
+  }
+}
+
 export async function ensureOfficeCliInstalled(onProgress?: DownloadProgressCallback): Promise<void> {
   try {
     await logSetupDebug("Starting Office CLI installation check...");
-    if (await isOfficeCliInstalledGlobally()) {
-      await logSetupDebug("Office CLI is already installed globally.");
+    if ((await isOfficeCliInstalledLocally()) || (await isOfficeCliInstalledGlobally())) {
+      await logSetupDebug("Office CLI is already installed locally or globally.");
       if (onProgress) onProgress(0, 0, "done");
       return;
     }
 
-    await logSetupDebug("Office CLI is not installed globally. Initiating auto-installation...");
+    await logSetupDebug("Office CLI not found. Initiating direct binary download...");
     if (onProgress) {
       onProgress(0, 0, "downloading");
     } else {
-      console.log("\n⚡ [SYSTEM] officecli not found. Downloading and installing... Please wait.");
+      console.log("\n⚡ [SYSTEM] officecli not found. Downloading binary... Please wait.");
     }
 
-    const isWin = process.platform === "win32";
-    if (isWin) {
-      const tempPs1 = path.join(os.tmpdir(), "install-officecli.ps1");
-      const url = "https://d.officecli.ai/install.ps1";
-      await logSetupDebug(`Downloading Windows installer from ${url}...`);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Failed to download officecli installer: HTTP ${res.status}`);
-      let text = await res.text();
-      
-      // Prepend ProgressPreference to avoid Invoke-WebRequest hangs
-      text = `$ProgressPreference = 'SilentlyContinue';\r\n` + text;
-      // Add Unblock-File to prevent Windows SmartScreen block hangs
-      text = text.replace(/&\s*\$tempFile\s*--version/, "Unblock-File $tempFile; & $tempFile --version");
-      
-      await logSetupDebug(`Writing Windows installer to temporary file: ${tempPs1}`);
-      await fs.writeFile(tempPs1, text);
-      
-      await logSetupDebug("Running powershell.exe script execution under ByPass policy...");
-      await execa("powershell.exe", ["-ExecutionPolicy", "ByPass", "-File", tempPs1], { timeout: 60000 });
-      await logSetupDebug("powershell.exe installer completed successfully.");
-      try {
-        await fs.unlink(tempPs1);
-      } catch {}
-    } else {
-      const tempSh = path.join(os.tmpdir(), "install-officecli.sh");
-      const url = "https://d.officecli.ai/install.sh";
-      await logSetupDebug(`Downloading Unix installer from ${url}...`);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Failed to download officecli installer: HTTP ${res.status}`);
-      const text = await res.text();
-      
-      await logSetupDebug(`Writing Unix installer to temporary file: ${tempSh}`);
-      await fs.writeFile(tempSh, text);
-      
-      await logSetupDebug("Running bash script execution...");
-      await execa("bash", [tempSh], { timeout: 60000 });
-      await logSetupDebug("bash installer completed successfully.");
-      try {
-        await fs.unlink(tempSh);
-      } catch {}
+    const binName = getOfficeCliBinaryName();
+    const url = `https://d.officecli.ai/releases/latest/download/${binName}`;
+    await logSetupDebug(`Downloading Office CLI binary from ${url}...`);
+
+    const res = await fetchWithRetry(url);
+    if (!res.ok) throw new Error(`Failed to download Office CLI binary: HTTP ${res.status}`);
+
+    const totalStr = res.headers.get("content-length");
+    const totalBytes = totalStr ? parseInt(totalStr, 10) : 0;
+    let downloadedBytes = 0;
+
+    const binDir = getLocalBinDir();
+    await fs.mkdir(binDir, { recursive: true });
+
+    const localPath = getLocalOfficeCliPath();
+    const tempPath = `${localPath}.tmp`;
+
+    if (!res.body) throw new Error("ReadableStream not supported by fetch response body");
+
+    const reader = (res.body as any).getReader();
+    const chunks: Uint8Array[] = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        downloadedBytes += value.length;
+        if (onProgress) {
+          onProgress(downloadedBytes, totalBytes, "downloading");
+        }
+      }
     }
 
-    await logSetupDebug("Office CLI installation finished successfully.");
+    const totalBuffer = Buffer.concat(chunks);
+    await fs.writeFile(tempPath, totalBuffer);
+
+    if (process.platform !== "win32") {
+      await fs.chmod(tempPath, 0o755);
+    }
+
+    await fs.rename(tempPath, localPath);
+
+    if (process.platform !== "win32") {
+      await fs.chmod(localPath, 0o755);
+    }
+
+    cachedOfficeCliInstalledLocally = true;
+
+    await logSetupDebug(`Office CLI downloaded and installed successfully at ${localPath}`);
     if (onProgress) {
-      onProgress(0, 0, "done");
+      onProgress(downloadedBytes, totalBytes, "done");
     } else {
       console.log("officecli installed successfully.");
     }
   } catch (err: any) {
-    await logSetupDebug(`Warning: Failed to auto-install officecli: ${err.message || err}`);
+    await logSetupDebug(`Warning: Failed to auto-install officecli: ${err?.message || err}`);
     console.error("Warning: Failed to auto-install officecli:", err);
+    if (onProgress) onProgress(0, 0, "error");
+    throw err;
   }
 }
 

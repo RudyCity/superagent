@@ -52,10 +52,10 @@ describe("Agent – goal mode properties", () => {
     expect(agent.goalMode).toBeNull();
   });
 
-  it("goalMaxIterations defaults to 200", () => {
+  it("goalMaxIterations defaults to Infinity", () => {
     const { onEvent, onPermission, onQuestion } = makeHandlers();
     const agent = new Agent(onEvent, onPermission, onQuestion);
-    expect(agent.goalMaxIterations).toBe(200);
+    expect(agent.goalMaxIterations).toBe(Infinity);
   });
 
   it("goalMode can be set and read back", () => {

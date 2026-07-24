@@ -3,6 +3,7 @@ import path from "path";
 import { execa } from "execa";
 import { Tool } from "./types.js";
 import { resolveFilePathFromArgs } from "./pathHelpers.js";
+import { getLocalOfficeCliPath, isOfficeCliInstalledLocally } from "../androidSetup.js";
 
 // Lazy-loaded imports to prevent startup performance drop
 let pdfParse: any = null;
@@ -41,7 +42,8 @@ export const readDocumentTool: Tool = {
     // Primary Path: Try to use officecli for Office files (.docx, .xlsx, .xls)
     if (ext === ".docx" || ext === ".xlsx" || ext === ".xls") {
       try {
-        const { stdout } = await execa("officecli", ["view", "text", resolvedPath], {
+        const bin = (await isOfficeCliInstalledLocally()) ? getLocalOfficeCliPath() : "officecli";
+        const { stdout } = await execa(bin, ["view", "text", resolvedPath], {
           cwd,
           signal,
         });

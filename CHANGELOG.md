@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.572] - 2026-07-25
+
+### Changed
+- **Unlimited Iterations Option**:
+  - Configured default settings in the system settings config to `maxIterations: 0` (unlimited).
+  - Modified the execution iteration logic in `Agent` to set the default `goalMaxIterations` to `Infinity` (unlimited).
+  - Updated context and prompt formatting logic in `ContextBuilder` to properly handle `0` and `Infinity` as unlimited iteration bounds instead of defaulting back to `50`.
+  - Updated the unit tests for `goalMaxIterations` defaults to assert `Infinity`.
+  - Added `"error"` stage to `DownloadProgressCallback` stage union in `androidSetup` to fix a compilation type mismatch.
+
 ## [1.2.571] - 2026-07-24
 
 ### Changed
