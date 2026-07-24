@@ -372,20 +372,20 @@ export class ContextManager {
     const responseBuffer = Math.max(4000, Math.min(8000, Math.floor(modelLimit * 0.05)));
     const toolCallBuffer = Math.max(5000, Math.min(10000, Math.floor(modelLimit * 0.05)));
     const threshold = modelLimit - responseBuffer - toolCallBuffer;
-    // For large models (e.g. Claude 200k), cap at 85% of limit, otherwise 75%
-    const capRatio = isAnthropic || modelLimit >= 100000 ? 0.85 : 0.75;
+    // For large models (e.g. Claude 200k), cap at 80% of limit, otherwise 70%
+    const capRatio = isAnthropic || modelLimit >= 100000 ? 0.80 : 0.70;
     return Math.min(threshold, Math.floor(modelLimit * capRatio));
   }
 
   private selectStrategy(messages: Message[]): CompactionStrategy {
     const context = this.buildCompactionContext(messages);
 
-    // Pre-emptive band: estimated tokens exceed 0.75 * limit but are still
+    // Pre-emptive band: estimated tokens exceed 0.65 * threshold but are still
     // below the emergency threshold. Use budgeted pruning to proactively
     // shrink the thought-DAG rather than waiting for reactive compaction.
     const totalTokens = this.tokenTracker.estimateTokensForAll(messages).total;
     const threshold = this.calculateThreshold();
-    if (totalTokens > threshold * 0.75 && totalTokens < threshold) {
+    if (totalTokens > threshold * 0.65 && totalTokens < threshold) {
       return this.budgetedPruningStrategy;
     }
 

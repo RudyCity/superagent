@@ -4,7 +4,8 @@ import fs from "fs";
 import { URL } from "url";
 import type { Agent } from "./core/agent.js";
 import { 
-  getSettings, 
+  getSettings,
+  getModelPresets, 
   addTrustedDirectory, 
   ensureDirectoryTrusted, 
   getPresets, 
@@ -1004,8 +1005,31 @@ export async function handleServerRoute(
   if (pathname === "/api/config" && req.method === "GET") {
     const settings = getSettings();
     const config = loadModelConfig();
-    const singlePresets = getPresets("single");
-    const multiPresets = getPresets("multi");
+    const configSingle: any[] = getPresets("single") || [];
+    const configMulti: any[] = getPresets("multi") || [];
+    let cliSingle: any[] = [];
+    let cliMulti: any[] = [];
+    try {
+      cliSingle = getModelPresets("single") || [];
+      cliMulti = getModelPresets("multi") || [];
+    } catch (e) {}
+
+    const mergePresets = (configList: any[], cliList: any[]) => {
+      const map = new Map<string, any>();
+      for (const p of cliList) {
+        if (p && p.name) map.set(p.name, { ...p, id: p.id || p.name });
+      }
+      for (const p of configList) {
+        if (p && (p.name || p.id)) {
+          const key = p.name || p.id;
+          map.set(key, { ...map.get(key), ...p, id: p.id || p.name });
+        }
+      }
+      return Array.from(map.values());
+    };
+
+    const singlePresets = mergePresets(configSingle, cliSingle);
+    const multiPresets = mergePresets(configMulti, cliMulti);
     const activeSinglePresetId = getActivePresetId("single");
     const activeMultiPresetId = getActivePresetId("multi");
     const trustedDirectories = getTrustedDirectories();

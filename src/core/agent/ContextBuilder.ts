@@ -408,7 +408,7 @@ export class ContextBuilder {
     {
       const modelLimit = getContextWindowLimit(getConfig().model);
       const isAnthropic = getConfig().provider === "anthropic" || (typeof getConfig().provider === "string" && getConfig().provider.includes("anthropic"));
-      const safetyMax = Math.floor(modelLimit * (isAnthropic || modelLimit >= 100000 ? 0.85 : 0.75));
+      const safetyMax = Math.floor(modelLimit * (isAnthropic || modelLimit >= 100000 ? 0.80 : 0.70));
       
       let estSysTokens = 0;
       let estMsgTokens = 0;

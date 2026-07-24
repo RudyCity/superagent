@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.557] - 2026-07-24
+
+### Changed
+- **Compaction & Pre-emptive Pruning Thresholds**:
+  - Adjusted model cap ratio in `ContextManager.ts` and `ContextBuilder.ts` from 85%/75% down to 80%/70% to trigger history compaction earlier.
+  - Lowered the GraphSentry pre-emptive budgeted pruning band threshold from 75% to 65% of context window, proactively clearing low-importance background messages before reaching emergency limits.
+
 ## [1.2.556] - 2026-07-24
 
 ### Fixed
