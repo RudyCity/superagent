@@ -2165,6 +2165,7 @@ export function App({
       setRunningTasksCount(
         allTasks.filter((t) => !t.hasExited && !t.isHidden && isTaskInWorkspace(t.cwd, workspacePath)).length
       );
+      let tasksChanged = false;
       allTasks.forEach((task) => {
         if (task.isDetachedWindow) return;
         if (task.hasExited && !(task as any).notified) {
@@ -2192,9 +2193,12 @@ export function App({
 
           // Clean up completed headless tasks from the Map to prevent memory leaks
           backgroundTasks.delete(task.id);
-          notifyTasksChanged();
+          tasksChanged = true;
         }
       });
+      if (tasksChanged) {
+        notifyTasksChanged();
+      }
     });
 
     const unsubSubagents = subscribeToSubagents(() => {

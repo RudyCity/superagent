@@ -179,18 +179,12 @@ function checkAndPerformDbMigration(currentModelName: string, currentDimensions:
 
   if (migrateNeeded) {
     try {
-      const filesToDelete = [
-        path.join(globalDataDir, "vectors.db"),
-        path.join(globalDataDir, "vectors.db-wal"),
-        path.join(globalDataDir, "vectors.db-shm"),
-        path.join(globalDataDir, "skills.db"),
-        path.join(globalDataDir, "skills.db-wal"),
-        path.join(globalDataDir, "skills.db-shm"),
-        path.join(globalDataDir, "skills.hash")
-      ];
-      for (const file of filesToDelete) {
-        if (fs.existsSync(file)) {
-          fs.unlinkSync(file);
+      if (fs.existsSync(globalDataDir)) {
+        const entries = fs.readdirSync(globalDataDir);
+        for (const entry of entries) {
+          if (entry === "metadata.json") continue;
+          const fullPath = path.join(globalDataDir, entry);
+          fs.rmSync(fullPath, { recursive: true, force: true });
         }
       }
     } catch (err) {

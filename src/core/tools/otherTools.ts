@@ -1052,16 +1052,17 @@ export const managePlanTool: Tool = {
     },
     required: ["action"],
   },
-  async execute(args, cwd, signal) {
-    const action = args.action as string;
+  async execute(rawArgs, cwd, signal) {
+    const args: Record<string, any> = (rawArgs && typeof rawArgs === "object" && (rawArgs as any).arguments) ? (rawArgs as any).arguments : (rawArgs as Record<string, any>);
+    const action = args?.action as string;
     const validActions = ["create", "edit", "sync", "get"];
     if (!validActions.includes(action)) {
       return formatUnknownActionError(action, validActions);
     }
-    const planContentInput = args.planContent as string | undefined;
-    const targetContent = args.targetContent as string | undefined;
-    const replacementContent = args.replacementContent as string | undefined;
-    const sessionId = args.sessionId as string | undefined;
+    const planContentInput = args?.planContent as string | undefined;
+    const targetContent = args?.targetContent as string | undefined;
+    const replacementContent = args?.replacementContent as string | undefined;
+    const sessionId = args?.sessionId as string | undefined;
 
     const { agentLocalStorage } = await import("../agent.js");
     const currentAgent = agentLocalStorage.getStore();

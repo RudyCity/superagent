@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.548] - 2026-07-24
+
+### Fixed
+- **RMemory Migration & Background Task Notifications**:
+  - Enhanced `checkAndPerformDbMigration` in `rmemoryUtil.ts` to clean up all stale files and directories in `globalDataDir` upon embedding model or dimension change, preventing vector dimension mismatches.
+  - Batched background task change notifications in `app.tsx` by moving `notifyTasksChanged()` outside the task processing `forEach` loop.
+  - Added robust argument unwrapping in `managePlanTool` (`otherTools.ts`) for nested `args.arguments` payloads.
+
 ## [1.2.547] - 2026-07-24
 
 ### Fixed
